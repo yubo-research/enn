@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable
 
-from .proposal import select_enn_pareto, select_gp_thompson, select_uniform
+from .proposal import select_uniform
 from .turbo_config import TurboConfig
 from .turbo_utils import argmax_random_tie, from_unit, latin_hypercube, raasp, to_unit
 
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
     from .turbo_mode import TurboMode
+    from .turbo_mode_impl import TurboModeImpl
 
 
 class TurboOptimizer:
@@ -54,8 +55,26 @@ class TurboOptimizer:
         self._sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
         self._x_obs_list: list = []
         self._y_obs_list: list = []
+        match mode:
+            case TurboMode.TURBO_ONE:
+                from .turbo_one_impl import TurboOneImpl
 
-        if mode == TurboMode.TURBO_ONE or mode == TurboMode.TURBO_ENN:
+                self._mode_impl: TurboModeImpl = TurboOneImpl()
+            case TurboMode.TURBO_ZERO:
+                from .turbo_zero_impl import TurboZeroImpl
+
+                self._mode_impl = TurboZeroImpl()
+            case TurboMode.TURBO_ENN:
+                from .turbo_enn_impl import TurboENNImpl
+
+                self._mode_impl = TurboENNImpl()
+            case TurboMode.LHD_ONLY:
+                from .lhd_only_impl import LHDOnlyImpl
+
+                self._mode_impl = LHDOnlyImpl()
+            case _:
+                raise ValueError(f"Unknown mode: {mode}")
+        if self._mode_impl.needs_tr_list():
             self._x_tr_list: list = []
             self._y_tr_list: list = []
         else:
@@ -151,60 +170,42 @@ class TurboOptimizer:
         return self._ask_normal(num_arms)
 
     def _ask_normal(self, num_arms: int) -> np.ndarray:
-        from .turbo_mode import TurboMode
-
         if self._tr_state.needs_restart():
             self._tr_state.restart()
-            if self._mode == TurboMode.TURBO_ONE or self._mode == TurboMode.TURBO_ENN:
-                self._x_tr_list.clear()
-                self._y_tr_list.clear()
-                self._init_idx = 0
+            should_reset_init, new_init_idx = self._mode_impl.handle_restart(
+                self._x_tr_list, self._y_tr_list, self._init_idx, self._num_init
+            )
+            if should_reset_init:
+                self._init_idx = new_init_idx
                 self._init_lhd = from_unit(
                     latin_hypercube(self._num_init, self._num_dim, rng=self._rng),
                     self._bounds,
                 )
                 return self._get_init_lhd_points(num_arms)
-        if (
-            self._mode == TurboMode.TURBO_ONE or self._mode == TurboMode.TURBO_ENN
-        ) and self._x_tr_list is not None:
-            x_center = self._best_x_tr()
-        else:
-            x_center = self._best_x()
+
+        x_center = self._mode_impl.get_x_center(
+            self._x_obs_list,
+            self._y_obs_list,
+            self._x_tr_list,
+            self._y_tr_list,
+            argmax_random_tie,
+            self._rng,
+        )
 
         def from_unit_fn(x):
             return from_unit(x, self._bounds)
 
-        gp_model = None
-        gp_y_mean_fitted = None
-        gp_y_std_fitted = None
-        weights = None
+        if self._mode_impl.needs_tr_list() and len(self._x_tr_list) == 0:
+            return self._get_init_lhd_points(num_arms)
 
-        if self._mode == TurboMode.TURBO_ONE or self._mode == TurboMode.TURBO_ENN:
-            if len(self._x_tr_list) == 0:
-                return self._get_init_lhd_points(num_arms)
-            x_tr_slice = self._x_tr_list
-            y_tr_slice = self._y_tr_list
-
-            if self._mode == TurboMode.TURBO_ONE:
-                import numpy as np
-
-                from .turbo_utils import fit_gp
-
-                gp_model, _likelihood, gp_y_mean_fitted, gp_y_std_fitted = fit_gp(
-                    x_tr_slice,
-                    y_tr_slice,
-                    self._num_dim,
-                    num_steps=self._gp_num_steps,
-                )
-                if gp_model is not None:
-                    weights = (
-                        gp_model.covar_module.base_kernel.lengthscale.cpu()
-                        .detach()
-                        .numpy()
-                        .ravel()
-                    )
-                    weights = weights / weights.mean()
-                    weights = weights / np.prod(np.power(weights, 1.0 / len(weights)))
+        gp_model, gp_y_mean_fitted, gp_y_std_fitted, weights = (
+            self._mode_impl.prepare_ask(
+                self._x_tr_list,
+                self._y_tr_list,
+                self._num_dim,
+                self._gp_num_steps,
+            )
+        )
 
         lb_local, ub_local = self._tr_state.compute_bounds_1d(x_center, weights)
 
@@ -221,46 +222,26 @@ class TurboOptimizer:
         def fallback_fn(x, n):
             return select_uniform(x, n, self._num_dim, self._rng, from_unit_fn)
 
-        if self._mode == TurboMode.TURBO_ZERO:
-            return select_uniform(
-                x_cand,
-                num_arms,
-                self._num_dim,
-                self._rng,
-                from_unit_fn,
-            )
-        if self._mode == TurboMode.TURBO_ONE:
-            selected, self._gp_y_mean, self._gp_y_std, _ = select_gp_thompson(
-                x_cand,
-                num_arms,
-                x_tr_slice,
-                y_tr_slice,
-                self._num_dim,
-                self._gp_num_steps,
-                self._rng,
-                self._gp_y_mean,
-                self._gp_y_std,
-                fallback_fn,
-                from_unit_fn,
-                model=gp_model,
-                new_gp_y_mean=gp_y_mean_fitted,
-                new_gp_y_std=gp_y_std_fitted,
-            )
-            return selected
-        if self._mode == TurboMode.TURBO_ENN:
-            return select_enn_pareto(
-                x_cand,
-                num_arms,
-                x_tr_slice,
-                y_tr_slice,
-                self._k,
-                self._var_scale,
-                self._rng,
-                fallback_fn,
-                from_unit_fn,
-                sobol_indices=self._config.sobol_indices,
-            )
-        raise RuntimeError(self._mode)
+        selected, self._gp_y_mean, self._gp_y_std = self._mode_impl.select_candidates(
+            x_cand,
+            num_arms,
+            self._x_tr_list,
+            self._y_tr_list,
+            self._num_dim,
+            self._k,
+            self._var_scale,
+            self._gp_num_steps,
+            self._gp_y_mean,
+            self._gp_y_std,
+            self._rng,
+            fallback_fn,
+            from_unit_fn,
+            gp_model,
+            gp_y_mean_fitted,
+            gp_y_std_fitted,
+            self._config,
+        )
+        return selected
 
     def _trim_trailing_obs(self) -> None:
         import numpy as np
