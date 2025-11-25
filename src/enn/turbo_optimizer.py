@@ -16,11 +16,11 @@ if TYPE_CHECKING:
 class TurboOptimizer:
     def __init__(
         self,
-        bounds: np.ndarray | Any,
-        mode: TurboMode | Any,
+        bounds: np.ndarray,
+        mode: TurboMode,
         num_arms: int,
         *,
-        rng: Generator | Any,
+        rng: Generator,
         config: TurboConfig | None = None,
     ) -> None:
         import numpy as np
@@ -46,8 +46,6 @@ class TurboOptimizer:
             num_candidates = min(5000, 100 * self._num_dim)
         from .turbo_mode import TurboMode
 
-        if mode == TurboMode.TURBO_ENN:
-            num_candidates = max(num_candidates, 10 * tr_num_arms)
         self._num_candidates = int(num_candidates)
         if self._num_candidates <= 0:
             raise ValueError(self._num_candidates)
@@ -64,6 +62,7 @@ class TurboOptimizer:
             self._x_tr_list = None
             self._y_tr_list = None
         if config.gumbel:
+            assert mode == TurboMode.TURBO_ENN
             self._tr_state: GumbelTrustRegion | TurboTrustRegion = GumbelTrustRegion(
                 num_dim=self._num_dim
             )

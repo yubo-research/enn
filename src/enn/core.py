@@ -170,3 +170,56 @@ class EpistemicNearestNeighbors:
             vvar = np.maximum(vvar, self._eps_var)
             se_all[i] = np.sqrt(vvar) * self._y_scale
         return ENNNormal(mu_all, se_all)
+
+    def neighbors(
+        self,
+        x: np.ndarray | Any,
+        k: int,
+        *,
+        exclude_nearest: bool = False,
+    ) -> list[tuple[np.ndarray, np.ndarray]]:
+        import numpy as np
+
+        x = np.asarray(x, dtype=float)
+        if x.ndim == 1:
+            x = x[np.newaxis, :]
+        if x.ndim != 2:
+            raise ValueError(f"x must be 1D or 2D, got shape {x.shape}")
+        if x.shape[0] != 1:
+            raise ValueError(f"x must be a single point, got shape {x.shape}")
+        if x.shape[1] != self._num_dim:
+            raise ValueError(
+                f"x must have {self._num_dim} dimensions, got {x.shape[1]}"
+            )
+        if k < 0:
+            raise ValueError(f"k must be non-negative, got {k}")
+        if len(self) == 0:
+            return []
+        if exclude_nearest:
+            if len(self) <= 1:
+                raise ValueError(
+                    f"exclude_nearest=True requires at least 2 observations, got {len(self)}"
+                )
+            search_k = int(min(k + 1, len(self)))
+        else:
+            search_k = int(min(k, len(self)))
+        if search_k == 0:
+            return []
+        x_scaled = x / self._x_scale
+        x_scaled = x_scaled.astype(np.float32, copy=False)
+        if self._index is None:
+            raise RuntimeError("index is not initialized")
+        dist2s_full, idx_full = self._index.search(x_scaled, search_k)
+        dist2s_full = dist2s_full.astype(float)
+        idx_full = idx_full.astype(int)
+        if exclude_nearest:
+            dist2s_full = dist2s_full[:, 1:]
+            idx_full = idx_full[:, 1:]
+        actual_k = min(k, len(idx_full[0]))
+        idx = idx_full[0, :actual_k]
+        result = []
+        for i in idx:
+            x_neighbor = self._train_x[i].copy()
+            y_neighbor = self._train_y[i].copy()
+            result.append((x_neighbor, y_neighbor))
+        return result

@@ -189,3 +189,194 @@ def test_epistemic_nearest_neighbors_sobol_indices_requires_single_metric():
         ValueError, match="sobol_indices=True requires train_y to have exactly 1 metric"
     ):
         EpistemicNearestNeighbors(x, y, yvar, sobol_indices=True)
+
+
+def test_neighbors_returns_correct_number_and_ordering():
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+
+    rng = np.random.default_rng(0)
+    n = 20
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
+    train_yvar = 0.1 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    # Query point at origin
+    x_query = np.zeros(d, dtype=float)
+    neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
+
+    assert len(neighbors) == 5
+    neighbor_indices = []
+    for x_neighbor, y_neighbor in neighbors:
+        assert x_neighbor.shape == (d,)
+        assert y_neighbor.shape == (1,)
+        # Find which training point this corresponds to
+        row_diffs = np.abs(train_x - x_neighbor[np.newaxis, :])
+        matches = np.all(row_diffs < 1e-6, axis=1)
+        assert np.any(matches), "Neighbor x not found in training data"
+        idx = np.where(matches)[0][0]
+        neighbor_indices.append(idx)
+        assert np.allclose(
+            train_y[idx], y_neighbor
+        ), "Neighbor y doesn't match training data"
+
+    # Verify ordering: distances in scaled space should be non-decreasing
+    # We verify by checking that the FAISS ordering is preserved
+    x_scaled_query = x_query / model._x_scale
+    x_scaled_train = train_x / model._x_scale
+    distances_scaled = [
+        np.linalg.norm(x_scaled_train[idx] - x_scaled_query) for idx in neighbor_indices
+    ]
+    for i in range(len(distances_scaled) - 1):
+        assert (
+            distances_scaled[i] <= distances_scaled[i + 1] + 1e-6
+        ), f"Distances not ordered: {distances_scaled}"
+
+
+def test_neighbors_exclude_nearest():
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+
+    rng = np.random.default_rng(0)
+    n = 20
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
+    train_yvar = 0.1 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    # Query point exactly matching a training point
+    x_query = train_x[5].copy()
+    neighbors_exclude = model.neighbors(x_query, k=5, exclude_nearest=True)
+    neighbors_include = model.neighbors(x_query, k=5, exclude_nearest=False)
+
+    assert len(neighbors_exclude) == 5
+    assert len(neighbors_include) == 5
+    # The first neighbor when include=True should be the exact match
+    assert np.allclose(neighbors_include[0][0], x_query)
+    # The first neighbor when exclude=True should NOT be the exact match
+    assert not np.allclose(neighbors_exclude[0][0], x_query)
+
+
+def test_neighbors_with_empty_observations():
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+
+    d = 3
+    train_x = np.zeros((0, d), dtype=float)
+    train_y = np.zeros((0, 1), dtype=float)
+    train_yvar = np.ones((0, 1), dtype=float)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    x_query = np.zeros(d, dtype=float)
+    neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
+    assert neighbors == []
+
+
+def test_neighbors_k_larger_than_available():
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+
+    rng = np.random.default_rng(0)
+    n = 5
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
+    train_yvar = 0.1 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    x_query = np.zeros(d, dtype=float)
+    neighbors = model.neighbors(x_query, k=20, exclude_nearest=False)
+    assert len(neighbors) == n
+
+
+def test_neighbors_k_zero():
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+
+    rng = np.random.default_rng(0)
+    n = 10
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
+    train_yvar = 0.1 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    x_query = np.zeros(d, dtype=float)
+    neighbors = model.neighbors(x_query, k=0, exclude_nearest=False)
+    assert neighbors == []
+
+
+def test_neighbors_with_multiple_metrics():
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+
+    rng = np.random.default_rng(0)
+    n = 15
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = rng.standard_normal((n, 2))
+    train_yvar = 0.1 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    x_query = np.zeros(d, dtype=float)
+    neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
+
+    assert len(neighbors) == 5
+    for x_neighbor, y_neighbor in neighbors:
+        assert x_neighbor.shape == (d,)
+        assert y_neighbor.shape == (2,)
+
+
+def test_neighbors_accepts_2d_input():
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+
+    rng = np.random.default_rng(0)
+    n = 10
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
+    train_yvar = 0.1 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    # Test with 1D input
+    x_query_1d = np.zeros(d, dtype=float)
+    neighbors_1d = model.neighbors(x_query_1d, k=3, exclude_nearest=False)
+
+    # Test with 2D input
+    x_query_2d = np.zeros((1, d), dtype=float)
+    neighbors_2d = model.neighbors(x_query_2d, k=3, exclude_nearest=False)
+
+    assert len(neighbors_1d) == len(neighbors_2d) == 3
+    for (x1, y1), (x2, y2) in zip(neighbors_1d, neighbors_2d):
+        assert np.allclose(x1, x2)
+        assert np.allclose(y1, y2)
+
+
+def test_neighbors_exclude_nearest_requires_multiple_observations():
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+
+    rng = np.random.default_rng(0)
+    d = 3
+    train_x = rng.standard_normal((1, d))
+    train_y = np.array([[1.0]])
+    train_yvar = np.array([[0.1]])
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    x_query = np.zeros(d, dtype=float)
+    with pytest.raises(
+        ValueError, match="exclude_nearest=True requires at least 2 observations"
+    ):
+        model.neighbors(x_query, k=1, exclude_nearest=True)
