@@ -112,8 +112,8 @@ def test_turbo_optimizer_with_trailing_obs():
             assert x.shape == (2, 2)
             y = -np.sum(x**2, axis=1)
             opt.tell(x, y)
-        assert len(opt._x_obs_list) == 20
-        assert len(opt._y_obs_list) == 20
+        assert len(opt._x_obs_list) == 5
+        assert len(opt._y_obs_list) == 5
         x_final = opt.ask(num_arms=2)
         assert x_final.shape == (2, 2)
 

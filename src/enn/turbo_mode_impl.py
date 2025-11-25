@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 if TYPE_CHECKING:
     import numpy as np
@@ -9,52 +9,43 @@ if TYPE_CHECKING:
     from .turbo_config import TurboConfig
 
 
-class TurboModeImpl:
-    def needs_tr_list(self) -> bool:
-        return False
+class TurboModeImpl(Protocol):
+    def needs_tr_list(self) -> bool: ...
 
-    def get_x_center(
+    def create_trust_region(
+        self, num_dim: int, num_arms: int, config: TurboConfig
+    ) -> Any: ...
+
+    def try_early_ask(
         self,
+        num_arms: int,
         x_obs_list: list,
-        y_obs_list: list,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
-        argmax_random_tie_fn: Callable[..., int],
-        rng: Generator,
-    ) -> np.ndarray:
-        import numpy as np
-
-        y_array = np.asarray(y_obs_list, dtype=float)
-        if y_array.size == 0:
-            raise RuntimeError("no observations")
-        idx = argmax_random_tie_fn(y_array, rng=rng)
-        x_array = np.asarray(x_obs_list, dtype=float)
-        return x_array[idx]
+        draw_initial_fn: Callable[[int], np.ndarray],
+        get_init_lhd_points_fn: Callable[[int], Callable[[int], np.ndarray] | None],
+    ) -> np.ndarray | None: ...
 
     def handle_restart(
         self,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
+        x_obs_list: list,
+        y_obs_list: list,
         init_idx: int,
         num_init: int,
-    ) -> tuple[bool, int]:
-        return False, init_idx
+    ) -> tuple[bool, int]: ...
 
     def prepare_ask(
         self,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
+        x_obs_list: list,
+        y_obs_list: list,
         num_dim: int,
         gp_num_steps: int,
-    ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
-        return None, None, None, None
+    ) -> tuple[Any, float | None, float | None, np.ndarray | None]: ...
 
     def select_candidates(
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
+        x_obs_list: list,
+        y_obs_list: list,
         num_dim: int,
         k: int | None,
         var_scale: float,
@@ -68,5 +59,12 @@ class TurboModeImpl:
         gp_y_mean_fitted: float | None,
         gp_y_std_fitted: float | None,
         config: TurboConfig,
-    ) -> tuple[np.ndarray, float, float]:
-        raise NotImplementedError
+    ) -> tuple[np.ndarray, float, float]: ...
+
+    def update_trust_region(
+        self,
+        tr_state: Any,
+        y_obs_list: list,
+        x_center: np.ndarray | None = None,
+        k: int | None = None,
+    ) -> None: ...

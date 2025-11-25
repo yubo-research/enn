@@ -6,35 +6,27 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
+    from .core import EpistemicNearestNeighbors
     from .turbo_gp import TurboGP
 
 from .turbo_utils import standardize_y
 
 
-def select_enn_pareto(
-    x_cand: np.ndarray,
-    num_arms: int,
+def mk_enn(
     x_obs_list: list[float] | list[list[float]],
     y_obs_list: list[float] | list[list[float]],
-    k: Optional[int],
-    var_scale: float,
-    rng: Generator | Any,
-    fallback_fn: Callable[[np.ndarray, int], np.ndarray],
-    from_unit_fn: Callable[[np.ndarray], np.ndarray],
     *,
     sobol_indices: bool = False,
-) -> np.ndarray:
+) -> EpistemicNearestNeighbors | None:
     import numpy as np
 
     from .core import EpistemicNearestNeighbors
-    from .enn_params import ENNParams
-    from .enn_util import arms_from_pareto_fronts
 
     if len(x_obs_list) == 0:
-        return fallback_fn(x_cand, num_arms)
+        return None
     y_obs_array = np.asarray(y_obs_list, dtype=float)
     if y_obs_array.size == 0:
-        return fallback_fn(x_cand, num_arms)
+        return None
 
     mu_y, sigma_y = standardize_y(y_obs_array)
     y_standardized = (y_obs_array - mu_y) / sigma_y
@@ -49,6 +41,30 @@ def select_enn_pareto(
         sobol_indices=sobol_indices,
     )
     if len(enn_model) == 0:
+        return None
+    return enn_model
+
+
+def select_enn_pareto(
+    x_cand: np.ndarray,
+    num_arms: int,
+    x_obs_list: list[float] | list[list[float]],
+    y_obs_list: list[float] | list[list[float]],
+    k: Optional[int],
+    var_scale: float,
+    rng: Generator | Any,
+    fallback_fn: Callable[[np.ndarray, int], np.ndarray],
+    from_unit_fn: Callable[[np.ndarray], np.ndarray],
+    *,
+    sobol_indices: bool = False,
+    enn_model: Optional[EpistemicNearestNeighbors] = None,
+) -> np.ndarray:
+    from .enn_params import ENNParams
+    from .enn_util import arms_from_pareto_fronts
+
+    if enn_model is None:
+        enn_model = mk_enn(x_obs_list, y_obs_list, sobol_indices=sobol_indices)
+    if enn_model is None:
         return fallback_fn(x_cand, num_arms)
 
     if k is None:

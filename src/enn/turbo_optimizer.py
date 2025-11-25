@@ -27,8 +27,7 @@ class TurboOptimizer:
         import numpy as np
         from scipy.stats import qmc
 
-        from .gumbel_trust_region import GumbelTrustRegion
-        from .turbo_trust_region import TurboTrustRegion
+        from .turbo_mode import TurboMode
 
         if config is None:
             config = TurboConfig()
@@ -45,7 +44,6 @@ class TurboOptimizer:
         num_candidates = config.num_candidates
         if num_candidates is None:
             num_candidates = min(5000, 100 * self._num_dim)
-        from .turbo_mode import TurboMode
 
         self._num_candidates = int(num_candidates)
         if self._num_candidates <= 0:
@@ -74,21 +72,9 @@ class TurboOptimizer:
                 self._mode_impl = LHDOnlyImpl()
             case _:
                 raise ValueError(f"Unknown mode: {mode}")
-        if self._mode_impl.needs_tr_list():
-            self._x_tr_list: list = []
-            self._y_tr_list: list = []
-        else:
-            self._x_tr_list = None
-            self._y_tr_list = None
-        if config.gumbel:
-            assert mode == TurboMode.TURBO_ENN
-            self._tr_state: GumbelTrustRegion | TurboTrustRegion = GumbelTrustRegion(
-                num_dim=self._num_dim
-            )
-        else:
-            self._tr_state = TurboTrustRegion(
-                num_dim=self._num_dim, num_arms=tr_num_arms
-            )
+        self._tr_state = self._mode_impl.create_trust_region(
+            self._num_dim, tr_num_arms, config
+        )
         self._gp_y_mean: float = 0.0
         self._gp_y_std: float = 1.0
         self._gp_num_steps: int = 50
@@ -124,41 +110,29 @@ class TurboOptimizer:
         self._init_idx = 0
 
     @property
-    def num_dim(self) -> int:
-        return self._num_dim
-
-    @property
-    def mode(self) -> TurboMode:
-        return self._mode
-
-    @property
     def tr_obs_count(self) -> int:
-        if self._y_tr_list is None:
-            return 0
-        return len(self._y_tr_list)
+        return len(self._y_obs_list)
 
     @property
     def best_tr_value(self) -> float | None:
         import numpy as np
 
-        if self._y_tr_list is None or len(self._y_tr_list) == 0:
+        if len(self._y_obs_list) == 0:
             return None
-        return float(np.max(self._y_tr_list))
+        return float(np.max(self._y_obs_list))
 
     def ask(self, num_arms: int) -> np.ndarray:
-        from .turbo_mode import TurboMode
-
         num_arms = int(num_arms)
         if num_arms <= 0:
             raise ValueError(num_arms)
-        if self._mode == TurboMode.LHD_ONLY:
-            return self._draw_initial(num_arms)
-        if (
-            self._mode == TurboMode.TURBO_ONE
-            and self._x_tr_list is not None
-            and len(self._x_tr_list) == 0
-        ):
-            return self._get_init_lhd_points(num_arms)
+        early_result = self._mode_impl.try_early_ask(
+            num_arms,
+            self._x_obs_list,
+            self._draw_initial,
+            self._get_init_lhd_points,
+        )
+        if early_result is not None:
+            return early_result
         if self._init_idx < self._num_init:
             if len(self._x_obs_list) == 0:
                 fallback_fn = None
@@ -173,7 +147,7 @@ class TurboOptimizer:
         if self._tr_state.needs_restart():
             self._tr_state.restart()
             should_reset_init, new_init_idx = self._mode_impl.handle_restart(
-                self._x_tr_list, self._y_tr_list, self._init_idx, self._num_init
+                self._x_obs_list, self._y_obs_list, self._init_idx, self._num_init
             )
             if should_reset_init:
                 self._init_idx = new_init_idx
@@ -183,25 +157,20 @@ class TurboOptimizer:
                 )
                 return self._get_init_lhd_points(num_arms)
 
-        x_center = self._mode_impl.get_x_center(
-            self._x_obs_list,
-            self._y_obs_list,
-            self._x_tr_list,
-            self._y_tr_list,
-            argmax_random_tie,
-            self._rng,
+        x_center = self._best_x_from_lists(
+            self._x_obs_list, self._y_obs_list, "no observations"
         )
 
         def from_unit_fn(x):
             return from_unit(x, self._bounds)
 
-        if self._mode_impl.needs_tr_list() and len(self._x_tr_list) == 0:
+        if self._mode_impl.needs_tr_list() and len(self._x_obs_list) == 0:
             return self._get_init_lhd_points(num_arms)
 
         gp_model, gp_y_mean_fitted, gp_y_std_fitted, weights = (
             self._mode_impl.prepare_ask(
-                self._x_tr_list,
-                self._y_tr_list,
+                self._x_obs_list,
+                self._y_obs_list,
                 self._num_dim,
                 self._gp_num_steps,
             )
@@ -225,8 +194,8 @@ class TurboOptimizer:
         selected, self._gp_y_mean, self._gp_y_std = self._mode_impl.select_candidates(
             x_cand,
             num_arms,
-            self._x_tr_list,
-            self._y_tr_list,
+            self._x_obs_list,
+            self._y_obs_list,
             self._num_dim,
             self._k,
             self._var_scale,
@@ -241,6 +210,10 @@ class TurboOptimizer:
             gp_y_std_fitted,
             self._config,
         )
+
+        self._mode_impl.update_trust_region(
+            self._tr_state, self._y_obs_list, x_center=x_center, k=self._k
+        )
         return selected
 
     def _trim_trailing_obs(self) -> None:
@@ -248,11 +221,11 @@ class TurboOptimizer:
 
         from .turbo_utils import argmax_random_tie
 
-        if len(self._x_tr_list) <= self._trailing_obs:
+        if len(self._x_obs_list) <= self._trailing_obs:
             return
-        y_tr_array = np.asarray(self._y_tr_list, dtype=float)
-        incumbent_idx = argmax_random_tie(y_tr_array, rng=self._rng)
-        num_total = len(self._x_tr_list)
+        y_array = np.asarray(self._y_obs_list, dtype=float)
+        incumbent_idx = argmax_random_tie(y_array, rng=self._rng)
+        num_total = len(self._x_obs_list)
         start_idx = max(0, num_total - self._trailing_obs)
         if incumbent_idx < start_idx:
             indices = np.array(
@@ -263,13 +236,13 @@ class TurboOptimizer:
         else:
             indices = np.arange(start_idx, num_total, dtype=int)
         assert incumbent_idx in indices, "Incumbent must be included in trimmed list"
-        x_tr_array = np.asarray(self._x_tr_list, dtype=float)
-        incumbent_value = y_tr_array[incumbent_idx]
-        self._x_tr_list = x_tr_array[indices].tolist()
-        self._y_tr_list = y_tr_array[indices].tolist()
-        y_tr_trimmed = np.asarray(self._y_tr_list, dtype=float)
+        x_array = np.asarray(self._x_obs_list, dtype=float)
+        incumbent_value = y_array[incumbent_idx]
+        self._x_obs_list = x_array[indices].tolist()
+        self._y_obs_list = y_array[indices].tolist()
+        y_trimmed = np.asarray(self._y_obs_list, dtype=float)
         assert np.any(
-            np.abs(y_tr_trimmed - incumbent_value) < 1e-10
+            np.abs(y_trimmed - incumbent_value) < 1e-10
         ), "Incumbent value must be preserved in trimmed list"
 
     def _append_observations(self, x: np.ndarray | Any, y: np.ndarray | Any) -> None:
@@ -286,11 +259,8 @@ class TurboOptimizer:
         x_unit = to_unit(x, self._bounds)
         self._x_obs_list.extend(x_unit.tolist())
         self._y_obs_list.extend(y.tolist())
-        if self._x_tr_list is not None:
-            self._x_tr_list.extend(x_unit.tolist())
-            self._y_tr_list.extend(y.tolist())
-            if self._trailing_obs is not None:
-                self._trim_trailing_obs()
+        if self._trailing_obs is not None:
+            self._trim_trailing_obs()
         y_obs_array = np.asarray(self._y_obs_list, dtype=float)
         self._tr_state.update(y_obs_array)
 
@@ -326,19 +296,9 @@ class TurboOptimizer:
         result = self._init_lhd[self._init_idx : self._init_idx + num_to_return]
         self._init_idx += num_to_return
         if num_to_return < num_arms:
-            remaining = num_arms - num_to_return
+            num_remaining = num_arms - num_to_return
             if fallback_fn is not None:
-                result = np.vstack([result, fallback_fn(remaining)])
+                result = np.vstack([result, fallback_fn(num_remaining)])
             else:
-                result = np.vstack([result, self._draw_initial(remaining)])
+                result = np.vstack([result, self._draw_initial(num_remaining)])
         return result
-
-    def _best_x(self) -> np.ndarray:
-        return self._best_x_from_lists(
-            self._x_obs_list, self._y_obs_list, "no observations"
-        )
-
-    def _best_x_tr(self) -> np.ndarray:
-        return self._best_x_from_lists(
-            self._x_tr_list, self._y_tr_list, "no trust-region observations"
-        )

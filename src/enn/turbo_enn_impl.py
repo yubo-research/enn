@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable
 
-from .turbo_mode_impl import TurboModeImpl
-
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
@@ -11,54 +9,70 @@ if TYPE_CHECKING:
     from .turbo_config import TurboConfig
 
 
-class TurboENNImpl(TurboModeImpl):
+class TurboENNImpl:
+    def __init__(self) -> None:
+        self._enn: Any | None = None
+
     def needs_tr_list(self) -> bool:
         return True
 
-    def get_x_center(
-        self,
-        x_obs_list: list,
-        y_obs_list: list,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
-        argmax_random_tie_fn: Callable[..., int],
-        rng: Generator,
-    ) -> np.ndarray:
-        import numpy as np
+    def create_trust_region(
+        self, num_dim: int, num_arms: int, config: TurboConfig
+    ) -> Any:
+        if config.gumbel:
+            from .gumbel_trust_region import GumbelTrustRegion
 
-        if x_tr_list is not None and len(x_tr_list) > 0:
-            y_array = np.asarray(y_tr_list, dtype=float)
-            if y_array.size == 0:
-                raise RuntimeError("no trust-region observations")
-            idx = argmax_random_tie_fn(y_array, rng=rng)
-            x_array = np.asarray(x_tr_list, dtype=float)
-            return x_array[idx]
-        y_array = np.asarray(y_obs_list, dtype=float)
-        if y_array.size == 0:
-            raise RuntimeError("no observations")
-        idx = argmax_random_tie_fn(y_array, rng=rng)
-        x_array = np.asarray(x_obs_list, dtype=float)
-        return x_array[idx]
+            return GumbelTrustRegion(num_dim=num_dim, neighbors_fn=self.neighbors)
+        from .turbo_trust_region import TurboTrustRegion
+
+        return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
+
+    def try_early_ask(
+        self,
+        num_arms: int,
+        x_obs_list: list,
+        draw_initial_fn: Callable[[int], np.ndarray],
+        get_init_lhd_points_fn: Callable[[int], np.ndarray | None],
+    ) -> np.ndarray | None:
+        return None
 
     def handle_restart(
         self,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
+        x_obs_list: list,
+        y_obs_list: list,
         init_idx: int,
         num_init: int,
     ) -> tuple[bool, int]:
-        if x_tr_list is not None:
-            x_tr_list.clear()
-            y_tr_list.clear()
-            return True, 0
-        return False, init_idx
+        x_obs_list.clear()
+        y_obs_list.clear()
+        return True, 0
+
+    def prepare_ask(
+        self,
+        x_obs_list: list,
+        y_obs_list: list,
+        num_dim: int,
+        gp_num_steps: int,
+    ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
+        return None, None, None, None
+
+    def neighbors(
+        self,
+        x: np.ndarray,
+        k: int,
+        *,
+        exclude_nearest: bool = False,
+    ) -> list[tuple[np.ndarray, np.ndarray]]:
+        if self._enn is None:
+            return []
+        return self._enn.neighbors(x, k, exclude_nearest=exclude_nearest)
 
     def select_candidates(
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
+        x_obs_list: list,
+        y_obs_list: list,
         num_dim: int,
         k: int | None,
         var_scale: float,
@@ -73,25 +87,44 @@ class TurboENNImpl(TurboModeImpl):
         gp_y_std_fitted: float | None,
         config: TurboConfig,
     ) -> tuple[np.ndarray, float, float]:
-        from .proposal import select_enn_pareto
+        from .proposal import mk_enn, select_enn_pareto
 
-        if x_tr_list is None:
-            x_tr_list = []
-        if y_tr_list is None:
-            y_tr_list = []
+        self._enn = mk_enn(x_obs_list, y_obs_list, sobol_indices=config.sobol_indices)
         return (
             select_enn_pareto(
                 x_cand,
                 num_arms,
-                x_tr_list,
-                y_tr_list,
+                x_obs_list,
+                y_obs_list,
                 k,
                 var_scale,
                 rng,
                 fallback_fn,
                 from_unit_fn,
                 sobol_indices=config.sobol_indices,
+                enn_model=self._enn,
             ),
             gp_y_mean,
             gp_y_std,
         )
+
+    def update_trust_region(
+        self,
+        tr_state: Any,
+        y_obs_list: list,
+        x_center: np.ndarray | None = None,
+        k: int | None = None,
+    ) -> None:
+        import numpy as np
+
+        from .gumbel_trust_region import GumbelTrustRegion
+
+        y_obs_array = np.asarray(y_obs_list, dtype=float)
+        if (
+            isinstance(tr_state, GumbelTrustRegion)
+            and x_center is not None
+            and k is not None
+        ):
+            tr_state.update(y_obs_array, x_center=x_center, k=k)
+        else:
+            tr_state.update(y_obs_array)

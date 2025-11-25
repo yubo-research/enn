@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable
 
-from .turbo_mode_impl import TurboModeImpl
-
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
@@ -11,52 +9,43 @@ if TYPE_CHECKING:
     from .turbo_config import TurboConfig
 
 
-class TurboOneImpl(TurboModeImpl):
+class TurboOneImpl:
     def needs_tr_list(self) -> bool:
         return True
 
-    def get_x_center(
-        self,
-        x_obs_list: list,
-        y_obs_list: list,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
-        argmax_random_tie_fn: Callable[..., int],
-        rng: Generator,
-    ) -> np.ndarray:
-        import numpy as np
+    def create_trust_region(
+        self, num_dim: int, num_arms: int, config: TurboConfig
+    ) -> Any:
+        from .turbo_trust_region import TurboTrustRegion
 
-        if x_tr_list is not None and len(x_tr_list) > 0:
-            y_array = np.asarray(y_tr_list, dtype=float)
-            if y_array.size == 0:
-                raise RuntimeError("no trust-region observations")
-            idx = argmax_random_tie_fn(y_array, rng=rng)
-            x_array = np.asarray(x_tr_list, dtype=float)
-            return x_array[idx]
-        y_array = np.asarray(y_obs_list, dtype=float)
-        if y_array.size == 0:
-            raise RuntimeError("no observations")
-        idx = argmax_random_tie_fn(y_array, rng=rng)
-        x_array = np.asarray(x_obs_list, dtype=float)
-        return x_array[idx]
+        return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
+
+    def try_early_ask(
+        self,
+        num_arms: int,
+        x_obs_list: list,
+        draw_initial_fn: Callable[[int], np.ndarray],
+        get_init_lhd_points_fn: Callable[[int], np.ndarray | None],
+    ) -> np.ndarray | None:
+        if len(x_obs_list) == 0:
+            return get_init_lhd_points_fn(num_arms)
+        return None
 
     def handle_restart(
         self,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
+        x_obs_list: list,
+        y_obs_list: list,
         init_idx: int,
         num_init: int,
     ) -> tuple[bool, int]:
-        if x_tr_list is not None:
-            x_tr_list.clear()
-            y_tr_list.clear()
-            return True, 0
-        return False, init_idx
+        x_obs_list.clear()
+        y_obs_list.clear()
+        return True, 0
 
     def prepare_ask(
         self,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
+        x_obs_list: list,
+        y_obs_list: list,
         num_dim: int,
         gp_num_steps: int,
     ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
@@ -64,11 +53,11 @@ class TurboOneImpl(TurboModeImpl):
 
         from .turbo_utils import fit_gp
 
-        if x_tr_list is None or len(x_tr_list) == 0:
+        if len(x_obs_list) == 0:
             return None, None, None, None
         gp_model, _likelihood, gp_y_mean_fitted, gp_y_std_fitted = fit_gp(
-            x_tr_list,
-            y_tr_list,
+            x_obs_list,
+            y_obs_list,
             num_dim,
             num_steps=gp_num_steps,
         )
@@ -88,8 +77,8 @@ class TurboOneImpl(TurboModeImpl):
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        x_tr_list: list | None,
-        y_tr_list: list | None,
+        x_obs_list: list,
+        y_obs_list: list,
         num_dim: int,
         k: int | None,
         var_scale: float,
@@ -106,15 +95,11 @@ class TurboOneImpl(TurboModeImpl):
     ) -> tuple[np.ndarray, float, float]:
         from .proposal import select_gp_thompson
 
-        if x_tr_list is None:
-            x_tr_list = []
-        if y_tr_list is None:
-            y_tr_list = []
         selected, new_gp_y_mean, new_gp_y_std, _ = select_gp_thompson(
             x_cand,
             num_arms,
-            x_tr_list,
-            y_tr_list,
+            x_obs_list,
+            y_obs_list,
             num_dim,
             gp_num_steps,
             rng,
@@ -127,3 +112,15 @@ class TurboOneImpl(TurboModeImpl):
             new_gp_y_std=gp_y_std_fitted,
         )
         return selected, new_gp_y_mean, new_gp_y_std
+
+    def update_trust_region(
+        self,
+        tr_state: Any,
+        y_obs_list: list,
+        x_center: np.ndarray | None = None,
+        k: int | None = None,
+    ) -> None:
+        import numpy as np
+
+        y_obs_array = np.asarray(y_obs_list, dtype=float)
+        tr_state.update(y_obs_array)
