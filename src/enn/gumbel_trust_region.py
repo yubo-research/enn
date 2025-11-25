@@ -36,22 +36,32 @@ class GumbelTrustRegion:
                 self.length = 1.0
                 return
             y_values = np.array([y for _, y in neighbors])
+            x_neighbors = np.array([x for x, _ in neighbors])
+            max_distance = float(
+                np.max(
+                    [
+                        np.max(np.abs(x_center - x_neighbor))
+                        for x_neighbor in x_neighbors
+                    ]
+                )
+            )
         else:
             y_values = values
+            max_distance = 0.1
 
         n = len(y_values)
         if n <= 1:
             self.length = 1.0
             return
         y_max = float(np.max(y_values))
-        y_median = float(np.median(y_values))
+        y_mean = float(np.mean(y_values))
         y_std = float(np.std(y_values))
-        denom = 2.0 * gumbel_expected_max(n)
+        denom = gumbel_expected_max(n)
         if denom <= 0:
             denom = 1.0
-        signal = ((y_max - y_median) / (1e-6 + y_std) / denom) ** 2
-        scale = 1.0 / (1e-6 + signal)
-        self.length = float(np.clip(scale, 0.1, 1.0))
+        signal = (y_max - y_mean) / (1e-6 + y_std) / denom
+        signal = float(np.clip(signal, 0.0, 1.0))
+        self.length = (1.0 - signal) * 1.0 + signal * max_distance
 
     def needs_restart(self) -> bool:
         return False
