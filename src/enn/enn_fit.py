@@ -123,5 +123,4 @@ def enn_fit(
             best_idx = i
     if best_idx is None:
         return ENNParams(k=k, var_scale=float(var_scale_values[0]))
-    print("P:", paramss[best_idx])
     return paramss[best_idx]
