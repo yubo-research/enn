@@ -88,35 +88,30 @@ def subsample_loglik(
 def enn_fit(
     model: EpistemicNearestNeighbors | Any,
     *,
-    k: int | None = None,
+    k: int,
     num_fit_candidates: int,
     num_fit_samples: int = 10,
     rng: Generator | Any,
 ) -> ENNParams:
     from .enn_params import ENNParams
 
-    if k is not None:
-        return ENNParams(k=k, var_scale=1.0)
     train_x = model.train_x
     train_y = model.train_y
     train_yvar = model.train_yvar
     if train_y.shape[1] != 1 or train_yvar.shape[1] != 1:
         raise ValueError((train_y.shape, train_yvar.shape))
     y = train_y[:, 0]
-    k_candidates = [3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 50, 100]
-    k_values = rng.choice(k_candidates, size=num_fit_candidates, replace=True).tolist()
-    var_scale_log_min = -2.0
-    var_scale_log_max = 2.0
+    var_scale_log_min = -3.0
+    var_scale_log_max = 3.0
     var_scale_log_values = rng.uniform(
         var_scale_log_min, var_scale_log_max, size=num_fit_candidates
     )
     var_scale_values = (10**var_scale_log_values).tolist()
     paramss = [
-        ENNParams(k=k_val, var_scale=var_scale_val)
-        for k_val, var_scale_val in zip(k_values, var_scale_values)
+        ENNParams(k=k, var_scale=var_scale_val) for var_scale_val in var_scale_values
     ]
     if len(paramss) == 0:
-        return ENNParams(k=10, var_scale=1.0)
+        return ENNParams(k=k, var_scale=1.0)
     logliks = subsample_loglik(
         model, train_x, y, paramss=paramss, P=num_fit_samples, rng=rng
     )
@@ -127,5 +122,6 @@ def enn_fit(
             best_mll = loglik
             best_idx = i
     if best_idx is None:
-        return ENNParams(k=k_values[0], var_scale=float(var_scale_values[0]))
+        return ENNParams(k=k, var_scale=float(var_scale_values[0]))
+    print("P:", paramss[best_idx])
     return paramss[best_idx]

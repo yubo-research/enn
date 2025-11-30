@@ -34,27 +34,18 @@ class TurboModeImpl(Protocol):
         y_obs_list: list,
         num_dim: int,
         gp_num_steps: int,
+        rng: Generator | Any | None = None,
     ) -> tuple[Any, float | None, float | None, np.ndarray | None]: ...
 
     def select_candidates(
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        x_obs_list: list,
-        y_obs_list: list,
         num_dim: int,
-        k: int | None,
-        var_scale: float,
-        gp_num_steps: int,
-        gp_y_mean: float,
-        gp_y_std: float,
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
-        gp_model: Any | None,
-        gp_y_mean_fitted: float | None,
-        gp_y_std_fitted: float | None,
-    ) -> tuple[np.ndarray, float, float]: ...
+    ) -> np.ndarray: ...
 
     def update_trust_region(
         self,
@@ -63,3 +54,5 @@ class TurboModeImpl(Protocol):
         x_center: np.ndarray | None = None,
         k: int | None = None,
     ) -> None: ...
+
+    def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray: ...

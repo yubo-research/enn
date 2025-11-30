@@ -2,8 +2,8 @@ def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     import numpy as np
 
     from enn.core import EpistemicNearestNeighbors
+    from enn.enn_fit import enn_fit, subsample_loglik
     from enn.enn_params import ENNParams
-    from enn.fit import enn_fit, subsample_loglik
 
     rng = np.random.default_rng(0)
     n = 40
@@ -19,12 +19,13 @@ def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     rng_fit = np.random.default_rng(1)
     result = enn_fit(
         model,
+        k=10,
         num_fit_candidates=30,
         num_fit_samples=20,
         rng=rng_fit,
     )
     assert isinstance(result, ENNParams)
-    assert result.k >= 3, "k must be >= 3 per style guide"
+    assert result.k == 10
     assert result.var_scale > 0.0
     rng_eval = np.random.default_rng(2)
     tuned_lls = subsample_loglik(

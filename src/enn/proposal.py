@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
     from .core import EpistemicNearestNeighbors
+    from .enn_params import ENNParams
     from .turbo_gp import TurboGP
 
 from .turbo_utils import standardize_y
@@ -15,16 +16,21 @@ from .turbo_utils import standardize_y
 def mk_enn(
     x_obs_list: list[float] | list[list[float]],
     y_obs_list: list[float] | list[list[float]],
-) -> EpistemicNearestNeighbors | None:
+    *,
+    k: int,
+    num_fit_samples: int | None = None,
+    rng: Generator | Any | None = None,
+) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None, float, float]:
     import numpy as np
 
     from .core import EpistemicNearestNeighbors
+    from .enn_params import ENNParams
 
     if len(x_obs_list) == 0:
-        return None
+        return None, None, 0.0, 1.0
     y_obs_array = np.asarray(y_obs_list, dtype=float)
     if y_obs_array.size == 0:
-        return None
+        return None, None, 0.0, 1.0
 
     mu_y, sigma_y = standardize_y(y_obs_array)
     y_standardized = (y_obs_array - mu_y) / sigma_y
@@ -38,8 +44,23 @@ def mk_enn(
         yvar,
     )
     if len(enn_model) == 0:
-        return None
-    return enn_model
+        return None, None, 0.0, 1.0
+
+    fitted_params: ENNParams | None = None
+    if num_fit_samples is not None and rng is not None:
+        from .enn_fit import enn_fit
+
+        fitted_params = enn_fit(
+            enn_model,
+            k=k,
+            num_fit_candidates=30,
+            num_fit_samples=num_fit_samples,
+            rng=rng,
+        )
+    else:
+        fitted_params = ENNParams(k=k, var_scale=1.0)
+
+    return enn_model, fitted_params, mu_y, sigma_y
 
 
 def select_enn_pareto(
@@ -54,22 +75,29 @@ def select_enn_pareto(
     from_unit_fn: Callable[[np.ndarray], np.ndarray],
     *,
     enn_model: Optional[EpistemicNearestNeighbors] = None,
+    fitted_params: Optional[ENNParams] = None,
 ) -> np.ndarray:
     from .enn_params import ENNParams
     from .enn_util import arms_from_pareto_fronts
 
     if enn_model is None:
-        enn_model = mk_enn(
+        if k is None:
+            k = 10
+        enn_model, _, _, _ = mk_enn(
             x_obs_list,
             y_obs_list,
+            k=k,
         )
     if enn_model is None:
         return fallback_fn(x_cand, num_arms)
 
-    if k is None:
-        k = 10
+    if fitted_params is not None:
+        params = fitted_params
+    else:
+        if k is None:
+            k = 10
+        params = ENNParams(k=k, var_scale=var_scale)
 
-    params = ENNParams(k=k, var_scale=var_scale)
     posterior = enn_model.posterior(x_cand, params=params)
     mu = posterior.mu[:, 0]
     se = posterior.se[:, 0]

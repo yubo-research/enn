@@ -45,6 +45,7 @@ class TurboZeroImpl:
         y_obs_list: list,
         num_dim: int,
         gp_num_steps: int,
+        rng: Any | None = None,
     ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
         return None, None, None, None
 
@@ -52,28 +53,14 @@ class TurboZeroImpl:
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        x_obs_list: list,
-        y_obs_list: list,
         num_dim: int,
-        k: int | None,
-        var_scale: float,
-        gp_num_steps: int,
-        gp_y_mean: float,
-        gp_y_std: float,
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
-        gp_model: Any | None,
-        gp_y_mean_fitted: float | None,
-        gp_y_std_fitted: float | None,
-    ) -> tuple[np.ndarray, float, float]:
+    ) -> np.ndarray:
         from .proposal import select_uniform
 
-        return (
-            select_uniform(x_cand, num_arms, num_dim, rng, from_unit_fn),
-            gp_y_mean,
-            gp_y_std,
-        )
+        return select_uniform(x_cand, num_arms, num_dim, rng, from_unit_fn)
 
     def update_trust_region(
         self,
@@ -86,3 +73,6 @@ class TurboZeroImpl:
 
         y_obs_array = np.asarray(y_obs_list, dtype=float)
         tr_state.update(y_obs_array)
+
+    def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
+        return y_observed

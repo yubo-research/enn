@@ -12,6 +12,9 @@ from .turbo_config import TurboConfig
 class TurboOneImpl:
     def __init__(self, config: TurboConfig) -> None:
         self._config = config
+        self._gp_model: Any | None = None
+        self._gp_y_mean: float = 0.0
+        self._gp_y_std: float = 1.0
 
     def needs_tr_list(self) -> bool:
         return True
@@ -49,6 +52,7 @@ class TurboOneImpl:
         y_obs_list: list,
         num_dim: int,
         gp_num_steps: int,
+        rng: Any | None = None,
     ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
         import numpy as np
 
@@ -56,16 +60,20 @@ class TurboOneImpl:
 
         if len(x_obs_list) == 0:
             return None, None, None, None
-        gp_model, _likelihood, gp_y_mean_fitted, gp_y_std_fitted = fit_gp(
+        self._gp_model, _likelihood, gp_y_mean_fitted, gp_y_std_fitted = fit_gp(
             x_obs_list,
             y_obs_list,
             num_dim,
             num_steps=gp_num_steps,
         )
+        if gp_y_mean_fitted is not None:
+            self._gp_y_mean = gp_y_mean_fitted
+        if gp_y_std_fitted is not None:
+            self._gp_y_std = gp_y_std_fitted
         weights = None
-        if gp_model is not None:
+        if self._gp_model is not None:
             weights = (
-                gp_model.covar_module.base_kernel.lengthscale.cpu()
+                self._gp_model.covar_module.base_kernel.lengthscale.cpu()
                 .detach()
                 .numpy()
                 .ravel()
@@ -73,46 +81,55 @@ class TurboOneImpl:
             # First line helps stabilize second line.
             weights = weights / weights.mean()
             weights = weights / np.prod(np.power(weights, 1.0 / len(weights)))
-        return gp_model, gp_y_mean_fitted, gp_y_std_fitted, weights
+        return self._gp_model, gp_y_mean_fitted, gp_y_std_fitted, weights
 
     def select_candidates(
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        x_obs_list: list,
-        y_obs_list: list,
         num_dim: int,
-        k: int | None,
-        var_scale: float,
-        gp_num_steps: int,
-        gp_y_mean: float,
-        gp_y_std: float,
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
-        gp_model: Any | None,
-        gp_y_mean_fitted: float | None,
-        gp_y_std_fitted: float | None,
-    ) -> tuple[np.ndarray, float, float]:
-        from .proposal import select_gp_thompson
+    ) -> np.ndarray:
+        import contextlib
 
-        selected, new_gp_y_mean, new_gp_y_std, _ = select_gp_thompson(
-            x_cand,
-            num_arms,
-            x_obs_list,
-            y_obs_list,
-            num_dim,
-            gp_num_steps,
-            rng,
-            gp_y_mean,
-            gp_y_std,
-            fallback_fn,
-            from_unit_fn,
-            model=gp_model,
-            new_gp_y_mean=gp_y_mean_fitted,
-            new_gp_y_std=gp_y_std_fitted,
-        )
-        return selected, new_gp_y_mean, new_gp_y_std
+        import gpytorch
+        import numpy as np
+        import torch
+
+        if self._gp_model is None:
+            return fallback_fn(x_cand, num_arms)
+
+        @contextlib.contextmanager
+        def _torch_rng_context(generator: torch.Generator):
+            old_state = torch.get_rng_state()
+            try:
+                torch.set_rng_state(generator.get_state())
+                yield
+            finally:
+                torch.set_rng_state(old_state)
+
+        x_torch = torch.as_tensor(x_cand, dtype=torch.float64)
+        seed = int(rng.integers(2**31 - 1))
+        gen = torch.Generator(device=x_torch.device)
+        gen.manual_seed(seed)
+        with (
+            torch.no_grad(),
+            gpytorch.settings.fast_pred_var(),
+            _torch_rng_context(gen),
+        ):
+            posterior = self._gp_model.posterior(x_torch)
+            samples = posterior.sample(sample_shape=torch.Size([1]))
+        ts = samples[0].reshape(-1)
+        scores = ts.detach().cpu().numpy().reshape(-1)
+        scores = self._gp_y_mean + self._gp_y_std * scores
+
+        shuffled_indices = rng.permutation(len(scores))
+        shuffled_scores = scores[shuffled_indices]
+        top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[:num_arms]
+        idx = shuffled_indices[top_k_in_shuffled]
+        return from_unit_fn(x_cand[idx])
 
     def update_trust_region(
         self,
@@ -125,3 +142,14 @@ class TurboOneImpl:
 
         y_obs_array = np.asarray(y_obs_list, dtype=float)
         tr_state.update(y_obs_array)
+
+    def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
+        import torch
+
+        if self._gp_model is None:
+            return y_observed
+        x_torch = torch.as_tensor(x_unit, dtype=torch.float64)
+        with torch.no_grad():
+            posterior = self._gp_model.posterior(x_torch)
+            mu = posterior.mean.cpu().numpy().ravel()
+        return self._gp_y_mean + self._gp_y_std * mu

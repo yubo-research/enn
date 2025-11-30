@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional
 
 
 @dataclass(frozen=True)
@@ -13,3 +13,5 @@ class TurboConfig:
 
     # Experimental
     trailing_obs: Optional[int] = None
+    num_fit_samples: Optional[int] = None
+    acq_type: Literal["thompson", "pareto", "ucb"] = "pareto"

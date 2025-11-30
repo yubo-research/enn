@@ -73,8 +73,11 @@ class TurboTrustRegion:
         self.best_value = -float("inf")
         self.prev_num_obs = 0
 
-    def validate_request(self, num_arms: int) -> None:
-        assert num_arms == self.num_arms
+    def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
+        if is_fallback:
+            assert num_arms <= self.num_arms
+        else:
+            assert num_arms == self.num_arms
 
     def compute_bounds_1d(
         self, x_center: np.ndarray | Any, weights: np.ndarray | None = None

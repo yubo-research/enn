@@ -69,8 +69,6 @@ class TurboOptimizer:
             case _:
                 raise ValueError(f"Unknown mode: {mode}")
         self._tr_state: Any | None = None
-        self._gp_y_mean: float = 0.0
-        self._gp_y_std: float = 1.0
         self._gp_num_steps: int = 50
         if config.k is not None:
             k_val = int(config.k)
@@ -79,10 +77,6 @@ class TurboOptimizer:
             self._k = k_val
         else:
             self._k = None
-        var_scale_val = float(config.var_scale)
-        if var_scale_val <= 0.0:
-            raise ValueError(f"var_scale must be > 0, got {var_scale_val}")
-        self._var_scale = var_scale_val
         if config.trailing_obs is not None:
             trailing_obs_val = int(config.trailing_obs)
             if trailing_obs_val <= 0:
@@ -135,13 +129,16 @@ class TurboOptimizer:
             if len(self._x_obs_list) == 0:
                 fallback_fn = None
             else:
-                fallback_fn = self._ask_normal
+
+                def fallback_fn(n: int) -> np.ndarray:
+                    return self._ask_normal(n, is_fallback=True)
+
             return self._get_init_lhd_points(num_arms, fallback_fn=fallback_fn)
         if len(self._x_obs_list) == 0:
             return self._draw_initial(num_arms)
         return self._ask_normal(num_arms)
 
-    def _ask_normal(self, num_arms: int) -> np.ndarray:
+    def _ask_normal(self, num_arms: int, *, is_fallback: bool = False) -> np.ndarray:
         if self._tr_state.needs_restart():
             self._tr_state.restart()
             should_reset_init, new_init_idx = self._mode_impl.handle_restart(
@@ -165,12 +162,13 @@ class TurboOptimizer:
         if self._mode_impl.needs_tr_list() and len(self._x_obs_list) == 0:
             return self._get_init_lhd_points(num_arms)
 
-        gp_model, gp_y_mean_fitted, gp_y_std_fitted, weights = (
+        _gp_model, _gp_y_mean_fitted, _gp_y_std_fitted, weights = (
             self._mode_impl.prepare_ask(
                 self._x_obs_list,
                 self._y_obs_list,
                 self._num_dim,
                 self._gp_num_steps,
+                rng=self._rng,
             )
         )
 
@@ -189,25 +187,15 @@ class TurboOptimizer:
         def fallback_fn(x, n):
             return select_uniform(x, n, self._num_dim, self._rng, from_unit_fn)
 
-        self._tr_state.validate_request(num_arms)
+        self._tr_state.validate_request(num_arms, is_fallback=is_fallback)
 
-        selected, self._gp_y_mean, self._gp_y_std = self._mode_impl.select_candidates(
+        selected = self._mode_impl.select_candidates(
             x_cand,
             num_arms,
-            self._x_obs_list,
-            self._y_obs_list,
             self._num_dim,
-            self._k,
-            self._var_scale,
-            self._gp_num_steps,
-            self._gp_y_mean,
-            self._gp_y_std,
             self._rng,
             fallback_fn,
             from_unit_fn,
-            gp_model,
-            gp_y_mean_fitted,
-            gp_y_std_fitted,
         )
 
         self._mode_impl.update_trust_region(
@@ -244,7 +232,7 @@ class TurboOptimizer:
             np.abs(y_trimmed - incumbent_value) < 1e-10
         ), "Incumbent value must be preserved in trimmed list"
 
-    def _append_observations(self, x: np.ndarray | Any, y: np.ndarray | Any) -> None:
+    def tell(self, x: np.ndarray | Any, y: np.ndarray | Any) -> np.ndarray:
         import numpy as np
 
         x = np.asarray(x, dtype=float)
@@ -254,16 +242,15 @@ class TurboOptimizer:
         if y.ndim != 1 or y.shape[0] != x.shape[0]:
             raise ValueError((x.shape, y.shape))
         if x.shape[0] == 0:
-            return
+            return np.array([], dtype=float)
         x_unit = to_unit(x, self._bounds)
+        y_estimate = self._mode_impl.estimate_y(x_unit, y)
         self._x_obs_list.extend(x_unit.tolist())
         self._y_obs_list.extend(y.tolist())
         if self._trailing_obs is not None:
             self._trim_trailing_obs()
         self._mode_impl.update_trust_region(self._tr_state, self._y_obs_list)
-
-    def tell(self, x: np.ndarray | Any, y: np.ndarray | Any) -> None:
-        self._append_observations(x, y)
+        return y_estimate
 
     def _best_x_from_lists(
         self,
