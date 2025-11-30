@@ -157,27 +157,21 @@ def test_epistemic_nearest_neighbors_with_sobol_indices():
     x = rng.standard_normal((n, d))
     y = (x[:, 0] + 0.1 * x[:, 1] + 0.01 * rng.standard_normal(n)).reshape(-1, 1)
     yvar = 0.1 * np.ones_like(y)
-    model_default = EpistemicNearestNeighbors(x, y, yvar, sobol_indices=False)
-    model_sobol = EpistemicNearestNeighbors(x, y, yvar, sobol_indices=True)
-    assert not np.allclose(model_default._x_scale, model_sobol._x_scale)
-    assert np.all(model_sobol._x_scale > 0)
+    model = EpistemicNearestNeighbors(x, y, yvar)
     x_test = rng.standard_normal((4, d))
     params = ENNParams(k=3, var_scale=1.0)
-    post_default = model_default.posterior(x_test, params=params, exclude_nearest=False)
-    post_sobol = model_sobol.posterior(x_test, params=params, exclude_nearest=False)
-    assert post_sobol.mu.shape == (4, 1)
-    assert post_sobol.se.shape == (4, 1)
-    assert np.all(np.isfinite(post_sobol.mu))
-    assert np.all(np.isfinite(post_sobol.se))
-    assert not np.allclose(post_default.mu, post_sobol.mu) or not np.allclose(
-        post_default.se, post_sobol.se
-    )
+    post = model.posterior(x_test, params=params, exclude_nearest=False)
+    assert post.mu.shape == (4, 1)
+    assert post.se.shape == (4, 1)
+    assert np.all(np.isfinite(post.mu))
+    assert np.all(np.isfinite(post.se))
 
 
-def test_epistemic_nearest_neighbors_sobol_indices_requires_single_metric():
+def test_epistemic_nearest_neighbors_multiple_metrics():
     import numpy as np
 
     from enn.core import EpistemicNearestNeighbors
+    from enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
     n = 20
@@ -185,10 +179,12 @@ def test_epistemic_nearest_neighbors_sobol_indices_requires_single_metric():
     x = rng.standard_normal((n, d))
     y = rng.standard_normal((n, 2))
     yvar = 0.1 * np.ones_like(y)
-    with pytest.raises(
-        ValueError, match="sobol_indices=True requires train_y to have exactly 1 metric"
-    ):
-        EpistemicNearestNeighbors(x, y, yvar, sobol_indices=True)
+    model = EpistemicNearestNeighbors(x, y, yvar)
+    x_test = rng.standard_normal((4, d))
+    params = ENNParams(k=3, var_scale=1.0)
+    post = model.posterior(x_test, params=params, exclude_nearest=False)
+    assert post.mu.shape == (4, 2)
+    assert post.se.shape == (4, 2)
 
 
 def test_neighbors_returns_correct_number_and_ordering():
@@ -223,17 +219,12 @@ def test_neighbors_returns_correct_number_and_ordering():
             train_y[idx], y_neighbor
         ), "Neighbor y doesn't match training data"
 
-    # Verify ordering: distances in scaled space should be non-decreasing
-    # We verify by checking that the FAISS ordering is preserved
-    x_scaled_query = x_query / model._x_scale
-    x_scaled_train = train_x / model._x_scale
-    distances_scaled = [
-        np.linalg.norm(x_scaled_train[idx] - x_scaled_query) for idx in neighbor_indices
-    ]
-    for i in range(len(distances_scaled) - 1):
+    # Verify ordering: distances should be non-decreasing
+    distances = [np.linalg.norm(train_x[idx] - x_query) for idx in neighbor_indices]
+    for i in range(len(distances) - 1):
         assert (
-            distances_scaled[i] <= distances_scaled[i + 1] + 1e-6
-        ), f"Distances not ordered: {distances_scaled}"
+            distances[i] <= distances[i + 1] + 1e-6
+        ), f"Distances not ordered: {distances}"
 
 
 def test_neighbors_exclude_nearest():

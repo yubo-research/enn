@@ -6,23 +6,18 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-    from .turbo_config import TurboConfig
+from .turbo_config import TurboConfig
 
 
 class TurboENNImpl:
-    def __init__(self) -> None:
+    def __init__(self, config: TurboConfig) -> None:
+        self._config = config
         self._enn: Any | None = None
 
     def needs_tr_list(self) -> bool:
         return True
 
-    def create_trust_region(
-        self, num_dim: int, num_arms: int, config: TurboConfig
-    ) -> Any:
-        if config.gumbel:
-            from .gumbel_trust_region import GumbelTrustRegion
-
-            return GumbelTrustRegion(num_dim=num_dim, neighbors_fn=self.neighbors)
+    def create_trust_region(self, num_dim: int, num_arms: int) -> Any:
         from .turbo_trust_region import TurboTrustRegion
 
         return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
@@ -54,6 +49,12 @@ class TurboENNImpl:
         num_dim: int,
         gp_num_steps: int,
     ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
+        from .proposal import mk_enn
+
+        self._enn = mk_enn(
+            x_obs_list,
+            y_obs_list,
+        )
         return None, None, None, None
 
     def neighbors(
@@ -85,11 +86,9 @@ class TurboENNImpl:
         gp_model: Any | None,
         gp_y_mean_fitted: float | None,
         gp_y_std_fitted: float | None,
-        config: TurboConfig,
     ) -> tuple[np.ndarray, float, float]:
-        from .proposal import mk_enn, select_enn_pareto
+        from .proposal import select_enn_pareto
 
-        self._enn = mk_enn(x_obs_list, y_obs_list, sobol_indices=config.sobol_indices)
         return (
             select_enn_pareto(
                 x_cand,
@@ -101,7 +100,6 @@ class TurboENNImpl:
                 rng,
                 fallback_fn,
                 from_unit_fn,
-                sobol_indices=config.sobol_indices,
                 enn_model=self._enn,
             ),
             gp_y_mean,
@@ -117,14 +115,5 @@ class TurboENNImpl:
     ) -> None:
         import numpy as np
 
-        from .gumbel_trust_region import GumbelTrustRegion
-
         y_obs_array = np.asarray(y_obs_list, dtype=float)
-        if (
-            isinstance(tr_state, GumbelTrustRegion)
-            and x_center is not None
-            and k is not None
-        ):
-            tr_state.update(y_obs_array, x_center=x_center, k=k)
-        else:
-            tr_state.update(y_obs_array)
+        tr_state.update(y_obs_array)

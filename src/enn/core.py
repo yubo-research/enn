@@ -15,7 +15,6 @@ class EpistemicNearestNeighbors:
         train_x: np.ndarray | Any,
         train_y: np.ndarray | Any,
         train_yvar: np.ndarray | Any,
-        sobol_indices: bool = False,
     ) -> None:
         import numpy as np
 
@@ -31,7 +30,6 @@ class EpistemicNearestNeighbors:
         self._num_obs, self._num_dim = self._train_x.shape
         _, self._num_metrics = self._train_y.shape
         self._eps_var = 1e-9
-        self._x_scale = self._calc_x_scale(sobol_indices)
         if len(self._train_y) < 2:
             self._y_scale = np.ones(shape=(1, self._num_metrics), dtype=float)
         else:
@@ -59,36 +57,15 @@ class EpistemicNearestNeighbors:
     def __len__(self) -> int:
         return self._num_obs
 
-    def _calc_x_scale(self, sobol_indices: bool) -> np.ndarray:
-        import numpy as np
-
-        s = np.std(self._train_x, axis=0, ddof=0).astype(float)
-        s = np.maximum(s, 1e-6)
-        if sobol_indices:
-            from .enn_util import calculate_sobol_indices
-
-            if self._num_metrics != 1:
-                raise ValueError(
-                    "sobol_indices=True requires train_y to have exactly 1 metric"
-                )
-            si = calculate_sobol_indices(self._train_x, self._train_y[:, 0])
-            w = si / s
-            w_sum = np.maximum(w.sum(), 1e-12)
-            w = w / w_sum
-            return s / w
-        else:
-            return s
-
     def _build_index(self) -> None:
         import faiss
         import numpy as np
 
         if self._num_obs == 0:
             return
-        x_scaled = self._train_x / self._x_scale
-        x_scaled = x_scaled.astype(np.float32, copy=False)
+        x_f32 = self._train_x.astype(np.float32, copy=False)
         index = faiss.IndexFlatL2(self._num_dim)
-        index.add(x_scaled)
+        index.add(x_f32)
         self._index = index
 
     def posterior(
@@ -135,11 +112,10 @@ class EpistemicNearestNeighbors:
             search_k = int(min(max_k + 1, len(self)))
         else:
             search_k = int(min(max_k, len(self)))
-        x_scaled = x / self._x_scale
-        x_scaled = x_scaled.astype(np.float32, copy=False)
+        x_f32 = x.astype(np.float32, copy=False)
         if self._index is None:
             raise RuntimeError("index is not initialized")
-        dist2s_full, idx_full = self._index.search(x_scaled, search_k)
+        dist2s_full, idx_full = self._index.search(x_f32, search_k)
         dist2s_full = dist2s_full.astype(float)
         idx_full = idx_full.astype(int)
         if exclude_nearest:
@@ -156,11 +132,9 @@ class EpistemicNearestNeighbors:
             dist2s = dist2s_full[:, :k]
             idx = idx_full[:, :k]
             y_neighbors = self._train_y[idx]
-            yvar_neighbors = self._train_yvar[idx]
+            yvar_neighbors = self._train_yvar[idx] / self._y_scale**2
             dist2s_expanded = dist2s[..., np.newaxis]
-            var_component = (
-                params.var_scale * dist2s_expanded + yvar_neighbors / self._y_scale**2
-            )
+            var_component = params.var_scale * dist2s_expanded + yvar_neighbors
             w = 1.0 / (self._eps_var + var_component)
             norm = np.sum(w, axis=1)
             mu_all[i] = np.sum(w * y_neighbors, axis=1) / norm
@@ -205,11 +179,10 @@ class EpistemicNearestNeighbors:
             search_k = int(min(k, len(self)))
         if search_k == 0:
             return []
-        x_scaled = x / self._x_scale
-        x_scaled = x_scaled.astype(np.float32, copy=False)
+        x_f32 = x.astype(np.float32, copy=False)
         if self._index is None:
             raise RuntimeError("index is not initialized")
-        dist2s_full, idx_full = self._index.search(x_scaled, search_k)
+        dist2s_full, idx_full = self._index.search(x_f32, search_k)
         dist2s_full = dist2s_full.astype(float)
         idx_full = idx_full.astype(int)
         if exclude_nearest:

@@ -6,16 +6,17 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-    from .turbo_config import TurboConfig
+from .turbo_config import TurboConfig
 
 
 class LHDOnlyImpl:
+    def __init__(self, config: TurboConfig) -> None:
+        self._config = config
+
     def needs_tr_list(self) -> bool:
         return False
 
-    def create_trust_region(
-        self, num_dim: int, num_arms: int, config: TurboConfig
-    ) -> Any:
+    def create_trust_region(self, num_dim: int, num_arms: int) -> Any:
         from .turbo_trust_region import TurboTrustRegion
 
         return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
@@ -27,7 +28,7 @@ class LHDOnlyImpl:
         draw_initial_fn: Callable[[int], np.ndarray],
         get_init_lhd_points_fn: Callable[[int], np.ndarray | None],
     ) -> np.ndarray | None:
-        return draw_initial_fn(num_arms)
+        return None
 
     def handle_restart(
         self,
@@ -65,15 +66,11 @@ class LHDOnlyImpl:
         gp_model: Any | None,
         gp_y_mean_fitted: float | None,
         gp_y_std_fitted: float | None,
-        config: TurboConfig,
     ) -> tuple[np.ndarray, float, float]:
-        from .proposal import select_uniform
+        from .turbo_utils import latin_hypercube
 
-        return (
-            select_uniform(x_cand, num_arms, num_dim, rng, from_unit_fn),
-            gp_y_mean,
-            gp_y_std,
-        )
+        unit = latin_hypercube(num_arms, num_dim, rng=rng)
+        return (from_unit_fn(unit), gp_y_mean, gp_y_std)
 
     def update_trust_region(
         self,
@@ -82,7 +79,4 @@ class LHDOnlyImpl:
         x_center: np.ndarray | None = None,
         k: int | None = None,
     ) -> None:
-        import numpy as np
-
-        y_obs_array = np.asarray(y_obs_list, dtype=float)
-        tr_state.update(y_obs_array)
+        pass

@@ -6,16 +6,17 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-    from .turbo_config import TurboConfig
+from .turbo_config import TurboConfig
 
 
 class TurboOneImpl:
+    def __init__(self, config: TurboConfig) -> None:
+        self._config = config
+
     def needs_tr_list(self) -> bool:
         return True
 
-    def create_trust_region(
-        self, num_dim: int, num_arms: int, config: TurboConfig
-    ) -> Any:
+    def create_trust_region(self, num_dim: int, num_arms: int) -> Any:
         from .turbo_trust_region import TurboTrustRegion
 
         return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
@@ -69,6 +70,7 @@ class TurboOneImpl:
                 .numpy()
                 .ravel()
             )
+            # First line helps stabilize second line.
             weights = weights / weights.mean()
             weights = weights / np.prod(np.power(weights, 1.0 / len(weights)))
         return gp_model, gp_y_mean_fitted, gp_y_std_fitted, weights
@@ -91,7 +93,6 @@ class TurboOneImpl:
         gp_model: Any | None,
         gp_y_mean_fitted: float | None,
         gp_y_std_fitted: float | None,
-        config: TurboConfig,
     ) -> tuple[np.ndarray, float, float]:
         from .proposal import select_gp_thompson
 

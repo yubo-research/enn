@@ -7,20 +7,6 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
 
-def gumbel_expected_max(n: int) -> float:
-    import numpy as np
-
-    if n <= 0:
-        return 0.0
-    if n == 1:
-        return 0.0
-    log_n = np.log(n)
-    log_log_n = np.log(log_n)
-    return float(
-        np.sqrt(2 * log_n) - (log_log_n + np.log(4 * np.pi)) / (2 * np.sqrt(2 * log_n))
-    )
-
-
 def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     import numpy as np
 

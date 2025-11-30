@@ -13,5 +13,3 @@ class TurboConfig:
 
     # Experimental
     trailing_obs: Optional[int] = None
-    sobol_indices: bool = False
-    gumbel: bool = False

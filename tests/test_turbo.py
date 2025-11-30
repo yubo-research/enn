@@ -14,7 +14,7 @@ def _run_bo(mode: TurboMode, num_steps: int = 15) -> float:
 
     bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    opt = Turbo(bounds=bounds, mode=mode, num_arms=4, rng=rng)
+    opt = Turbo(bounds=bounds, mode=mode, rng=rng)
     best = -np.inf
     for _ in range(num_steps):
         x = opt.ask(num_arms=4)
@@ -34,7 +34,6 @@ def test_turbo_zero_ask_tell_and_shape():
     opt = Turbo(
         bounds=bounds,
         mode=TurboMode.TURBO_ZERO,
-        num_arms=4,
         rng=rng,
     )
     x0 = opt.ask(num_arms=4)
@@ -74,7 +73,6 @@ def test_turbo_enn_with_k_none_fits_hyperparameters():
     opt = TurboOptimizer(
         bounds=bounds,
         mode=TurboMode.TURBO_ENN,
-        num_arms=4,
         rng=rng,
         config=TurboConfig(k=None),
     )
@@ -103,7 +101,6 @@ def test_turbo_optimizer_with_trailing_obs():
         opt = TurboOptimizer(
             bounds=bounds,
             mode=mode,
-            num_arms=2,
             rng=rng,
             config=TurboConfig(trailing_obs=5),
         )
@@ -133,7 +130,6 @@ def test_trailing_obs_includes_incumbent():
         opt = TurboOptimizer(
             bounds=bounds,
             mode=mode,
-            num_arms=2,
             rng=rng,
             config=TurboConfig(trailing_obs=5),
         )
@@ -222,41 +218,6 @@ def test_trust_region_state_update_and_restart_and_bounds():
     assert state.length == state.length_init
 
 
-def test_gumbel_trust_region_update_and_bounds():
-    import numpy as np
-
-    from enn.gumbel_trust_region import GumbelTrustRegion
-
-    tr = GumbelTrustRegion(num_dim=4)
-    assert tr.length == 1.0
-
-    y_noisy = np.random.default_rng(42).normal(0, 1, 64)
-    tr.update(y_noisy)
-    length_noisy = tr.length
-    assert 0.1 <= length_noisy <= 1.0
-
-    tr2 = GumbelTrustRegion(num_dim=4)
-    y_peaky = np.concatenate([np.zeros(63), [10.0]])
-    tr2.update(y_peaky)
-    length_peaky = tr2.length
-    assert length_peaky < length_noisy
-
-    assert tr.needs_restart() is False
-    tr.restart()
-    assert tr.length == length_noisy
-
-    x_center = np.full(4, 0.5)
-    lb, ub = tr.compute_bounds_1d(x_center)
-    assert lb.shape == (4,)
-    assert ub.shape == (4,)
-    assert np.all(lb >= 0.0) and np.all(ub <= 1.0)
-    assert np.all(lb <= x_center) and np.all(ub >= x_center)
-
-    weights = np.array([2.0, 1.0, 1.0, 0.5])
-    lb_w, ub_w = tr.compute_bounds_1d(x_center, weights)
-    assert not np.allclose(ub_w - lb_w, ub - lb)
-
-
 @pytest.mark.parametrize(
     "mode", [TurboMode.TURBO_ZERO, TurboMode.TURBO_ONE, TurboMode.TURBO_ENN]
 )
@@ -274,13 +235,11 @@ def test_turbo_behavior_independent_of_affine_x(mode: TurboMode) -> None:
     opt1 = Turbo(
         bounds=bounds1,
         mode=mode,
-        num_arms=num_arms,
         rng=rng1,
     )
     opt2 = Turbo(
         bounds=bounds2,
         mode=mode,
-        num_arms=num_arms,
         rng=rng2,
     )
 
@@ -314,7 +273,6 @@ def test_turbo_behavior_independent_of_affine_y(mode: TurboMode) -> None:
         opt = Turbo(
             bounds=bounds,
             mode=mode,
-            num_arms=num_arms,
             rng=rng,
         )
         unit_trajectory = []

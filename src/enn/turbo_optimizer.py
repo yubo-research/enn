@@ -19,7 +19,6 @@ class TurboOptimizer:
         self,
         bounds: np.ndarray,
         mode: TurboMode,
-        num_arms: int,
         *,
         rng: Generator,
         config: TurboConfig | None = None,
@@ -38,9 +37,6 @@ class TurboOptimizer:
         self._bounds = np.asarray(bounds, dtype=float)
         self._num_dim = self._bounds.shape[0]
         self._mode = mode
-        tr_num_arms = int(num_arms)
-        if tr_num_arms <= 0:
-            raise ValueError(tr_num_arms)
         num_candidates = config.num_candidates
         if num_candidates is None:
             num_candidates = min(5000, 100 * self._num_dim)
@@ -57,24 +53,22 @@ class TurboOptimizer:
             case TurboMode.TURBO_ONE:
                 from .turbo_one_impl import TurboOneImpl
 
-                self._mode_impl: TurboModeImpl = TurboOneImpl()
+                self._mode_impl: TurboModeImpl = TurboOneImpl(config)
             case TurboMode.TURBO_ZERO:
                 from .turbo_zero_impl import TurboZeroImpl
 
-                self._mode_impl = TurboZeroImpl()
+                self._mode_impl = TurboZeroImpl(config)
             case TurboMode.TURBO_ENN:
                 from .turbo_enn_impl import TurboENNImpl
 
-                self._mode_impl = TurboENNImpl()
+                self._mode_impl = TurboENNImpl(config)
             case TurboMode.LHD_ONLY:
                 from .lhd_only_impl import LHDOnlyImpl
 
-                self._mode_impl = LHDOnlyImpl()
+                self._mode_impl = LHDOnlyImpl(config)
             case _:
                 raise ValueError(f"Unknown mode: {mode}")
-        self._tr_state = self._mode_impl.create_trust_region(
-            self._num_dim, tr_num_arms, config
-        )
+        self._tr_state: Any | None = None
         self._gp_y_mean: float = 0.0
         self._gp_y_std: float = 1.0
         self._gp_num_steps: int = 50
@@ -125,6 +119,10 @@ class TurboOptimizer:
         num_arms = int(num_arms)
         if num_arms <= 0:
             raise ValueError(num_arms)
+        if self._tr_state is None:
+            self._tr_state = self._mode_impl.create_trust_region(
+                self._num_dim, num_arms
+            )
         early_result = self._mode_impl.try_early_ask(
             num_arms,
             self._x_obs_list,
@@ -191,6 +189,8 @@ class TurboOptimizer:
         def fallback_fn(x, n):
             return select_uniform(x, n, self._num_dim, self._rng, from_unit_fn)
 
+        self._tr_state.validate_request(num_arms)
+
         selected, self._gp_y_mean, self._gp_y_std = self._mode_impl.select_candidates(
             x_cand,
             num_arms,
@@ -208,7 +208,6 @@ class TurboOptimizer:
             gp_model,
             gp_y_mean_fitted,
             gp_y_std_fitted,
-            self._config,
         )
 
         self._mode_impl.update_trust_region(
@@ -261,8 +260,7 @@ class TurboOptimizer:
         self._y_obs_list.extend(y.tolist())
         if self._trailing_obs is not None:
             self._trim_trailing_obs()
-        y_obs_array = np.asarray(self._y_obs_list, dtype=float)
-        self._tr_state.update(y_obs_array)
+        self._mode_impl.update_trust_region(self._tr_state, self._y_obs_list)
 
     def tell(self, x: np.ndarray | Any, y: np.ndarray | Any) -> None:
         self._append_observations(x, y)

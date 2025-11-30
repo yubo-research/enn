@@ -15,8 +15,6 @@ from .turbo_utils import standardize_y
 def mk_enn(
     x_obs_list: list[float] | list[list[float]],
     y_obs_list: list[float] | list[list[float]],
-    *,
-    sobol_indices: bool = False,
 ) -> EpistemicNearestNeighbors | None:
     import numpy as np
 
@@ -38,7 +36,6 @@ def mk_enn(
         x_obs_array,
         y,
         yvar,
-        sobol_indices=sobol_indices,
     )
     if len(enn_model) == 0:
         return None
@@ -56,14 +53,16 @@ def select_enn_pareto(
     fallback_fn: Callable[[np.ndarray, int], np.ndarray],
     from_unit_fn: Callable[[np.ndarray], np.ndarray],
     *,
-    sobol_indices: bool = False,
     enn_model: Optional[EpistemicNearestNeighbors] = None,
 ) -> np.ndarray:
     from .enn_params import ENNParams
     from .enn_util import arms_from_pareto_fronts
 
     if enn_model is None:
-        enn_model = mk_enn(x_obs_list, y_obs_list, sobol_indices=sobol_indices)
+        enn_model = mk_enn(
+            x_obs_list,
+            y_obs_list,
+        )
     if enn_model is None:
         return fallback_fn(x_cand, num_arms)
 
@@ -161,5 +160,9 @@ def select_gp_thompson(
     scores = new_gp_y_mean + new_gp_y_std * scores
     if x_cand.shape[0] < num_arms:
         raise ValueError((x_cand.shape[0], num_arms))
-    idx = np.argpartition(-scores, num_arms - 1)[:num_arms]
+    # Shuffle indices first to randomize tie-breaking (matches argmax_random_tie pattern)
+    shuffled_indices = rng.permutation(len(scores))
+    shuffled_scores = scores[shuffled_indices]
+    top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[:num_arms]
+    idx = shuffled_indices[top_k_in_shuffled]
     return from_unit_fn(x_cand[idx]), new_gp_y_mean, new_gp_y_std, model

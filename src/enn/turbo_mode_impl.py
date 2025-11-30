@@ -6,15 +6,11 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-    from .turbo_config import TurboConfig
-
 
 class TurboModeImpl(Protocol):
     def needs_tr_list(self) -> bool: ...
 
-    def create_trust_region(
-        self, num_dim: int, num_arms: int, config: TurboConfig
-    ) -> Any: ...
+    def create_trust_region(self, num_dim: int, num_arms: int) -> Any: ...
 
     def try_early_ask(
         self,
@@ -58,7 +54,6 @@ class TurboModeImpl(Protocol):
         gp_model: Any | None,
         gp_y_mean_fitted: float | None,
         gp_y_std_fitted: float | None,
-        config: TurboConfig,
     ) -> tuple[np.ndarray, float, float]: ...
 
     def update_trust_region(
