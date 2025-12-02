@@ -24,6 +24,7 @@ class TurboModeImpl(Protocol):
         self,
         x_obs_list: list,
         y_obs_list: list,
+        yvar_obs_list: list,
         init_idx: int,
         num_init: int,
     ) -> tuple[bool, int]: ...
@@ -32,6 +33,7 @@ class TurboModeImpl(Protocol):
         self,
         x_obs_list: list,
         y_obs_list: list,
+        yvar_obs_list: list,
         num_dim: int,
         gp_num_steps: int,
         rng: Generator | Any | None = None,

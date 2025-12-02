@@ -49,6 +49,7 @@ class TurboOptimizer:
         self._sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
         self._x_obs_list: list = []
         self._y_obs_list: list = []
+        self._yvar_obs_list: list = []
         match mode:
             case TurboMode.TURBO_ONE:
                 from .turbo_one_impl import TurboOneImpl
@@ -142,7 +143,11 @@ class TurboOptimizer:
         if self._tr_state.needs_restart():
             self._tr_state.restart()
             should_reset_init, new_init_idx = self._mode_impl.handle_restart(
-                self._x_obs_list, self._y_obs_list, self._init_idx, self._num_init
+                self._x_obs_list,
+                self._y_obs_list,
+                self._yvar_obs_list,
+                self._init_idx,
+                self._num_init,
             )
             if should_reset_init:
                 self._init_idx = new_init_idx
@@ -166,6 +171,7 @@ class TurboOptimizer:
             self._mode_impl.prepare_ask(
                 self._x_obs_list,
                 self._y_obs_list,
+                self._yvar_obs_list,
                 self._num_dim,
                 self._gp_num_steps,
                 rng=self._rng,
@@ -227,12 +233,19 @@ class TurboOptimizer:
         incumbent_value = y_array[incumbent_idx]
         self._x_obs_list = x_array[indices].tolist()
         self._y_obs_list = y_array[indices].tolist()
+        yvar_array = np.asarray(self._yvar_obs_list, dtype=float)
+        self._yvar_obs_list = yvar_array[indices].tolist()
         y_trimmed = np.asarray(self._y_obs_list, dtype=float)
         assert np.any(
             np.abs(y_trimmed - incumbent_value) < 1e-10
         ), "Incumbent value must be preserved in trimmed list"
 
-    def tell(self, x: np.ndarray | Any, y: np.ndarray | Any) -> np.ndarray:
+    def tell(
+        self,
+        x: np.ndarray | Any,
+        y: np.ndarray | Any,
+        y_var: np.ndarray | Any | None = None,
+    ) -> np.ndarray:
         import numpy as np
 
         x = np.asarray(x, dtype=float)
@@ -241,12 +254,20 @@ class TurboOptimizer:
             raise ValueError(x.shape)
         if y.ndim != 1 or y.shape[0] != x.shape[0]:
             raise ValueError((x.shape, y.shape))
+        if y_var is not None:
+            y_var = np.asarray(y_var, dtype=float)
+            if y_var.shape != y.shape:
+                raise ValueError((y.shape, y_var.shape))
         if x.shape[0] == 0:
             return np.array([], dtype=float)
         x_unit = to_unit(x, self._bounds)
         y_estimate = self._mode_impl.estimate_y(x_unit, y)
         self._x_obs_list.extend(x_unit.tolist())
         self._y_obs_list.extend(y.tolist())
+        if y_var is not None:
+            self._yvar_obs_list.extend(y_var.tolist())
+        else:
+            self._yvar_obs_list.extend([0.0] * len(y))
         if self._trailing_obs is not None:
             self._trim_trailing_obs()
         self._mode_impl.update_trust_region(self._tr_state, self._y_obs_list)

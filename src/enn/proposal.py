@@ -17,6 +17,7 @@ def mk_enn(
     x_obs_list: list[float] | list[list[float]],
     y_obs_list: list[float] | list[list[float]],
     *,
+    yvar_obs_list: list[float] | None = None,
     k: int,
     num_fit_samples: int | None = None,
     rng: Generator | Any | None = None,
@@ -36,7 +37,12 @@ def mk_enn(
     y_standardized = (y_obs_array - mu_y) / sigma_y
 
     y = y_standardized.reshape(-1, 1)
-    yvar = np.zeros_like(y, dtype=float)
+    if yvar_obs_list is not None and len(yvar_obs_list) > 0:
+        yvar_array = np.asarray(yvar_obs_list, dtype=float)
+        # Scale variance by sigma_y^2 to match standardized y
+        yvar = (yvar_array / (sigma_y**2)).reshape(-1, 1)
+    else:
+        yvar = np.zeros_like(y, dtype=float)
     x_obs_array = np.asarray(x_obs_list, dtype=float)
     enn_model = EpistemicNearestNeighbors(
         x_obs_array,

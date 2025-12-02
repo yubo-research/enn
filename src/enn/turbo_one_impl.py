@@ -39,17 +39,20 @@ class TurboOneImpl:
         self,
         x_obs_list: list,
         y_obs_list: list,
+        yvar_obs_list: list,
         init_idx: int,
         num_init: int,
     ) -> tuple[bool, int]:
         x_obs_list.clear()
         y_obs_list.clear()
+        yvar_obs_list.clear()
         return True, 0
 
     def prepare_ask(
         self,
         x_obs_list: list,
         y_obs_list: list,
+        yvar_obs_list: list,
         num_dim: int,
         gp_num_steps: int,
         rng: Any | None = None,
