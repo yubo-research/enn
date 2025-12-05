@@ -6,12 +6,13 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
+from .base_turbo_impl import BaseTurboImpl
 from .turbo_config import TurboConfig
 
 
-class TurboENNImpl:
+class TurboENNImpl(BaseTurboImpl):
     def __init__(self, config: TurboConfig) -> None:
-        self._config = config
+        super().__init__(config)
         self._enn: Any | None = None
         self._fitted_params: Any | None = None
         self._y_mean: float = 0.0
@@ -19,20 +20,6 @@ class TurboENNImpl:
 
     def needs_tr_list(self) -> bool:
         return True
-
-    def create_trust_region(self, num_dim: int, num_arms: int) -> Any:
-        from .turbo_trust_region import TurboTrustRegion
-
-        return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
-
-    def try_early_ask(
-        self,
-        num_arms: int,
-        x_obs_list: list,
-        draw_initial_fn: Callable[[int], np.ndarray],
-        get_init_lhd_points_fn: Callable[[int], np.ndarray | None],
-    ) -> np.ndarray | None:
-        return None
 
     def handle_restart(
         self,
@@ -138,18 +125,6 @@ class TurboENNImpl:
             raise ValueError(f"Unknown acq_type: {acq_type}")
 
         return from_unit_fn(x_arms)
-
-    def update_trust_region(
-        self,
-        tr_state: Any,
-        y_obs_list: list,
-        x_center: np.ndarray | None = None,
-        k: int | None = None,
-    ) -> None:
-        import numpy as np
-
-        y_obs_array = np.asarray(y_obs_list, dtype=float)
-        tr_state.update(y_obs_array)
 
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
         if self._enn is None or self._fitted_params is None:

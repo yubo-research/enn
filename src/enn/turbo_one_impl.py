@@ -6,23 +6,19 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
+from .base_turbo_impl import BaseTurboImpl
 from .turbo_config import TurboConfig
 
 
-class TurboOneImpl:
+class TurboOneImpl(BaseTurboImpl):
     def __init__(self, config: TurboConfig) -> None:
-        self._config = config
+        super().__init__(config)
         self._gp_model: Any | None = None
         self._gp_y_mean: float = 0.0
         self._gp_y_std: float = 1.0
 
     def needs_tr_list(self) -> bool:
         return True
-
-    def create_trust_region(self, num_dim: int, num_arms: int) -> Any:
-        from .turbo_trust_region import TurboTrustRegion
-
-        return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
 
     def try_early_ask(
         self,
@@ -133,18 +129,6 @@ class TurboOneImpl:
         top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[:num_arms]
         idx = shuffled_indices[top_k_in_shuffled]
         return from_unit_fn(x_cand[idx])
-
-    def update_trust_region(
-        self,
-        tr_state: Any,
-        y_obs_list: list,
-        x_center: np.ndarray | None = None,
-        k: int | None = None,
-    ) -> None:
-        import numpy as np
-
-        y_obs_array = np.asarray(y_obs_list, dtype=float)
-        tr_state.update(y_obs_array)
 
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
         import torch

@@ -19,19 +19,11 @@ def test_ennnormal_sample_shape_and_clip():
 
 
 def test_epistemic_nearest_neighbors_posterior_and_var_scale():
-    import numpy as np
-
-    from enn.core import EpistemicNearestNeighbors
+    import conftest
     from enn.enn_params import ENNParams
 
-    rng = np.random.default_rng(0)
-    n = 20
-    d = 3
-    x = rng.standard_normal((n, d))
-    y = (x.sum(axis=1, keepdims=True)).astype(float)
-    yvar = 0.1 * np.ones_like(y)
-    model = EpistemicNearestNeighbors(x, y, yvar)
-    x_test = rng.standard_normal((4, d))
+    model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
+    x_test = rng.standard_normal((4, 3))
     params = ENNParams(k=3, var_scale=1.0)
     post = model.posterior(x_test, params=params, exclude_nearest=False)
     assert post.mu.shape == (4, 1)
@@ -93,17 +85,11 @@ def test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior(
 def test_batch_posterior_matches_individual_posterior_calls():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    import conftest
     from enn.enn_params import ENNParams
 
-    rng = np.random.default_rng(0)
-    n = 20
-    d = 3
-    x = rng.standard_normal((n, d))
-    y = (x.sum(axis=1, keepdims=True)).astype(float)
-    yvar = 0.1 * np.ones_like(y)
-    model = EpistemicNearestNeighbors(x, y, yvar)
-    x_test = rng.standard_normal((4, d))
+    model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
+    x_test = rng.standard_normal((4, 3))
     paramss = [
         ENNParams(k=3, var_scale=1.0),
         ENNParams(k=5, var_scale=0.5),
@@ -121,17 +107,11 @@ def test_batch_posterior_matches_individual_posterior_calls():
 def test_batch_posterior_matches_individual_posterior_calls_with_exclude_nearest():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    import conftest
     from enn.enn_params import ENNParams
 
-    rng = np.random.default_rng(0)
-    n = 20
-    d = 3
-    x = rng.standard_normal((n, d))
-    y = (x.sum(axis=1, keepdims=True)).astype(float)
-    yvar = 0.1 * np.ones_like(y)
-    model = EpistemicNearestNeighbors(x, y, yvar)
-    x_test = rng.standard_normal((4, d))
+    model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
+    x_test = rng.standard_normal((4, 3))
     paramss = [
         ENNParams(k=3, var_scale=1.0),
         ENNParams(k=5, var_scale=0.5),
@@ -190,15 +170,10 @@ def test_epistemic_nearest_neighbors_multiple_metrics():
 def test_neighbors_returns_correct_number_and_ordering():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    import conftest
 
-    rng = np.random.default_rng(0)
-    n = 20
+    model, train_x, train_y, _train_yvar, _rng = conftest.make_enn_model()
     d = 3
-    train_x = rng.standard_normal((n, d))
-    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
-    train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
 
     # Query point at origin
     x_query = np.zeros(d, dtype=float)
@@ -230,15 +205,9 @@ def test_neighbors_returns_correct_number_and_ordering():
 def test_neighbors_exclude_nearest():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    import conftest
 
-    rng = np.random.default_rng(0)
-    n = 20
-    d = 3
-    train_x = rng.standard_normal((n, d))
-    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
-    train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model, train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model()
 
     # Query point exactly matching a training point
     x_query = train_x[5].copy()
@@ -290,17 +259,11 @@ def test_neighbors_k_larger_than_available():
 def test_neighbors_k_zero():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    import conftest
 
-    rng = np.random.default_rng(0)
-    n = 10
-    d = 3
-    train_x = rng.standard_normal((n, d))
-    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
-    train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model, _train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model(n=10)
 
-    x_query = np.zeros(d, dtype=float)
+    x_query = np.zeros(3, dtype=float)
     neighbors = model.neighbors(x_query, k=0, exclude_nearest=False)
     assert neighbors == []
 
@@ -330,15 +293,10 @@ def test_neighbors_with_multiple_metrics():
 def test_neighbors_accepts_2d_input():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    import conftest
 
-    rng = np.random.default_rng(0)
-    n = 10
+    model, _train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model(n=10)
     d = 3
-    train_x = rng.standard_normal((n, d))
-    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
-    train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
 
     # Test with 1D input
     x_query_1d = np.zeros(d, dtype=float)
