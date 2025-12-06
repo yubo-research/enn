@@ -50,6 +50,30 @@ def test_turbo_one_improves_on_sphere():
     assert best > -0.5
 
 
+def test_turbo_one_with_y_var_uses_noisy_gp():
+    import numpy as np
+
+    from enn import Turbo
+    from enn.turbo_gp_noisy import TurboGPNoisy
+
+    bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(42)
+    opt = Turbo(bounds=bounds, mode=TurboMode.TURBO_ONE, rng=rng)
+
+    for _ in range(5):
+        x = opt.ask(num_arms=4)
+        y = conftest.sphere_objective(x)
+        y_var = rng.uniform(0.01, 0.1, size=y.shape)
+        opt.tell(x, y, y_var)
+
+    x = opt.ask(num_arms=4)
+    assert x.shape == (4, 2)
+
+    gp_model = opt._mode_impl._gp_model
+    assert gp_model is not None
+    assert isinstance(gp_model, TurboGPNoisy)
+
+
 def test_turbo_zero_reasonable_on_sphere():
     best = _run_bo(TurboMode.TURBO_ZERO, num_steps=12)
     assert best > -1.5
@@ -780,3 +804,216 @@ def test_fit_gp_returns_none_with_insufficient_data():
     assert likelihood_single is None
     assert isinstance(mean_single, float)
     assert std_single == 1.0
+
+
+def test_fit_gp_with_y_var_list_uses_noisy_model():
+    import numpy as np
+
+    from enn.turbo_gp_noisy import TurboGPNoisy
+    from enn.turbo_utils import fit_gp
+
+    num_obs = 20
+    num_dim = 3
+    rng = np.random.default_rng(42)
+    x_obs = rng.random((num_obs, num_dim))
+    y_obs = (x_obs.sum(axis=1) + 0.1 * rng.standard_normal(num_obs)).tolist()
+    y_var = rng.uniform(0.01, 0.1, size=num_obs).tolist()
+
+    model, likelihood, y_mean, y_std = fit_gp(
+        x_obs.tolist(), y_obs, num_dim, yvar_obs_list=y_var, num_steps=10
+    )
+
+    assert model is not None
+    assert isinstance(model, TurboGPNoisy)
+    assert likelihood is not None
+    assert isinstance(y_mean, float)
+    assert isinstance(y_std, float)
+    assert y_std > 0.0
+
+
+def test_fit_gp_with_y_var_list_asserts_length():
+    import numpy as np
+    import pytest
+
+    from enn.turbo_utils import fit_gp
+
+    num_obs = 10
+    num_dim = 2
+    rng = np.random.default_rng(0)
+    x_obs = rng.random((num_obs, num_dim)).tolist()
+    y_obs = rng.random(num_obs).tolist()
+    y_var_wrong_length = rng.uniform(0.01, 0.1, size=num_obs - 2).tolist()
+
+    with pytest.raises(AssertionError):
+        fit_gp(x_obs, y_obs, num_dim, yvar_obs_list=y_var_wrong_length, num_steps=5)
+
+
+def test_turbo_gp_noisy_accepts_train_y_var():
+    import numpy as np
+    import torch
+    from gpytorch.constraints import Interval
+    from gpytorch.likelihoods import FixedNoiseGaussianLikelihood
+
+    from enn.turbo_gp_noisy import TurboGPNoisy
+
+    num_obs = 10
+    num_dim = 2
+    rng = np.random.default_rng(42)
+    train_x = torch.as_tensor(rng.random((num_obs, num_dim)), dtype=torch.float64)
+    train_y = torch.as_tensor(
+        train_x.sum(dim=1).numpy() + 0.1 * rng.standard_normal(num_obs),
+        dtype=torch.float64,
+    )
+    train_y_var = torch.as_tensor(
+        rng.uniform(0.01, 0.1, size=num_obs), dtype=torch.float64
+    )
+
+    lengthscale_constraint = Interval(0.005, 2.0)
+    outputscale_constraint = Interval(0.05, 20.0)
+
+    model = TurboGPNoisy(
+        train_x=train_x,
+        train_y=train_y,
+        train_y_var=train_y_var,
+        lengthscale_constraint=lengthscale_constraint,
+        outputscale_constraint=outputscale_constraint,
+        ard_dims=num_dim,
+    )
+
+    assert model is not None
+    assert isinstance(model.likelihood, FixedNoiseGaussianLikelihood)
+    assert model.covar_module is not None
+    assert model.mean_module is not None
+
+
+def test_turbo_gp_noisy_forward_and_posterior():
+    import numpy as np
+    import torch
+    from gpytorch.constraints import Interval
+    from gpytorch.distributions import MultivariateNormal
+
+    from enn.turbo_gp_noisy import TurboGPNoisy
+
+    num_obs = 15
+    num_dim = 3
+    rng = np.random.default_rng(123)
+    train_x = torch.as_tensor(rng.random((num_obs, num_dim)), dtype=torch.float64)
+    train_y = torch.as_tensor(
+        train_x.sum(dim=1).numpy() + 0.05 * rng.standard_normal(num_obs),
+        dtype=torch.float64,
+    )
+    train_y_var = torch.full((num_obs,), 0.01, dtype=torch.float64)
+
+    lengthscale_constraint = Interval(0.005, 2.0)
+    outputscale_constraint = Interval(0.05, 20.0)
+
+    model = TurboGPNoisy(
+        train_x=train_x,
+        train_y=train_y,
+        train_y_var=train_y_var,
+        lengthscale_constraint=lengthscale_constraint,
+        outputscale_constraint=outputscale_constraint,
+        ard_dims=num_dim,
+    )
+
+    model.eval()
+    model.likelihood.eval()
+
+    test_x = torch.as_tensor(rng.random((5, num_dim)), dtype=torch.float64)
+    with torch.no_grad():
+        forward_output = model.forward(test_x)
+        posterior_output = model.posterior(test_x)
+
+    assert isinstance(forward_output, MultivariateNormal)
+    assert isinstance(posterior_output, MultivariateNormal)
+    assert forward_output.mean.shape == (5,)
+    assert posterior_output.mean.shape == (5,)
+
+
+def test_turbo_gp_noisy_trains_successfully():
+    import numpy as np
+    import torch
+    from gpytorch.constraints import Interval
+    from gpytorch.mlls import ExactMarginalLogLikelihood
+
+    from enn.turbo_gp_noisy import TurboGPNoisy
+
+    num_obs = 20
+    num_dim = 2
+    rng = np.random.default_rng(999)
+    train_x = torch.as_tensor(rng.random((num_obs, num_dim)), dtype=torch.float64)
+    train_y = torch.as_tensor(
+        train_x.sum(dim=1).numpy() + 0.1 * rng.standard_normal(num_obs),
+        dtype=torch.float64,
+    )
+    train_y_var = torch.as_tensor(
+        rng.uniform(0.005, 0.05, size=num_obs), dtype=torch.float64
+    )
+
+    lengthscale_constraint = Interval(0.005, 2.0)
+    outputscale_constraint = Interval(0.05, 20.0)
+
+    model = TurboGPNoisy(
+        train_x=train_x,
+        train_y=train_y,
+        train_y_var=train_y_var,
+        lengthscale_constraint=lengthscale_constraint,
+        outputscale_constraint=outputscale_constraint,
+        ard_dims=num_dim,
+    )
+
+    model.train()
+    model.likelihood.train()
+
+    mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+
+    initial_loss = None
+    for i in range(20):
+        optimizer.zero_grad()
+        output = model(train_x)
+        loss = -mll(output, train_y)
+        if i == 0:
+            initial_loss = loss.item()
+        loss.backward()
+        optimizer.step()
+
+    final_loss = loss.item()
+    assert final_loss <= initial_loss
+
+
+def test_turbo_gp_noisy_with_zero_variance():
+    import numpy as np
+    import torch
+    from gpytorch.constraints import Interval
+
+    from enn.turbo_gp_noisy import TurboGPNoisy
+
+    num_obs = 10
+    num_dim = 2
+    rng = np.random.default_rng(42)
+    train_x = torch.as_tensor(rng.random((num_obs, num_dim)), dtype=torch.float64)
+    train_y = torch.as_tensor(train_x.sum(dim=1).numpy(), dtype=torch.float64)
+    train_y_var = torch.zeros(num_obs, dtype=torch.float64)
+
+    lengthscale_constraint = Interval(0.005, 2.0)
+    outputscale_constraint = Interval(0.05, 20.0)
+
+    model = TurboGPNoisy(
+        train_x=train_x,
+        train_y=train_y,
+        train_y_var=train_y_var,
+        lengthscale_constraint=lengthscale_constraint,
+        outputscale_constraint=outputscale_constraint,
+        ard_dims=num_dim,
+        learn_additional_noise=True,
+    )
+
+    model.eval()
+    model.likelihood.eval()
+
+    test_x = torch.as_tensor(rng.random((3, num_dim)), dtype=torch.float64)
+    with torch.no_grad():
+        posterior = model.posterior(test_x)
+
+    assert posterior.mean.shape == (3,)

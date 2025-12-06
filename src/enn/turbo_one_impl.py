@@ -63,6 +63,7 @@ class TurboOneImpl(BaseTurboImpl):
             x_obs_list,
             y_obs_list,
             num_dim,
+            yvar_obs_list=yvar_obs_list if yvar_obs_list else None,
             num_steps=gp_num_steps,
         )
         if gp_y_mean_fitted is not None:

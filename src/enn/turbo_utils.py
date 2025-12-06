@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from scipy.stats._qmc import QMCEngine
 
     from .turbo_gp import TurboGP
+    from .turbo_gp_noisy import TurboGPNoisy
 
 
 def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
@@ -27,9 +28,10 @@ def fit_gp(
     y_obs_list: list[float] | list[list[float]],
     num_dim: int,
     *,
+    yvar_obs_list: list[float] | None = None,
     num_steps: int = 50,
 ) -> tuple[
-    "TurboGP | None",
+    "TurboGP | TurboGPNoisy | None",
     "GaussianLikelihood | None",
     float,
     float,
@@ -41,10 +43,13 @@ def fit_gp(
     from gpytorch.mlls import ExactMarginalLogLikelihood
 
     from .turbo_gp import TurboGP
+    from .turbo_gp_noisy import TurboGPNoisy
 
     x = np.asarray(x_obs_list, dtype=float)
     y = np.asarray(y_obs_list, dtype=float)
     n = x.shape[0]
+    if yvar_obs_list is not None:
+        assert len(yvar_obs_list) == len(y_obs_list)
     if n == 0:
         return None, None, 0.0, 1.0
     if n == 1:
@@ -56,25 +61,38 @@ def fit_gp(
     z = y_centered / gp_y_std
     train_x = torch.as_tensor(x, dtype=torch.float64)
     train_y = torch.as_tensor(z, dtype=torch.float64)
-    noise_constraint = Interval(5e-4, 0.2)
     lengthscale_constraint = Interval(0.005, 2.0)
     outputscale_constraint = Interval(0.05, 20.0)
-    likelihood = GaussianLikelihood(noise_constraint=noise_constraint).to(
-        dtype=train_y.dtype
-    )
-    model = TurboGP(
-        train_x=train_x,
-        train_y=train_y,
-        likelihood=likelihood,
-        lengthscale_constraint=lengthscale_constraint,
-        outputscale_constraint=outputscale_constraint,
-        ard_dims=num_dim,
-    ).to(dtype=train_x.dtype)
+    if yvar_obs_list is not None:
+        y_var = np.asarray(yvar_obs_list, dtype=float)
+        train_y_var = torch.as_tensor(y_var / (gp_y_std**2), dtype=torch.float64)
+        model = TurboGPNoisy(
+            train_x=train_x,
+            train_y=train_y,
+            train_y_var=train_y_var,
+            lengthscale_constraint=lengthscale_constraint,
+            outputscale_constraint=outputscale_constraint,
+            ard_dims=num_dim,
+        ).to(dtype=train_x.dtype)
+        likelihood = model.likelihood
+    else:
+        noise_constraint = Interval(5e-4, 0.2)
+        likelihood = GaussianLikelihood(noise_constraint=noise_constraint).to(
+            dtype=train_y.dtype
+        )
+        model = TurboGP(
+            train_x=train_x,
+            train_y=train_y,
+            likelihood=likelihood,
+            lengthscale_constraint=lengthscale_constraint,
+            outputscale_constraint=outputscale_constraint,
+            ard_dims=num_dim,
+        ).to(dtype=train_x.dtype)
+        likelihood.noise = torch.tensor(0.005, dtype=train_y.dtype)
     model.covar_module.outputscale = torch.tensor(1.0, dtype=train_x.dtype)
     model.covar_module.base_kernel.lengthscale = torch.full(
         (num_dim,), 0.5, dtype=train_x.dtype
     )
-    likelihood.noise = torch.tensor(0.005, dtype=train_y.dtype)
     model.train()
     likelihood.train()
     mll = ExactMarginalLogLikelihood(likelihood, model)

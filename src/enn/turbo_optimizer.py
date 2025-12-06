@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from .proposal import select_uniform
 from .turbo_config import TurboConfig
 from .turbo_utils import argmax_random_tie, from_unit, latin_hypercube, raasp, to_unit
+
+
+@dataclass(frozen=True)
+class Telemetry:
+    dt_fit: float
+    dt_sel: float
+
 
 if TYPE_CHECKING:
     import numpy as np
@@ -97,6 +105,8 @@ class TurboOptimizer:
             self._bounds,
         )
         self._init_idx = 0
+        self._dt_fit: float = 0.0
+        self._dt_sel: float = 0.0
 
     @property
     def tr_obs_count(self) -> int:
@@ -109,6 +119,9 @@ class TurboOptimizer:
         if len(self._y_obs_list) == 0:
             return None
         return float(np.max(self._y_obs_list))
+
+    def telemetry(self) -> Telemetry:
+        return Telemetry(dt_fit=self._dt_fit, dt_sel=self._dt_sel)
 
     def ask(self, num_arms: int) -> np.ndarray:
         num_arms = int(num_arms)
@@ -125,6 +138,8 @@ class TurboOptimizer:
             self._get_init_lhd_points,
         )
         if early_result is not None:
+            self._dt_fit = 0.0
+            self._dt_sel = 0.0
             return early_result
         if self._init_idx < self._num_init:
             if len(self._x_obs_list) == 0:
@@ -134,8 +149,12 @@ class TurboOptimizer:
                 def fallback_fn(n: int) -> np.ndarray:
                     return self._ask_normal(n, is_fallback=True)
 
+            self._dt_fit = 0.0
+            self._dt_sel = 0.0
             return self._get_init_lhd_points(num_arms, fallback_fn=fallback_fn)
         if len(self._x_obs_list) == 0:
+            self._dt_fit = 0.0
+            self._dt_sel = 0.0
             return self._draw_initial(num_arms)
         return self._ask_normal(num_arms)
 
@@ -167,6 +186,9 @@ class TurboOptimizer:
         if self._mode_impl.needs_tr_list() and len(self._x_obs_list) == 0:
             return self._get_init_lhd_points(num_arms)
 
+        import time
+
+        t0_fit = time.perf_counter()
         _gp_model, _gp_y_mean_fitted, _gp_y_std_fitted, weights = (
             self._mode_impl.prepare_ask(
                 self._x_obs_list,
@@ -177,6 +199,7 @@ class TurboOptimizer:
                 rng=self._rng,
             )
         )
+        self._dt_fit = time.perf_counter() - t0_fit
 
         lb_local, ub_local = self._tr_state.compute_bounds_1d(x_center, weights)
 
@@ -195,6 +218,7 @@ class TurboOptimizer:
 
         self._tr_state.validate_request(num_arms, is_fallback=is_fallback)
 
+        t0_sel = time.perf_counter()
         selected = self._mode_impl.select_candidates(
             x_cand,
             num_arms,
@@ -203,6 +227,7 @@ class TurboOptimizer:
             fallback_fn,
             from_unit_fn,
         )
+        self._dt_sel = time.perf_counter() - t0_sel
 
         self._mode_impl.update_trust_region(
             self._tr_state, self._y_obs_list, x_center=x_center, k=self._k
