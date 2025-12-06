@@ -102,8 +102,7 @@ class TurboENNImpl(BaseTurboImpl):
 
             x_arms = arms_from_pareto_fronts(x_cand, mu, se, num_arms, rng)
         elif acq_type == "ucb":
-            beta = 2.0
-            scores = mu + beta * se
+            scores = mu + se
             shuffled_indices = rng.permutation(len(scores))
             shuffled_scores = scores[shuffled_indices]
             top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[

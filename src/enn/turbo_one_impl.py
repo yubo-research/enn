@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 from .base_turbo_impl import BaseTurboImpl
 from .turbo_config import TurboConfig
+from .turbo_utils import gp_thompson_sample
 
 
 class TurboOneImpl(BaseTurboImpl):
@@ -92,43 +93,17 @@ class TurboOneImpl(BaseTurboImpl):
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
     ) -> np.ndarray:
-        import contextlib
-
-        import gpytorch
-        import numpy as np
-        import torch
-
         if self._gp_model is None:
             return fallback_fn(x_cand, num_arms)
 
-        @contextlib.contextmanager
-        def _torch_rng_context(generator: torch.Generator):
-            old_state = torch.get_rng_state()
-            try:
-                torch.set_rng_state(generator.get_state())
-                yield
-            finally:
-                torch.set_rng_state(old_state)
-
-        x_torch = torch.as_tensor(x_cand, dtype=torch.float64)
-        seed = int(rng.integers(2**31 - 1))
-        gen = torch.Generator(device=x_torch.device)
-        gen.manual_seed(seed)
-        with (
-            torch.no_grad(),
-            gpytorch.settings.fast_pred_var(),
-            _torch_rng_context(gen),
-        ):
-            posterior = self._gp_model.posterior(x_torch)
-            samples = posterior.sample(sample_shape=torch.Size([1]))
-        ts = samples[0].reshape(-1)
-        scores = ts.detach().cpu().numpy().reshape(-1)
-        scores = self._gp_y_mean + self._gp_y_std * scores
-
-        shuffled_indices = rng.permutation(len(scores))
-        shuffled_scores = scores[shuffled_indices]
-        top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[:num_arms]
-        idx = shuffled_indices[top_k_in_shuffled]
+        idx = gp_thompson_sample(
+            self._gp_model,
+            x_cand,
+            num_arms,
+            rng,
+            self._gp_y_mean,
+            self._gp_y_std,
+        )
         return from_unit_fn(x_cand[idx])
 
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:

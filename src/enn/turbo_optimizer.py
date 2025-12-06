@@ -253,7 +253,8 @@ class TurboOptimizer:
             )
         else:
             indices = np.arange(start_idx, num_total, dtype=int)
-        assert incumbent_idx in indices, "Incumbent must be included in trimmed list"
+        if incumbent_idx not in indices:
+            raise RuntimeError("Incumbent must be included in trimmed list")
         x_array = np.asarray(self._x_obs_list, dtype=float)
         incumbent_value = y_array[incumbent_idx]
         self._x_obs_list = x_array[indices].tolist()
@@ -261,9 +262,8 @@ class TurboOptimizer:
         yvar_array = np.asarray(self._yvar_obs_list, dtype=float)
         self._yvar_obs_list = yvar_array[indices].tolist()
         y_trimmed = np.asarray(self._y_obs_list, dtype=float)
-        assert np.any(
-            np.abs(y_trimmed - incumbent_value) < 1e-10
-        ), "Incumbent value must be preserved in trimmed list"
+        if not np.any(np.abs(y_trimmed - incumbent_value) < 1e-10):
+            raise RuntimeError("Incumbent value must be preserved in trimmed list")
 
     def tell(
         self,

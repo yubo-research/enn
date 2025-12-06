@@ -329,3 +329,34 @@ def test_neighbors_exclude_nearest_requires_multiple_observations():
         ValueError, match="exclude_nearest=True requires at least 2 observations"
     ):
         model.neighbors(x_query, k=1, exclude_nearest=True)
+
+
+def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
+    """
+    Forces the off-by-one bug when exclude_nearest=True and k > len(self) - 1.
+
+    With len(self)=5, max_k=10, exclude_nearest=True:
+    - search_k = min(11, 5) = 5
+    - After slicing [:, 1:], arrays have 4 columns
+    - BUG: k = min(10, 5) = 5, but should be min(10, 4) = 4
+    """
+    import numpy as np
+
+    from enn.core import EpistemicNearestNeighbors
+    from enn.enn_params import ENNParams
+
+    rng = np.random.default_rng(0)
+    n = 5
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
+    train_yvar = 0.1 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    x_test = rng.standard_normal((4, d))
+    params = ENNParams(k=10, var_scale=1.0)
+    post = model.batch_posterior(x_test, [params], exclude_nearest=True)
+    assert post.mu.shape == (1, 4, 1)
+    assert post.se.shape == (1, 4, 1)
+    assert np.all(np.isfinite(post.mu))
+    assert np.all(np.isfinite(post.se))

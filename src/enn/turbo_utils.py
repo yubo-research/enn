@@ -1,15 +1,29 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import contextlib
+from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
     import numpy as np
+    import torch
     from gpytorch.likelihoods import GaussianLikelihood
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
 
     from .turbo_gp import TurboGP
     from .turbo_gp_noisy import TurboGPNoisy
+
+
+@contextlib.contextmanager
+def torch_rng_context(generator: torch.Generator | Any) -> Iterator[None]:
+    import torch
+
+    old_state = torch.get_rng_state()
+    try:
+        torch.set_rng_state(generator.get_state())
+        yield
+    finally:
+        torch.set_rng_state(old_state)
 
 
 def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
@@ -214,6 +228,41 @@ def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
 
 
 def from_unit(x_unit: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
-    lb = bounds[:, 0]
-    ub = bounds[:, 1]
+    import numpy as np
+
+    lb = np.asarray(bounds[:, 0])
+    ub = np.asarray(bounds[:, 1])
     return lb + x_unit * (ub - lb)
+
+
+def gp_thompson_sample(
+    model: Any,
+    x_cand: np.ndarray | Any,
+    num_arms: int,
+    rng: Generator | Any,
+    gp_y_mean: float,
+    gp_y_std: float,
+) -> np.ndarray:
+    import gpytorch
+    import numpy as np
+    import torch
+
+    x_torch = torch.as_tensor(x_cand, dtype=torch.float64)
+    seed = int(rng.integers(2**31 - 1))
+    gen = torch.Generator(device=x_torch.device)
+    gen.manual_seed(seed)
+    with (
+        torch.no_grad(),
+        gpytorch.settings.fast_pred_var(),
+        torch_rng_context(gen),
+    ):
+        posterior = model.posterior(x_torch)
+        samples = posterior.sample(sample_shape=torch.Size([1]))
+    ts = samples[0].reshape(-1)
+    scores = ts.detach().cpu().numpy().reshape(-1)
+    scores = gp_y_mean + gp_y_std * scores
+    shuffled_indices = rng.permutation(len(scores))
+    shuffled_scores = scores[shuffled_indices]
+    top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[:num_arms]
+    idx = shuffled_indices[top_k_in_shuffled]
+    return idx

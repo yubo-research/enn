@@ -74,10 +74,16 @@ class EpistemicNearestNeighbors:
         *,
         params: ENNParams,
         exclude_nearest: bool = False,
+        observation_noise: bool = False,
     ) -> ENNNormal:
         from .enn_normal import ENNNormal
 
-        post_batch = self.batch_posterior(x, [params], exclude_nearest=exclude_nearest)
+        post_batch = self.batch_posterior(
+            x,
+            [params],
+            exclude_nearest=exclude_nearest,
+            observation_noise=observation_noise,
+        )
         mu = post_batch.mu[0]
         se = post_batch.se[0]
         return ENNNormal(mu, se)
@@ -88,6 +94,7 @@ class EpistemicNearestNeighbors:
         paramss: list[ENNParams],
         *,
         exclude_nearest: bool = False,
+        observation_noise: bool = False,
     ) -> ENNNormal:
         import numpy as np
 
@@ -123,8 +130,12 @@ class EpistemicNearestNeighbors:
             idx_full = idx_full[:, 1:]
         mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
         se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
+        available_k = search_k - 1 if exclude_nearest else search_k
         for i, params in enumerate(paramss):
-            k = min(params.k, search_k)
+            k = min(params.k, available_k)
+            assert (
+                k <= dist2s_full.shape[1]
+            ), f"k={k} exceeds available columns={dist2s_full.shape[1]}"
             if k == 0:
                 mu_all[i] = np.zeros((batch_size, self._num_metrics), dtype=float)
                 se_all[i] = np.ones((batch_size, self._num_metrics), dtype=float)
@@ -139,8 +150,10 @@ class EpistemicNearestNeighbors:
             norm = np.sum(w, axis=1)
             mu_all[i] = np.sum(w * y_neighbors, axis=1) / norm
             epistemic_var = 1.0 / norm
-            noise_var = np.sum(w * yvar_neighbors, axis=1) / norm
-            vvar = epistemic_var + noise_var
+            vvar = epistemic_var
+            if observation_noise:
+                noise_var = np.sum(w * yvar_neighbors, axis=1) / norm
+                vvar += noise_var
             vvar = np.maximum(vvar, self._eps_var)
             se_all[i] = np.sqrt(vvar) * self._y_scale
         return ENNNormal(mu_all, se_all)

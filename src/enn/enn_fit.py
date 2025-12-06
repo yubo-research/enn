@@ -47,7 +47,9 @@ def subsample_loglik(
     y_selected = y[indices]
     if not np.isfinite(y_selected).all():
         return [0.0] * len(paramss)
-    post_batch = model.batch_posterior(x_selected, paramss, exclude_nearest=True)
+    post_batch = model.batch_posterior(
+        x_selected, paramss, exclude_nearest=True, observation_noise=True
+    )
     mu_batch = post_batch.mu
     se_batch = post_batch.se
     if mu_batch.shape[2] == 1:
@@ -112,15 +114,12 @@ def enn_fit(
     ]
     if len(paramss) == 0:
         return ENNParams(k=k, var_scale=1.0)
+    import numpy as np
+
     logliks = subsample_loglik(
         model, train_x, y, paramss=paramss, P=num_fit_samples, rng=rng
     )
-    best_idx: int | None = None
-    best_mll: float | None = None
-    for i, loglik in enumerate(logliks):
-        if best_mll is None or loglik > best_mll:
-            best_mll = loglik
-            best_idx = i
-    if best_idx is None:
+    if len(logliks) == 0:
         return ENNParams(k=k, var_scale=float(var_scale_values[0]))
+    best_idx = int(np.argmax(logliks))
     return paramss[best_idx]

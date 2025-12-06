@@ -7,6 +7,7 @@ Turbo = TurboOptimizer
 
 __all__ = [
     "TurboMode",
+    "TurboOptimizer",
     "Turbo",
     "Telemetry",
 ]

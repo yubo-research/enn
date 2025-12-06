@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     import numpy as np
@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .enn_params import ENNParams
     from .turbo_gp import TurboGP
 
-from .turbo_utils import standardize_y
+from .turbo_utils import gp_thompson_sample, standardize_y
 
 
 def mk_enn(
@@ -74,14 +74,14 @@ def select_enn_pareto(
     num_arms: int,
     x_obs_list: list[float] | list[list[float]],
     y_obs_list: list[float] | list[list[float]],
-    k: Optional[int],
+    k: int | None,
     var_scale: float,
     rng: Generator | Any,
     fallback_fn: Callable[[np.ndarray, int], np.ndarray],
     from_unit_fn: Callable[[np.ndarray], np.ndarray],
     *,
-    enn_model: Optional[EpistemicNearestNeighbors] = None,
-    fitted_params: Optional[ENNParams] = None,
+    enn_model: EpistemicNearestNeighbors | None = None,
+    fitted_params: ENNParams | None = None,
 ) -> np.ndarray:
     from .enn_params import ENNParams
     from .enn_util import arms_from_pareto_fronts
@@ -140,26 +140,11 @@ def select_gp_thompson(
     select_sobol_fn: Callable[[np.ndarray, int], np.ndarray],
     from_unit_fn: Callable[[np.ndarray], np.ndarray],
     *,
-    model: Optional["TurboGP"] = None,
-    new_gp_y_mean: Optional[float] = None,
-    new_gp_y_std: Optional[float] = None,
+    model: TurboGP | None = None,
+    new_gp_y_mean: float | None = None,
+    new_gp_y_std: float | None = None,
 ) -> tuple[np.ndarray, float, float, TurboGP | None]:
-    import contextlib
-
-    import gpytorch
-    import numpy as np
-    import torch
-
     from .turbo_utils import fit_gp
-
-    @contextlib.contextmanager
-    def _torch_rng_context(generator: torch.Generator) -> Any:
-        old_state = torch.get_rng_state()
-        try:
-            torch.set_rng_state(generator.get_state())
-            yield
-        finally:
-            torch.set_rng_state(old_state)
 
     if len(x_obs_list) == 0:
         return select_sobol_fn(x_cand, num_arms), gp_y_mean, gp_y_std, None
@@ -176,27 +161,14 @@ def select_gp_thompson(
         new_gp_y_mean = gp_y_mean
     if new_gp_y_std is None:
         new_gp_y_std = gp_y_std
-    x_torch = torch.as_tensor(x_cand, dtype=torch.float64)
-    seed = int(rng.integers(2**31 - 1))
-    gen = torch.Generator(device=x_torch.device)
-    gen.manual_seed(seed)
-    with (
-        torch.no_grad(),
-        gpytorch.settings.fast_pred_var(),
-        _torch_rng_context(gen),
-    ):
-        posterior = model.posterior(x_torch)
-        samples = posterior.sample(
-            sample_shape=torch.Size([1]),
-        )
-    ts = samples[0].reshape(-1)
-    scores = ts.detach().cpu().numpy().reshape(-1)
-    scores = new_gp_y_mean + new_gp_y_std * scores
     if x_cand.shape[0] < num_arms:
         raise ValueError((x_cand.shape[0], num_arms))
-    # Shuffle indices first to randomize tie-breaking (matches argmax_random_tie pattern)
-    shuffled_indices = rng.permutation(len(scores))
-    shuffled_scores = scores[shuffled_indices]
-    top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[:num_arms]
-    idx = shuffled_indices[top_k_in_shuffled]
+    idx = gp_thompson_sample(
+        model,
+        x_cand,
+        num_arms,
+        rng,
+        new_gp_y_mean,
+        new_gp_y_std,
+    )
     return from_unit_fn(x_cand[idx]), new_gp_y_mean, new_gp_y_std, model
