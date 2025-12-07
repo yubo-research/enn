@@ -6,11 +6,14 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-    from .core import EpistemicNearestNeighbors
-    from .enn_params import ENNParams
+    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn_params import ENNParams
+
     from .turbo_gp import TurboGP
 
-from .turbo_utils import gp_thompson_sample, standardize_y
+from enn.enn_util import standardize_y
+
+from .turbo_utils import gp_thompson_sample
 
 
 def mk_enn(
@@ -24,8 +27,8 @@ def mk_enn(
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None, float, float]:
     import numpy as np
 
-    from .core import EpistemicNearestNeighbors
-    from .enn_params import ENNParams
+    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn_params import ENNParams
 
     if len(x_obs_list) == 0:
         return None, None, 0.0, 1.0
@@ -54,7 +57,7 @@ def mk_enn(
 
     fitted_params: ENNParams | None = None
     if num_fit_samples is not None and rng is not None:
-        from .enn_fit import enn_fit
+        from enn.enn_fit import enn_fit
 
         fitted_params = enn_fit(
             enn_model,
@@ -83,8 +86,8 @@ def select_enn_pareto(
     enn_model: EpistemicNearestNeighbors | None = None,
     fitted_params: ENNParams | None = None,
 ) -> np.ndarray:
-    from .enn_params import ENNParams
-    from .enn_util import arms_from_pareto_fronts
+    from enn.enn_params import ENNParams
+    from enn.enn_util import arms_from_pareto_fronts
 
     if enn_model is None:
         if k is None:

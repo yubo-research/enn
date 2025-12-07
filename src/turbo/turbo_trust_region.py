@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     import numpy as np
+    from numpy.random import Generator
+    from scipy.stats._qmc import QMCEngine
 
 
 @dataclass
@@ -60,6 +62,7 @@ class TurboTrustRegion:
         elif self.failure_counter >= self.failure_tolerance:
             self.length = 0.5 * self.length
             self.failure_counter = 0
+
         self.best_value = max(self.best_value, float(np.max(new_values)))
         self.prev_num_obs = values.size
 
@@ -91,3 +94,28 @@ class TurboTrustRegion:
         lb = np.clip(x_center - half_length, 0.0, 1.0)
         ub = np.clip(x_center + half_length, 0.0, 1.0)
         return lb, ub
+
+    def generate_candidates(
+        self,
+        x_center: np.ndarray,
+        y_max: float,
+        weights: np.ndarray | None,
+        num_candidates: int,
+        get_mu_sigma_fn: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray] | None],
+        rng: Generator,
+        sobol_engine: QMCEngine,
+        x_obs: np.ndarray,
+        y_obs: np.ndarray,
+    ) -> np.ndarray:
+        from .turbo_utils import raasp
+
+        lb, ub = self.compute_bounds_1d(x_center, weights)
+        return raasp(
+            x_center,
+            lb,
+            ub,
+            num_candidates,
+            num_pert=20,
+            rng=rng,
+            sobol_engine=sobol_engine,
+        )

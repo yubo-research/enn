@@ -78,7 +78,7 @@ class TurboENNImpl(BaseTurboImpl):
     ) -> np.ndarray:
         import numpy as np
 
-        from .enn_params import ENNParams
+        from enn.enn_params import ENNParams
 
         acq_type = self._config.acq_type
         k = self._config.k
@@ -98,7 +98,7 @@ class TurboENNImpl(BaseTurboImpl):
         se = posterior.se[:, 0]
 
         if acq_type == "pareto":
-            from .enn_util import arms_from_pareto_fronts
+            from enn.enn_util import arms_from_pareto_fronts
 
             x_arms = arms_from_pareto_fronts(x_cand, mu, se, num_arms, rng)
         elif acq_type == "ucb":
@@ -131,3 +131,21 @@ class TurboENNImpl(BaseTurboImpl):
         posterior = self._enn.posterior(x_unit, params=self._fitted_params)
         mu_standardized = posterior.mu[:, 0]
         return self._y_mean + self._y_std * mu_standardized
+
+    def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        if self._enn is None:
+            return None
+        k = self._config.k if self._config.k is not None else 10
+        from enn.enn_params import ENNParams
+
+        params = (
+            self._fitted_params
+            if self._fitted_params is not None
+            else ENNParams(k=k, var_scale=self._config.var_scale)
+        )
+        posterior = self._enn.posterior(x_unit, params=params, observation_noise=False)
+        mu_std = posterior.mu[:, 0]
+        sigma_std = posterior.se[:, 0]
+        mu = self._y_mean + self._y_std * mu_std
+        sigma = self._y_std * sigma_std
+        return mu, sigma

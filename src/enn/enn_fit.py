@@ -6,10 +6,10 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-    from .core import EpistemicNearestNeighbors
+    from .enn import EpistemicNearestNeighbors
     from .enn_params import ENNParams
 
-from .turbo_utils import standardize_y
+from .enn_util import standardize_y
 
 
 def subsample_loglik(

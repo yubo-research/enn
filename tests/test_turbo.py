@@ -3,8 +3,8 @@ from __future__ import annotations
 import conftest
 import pytest
 
-from enn.turbo_mode import TurboMode
-from enn.turbo_utils import to_unit
+from turbo.turbo_mode import TurboMode
+from turbo.turbo_utils import to_unit
 
 
 def _run_bo(mode: TurboMode, num_steps: int = 15) -> float:
@@ -54,7 +54,7 @@ def test_turbo_one_with_y_var_uses_noisy_gp():
     import numpy as np
 
     from enn import Turbo
-    from enn.turbo_gp_noisy import TurboGPNoisy
+    from turbo.turbo_gp_noisy import TurboGPNoisy
 
     bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
@@ -87,12 +87,12 @@ def test_turbo_enn_uses_enn_and_is_reasonable():
 def test_turbo_enn_with_k_none_fits_hyperparameters():
     import numpy as np
 
-    from enn.turbo_mode import TurboMode
-    from enn.turbo_optimizer import TurboOptimizer
+    from turbo.turbo_mode import TurboMode
+    from turbo.turbo_optimizer import TurboOptimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
-    from enn.turbo_config import TurboConfig
+    from turbo.turbo_config import TurboConfig
 
     opt = TurboOptimizer(
         bounds=bounds,
@@ -113,13 +113,13 @@ def test_turbo_enn_with_k_none_fits_hyperparameters():
 def test_turbo_optimizer_with_trailing_obs():
     import numpy as np
 
-    from enn.turbo_mode import TurboMode
-    from enn.turbo_optimizer import TurboOptimizer
+    from turbo.turbo_mode import TurboMode
+    from turbo.turbo_optimizer import TurboOptimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
 
-    from enn.turbo_config import TurboConfig
+    from turbo.turbo_config import TurboConfig
 
     for mode in [TurboMode.TURBO_ONE, TurboMode.TURBO_ENN]:
         opt = TurboOptimizer(
@@ -142,13 +142,13 @@ def test_turbo_optimizer_with_trailing_obs():
 def test_trailing_obs_includes_incumbent():
     import numpy as np
 
-    from enn.turbo_mode import TurboMode
-    from enn.turbo_optimizer import TurboOptimizer
+    from turbo.turbo_mode import TurboMode
+    from turbo.turbo_optimizer import TurboOptimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(123)
 
-    from enn.turbo_config import TurboConfig
+    from turbo.turbo_config import TurboConfig
 
     for mode in [TurboMode.TURBO_ONE, TurboMode.TURBO_ENN]:
         opt = TurboOptimizer(
@@ -176,7 +176,7 @@ def test_trailing_obs_includes_incumbent():
 def test_latin_hypercube_stratification_and_bounds():
     import numpy as np
 
-    from enn.turbo_utils import latin_hypercube
+    from turbo.turbo_utils import latin_hypercube
 
     rng = np.random.default_rng(0)
     n = 8
@@ -196,7 +196,7 @@ def test_latin_hypercube_stratification_and_bounds():
 def test_argmax_random_tie_uses_rng_and_is_deterministic():
     import numpy as np
 
-    from enn.turbo_utils import argmax_random_tie
+    from turbo.turbo_utils import argmax_random_tie
 
     values = np.array([1.0, 2.0, 2.0, 0.0], dtype=float)
     rng = np.random.default_rng(0)
@@ -210,7 +210,7 @@ def test_argmax_random_tie_uses_rng_and_is_deterministic():
 def test_pareto_front_simple_case():
     import numpy as np
 
-    from enn.turbo_utils import pareto_front
+    from turbo.turbo_utils import pareto_front
 
     mu = np.array([1.0, 0.9, 0.8], dtype=float)
     se = np.array([1.0, 0.5, 0.7], dtype=float)
@@ -225,7 +225,7 @@ def test_pareto_front_simple_case():
 def test_trust_region_state_update_and_restart_and_bounds():
     import numpy as np
 
-    from enn.turbo_trust_region import TurboTrustRegion
+    from turbo.turbo_trust_region import TurboTrustRegion
 
     state = TurboTrustRegion(num_dim=2, num_arms=2)
     values = []
@@ -325,7 +325,7 @@ def test_sobol_perturb_np_shape_and_bounds():
     import numpy as np
     from scipy.stats import qmc
 
-    from enn.turbo_utils import sobol_perturb_np
+    from turbo.turbo_utils import sobol_perturb_np
 
     num_candidates = 10
     num_dim = 3
@@ -346,7 +346,7 @@ def test_sobol_perturb_np_mask_application():
     import numpy as np
     from scipy.stats import qmc
 
-    from enn.turbo_utils import sobol_perturb_np
+    from turbo.turbo_utils import sobol_perturb_np
 
     num_candidates = 5
     num_dim = 3
@@ -374,7 +374,7 @@ def test_sobol_perturb_np_deterministic():
     import numpy as np
     from scipy.stats import qmc
 
-    from enn.turbo_utils import sobol_perturb_np
+    from turbo.turbo_utils import sobol_perturb_np
 
     num_candidates = 8
     num_dim = 2
@@ -397,7 +397,7 @@ def test_raasp_shape_and_bounds():
     import numpy as np
     from scipy.stats import qmc
 
-    from enn.turbo_utils import raasp
+    from turbo.turbo_utils import raasp
 
     num_candidates = 10
     num_dim = 3
@@ -424,7 +424,7 @@ def test_raasp_at_least_one_dimension_perturbed():
     import numpy as np
     from scipy.stats import qmc
 
-    from enn.turbo_utils import raasp
+    from turbo.turbo_utils import raasp
 
     num_candidates = 20
     num_dim = 5
@@ -451,7 +451,7 @@ def test_raasp_deterministic():
     import numpy as np
     from scipy.stats import qmc
 
-    from enn.turbo_utils import raasp
+    from turbo.turbo_utils import raasp
 
     num_candidates = 8
     num_dim = 2
@@ -487,7 +487,7 @@ def test_raasp_probability_scaling():
     import numpy as np
     from scipy.stats import qmc
 
-    from enn.turbo_utils import raasp
+    from turbo.turbo_utils import raasp
 
     num_candidates = 100
     num_dim_low = 5
@@ -527,10 +527,142 @@ def test_raasp_probability_scaling():
     assert mean_perturbed_low > mean_perturbed_high
 
 
+def test_raasp_multiscale_shape_and_bounds():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from turbo.turbo_utils import raasp_multiscale
+
+    num_candidates = 50
+    num_dim = 3
+    x_center = np.array([0.5, 0.5, 0.5], dtype=float)
+    rng = np.random.default_rng(0)
+    sobol_engine = qmc.Sobol(d=num_dim, scramble=True, seed=0)
+    candidates = raasp_multiscale(
+        x_center,
+        weights=None,
+        num_candidates=num_candidates,
+        num_pert=20,
+        rng=rng,
+        sobol_engine=sobol_engine,
+    )
+    assert candidates.shape == (num_candidates, num_dim)
+    assert np.all(candidates >= 0.0)
+    assert np.all(candidates <= 1.0)
+
+
+def test_raasp_multiscale_at_least_one_dimension_perturbed():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from turbo.turbo_utils import raasp_multiscale
+
+    num_candidates = 20
+    num_dim = 5
+    x_center = np.array([0.5] * num_dim, dtype=float)
+    rng = np.random.default_rng(0)
+    sobol_engine = qmc.Sobol(d=num_dim, scramble=True, seed=0)
+    candidates = raasp_multiscale(
+        x_center,
+        weights=None,
+        num_candidates=num_candidates,
+        num_pert=20,
+        rng=rng,
+        sobol_engine=sobol_engine,
+    )
+    for i in range(num_candidates):
+        diff = np.abs(candidates[i] - x_center)
+        assert np.any(diff > 1e-10)
+
+
+def test_raasp_multiscale_deterministic():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from turbo.turbo_utils import raasp_multiscale
+
+    num_candidates = 10
+    num_dim = 2
+    x_center = np.array([0.5, 0.5], dtype=float)
+    rng1 = np.random.default_rng(42)
+    rng2 = np.random.default_rng(42)
+    sobol_engine1 = qmc.Sobol(d=num_dim, scramble=True, seed=0)
+    sobol_engine2 = qmc.Sobol(d=num_dim, scramble=True, seed=0)
+    candidates1 = raasp_multiscale(
+        x_center,
+        weights=None,
+        num_candidates=num_candidates,
+        num_pert=20,
+        rng=rng1,
+        sobol_engine=sobol_engine1,
+    )
+    candidates2 = raasp_multiscale(
+        x_center,
+        weights=None,
+        num_candidates=num_candidates,
+        num_pert=20,
+        rng=rng2,
+        sobol_engine=sobol_engine2,
+    )
+    assert np.allclose(candidates1, candidates2)
+
+
+def test_raasp_multiscale_varying_scales():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from turbo.turbo_utils import raasp_multiscale
+
+    num_candidates = 100
+    num_dim = 2
+    x_center = np.array([0.5, 0.5], dtype=float)
+    rng = np.random.default_rng(0)
+    sobol_engine = qmc.Sobol(d=num_dim, scramble=True, seed=0)
+    candidates = raasp_multiscale(
+        x_center,
+        weights=None,
+        num_candidates=num_candidates,
+        num_pert=20,
+        rng=rng,
+        sobol_engine=sobol_engine,
+    )
+    distances = np.max(np.abs(candidates - x_center), axis=1)
+    assert np.min(distances) < 0.1
+    assert np.max(distances) > 0.3
+
+
+def test_raasp_multiscale_with_weights():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from turbo.turbo_utils import raasp_multiscale
+
+    num_candidates = 50
+    num_dim = 2
+    x_center = np.array([0.5, 0.5], dtype=float)
+    weights = np.array([2.0, 0.5], dtype=float)
+    rng = np.random.default_rng(0)
+    sobol_engine = qmc.Sobol(d=num_dim, scramble=True, seed=0)
+    candidates = raasp_multiscale(
+        x_center,
+        weights=weights,
+        num_candidates=num_candidates,
+        num_pert=20,
+        rng=rng,
+        sobol_engine=sobol_engine,
+    )
+    assert candidates.shape == (num_candidates, num_dim)
+    assert np.all(candidates >= 0.0)
+    assert np.all(candidates <= 1.0)
+    spread_dim0 = np.std(candidates[:, 0])
+    spread_dim1 = np.std(candidates[:, 1])
+    assert spread_dim0 > spread_dim1
+
+
 def test_to_unit_and_from_unit_roundtrip():
     import numpy as np
 
-    from enn.turbo_utils import from_unit
+    from turbo.turbo_utils import from_unit
 
     bounds = np.array([[0.0, 2.0], [-1.0, 1.0], [5.0, 10.0]], dtype=float)
     x_original = np.array([[1.0, 0.0, 7.5], [0.5, -0.5, 8.0]], dtype=float)
@@ -553,7 +685,7 @@ def test_to_unit_bounds_validation():
 def test_select_uniform_shape_and_uniformity():
     import numpy as np
 
-    from enn.proposal import select_uniform
+    from turbo.proposal import select_uniform
 
     num_candidates = 128
     num_dim = 4
@@ -571,7 +703,7 @@ def test_select_uniform_shape_and_uniformity():
 def test_select_uniform_validation():
     import numpy as np
 
-    from enn.proposal import select_uniform
+    from turbo.proposal import select_uniform
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
@@ -589,7 +721,7 @@ def test_select_uniform_validation():
 def test_select_enn_pareto_uses_enn_and_selects_pareto():
     import numpy as np
 
-    from enn.proposal import select_enn_pareto
+    from turbo.proposal import select_enn_pareto
 
     num_candidates = 64
     num_dim = 2
@@ -620,7 +752,7 @@ def test_select_enn_pareto_uses_enn_and_selects_pareto():
 def test_select_enn_pareto_fallback_on_empty_observations():
     import numpy as np
 
-    from enn.proposal import select_enn_pareto
+    from turbo.proposal import select_enn_pareto
 
     num_candidates = 32
     num_dim = 2
@@ -656,7 +788,7 @@ def test_select_enn_pareto_fallback_on_empty_observations():
 def test_select_enn_pareto_with_k_none_fits_model():
     import numpy as np
 
-    from enn.proposal import select_enn_pareto
+    from turbo.proposal import select_enn_pareto
 
     num_candidates = 50
     num_dim = 2
@@ -687,7 +819,7 @@ def test_select_enn_pareto_with_k_none_fits_model():
 def test_select_gp_thompson_uses_gp_and_returns_correct_shape():
     import numpy as np
 
-    from enn.proposal import select_gp_thompson
+    from turbo.proposal import select_gp_thompson
 
     num_candidates = 30
     num_dim = 2
@@ -723,7 +855,7 @@ def test_select_gp_thompson_uses_gp_and_returns_correct_shape():
 def test_select_gp_thompson_fallback_on_empty_observations():
     import numpy as np
 
-    from enn.proposal import select_gp_thompson
+    from turbo.proposal import select_gp_thompson
 
     num_candidates = 20
     num_dim = 2
@@ -763,7 +895,7 @@ def test_select_gp_thompson_fallback_on_empty_observations():
 def test_fit_gp_returns_model_with_valid_data():
     import numpy as np
 
-    from enn.turbo_utils import fit_gp
+    from turbo.turbo_utils import fit_gp
 
     num_obs = 20
     num_dim = 3
@@ -784,7 +916,7 @@ def test_fit_gp_returns_model_with_valid_data():
 def test_fit_gp_returns_none_with_insufficient_data():
     import numpy as np
 
-    from enn.turbo_utils import fit_gp
+    from turbo.turbo_utils import fit_gp
 
     num_dim = 2
     model_empty, likelihood_empty, mean_empty, std_empty = fit_gp(
@@ -809,8 +941,8 @@ def test_fit_gp_returns_none_with_insufficient_data():
 def test_fit_gp_with_y_var_list_uses_noisy_model():
     import numpy as np
 
-    from enn.turbo_gp_noisy import TurboGPNoisy
-    from enn.turbo_utils import fit_gp
+    from turbo.turbo_gp_noisy import TurboGPNoisy
+    from turbo.turbo_utils import fit_gp
 
     num_obs = 20
     num_dim = 3
@@ -835,7 +967,7 @@ def test_fit_gp_with_y_var_list_asserts_length():
     import numpy as np
     import pytest
 
-    from enn.turbo_utils import fit_gp
+    from turbo.turbo_utils import fit_gp
 
     num_obs = 10
     num_dim = 2
@@ -854,7 +986,7 @@ def test_turbo_gp_noisy_accepts_train_y_var():
     from gpytorch.constraints import Interval
     from gpytorch.likelihoods import FixedNoiseGaussianLikelihood
 
-    from enn.turbo_gp_noisy import TurboGPNoisy
+    from turbo.turbo_gp_noisy import TurboGPNoisy
 
     num_obs = 10
     num_dim = 2
@@ -892,7 +1024,7 @@ def test_turbo_gp_noisy_forward_and_posterior():
     from gpytorch.constraints import Interval
     from gpytorch.distributions import MultivariateNormal
 
-    from enn.turbo_gp_noisy import TurboGPNoisy
+    from turbo.turbo_gp_noisy import TurboGPNoisy
 
     num_obs = 15
     num_dim = 3
@@ -936,7 +1068,7 @@ def test_turbo_gp_noisy_trains_successfully():
     from gpytorch.constraints import Interval
     from gpytorch.mlls import ExactMarginalLogLikelihood
 
-    from enn.turbo_gp_noisy import TurboGPNoisy
+    from turbo.turbo_gp_noisy import TurboGPNoisy
 
     num_obs = 20
     num_dim = 2
@@ -987,7 +1119,7 @@ def test_turbo_gp_noisy_with_zero_variance():
     import torch
     from gpytorch.constraints import Interval
 
-    from enn.turbo_gp_noisy import TurboGPNoisy
+    from turbo.turbo_gp_noisy import TurboGPNoisy
 
     num_obs = 10
     num_dim = 2

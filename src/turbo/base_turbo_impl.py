@@ -76,3 +76,6 @@ class BaseTurboImpl:
 
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
         return y_observed
+
+    def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        return None

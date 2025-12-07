@@ -20,6 +20,7 @@ def test_ennnormal_sample_shape_and_clip():
 
 def test_epistemic_nearest_neighbors_posterior_and_var_scale():
     import conftest
+
     from enn.enn_params import ENNParams
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
@@ -38,7 +39,7 @@ def test_epistemic_nearest_neighbors_posterior_and_var_scale():
 def test_epistemic_nearest_neighbors_with_no_observations_returns_prior_like_posterior():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
     from enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
@@ -63,7 +64,7 @@ def test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior(
 ):
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
     from enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
@@ -83,9 +84,9 @@ def test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior(
 
 
 def test_batch_posterior_matches_individual_posterior_calls():
+    import conftest
     import numpy as np
 
-    import conftest
     from enn.enn_params import ENNParams
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
@@ -105,9 +106,9 @@ def test_batch_posterior_matches_individual_posterior_calls():
 
 
 def test_batch_posterior_matches_individual_posterior_calls_with_exclude_nearest():
+    import conftest
     import numpy as np
 
-    import conftest
     from enn.enn_params import ENNParams
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
@@ -128,7 +129,7 @@ def test_batch_posterior_matches_individual_posterior_calls_with_exclude_nearest
 def test_epistemic_nearest_neighbors_with_sobol_indices():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
     from enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
@@ -150,7 +151,7 @@ def test_epistemic_nearest_neighbors_with_sobol_indices():
 def test_epistemic_nearest_neighbors_multiple_metrics():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
     from enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
@@ -168,9 +169,8 @@ def test_epistemic_nearest_neighbors_multiple_metrics():
 
 
 def test_neighbors_returns_correct_number_and_ordering():
-    import numpy as np
-
     import conftest
+    import numpy as np
 
     model, train_x, train_y, _train_yvar, _rng = conftest.make_enn_model()
     d = 3
@@ -203,9 +203,8 @@ def test_neighbors_returns_correct_number_and_ordering():
 
 
 def test_neighbors_exclude_nearest():
-    import numpy as np
-
     import conftest
+    import numpy as np
 
     model, train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model()
 
@@ -225,7 +224,7 @@ def test_neighbors_exclude_nearest():
 def test_neighbors_with_empty_observations():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
 
     d = 3
     train_x = np.zeros((0, d), dtype=float)
@@ -241,7 +240,7 @@ def test_neighbors_with_empty_observations():
 def test_neighbors_k_larger_than_available():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
 
     rng = np.random.default_rng(0)
     n = 5
@@ -257,9 +256,8 @@ def test_neighbors_k_larger_than_available():
 
 
 def test_neighbors_k_zero():
-    import numpy as np
-
     import conftest
+    import numpy as np
 
     model, _train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model(n=10)
 
@@ -271,7 +269,7 @@ def test_neighbors_k_zero():
 def test_neighbors_with_multiple_metrics():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
 
     rng = np.random.default_rng(0)
     n = 15
@@ -291,9 +289,8 @@ def test_neighbors_with_multiple_metrics():
 
 
 def test_neighbors_accepts_2d_input():
-    import numpy as np
-
     import conftest
+    import numpy as np
 
     model, _train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model(n=10)
     d = 3
@@ -315,7 +312,7 @@ def test_neighbors_accepts_2d_input():
 def test_neighbors_exclude_nearest_requires_multiple_observations():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
 
     rng = np.random.default_rng(0)
     d = 3
@@ -342,7 +339,7 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
     """
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
     from enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)

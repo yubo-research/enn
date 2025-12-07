@@ -1,7 +1,7 @@
 def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
     from enn.enn_fit import enn_fit, subsample_loglik
     from enn.enn_params import ENNParams
 

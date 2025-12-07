@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from .proposal import select_uniform
 from .turbo_config import TurboConfig
-from .turbo_utils import argmax_random_tie, from_unit, latin_hypercube, raasp, to_unit
+from .turbo_utils import argmax_random_tie, from_unit, latin_hypercube, to_unit
 
 
 @dataclass(frozen=True)
@@ -159,6 +159,8 @@ class TurboOptimizer:
         return self._ask_normal(num_arms)
 
     def _ask_normal(self, num_arms: int, *, is_fallback: bool = False) -> np.ndarray:
+        import numpy as np
+
         if self._tr_state.needs_restart():
             self._tr_state.restart()
             should_reset_init, new_init_idx = self._mode_impl.handle_restart(
@@ -179,6 +181,7 @@ class TurboOptimizer:
         x_center = self._best_x_from_lists(
             self._x_obs_list, self._y_obs_list, "no observations"
         )
+        y_max = float(np.max(self._y_obs_list))
 
         def from_unit_fn(x):
             return from_unit(x, self._bounds)
@@ -201,16 +204,16 @@ class TurboOptimizer:
         )
         self._dt_fit = time.perf_counter() - t0_fit
 
-        lb_local, ub_local = self._tr_state.compute_bounds_1d(x_center, weights)
-
-        x_cand = raasp(
+        x_cand = self._tr_state.generate_candidates(
             x_center,
-            lb_local,
-            ub_local,
+            y_max,
+            weights,
             self._num_candidates,
-            num_pert=20,
-            rng=self._rng,
-            sobol_engine=self._sobol_engine,
+            self._mode_impl.get_mu_sigma,
+            self._rng,
+            self._sobol_engine,
+            x_obs=np.asarray(self._x_obs_list, dtype=float),
+            y_obs=np.asarray(self._y_obs_list, dtype=float),
         )
 
         def fallback_fn(x, n):

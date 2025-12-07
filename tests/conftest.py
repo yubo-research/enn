@@ -15,7 +15,7 @@ def sphere_objective(x):
 
 
 def make_from_unit_fn(bounds):
-    from enn.turbo_utils import from_unit
+    from turbo.turbo_utils import from_unit
 
     def from_unit_fn(x):
         return from_unit(x, bounds)
@@ -24,7 +24,7 @@ def make_from_unit_fn(bounds):
 
 
 def make_fallback_fn(bounds, rng):
-    from enn.turbo_utils import from_unit
+    from turbo.turbo_utils import from_unit
 
     def fallback_fn(x, n):
         idx = rng.choice(x.shape[0], size=n, replace=False)
@@ -34,7 +34,7 @@ def make_fallback_fn(bounds, rng):
 
 
 def make_select_sobol_fn(bounds, rng):
-    from enn.turbo_utils import from_unit
+    from turbo.turbo_utils import from_unit
 
     def select_sobol_fn(x, n):
         idx = rng.choice(x.shape[0], size=n, replace=False)
@@ -46,7 +46,7 @@ def make_select_sobol_fn(bounds, rng):
 def make_enn_model(n=20, d=3, seed=0, yvar_scale=0.1):
     import numpy as np
 
-    from enn.core import EpistemicNearestNeighbors
+    from enn.enn import EpistemicNearestNeighbors
 
     rng = np.random.default_rng(seed)
     train_x = rng.standard_normal((n, d))

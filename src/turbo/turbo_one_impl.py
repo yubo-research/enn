@@ -116,3 +116,17 @@ class TurboOneImpl(BaseTurboImpl):
             posterior = self._gp_model.posterior(x_torch)
             mu = posterior.mean.cpu().numpy().ravel()
         return self._gp_y_mean + self._gp_y_std * mu
+
+    def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        import torch
+
+        if self._gp_model is None:
+            return None
+        x_torch = torch.as_tensor(x_unit, dtype=torch.float64)
+        with torch.no_grad():
+            posterior = self._gp_model.posterior(x_torch)
+            mu_std = posterior.mean.cpu().numpy().ravel()
+            sigma_std = posterior.variance.cpu().numpy().ravel() ** 0.5
+        mu = self._gp_y_mean + self._gp_y_std * mu_std
+        sigma = self._gp_y_std * sigma_std
+        return mu, sigma

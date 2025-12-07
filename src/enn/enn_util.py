@@ -7,6 +7,17 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
 
+def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
+    import numpy as np
+
+    y_array = np.asarray(y, dtype=float)
+    center = float(np.median(y_array))
+    scale = float(np.std(y_array))
+    if not np.isfinite(scale) or scale <= 0.0:
+        scale = 1.0
+    return center, scale
+
+
 def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     import numpy as np
 
