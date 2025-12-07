@@ -2,7 +2,10 @@ import math
 
 
 class MVUE:
-    def __init__(self) -> None:
+    def __init__(self, decay: float) -> None:
+        if not (0.0 < decay <= 1.0):
+            raise ValueError("decay must be in (0, 1]")
+        self._decay = decay
         self._sum_precision: float = 0.0
         self._sum_weighted_y: float = 0.0
         self._n: int = 0
@@ -11,8 +14,8 @@ class MVUE:
         if y_var <= 0:
             raise ValueError("y_var must be positive")
         precision = 1.0 / y_var
-        self._sum_precision += precision
-        self._sum_weighted_y += y * precision
+        self._sum_precision = self._decay * self._sum_precision + precision
+        self._sum_weighted_y = self._decay * self._sum_weighted_y + y * precision
         self._n += 1
 
     @property
