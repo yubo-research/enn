@@ -1,46 +1,50 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 from torch import nn
 
 from uhd.perturb_module import perturb_module, unperturb_module
 
+if TYPE_CHECKING:
+    from uhd.simple_adapter import SimpleAdapter
+    from uhd.thompson_sampler import ThompsonSampler
+
 
 class SimpleRacer:
     def __init__(
-        self, step_sizes: list[float], rng: np.random.Generator, decay: float = None
+        self,
+        adapter: ThompsonSampler | SimpleAdapter,
+        rng: np.random.Generator,
+        momentum: bool = False,
     ) -> None:
-        if len(step_sizes) == 0:
-            raise ValueError("step_sizes must be non-empty")
-        self._step_sizes = list(step_sizes)
+        self._adapter = adapter
         self._rng = rng
-        self._decay = decay
+        self._momentum = momentum
+
         self._incumbent_y: float = float("-inf")
         self._incumbent_y_var: float = float("inf")
         self._challenger_seed: int | None = None
         self._challenger_step_size: float | None = None
         self._accepts: int = 0
         self._races: int = 0
-
-        if len(self._step_sizes) > 1:
-            from uhd.thompson_sampler import ThompsonSampler
-
-            self._sampler: ThompsonSampler | None = ThompsonSampler(
-                self._step_sizes, rng, decay=decay
-            )
-        else:
-            assert decay is None, "decay must be None if there is only one step size"
-            self._sampler = None
+        self._last_accepted: bool = False
 
     def ask(self, module: nn.Module) -> int:
-        if self._sampler is not None:
-            self._challenger_step_size = self._sampler.ask()
-        else:
-            self._challenger_step_size = self._step_sizes[0]
+        self._challenger_step_size = self._adapter.ask()
 
-        self._challenger_seed = int(self._rng.integers(1, 2**31))
+        # If momentum enabled and last perturbation was accepted, reuse the same seed
+        if (
+            not (self._momentum and self._last_accepted)
+            or self._challenger_seed is None
+        ):
+            self._challenger_seed = int(self._rng.integers(1, 2**31))
+
         perturb_module(module, self._challenger_seed, self._challenger_step_size)
         return self._challenger_seed
 
-    def tell(self, module: nn.Module, seed: int, y: float, y_var: float) -> None:
+    def tell(self, module: nn.Module, seed: int, y: float, y_var: float) -> bool:
         if not np.isfinite(y):
             raise ValueError("y must be finite")
         if not np.isfinite(y_var) or y_var <= 0:
@@ -48,19 +52,32 @@ class SimpleRacer:
         if seed != self._challenger_seed:
             raise ValueError("seed mismatch")
 
-        if self._sampler is not None and np.isfinite(self._incumbent_y):
-            improvement = max(0.0, y - self._incumbent_y)
-            improvement_var = y_var + self._incumbent_y_var
-            self._sampler.tell(self._challenger_step_size, improvement, improvement_var)
+        accepted = y > self._incumbent_y
+
+        # Update the adapter
+        if np.isfinite(self._incumbent_y):
+            from uhd.simple_adapter import SimpleAdapter
+
+            if isinstance(self._adapter, SimpleAdapter):
+                self._adapter.tell(accepted)
+            else:
+                # ThompsonSampler - use improvement as reward
+                improvement = max(0.0, y - self._incumbent_y)
+                improvement_var = y_var + self._incumbent_y_var
+                self._adapter.tell(
+                    self._challenger_step_size, improvement, improvement_var
+                )
 
         self._races += 1
-        if y > self._incumbent_y:
+        if accepted:
             self._incumbent_y = y
             self._incumbent_y_var = y_var
             self._accepts += 1
+            self._last_accepted = True
             return True
         else:
             unperturb_module(module, self._challenger_seed, self._challenger_step_size)
+            self._last_accepted = False
             return False
 
     @property

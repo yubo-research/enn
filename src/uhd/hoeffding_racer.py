@@ -15,8 +15,8 @@ class HoeffdingRacer:
         self._k = k
         self._rng = rng
 
-        self._incumbent = MVUE()
-        self._challenger = MVUE()
+        self._incumbent = MVUE(decay=1.0)
+        self._challenger = MVUE(decay=1.0)
         self._challenger_seed: int | None = None
         self._initialized = False
         self._accepts: int = 0
@@ -37,7 +37,10 @@ class HoeffdingRacer:
     def ask(self, module: nn.Module) -> int:
         if not self._initialized:
             self._initialized = True
-            assert self._module_params == "incumbent"
+            if self._module_params != "incumbent":
+                raise RuntimeError(
+                    "Expected module_params to be 'incumbent' on first ask"
+                )
             return CURRENT_SEED
 
         if self._challenger_seed is None:
@@ -45,7 +48,8 @@ class HoeffdingRacer:
             self._to_challenger(module)
             return self._challenger_seed
 
-        assert self._incumbent.n > 0
+        if self._incumbent.n == 0:
+            raise RuntimeError("Incumbent has no observations")
         if self._challenger.n > 0:
             inc_lcb, inc_ucb = self._incumbent.confidence_bounds(self._k)
             chall_lcb, chall_ucb = self._challenger.confidence_bounds(self._k)
@@ -55,7 +59,7 @@ class HoeffdingRacer:
                     print("CHALL:", inc_ucb, chall_lcb)
                 self._to_challenger(module)
                 self._incumbent = self._challenger
-                self._challenger = MVUE()
+                self._challenger = MVUE(decay=1.0)
                 self._challenger_seed = None
                 self._accepts += 1
                 self._races += 1
@@ -65,13 +69,19 @@ class HoeffdingRacer:
                 if _VERBOSE:
                     print("INC:", inc_lcb, chall_ucb)
                 self._to_incumbent(module)
-                self._challenger = MVUE()
+                self._challenger = MVUE(decay=1.0)
                 self._challenger_seed = None
                 self._races += 1
                 return CURRENT_SEED
             elif self._challenger.se < self._squeeze * self._incumbent.se:
-                self._to_incumbent(module)
-                return CURRENT_SEED
+                # Swap: challenger has tighter variance, becomes new incumbent
+                # Old incumbent becomes new challenger
+                old_challenger_seed = self._challenger_seed
+                self._to_incumbent(module)  # Move to old incumbent position
+                self._incumbent, self._challenger = self._challenger, self._incumbent
+                self._challenger_seed = -abs(old_challenger_seed)
+                self._module_params = "challenger"  # Module is now at new challenger
+                return old_challenger_seed
 
         return self._challenger_seed
 
@@ -108,15 +118,16 @@ class HoeffdingRacer:
         return self._challenger.mean
 
     def tell(self, seed: int, y: float, y_var: float) -> None:
-        assert np.isfinite(y)
-        assert np.isfinite(y_var)
-        if y_var <= 0:
-            raise ValueError("y_var must be positive")
+        if not np.isfinite(y):
+            raise ValueError("y must be finite")
+        if not np.isfinite(y_var) or y_var <= 0:
+            raise ValueError("y_var must be finite and positive")
 
         if seed == CURRENT_SEED:
             self._incumbent.update(y, y_var)
         else:
-            assert self._challenger_seed is not None
+            if self._challenger_seed is None:
+                raise RuntimeError("No challenger seed set")
             if seed != abs(self._challenger_seed):
                 raise ValueError(
                     f"Seed mismatch: expected {abs(self._challenger_seed)}, got {seed}"

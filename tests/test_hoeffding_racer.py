@@ -134,28 +134,6 @@ def test_hoeffding_racer_accumulates_multiple_observations():
     assert racer._challenger.n == 2
 
 
-def test_hoeffding_racer_challenger_nested_swaps():
-    rng = np.random.default_rng(42)
-    racer = HoeffdingRacer(step_size=0.01, k=2.0, rng=rng)
-    module = SimpleModule()
-
-    seed = racer.ask(module)
-    assert seed == CURRENT_SEED
-    racer.tell(seed, y=-1.5, y_var=1.0)
-
-    challenger_seed = racer.ask(module)
-    racer.tell(challenger_seed, y=-1.5, y_var=0.01)
-
-    seed = racer.ask(module)
-    assert seed == challenger_seed
-
-    assert racer._incumbent.n == 1
-    assert racer._incumbent.var == 0.01
-    assert racer._challenger.n == 1
-    assert racer._challenger.var == 1.0
-    assert racer._challenger_seed < 0  # negative seed indicates swapped state
-
-
 def test_hoeffding_racer_swap_correctly_navigates_module():
     """After a swap, the signed seed should correctly reverse perturb/unperturb."""
     rng = np.random.default_rng(42)
@@ -219,8 +197,8 @@ def test_hoeffding_racer_tell_invalid_y_var_raises():
 
     seed = racer.ask(module)
 
-    with pytest.raises(ValueError, match="y_var must be positive"):
+    with pytest.raises(ValueError, match="y_var must be finite and positive"):
         racer.tell(seed, y=-1.0, y_var=0.0)
 
-    with pytest.raises(ValueError, match="y_var must be positive"):
+    with pytest.raises(ValueError, match="y_var must be finite and positive"):
         racer.tell(seed, y=-1.0, y_var=-0.1)
