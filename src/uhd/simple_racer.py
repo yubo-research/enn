@@ -49,7 +49,7 @@ class SimpleRacer:
             raise ValueError("seed mismatch")
 
         if self._sampler is not None and np.isfinite(self._incumbent_y):
-            improvement = y - self._incumbent_y
+            improvement = max(0.0, y - self._incumbent_y)
             improvement_var = y_var + self._incumbent_y_var
             self._sampler.tell(self._challenger_step_size, improvement, improvement_var)
 
@@ -58,8 +58,10 @@ class SimpleRacer:
             self._incumbent_y = y
             self._incumbent_y_var = y_var
             self._accepts += 1
+            return True
         else:
             unperturb_module(module, self._challenger_seed, self._challenger_step_size)
+            return False
 
     @property
     def accepts(self) -> int:

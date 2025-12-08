@@ -6,7 +6,9 @@ from uhd.mvue_accumulator import MVUE
 
 
 class ThompsonSampler:
-    def __init__(self, arms: list[Any], rng: np.random.Generator, decay: float) -> None:
+    def __init__(
+        self, arms: list[Any], rng: np.random.Generator, decay: float = 1.0
+    ) -> None:
         if len(arms) == 0:
             raise ValueError("arms must be non-empty")
         self._arms = list(arms)

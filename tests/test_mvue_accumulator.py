@@ -6,7 +6,7 @@ from uhd.mvue_accumulator import MVUE
 
 
 def test_mvue_single_observation():
-    acc = MVUE()
+    acc = MVUE(decay=1.0)
     acc.update(y=10.0, y_var=4.0)
     assert acc.n == 1
     assert acc.mean == 10.0
@@ -15,7 +15,7 @@ def test_mvue_single_observation():
 
 
 def test_mvue_two_equal_variance_observations():
-    acc = MVUE()
+    acc = MVUE(decay=1.0)
     acc.update(y=8.0, y_var=4.0)
     acc.update(y=12.0, y_var=4.0)
     assert acc.n == 2
@@ -25,7 +25,7 @@ def test_mvue_two_equal_variance_observations():
 
 
 def test_mvue_precision_weighting():
-    acc = MVUE()
+    acc = MVUE(decay=1.0)
     acc.update(y=10.0, y_var=1.0)
     acc.update(y=20.0, y_var=9.0)
     expected_mean = (10.0 / 1.0 + 20.0 / 9.0) / (1.0 / 1.0 + 1.0 / 9.0)
@@ -37,7 +37,7 @@ def test_mvue_precision_weighting():
 
 
 def test_mvue_no_observations_raises():
-    acc = MVUE()
+    acc = MVUE(decay=1.0)
     with pytest.raises(ValueError, match="No observations yet"):
         _ = acc.mean
     with pytest.raises(ValueError, match="No observations yet"):
@@ -45,13 +45,13 @@ def test_mvue_no_observations_raises():
 
 
 def test_mvue_zero_variance_raises():
-    acc = MVUE()
+    acc = MVUE(decay=1.0)
     with pytest.raises(ValueError, match="y_var must be positive"):
         acc.update(y=10.0, y_var=0.0)
 
 
 def test_mvue_negative_variance_raises():
-    acc = MVUE()
+    acc = MVUE(decay=1.0)
     with pytest.raises(ValueError, match="y_var must be positive"):
         acc.update(y=10.0, y_var=-1.0)
 
@@ -66,13 +66,14 @@ def test_mvue_decay_one_matches_original_behavior():
 
 def test_mvue_decay_downweights_older_observations():
     decay = 0.5
+    omdecay = 1.0 - decay
     acc = MVUE(decay=decay)
 
     acc.update(y=10.0, y_var=1.0)
     acc.update(y=20.0, y_var=1.0)
 
-    expected_precision = decay * 1.0 + 1.0
-    expected_weighted_y = decay * 10.0 + 20.0
+    expected_precision = decay * omdecay * 1.0 + omdecay * 1.0
+    expected_weighted_y = decay * omdecay * 10.0 + omdecay * 20.0
     expected_mean = expected_weighted_y / expected_precision
     expected_var = 1.0 / expected_precision
 

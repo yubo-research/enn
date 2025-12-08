@@ -6,6 +6,7 @@ class MVUE:
         if not (0.0 < decay <= 1.0):
             raise ValueError("decay must be in (0, 1]")
         self._decay = decay
+        self._omdecay = 1.0 - decay
         self._sum_precision: float = 0.0
         self._sum_weighted_y: float = 0.0
         self._n: int = 0
@@ -14,8 +15,16 @@ class MVUE:
         if y_var <= 0:
             raise ValueError("y_var must be positive")
         precision = 1.0 / y_var
-        self._sum_precision = self._decay * self._sum_precision + precision
-        self._sum_weighted_y = self._decay * self._sum_weighted_y + y * precision
+        if self._decay == 1.0:
+            self._sum_precision += precision
+            self._sum_weighted_y += y * precision
+        else:
+            self._sum_precision = (
+                self._decay * self._sum_precision + self._omdecay * precision
+            )
+            self._sum_weighted_y = (
+                self._decay * self._sum_weighted_y + self._omdecay * y * precision
+            )
         self._n += 1
 
     @property
