@@ -106,6 +106,19 @@ def test_sparse_jl_t_raises_when_s_exceeds_d():
         block_sparse_jl_transform_t(x, d=d, s=s, seed=0)
 
 
+def test_sparse_jl_t_validation_errors():
+    import pytest
+
+    x_1d = torch.ones(10)
+    x_2d = torch.ones(10, 2)
+    with pytest.raises(ValueError, match="must be 1D"):
+        block_sparse_jl_transform_t(x_2d, d=8, s=4, seed=0)
+    with pytest.raises(ValueError, match="d must be positive"):
+        block_sparse_jl_transform_t(x_1d, d=0, s=4, seed=0)
+    with pytest.raises(ValueError, match="s must be positive"):
+        block_sparse_jl_transform_t(x_1d, d=8, s=0, seed=0)
+
+
 def test_sparse_jl_t_timing_prints():
     import time
 

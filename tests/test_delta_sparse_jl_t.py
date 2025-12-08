@@ -20,7 +20,7 @@ def test_requires_initialize_before_transform():
     d = 8
     dut = DeltaSparseJL_T(num_dim_ambient=D, num_dim_embedding=d, s=4, seed=0)
     dx = make_sparse_vector([], [], D)
-    with pytest.raises(AssertionError):
+    with pytest.raises(RuntimeError):
         _ = dut.transform(dx)
 
 
@@ -31,7 +31,7 @@ def test_initialize_only_once():
     x0 = torch.zeros(D, dtype=dtype)
     dut = DeltaSparseJL_T(num_dim_ambient=D, num_dim_embedding=d, s=3, seed=1)
     dut.initialize(x0)
-    with pytest.raises(AssertionError):
+    with pytest.raises(RuntimeError):
         dut.initialize(x0)
 
 
@@ -39,9 +39,9 @@ def test_initialize_shape_checks():
     D = 12
     d = 5
     dut = DeltaSparseJL_T(num_dim_ambient=D, num_dim_embedding=d, s=2, seed=2)
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         dut.initialize(torch.zeros((D, 1)))
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         dut.initialize(torch.zeros(D + 1))
 
 
@@ -50,9 +50,9 @@ def test_transform_requires_sparse_and_shape():
     d = 7
     dut = DeltaSparseJL_T(num_dim_ambient=D, num_dim_embedding=d, s=3, seed=3)
     dut.initialize(torch.zeros(D))
-    with pytest.raises(AssertionError):
+    with pytest.raises(TypeError):
         _ = dut.transform(torch.zeros(D))
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         _ = dut.transform(make_sparse_vector([0], [1.0], D + 1))
 
 
@@ -76,6 +76,97 @@ def test_parity_with_reference_transform():
     assert torch.is_tensor(y)
     assert y.shape == (d,)
     torch.testing.assert_close(y, y_ref, atol=0, rtol=0)
+
+
+def test_incremental_mode_parity_with_reference():
+    D = 32
+    d = 16
+    s = 4
+    seed = 7
+    gen = torch.Generator().manual_seed(2025)
+    x0 = torch.randn(D, generator=gen)
+    k = 5
+    idx = torch.randperm(D, generator=gen)[:k]
+    vals = torch.randn(k, generator=gen)
+    dx = make_sparse_vector(
+        idx.tolist(), vals.tolist(), D, dtype=x0.dtype, device=x0.device
+    )
+    dut = DeltaSparseJL_T(
+        num_dim_ambient=D, num_dim_embedding=d, s=s, seed=seed, incremental=True
+    )
+    dut.initialize(x0)
+    y = dut.transform(dx)
+    y_ref = block_sparse_jl_transform_t(x0 + dx.to_dense(), d=d, s=s, seed=seed)
+    assert torch.is_tensor(y)
+    assert y.shape == (d,)
+    torch.testing.assert_close(y, y_ref, atol=1e-6, rtol=1e-6)
+
+
+def test_incremental_mode_multiple_transforms():
+    D = 64
+    d = 16
+    s = 4
+    seed = 42
+    gen = torch.Generator().manual_seed(9999)
+    x0 = torch.randn(D, generator=gen)
+    dut = DeltaSparseJL_T(
+        num_dim_ambient=D, num_dim_embedding=d, s=s, seed=seed, incremental=True
+    )
+    dut.initialize(x0)
+    for _ in range(5):
+        k = 10
+        idx = torch.randperm(D, generator=gen)[:k]
+        vals = torch.randn(k, generator=gen)
+        dx = make_sparse_vector(
+            idx.tolist(), vals.tolist(), D, dtype=x0.dtype, device=x0.device
+        )
+        y = dut.transform(dx)
+        y_ref = block_sparse_jl_transform_t(x0 + dx.to_dense(), d=d, s=s, seed=seed)
+        torch.testing.assert_close(y, y_ref, atol=1e-6, rtol=1e-6)
+
+
+def test_incremental_mode_precomputes_y0():
+    D = 32
+    d = 16
+    s = 4
+    seed = 7
+    gen = torch.Generator().manual_seed(2025)
+    x0 = torch.randn(D, generator=gen)
+    dut = DeltaSparseJL_T(
+        num_dim_ambient=D, num_dim_embedding=d, s=s, seed=seed, incremental=True
+    )
+    assert dut.y0 is None
+    dut.initialize(x0)
+    assert dut.y0 is not None
+    y0_expected = block_sparse_jl_transform_t(x0, d=d, s=s, seed=seed)
+    torch.testing.assert_close(dut.y0, y0_expected, atol=0, rtol=0)
+
+
+def test_non_incremental_mode_does_not_precompute_y0():
+    D = 32
+    d = 16
+    gen = torch.Generator().manual_seed(2025)
+    x0 = torch.randn(D, generator=gen)
+    dut = DeltaSparseJL_T(
+        num_dim_ambient=D, num_dim_embedding=d, s=4, seed=7, incremental=False
+    )
+    dut.initialize(x0)
+    assert dut.y0 is None
+
+
+def test_property_accessors():
+    D = 20
+    d = 10
+    gen = torch.Generator().manual_seed(1234)
+    x0 = torch.randn(D, generator=gen)
+    dut = DeltaSparseJL_T(num_dim_ambient=D, num_dim_embedding=d, s=4, seed=0)
+    assert dut.initialized is False
+    assert dut.x0 is None
+    assert dut.y0 is None
+    dut.initialize(x0)
+    assert dut.initialized is True
+    assert dut.x0 is x0
+    assert dut.y0 is None
 
 
 def test_zero_maps_to_zero():
@@ -121,6 +212,15 @@ def test_s_exceeds_embedding_raises():
     s = 5
     with pytest.raises(ValueError):
         _ = DeltaSparseJL_T(num_dim_ambient=D, num_dim_embedding=d, s=s, seed=0)
+
+
+def test_invalid_constructor_args():
+    with pytest.raises(ValueError):
+        DeltaSparseJL_T(num_dim_ambient=-1, num_dim_embedding=10, s=4)
+    with pytest.raises(ValueError):
+        DeltaSparseJL_T(num_dim_ambient=10, num_dim_embedding=0, s=4)
+    with pytest.raises(ValueError):
+        DeltaSparseJL_T(num_dim_ambient=10, num_dim_embedding=10, s=-1)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

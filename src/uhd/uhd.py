@@ -5,23 +5,22 @@ from typing import TYPE_CHECKING
 import numpy as np
 from torch import nn
 
-from uhd.perturb_module import perturb_module, unperturb_module
+from uhd.perturb_module import unperturb_module
 
 if TYPE_CHECKING:
     from uhd.simple_adapter import SimpleAdapter
+    from uhd.simple_perturbator import SimplePerturbator
     from uhd.thompson_sampler import ThompsonSampler
 
 
-class SimpleRacer:
+class UHD:
     def __init__(
         self,
-        adapter: ThompsonSampler | SimpleAdapter,
-        rng: np.random.Generator,
-        momentum: bool = False,
+        step_size_adapter: ThompsonSampler | SimpleAdapter,
+        perturbator: SimplePerturbator,
     ) -> None:
-        self._adapter = adapter
-        self._rng = rng
-        self._momentum = momentum
+        self._step_size_adapter = step_size_adapter
+        self._perturbator = perturbator
 
         self._incumbent_y: float = float("-inf")
         self._incumbent_y_var: float = float("inf")
@@ -32,16 +31,10 @@ class SimpleRacer:
         self._last_accepted: bool = False
 
     def ask(self, module: nn.Module) -> int:
-        self._challenger_step_size = self._adapter.ask()
-
-        # If momentum enabled and last perturbation was accepted, reuse the same seed
-        if (
-            not (self._momentum and self._last_accepted)
-            or self._challenger_seed is None
-        ):
-            self._challenger_seed = int(self._rng.integers(1, 2**31))
-
-        perturb_module(module, self._challenger_seed, self._challenger_step_size)
+        self._challenger_step_size = self._step_size_adapter.ask()
+        self._challenger_seed = self._perturbator.ask(
+            module, self._challenger_step_size
+        )
         return self._challenger_seed
 
     def tell(self, module: nn.Module, seed: int, y: float, y_var: float) -> bool:
@@ -54,9 +47,8 @@ class SimpleRacer:
 
         accepted = y > self._incumbent_y
 
-        # Update the adapter
-        if np.isfinite(self._incumbent_y):
-            self._adapter.tell(accepted)
+        self._step_size_adapter.tell(accepted)
+        self._perturbator.tell(module, seed, y, y_var)
 
         self._races += 1
         if accepted:
