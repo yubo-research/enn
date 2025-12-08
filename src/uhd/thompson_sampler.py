@@ -21,25 +21,21 @@ class ThompsonSampler:
         self._rng = rng
         self._min_observations = min_observations
         self._mvues = [MVUE(decay=decay) for _ in self._arms]
+        self._last_idx: int | None = None
 
     def ask(self) -> Any:
         uninitialized = [
             i for i, m in enumerate(self._mvues) if m.n < self._min_observations
         ]
         if uninitialized:
-            idx = self._rng.choice(uninitialized)
-            return self._arms[idx]
+            self._last_idx = self._rng.choice(uninitialized)
+        else:
+            samples = [self._rng.normal(m.mean, m.se) for m in self._mvues]
+            self._last_idx = int(np.argmax(samples))
+        return self._arms[self._last_idx]
 
-        samples = [self._rng.normal(m.mean, m.se) for m in self._mvues]
-        idx = int(np.argmax(samples))
-        return self._arms[idx]
-
-    def tell(self, arm: Any, y: float, y_var: float) -> None:
-        idx = self._find_arm_index(arm)
-        self._mvues[idx].update(y, y_var)
-
-    def _find_arm_index(self, arm: Any) -> int:
-        for i, a in enumerate(self._arms):
-            if a is arm:
-                return i
-        raise ValueError("arm not found")
+    def tell(self, success: bool) -> None:
+        if self._last_idx is None:
+            raise RuntimeError("tell() called before ask()")
+        reward = 1 if success else 0
+        self._mvues[self._last_idx].update(reward, 1)

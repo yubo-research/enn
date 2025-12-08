@@ -56,17 +56,7 @@ class SimpleRacer:
 
         # Update the adapter
         if np.isfinite(self._incumbent_y):
-            from uhd.simple_adapter import SimpleAdapter
-
-            if isinstance(self._adapter, SimpleAdapter):
-                self._adapter.tell(accepted)
-            else:
-                # ThompsonSampler - use improvement as reward
-                improvement = max(0.0, y - self._incumbent_y)
-                improvement_var = y_var + self._incumbent_y_var
-                self._adapter.tell(
-                    self._challenger_step_size, improvement, improvement_var
-                )
+            self._adapter.tell(accepted)
 
         self._races += 1
         if accepted:
