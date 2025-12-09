@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 import torch
 
 examples_path = Path(__file__).parent.parent.parent.parent / "examples"
@@ -76,7 +75,6 @@ def test_model_gradients_disabled_during_eval():
         assert param.grad is None
 
 
-@pytest.mark.slow
 def test_mnist_data_loading():
     from mnist.data import get_mnist_subset
 
@@ -93,7 +91,6 @@ def test_mnist_data_loading():
     assert train_labels.max() <= 9
 
 
-@pytest.mark.slow
 def test_mnist_model_on_real_data():
     from mnist.data import get_mnist_subset
     from mnist.evaluate import evaluate_batch
@@ -109,7 +106,6 @@ def test_mnist_model_on_real_data():
     assert accuracy < 0.5
 
 
-@pytest.mark.slow
 def test_get_mnist_loaders():
     from mnist.data import get_mnist_loaders
 
@@ -124,7 +120,6 @@ def test_get_mnist_loaders():
     assert test_batch[1].shape == (32,)
 
 
-@pytest.mark.slow
 def test_get_mnist_loaders_reproducible_with_seed():
     from mnist.data import get_mnist_loaders
 
@@ -138,7 +133,6 @@ def test_get_mnist_loaders_reproducible_with_seed():
     assert torch.equal(batch1[1], batch2[1])
 
 
-@pytest.mark.slow
 def test_evaluate_model():
     from mnist.data import get_mnist_loaders
     from mnist.evaluate import evaluate_model

@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from torch import nn
 
-from uhd.perturb_module import unperturb_module
-
 if TYPE_CHECKING:
     from uhd.simple_adapter import SimpleAdapter
     from uhd.simple_perturbator import SimplePerturbator
@@ -56,11 +54,10 @@ class UHD:
             self._incumbent_y_var = y_var
             self._accepts += 1
             self._last_accepted = True
-            return True
         else:
-            unperturb_module(module, self._challenger_seed, self._challenger_step_size)
             self._last_accepted = False
-            return False
+
+        return accepted
 
     @property
     def accepts(self) -> int:

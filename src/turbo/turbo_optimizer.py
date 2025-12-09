@@ -100,13 +100,19 @@ class TurboOptimizer:
         if num_init_val <= 0:
             raise ValueError(f"num_init must be > 0, got {num_init_val}")
         self._num_init = num_init_val
-        self._init_lhd = from_unit(
-            latin_hypercube(self._num_init, self._num_dim, rng=self._rng),
-            self._bounds,
-        )
+        if config.local_only:
+            center = 0.5 * (self._bounds[:, 0] + self._bounds[:, 1])
+            self._init_lhd = center.reshape(1, -1)
+            self._num_init = 1
+        else:
+            self._init_lhd = from_unit(
+                latin_hypercube(self._num_init, self._num_dim, rng=self._rng),
+                self._bounds,
+            )
         self._init_idx = 0
         self._dt_fit: float = 0.0
         self._dt_sel: float = 0.0
+        self._local_only = config.local_only
 
     @property
     def tr_obs_count(self) -> int:
@@ -120,6 +126,12 @@ class TurboOptimizer:
             return None
         return float(np.max(self._y_obs_list))
 
+    @property
+    def tr_length(self) -> float | None:
+        if self._tr_state is None:
+            return None
+        return float(self._tr_state.length)
+
     def telemetry(self) -> Telemetry:
         return Telemetry(dt_fit=self._dt_fit, dt_sel=self._dt_sel)
 
@@ -131,6 +143,10 @@ class TurboOptimizer:
             self._tr_state = self._mode_impl.create_trust_region(
                 self._num_dim, num_arms
             )
+            if self._local_only:
+                self._tr_state.length_max = 0.1
+                self._tr_state.length = min(self._tr_state.length, 0.1)
+                self._tr_state.length_init = min(self._tr_state.length_init, 0.1)
         early_result = self._mode_impl.try_early_ask(
             num_arms,
             self._x_obs_list,

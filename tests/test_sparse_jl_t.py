@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from scipy.stats import spearmanr
 
-from sampling.sparse_jl_t import block_sparse_jl_transform_t
+from embedding.sparse_jl_t import block_sparse_jl_transform_t
 
 
 def test_sparse_jl_t_preserves_neighbors_and_correlations():

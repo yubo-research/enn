@@ -37,7 +37,7 @@ def test_thompson_sampler_cold_start_cycles_through_uninitialized():
     assert {arm1, arm2, arm3} == {"a", "b", "c"}
 
 
-def test_thompson_sampler_ask_uses_thompson_sampling():
+def test_thompson_sampler_ask_uses_thompson_embedding():
     good = ["good"]
     bad = ["bad"]
     arms = [good, bad]

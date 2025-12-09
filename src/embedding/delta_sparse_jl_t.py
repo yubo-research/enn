@@ -1,6 +1,6 @@
 import torch
 
-from sampling.sparse_jl_t import (
+from embedding.sparse_jl_t import (
     _block_sparse_hash_scatter_from_nz_t,
     block_sparse_jl_transform_t,
 )

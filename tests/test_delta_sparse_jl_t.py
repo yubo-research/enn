@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from sampling.delta_sparse_jl_t import DeltaSparseJL_T
-from sampling.sparse_jl_t import block_sparse_jl_transform_t
+from embedding.delta_sparse_jl_t import DeltaSparseJL_T
+from embedding.sparse_jl_t import block_sparse_jl_transform_t
 
 
 def make_sparse_vector(indices, values, size, dtype=torch.float32, device="cpu"):

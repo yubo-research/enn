@@ -15,6 +15,7 @@ class TurboConfig:
     trailing_obs: int | None = None
     num_fit_samples: int | None = None
     acq_type: Literal["thompson", "pareto", "ucb"] = "pareto"
+    local_only: bool = False
 
     def __post_init__(self) -> None:
         if self.acq_type not in ["thompson", "pareto", "ucb"]:
