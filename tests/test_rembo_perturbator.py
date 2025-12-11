@@ -113,7 +113,9 @@ def test_rembo_perturb_preserves_l2_norm():
     module = SimpleModule()
     original_params = [p.clone() for p in module.parameters()]
 
-    z = torch.randn(100)
+    generator = torch.Generator()
+    generator.manual_seed(123)
+    z = torch.randn(100, generator=generator)
     rembo_perturb(module, seed=42, z=z)
 
     delta_x = torch.cat(
