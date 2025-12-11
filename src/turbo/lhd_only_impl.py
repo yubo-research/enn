@@ -10,6 +10,14 @@ from .base_turbo_impl import BaseTurboImpl
 
 
 class LHDOnlyImpl(BaseTurboImpl):
+    def get_x_center(
+        self,
+        x_obs_list: list,
+        y_obs_list: list,
+        rng: Generator,
+    ) -> np.ndarray | None:
+        return None
+
     def select_candidates(
         self,
         x_cand: np.ndarray,

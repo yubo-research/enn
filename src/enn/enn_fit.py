@@ -103,23 +103,30 @@ def enn_fit(
     if train_y.shape[1] != 1 or train_yvar.shape[1] != 1:
         raise ValueError((train_y.shape, train_yvar.shape))
     y = train_y[:, 0]
-    var_scale_log_min = -3.0
-    var_scale_log_max = 3.0
-    var_scale_log_values = rng.uniform(
-        var_scale_log_min, var_scale_log_max, size=num_fit_candidates
+    log_min = -3.0
+    log_max = 3.0
+    epi_var_scale_log_values = rng.uniform(log_min, log_max, size=num_fit_candidates)
+    epi_var_scale_values = 10**epi_var_scale_log_values
+    ale_homoscedastic_log_values = rng.uniform(
+        log_min, log_max, size=num_fit_candidates
     )
-    var_scale_values = (10**var_scale_log_values).tolist()
+    ale_homoscedastic_values = 10**ale_homoscedastic_log_values
     paramss = [
-        ENNParams(k=k, var_scale=var_scale_val) for var_scale_val in var_scale_values
+        ENNParams(
+            k=k,
+            epi_var_scale=float(epi_val),
+            ale_homoscedastic_scale=float(ale_val),
+        )
+        for epi_val, ale_val in zip(epi_var_scale_values, ale_homoscedastic_values)
     ]
     if len(paramss) == 0:
-        return ENNParams(k=k, var_scale=1.0)
+        return ENNParams(k=k, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
     import numpy as np
 
     logliks = subsample_loglik(
         model, train_x, y, paramss=paramss, P=num_fit_samples, rng=rng
     )
     if len(logliks) == 0:
-        return ENNParams(k=k, var_scale=float(var_scale_values[0]))
+        return paramss[0]
     best_idx = int(np.argmax(logliks))
     return paramss[best_idx]

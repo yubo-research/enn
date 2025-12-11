@@ -1149,3 +1149,54 @@ def test_turbo_gp_noisy_with_zero_variance():
         posterior = model.posterior(test_x)
 
     assert posterior.mean.shape == (3,)
+
+
+def test_lhd_only_runs_after_initial_observations():
+    import numpy as np
+
+    from turbo.turbo_config import TurboConfig
+    from turbo.turbo_mode import TurboMode
+    from turbo.turbo_optimizer import TurboOptimizer
+
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(42)
+    config = TurboConfig(num_init=4)
+    opt = TurboOptimizer(bounds=bounds, mode=TurboMode.LHD_ONLY, rng=rng, config=config)
+
+    for _ in range(3):
+        x = opt.ask(num_arms=2)
+        y = -np.sum(x**2, axis=1)
+        opt.tell(x, y)
+
+    x_after_init = opt.ask(num_arms=2)
+    assert x_after_init.shape == (2, 2)
+
+
+def test_turbo_enn_impl_get_x_center():
+    import numpy as np
+
+    from turbo.turbo_config import TurboConfig
+    from turbo.turbo_enn_impl import TurboENNImpl
+
+    rng = np.random.default_rng(42)
+    config = TurboConfig(k=5)
+    impl = TurboENNImpl(config)
+
+    result = impl.get_x_center([], [], rng)
+    assert result is None
+
+    x_obs = rng.random((20, 3)).tolist()
+    y_obs = [float(i) for i in range(20)]
+    result_before_fit = impl.get_x_center(x_obs, y_obs, rng)
+    assert result_before_fit is not None
+    x_array = np.asarray(x_obs, dtype=float)
+    assert np.allclose(result_before_fit, x_array[19])
+
+    impl.prepare_ask(x_obs, y_obs, [0.0] * 20, num_dim=3, gp_num_steps=10, rng=rng)
+    result_after_fit = impl.get_x_center(x_obs, y_obs, rng)
+    assert result_after_fit is not None
+    assert result_after_fit.shape == (3,)
+    top_5_indices = np.argsort(y_obs)[-5:]
+    x_top_5 = x_array[top_5_indices]
+    is_from_top_k = any(np.allclose(result_after_fit, x_top_5[i]) for i in range(5))
+    assert is_from_top_k

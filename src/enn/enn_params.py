@@ -6,4 +6,5 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ENNParams:
     k: int
-    var_scale: float
+    epi_var_scale: float
+    ale_homoscedastic_scale: float

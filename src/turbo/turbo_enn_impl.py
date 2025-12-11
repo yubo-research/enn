@@ -15,8 +15,40 @@ class TurboENNImpl(BaseTurboImpl):
         super().__init__(config)
         self._enn: Any | None = None
         self._fitted_params: Any | None = None
-        self._y_mean: float = 0.0
-        self._y_std: float = 1.0
+        self._fitted_n_obs: int = 0
+
+    def get_x_center(
+        self,
+        x_obs_list: list,
+        y_obs_list: list,
+        rng: Generator,
+    ) -> np.ndarray | None:
+        import numpy as np
+
+        from .turbo_utils import argmax_random_tie
+
+        if len(y_obs_list) == 0:
+            return None
+        if self._enn is None or self._fitted_params is None:
+            return super().get_x_center(x_obs_list, y_obs_list, rng)
+        if self._fitted_n_obs != len(x_obs_list):
+            raise RuntimeError(
+                f"ENN fitted on {self._fitted_n_obs} obs but get_x_center called with {len(x_obs_list)}"
+            )
+
+        y_array = np.asarray(y_obs_list, dtype=float)
+        x_array = np.asarray(x_obs_list, dtype=float)
+
+        k = self._config.k if self._config.k is not None else 10
+        num_top = min(k, len(y_array))
+        top_indices = np.argpartition(-y_array, num_top - 1)[:num_top]
+
+        x_top = x_array[top_indices]
+        posterior = self._enn.posterior(x_top, params=self._fitted_params)
+        mu = posterior.mu[:, 0]
+
+        best_idx_in_top = argmax_random_tie(mu, rng=rng)
+        return x_top[best_idx_in_top]
 
     def needs_tr_list(self) -> bool:
         return True
@@ -46,7 +78,7 @@ class TurboENNImpl(BaseTurboImpl):
         from .proposal import mk_enn
 
         k = self._config.k if self._config.k is not None else 10
-        self._enn, self._fitted_params, self._y_mean, self._y_std = mk_enn(
+        self._enn, self._fitted_params = mk_enn(
             x_obs_list,
             y_obs_list,
             yvar_obs_list=yvar_obs_list,
@@ -54,6 +86,7 @@ class TurboENNImpl(BaseTurboImpl):
             num_fit_samples=self._config.num_fit_samples,
             rng=rng,
         )
+        self._fitted_n_obs = len(x_obs_list)
         return None, None, None, None
 
     def neighbors(
@@ -91,7 +124,9 @@ class TurboENNImpl(BaseTurboImpl):
             params = self._fitted_params
         else:
             k_val = k if k is not None else 10
-            params = ENNParams(k=k_val, var_scale=var_scale)
+            params = ENNParams(
+                k=k_val, epi_var_scale=var_scale, ale_homoscedastic_scale=0.0
+            )
 
         posterior = self._enn.posterior(x_cand, params=params)
         mu = posterior.mu[:, 0]
@@ -129,8 +164,7 @@ class TurboENNImpl(BaseTurboImpl):
         if self._enn is None or self._fitted_params is None:
             return y_observed
         posterior = self._enn.posterior(x_unit, params=self._fitted_params)
-        mu_standardized = posterior.mu[:, 0]
-        return self._y_mean + self._y_std * mu_standardized
+        return posterior.mu[:, 0]
 
     def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         if self._enn is None:
@@ -141,11 +175,11 @@ class TurboENNImpl(BaseTurboImpl):
         params = (
             self._fitted_params
             if self._fitted_params is not None
-            else ENNParams(k=k, var_scale=self._config.var_scale)
+            else ENNParams(
+                k=k, epi_var_scale=self._config.var_scale, ale_homoscedastic_scale=0.0
+            )
         )
         posterior = self._enn.posterior(x_unit, params=params, observation_noise=False)
-        mu_std = posterior.mu[:, 0]
-        sigma_std = posterior.se[:, 0]
-        mu = self._y_mean + self._y_std * mu_std
-        sigma = self._y_std * sigma_std
+        mu = posterior.mu[:, 0]
+        sigma = posterior.se[:, 0]
         return mu, sigma

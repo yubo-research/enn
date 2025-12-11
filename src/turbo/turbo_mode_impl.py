@@ -8,6 +8,13 @@ if TYPE_CHECKING:
 
 
 class TurboModeImpl(Protocol):
+    def get_x_center(
+        self,
+        x_obs_list: list,
+        y_obs_list: list,
+        rng: Generator,
+    ) -> np.ndarray | None: ...
+
     def needs_tr_list(self) -> bool: ...
 
     def create_trust_region(self, num_dim: int, num_arms: int) -> Any: ...

@@ -26,7 +26,9 @@ class EpistemicNearestNeighbors:
             raise ValueError((train_x.shape, train_y.shape, train_yvar.shape))
         self._train_x = np.asarray(train_x, dtype=float)
         self._train_y = np.asarray(train_y, dtype=float)
-        self._train_yvar = np.asarray(train_yvar, dtype=float)
+        self._train_yvar = (
+            np.asarray(train_yvar, dtype=float) if train_yvar is not None else None
+        )
         self._num_obs, self._num_dim = self._train_x.shape
         _, self._num_metrics = self._train_y.shape
         self._eps_var = 1e-9
@@ -47,7 +49,7 @@ class EpistemicNearestNeighbors:
         return self._train_y
 
     @property
-    def train_yvar(self) -> np.ndarray:
+    def train_yvar(self) -> np.ndarray | None:
         return self._train_yvar
 
     @property
@@ -143,17 +145,26 @@ class EpistemicNearestNeighbors:
             dist2s = dist2s_full[:, :k]
             idx = idx_full[:, :k]
             y_neighbors = self._train_y[idx]
-            yvar_neighbors = self._train_yvar[idx] / self._y_scale**2
+
             dist2s_expanded = dist2s[..., np.newaxis]
-            var_component = params.var_scale * dist2s_expanded + yvar_neighbors
+            var_component = (
+                params.ale_homoscedastic_scale + params.epi_var_scale * dist2s_expanded
+            )
+            if self._train_yvar is not None:
+                yvar_neighbors = self._train_yvar[idx] / self._y_scale**2
+                var_component = var_component + yvar_neighbors
+            else:
+                yvar_neighbors = np.zeros_like(y_neighbors)
+
             w = 1.0 / (self._eps_var + var_component)
             norm = np.sum(w, axis=1)
             mu_all[i] = np.sum(w * y_neighbors, axis=1) / norm
             epistemic_var = 1.0 / norm
             vvar = epistemic_var
             if observation_noise:
-                noise_var = np.sum(w * yvar_neighbors, axis=1) / norm
-                vvar += noise_var
+                vvar = vvar + params.ale_homoscedastic_scale
+                ale_heteroscedastic = np.sum(w * yvar_neighbors, axis=1) / norm
+                vvar = vvar + ale_heteroscedastic
             vvar = np.maximum(vvar, self._eps_var)
             se_all[i] = np.sqrt(vvar) * self._y_scale
         return ENNNormal(mu_all, se_all)

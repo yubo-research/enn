@@ -11,8 +11,6 @@ if TYPE_CHECKING:
 
     from .turbo_gp import TurboGP
 
-from enn.enn_util import standardize_y
-
 from .turbo_utils import gp_thompson_sample
 
 
@@ -24,26 +22,22 @@ def mk_enn(
     k: int,
     num_fit_samples: int | None = None,
     rng: Generator | Any | None = None,
-) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None, float, float]:
+) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
     from enn.enn_params import ENNParams
 
     if len(x_obs_list) == 0:
-        return None, None, 0.0, 1.0
+        return None, None
     y_obs_array = np.asarray(y_obs_list, dtype=float)
     if y_obs_array.size == 0:
-        return None, None, 0.0, 1.0
+        return None, None
 
-    mu_y, sigma_y = standardize_y(y_obs_array)
-    y_standardized = (y_obs_array - mu_y) / sigma_y
-
-    y = y_standardized.reshape(-1, 1)
+    y = y_obs_array.reshape(-1, 1)
     if yvar_obs_list is not None and len(yvar_obs_list) > 0:
         yvar_array = np.asarray(yvar_obs_list, dtype=float)
-        # Scale variance by sigma_y^2 to match standardized y
-        yvar = (yvar_array / (sigma_y**2)).reshape(-1, 1)
+        yvar = yvar_array.reshape(-1, 1)
     else:
         yvar = np.zeros_like(y, dtype=float)
     x_obs_array = np.asarray(x_obs_list, dtype=float)
@@ -53,7 +47,7 @@ def mk_enn(
         yvar,
     )
     if len(enn_model) == 0:
-        return None, None, 0.0, 1.0
+        return None, None
 
     fitted_params: ENNParams | None = None
     if num_fit_samples is not None and rng is not None:
@@ -67,9 +61,9 @@ def mk_enn(
             rng=rng,
         )
     else:
-        fitted_params = ENNParams(k=k, var_scale=1.0)
+        fitted_params = ENNParams(k=k, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
 
-    return enn_model, fitted_params, mu_y, sigma_y
+    return enn_model, fitted_params
 
 
 def select_enn_pareto(
@@ -92,7 +86,7 @@ def select_enn_pareto(
     if enn_model is None:
         if k is None:
             k = 10
-        enn_model, _, _, _ = mk_enn(
+        enn_model, _ = mk_enn(
             x_obs_list,
             y_obs_list,
             k=k,
@@ -105,7 +99,7 @@ def select_enn_pareto(
     else:
         if k is None:
             k = 10
-        params = ENNParams(k=k, var_scale=var_scale)
+        params = ENNParams(k=k, epi_var_scale=var_scale, ale_homoscedastic_scale=0.0)
 
     posterior = enn_model.posterior(x_cand, params=params)
     mu = posterior.mu[:, 0]

@@ -17,6 +17,36 @@ class TurboOneImpl(BaseTurboImpl):
         self._gp_model: Any | None = None
         self._gp_y_mean: float = 0.0
         self._gp_y_std: float = 1.0
+        self._fitted_n_obs: int = 0
+
+    def get_x_center(
+        self,
+        x_obs_list: list,
+        y_obs_list: list,
+        rng: Generator,
+    ) -> np.ndarray | None:
+        import numpy as np
+        import torch
+
+        from .turbo_utils import argmax_random_tie
+
+        if len(y_obs_list) == 0:
+            return None
+        if self._gp_model is None:
+            return super().get_x_center(x_obs_list, y_obs_list, rng)
+        if self._fitted_n_obs != len(x_obs_list):
+            raise RuntimeError(
+                f"GP fitted on {self._fitted_n_obs} obs but get_x_center called with {len(x_obs_list)}"
+            )
+
+        x_array = np.asarray(x_obs_list, dtype=float)
+        x_torch = torch.as_tensor(x_array, dtype=torch.float64)
+        with torch.no_grad():
+            posterior = self._gp_model.posterior(x_torch)
+            mu = posterior.mean.cpu().numpy().ravel()
+
+        best_idx = argmax_random_tie(mu, rng=rng)
+        return x_array[best_idx]
 
     def needs_tr_list(self) -> bool:
         return True
@@ -67,6 +97,7 @@ class TurboOneImpl(BaseTurboImpl):
             yvar_obs_list=yvar_obs_list if yvar_obs_list else None,
             num_steps=gp_num_steps,
         )
+        self._fitted_n_obs = len(x_obs_list)
         if gp_y_mean_fitted is not None:
             self._gp_y_mean = gp_y_mean_fitted
         if gp_y_std_fitted is not None:

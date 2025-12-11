@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from .proposal import select_uniform
 from .turbo_config import TurboConfig
-from .turbo_utils import argmax_random_tie, from_unit, latin_hypercube, to_unit
+from .turbo_utils import from_unit, latin_hypercube, to_unit
 
 
 @dataclass(frozen=True)
@@ -194,11 +194,6 @@ class TurboOptimizer:
                 )
                 return self._get_init_lhd_points(num_arms)
 
-        x_center = self._best_x_from_lists(
-            self._x_obs_list, self._y_obs_list, "no observations"
-        )
-        y_max = float(np.max(self._y_obs_list))
-
         def from_unit_fn(x):
             return from_unit(x, self._bounds)
 
@@ -219,6 +214,15 @@ class TurboOptimizer:
             )
         )
         self._dt_fit = time.perf_counter() - t0_fit
+
+        x_center = self._mode_impl.get_x_center(
+            self._x_obs_list, self._y_obs_list, self._rng
+        )
+        if x_center is None:
+            if len(self._y_obs_list) == 0:
+                raise RuntimeError("no observations")
+            x_center = np.full(self._num_dim, 0.5)
+        y_max = float(np.max(self._y_obs_list))
 
         x_cand = self._tr_state.generate_candidates(
             x_center,
@@ -316,21 +320,6 @@ class TurboOptimizer:
             self._trim_trailing_obs()
         self._mode_impl.update_trust_region(self._tr_state, self._y_obs_list)
         return y_estimate
-
-    def _best_x_from_lists(
-        self,
-        x_list: list[float] | list[list[float]],
-        y_list: list[float] | list[list[float]],
-        error_msg: str,
-    ) -> np.ndarray:
-        import numpy as np
-
-        y_array = np.asarray(y_list, dtype=float)
-        if y_array.size == 0:
-            raise RuntimeError(error_msg)
-        idx = argmax_random_tie(y_array, rng=self._rng)
-        x_array = np.asarray(x_list, dtype=float)
-        return x_array[idx]
 
     def _draw_initial(self, num_arms: int) -> np.ndarray:
         unit = latin_hypercube(num_arms, self._num_dim, rng=self._rng)

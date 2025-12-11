@@ -13,6 +13,23 @@ class BaseTurboImpl:
     def __init__(self, config: TurboConfig) -> None:
         self._config = config
 
+    def get_x_center(
+        self,
+        x_obs_list: list,
+        y_obs_list: list,
+        rng: Generator,
+    ) -> np.ndarray | None:
+        import numpy as np
+
+        from .turbo_utils import argmax_random_tie
+
+        y_array = np.asarray(y_obs_list, dtype=float)
+        if y_array.size == 0:
+            return None
+        idx = argmax_random_tie(y_array, rng=rng)
+        x_array = np.asarray(x_obs_list, dtype=float)
+        return x_array[idx]
+
     def needs_tr_list(self) -> bool:
         return False
 

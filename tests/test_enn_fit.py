@@ -26,7 +26,7 @@ def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     )
     assert isinstance(result, ENNParams)
     assert result.k == 10
-    assert result.var_scale > 0.0
+    assert result.epi_var_scale > 0.0
     rng_eval = np.random.default_rng(2)
     tuned_lls = subsample_loglik(
         model,
