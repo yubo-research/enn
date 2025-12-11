@@ -17,6 +17,12 @@ if TYPE_CHECKING:
 from enn.enn_util import standardize_y
 
 
+def _next_power_of_2(n: int) -> int:
+    if n <= 0:
+        return 1
+    return 1 << (n - 1).bit_length()
+
+
 @contextlib.contextmanager
 def torch_rng_context(generator: torch.Generator | Any) -> Iterator[None]:
     import torch
@@ -176,7 +182,8 @@ def sobol_perturb_np(
 ) -> np.ndarray:
     import numpy as np
 
-    sobol_samples = sobol_engine.random(num_candidates)
+    n_sobol = _next_power_of_2(num_candidates)
+    sobol_samples = sobol_engine.random(n_sobol)[:num_candidates]
     lb_array = np.asarray(lb)
     ub_array = np.asarray(ub)
     pert = lb_array + (ub_array - lb_array) * sobol_samples
@@ -240,7 +247,8 @@ def raasp_multiscale(
     if len(ind) > 0:
         mask[ind, rng.integers(0, num_dim, size=len(ind))] = True
 
-    sobol_samples = sobol_engine.random(num_candidates)
+    n_sobol = _next_power_of_2(num_candidates)
+    sobol_samples = sobol_engine.random(n_sobol)[:num_candidates]
     pert = lb + (ub - lb) * sobol_samples
     candidates = np.tile(x_center, (num_candidates, 1))
     candidates[mask] = pert[mask]

@@ -14,16 +14,21 @@ class EpistemicNearestNeighbors:
         self,
         train_x: np.ndarray | Any,
         train_y: np.ndarray | Any,
-        train_yvar: np.ndarray | Any,
+        train_yvar: np.ndarray | Any | None = None,
     ) -> None:
         import numpy as np
 
         if train_x.ndim != 2:
             raise ValueError(train_x.shape)
-        if train_y.ndim != 2 or train_yvar.ndim != 2:
-            raise ValueError((train_y.shape, train_yvar.shape))
-        if train_x.shape[0] != train_y.shape[0] or train_y.shape != train_yvar.shape:
-            raise ValueError((train_x.shape, train_y.shape, train_yvar.shape))
+        if train_y.ndim != 2:
+            raise ValueError(train_y.shape)
+        if train_x.shape[0] != train_y.shape[0]:
+            raise ValueError((train_x.shape, train_y.shape))
+        if train_yvar is not None:
+            if train_yvar.ndim != 2:
+                raise ValueError(train_yvar.shape)
+            if train_y.shape != train_yvar.shape:
+                raise ValueError((train_y.shape, train_yvar.shape))
         self._train_x = np.asarray(train_x, dtype=float)
         self._train_y = np.asarray(train_y, dtype=float)
         self._train_yvar = (

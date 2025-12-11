@@ -1200,3 +1200,26 @@ def test_turbo_enn_impl_get_x_center():
     x_top_5 = x_array[top_5_indices]
     is_from_top_k = any(np.allclose(result_after_fit, x_top_5[i]) for i in range(5))
     assert is_from_top_k
+
+
+def test_turbo_optimizer_tell_without_yvar():
+    import numpy as np
+
+    from turbo.turbo_mode import TurboMode
+    from turbo.turbo_optimizer import TurboOptimizer
+
+    rng = np.random.default_rng(42)
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    opt = TurboOptimizer(bounds=bounds, mode=TurboMode.TURBO_ENN, rng=rng)
+
+    x0 = opt.ask(num_arms=4)
+    y0 = -np.sum(x0**2, axis=1)
+    opt.tell(x0, y0)  # No y_var provided
+
+    x1 = opt.ask(num_arms=4)
+    y1 = -np.sum(x1**2, axis=1)
+    opt.tell(x1, y1)  # No y_var provided
+
+    x2 = opt.ask(num_arms=4)
+    assert x2.shape == (4, 2)
+    assert np.all(x2 >= 0.0) and np.all(x2 <= 1.0)

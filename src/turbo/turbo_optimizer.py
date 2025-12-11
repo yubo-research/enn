@@ -282,8 +282,9 @@ class TurboOptimizer:
         incumbent_value = y_array[incumbent_idx]
         self._x_obs_list = x_array[indices].tolist()
         self._y_obs_list = y_array[indices].tolist()
-        yvar_array = np.asarray(self._yvar_obs_list, dtype=float)
-        self._yvar_obs_list = yvar_array[indices].tolist()
+        if len(self._yvar_obs_list) == len(y_array):
+            yvar_array = np.asarray(self._yvar_obs_list, dtype=float)
+            self._yvar_obs_list = yvar_array[indices].tolist()
         y_trimmed = np.asarray(self._y_obs_list, dtype=float)
         if not np.any(np.abs(y_trimmed - incumbent_value) < 1e-10):
             raise RuntimeError("Incumbent value must be preserved in trimmed list")
@@ -314,8 +315,6 @@ class TurboOptimizer:
         self._y_obs_list.extend(y.tolist())
         if y_var is not None:
             self._yvar_obs_list.extend(y_var.tolist())
-        else:
-            self._yvar_obs_list.extend([0.0] * len(y))
         if self._trailing_obs is not None:
             self._trim_trailing_obs()
         self._mode_impl.update_trust_region(self._tr_state, self._y_obs_list)

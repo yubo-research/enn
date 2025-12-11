@@ -39,7 +39,7 @@ def mk_enn(
         yvar_array = np.asarray(yvar_obs_list, dtype=float)
         yvar = yvar_array.reshape(-1, 1)
     else:
-        yvar = np.zeros_like(y, dtype=float)
+        yvar = None
     x_obs_array = np.asarray(x_obs_list, dtype=float)
     enn_model = EpistemicNearestNeighbors(
         x_obs_array,

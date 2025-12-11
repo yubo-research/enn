@@ -426,3 +426,30 @@ def test_epistemic_nearest_neighbors_shift_invariance():
 
     assert np.allclose(post_shifted.mu, post_base.mu + shift, rtol=1e-10)
     assert np.allclose(post_shifted.se, post_base.se, rtol=1e-10)
+
+
+def test_epistemic_nearest_neighbors_with_yvar_none():
+    import numpy as np
+
+    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn_params import ENNParams
+
+    rng = np.random.default_rng(42)
+    n = 20
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = train_x.sum(axis=1, keepdims=True) + rng.standard_normal((n, 1)) * 0.1
+
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+
+    assert len(model) == n
+    assert model.train_yvar is None
+
+    x_test = rng.standard_normal((10, d))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    post = model.posterior(x_test, params=params)
+
+    assert post.mu.shape == (10, 1)
+    assert post.se.shape == (10, 1)
+    assert np.all(np.isfinite(post.mu))
+    assert np.all(np.isfinite(post.se))
