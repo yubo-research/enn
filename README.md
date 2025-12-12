@@ -4,8 +4,8 @@ A fast, alternative surrogate for Bayesian optimization
 ENN estimates a function's value and associated epistemic uncertainty using a K-Nearest Neighbors model. Queries take $O(N lnK)$ time, where $N$ is the number of observations available for KNN lookups. Compare to an exact GP, which takes $O(N^2)$ time. Additionally, measured running times are very small compared to GPs and other alternative surrogates. [1]
 
 ## Contents
-- ENN model, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/core.py) [1]
-- TuRBO-ENN optimizer, class [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo_optimizer.py) has four modes
+- ENN model, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) [1]
+- TuRBO-ENN optimizer, class [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/turbo_optimizer.py) has four modes
 	- `TURBO_ONE` - A clone of the TuRBO [2] reference [code](https://github.com/uber-research/TuRBO), reworked to have an `ask()`/`tell()` interface.
 	- `TURBO_ENN` - Same as TURBO_ONE, except uses ENN instead of GP and Pareto(mu, se) instead of Thompson sampling.
 	- `TURBO_ZERO` - Same as TURBO_ONE, except randomly-chosen RAASP [3] candidates are picked to be proposals. There is no surrogate.
