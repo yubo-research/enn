@@ -43,7 +43,7 @@ You may replace `micromamba` with `conda` and this will probably still work.
 
 The commands above make sure
 - You use the MacOS-specific PyTorch (with `mps`).
-- You avoid having multiple OpenMPs [PyTorch issue](https://github.com/pytorch/pytorch/issues/44282) [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/40).
+- You avoid having multiple, competing OpenMPs installed [PyTorch issue](https://github.com/pytorch/pytorch/issues/44282) [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/40).
 - You use old enough versions of NumPy and PyTorch to be compatible with faiss [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/104).
 - Prevent matplotlib's installation from upgrading your NumPy to an incompatible version.
 - ennbo's listed dependencies do not undo any of the above (which is fine b/c the above commands set the up correctly).
