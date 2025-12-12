@@ -14,6 +14,7 @@ class TurboConfig:
     # Experimental
     trailing_obs: int | None = None
     num_fit_samples: int | None = None
+    num_fit_candidates: int | None = None
     acq_type: Literal["thompson", "pareto", "ucb"] = "pareto"
     local_only: bool = False
 

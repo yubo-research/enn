@@ -21,7 +21,9 @@ def mk_enn(
     yvar_obs_list: list[float] | None = None,
     k: int,
     num_fit_samples: int | None = None,
+    num_fit_candidates: int | None = None,
     rng: Generator | Any | None = None,
+    params_warm_start: ENNParams | Any | None = None,
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
     import numpy as np
 
@@ -56,9 +58,12 @@ def mk_enn(
         fitted_params = enn_fit(
             enn_model,
             k=k,
-            num_fit_candidates=30,
+            num_fit_candidates=num_fit_candidates
+            if num_fit_candidates is not None
+            else 30,
             num_fit_samples=num_fit_samples,
             rng=rng,
+            params_warm_start=params_warm_start,
         )
     else:
         fitted_params = ENNParams(k=k, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)

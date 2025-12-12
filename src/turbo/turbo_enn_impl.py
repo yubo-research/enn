@@ -84,7 +84,9 @@ class TurboENNImpl(BaseTurboImpl):
             yvar_obs_list=yvar_obs_list,
             k=k,
             num_fit_samples=self._config.num_fit_samples,
+            num_fit_candidates=self._config.num_fit_candidates,
             rng=rng,
+            params_warm_start=self._fitted_params,
         )
         self._fitted_n_obs = len(x_obs_list)
         return None, None, None, None

@@ -94,14 +94,17 @@ def enn_fit(
     num_fit_candidates: int,
     num_fit_samples: int = 10,
     rng: Generator | Any,
+    params_warm_start: ENNParams | Any | None = None,
 ) -> ENNParams:
     from .enn_params import ENNParams
 
     train_x = model.train_x
     train_y = model.train_y
     train_yvar = model.train_yvar
-    if train_y.shape[1] != 1 or train_yvar.shape[1] != 1:
-        raise ValueError((train_y.shape, train_yvar.shape))
+    if train_y.shape[1] != 1:
+        raise ValueError(train_y.shape)
+    if train_yvar is not None and train_yvar.shape[1] != 1:
+        raise ValueError(train_yvar.shape)
     y = train_y[:, 0]
     log_min = -3.0
     log_max = 3.0
@@ -119,6 +122,14 @@ def enn_fit(
         )
         for epi_val, ale_val in zip(epi_var_scale_values, ale_homoscedastic_values)
     ]
+    if params_warm_start is not None:
+        paramss.append(
+            ENNParams(
+                k=k,
+                epi_var_scale=params_warm_start.epi_var_scale,
+                ale_homoscedastic_scale=params_warm_start.ale_homoscedastic_scale,
+            )
+        )
     if len(paramss) == 0:
         return ENNParams(k=k, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
     import numpy as np
@@ -129,4 +140,5 @@ def enn_fit(
     if len(logliks) == 0:
         return paramss[0]
     best_idx = int(np.argmax(logliks))
+    # print("BEST PARAMS:", logliks[best_idx], paramss[best_idx])
     return paramss[best_idx]

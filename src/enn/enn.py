@@ -159,7 +159,7 @@ class EpistemicNearestNeighbors:
                 yvar_neighbors = self._train_yvar[idx] / self._y_scale**2
                 var_component = var_component + yvar_neighbors
             else:
-                yvar_neighbors = np.zeros_like(y_neighbors)
+                yvar_neighbors = None
 
             w = 1.0 / (self._eps_var + var_component)
             norm = np.sum(w, axis=1)
@@ -168,8 +168,9 @@ class EpistemicNearestNeighbors:
             vvar = epistemic_var
             if observation_noise:
                 vvar = vvar + params.ale_homoscedastic_scale
-                ale_heteroscedastic = np.sum(w * yvar_neighbors, axis=1) / norm
-                vvar = vvar + ale_heteroscedastic
+                if yvar_neighbors is not None:
+                    ale_heteroscedastic = np.sum(w * yvar_neighbors, axis=1) / norm
+                    vvar = vvar + ale_heteroscedastic
             vvar = np.maximum(vvar, self._eps_var)
             se_all[i] = np.sqrt(vvar) * self._y_scale
         return ENNNormal(mu_all, se_all)
