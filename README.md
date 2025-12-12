@@ -23,14 +23,14 @@ ENN estimates a function's value and associated epistemic uncertainty using a K-
 `pip install ennbo`
 
 ## Demonstration
-[`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/core.py) to build and query an ENN model.
-[`demo_turbo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples) - Shows how to use [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo_optimizer.py) to optimize the Ackley function.
+[`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_enn.ipynb) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/core.py) to build and query an ENN model.
+[`demo_turbo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_turbo_enn.ipynb) - Shows how to use [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo_optimizer.py) to optimize the Ackley function.
 
 
 
 ## Installation, MacOS
 
-On my MacBook I can run into a problems with dependencies and compatibilities.
+On my MacBook I can run into problems with dependencies and compatibilities.
 
 On MacOS try:
 ```
