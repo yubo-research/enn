@@ -23,8 +23,8 @@ ENN estimates a function's value and associated epistemic uncertainty using a K-
 `pip install ennbo`
 
 ## Demonstration
-[`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_enn.ipynb) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/core.py) to build and query an ENN model.
-[`demo_turbo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_turbo_enn.ipynb) - Shows how to use [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo_optimizer.py) to optimize the Ackley function.
+[`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_enn.ipynb) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) to build and query an ENN model.
+[`demo_turbo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_turbo_enn.ipynb) - Shows how to use [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/turbo_optimizer.py) to optimize the Ackley function.
 
 
 
@@ -46,7 +46,7 @@ The commands above make sure
 - You avoid having multiple, competing OpenMPs installed [PyTorch issue](https://github.com/pytorch/pytorch/issues/44282) [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/40).
 - You use old enough versions of NumPy and PyTorch to be compatible with faiss [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/104).
 - Prevent matplotlib's installation from upgrading your NumPy to an incompatible version.
-- ennbo's listed dependencies do not undo any of the above (which is fine b/c the above commands set the up correctly).
+- `ennbo`'s listed dependencies do not undo any of the above (which is fine b/c the above commands set the up correctly).
 
 Run tests with
 ```
