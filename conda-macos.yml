@@ -1,0 +1,16 @@
+channels:
+  - conda-forge
+  - pkgs/main
+dependencies:
+  - python=3.11.14=h18782d2_2_cpython
+  - faiss-cpu=1.9.0=hd610c6a_0
+  - nomkl=1.0=h5ca1d4c_0
+  - llvm-openmp=20.1.2=hdb05f8b_1
+  - gpytorch=1.13=pyh101cb37_1
+  - pytorch=2.5.1=gpu_mps_py311h80af30b_202
+  - scipy=1.15.3=py311hb81b3df_0
+  - pytest=8.3.4=pyhd8ed1ab_1
+  - ipykernel=6.29.5=pyh57ce528_0
+  - pip:
+    - matplotlib==3.10.8
+    - nds==0.4.3
