@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     from .turbo_gp import TurboGP
 
@@ -28,7 +28,7 @@ def mk_enn(
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     if len(x_obs_list) == 0:
         return None, None
@@ -53,7 +53,7 @@ def mk_enn(
 
     fitted_params: ENNParams | None = None
     if num_fit_samples is not None and rng is not None:
-        from enn.enn_fit import enn_fit
+        from enn.enn.enn_fit import enn_fit
 
         fitted_params = enn_fit(
             enn_model,
@@ -69,49 +69,6 @@ def mk_enn(
         fitted_params = ENNParams(k=k, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
 
     return enn_model, fitted_params
-
-
-def select_enn_pareto(
-    x_cand: np.ndarray,
-    num_arms: int,
-    x_obs_list: list[float] | list[list[float]],
-    y_obs_list: list[float] | list[list[float]],
-    k: int | None,
-    var_scale: float,
-    rng: Generator | Any,
-    fallback_fn: Callable[[np.ndarray, int], np.ndarray],
-    from_unit_fn: Callable[[np.ndarray], np.ndarray],
-    *,
-    enn_model: EpistemicNearestNeighbors | None = None,
-    fitted_params: ENNParams | None = None,
-) -> np.ndarray:
-    from enn.enn_params import ENNParams
-    from enn.enn_util import arms_from_pareto_fronts
-
-    if enn_model is None:
-        if k is None:
-            k = 10
-        enn_model, _ = mk_enn(
-            x_obs_list,
-            y_obs_list,
-            k=k,
-        )
-    if enn_model is None:
-        return fallback_fn(x_cand, num_arms)
-
-    if fitted_params is not None:
-        params = fitted_params
-    else:
-        if k is None:
-            k = 10
-        params = ENNParams(k=k, epi_var_scale=var_scale, ale_homoscedastic_scale=0.0)
-
-    posterior = enn_model.posterior(x_cand, params=params)
-    mu = posterior.mu[:, 0]
-    se = posterior.se[:, 0]
-
-    x_arms = arms_from_pareto_fronts(x_cand, mu, se, num_arms, rng)
-    return from_unit_fn(x_arms)
 
 
 def select_uniform(

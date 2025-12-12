@@ -91,17 +91,6 @@ class TurboENNImpl(BaseTurboImpl):
         self._fitted_n_obs = len(x_obs_list)
         return None, None, None, None
 
-    def neighbors(
-        self,
-        x: np.ndarray,
-        k: int,
-        *,
-        exclude_nearest: bool = False,
-    ) -> list[tuple[np.ndarray, np.ndarray]]:
-        if self._enn is None:
-            return []
-        return self._enn.neighbors(x, k, exclude_nearest=exclude_nearest)
-
     def select_candidates(
         self,
         x_cand: np.ndarray,
@@ -113,7 +102,7 @@ class TurboENNImpl(BaseTurboImpl):
     ) -> np.ndarray:
         import numpy as np
 
-        from enn.enn_params import ENNParams
+        from enn.enn.enn_params import ENNParams
 
         acq_type = self._config.acq_type
         k = self._config.k
@@ -135,7 +124,7 @@ class TurboENNImpl(BaseTurboImpl):
         se = posterior.se[:, 0]
 
         if acq_type == "pareto":
-            from enn.enn_util import arms_from_pareto_fronts
+            from enn.enn.enn_util import arms_from_pareto_fronts
 
             x_arms = arms_from_pareto_fronts(x_cand, mu, se, num_arms, rng)
         elif acq_type == "ucb":
@@ -172,7 +161,7 @@ class TurboENNImpl(BaseTurboImpl):
         if self._enn is None:
             return None
         k = self._config.k if self._config.k is not None else 10
-        from enn.enn_params import ENNParams
+        from enn.enn.enn_params import ENNParams
 
         params = (
             self._fitted_params

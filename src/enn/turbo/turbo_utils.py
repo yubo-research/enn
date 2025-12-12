@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .turbo_gp_noisy import TurboGPNoisy
 
 
-from enn.enn_util import standardize_y
+from enn.enn.enn_util import standardize_y
 
 
 def _next_power_of_2(n: int) -> int:
@@ -61,7 +61,10 @@ def fit_gp(
     y = np.asarray(y_obs_list, dtype=float)
     n = x.shape[0]
     if yvar_obs_list is not None:
-        assert len(yvar_obs_list) == len(y_obs_list)
+        if len(yvar_obs_list) != len(y_obs_list):
+            raise ValueError(
+                f"yvar_obs_list length {len(yvar_obs_list)} != y_obs_list length {len(y_obs_list)}"
+            )
     if n == 0:
         return None, None, 0.0, 1.0
     if n == 1:
@@ -149,28 +152,6 @@ def argmax_random_tie(values: np.ndarray | Any, *, rng: Generator | Any) -> int:
     return int(idx[j])
 
 
-def pareto_front(mu: np.ndarray | Any, se: np.ndarray | Any) -> np.ndarray:
-    import numpy as np
-
-    if mu.shape != se.shape or mu.ndim != 1:
-        raise ValueError((mu.shape, se.shape))
-    n = mu.size
-    if n == 0:
-        return np.zeros((0,), dtype=bool)
-    order = np.argsort(-mu)
-    mu_sorted = mu[order]
-    se_sorted = se[order]
-    is_pareto_sorted = np.zeros_like(mu_sorted, dtype=bool)
-    best_se = float("inf")
-    for i in range(n):
-        if se_sorted[i] < best_se:
-            best_se = float(se_sorted[i])
-            is_pareto_sorted[i] = True
-    is_pareto = np.zeros_like(is_pareto_sorted, dtype=bool)
-    is_pareto[order] = is_pareto_sorted
-    return is_pareto
-
-
 def sobol_perturb_np(
     x_center: np.ndarray | Any,
     lb: np.ndarray | list[float] | Any,
@@ -214,45 +195,6 @@ def raasp(
     return sobol_perturb_np(
         x_center, lb, ub, num_candidates, mask, sobol_engine=sobol_engine
     )
-
-
-def raasp_multiscale(
-    x_center: np.ndarray | Any,
-    weights: np.ndarray | None,
-    num_candidates: int,
-    *,
-    num_pert: int = 20,
-    log_tr_min: float = -1,
-    log_tr_max: float = 0,
-    rng: Generator | Any,
-    sobol_engine: QMCEngine | Any,
-) -> np.ndarray:
-    import numpy as np
-
-    num_dim = x_center.shape[-1]
-
-    tr_values = 10 ** rng.uniform(log_tr_min, log_tr_max, size=num_candidates)
-
-    if weights is None:
-        half_lengths = 0.5 * tr_values[:, np.newaxis]
-    else:
-        half_lengths = tr_values[:, np.newaxis] * weights / 2.0
-
-    lb = np.clip(x_center - half_lengths, 0.0, 1.0)
-    ub = np.clip(x_center + half_lengths, 0.0, 1.0)
-
-    prob_perturb = min(num_pert / num_dim, 1.0)
-    mask = rng.random((num_candidates, num_dim)) <= prob_perturb
-    ind = np.nonzero(~mask.any(axis=1))[0]
-    if len(ind) > 0:
-        mask[ind, rng.integers(0, num_dim, size=len(ind))] = True
-
-    n_sobol = _next_power_of_2(num_candidates)
-    sobol_samples = sobol_engine.random(n_sobol)[:num_candidates]
-    pert = lb + (ub - lb) * sobol_samples
-    candidates = np.tile(x_center, (num_candidates, 1))
-    candidates[mask] = pert[mask]
-    return candidates
 
 
 def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:

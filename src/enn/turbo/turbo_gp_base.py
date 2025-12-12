@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from gpytorch.distributions import MultivariateNormal
@@ -13,8 +13,8 @@ def _get_exact_gp_base():
 
 
 class TurboGPBase(_get_exact_gp_base()):
-    mean_module: any
-    covar_module: any
+    mean_module: Any
+    covar_module: Any
 
     def forward(self, x) -> MultivariateNormal:
         from gpytorch.distributions import MultivariateNormal

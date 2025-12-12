@@ -1,28 +1,24 @@
-from .enn import EpistemicNearestNeighbors
-from .enn_fit import enn_fit
+from __future__ import annotations
+
+from .enn import EpistemicNearestNeighbors, enn_fit
+
+_LAZY_IMPORTS = ("TurboMode", "TurboOptimizer", "Turbo", "Telemetry")
+
+
+def _lazy_load(name: str):
+    from . import turbo
+
+    return getattr(turbo, name)
 
 
 def __getattr__(name: str):
-    """Lazy import for backwards compatibility with turbo classes."""
-    if name in ("TurboMode", "TurboOptimizer", "Turbo", "Telemetry"):
-        import turbo
-
-        if name == "TurboMode":
-            return turbo.TurboMode
-        elif name == "TurboOptimizer":
-            return turbo.TurboOptimizer
-        elif name == "Turbo":
-            return turbo.Turbo
-        elif name == "Telemetry":
-            return turbo.Telemetry
+    if name in _LAZY_IMPORTS:
+        return _lazy_load(name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__: list[str] = [
     "EpistemicNearestNeighbors",
-    "TurboMode",
-    "TurboOptimizer",
-    "Turbo",
-    "Telemetry",
     "enn_fit",
+    *_LAZY_IMPORTS,
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 def test_calculate_sobol_indices_basic():
     import numpy as np
 
-    from enn.enn_util import calculate_sobol_indices
+    from enn.enn.enn_util import calculate_sobol_indices
 
     rng = np.random.default_rng(42)
     n = 50
@@ -23,7 +23,7 @@ def test_calculate_sobol_indices_basic():
 def test_calculate_sobol_indices_small_n():
     import numpy as np
 
-    from enn.enn_util import calculate_sobol_indices
+    from enn.enn.enn_util import calculate_sobol_indices
 
     rng = np.random.default_rng(42)
     n = 5
@@ -39,7 +39,7 @@ def test_calculate_sobol_indices_small_n():
 def test_calculate_sobol_indices_y_2d():
     import numpy as np
 
-    from enn.enn_util import calculate_sobol_indices
+    from enn.enn.enn_util import calculate_sobol_indices
 
     rng = np.random.default_rng(42)
     n = 50
@@ -56,7 +56,7 @@ def test_calculate_sobol_indices_y_2d():
 def test_calculate_sobol_indices_zero_variance():
     import numpy as np
 
-    from enn.enn_util import calculate_sobol_indices
+    from enn.enn.enn_util import calculate_sobol_indices
 
     rng = np.random.default_rng(42)
     n = 50
@@ -72,7 +72,7 @@ def test_calculate_sobol_indices_zero_variance():
 def test_calculate_sobol_indices_low_variance_dimension():
     import numpy as np
 
-    from enn.enn_util import calculate_sobol_indices
+    from enn.enn.enn_util import calculate_sobol_indices
 
     rng = np.random.default_rng(42)
     n = 50
@@ -93,7 +93,7 @@ def test_calculate_sobol_indices_low_variance_dimension():
 def test_calculate_sobol_indices_dtype_preservation():
     import numpy as np
 
-    from enn.enn_util import calculate_sobol_indices
+    from enn.enn.enn_util import calculate_sobol_indices
 
     rng = np.random.default_rng(42)
     n = 50

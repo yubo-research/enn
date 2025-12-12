@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import numpy as np
@@ -78,9 +78,15 @@ class TurboTrustRegion:
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
         if is_fallback:
-            assert num_arms <= self.num_arms
+            if num_arms > self.num_arms:
+                raise ValueError(
+                    f"num_arms {num_arms} > configured num_arms {self.num_arms}"
+                )
         else:
-            assert num_arms == self.num_arms
+            if num_arms != self.num_arms:
+                raise ValueError(
+                    f"num_arms {num_arms} != configured num_arms {self.num_arms}"
+                )
 
     def compute_bounds_1d(
         self, x_center: np.ndarray | Any, weights: np.ndarray | None = None
@@ -98,14 +104,10 @@ class TurboTrustRegion:
     def generate_candidates(
         self,
         x_center: np.ndarray,
-        y_max: float,
         weights: np.ndarray | None,
         num_candidates: int,
-        get_mu_sigma_fn: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray] | None],
         rng: Generator,
         sobol_engine: QMCEngine,
-        x_obs: np.ndarray,
-        y_obs: np.ndarray,
     ) -> np.ndarray:
         from .turbo_utils import raasp
 

@@ -222,18 +222,13 @@ class TurboOptimizer:
             if len(self._y_obs_list) == 0:
                 raise RuntimeError("no observations")
             x_center = np.full(self._num_dim, 0.5)
-        y_max = float(np.max(self._y_obs_list))
 
         x_cand = self._tr_state.generate_candidates(
             x_center,
-            y_max,
             weights,
             self._num_candidates,
-            self._mode_impl.get_mu_sigma,
             self._rng,
             self._sobol_engine,
-            x_obs=np.asarray(self._x_obs_list, dtype=float),
-            y_obs=np.asarray(self._y_obs_list, dtype=float),
         )
 
         def fallback_fn(x, n):

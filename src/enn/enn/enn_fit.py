@@ -140,5 +140,4 @@ def enn_fit(
     if len(logliks) == 0:
         return paramss[0]
     best_idx = int(np.argmax(logliks))
-    # print("BEST PARAMS:", logliks[best_idx], paramss[best_idx])
     return paramss[best_idx]

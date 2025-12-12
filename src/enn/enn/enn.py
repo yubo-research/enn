@@ -140,9 +140,10 @@ class EpistemicNearestNeighbors:
         available_k = search_k - 1 if exclude_nearest else search_k
         for i, params in enumerate(paramss):
             k = min(params.k, available_k)
-            assert (
-                k <= dist2s_full.shape[1]
-            ), f"k={k} exceeds available columns={dist2s_full.shape[1]}"
+            if k > dist2s_full.shape[1]:
+                raise RuntimeError(
+                    f"k={k} exceeds available columns={dist2s_full.shape[1]}"
+                )
             if k == 0:
                 mu_all[i] = np.zeros((batch_size, self._num_metrics), dtype=float)
                 se_all[i] = np.ones((batch_size, self._num_metrics), dtype=float)

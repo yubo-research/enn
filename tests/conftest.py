@@ -3,6 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Import torch before faiss to avoid OpenMP conflict on macOS.
+# Both libraries use OpenMP; torch must load its runtime first.
+import torch  # noqa: F401
+
 src_path = Path(__file__).parent.parent / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
@@ -15,7 +19,7 @@ def sphere_objective(x):
 
 
 def make_from_unit_fn(bounds):
-    from turbo.turbo_utils import from_unit
+    from enn.turbo.turbo_utils import from_unit
 
     def from_unit_fn(x):
         return from_unit(x, bounds)
@@ -23,18 +27,8 @@ def make_from_unit_fn(bounds):
     return from_unit_fn
 
 
-def make_fallback_fn(bounds, rng):
-    from turbo.turbo_utils import from_unit
-
-    def fallback_fn(x, n):
-        idx = rng.choice(x.shape[0], size=n, replace=False)
-        return from_unit(x[idx], bounds)
-
-    return fallback_fn
-
-
 def make_select_sobol_fn(bounds, rng):
-    from turbo.turbo_utils import from_unit
+    from enn.turbo.turbo_utils import from_unit
 
     def select_sobol_fn(x, n):
         idx = rng.choice(x.shape[0], size=n, replace=False)

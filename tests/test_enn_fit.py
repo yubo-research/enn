@@ -2,8 +2,8 @@ def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_fit import enn_fit, subsample_loglik
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_fit import enn_fit, subsample_loglik
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
     n = 40
@@ -44,8 +44,8 @@ def test_enn_fit_with_yvar_none():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_fit import enn_fit
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_fit import enn_fit
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(42)
     n = 30
@@ -73,8 +73,8 @@ def test_enn_fit_with_warm_start():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_fit import enn_fit
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_fit import enn_fit
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(42)
     n = 30

@@ -21,13 +21,17 @@ def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
 def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     import numpy as np
 
-    assert x.ndim == 2
+    if x.ndim != 2:
+        raise ValueError(f"x must be 2D, got shape {x.shape}")
     n, d = x.shape
-    assert d > 0
+    if d <= 0:
+        raise ValueError(f"x must have at least 1 dimension, got {d}")
     if y.ndim == 2 and y.shape[1] == 1:
         y = y.reshape(-1)
-    assert y.ndim == 1
-    assert y.shape[0] == n
+    if y.ndim != 1:
+        raise ValueError(f"y must be 1D, got shape {y.shape}")
+    if y.shape[0] != n:
+        raise ValueError(f"y length {y.shape[0]} != x rows {n}")
     if n < 9:
         return np.ones(d, dtype=x.dtype)
     mu = y.mean()

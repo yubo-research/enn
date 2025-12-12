@@ -6,7 +6,7 @@ import pytest
 def test_ennnormal_sample_shape_and_clip():
     import numpy as np
 
-    from enn.enn_normal import ENNNormal
+    from enn.enn.enn_normal import ENNNormal
 
     rng = np.random.default_rng(0)
     mu = np.array([[0.0, 1.0]], dtype=float)
@@ -21,7 +21,7 @@ def test_ennnormal_sample_shape_and_clip():
 def test_epistemic_nearest_neighbors_posterior_and_var_scale():
     import conftest
 
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
     x_test = rng.standard_normal((4, 3))
@@ -42,7 +42,7 @@ def test_epistemic_nearest_neighbors_with_no_observations_returns_prior_like_pos
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
     d = 3
@@ -69,7 +69,7 @@ def test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior(
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
     d = 3
@@ -93,7 +93,7 @@ def test_batch_posterior_matches_individual_posterior_calls():
     import conftest
     import numpy as np
 
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
     x_test = rng.standard_normal((4, 3))
@@ -115,7 +115,7 @@ def test_batch_posterior_matches_individual_posterior_calls_with_exclude_nearest
     import conftest
     import numpy as np
 
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
     x_test = rng.standard_normal((4, 3))
@@ -136,7 +136,7 @@ def test_epistemic_nearest_neighbors_with_sobol_indices():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
     n = 50
@@ -158,7 +158,7 @@ def test_epistemic_nearest_neighbors_multiple_metrics():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
     n = 20
@@ -346,7 +346,7 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
     n = 5
@@ -369,7 +369,7 @@ def test_epistemic_nearest_neighbors_scale_invariance():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(42)
     n = 20
@@ -401,7 +401,7 @@ def test_epistemic_nearest_neighbors_shift_invariance():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(42)
     n = 20
@@ -432,7 +432,7 @@ def test_epistemic_nearest_neighbors_with_yvar_none():
     import numpy as np
 
     from enn.enn import EpistemicNearestNeighbors
-    from enn.enn_params import ENNParams
+    from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(42)
     n = 20
