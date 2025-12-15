@@ -7,12 +7,12 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
 from .base_turbo_impl import BaseTurboImpl
-from .turbo_config import TurboConfig
+from .turbo_config import TurboOneConfig
 from .turbo_utils import gp_thompson_sample
 
 
 class TurboOneImpl(BaseTurboImpl):
-    def __init__(self, config: TurboConfig) -> None:
+    def __init__(self, config: TurboOneConfig) -> None:
         super().__init__(config)
         self._gp_model: Any | None = None
         self._gp_y_mean: float | Any = 0.0
@@ -34,16 +34,21 @@ class TurboOneImpl(BaseTurboImpl):
         if len(y_obs_list) == 0:
             return None
         if self._gp_model is None:
-            x_array = np.asarray(x_obs_list, dtype=float)
-            y_array = np.asarray(y_obs_list, dtype=float)
-            if y_array.ndim == 2:
-                if self._config.tr_type == "morbo" and tr_state is not None:
-                    scores = tr_state.scalarize(y_array, clip=True)
-                else:
-                    scores = y_array[:, 0]
-                best_idx = argmax_random_tie(scores, rng=rng)
-                return x_array[best_idx]
-            return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
+            if len(y_obs_list) <= 1:
+                x_array = np.asarray(x_obs_list, dtype=float)
+                y_array = np.asarray(y_obs_list, dtype=float)
+                if y_array.ndim == 2:
+                    if self._config.tr_type == "morbo" and tr_state is not None:
+                        scores = tr_state.scalarize(y_array, clip=True)
+                    else:
+                        scores = y_array[:, 0]
+                    best_idx = argmax_random_tie(scores, rng=rng)
+                    return x_array[best_idx]
+                return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
+            raise RuntimeError(
+                "TurboOneImpl.get_x_center requires a fitted GP model for 2+ observations; "
+                "call prepare_ask() first."
+            )
         if self._fitted_n_obs != len(x_obs_list):
             raise RuntimeError(
                 f"GP fitted on {self._fitted_n_obs} obs but get_x_center called with {len(x_obs_list)}"
@@ -138,7 +143,7 @@ class TurboOneImpl(BaseTurboImpl):
             self._gp_y_mean = gp_y_mean_fitted
         if gp_y_std_fitted is not None:
             self._gp_y_std = gp_y_std_fitted
-        weights = None
+        lengthscales = None
         if self._gp_model is not None:
             lengthscale = (
                 self._gp_model.covar_module.base_kernel.lengthscale.cpu()
@@ -147,11 +152,13 @@ class TurboOneImpl(BaseTurboImpl):
             )
             if lengthscale.ndim == 3:
                 lengthscale = lengthscale.mean(axis=0)
-            weights = lengthscale.ravel()
+            lengthscales = lengthscale.ravel()
             # First line helps stabilize second line.
-            weights = weights / weights.mean()
-            weights = weights / np.prod(np.power(weights, 1.0 / len(weights)))
-        return self._gp_model, gp_y_mean_fitted, gp_y_std_fitted, weights
+            lengthscales = lengthscales / lengthscales.mean()
+            lengthscales = lengthscales / np.prod(
+                np.power(lengthscales, 1.0 / len(lengthscales))
+            )
+        return self._gp_model, gp_y_mean_fitted, gp_y_std_fitted, lengthscales
 
     def select_candidates(
         self,
@@ -166,6 +173,11 @@ class TurboOneImpl(BaseTurboImpl):
         import numpy as np
 
         if self._gp_model is None:
+            if self._fitted_n_obs >= 2:
+                raise RuntimeError(
+                    "TurboOneImpl.select_candidates requires a fitted GP model for 2+ observations; "
+                    "call prepare_ask() first."
+                )
             return fallback_fn(x_cand, num_arms)
 
         if self._config.tr_type == "morbo" and tr_state is not None:

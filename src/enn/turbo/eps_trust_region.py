@@ -20,6 +20,21 @@ class EpsTrustRegion:
     _ub: np.ndarray | Any | None = None
     _center: np.ndarray | Any | None = None
 
+    def __post_init__(self) -> None:
+        import numpy as np
+
+        if int(self.num_dim) <= 0:
+            raise ValueError(self.num_dim)
+        if int(self.num_arms) <= 0:
+            raise ValueError(self.num_arms)
+        eps_tr = float(self.eps_tr)
+        if eps_tr < 0.0 or eps_tr > 1.0:
+            raise ValueError(f"eps_tr must be in [0, 1], got {eps_tr}")
+        if float(self.length_min) <= 0.0:
+            raise ValueError(self.length_min)
+        if not np.isfinite(float(self.length_min)):
+            raise ValueError(self.length_min)
+
     def update(self, values: np.ndarray | Any) -> None:
         return
 
@@ -87,7 +102,7 @@ class EpsTrustRegion:
     def generate_candidates(
         self,
         x_center: np.ndarray,
-        weights: np.ndarray | None,
+        lengthscales: np.ndarray | None,
         num_candidates: int,
         rng: Generator,
         sobol_engine: QMCEngine,

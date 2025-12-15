@@ -22,6 +22,7 @@ def mk_enn(
     k: int,
     num_fit_samples: int | None = None,
     num_fit_candidates: int | None = None,
+    scale_x: bool = False,
     rng: Generator | Any | None = None,
     params_warm_start: ENNParams | Any | None = None,
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
@@ -54,6 +55,7 @@ def mk_enn(
         x_obs_array,
         y,
         yvar,
+        scale_x=scale_x,
     )
     if len(enn_model) == 0:
         return None, None

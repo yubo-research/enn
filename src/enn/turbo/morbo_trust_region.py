@@ -145,18 +145,18 @@ class MorboChebyshevTrustRegion:
         return self._tr.validate_request(num_arms, is_fallback=is_fallback)
 
     def compute_bounds_1d(
-        self, x_center: np.ndarray | Any, weights: np.ndarray | None = None
+        self, x_center: np.ndarray | Any, lengthscales: np.ndarray | None = None
     ) -> tuple[np.ndarray, np.ndarray]:
-        return self._tr.compute_bounds_1d(x_center, weights)
+        return self._tr.compute_bounds_1d(x_center, lengthscales)
 
     def generate_candidates(
         self,
         x_center: np.ndarray,
-        weights: np.ndarray | None,
+        lengthscales: np.ndarray | None,
         num_candidates: int,
         rng: Generator,
         sobol_engine: QMCEngine,
     ) -> np.ndarray:
         return self._tr.generate_candidates(
-            x_center, weights, num_candidates, rng, sobol_engine
+            x_center, lengthscales, num_candidates, rng, sobol_engine
         )

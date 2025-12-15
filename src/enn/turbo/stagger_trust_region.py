@@ -16,6 +16,20 @@ class StaggerTrustRegion:
     low: float = 0.1
     high: float = 1.0
 
+    def __post_init__(self) -> None:
+        import numpy as np
+
+        if int(self.num_dim) <= 0:
+            raise ValueError(self.num_dim)
+        if int(self.num_arms) <= 0:
+            raise ValueError(self.num_arms)
+        low = float(self.low)
+        high = float(self.high)
+        if not np.isfinite(low) or not np.isfinite(high) or low <= 0.0 or high <= 0.0:
+            raise ValueError((low, high))
+        if low > high:
+            raise ValueError((low, high))
+
     def update(self, values: np.ndarray | Any) -> None:
         return
 
@@ -40,7 +54,7 @@ class StaggerTrustRegion:
     def generate_candidates(
         self,
         x_center: np.ndarray,
-        weights: np.ndarray | None,
+        lengthscales: np.ndarray | None,
         num_candidates: int,
         rng: Generator,
         sobol_engine: QMCEngine,
@@ -53,17 +67,13 @@ class StaggerTrustRegion:
             raise ValueError(num_candidates)
         low = float(self.low)
         high = float(self.high)
-        if not np.isfinite(low) or not np.isfinite(high) or low <= 0.0 or high <= 0.0:
-            raise ValueError((low, high))
-        if low > high:
-            low = high
         log_min = float(np.log(low))
         log_max = float(np.log(high))
         length = float(np.exp(rng.uniform(log_min, log_max)))
-        if weights is None:
+        if lengthscales is None:
             half_length = 0.5 * length
         else:
-            half_length = weights * length / 2.0
+            half_length = lengthscales * length / 2.0
         lb = np.clip(x_center - half_length, 0.0, 1.0)
         ub = np.clip(x_center + half_length, 0.0, 1.0)
         return generate_raasp_candidates(

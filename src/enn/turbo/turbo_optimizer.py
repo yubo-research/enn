@@ -4,7 +4,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from .proposal import select_uniform
-from .turbo_config import TurboConfig
+from .turbo_config import (
+    LHDOnlyConfig,
+    TurboConfig,
+    TurboENNConfig,
+    TurboOneConfig,
+    TurboZeroConfig,
+)
 from .turbo_utils import from_unit, latin_hypercube, to_unit
 
 
@@ -35,8 +41,44 @@ class TurboOptimizer:
 
         from .turbo_mode import TurboMode
 
+        def _common_kwargs(cfg: TurboConfig) -> dict[str, object]:
+            return {
+                "k": cfg.k,
+                "num_candidates": cfg.num_candidates,
+                "num_init": cfg.num_init,
+                "trailing_obs": cfg.trailing_obs,
+                "tr_type": cfg.tr_type,
+                "num_metrics": cfg.num_metrics,
+            }
+
         if config is None:
-            config = TurboConfig()
+            match mode:
+                case TurboMode.TURBO_ONE:
+                    config = TurboOneConfig()
+                case TurboMode.TURBO_ZERO:
+                    config = TurboZeroConfig()
+                case TurboMode.TURBO_ENN:
+                    config = TurboENNConfig()
+                case TurboMode.LHD_ONLY:
+                    config = LHDOnlyConfig()
+                case _:
+                    raise ValueError(f"Unknown mode: {mode}")
+
+        match mode:
+            case TurboMode.TURBO_ONE:
+                if not isinstance(config, TurboOneConfig):
+                    config = TurboOneConfig(**_common_kwargs(config))
+            case TurboMode.TURBO_ZERO:
+                if not isinstance(config, TurboZeroConfig):
+                    config = TurboZeroConfig(**_common_kwargs(config))
+            case TurboMode.TURBO_ENN:
+                if not isinstance(config, TurboENNConfig):
+                    config = TurboENNConfig(**_common_kwargs(config))
+            case TurboMode.LHD_ONLY:
+                if not isinstance(config, LHDOnlyConfig):
+                    config = LHDOnlyConfig(**_common_kwargs(config))
+            case _:
+                raise ValueError(f"Unknown mode: {mode}")
         self._config = config
 
         bounds = np.asarray(bounds, dtype=float)
@@ -54,9 +96,9 @@ class TurboOptimizer:
             raise ValueError(self._num_candidates)
         self._rng = rng
         self._sobol_seed_base = int(self._rng.integers(2**31 - 1))
-        self._x_obs_list: list = []
-        self._y_obs_list: list = []
-        self._yvar_obs_list: list = []
+        self._x_obs_list: list[list[float]] = []
+        self._y_obs_list: list[float] | list[list[float]] = []
+        self._yvar_obs_list: list[float] | list[list[float]] = []
         self._expects_yvar: bool | None = None
         match mode:
             case TurboMode.TURBO_ONE:
@@ -217,7 +259,7 @@ class TurboOptimizer:
         import time
 
         t0_fit = time.perf_counter()
-        _gp_model, _gp_y_mean_fitted, _gp_y_std_fitted, weights = (
+        _gp_model, _gp_y_mean_fitted, _gp_y_std_fitted, lengthscales = (
             self._mode_impl.prepare_ask(
                 self._x_obs_list,
                 self._y_obs_list,
@@ -244,7 +286,7 @@ class TurboOptimizer:
         sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
         x_cand = self._tr_state.generate_candidates(
             x_center,
-            weights,
+            lengthscales,
             self._num_candidates,
             self._rng,
             sobol_engine,
@@ -312,9 +354,9 @@ class TurboOptimizer:
 
     def tell(
         self,
-        x: np.ndarray | Any,
-        y: np.ndarray | Any,
-        y_var: np.ndarray | Any | None = None,
+        x: np.ndarray,
+        y: np.ndarray,
+        y_var: np.ndarray | None = None,
     ) -> np.ndarray:
         import numpy as np
 

@@ -89,14 +89,14 @@ class TurboTrustRegion:
                 )
 
     def compute_bounds_1d(
-        self, x_center: np.ndarray | Any, weights: np.ndarray | None = None
+        self, x_center: np.ndarray | Any, lengthscales: np.ndarray | None = None
     ) -> tuple[np.ndarray, np.ndarray]:
         import numpy as np
 
-        if weights is None:
+        if lengthscales is None:
             half_length = 0.5 * self.length
         else:
-            half_length = weights * self.length / 2.0
+            half_length = lengthscales * self.length / 2.0
         lb = np.clip(x_center - half_length, 0.0, 1.0)
         ub = np.clip(x_center + half_length, 0.0, 1.0)
         return lb, ub
@@ -104,14 +104,14 @@ class TurboTrustRegion:
     def generate_candidates(
         self,
         x_center: np.ndarray,
-        weights: np.ndarray | None,
+        lengthscales: np.ndarray | None,
         num_candidates: int,
         rng: Generator,
         sobol_engine: QMCEngine,
     ) -> np.ndarray:
         from .turbo_utils import generate_raasp_candidates
 
-        lb, ub = self.compute_bounds_1d(x_center, weights)
+        lb, ub = self.compute_bounds_1d(x_center, lengthscales)
         return generate_raasp_candidates(
             x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
         )

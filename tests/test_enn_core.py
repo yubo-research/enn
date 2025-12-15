@@ -474,3 +474,33 @@ def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
     post = model.posterior(x_test, params=params)
     assert np.all(np.isfinite(post.mu))
     assert np.all(np.isfinite(post.se))
+
+
+def test_epistemic_nearest_neighbors_x_rescaling_is_invariant_when_scale_x_enabled():
+    import numpy as np
+
+    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn_params import ENNParams
+
+    rng = np.random.default_rng(0)
+    n = 50
+    d = 4
+    train_x = rng.standard_normal((n, d))
+    train_y = train_x.sum(axis=1, keepdims=True)
+    train_yvar = 0.1 * np.ones_like(train_y)
+
+    feature_scale = np.array([100.0, 0.1, 3.0, 1.0], dtype=float).reshape(1, -1)
+    train_x_scaled = train_x * feature_scale
+
+    x_test = rng.standard_normal((10, d))
+    x_test_scaled = x_test * feature_scale
+
+    params = ENNParams(k=7, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar, scale_x=True)
+    model_scaled = EpistemicNearestNeighbors(
+        train_x_scaled, train_y, train_yvar, scale_x=True
+    )
+    post = model.posterior(x_test, params=params)
+    post_scaled = model_scaled.posterior(x_test_scaled, params=params)
+    assert np.allclose(post.mu, post_scaled.mu, rtol=1e-6, atol=1e-8)
+    assert np.allclose(post.se, post_scaled.se, rtol=1e-6, atol=1e-8)

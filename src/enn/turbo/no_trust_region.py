@@ -37,7 +37,7 @@ class NoTrustRegion:
                 )
 
     def compute_bounds_1d(
-        self, x_center: np.ndarray | Any, weights: np.ndarray | None = None
+        self, x_center: np.ndarray | Any, lengthscales: np.ndarray | None = None
     ) -> tuple[np.ndarray, np.ndarray]:
         import numpy as np
 
@@ -48,14 +48,14 @@ class NoTrustRegion:
     def generate_candidates(
         self,
         x_center: np.ndarray,
-        weights: np.ndarray | None,
+        lengthscales: np.ndarray | None,
         num_candidates: int,
         rng: Generator,
         sobol_engine: QMCEngine,
     ) -> np.ndarray:
         from .turbo_utils import generate_raasp_candidates
 
-        lb, ub = self.compute_bounds_1d(x_center, weights)
+        lb, ub = self.compute_bounds_1d(x_center, lengthscales)
         return generate_raasp_candidates(
             x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
         )

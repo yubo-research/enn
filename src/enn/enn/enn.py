@@ -12,9 +12,11 @@ if TYPE_CHECKING:
 class EpistemicNearestNeighbors:
     def __init__(
         self,
-        train_x: np.ndarray | Any,
-        train_y: np.ndarray | Any,
-        train_yvar: np.ndarray | Any | None = None,
+        train_x: np.ndarray,
+        train_y: np.ndarray,
+        train_yvar: np.ndarray | None = None,
+        *,
+        scale_x: bool = False,
     ) -> None:
         import numpy as np
 
@@ -39,6 +41,22 @@ class EpistemicNearestNeighbors:
         self._num_obs, self._num_dim = self._train_x.shape
         _, self._num_metrics = self._train_y.shape
         self._eps_var = 1e-9
+        self._scale_x = bool(scale_x)
+        if self._scale_x:
+            if len(self._train_x) < 2:
+                x_scale = np.ones((1, self._num_dim), dtype=float)
+            else:
+                x_scale = np.std(self._train_x, axis=0, keepdims=True).astype(float)
+                x_scale = np.where(
+                    np.isfinite(x_scale) & (x_scale > 1e-12),
+                    x_scale,
+                    1.0,
+                )
+            self._x_scale = x_scale
+            self._train_x_scaled = self._train_x / self._x_scale
+        else:
+            self._x_scale = np.ones((1, self._num_dim), dtype=float)
+            self._train_x_scaled = self._train_x
         if len(self._train_y) < 2:
             self._y_scale = np.ones(shape=(1, self._num_metrics), dtype=float)
         else:
@@ -75,14 +93,14 @@ class EpistemicNearestNeighbors:
 
         if self._num_obs == 0:
             return
-        x_f32 = self._train_x.astype(np.float32, copy=False)
+        x_f32 = self._train_x_scaled.astype(np.float32, copy=False)
         index = faiss.IndexFlatL2(self._num_dim)
         index.add(x_f32)
         self._index = index
 
     def posterior(
         self,
-        x: np.ndarray | Any,
+        x: np.ndarray,
         *,
         params: ENNParams,
         exclude_nearest: bool = False,
@@ -102,7 +120,7 @@ class EpistemicNearestNeighbors:
 
     def batch_posterior(
         self,
-        x: np.ndarray | Any,
+        x: np.ndarray,
         paramss: list[ENNParams],
         *,
         exclude_nearest: bool = False,
@@ -132,7 +150,8 @@ class EpistemicNearestNeighbors:
             search_k = int(min(max_k + 1, len(self)))
         else:
             search_k = int(min(max_k, len(self)))
-        x_f32 = x.astype(np.float32, copy=False)
+        x_scaled = x / self._x_scale if self._scale_x else x
+        x_f32 = x_scaled.astype(np.float32, copy=False)
         if self._index is None:
             raise RuntimeError("index is not initialized")
         dist2s_full, idx_full = self._index.search(x_f32, search_k)
@@ -184,7 +203,7 @@ class EpistemicNearestNeighbors:
 
     def neighbors(
         self,
-        x: np.ndarray | Any,
+        x: np.ndarray,
         k: int,
         *,
         exclude_nearest: bool = False,
@@ -216,7 +235,8 @@ class EpistemicNearestNeighbors:
             search_k = int(min(k, len(self)))
         if search_k == 0:
             return []
-        x_f32 = x.astype(np.float32, copy=False)
+        x_scaled = x / self._x_scale if self._scale_x else x
+        x_f32 = x_scaled.astype(np.float32, copy=False)
         if self._index is None:
             raise RuntimeError("index is not initialized")
         dist2s_full, idx_full = self._index.search(x_f32, search_k)

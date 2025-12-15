@@ -7,9 +7,13 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
 from .base_turbo_impl import BaseTurboImpl
+from .turbo_config import LHDOnlyConfig
 
 
 class LHDOnlyImpl(BaseTurboImpl):
+    def __init__(self, config: LHDOnlyConfig) -> None:
+        super().__init__(config)
+
     def get_x_center(
         self,
         x_obs_list: list,

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
+    from numpy.random import Generator
 
 
 @dataclass
@@ -15,8 +16,8 @@ class ENNNormal:
     def sample(
         self,
         num_samples: int,
-        rng,
-        clip=None,
+        rng: Generator,
+        clip: float | None = None,
     ) -> np.ndarray:
         import numpy as np
 

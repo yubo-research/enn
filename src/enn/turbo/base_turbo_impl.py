@@ -50,17 +50,7 @@ class BaseTurboImpl:
         rng: Generator,
         num_metrics: int | None = None,
     ) -> Any:
-        if self._config.tr_type == "stagger":
-            from .stagger_trust_region import StaggerTrustRegion
-
-            return StaggerTrustRegion(num_dim=num_dim, num_arms=num_arms)
-        elif self._config.tr_type == "eps_tr":
-            from .eps_trust_region import EpsTrustRegion
-
-            return EpsTrustRegion(
-                num_dim=num_dim, num_arms=num_arms, eps_tr=self._config.eps_tr
-            )
-        elif self._config.tr_type == "none":
+        if self._config.tr_type == "none":
             from .no_trust_region import NoTrustRegion
 
             return NoTrustRegion(num_dim=num_dim, num_arms=num_arms)

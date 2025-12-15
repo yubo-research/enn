@@ -7,9 +7,13 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
 from .base_turbo_impl import BaseTurboImpl
+from .turbo_config import TurboZeroConfig
 
 
 class TurboZeroImpl(BaseTurboImpl):
+    def __init__(self, config: TurboZeroConfig) -> None:
+        super().__init__(config)
+
     def select_candidates(
         self,
         x_cand: np.ndarray,

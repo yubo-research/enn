@@ -19,7 +19,11 @@ class TurboModeImpl(Protocol):
     def needs_tr_list(self) -> bool: ...
 
     def create_trust_region(
-        self, num_dim: int, num_arms: int, rng: Generator
+        self,
+        num_dim: int,
+        num_arms: int,
+        rng: Generator,
+        num_metrics: int | None = None,
     ) -> Any: ...
 
     def try_early_ask(

@@ -7,11 +7,11 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
 from .base_turbo_impl import BaseTurboImpl
-from .turbo_config import TurboConfig
+from .turbo_config import TurboENNConfig
 
 
 class TurboENNImpl(BaseTurboImpl):
-    def __init__(self, config: TurboConfig) -> None:
+    def __init__(self, config: TurboENNConfig) -> None:
         super().__init__(config)
         self._enn: Any | None = None
         self._fitted_params: Any | None = None
@@ -109,6 +109,7 @@ class TurboENNImpl(BaseTurboImpl):
             k=k,
             num_fit_samples=self._config.num_fit_samples,
             num_fit_candidates=self._config.num_fit_candidates,
+            scale_x=self._config.scale_x,
             rng=rng,
             params_warm_start=self._fitted_params,
         )
