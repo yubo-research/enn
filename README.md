@@ -34,7 +34,7 @@ On my MacBook I can run into problems with dependencies and compatibilities.
 
 On MacOS try:
 ```
-micromamba env create -n ennbo -f conda-macos.yml
+micromamba env create -n ennbo -f admin/conda-macos.yml
 micromamba activate ennbo
 pip install --no-deps ennbo
 ```
