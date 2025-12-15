@@ -13,7 +13,7 @@ authors = [
   { name = "YUBO Lab", email = "david.sweet@yu.edu" },
 ]
 dependencies = [
-    "numpy==1.26.4",
+    "numpy>=1.26.4,<2.0.0",
     "torch==2.5.1",
     "gpytorch==1.13",
     "faiss-cpu>=1.9.0",

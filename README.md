@@ -37,6 +37,7 @@ On MacOS try:
 micromamba env create -n ennbo -f admin/conda-macos.yml
 micromamba activate ennbo
 pip install --no-deps ennbo
+pytest -sv tests
 ```
 
 You may replace `micromamba` with `conda` and this will probably still work.
