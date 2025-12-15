@@ -108,3 +108,41 @@ def test_enn_fit_with_warm_start():
     assert result2.k == 5
     assert result2.epi_var_scale > 0.0
     assert result2.ale_homoscedastic_scale >= 0.0
+
+
+def test_enn_fit_supports_multioutput_y():
+    import numpy as np
+
+    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn_fit import enn_fit, subsample_loglik
+    from enn.enn.enn_params import ENNParams
+
+    rng = np.random.default_rng(123)
+    n = 60
+    d = 3
+    x = rng.standard_normal((n, d))
+    w1 = np.array([1.0, -2.0, 0.5])
+    w2 = np.array([-0.5, 0.25, 1.25])
+    noise_std1 = 0.1
+    noise_std2 = 0.3
+    y1 = x @ w1 + noise_std1 * rng.standard_normal(n)
+    y2 = np.sin(x @ w2) + noise_std2 * rng.standard_normal(n)
+    y = np.column_stack([y1, y2]).astype(float)
+    yvar = np.ones_like(y, dtype=float) * np.array([[noise_std1**2, noise_std2**2]])
+    model = EpistemicNearestNeighbors(x, y, yvar)
+
+    rng_fit = np.random.default_rng(456)
+    params = enn_fit(
+        model,
+        k=12,
+        num_fit_candidates=40,
+        num_fit_samples=25,
+        rng=rng_fit,
+    )
+    assert isinstance(params, ENNParams)
+    assert params.k == 12
+
+    rng_eval = np.random.default_rng(789)
+    lls = subsample_loglik(model, x, y, paramss=[params], P=25, rng=rng_eval)
+    assert len(lls) == 1
+    assert np.isfinite(lls[0])

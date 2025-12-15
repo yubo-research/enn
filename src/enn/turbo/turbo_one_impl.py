@@ -24,6 +24,7 @@ class TurboOneImpl(BaseTurboImpl):
         x_obs_list: list,
         y_obs_list: list,
         rng: Generator,
+        tr_state: Any = None,
     ) -> np.ndarray | None:
         import numpy as np
         import torch
@@ -33,7 +34,7 @@ class TurboOneImpl(BaseTurboImpl):
         if len(y_obs_list) == 0:
             return None
         if self._gp_model is None:
-            return super().get_x_center(x_obs_list, y_obs_list, rng)
+            return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
         if self._fitted_n_obs != len(x_obs_list):
             raise RuntimeError(
                 f"GP fitted on {self._fitted_n_obs} obs but get_x_center called with {len(x_obs_list)}"
@@ -43,9 +44,17 @@ class TurboOneImpl(BaseTurboImpl):
         x_torch = torch.as_tensor(x_array, dtype=torch.float64)
         with torch.no_grad():
             posterior = self._gp_model.posterior(x_torch)
-            mu = posterior.mean.cpu().numpy().ravel()
+            mu = posterior.mean.cpu().numpy()  # (n, num_metrics) or (n, 1)
 
-        best_idx = argmax_random_tie(mu, rng=rng)
+        # For morbo: scalarize mu values
+        if self._config.tr_type == "morbo" and tr_state is not None:
+            if mu.ndim == 1:
+                mu = mu.reshape(-1, tr_state.num_metrics)
+            scalarized = tr_state.scalarize(mu, clip=False)
+            best_idx = argmax_random_tie(scalarized, rng=rng)
+        else:
+            best_idx = argmax_random_tie(mu.ravel(), rng=rng)
+
         return x_array[best_idx]
 
     def needs_tr_list(self) -> bool:

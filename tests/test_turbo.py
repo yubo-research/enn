@@ -45,6 +45,18 @@ def test_turbo_zero_ask_tell_and_shape():
     assert x1.shape == (4, 2)
 
 
+def test_turbo_optimizer_accepts_list_bounds():
+    import numpy as np
+
+    from enn import Turbo
+
+    bounds = [[0.0, 1.0], [0.0, 1.0]]
+    rng = np.random.default_rng(0)
+    opt = Turbo(bounds=bounds, mode=TurboMode.TURBO_ZERO, rng=rng)
+    x0 = opt.ask(num_arms=2)
+    assert x0.shape == (2, 2)
+
+
 def test_turbo_one_improves_on_sphere():
     best = _run_bo(TurboMode.TURBO_ONE, num_steps=12)
     assert best > -0.5
@@ -978,3 +990,220 @@ def test_turbo_optimizer_tell_without_yvar():
     x2 = opt.ask(num_arms=4)
     assert x2.shape == (4, 2)
     assert np.all(x2 >= 0.0) and np.all(x2 <= 1.0)
+
+
+def test_turbo_optimizer_yvar_policy_enforced():
+    import numpy as np
+
+    from enn.turbo.turbo_mode import TurboMode
+    from enn.turbo.turbo_optimizer import TurboOptimizer
+
+    rng = np.random.default_rng(0)
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+
+    opt = TurboOptimizer(bounds=bounds, mode=TurboMode.TURBO_ONE, rng=rng)
+    x0 = opt.ask(num_arms=2)
+    y0 = -np.sum(x0**2, axis=1)
+    yvar0 = 0.1 * np.ones_like(y0)
+    opt.tell(x0, y0, yvar0)
+
+    x1 = opt.ask(num_arms=2)
+    y1 = -np.sum(x1**2, axis=1)
+    with pytest.raises(ValueError, match="y_var must be provided"):
+        opt.tell(x1, y1)
+
+    rng = np.random.default_rng(0)
+    opt2 = TurboOptimizer(bounds=bounds, mode=TurboMode.TURBO_ONE, rng=rng)
+    x0 = opt2.ask(num_arms=2)
+    y0 = -np.sum(x0**2, axis=1)
+    opt2.tell(x0, y0)
+
+    x1 = opt2.ask(num_arms=2)
+    y1 = -np.sum(x1**2, axis=1)
+    yvar1 = 0.1 * np.ones_like(y1)
+    with pytest.raises(ValueError, match="y_var must be omitted"):
+        opt2.tell(x1, y1, yvar1)
+
+
+def test_stagger_trust_region_generate_candidates_is_unit_box():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from enn.turbo.stagger_trust_region import StaggerTrustRegion
+
+    rng = np.random.default_rng(0)
+    tr = StaggerTrustRegion(num_dim=3, num_arms=1)
+    x_center = np.array([0.25, 0.5, 0.75], dtype=float)
+    sobol_engine = qmc.Sobol(d=3, scramble=True, seed=0)
+    x_cand = tr.generate_candidates(
+        x_center=x_center,
+        weights=None,
+        num_candidates=256,
+        rng=rng,
+        sobol_engine=sobol_engine,
+    )
+    assert x_cand.shape == (256, 3)
+    assert np.all(x_cand >= 0.0) and np.all(x_cand <= 1.0)
+
+
+def test_turbo_optimizer_no_trust_region_bounds_are_full_box():
+    import numpy as np
+
+    from enn.turbo.turbo_config import TurboConfig
+    from enn.turbo.turbo_mode import TurboMode
+    from enn.turbo.turbo_optimizer import TurboOptimizer
+
+    rng = np.random.default_rng(0)
+    bounds = np.array([[-2.0, 2.0], [-1.0, 1.0], [0.0, 3.0]], dtype=float)
+    opt = TurboOptimizer(
+        bounds=bounds,
+        mode=TurboMode.TURBO_ZERO,
+        rng=rng,
+        config=TurboConfig(tr_type="none", num_init=1, num_candidates=16),
+    )
+    x0 = opt.ask(num_arms=1)
+    opt.tell(x0, np.array([1.0]))
+    x_center = np.array([0.25, 0.5, 0.75], dtype=float)
+    lb, ub = opt._tr_state.compute_bounds_1d(x_center)
+    assert np.allclose(lb, 0.0)
+    assert np.allclose(ub, 1.0)
+
+
+def test_turbo_optimizer_eps_trust_region_eps_0_uses_tight_bounds():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from enn.turbo.eps_trust_region import EpsTrustRegion
+
+    rng = np.random.default_rng(0)
+    tr = EpsTrustRegion(num_dim=3, num_arms=1, eps_tr=0.0)
+    x_obs = np.array(
+        [
+            [0.20, 0.20, 0.20],
+            [0.40, 0.40, 0.40],
+            [0.60, 0.60, 0.60],
+            [0.90, 0.10, 0.50],
+        ],
+        dtype=float,
+    )
+    y_obs = np.array([0.0, 1.0, 2.0, -1.0], dtype=float)
+    tr.update_xy(x_obs, y_obs, k=2)
+    sobol_engine = qmc.Sobol(d=3, scramble=True, seed=0)
+    x_cand = tr.generate_candidates(
+        x_center=np.array([0.5, 0.5, 0.5], dtype=float),
+        weights=None,
+        num_candidates=512,
+        rng=rng,
+        sobol_engine=sobol_engine,
+    )
+    assert np.all(x_cand >= 0.40) and np.all(x_cand <= 0.60)
+
+
+def test_turbo_optimizer_eps_trust_region_eps_1_produces_full_box_candidates():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from enn.turbo.eps_trust_region import EpsTrustRegion
+
+    rng = np.random.default_rng(0)
+    tr = EpsTrustRegion(num_dim=3, num_arms=1, eps_tr=1.0)
+    x_obs = np.array(
+        [
+            [0.20, 0.20, 0.20],
+            [0.40, 0.40, 0.40],
+            [0.60, 0.60, 0.60],
+            [0.90, 0.10, 0.50],
+        ],
+        dtype=float,
+    )
+    y_obs = np.array([0.0, 1.0, 2.0, -1.0], dtype=float)
+    tr.update_xy(x_obs, y_obs, k=2)
+    sobol_engine = qmc.Sobol(d=3, scramble=True, seed=0)
+    x_center = np.array([0.5, 0.5, 0.5], dtype=float)
+    x_cand = tr.generate_candidates(
+        x_center=x_center,
+        weights=None,
+        num_candidates=2048,
+        rng=rng,
+        sobol_engine=sobol_engine,
+    )
+    assert np.any((x_cand < 0.40) | (x_cand > 0.60))
+
+
+def test_morbo_chebyshev_trust_region_weights_and_scaling():
+    import numpy as np
+    from scipy.stats import qmc
+
+    from enn.turbo.morbo_chebyshev_trust_region import MorboChebyshevTrustRegion
+
+    rng1 = np.random.default_rng(0)
+    rng2 = np.random.default_rng(0)
+    tr1 = MorboChebyshevTrustRegion(num_dim=3, num_arms=1, num_metrics=2, rng=rng1)
+    tr2 = MorboChebyshevTrustRegion(num_dim=3, num_arms=1, num_metrics=2, rng=rng2)
+    assert np.allclose(tr1.weights, tr2.weights)
+    assert tr1.weights.shape == (2,)
+    assert np.all(tr1.weights > 0.0)
+    assert np.isclose(tr1.weights.sum(), 1.0)
+
+    x_obs = np.array([[0.1, 0.2, 0.3], [0.2, 0.2, 0.2]], dtype=float)
+    y_obs = np.array([[1.0, 1.0], [1.0, 1.0]], dtype=float)
+    tr1.update_xy(x_obs, y_obs)
+    scores = tr1.scalarize(y_obs, clip=True)
+    assert scores.shape == (2,)
+    assert np.all(np.isfinite(scores))
+    t = 0.5 * tr1.weights.reshape(1, -1)
+    expected = np.min(t, axis=1) + 0.05 * np.sum(t, axis=1)
+    assert np.allclose(scores[:1], expected)
+
+    sobol_engine = qmc.Sobol(d=3, scramble=True, seed=0)
+    x_center = np.array([0.5, 0.5, 0.5], dtype=float)
+    x_cand = tr1.generate_candidates(
+        x_center=x_center,
+        weights=None,
+        num_candidates=64,
+        rng=np.random.default_rng(1),
+        sobol_engine=sobol_engine,
+    )
+    assert x_cand.shape == (64, 3)
+    assert np.all(x_cand >= 0.0) and np.all(x_cand <= 1.0)
+
+
+def test_turbo_optimizer_morbo_multi_objective():
+    import numpy as np
+
+    from enn.turbo.turbo_config import TurboConfig
+    from enn.turbo.turbo_mode import TurboMode
+    from enn.turbo.turbo_optimizer import TurboOptimizer
+
+    num_dim = 3
+    num_metrics = 2
+    bounds = np.array([[0.0, 1.0]] * num_dim, dtype=float)
+    rng = np.random.default_rng(42)
+
+    config = TurboConfig(tr_type="morbo", num_metrics=num_metrics, num_init=4)
+    optimizer = TurboOptimizer(
+        bounds=bounds, mode=TurboMode.TURBO_ENN, rng=rng, config=config
+    )
+
+    # Initial ask/tell loop
+    for _ in range(3):
+        x = optimizer.ask(num_arms=2)
+        assert x.shape == (2, num_dim)
+        # 2D y with shape (n, num_metrics)
+        y = rng.uniform(0.0, 1.0, size=(2, num_metrics))
+        y_est = optimizer.tell(x, y)
+        # y_est should be 2D with shape (n, num_metrics)
+        assert y_est.shape == (2, num_metrics)
+
+    # After init: should use normal ask with trust region
+    x = optimizer.ask(num_arms=2)
+    assert x.shape == (2, num_dim)
+    y = rng.uniform(0.0, 1.0, size=(2, num_metrics))
+    y_est = optimizer.tell(x, y)
+    # After ENN is fit, y_est is still 2D with shape (n, num_metrics)
+    assert y_est.shape == (2, num_metrics)
+
+    # Verify trust region length is set
+    tr_len = optimizer.tr_length
+    assert tr_len is not None
+    assert 0.0 < tr_len <= 1.0

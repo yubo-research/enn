@@ -453,3 +453,24 @@ def test_epistemic_nearest_neighbors_with_yvar_none():
     assert post.se.shape == (10, 1)
     assert np.all(np.isfinite(post.mu))
     assert np.all(np.isfinite(post.se))
+
+
+def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
+    import numpy as np
+
+    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn_params import ENNParams
+
+    rng = np.random.default_rng(0)
+    n = 20
+    d = 3
+    train_x = rng.standard_normal((n, d))
+    train_y = np.zeros((n, 1), dtype=float)
+    train_yvar = 0.1 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+
+    x_test = rng.standard_normal((5, d))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    post = model.posterior(x_test, params=params)
+    assert np.all(np.isfinite(post.mu))
+    assert np.all(np.isfinite(post.se))

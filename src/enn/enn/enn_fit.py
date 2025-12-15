@@ -9,8 +9,6 @@ if TYPE_CHECKING:
     from .enn import EpistemicNearestNeighbors
     from .enn_params import ENNParams
 
-from .enn_util import standardize_y
-
 
 def subsample_loglik(
     model: EpistemicNearestNeighbors | Any,
@@ -23,17 +21,21 @@ def subsample_loglik(
 ) -> list[float]:
     import numpy as np
 
-    if x.ndim != 2:
-        raise ValueError(x.shape)
-    if y.ndim != 1:
-        raise ValueError(y.shape)
-    if x.shape[0] != y.shape[0]:
-        raise ValueError((x.shape, y.shape))
+    x_array = np.asarray(x, dtype=float)
+    if x_array.ndim != 2:
+        raise ValueError(x_array.shape)
+    y_array = np.asarray(y, dtype=float)
+    if y_array.ndim == 1:
+        y_array = y_array.reshape(-1, 1)
+    if y_array.ndim != 2:
+        raise ValueError(y_array.shape)
+    if x_array.shape[0] != y_array.shape[0]:
+        raise ValueError((x_array.shape, y_array.shape))
     if P <= 0:
         raise ValueError(P)
     if len(paramss) == 0:
         raise ValueError("paramss must be non-empty")
-    n = x.shape[0]
+    n = x_array.shape[0]
     if n == 0:
         return [0.0] * len(paramss)
     if len(model) <= 1:
@@ -43,8 +45,8 @@ def subsample_loglik(
         indices = np.arange(n, dtype=int)
     else:
         indices = rng.permutation(n)[:P_actual]
-    x_selected = x[indices]
-    y_selected = y[indices]
+    x_selected = x_array[indices]
+    y_selected = y_array[indices]
     if not np.isfinite(y_selected).all():
         return [0.0] * len(paramss)
     post_batch = model.batch_posterior(
@@ -52,16 +54,22 @@ def subsample_loglik(
     )
     mu_batch = post_batch.mu
     se_batch = post_batch.se
-    if mu_batch.shape[2] == 1:
-        mu_batch = mu_batch[:, :, 0]
-        se_batch = se_batch[:, :, 0]
     num_params = len(paramss)
-    if mu_batch.shape != (num_params, P_actual) or se_batch.shape != (
+    num_outputs = y_selected.shape[1]
+    if mu_batch.shape != (num_params, P_actual, num_outputs) or se_batch.shape != (
         num_params,
         P_actual,
+        num_outputs,
     ):
-        raise ValueError((mu_batch.shape, se_batch.shape, (num_params, P_actual)))
-    _, y_std = standardize_y(y)
+        raise ValueError(
+            (
+                mu_batch.shape,
+                se_batch.shape,
+                (num_params, P_actual, num_outputs),
+            )
+        )
+    y_std = np.std(y_array, axis=0, keepdims=True).astype(float)
+    y_std = np.where(np.isfinite(y_std) & (y_std > 0.0), y_std, 1.0)
     y_scaled = y_selected / y_std
     mu_scaled = mu_batch / y_std
     se_scaled = se_batch / y_std
@@ -100,12 +108,6 @@ def enn_fit(
 
     train_x = model.train_x
     train_y = model.train_y
-    train_yvar = model.train_yvar
-    if train_y.shape[1] != 1:
-        raise ValueError(train_y.shape)
-    if train_yvar is not None and train_yvar.shape[1] != 1:
-        raise ValueError(train_yvar.shape)
-    y = train_y[:, 0]
     log_min = -3.0
     log_max = 3.0
     epi_var_scale_log_values = rng.uniform(log_min, log_max, size=num_fit_candidates)
@@ -135,7 +137,7 @@ def enn_fit(
     import numpy as np
 
     logliks = subsample_loglik(
-        model, train_x, y, paramss=paramss, P=num_fit_samples, rng=rng
+        model, train_x, train_y, paramss=paramss, P=num_fit_samples, rng=rng
     )
     if len(logliks) == 0:
         return paramss[0]

@@ -18,6 +18,8 @@ class EpistemicNearestNeighbors:
     ) -> None:
         import numpy as np
 
+        train_x = np.asarray(train_x, dtype=float)
+        train_y = np.asarray(train_y, dtype=float)
         if train_x.ndim != 2:
             raise ValueError(train_x.shape)
         if train_y.ndim != 2:
@@ -25,22 +27,25 @@ class EpistemicNearestNeighbors:
         if train_x.shape[0] != train_y.shape[0]:
             raise ValueError((train_x.shape, train_y.shape))
         if train_yvar is not None:
+            train_yvar = np.asarray(train_yvar, dtype=float)
             if train_yvar.ndim != 2:
                 raise ValueError(train_yvar.shape)
             if train_y.shape != train_yvar.shape:
                 raise ValueError((train_y.shape, train_yvar.shape))
-        self._train_x = np.asarray(train_x, dtype=float)
-        self._train_y = np.asarray(train_y, dtype=float)
-        self._train_yvar = (
-            np.asarray(train_yvar, dtype=float) if train_yvar is not None else None
-        )
+
+        self._train_x = train_x
+        self._train_y = train_y
+        self._train_yvar = train_yvar
         self._num_obs, self._num_dim = self._train_x.shape
         _, self._num_metrics = self._train_y.shape
         self._eps_var = 1e-9
         if len(self._train_y) < 2:
             self._y_scale = np.ones(shape=(1, self._num_metrics), dtype=float)
         else:
-            self._y_scale = np.std(self._train_y, axis=0, keepdims=True).astype(float)
+            y_scale = np.std(self._train_y, axis=0, keepdims=True).astype(float)
+            self._y_scale = np.where(
+                np.isfinite(y_scale) & (y_scale > 0.0), y_scale, 1.0
+            )
 
         self._index: Any | None = None
         self._build_index()
@@ -107,6 +112,7 @@ class EpistemicNearestNeighbors:
 
         from .enn_normal import ENNNormal
 
+        x = np.asarray(x, dtype=float)
         if x.ndim != 2:
             raise ValueError(x.shape)
         if x.shape[1] != self._num_dim:

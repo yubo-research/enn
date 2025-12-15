@@ -24,15 +24,23 @@ def _next_power_of_2(n: int) -> int:
 
 
 @contextlib.contextmanager
-def torch_rng_context(generator: torch.Generator | Any) -> Iterator[None]:
+def torch_seed_context(
+    seed: int, device: torch.device | Any | None = None
+) -> Iterator[None]:
     import torch
 
-    old_state = torch.get_rng_state()
-    try:
-        torch.set_rng_state(generator.get_state())
+    devices: list[int] | None = None
+    if device is not None and getattr(device, "type", None) == "cuda":
+        idx = 0 if getattr(device, "index", None) is None else int(device.index)
+        devices = [idx]
+    with torch.random.fork_rng(devices=devices, enabled=True):
+        torch.manual_seed(int(seed))
+        if device is not None and getattr(device, "type", None) == "cuda":
+            torch.cuda.manual_seed_all(int(seed))
+        if device is not None and getattr(device, "type", None) == "mps":
+            if hasattr(torch, "mps") and hasattr(torch.mps, "manual_seed"):
+                torch.mps.manual_seed(int(seed))
         yield
-    finally:
-        torch.set_rng_state(old_state)
 
 
 def fit_gp(
@@ -197,6 +205,29 @@ def raasp(
     )
 
 
+def generate_raasp_candidates(
+    center: np.ndarray | Any,
+    lb: np.ndarray | list[float] | Any,
+    ub: np.ndarray | list[float] | Any,
+    num_candidates: int,
+    *,
+    rng: Generator | Any,
+    sobol_engine: QMCEngine | Any,
+    num_pert: int = 20,
+) -> np.ndarray:
+    if num_candidates <= 0:
+        raise ValueError(num_candidates)
+    return raasp(
+        center,
+        lb,
+        ub,
+        num_candidates,
+        num_pert=num_pert,
+        rng=rng,
+        sobol_engine=sobol_engine,
+    )
+
+
 def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
     import numpy as np
 
@@ -229,12 +260,10 @@ def gp_thompson_sample(
 
     x_torch = torch.as_tensor(x_cand, dtype=torch.float64)
     seed = int(rng.integers(2**31 - 1))
-    gen = torch.Generator(device=x_torch.device)
-    gen.manual_seed(seed)
     with (
         torch.no_grad(),
         gpytorch.settings.fast_pred_var(),
-        torch_rng_context(gen),
+        torch_seed_context(seed, device=x_torch.device),
     ):
         posterior = model.posterior(x_torch)
         samples = posterior.sample(sample_shape=torch.Size([1]))

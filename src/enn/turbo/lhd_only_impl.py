@@ -15,6 +15,7 @@ class LHDOnlyImpl(BaseTurboImpl):
         x_obs_list: list,
         y_obs_list: list,
         rng: Generator,
+        tr_state: Any = None,
     ) -> np.ndarray | None:
         return None
 
@@ -35,6 +36,7 @@ class LHDOnlyImpl(BaseTurboImpl):
     def update_trust_region(
         self,
         tr_state: Any,
+        x_obs_list: list,
         y_obs_list: list,
         x_center: np.ndarray | None = None,
         k: int | None = None,

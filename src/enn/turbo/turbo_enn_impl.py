@@ -22,6 +22,7 @@ class TurboENNImpl(BaseTurboImpl):
         x_obs_list: list,
         y_obs_list: list,
         rng: Generator,
+        tr_state: Any = None,
     ) -> np.ndarray | None:
         import numpy as np
 
@@ -30,7 +31,7 @@ class TurboENNImpl(BaseTurboImpl):
         if len(y_obs_list) == 0:
             return None
         if self._enn is None or self._fitted_params is None:
-            return super().get_x_center(x_obs_list, y_obs_list, rng)
+            return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
         if self._fitted_n_obs != len(x_obs_list):
             raise RuntimeError(
                 f"ENN fitted on {self._fitted_n_obs} obs but get_x_center called with {len(x_obs_list)}"
@@ -38,17 +39,40 @@ class TurboENNImpl(BaseTurboImpl):
 
         y_array = np.asarray(y_obs_list, dtype=float)
         x_array = np.asarray(x_obs_list, dtype=float)
-
         k = self._config.k if self._config.k is not None else 10
-        num_top = min(k, len(y_array))
-        top_indices = np.argpartition(-y_array, num_top - 1)[:num_top]
 
-        x_top = x_array[top_indices]
-        posterior = self._enn.posterior(x_top, params=self._fitted_params)
-        mu = posterior.mu[:, 0]
+        # For morbo: top-k per metric → union → scalarize mu
+        if self._config.tr_type == "morbo" and tr_state is not None:
+            if y_array.ndim == 1:
+                y_array = y_array.reshape(-1, tr_state.num_metrics)
+            num_metrics = y_array.shape[1]
 
-        best_idx_in_top = argmax_random_tie(mu, rng=rng)
-        return x_top[best_idx_in_top]
+            # Find top-k indices for each metric and take union
+            union_indices = set()
+            for m in range(num_metrics):
+                num_top = min(k, len(y_array))
+                top_m = np.argpartition(-y_array[:, m], num_top - 1)[:num_top]
+                union_indices.update(top_m.tolist())
+            union_indices = np.array(sorted(union_indices), dtype=int)
+
+            x_union = x_array[union_indices]
+            posterior = self._enn.posterior(x_union, params=self._fitted_params)
+            mu = posterior.mu  # (len(union), num_metrics)
+
+            scalarized = tr_state.scalarize(mu, clip=False)
+            best_idx_in_union = argmax_random_tie(scalarized, rng=rng)
+            return x_union[best_idx_in_union]
+        else:
+            # Single-objective: original logic
+            num_top = min(k, len(y_array))
+            top_indices = np.argpartition(-y_array, num_top - 1)[:num_top]
+
+            x_top = x_array[top_indices]
+            posterior = self._enn.posterior(x_top, params=self._fitted_params)
+            mu = posterior.mu[:, 0]
+
+            best_idx_in_top = argmax_random_tie(mu, rng=rng)
+            return x_top[best_idx_in_top]
 
     def needs_tr_list(self) -> bool:
         return True
@@ -106,7 +130,6 @@ class TurboENNImpl(BaseTurboImpl):
 
         acq_type = self._config.acq_type
         k = self._config.k
-        var_scale = self._config.var_scale
 
         if self._enn is None:
             return fallback_fn(x_cand, num_arms)
@@ -115,9 +138,7 @@ class TurboENNImpl(BaseTurboImpl):
             params = self._fitted_params
         else:
             k_val = k if k is not None else 10
-            params = ENNParams(
-                k=k_val, epi_var_scale=var_scale, ale_homoscedastic_scale=0.0
-            )
+            params = ENNParams(k=k_val, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
 
         posterior = self._enn.posterior(x_cand, params=params)
         mu = posterior.mu[:, 0]
@@ -155,6 +176,9 @@ class TurboENNImpl(BaseTurboImpl):
         if self._enn is None or self._fitted_params is None:
             return y_observed
         posterior = self._enn.posterior(x_unit, params=self._fitted_params)
+        # For multi-metric (morbo), return full mu; for single-metric, return 1D
+        if posterior.mu.shape[1] > 1:
+            return posterior.mu
         return posterior.mu[:, 0]
 
     def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
@@ -166,11 +190,10 @@ class TurboENNImpl(BaseTurboImpl):
         params = (
             self._fitted_params
             if self._fitted_params is not None
-            else ENNParams(
-                k=k, epi_var_scale=self._config.var_scale, ale_homoscedastic_scale=0.0
-            )
+            else ENNParams(k=k, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
         )
         posterior = self._enn.posterior(x_unit, params=params, observation_noise=False)
-        mu = posterior.mu[:, 0]
-        sigma = posterior.se[:, 0]
-        return mu, sigma
+        # For multi-metric (morbo), return full mu/sigma; for single-metric, return 1D
+        if posterior.mu.shape[1] > 1:
+            return posterior.mu, posterior.se
+        return posterior.mu[:, 0], posterior.se[:, 0]

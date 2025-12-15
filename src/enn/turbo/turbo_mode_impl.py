@@ -13,11 +13,14 @@ class TurboModeImpl(Protocol):
         x_obs_list: list,
         y_obs_list: list,
         rng: Generator,
+        tr_state: Any = None,
     ) -> np.ndarray | None: ...
 
     def needs_tr_list(self) -> bool: ...
 
-    def create_trust_region(self, num_dim: int, num_arms: int) -> Any: ...
+    def create_trust_region(
+        self, num_dim: int, num_arms: int, rng: Generator
+    ) -> Any: ...
 
     def try_early_ask(
         self,
@@ -59,6 +62,7 @@ class TurboModeImpl(Protocol):
     def update_trust_region(
         self,
         tr_state: Any,
+        x_obs_list: list,
         y_obs_list: list,
         x_center: np.ndarray | None = None,
         k: int | None = None,
