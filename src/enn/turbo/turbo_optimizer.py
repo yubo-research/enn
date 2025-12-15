@@ -41,16 +41,6 @@ class TurboOptimizer:
 
         from .turbo_mode import TurboMode
 
-        def _common_kwargs(cfg: TurboConfig) -> dict[str, object]:
-            return {
-                "k": cfg.k,
-                "num_candidates": cfg.num_candidates,
-                "num_init": cfg.num_init,
-                "trailing_obs": cfg.trailing_obs,
-                "tr_type": cfg.tr_type,
-                "num_metrics": cfg.num_metrics,
-            }
-
         if config is None:
             match mode:
                 case TurboMode.TURBO_ONE:
@@ -63,22 +53,30 @@ class TurboOptimizer:
                     config = LHDOnlyConfig()
                 case _:
                     raise ValueError(f"Unknown mode: {mode}")
-
-        match mode:
-            case TurboMode.TURBO_ONE:
-                if not isinstance(config, TurboOneConfig):
-                    config = TurboOneConfig(**_common_kwargs(config))
-            case TurboMode.TURBO_ZERO:
-                if not isinstance(config, TurboZeroConfig):
-                    config = TurboZeroConfig(**_common_kwargs(config))
-            case TurboMode.TURBO_ENN:
-                if not isinstance(config, TurboENNConfig):
-                    config = TurboENNConfig(**_common_kwargs(config))
-            case TurboMode.LHD_ONLY:
-                if not isinstance(config, LHDOnlyConfig):
-                    config = LHDOnlyConfig(**_common_kwargs(config))
-            case _:
-                raise ValueError(f"Unknown mode: {mode}")
+        else:
+            match mode:
+                case TurboMode.TURBO_ONE:
+                    if not isinstance(config, TurboOneConfig):
+                        raise ValueError(
+                            f"mode={mode} requires TurboOneConfig, got {type(config).__name__}"
+                        )
+                case TurboMode.TURBO_ZERO:
+                    if not isinstance(config, TurboZeroConfig):
+                        raise ValueError(
+                            f"mode={mode} requires TurboZeroConfig, got {type(config).__name__}"
+                        )
+                case TurboMode.TURBO_ENN:
+                    if not isinstance(config, TurboENNConfig):
+                        raise ValueError(
+                            f"mode={mode} requires TurboENNConfig, got {type(config).__name__}"
+                        )
+                case TurboMode.LHD_ONLY:
+                    if not isinstance(config, LHDOnlyConfig):
+                        raise ValueError(
+                            f"mode={mode} requires LHDOnlyConfig, got {type(config).__name__}"
+                        )
+                case _:
+                    raise ValueError(f"Unknown mode: {mode}")
         self._config = config
 
         bounds = np.asarray(bounds, dtype=float)
@@ -166,14 +164,6 @@ class TurboOptimizer:
     @property
     def tr_obs_count(self) -> int:
         return len(self._y_obs_list)
-
-    @property
-    def best_tr_value(self) -> float | None:
-        import numpy as np
-
-        if len(self._y_obs_list) == 0:
-            return None
-        return float(np.max(self._y_obs_list))
 
     @property
     def tr_length(self) -> float | None:

@@ -67,7 +67,6 @@ def arms_from_pareto_fronts(
     rng: Generator | Any,
 ) -> np.ndarray:
     import numpy as np
-    from nds import ndomsort
 
     if x_cand.ndim != 2:
         raise ValueError(x_cand.shape)
@@ -75,22 +74,51 @@ def arms_from_pareto_fronts(
         raise ValueError((mu.shape, se.shape))
     if mu.size != x_cand.shape[0]:
         raise ValueError((mu.size, x_cand.shape[0]))
+    num_arms = int(num_arms)
+    if num_arms <= 0:
+        raise ValueError(num_arms)
+    if not np.all(np.isfinite(mu)) or not np.all(np.isfinite(se)):
+        raise ValueError("mu and se must be finite")
 
-    combined = np.column_stack([mu, se])
-    idx_front = np.array(ndomsort.non_domin_sort(-combined, only_front_indices=True))
+    def _pareto_front_2d_maximize(
+        mu_: np.ndarray, se_: np.ndarray, idx: np.ndarray
+    ) -> np.ndarray:
+        order = np.lexsort((-se_[idx], -mu_[idx]))
+        sorted_idx = idx[order]
+        keep: list[int] = []
+        best_se = -float("inf")
+        last_mu = float("nan")
+        last_se = float("nan")
+        for i in sorted_idx.tolist():
+            s = float(se_[i])
+            m = float(mu_[i])
+            if s > best_se:
+                keep.append(i)
+                best_se = s
+                last_mu = m
+                last_se = s
+            elif s == best_se and m == last_mu and s == last_se:
+                keep.append(i)
+        return np.asarray(keep, dtype=int)
 
     i_keep: list[int] = []
-    for n_front in range(1 + int(idx_front.max())):
-        front_indices = np.where(idx_front == n_front)[0]
+    remaining = np.arange(mu.size, dtype=int)
+    while remaining.size > 0 and len(i_keep) < num_arms:
+        front_indices = _pareto_front_2d_maximize(mu, se, remaining)
+        if front_indices.size == 0:
+            raise RuntimeError("pareto front extraction failed")
         front_indices = front_indices[np.argsort(-mu[front_indices])]
-        if len(i_keep) + len(front_indices) <= num_arms:
+        if len(i_keep) + int(front_indices.size) <= num_arms:
             i_keep.extend(front_indices.tolist())
-        else:
-            remaining = num_arms - len(i_keep)
-            i_keep.extend(
-                rng.choice(front_indices, size=remaining, replace=False).tolist()
-            )
-            break
+            is_front = np.zeros(mu.size, dtype=bool)
+            is_front[front_indices] = True
+            remaining = remaining[~is_front[remaining]]
+            continue
+        remaining_arms = num_arms - len(i_keep)
+        i_keep.extend(
+            rng.choice(front_indices, size=remaining_arms, replace=False).tolist()
+        )
+        break
 
     i_keep = np.array(i_keep)
     return x_cand[i_keep[np.argsort(-mu[i_keep])]]

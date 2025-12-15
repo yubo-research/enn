@@ -22,6 +22,16 @@ class TurboConfig:
             )
         if self.num_metrics is not None and self.num_metrics < 1:
             raise ValueError(f"num_metrics must be >= 1, got {self.num_metrics}")
+        if self.tr_type == "turbo":
+            if self.num_metrics is not None and self.num_metrics != 1:
+                raise ValueError(
+                    f"num_metrics must be 1 for tr_type='turbo', got {self.num_metrics}"
+                )
+        if self.tr_type == "none":
+            if self.num_metrics is not None and self.num_metrics != 1:
+                raise ValueError(
+                    f"num_metrics must be 1 for tr_type='none', got {self.num_metrics}"
+                )
 
 
 @dataclass(frozen=True)

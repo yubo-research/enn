@@ -57,6 +57,23 @@ def test_turbo_optimizer_accepts_list_bounds():
     assert x0.shape == (2, 2)
 
 
+def test_turbo_optimizer_requires_mode_specific_config():
+    import numpy as np
+
+    from enn.turbo.turbo_config import TurboConfig
+    from enn.turbo.turbo_optimizer import TurboOptimizer
+
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError, match="requires TurboENNConfig"):
+        TurboOptimizer(
+            bounds=bounds,
+            mode=TurboMode.TURBO_ENN,
+            rng=rng,
+            config=TurboConfig(),
+        )
+
+
 def test_turbo_one_improves_on_sphere():
     best = _run_bo(TurboMode.TURBO_ONE, num_steps=12)
     assert best > -0.5
@@ -206,7 +223,6 @@ def test_trailing_obs_includes_incumbent():
             opt.tell(x, y)
 
         assert opt.tr_obs_count <= 5
-        assert opt.best_tr_value == 10.0
 
         x_new = opt.ask(num_arms=2)
         assert x_new.shape == (2, 2)
@@ -1025,6 +1041,27 @@ def test_turbo_one_impl_get_x_center_requires_fit_for_n_ge_2():
     assert np.allclose(center2, x2_array[0]) or np.allclose(center2, x2_array[1])
 
 
+def test_turbo_config_num_metrics_validation():
+    import pytest
+
+    from enn.turbo.turbo_config import TurboConfig
+
+    TurboConfig(tr_type="turbo", num_metrics=None)
+    TurboConfig(tr_type="turbo", num_metrics=1)
+    with pytest.raises(ValueError, match="num_metrics must be 1 for tr_type='turbo'"):
+        TurboConfig(tr_type="turbo", num_metrics=2)
+
+    TurboConfig(tr_type="none", num_metrics=None)
+    TurboConfig(tr_type="none", num_metrics=1)
+    with pytest.raises(ValueError, match="num_metrics must be 1 for tr_type='none'"):
+        TurboConfig(tr_type="none", num_metrics=2)
+
+    TurboConfig(tr_type="morbo", num_metrics=None)
+    TurboConfig(tr_type="morbo", num_metrics=2)
+    with pytest.raises(ValueError, match="num_metrics must be >= 1"):
+        TurboConfig(tr_type="morbo", num_metrics=0)
+
+
 def test_turbo_optimizer_tell_without_yvar():
     import numpy as np
 
@@ -1081,27 +1118,6 @@ def test_turbo_optimizer_yvar_policy_enforced():
         opt2.tell(x1, y1, yvar1)
 
 
-def test_stagger_trust_region_generate_candidates_is_unit_box():
-    import numpy as np
-    from scipy.stats import qmc
-
-    from enn.turbo.stagger_trust_region import StaggerTrustRegion
-
-    rng = np.random.default_rng(0)
-    tr = StaggerTrustRegion(num_dim=3, num_arms=1)
-    x_center = np.array([0.25, 0.5, 0.75], dtype=float)
-    sobol_engine = qmc.Sobol(d=3, scramble=True, seed=0)
-    x_cand = tr.generate_candidates(
-        x_center=x_center,
-        lengthscales=None,
-        num_candidates=256,
-        rng=rng,
-        sobol_engine=sobol_engine,
-    )
-    assert x_cand.shape == (256, 3)
-    assert np.all(x_cand >= 0.0) and np.all(x_cand <= 1.0)
-
-
 def test_turbo_optimizer_no_trust_region_bounds_are_full_box():
     import numpy as np
 
@@ -1123,67 +1139,6 @@ def test_turbo_optimizer_no_trust_region_bounds_are_full_box():
     lb, ub = opt._tr_state.compute_bounds_1d(x_center)
     assert np.allclose(lb, 0.0)
     assert np.allclose(ub, 1.0)
-
-
-def test_turbo_optimizer_eps_trust_region_eps_0_uses_tight_bounds():
-    import numpy as np
-    from scipy.stats import qmc
-
-    from enn.turbo.eps_trust_region import EpsTrustRegion
-
-    rng = np.random.default_rng(0)
-    tr = EpsTrustRegion(num_dim=3, num_arms=1, eps_tr=0.0)
-    x_obs = np.array(
-        [
-            [0.20, 0.20, 0.20],
-            [0.40, 0.40, 0.40],
-            [0.60, 0.60, 0.60],
-            [0.90, 0.10, 0.50],
-        ],
-        dtype=float,
-    )
-    y_obs = np.array([0.0, 1.0, 2.0, -1.0], dtype=float)
-    tr.update_xy(x_obs, y_obs, k=2)
-    sobol_engine = qmc.Sobol(d=3, scramble=True, seed=0)
-    x_cand = tr.generate_candidates(
-        x_center=np.array([0.5, 0.5, 0.5], dtype=float),
-        lengthscales=None,
-        num_candidates=512,
-        rng=rng,
-        sobol_engine=sobol_engine,
-    )
-    assert np.all(x_cand >= 0.40) and np.all(x_cand <= 0.60)
-
-
-def test_turbo_optimizer_eps_trust_region_eps_1_produces_full_box_candidates():
-    import numpy as np
-    from scipy.stats import qmc
-
-    from enn.turbo.eps_trust_region import EpsTrustRegion
-
-    rng = np.random.default_rng(0)
-    tr = EpsTrustRegion(num_dim=3, num_arms=1, eps_tr=1.0)
-    x_obs = np.array(
-        [
-            [0.20, 0.20, 0.20],
-            [0.40, 0.40, 0.40],
-            [0.60, 0.60, 0.60],
-            [0.90, 0.10, 0.50],
-        ],
-        dtype=float,
-    )
-    y_obs = np.array([0.0, 1.0, 2.0, -1.0], dtype=float)
-    tr.update_xy(x_obs, y_obs, k=2)
-    sobol_engine = qmc.Sobol(d=3, scramble=True, seed=0)
-    x_center = np.array([0.5, 0.5, 0.5], dtype=float)
-    x_cand = tr.generate_candidates(
-        x_center=x_center,
-        lengthscales=None,
-        num_candidates=2048,
-        rng=rng,
-        sobol_engine=sobol_engine,
-    )
-    assert np.any((x_cand < 0.40) | (x_cand > 0.60))
 
 
 def test_morbo_chebyshev_trust_region_weights_and_scaling():

@@ -34,8 +34,6 @@ class MorboChebyshevTrustRegion:
 
         self._y_min: np.ndarray | Any | None = None
         self._y_max: np.ndarray | Any | None = None
-        self._scalarized_values: list[float] = []
-        self._prev_num_obs: int = 0
 
     @property
     def num_dim(self) -> int:
@@ -81,35 +79,20 @@ class MorboChebyshevTrustRegion:
         if n == 0:
             self._y_min = None
             self._y_max = None
-            self._scalarized_values = []
-            self._prev_num_obs = 0
             self._tr.restart()
             return
 
-        if n < self._prev_num_obs:
-            raise ValueError((n, self._prev_num_obs))
-
-        y_new = y_obs[self._prev_num_obs :]
-        if y_new.size == 0:
-            return
-
-        if self._y_min is None or self._y_max is None:
-            y_min = y_new.min(axis=0)
-            y_max = y_new.max(axis=0)
-        else:
-            y_min = np.minimum(self._y_min, y_new.min(axis=0))
-            y_max = np.maximum(self._y_max, y_new.max(axis=0))
-        self._y_min = y_min
-        self._y_max = y_max
-
-        scores = self.scalarize(y_new, clip=True)
-        self._scalarized_values.extend([float(v) for v in scores])
-        self._prev_num_obs = n
-
-        values = np.asarray(self._scalarized_values, dtype=float)
+        self._y_min = y_obs.min(axis=0)
+        self._y_max = y_obs.max(axis=0)
+        values = np.asarray(self.scalarize(y_obs, clip=True), dtype=float)
         if values.shape != (n,):
             raise RuntimeError((values.shape, n))
-        self._tr.update(values)
+
+        self._tr.restart()
+        end = 0
+        while end < n:
+            end = min(n, end + self._num_arms)
+            self._tr.update(values[:end])
 
     def scalarize(self, y: np.ndarray | Any, *, clip: bool) -> np.ndarray:
         import numpy as np
@@ -137,8 +120,6 @@ class MorboChebyshevTrustRegion:
     def restart(self) -> None:
         self._y_min = None
         self._y_max = None
-        self._scalarized_values = []
-        self._prev_num_obs = 0
         self._tr.restart()
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:

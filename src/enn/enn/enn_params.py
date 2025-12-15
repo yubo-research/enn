@@ -13,8 +13,8 @@ class ENNParams:
         import numpy as np
 
         k = int(self.k)
-        if k < 0:
-            raise ValueError(f"k must be >= 0, got {k}")
+        if k <= 0:
+            raise ValueError(f"k must be > 0, got {k}")
         epi_var_scale = float(self.epi_var_scale)
         if not np.isfinite(epi_var_scale) or epi_var_scale < 0.0:
             raise ValueError(f"epi_var_scale must be >= 0, got {epi_var_scale}")

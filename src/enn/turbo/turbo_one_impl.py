@@ -97,7 +97,7 @@ class TurboOneImpl(BaseTurboImpl):
         num_arms: int,
         x_obs_list: list,
         draw_initial_fn: Callable[[int], np.ndarray],
-        get_init_lhd_points_fn: Callable[[int], np.ndarray | None],
+        get_init_lhd_points_fn: Callable[[int], np.ndarray],
     ) -> np.ndarray | None:
         if len(x_obs_list) == 0:
             return get_init_lhd_points_fn(num_arms)

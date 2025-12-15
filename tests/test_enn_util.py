@@ -104,3 +104,23 @@ def test_calculate_sobol_indices_dtype_preservation():
     S = calculate_sobol_indices(x, y)
     assert S.shape == (d,)
     assert S.dtype == np.float32
+
+
+def test_arms_from_pareto_fronts_selects_fronts_in_order():
+    import numpy as np
+
+    from enn.enn.enn_util import arms_from_pareto_fronts
+
+    x_cand = np.arange(12, dtype=float).reshape(6, 2)
+    mu = np.array([5.0, 4.0, 3.0, 2.0, 1.0, 0.0], dtype=float)
+    se = np.array([0.10, 0.20, 0.15, 0.40, 0.05, 0.50], dtype=float)
+    rng = np.random.default_rng(0)
+
+    out4 = arms_from_pareto_fronts(x_cand, mu, se, num_arms=4, rng=rng)
+    assert out4.shape == (4, 2)
+    assert np.allclose(out4, x_cand[[0, 1, 3, 5]])
+
+    rng = np.random.default_rng(0)
+    out5 = arms_from_pareto_fronts(x_cand, mu, se, num_arms=5, rng=rng)
+    assert out5.shape == (5, 2)
+    assert np.allclose(out5, x_cand[[0, 1, 2, 3, 5]])
