@@ -15,8 +15,8 @@ class TurboOneImpl(BaseTurboImpl):
     def __init__(self, config: TurboConfig) -> None:
         super().__init__(config)
         self._gp_model: Any | None = None
-        self._gp_y_mean: float = 0.0
-        self._gp_y_std: float = 1.0
+        self._gp_y_mean: float | Any = 0.0
+        self._gp_y_std: float | Any = 1.0
         self._fitted_n_obs: int = 0
 
     def get_x_center(
@@ -34,6 +34,15 @@ class TurboOneImpl(BaseTurboImpl):
         if len(y_obs_list) == 0:
             return None
         if self._gp_model is None:
+            x_array = np.asarray(x_obs_list, dtype=float)
+            y_array = np.asarray(y_obs_list, dtype=float)
+            if y_array.ndim == 2:
+                if self._config.tr_type == "morbo" and tr_state is not None:
+                    scores = tr_state.scalarize(y_array, clip=True)
+                else:
+                    scores = y_array[:, 0]
+                best_idx = argmax_random_tie(scores, rng=rng)
+                return x_array[best_idx]
             return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
         if self._fitted_n_obs != len(x_obs_list):
             raise RuntimeError(
@@ -44,16 +53,34 @@ class TurboOneImpl(BaseTurboImpl):
         x_torch = torch.as_tensor(x_array, dtype=torch.float64)
         with torch.no_grad():
             posterior = self._gp_model.posterior(x_torch)
-            mu = posterior.mean.cpu().numpy()  # (n, num_metrics) or (n, 1)
+            mu_std = posterior.mean.cpu().numpy()
+
+        if mu_std.ndim == 1:
+            mu_std_2d = mu_std.reshape(-1, 1)
+        elif mu_std.ndim == 2:
+            mu_std_2d = mu_std.T
+        else:
+            raise ValueError(mu_std.shape)
+
+        num_metrics = int(mu_std_2d.shape[1])
+        gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
+        gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
+        if gp_y_mean.size == 1 and num_metrics != 1:
+            gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
+        if gp_y_std.size == 1 and num_metrics != 1:
+            gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
+        if gp_y_mean.shape != (num_metrics,) or gp_y_std.shape != (num_metrics,):
+            raise ValueError((gp_y_mean.shape, gp_y_std.shape, num_metrics))
+        mu = gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * mu_std_2d
 
         # For morbo: scalarize mu values
         if self._config.tr_type == "morbo" and tr_state is not None:
-            if mu.ndim == 1:
-                mu = mu.reshape(-1, tr_state.num_metrics)
             scalarized = tr_state.scalarize(mu, clip=False)
             best_idx = argmax_random_tie(scalarized, rng=rng)
         else:
-            best_idx = argmax_random_tie(mu.ravel(), rng=rng)
+            if mu.shape[1] != 1:
+                raise ValueError(mu.shape)
+            best_idx = argmax_random_tie(mu[:, 0], rng=rng)
 
         return x_array[best_idx]
 
@@ -113,12 +140,14 @@ class TurboOneImpl(BaseTurboImpl):
             self._gp_y_std = gp_y_std_fitted
         weights = None
         if self._gp_model is not None:
-            weights = (
+            lengthscale = (
                 self._gp_model.covar_module.base_kernel.lengthscale.cpu()
                 .detach()
                 .numpy()
-                .ravel()
             )
+            if lengthscale.ndim == 3:
+                lengthscale = lengthscale.mean(axis=0)
+            weights = lengthscale.ravel()
             # First line helps stabilize second line.
             weights = weights / weights.mean()
             weights = weights / np.prod(np.power(weights, 1.0 / len(weights)))
@@ -132,21 +161,73 @@ class TurboOneImpl(BaseTurboImpl):
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
+        tr_state: Any = None,
     ) -> np.ndarray:
+        import numpy as np
+
         if self._gp_model is None:
             return fallback_fn(x_cand, num_arms)
 
+        if self._config.tr_type == "morbo" and tr_state is not None:
+            import gpytorch
+            import torch
+
+            from .turbo_utils import torch_seed_context
+
+            x_torch = torch.as_tensor(x_cand, dtype=torch.float64)
+            seed = int(rng.integers(2**31 - 1))
+            with (
+                torch.no_grad(),
+                gpytorch.settings.fast_pred_var(),
+                torch_seed_context(seed, device=x_torch.device),
+            ):
+                posterior = self._gp_model.posterior(x_torch)
+                samples = posterior.sample(sample_shape=torch.Size([1]))
+
+            if samples.ndim == 2:
+                samples_std = samples[0].detach().cpu().numpy().reshape(-1, 1)
+            elif samples.ndim == 3:
+                samples_std = samples[0].detach().cpu().numpy().T
+            else:
+                raise ValueError(samples.shape)
+
+            num_metrics = int(samples_std.shape[1])
+            gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
+            gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
+            if gp_y_mean.size == 1 and num_metrics != 1:
+                gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
+            if gp_y_std.size == 1 and num_metrics != 1:
+                gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
+            if gp_y_mean.shape != (num_metrics,) or gp_y_std.shape != (num_metrics,):
+                raise ValueError((gp_y_mean.shape, gp_y_std.shape, num_metrics))
+
+            y_samples = gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * samples_std
+            scores = tr_state.scalarize(y_samples, clip=False)
+            shuffled_indices = rng.permutation(len(scores))
+            shuffled_scores = scores[shuffled_indices]
+            top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[
+                :num_arms
+            ]
+            idx = shuffled_indices[top_k_in_shuffled]
+            return from_unit_fn(x_cand[idx])
+
+        if (
+            np.asarray(self._gp_y_mean).ndim != 0
+            or np.asarray(self._gp_y_std).ndim != 0
+        ):
+            raise ValueError("multi-output GP requires tr_type='morbo'")
         idx = gp_thompson_sample(
             self._gp_model,
             x_cand,
             num_arms,
             rng,
-            self._gp_y_mean,
-            self._gp_y_std,
+            float(self._gp_y_mean),
+            float(self._gp_y_std),
         )
         return from_unit_fn(x_cand[idx])
 
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
+        import numpy as np
         import torch
 
         if self._gp_model is None:
@@ -154,10 +235,28 @@ class TurboOneImpl(BaseTurboImpl):
         x_torch = torch.as_tensor(x_unit, dtype=torch.float64)
         with torch.no_grad():
             posterior = self._gp_model.posterior(x_torch)
-            mu = posterior.mean.cpu().numpy().ravel()
-        return self._gp_y_mean + self._gp_y_std * mu
+            mu_std = posterior.mean.cpu().numpy()
+
+        if mu_std.ndim == 1:
+            mu_std_2d = mu_std.reshape(-1, 1)
+        elif mu_std.ndim == 2:
+            mu_std_2d = mu_std.T
+        else:
+            raise ValueError(mu_std.shape)
+        num_metrics = int(mu_std_2d.shape[1])
+        gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
+        gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
+        if gp_y_mean.size == 1 and num_metrics != 1:
+            gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
+        if gp_y_std.size == 1 and num_metrics != 1:
+            gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
+        mu = gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * mu_std_2d
+        if mu.shape[1] == 1:
+            return mu[:, 0]
+        return mu
 
     def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        import numpy as np
         import torch
 
         if self._gp_model is None:
@@ -165,8 +264,24 @@ class TurboOneImpl(BaseTurboImpl):
         x_torch = torch.as_tensor(x_unit, dtype=torch.float64)
         with torch.no_grad():
             posterior = self._gp_model.posterior(x_torch)
-            mu_std = posterior.mean.cpu().numpy().ravel()
-            sigma_std = posterior.variance.cpu().numpy().ravel() ** 0.5
-        mu = self._gp_y_mean + self._gp_y_std * mu_std
-        sigma = self._gp_y_std * sigma_std
+            mu_std = posterior.mean.cpu().numpy()
+            sigma_std = posterior.variance.cpu().numpy() ** 0.5
+
+        if mu_std.ndim == 1:
+            mu_std_2d = mu_std.reshape(-1, 1)
+            sigma_std_2d = sigma_std.reshape(-1, 1)
+        elif mu_std.ndim == 2:
+            mu_std_2d = mu_std.T
+            sigma_std_2d = sigma_std.T
+        else:
+            raise ValueError(mu_std.shape)
+        num_metrics = int(mu_std_2d.shape[1])
+        gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
+        gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
+        if gp_y_mean.size == 1 and num_metrics != 1:
+            gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
+        if gp_y_std.size == 1 and num_metrics != 1:
+            gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
+        mu = gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * mu_std_2d
+        sigma = gp_y_std.reshape(1, -1) * sigma_std_2d
         return mu, sigma

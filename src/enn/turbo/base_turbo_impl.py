@@ -69,7 +69,7 @@ class BaseTurboImpl:
 
             return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
         elif self._config.tr_type == "morbo":
-            from .morbo_chebyshev_trust_region import MorboChebyshevTrustRegion
+            from .morbo_trust_region import MorboChebyshevTrustRegion
 
             effective_num_metrics = num_metrics or self._config.num_metrics
             if effective_num_metrics is None:
@@ -126,6 +126,7 @@ class BaseTurboImpl:
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
+        tr_state: Any = None,
     ) -> np.ndarray:
         raise NotImplementedError("Subclasses must implement select_candidates")
 

@@ -123,6 +123,7 @@ class TurboENNImpl(BaseTurboImpl):
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
+        tr_state: Any = None,  # noqa: ARG002
     ) -> np.ndarray:
         import numpy as np
 

@@ -1134,7 +1134,7 @@ def test_morbo_chebyshev_trust_region_weights_and_scaling():
     import numpy as np
     from scipy.stats import qmc
 
-    from enn.turbo.morbo_chebyshev_trust_region import MorboChebyshevTrustRegion
+    from enn.turbo.morbo_trust_region import MorboChebyshevTrustRegion
 
     rng1 = np.random.default_rng(0)
     rng2 = np.random.default_rng(0)
@@ -1207,3 +1207,58 @@ def test_turbo_optimizer_morbo_multi_objective():
     tr_len = optimizer.tr_length
     assert tr_len is not None
     assert 0.0 < tr_len <= 1.0
+
+
+def test_fit_gp_multi_output_can_trigger_non_scalar_backward_error():
+    import numpy as np
+    import pytest
+    from gpytorch.mlls import ExactMarginalLogLikelihood
+
+    from enn.turbo.turbo_utils import fit_gp
+
+    rng = np.random.default_rng(0)
+    num_dim = 3
+    num_metrics = 2
+    n = 8
+
+    x = rng.uniform(0.0, 1.0, size=(n, num_dim))
+    y = rng.normal(size=(n, num_metrics))
+    model, likelihood, _gp_y_mean, _gp_y_std = fit_gp(
+        x.tolist(), y.tolist(), num_dim, num_steps=0
+    )
+    assert model is not None
+    assert likelihood is not None
+
+    model.train()
+    likelihood.train()
+    train_x = model.train_inputs[0]
+    train_y = model.train_targets
+    output = model(train_x)
+    mll = ExactMarginalLogLikelihood(likelihood, model)
+    loss = -mll(output, train_y)
+    assert tuple(loss.shape) == (num_metrics,)
+    with pytest.raises(
+        RuntimeError, match="grad can be implicitly created only for scalar outputs"
+    ):
+        loss.backward()
+
+
+def test_fit_gp_multi_output_trains_without_scalar_backward_error():
+    import numpy as np
+
+    from enn.turbo.turbo_utils import fit_gp
+
+    rng = np.random.default_rng(0)
+    num_dim = 3
+    num_metrics = 2
+    n = 8
+
+    x = rng.uniform(0.0, 1.0, size=(n, num_dim))
+    y = rng.normal(size=(n, num_metrics))
+    model, likelihood, gp_y_mean, gp_y_std = fit_gp(
+        x.tolist(), y.tolist(), num_dim, num_steps=2
+    )
+    assert model is not None
+    assert likelihood is not None
+    assert gp_y_mean.shape == (num_metrics,)
+    assert gp_y_std.shape == (num_metrics,)

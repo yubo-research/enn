@@ -57,6 +57,7 @@ class TurboModeImpl(Protocol):
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
+        tr_state: Any = None,
     ) -> np.ndarray: ...
 
     def update_trust_region(

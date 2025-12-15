@@ -27,6 +27,7 @@ class LHDOnlyImpl(BaseTurboImpl):
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
+        tr_state: Any = None,  # noqa: ARG002
     ) -> np.ndarray:
         from .turbo_utils import latin_hypercube
 

@@ -263,6 +263,7 @@ class TurboOptimizer:
             self._rng,
             fallback_fn,
             from_unit_fn,
+            tr_state=self._tr_state,
         )
         self._dt_sel = time.perf_counter() - t0_sel
 
@@ -363,8 +364,9 @@ class TurboOptimizer:
         self._x_obs_list.extend(x_unit.tolist())
 
         if is_morbo:
-            # For morbo: store raw 2D y for ENN training, update TR for success/failure
             self._y_obs_list.extend(y.tolist())
+            if y_var is not None:
+                self._yvar_obs_list.extend(y_var.tolist())
             y_all = np.asarray(self._y_obs_list, dtype=float)
             if y_all.ndim == 1:
                 y_all = y_all.reshape(-1, num_metrics)

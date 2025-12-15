@@ -18,6 +18,7 @@ class TurboZeroImpl(BaseTurboImpl):
         rng: Generator,
         fallback_fn: Callable[[np.ndarray, int], np.ndarray],
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
+        tr_state: object | None = None,  # noqa: ARG002
     ) -> np.ndarray:
         from .proposal import select_uniform
 
