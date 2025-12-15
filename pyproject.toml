@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ennbo"
-version = "0.1.0"
+version = "0.1.1"
 description = "Epistemic Nearest Neighbors"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,7 +16,7 @@ dependencies = [
     "numpy==1.26.4",
     "torch==2.5.1",
     "gpytorch==1.13",
-    "faiss-cpu==1.9.0",
+    "faiss-cpu>=1.9.0",
     "scipy==1.15.3",
     "nds==0.4.3",
 ]
