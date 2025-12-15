@@ -96,6 +96,7 @@ class TurboOptimizer:
         self._sobol_seed_base = int(self._rng.integers(2**31 - 1))
         self._x_obs_list: list[list[float]] = []
         self._y_obs_list: list[float] | list[list[float]] = []
+        self._y_tr_list: list[float] = []
         self._yvar_obs_list: list[float] | list[list[float]] = []
         self._expects_yvar: bool | None = None
         match mode:
@@ -233,6 +234,7 @@ class TurboOptimizer:
                 self._num_init,
             )
             if should_reset_init:
+                self._y_tr_list = []
                 self._init_idx = new_init_idx
                 self._init_lhd = from_unit(
                     latin_hypercube(self._num_init, self._num_dim, rng=self._rng),
@@ -262,7 +264,10 @@ class TurboOptimizer:
         self._dt_fit = time.perf_counter() - t0_fit
 
         x_center = self._mode_impl.get_x_center(
-            self._x_obs_list, self._y_obs_list, self._rng, self._tr_state
+            self._x_obs_list,
+            self._y_obs_list,
+            self._rng,
+            self._tr_state,
         )
         if x_center is None:
             if len(self._y_obs_list) == 0:
@@ -304,7 +309,7 @@ class TurboOptimizer:
             self._mode_impl.update_trust_region(
                 self._tr_state,
                 self._x_obs_list,
-                self._y_obs_list,
+                self._y_tr_list,
                 x_center=x_center,
                 k=self._k,
             )
@@ -317,8 +322,8 @@ class TurboOptimizer:
 
         if len(self._x_obs_list) <= self._trailing_obs:
             return
-        y_array = np.asarray(self._y_obs_list, dtype=float)
-        incumbent_idx = argmax_random_tie(y_array, rng=self._rng)
+        y_tr_array = np.asarray(self._y_tr_list, dtype=float)
+        incumbent_idx = argmax_random_tie(y_tr_array, rng=self._rng)
         num_total = len(self._x_obs_list)
         start_idx = max(0, num_total - self._trailing_obs)
         if incumbent_idx < start_idx:
@@ -332,13 +337,15 @@ class TurboOptimizer:
         if incumbent_idx not in indices:
             raise RuntimeError("Incumbent must be included in trimmed list")
         x_array = np.asarray(self._x_obs_list, dtype=float)
-        incumbent_value = y_array[incumbent_idx]
+        incumbent_value = y_tr_array[incumbent_idx]
         self._x_obs_list = x_array[indices].tolist()
-        self._y_obs_list = y_array[indices].tolist()
-        if len(self._yvar_obs_list) == len(y_array):
+        y_obs_array = np.asarray(self._y_obs_list, dtype=float)
+        self._y_obs_list = y_obs_array[indices].tolist()
+        self._y_tr_list = y_tr_array[indices].tolist()
+        if len(self._yvar_obs_list) == len(y_obs_array):
             yvar_array = np.asarray(self._yvar_obs_list, dtype=float)
             self._yvar_obs_list = yvar_array[indices].tolist()
-        y_trimmed = np.asarray(self._y_obs_list, dtype=float)
+        y_trimmed = np.asarray(self._y_tr_list, dtype=float)
         if not np.any(np.abs(y_trimmed - incumbent_value) < 1e-10):
             raise RuntimeError("Incumbent value must be preserved in trimmed list")
 
@@ -392,10 +399,10 @@ class TurboOptimizer:
         if x.shape[0] == 0:
             return np.array([], dtype=float)
         x_unit = to_unit(x, self._bounds)
-        y_estimate = self._mode_impl.estimate_y(x_unit, y)
         self._x_obs_list.extend(x_unit.tolist())
 
         if is_morbo:
+            y_estimate = y
             self._y_obs_list.extend(y.tolist())
             if y_var is not None:
                 self._yvar_obs_list.extend(y_var.tolist())
@@ -405,13 +412,93 @@ class TurboOptimizer:
             x_all = np.asarray(self._x_obs_list, dtype=float)
             self._tr_state.update_xy(x_all, y_all, k=self._k)
         else:
+            from .turbo_mode import TurboMode
+
             self._y_obs_list.extend(y.tolist())
             if y_var is not None:
                 self._yvar_obs_list.extend(y_var.tolist())
+
+            if self._mode in (TurboMode.TURBO_ONE, TurboMode.TURBO_ENN):
+                self._mode_impl.prepare_ask(
+                    self._x_obs_list,
+                    self._y_obs_list,
+                    self._yvar_obs_list,
+                    self._num_dim,
+                    0,
+                    rng=self._rng,
+                )
+                x_all = np.asarray(self._x_obs_list, dtype=float)
+                y_all = np.asarray(self._y_obs_list, dtype=float)
+                if self._mode == TurboMode.TURBO_ONE:
+                    # We intentionally evaluate the GP posterior at the training inputs
+                    # (the observed points) right after conditioning the model. GPyTorch
+                    # warns about this in debug mode, but it's expected for our TR logic.
+                    import warnings
+
+                    try:
+                        from gpytorch.utils.warnings import GPInputWarning
+                    except Exception:  # pragma: no cover
+                        GPInputWarning = None
+
+                    if GPInputWarning is None:
+                        mu_all = np.asarray(
+                            self._mode_impl.estimate_y(x_all, y_all), dtype=float
+                        ).reshape(-1)
+                    else:
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings(
+                                "ignore",
+                                message=r"The input matches the stored training data\..*",
+                                category=GPInputWarning,
+                            )
+                            mu_all = np.asarray(
+                                self._mode_impl.estimate_y(x_all, y_all), dtype=float
+                            ).reshape(-1)
+                else:
+                    mu_all = np.asarray(
+                        self._mode_impl.estimate_y(x_all, y_all), dtype=float
+                    ).reshape(-1)
+                self._y_tr_list = mu_all.tolist()
+                if self._mode == TurboMode.TURBO_ONE:
+                    import warnings
+
+                    try:
+                        from gpytorch.utils.warnings import GPInputWarning
+                    except Exception:  # pragma: no cover
+                        GPInputWarning = None
+
+                    if GPInputWarning is None:
+                        y_estimate = np.asarray(
+                            self._mode_impl.estimate_y(x_unit, y), dtype=float
+                        )
+                    else:
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings(
+                                "ignore",
+                                message=r"The input matches the stored training data\..*",
+                                category=GPInputWarning,
+                            )
+                            y_estimate = np.asarray(
+                                self._mode_impl.estimate_y(x_unit, y), dtype=float
+                            )
+                else:
+                    y_estimate = np.asarray(
+                        self._mode_impl.estimate_y(x_unit, y), dtype=float
+                    )
+            else:
+                y_estimate = self._mode_impl.estimate_y(x_unit, y)
+                self._y_tr_list.extend(np.asarray(y_estimate, dtype=float).tolist())
+
             if self._trailing_obs is not None:
                 self._trim_trailing_obs()
+            prev_n = int(getattr(self._tr_state, "prev_num_obs", 0))
+            if prev_n > 0 and prev_n <= len(self._y_tr_list):
+                if hasattr(self._tr_state, "best_value"):
+                    self._tr_state.best_value = float(
+                        np.max(np.asarray(self._y_tr_list, dtype=float)[:prev_n])
+                    )
             self._mode_impl.update_trust_region(
-                self._tr_state, self._x_obs_list, self._y_obs_list, k=self._k
+                self._tr_state, self._x_obs_list, self._y_tr_list, k=self._k
             )
 
         return y_estimate

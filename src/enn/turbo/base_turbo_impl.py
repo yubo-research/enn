@@ -59,12 +59,12 @@ class BaseTurboImpl:
 
             return TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
         elif self._config.tr_type == "morbo":
-            from .morbo_trust_region import MorboChebyshevTrustRegion
+            from .morbo_trust_region import MorboTrustRegion
 
             effective_num_metrics = num_metrics or self._config.num_metrics
             if effective_num_metrics is None:
                 raise ValueError("num_metrics required for tr_type='morbo'")
-            return MorboChebyshevTrustRegion(
+            return MorboTrustRegion(
                 num_dim=num_dim,
                 num_arms=num_arms,
                 num_metrics=effective_num_metrics,

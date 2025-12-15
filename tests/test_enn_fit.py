@@ -40,6 +40,23 @@ def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     assert np.isfinite(tuned_ll), "tuned log-likelihood must be finite"
 
 
+def _make_linear_1d_regression_data(
+    *,
+    rng,
+    n: int,
+    d: int,
+    noise_std: float,
+    yvar: float | None,
+):
+    import numpy as np
+
+    x = rng.standard_normal((n, d))
+    y = x.sum(axis=1, keepdims=True) + rng.standard_normal((n, 1)) * float(noise_std)
+    if yvar is None:
+        return x, y, None
+    return x, y, float(yvar) * np.ones_like(y)
+
+
 def test_enn_fit_with_yvar_none():
     import numpy as np
 
@@ -50,10 +67,11 @@ def test_enn_fit_with_yvar_none():
     rng = np.random.default_rng(42)
     n = 30
     d = 2
-    x = rng.standard_normal((n, d))
-    y = x.sum(axis=1, keepdims=True) + rng.standard_normal((n, 1)) * 0.1
+    x, y, yvar = _make_linear_1d_regression_data(
+        rng=rng, n=n, d=d, noise_std=0.1, yvar=None
+    )
 
-    model = EpistemicNearestNeighbors(x, y, train_yvar=None)
+    model = EpistemicNearestNeighbors(x, y, train_yvar=yvar)
 
     result = enn_fit(
         model,
@@ -79,9 +97,9 @@ def test_enn_fit_with_warm_start():
     rng = np.random.default_rng(42)
     n = 30
     d = 2
-    x = rng.standard_normal((n, d))
-    y = x.sum(axis=1, keepdims=True) + rng.standard_normal((n, 1)) * 0.1
-    yvar = 0.01 * np.ones_like(y)
+    x, y, yvar = _make_linear_1d_regression_data(
+        rng=rng, n=n, d=d, noise_std=0.1, yvar=0.01
+    )
 
     model = EpistemicNearestNeighbors(x, y, yvar)
 

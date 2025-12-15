@@ -109,9 +109,13 @@ class TurboTrustRegion:
         rng: Generator,
         sobol_engine: QMCEngine,
     ) -> np.ndarray:
-        from .turbo_utils import generate_raasp_candidates
+        from .turbo_utils import generate_trust_region_candidates
 
-        lb, ub = self.compute_bounds_1d(x_center, lengthscales)
-        return generate_raasp_candidates(
-            x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
+        return generate_trust_region_candidates(
+            x_center,
+            lengthscales,
+            num_candidates,
+            compute_bounds_1d=self.compute_bounds_1d,
+            rng=rng,
+            sobol_engine=sobol_engine,
         )

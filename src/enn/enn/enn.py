@@ -98,6 +98,34 @@ class EpistemicNearestNeighbors:
         index.add(x_f32)
         self._index = index
 
+    def _search_index(
+        self,
+        x: np.ndarray,
+        *,
+        search_k: int,
+        exclude_nearest: bool,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        import numpy as np
+
+        search_k = int(search_k)
+        if search_k <= 0:
+            raise ValueError(search_k)
+        x = np.asarray(x, dtype=float)
+        if x.ndim != 2 or x.shape[1] != self._num_dim:
+            raise ValueError(x.shape)
+        if self._index is None:
+            raise RuntimeError("index is not initialized")
+
+        x_scaled = x / self._x_scale if self._scale_x else x
+        x_f32 = x_scaled.astype(np.float32, copy=False)
+        dist2s_full, idx_full = self._index.search(x_f32, search_k)
+        dist2s_full = dist2s_full.astype(float)
+        idx_full = idx_full.astype(int)
+        if exclude_nearest:
+            dist2s_full = dist2s_full[:, 1:]
+            idx_full = idx_full[:, 1:]
+        return dist2s_full, idx_full
+
     def posterior(
         self,
         x: np.ndarray,
@@ -150,16 +178,9 @@ class EpistemicNearestNeighbors:
             search_k = int(min(max_k + 1, len(self)))
         else:
             search_k = int(min(max_k, len(self)))
-        x_scaled = x / self._x_scale if self._scale_x else x
-        x_f32 = x_scaled.astype(np.float32, copy=False)
-        if self._index is None:
-            raise RuntimeError("index is not initialized")
-        dist2s_full, idx_full = self._index.search(x_f32, search_k)
-        dist2s_full = dist2s_full.astype(float)
-        idx_full = idx_full.astype(int)
-        if exclude_nearest:
-            dist2s_full = dist2s_full[:, 1:]
-            idx_full = idx_full[:, 1:]
+        dist2s_full, idx_full = self._search_index(
+            x, search_k=search_k, exclude_nearest=exclude_nearest
+        )
         mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
         se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
         available_k = search_k - 1 if exclude_nearest else search_k
@@ -235,16 +256,9 @@ class EpistemicNearestNeighbors:
             search_k = int(min(k, len(self)))
         if search_k == 0:
             return []
-        x_scaled = x / self._x_scale if self._scale_x else x
-        x_f32 = x_scaled.astype(np.float32, copy=False)
-        if self._index is None:
-            raise RuntimeError("index is not initialized")
-        dist2s_full, idx_full = self._index.search(x_f32, search_k)
-        dist2s_full = dist2s_full.astype(float)
-        idx_full = idx_full.astype(int)
-        if exclude_nearest:
-            dist2s_full = dist2s_full[:, 1:]
-            idx_full = idx_full[:, 1:]
+        dist2s_full, idx_full = self._search_index(
+            x, search_k=search_k, exclude_nearest=exclude_nearest
+        )
         actual_k = min(k, len(idx_full[0]))
         idx = idx_full[0, :actual_k]
         result = []

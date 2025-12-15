@@ -19,6 +19,42 @@ class TurboOneImpl(BaseTurboImpl):
         self._gp_y_std: float | Any = 1.0
         self._fitted_n_obs: int = 0
 
+    def _as_2d(self, a: np.ndarray) -> np.ndarray:
+        import numpy as np
+
+        a = np.asarray(a, dtype=float)
+        if a.ndim == 1:
+            return a.reshape(-1, 1)
+        if a.ndim == 2:
+            return a.T
+        raise ValueError(a.shape)
+
+    def _broadcast_gp_mean_std(self, num_metrics: int) -> tuple[np.ndarray, np.ndarray]:
+        import numpy as np
+
+        num_metrics = int(num_metrics)
+        if num_metrics <= 0:
+            raise ValueError(num_metrics)
+        gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
+        gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
+        if gp_y_mean.size == 1 and num_metrics != 1:
+            gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
+        if gp_y_std.size == 1 and num_metrics != 1:
+            gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
+        if gp_y_mean.shape != (num_metrics,) or gp_y_std.shape != (num_metrics,):
+            raise ValueError((gp_y_mean.shape, gp_y_std.shape, num_metrics))
+        return gp_y_mean, gp_y_std
+
+    def _unstandardize(self, y_std_2d: np.ndarray) -> np.ndarray:
+        import numpy as np
+
+        y_std_2d = np.asarray(y_std_2d, dtype=float)
+        if y_std_2d.ndim != 2:
+            raise ValueError(y_std_2d.shape)
+        num_metrics = int(y_std_2d.shape[1])
+        gp_y_mean, gp_y_std = self._broadcast_gp_mean_std(num_metrics)
+        return gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * y_std_2d
+
     def get_x_center(
         self,
         x_obs_list: list,
@@ -28,6 +64,7 @@ class TurboOneImpl(BaseTurboImpl):
     ) -> np.ndarray | None:
         import numpy as np
         import torch
+        import warnings
 
         from .turbo_utils import argmax_random_tie
 
@@ -56,27 +93,28 @@ class TurboOneImpl(BaseTurboImpl):
 
         x_array = np.asarray(x_obs_list, dtype=float)
         x_torch = torch.as_tensor(x_array, dtype=torch.float64)
+        try:
+            from gpytorch.utils.warnings import GPInputWarning
+        except Exception:  # pragma: no cover
+            GPInputWarning = None
+
         with torch.no_grad():
-            posterior = self._gp_model.posterior(x_torch)
+            if GPInputWarning is None:
+                posterior = self._gp_model.posterior(x_torch)
+            else:
+                # We intentionally evaluate the GP posterior at the training inputs
+                # (observed points) when choosing the center. GPyTorch warns about this
+                # in debug mode, but it's expected for our usage.
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r"The input matches the stored training data\..*",
+                        category=GPInputWarning,
+                    )
+                    posterior = self._gp_model.posterior(x_torch)
             mu_std = posterior.mean.cpu().numpy()
 
-        if mu_std.ndim == 1:
-            mu_std_2d = mu_std.reshape(-1, 1)
-        elif mu_std.ndim == 2:
-            mu_std_2d = mu_std.T
-        else:
-            raise ValueError(mu_std.shape)
-
-        num_metrics = int(mu_std_2d.shape[1])
-        gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
-        gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
-        if gp_y_mean.size == 1 and num_metrics != 1:
-            gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
-        if gp_y_std.size == 1 and num_metrics != 1:
-            gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
-        if gp_y_mean.shape != (num_metrics,) or gp_y_std.shape != (num_metrics,):
-            raise ValueError((gp_y_mean.shape, gp_y_std.shape, num_metrics))
-        mu = gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * mu_std_2d
+        mu = self._unstandardize(self._as_2d(mu_std))
 
         # For morbo: scalarize mu values
         if self._config.tr_type == "morbo" and tr_state is not None:
@@ -203,17 +241,7 @@ class TurboOneImpl(BaseTurboImpl):
             else:
                 raise ValueError(samples.shape)
 
-            num_metrics = int(samples_std.shape[1])
-            gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
-            gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
-            if gp_y_mean.size == 1 and num_metrics != 1:
-                gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
-            if gp_y_std.size == 1 and num_metrics != 1:
-                gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
-            if gp_y_mean.shape != (num_metrics,) or gp_y_std.shape != (num_metrics,):
-                raise ValueError((gp_y_mean.shape, gp_y_std.shape, num_metrics))
-
-            y_samples = gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * samples_std
+            y_samples = self._unstandardize(samples_std)
             scores = tr_state.scalarize(y_samples, clip=False)
             shuffled_indices = rng.permutation(len(scores))
             shuffled_scores = scores[shuffled_indices]
@@ -239,36 +267,23 @@ class TurboOneImpl(BaseTurboImpl):
         return from_unit_fn(x_cand[idx])
 
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
-        import numpy as np
         import torch
 
         if self._gp_model is None:
-            return y_observed
+            raise RuntimeError(
+                "TurboOneImpl.estimate_y requires a fitted GP model; call prepare_ask() first."
+            )
         x_torch = torch.as_tensor(x_unit, dtype=torch.float64)
         with torch.no_grad():
             posterior = self._gp_model.posterior(x_torch)
             mu_std = posterior.mean.cpu().numpy()
 
-        if mu_std.ndim == 1:
-            mu_std_2d = mu_std.reshape(-1, 1)
-        elif mu_std.ndim == 2:
-            mu_std_2d = mu_std.T
-        else:
-            raise ValueError(mu_std.shape)
-        num_metrics = int(mu_std_2d.shape[1])
-        gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
-        gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
-        if gp_y_mean.size == 1 and num_metrics != 1:
-            gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
-        if gp_y_std.size == 1 and num_metrics != 1:
-            gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
-        mu = gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * mu_std_2d
+        mu = self._unstandardize(self._as_2d(mu_std))
         if mu.shape[1] == 1:
             return mu[:, 0]
         return mu
 
     def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-        import numpy as np
         import torch
 
         if self._gp_model is None:
@@ -279,21 +294,9 @@ class TurboOneImpl(BaseTurboImpl):
             mu_std = posterior.mean.cpu().numpy()
             sigma_std = posterior.variance.cpu().numpy() ** 0.5
 
-        if mu_std.ndim == 1:
-            mu_std_2d = mu_std.reshape(-1, 1)
-            sigma_std_2d = sigma_std.reshape(-1, 1)
-        elif mu_std.ndim == 2:
-            mu_std_2d = mu_std.T
-            sigma_std_2d = sigma_std.T
-        else:
-            raise ValueError(mu_std.shape)
-        num_metrics = int(mu_std_2d.shape[1])
-        gp_y_mean = np.asarray(self._gp_y_mean, dtype=float).reshape(-1)
-        gp_y_std = np.asarray(self._gp_y_std, dtype=float).reshape(-1)
-        if gp_y_mean.size == 1 and num_metrics != 1:
-            gp_y_mean = np.full(num_metrics, float(gp_y_mean[0]), dtype=float)
-        if gp_y_std.size == 1 and num_metrics != 1:
-            gp_y_std = np.full(num_metrics, float(gp_y_std[0]), dtype=float)
-        mu = gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * mu_std_2d
+        mu_std_2d = self._as_2d(mu_std)
+        sigma_std_2d = self._as_2d(sigma_std)
+        mu = self._unstandardize(mu_std_2d)
+        _gp_y_mean, gp_y_std = self._broadcast_gp_mean_std(int(mu_std_2d.shape[1]))
         sigma = gp_y_std.reshape(1, -1) * sigma_std_2d
         return mu, sigma

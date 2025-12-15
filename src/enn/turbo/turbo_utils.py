@@ -83,13 +83,9 @@ def fit_gp(
             num_outputs = int(y.shape[1])
             return None, None, np.zeros(num_outputs), np.ones(num_outputs)
         return None, None, 0.0, 1.0
-    if n == 1:
-        if is_multi_output:
-            gp_y_mean = y[0].copy()
-            gp_y_std = np.ones(int(y.shape[1]), dtype=float)
-            return None, None, gp_y_mean, gp_y_std
-        gp_y_mean = float(y[0])
-        gp_y_std = 1.0
+    if n == 1 and is_multi_output:
+        gp_y_mean = y[0].copy()
+        gp_y_std = np.ones(int(y.shape[1]), dtype=float)
         return None, None, gp_y_mean, gp_y_std
 
     if is_multi_output:
@@ -268,6 +264,26 @@ def generate_raasp_candidates(
         num_pert=num_pert,
         rng=rng,
         sobol_engine=sobol_engine,
+    )
+
+
+def generate_trust_region_candidates(
+    x_center: np.ndarray | Any,
+    lengthscales: np.ndarray | None,
+    num_candidates: int,
+    *,
+    compute_bounds_1d: Any,
+    rng: Generator | Any,
+    sobol_engine: QMCEngine | Any,
+) -> np.ndarray:
+    """
+    Small DRY helper for trust-region candidate generation.
+
+    `compute_bounds_1d` is typically a TR object's bound computation method.
+    """
+    lb, ub = compute_bounds_1d(x_center, lengthscales)
+    return generate_raasp_candidates(
+        x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
     )
 
 

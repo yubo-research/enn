@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 
+def _make_sobol_synth_data(*, rng, n: int, d: int, y_2d: bool) -> tuple:
+    x = rng.standard_normal((n, d))
+    y = x[:, 0] + 0.1 * rng.standard_normal(n)
+    if y_2d:
+        y = y.reshape(-1, 1)
+    return x, y
+
+
 def test_calculate_sobol_indices_basic():
     import numpy as np
 
@@ -9,8 +17,7 @@ def test_calculate_sobol_indices_basic():
     rng = np.random.default_rng(42)
     n = 50
     d = 3
-    x = rng.standard_normal((n, d))
-    y = x[:, 0] + 0.1 * rng.standard_normal(n)
+    x, y = _make_sobol_synth_data(rng=rng, n=n, d=d, y_2d=False)
 
     S = calculate_sobol_indices(x, y)
     assert S.shape == (d,)
@@ -44,8 +51,7 @@ def test_calculate_sobol_indices_y_2d():
     rng = np.random.default_rng(42)
     n = 50
     d = 3
-    x = rng.standard_normal((n, d))
-    y = (x[:, 0] + 0.1 * rng.standard_normal(n)).reshape(-1, 1)
+    x, y = _make_sobol_synth_data(rng=rng, n=n, d=d, y_2d=True)
 
     S = calculate_sobol_indices(x, y)
     assert S.shape == (d,)
