@@ -13,4 +13,3 @@ dependencies:
   - ipykernel=6.29.5=pyh57ce528_0
   - pip:
     - matplotlib==3.10.8
-    - nds==0.4.3

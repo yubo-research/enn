@@ -22,6 +22,23 @@ ENN estimates a function's value and associated epistemic uncertainty using a K-
 ## Installation
 `pip install ennbo`
 
+## Installation (conda)
+
+End-user install (after you upload to a channel, or after conda-forge picks it up):
+```
+conda install -c conda-forge -c <YOUR_CHANNEL> ennbo
+```
+
+Note: this only works if all runtime deps are available on conda channels.
+If a dependency is only on PyPI, you’ll need to also package it for conda (your own channel or conda-forge) first.
+
+Local build + upload to `anaconda.org`:
+```
+conda install -c conda-forge conda-build anaconda-client
+conda build conda/recipe
+anaconda upload <PATH_TO_CONDA_BLD>/noarch/ennbo-*.tar.bz2
+```
+
 ## Demonstration
 [`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_enn.ipynb) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) to build and query an ENN model.
 [`demo_turbo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_turbo_enn.ipynb) - Shows how to use [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/turbo_optimizer.py) to optimize the Ackley function.

@@ -59,6 +59,41 @@ def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return S
 
 
+def pareto_front_2d_maximize(
+    a: np.ndarray | Any, b: np.ndarray | Any, idx: np.ndarray | Any | None = None
+) -> np.ndarray:
+    import numpy as np
+
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    if a.shape != b.shape or a.ndim != 1:
+        raise ValueError((a.shape, b.shape))
+    if idx is None:
+        idx = np.arange(a.size, dtype=int)
+    else:
+        idx = np.asarray(idx, dtype=int)
+        if idx.ndim != 1:
+            raise ValueError(idx.shape)
+
+    order = np.lexsort((-b[idx], -a[idx]))
+    sorted_idx = idx[order]
+    keep: list[int] = []
+    best_b = -float("inf")
+    last_a = float("nan")
+    last_b = float("nan")
+    for i in sorted_idx.tolist():
+        bi = float(b[i])
+        ai = float(a[i])
+        if bi > best_b:
+            keep.append(i)
+            best_b = bi
+            last_a = ai
+            last_b = bi
+        elif bi == best_b and ai == last_a and bi == last_b:
+            keep.append(i)
+    return np.asarray(keep, dtype=int)
+
+
 def arms_from_pareto_fronts(
     x_cand: np.ndarray | Any,
     mu: np.ndarray | Any,
@@ -80,31 +115,10 @@ def arms_from_pareto_fronts(
     if not np.all(np.isfinite(mu)) or not np.all(np.isfinite(se)):
         raise ValueError("mu and se must be finite")
 
-    def _pareto_front_2d_maximize(
-        mu_: np.ndarray, se_: np.ndarray, idx: np.ndarray
-    ) -> np.ndarray:
-        order = np.lexsort((-se_[idx], -mu_[idx]))
-        sorted_idx = idx[order]
-        keep: list[int] = []
-        best_se = -float("inf")
-        last_mu = float("nan")
-        last_se = float("nan")
-        for i in sorted_idx.tolist():
-            s = float(se_[i])
-            m = float(mu_[i])
-            if s > best_se:
-                keep.append(i)
-                best_se = s
-                last_mu = m
-                last_se = s
-            elif s == best_se and m == last_mu and s == last_se:
-                keep.append(i)
-        return np.asarray(keep, dtype=int)
-
     i_keep: list[int] = []
     remaining = np.arange(mu.size, dtype=int)
     while remaining.size > 0 and len(i_keep) < num_arms:
-        front_indices = _pareto_front_2d_maximize(mu, se, remaining)
+        front_indices = pareto_front_2d_maximize(mu, se, remaining)
         if front_indices.size == 0:
             raise RuntimeError("pareto front extraction failed")
         front_indices = front_indices[np.argsort(-mu[front_indices])]

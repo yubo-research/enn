@@ -199,26 +199,20 @@ class EpistemicNearestNeighbors:
             y_neighbors = self._train_y[idx]
 
             dist2s_expanded = dist2s[..., np.newaxis]
-            var_component = (
-                params.ale_homoscedastic_scale + params.epi_var_scale * dist2s_expanded
-            )
+            var_epi_obs = params.epi_var_scale * dist2s_expanded
+            var_ale_obs = params.ale_homoscedastic_scale
             if self._train_yvar is not None:
-                yvar_neighbors = self._train_yvar[idx] / self._y_scale**2
-                var_component = var_component + yvar_neighbors
-            else:
-                yvar_neighbors = None
+                var_ale_obs = var_ale_obs + self._train_yvar[idx] / self._y_scale**2
 
-            w = 1.0 / (self._eps_var + var_component)
+            w = 1.0 / (self._eps_var + var_epi_obs + var_ale_obs)
             norm = np.sum(w, axis=1)
             mu_all[i] = np.sum(w * y_neighbors, axis=1) / norm
             epistemic_var = 1.0 / norm
-            vvar = epistemic_var
             if observation_noise:
-                vvar = vvar + params.ale_homoscedastic_scale
-                if yvar_neighbors is not None:
-                    ale_heteroscedastic = np.sum(w * yvar_neighbors, axis=1) / norm
-                    vvar = vvar + ale_heteroscedastic
-            vvar = np.maximum(vvar, self._eps_var)
+                aleatoric_var = np.sum(w * var_ale_obs, axis=1) / norm
+            else:
+                aleatoric_var = 0.0
+            vvar = np.maximum(epistemic_var + aleatoric_var, self._eps_var)
             se_all[i] = np.sqrt(vvar) * self._y_scale
         return ENNNormal(mu_all, se_all)
 

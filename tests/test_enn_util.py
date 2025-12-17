@@ -130,3 +130,14 @@ def test_arms_from_pareto_fronts_selects_fronts_in_order():
     out5 = arms_from_pareto_fronts(x_cand, mu, se, num_arms=5, rng=rng)
     assert out5.shape == (5, 2)
     assert np.allclose(out5, x_cand[[0, 1, 2, 3, 5]])
+
+
+def test_pareto_front_2d_maximize_basic():
+    import numpy as np
+
+    from enn.enn.enn_util import pareto_front_2d_maximize
+
+    a = np.array([1.0, 0.5, 0.2])
+    b = np.array([0.5, 1.0, 0.2])
+    idx = pareto_front_2d_maximize(a, b)
+    assert set(idx.tolist()) == {0, 1}
