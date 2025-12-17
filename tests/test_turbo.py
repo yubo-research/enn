@@ -926,9 +926,10 @@ def test_turbo_gp_noisy_trains_successfully():
 
 
 def test_turbo_gp_noisy_with_zero_variance():
+    import warnings
+
     import numpy as np
     import torch
-    import warnings
 
     num_obs = 10
     num_dim = 2
@@ -1143,7 +1144,10 @@ def test_turbo_one_trust_region_update_is_noise_robust_to_spikes():
     opt.tell(x1, np.array([100.0], dtype=float), y_var=np.array([1e6], dtype=float))
 
     assert opt._tr_state.best_value < 100.0
-    assert opt._tr_state.best_value == max(opt._y_tr_list)
+    y_tr_array = np.asarray(opt._y_tr_list, dtype=float)
+    if y_tr_array.ndim == 2:
+        y_tr_array = y_tr_array[:, 0]
+    assert opt._tr_state.best_value == float(np.max(y_tr_array))
 
 
 def test_turbo_enn_tr_values_use_posterior_mean_over_all_obs():
@@ -1175,6 +1179,8 @@ def test_turbo_enn_tr_values_use_posterior_mean_over_all_obs():
     # With huge observation noise, the ENN posterior mean at observed points should
     # be strongly smoothed and not match raw y.
     tr_vals = np.asarray(opt._y_tr_list, dtype=float)
+    if tr_vals.ndim == 2:
+        tr_vals = tr_vals[:, 0]
     assert tr_vals.shape == (2,)
     assert not np.allclose(tr_vals, np.array([0.0, 100.0], dtype=float))
     assert np.all(tr_vals > 1.0) and np.all(tr_vals < 99.0)
@@ -1218,9 +1224,8 @@ def test_morbo_chebyshev_trust_region_weights_and_scaling():
     assert np.all(tr1.weights > 0.0)
     assert np.isclose(tr1.weights.sum(), 1.0)
 
-    x_obs = np.array([[0.1, 0.2, 0.3], [0.2, 0.2, 0.2]], dtype=float)
     y_obs = np.array([[1.0, 1.0], [1.0, 1.0]], dtype=float)
-    tr1.update_xy(x_obs, y_obs)
+    tr1.update(y_obs)
     scores = tr1.scalarize(y_obs, clip=True)
     assert scores.shape == (2,)
     assert np.all(np.isfinite(scores))

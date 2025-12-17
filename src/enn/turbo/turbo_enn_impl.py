@@ -178,10 +178,7 @@ class TurboENNImpl(BaseTurboImpl):
         if self._enn is None or self._fitted_params is None:
             return y_observed
         posterior = self._enn.posterior(x_unit, params=self._fitted_params)
-        # For multi-metric (morbo), return full mu; for single-metric, return 1D
-        if posterior.mu.shape[1] > 1:
-            return posterior.mu
-        return posterior.mu[:, 0]
+        return posterior.mu
 
     def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         if self._enn is None:

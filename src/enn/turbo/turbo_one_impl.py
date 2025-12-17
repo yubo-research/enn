@@ -62,9 +62,10 @@ class TurboOneImpl(BaseTurboImpl):
         rng: Generator,
         tr_state: Any = None,
     ) -> np.ndarray | None:
+        import warnings
+
         import numpy as np
         import torch
-        import warnings
 
         from .turbo_utils import argmax_random_tie
 
@@ -267,20 +268,35 @@ class TurboOneImpl(BaseTurboImpl):
         return from_unit_fn(x_cand[idx])
 
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
+        import warnings
+
         import torch
 
         if self._gp_model is None:
             raise RuntimeError(
                 "TurboOneImpl.estimate_y requires a fitted GP model; call prepare_ask() first."
             )
+
+        try:
+            from gpytorch.utils.warnings import GPInputWarning
+        except Exception:  # pragma: no cover
+            GPInputWarning = None
+
         x_torch = torch.as_tensor(x_unit, dtype=torch.float64)
         with torch.no_grad():
-            posterior = self._gp_model.posterior(x_torch)
+            if GPInputWarning is None:
+                posterior = self._gp_model.posterior(x_torch)
+            else:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r"The input matches the stored training data\..*",
+                        category=GPInputWarning,
+                    )
+                    posterior = self._gp_model.posterior(x_torch)
             mu_std = posterior.mean.cpu().numpy()
 
         mu = self._unstandardize(self._as_2d(mu_std))
-        if mu.shape[1] == 1:
-            return mu[:, 0]
         return mu
 
     def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:

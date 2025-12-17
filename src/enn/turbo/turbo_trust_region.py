@@ -38,7 +38,12 @@ class TurboTrustRegion:
     def update(self, values: np.ndarray | Any) -> None:
         import numpy as np
 
-        if values.ndim != 1:
+        values = np.asarray(values, dtype=float)
+        if values.ndim == 2:
+            if values.shape[1] != 1:
+                raise ValueError(f"TurboTrustRegion expects m=1, got {values.shape}")
+            values = values[:, 0]
+        elif values.ndim != 1:
             raise ValueError(values.shape)
         if values.size == 0:
             return
@@ -119,3 +124,12 @@ class TurboTrustRegion:
             rng=rng,
             sobol_engine=sobol_engine,
         )
+
+    def get_incumbent_indices(self, y: np.ndarray | Any, rng: Generator) -> np.ndarray:
+        import numpy as np
+
+        from .turbo_utils import argmax_random_tie
+
+        y = np.asarray(y, dtype=float)
+        y_1d = y[:, 0] if y.ndim == 2 else y
+        return np.array([argmax_random_tie(y_1d, rng=rng)])

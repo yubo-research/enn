@@ -55,27 +55,15 @@ class MorboTrustRegion:
     def length(self) -> float:
         return float(self._tr.length)
 
-    def update(self, values: np.ndarray | Any) -> None:
-        raise NotImplementedError(
-            "Use update_xy(x_obs, y_obs) with multi-objective observations."
-        )
-
-    def update_xy(
-        self, x_obs: np.ndarray | Any, y_obs: np.ndarray | Any, *, k: Any = None
-    ) -> None:  # noqa: ARG002
+    def update(self, y_obs: np.ndarray | Any) -> None:
         import numpy as np
 
-        x_obs = np.asarray(x_obs, dtype=float)
         y_obs = np.asarray(y_obs, dtype=float)
 
-        if x_obs.ndim != 2 or x_obs.shape[1] != self._num_dim:
-            raise ValueError(x_obs.shape)
-        if y_obs.ndim != 2 or y_obs.shape[0] != x_obs.shape[0]:
-            raise ValueError((x_obs.shape, y_obs.shape))
-        if y_obs.shape[1] != self._num_metrics:
+        if y_obs.ndim != 2 or y_obs.shape[1] != self._num_metrics:
             raise ValueError((y_obs.shape, self._num_metrics))
 
-        n = int(x_obs.shape[0])
+        n = int(y_obs.shape[0])
         if n == 0:
             self._y_min = None
             self._y_max = None
@@ -187,3 +175,34 @@ class MorboTrustRegion:
         return self._tr.generate_candidates(
             x_center, lengthscales, num_candidates, rng, sobol_engine
         )
+
+    def get_incumbent_indices(
+        self,
+        y: np.ndarray | Any,
+        rng: Generator,  # noqa: ARG002
+    ) -> np.ndarray:
+        import numpy as np
+
+        y = np.asarray(y, dtype=float)
+        if y.ndim != 2:
+            raise ValueError(y.shape)
+        n = y.shape[0]
+        if n == 0:
+            return np.array([], dtype=int)
+
+        if y.shape[1] == 2:
+            from enn.enn.enn_util import pareto_front_2d_maximize
+
+            return pareto_front_2d_maximize(y[:, 0], y[:, 1])
+
+        dominated = np.zeros(n, dtype=bool)
+        for i in range(n):
+            if dominated[i]:
+                continue
+            for j in range(n):
+                if i == j or dominated[j]:
+                    continue
+                if np.all(y[j] >= y[i]) and np.any(y[j] > y[i]):
+                    dominated[i] = True
+                    break
+        return np.where(~dominated)[0]

@@ -37,13 +37,3 @@ class LHDOnlyImpl(BaseTurboImpl):
 
         unit = latin_hypercube(num_arms, num_dim, rng=rng)
         return from_unit_fn(unit)
-
-    def update_trust_region(
-        self,
-        tr_state: Any,
-        x_obs_list: list,
-        y_obs_list: list,
-        x_center: np.ndarray | None = None,
-        k: int | None = None,
-    ) -> None:
-        pass

@@ -64,13 +64,4 @@ class TurboModeImpl(Protocol):
         tr_state: Any = None,
     ) -> np.ndarray: ...
 
-    def update_trust_region(
-        self,
-        tr_state: Any,
-        x_obs_list: list,
-        y_obs_list: list,
-        x_center: np.ndarray | None = None,
-        k: int | None = None,
-    ) -> None: ...
-
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray: ...

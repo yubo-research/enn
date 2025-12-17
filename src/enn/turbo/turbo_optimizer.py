@@ -41,42 +41,23 @@ class TurboOptimizer:
 
         from .turbo_mode import TurboMode
 
+        mode_registry: dict[TurboMode, tuple[type, type]] = {
+            TurboMode.TURBO_ONE: (TurboOneConfig, self._make_turbo_one_impl),
+            TurboMode.TURBO_ZERO: (TurboZeroConfig, self._make_turbo_zero_impl),
+            TurboMode.TURBO_ENN: (TurboENNConfig, self._make_turbo_enn_impl),
+            TurboMode.LHD_ONLY: (LHDOnlyConfig, self._make_lhd_only_impl),
+        }
+
+        if mode not in mode_registry:
+            raise ValueError(f"Unknown mode: {mode}")
+
+        config_class, _ = mode_registry[mode]
         if config is None:
-            match mode:
-                case TurboMode.TURBO_ONE:
-                    config = TurboOneConfig()
-                case TurboMode.TURBO_ZERO:
-                    config = TurboZeroConfig()
-                case TurboMode.TURBO_ENN:
-                    config = TurboENNConfig()
-                case TurboMode.LHD_ONLY:
-                    config = LHDOnlyConfig()
-                case _:
-                    raise ValueError(f"Unknown mode: {mode}")
-        else:
-            match mode:
-                case TurboMode.TURBO_ONE:
-                    if not isinstance(config, TurboOneConfig):
-                        raise ValueError(
-                            f"mode={mode} requires TurboOneConfig, got {type(config).__name__}"
-                        )
-                case TurboMode.TURBO_ZERO:
-                    if not isinstance(config, TurboZeroConfig):
-                        raise ValueError(
-                            f"mode={mode} requires TurboZeroConfig, got {type(config).__name__}"
-                        )
-                case TurboMode.TURBO_ENN:
-                    if not isinstance(config, TurboENNConfig):
-                        raise ValueError(
-                            f"mode={mode} requires TurboENNConfig, got {type(config).__name__}"
-                        )
-                case TurboMode.LHD_ONLY:
-                    if not isinstance(config, LHDOnlyConfig):
-                        raise ValueError(
-                            f"mode={mode} requires LHDOnlyConfig, got {type(config).__name__}"
-                        )
-                case _:
-                    raise ValueError(f"Unknown mode: {mode}")
+            config = config_class()
+        elif not isinstance(config, config_class):
+            raise ValueError(
+                f"mode={mode} requires {config_class.__name__}, got {type(config).__name__}"
+            )
         self._config = config
 
         bounds = np.asarray(bounds, dtype=float)
@@ -96,28 +77,11 @@ class TurboOptimizer:
         self._sobol_seed_base = int(self._rng.integers(2**31 - 1))
         self._x_obs_list: list[list[float]] = []
         self._y_obs_list: list[float] | list[list[float]] = []
-        self._y_tr_list: list[float] = []
+        self._y_tr_list: list[float] | list[list[float]] = []
         self._yvar_obs_list: list[float] | list[list[float]] = []
         self._expects_yvar: bool | None = None
-        match mode:
-            case TurboMode.TURBO_ONE:
-                from .turbo_one_impl import TurboOneImpl
-
-                self._mode_impl: TurboModeImpl = TurboOneImpl(config)
-            case TurboMode.TURBO_ZERO:
-                from .turbo_zero_impl import TurboZeroImpl
-
-                self._mode_impl = TurboZeroImpl(config)
-            case TurboMode.TURBO_ENN:
-                from .turbo_enn_impl import TurboENNImpl
-
-                self._mode_impl = TurboENNImpl(config)
-            case TurboMode.LHD_ONLY:
-                from .lhd_only_impl import LHDOnlyImpl
-
-                self._mode_impl = LHDOnlyImpl(config)
-            case _:
-                raise ValueError(f"Unknown mode: {mode}")
+        _, impl_factory = mode_registry[mode]
+        self._mode_impl: TurboModeImpl = impl_factory(config)
         self._tr_state: Any | None = None
         self._gp_num_steps: int = 50
         if config.k is not None:
@@ -181,12 +145,6 @@ class TurboOptimizer:
         num_arms = int(num_arms)
         if num_arms <= 0:
             raise ValueError(num_arms)
-        # For morbo, defer TR creation until tell() when we can infer num_metrics
-        is_morbo = self._config.tr_type == "morbo"
-        if self._tr_state is None and not is_morbo:
-            self._tr_state = self._mode_impl.create_trust_region(
-                self._num_dim, num_arms, self._rng
-            )
         if self._tr_state is not None:
             self._tr_state.validate_request(num_arms)
         early_result = self._mode_impl.try_early_ask(
@@ -220,7 +178,6 @@ class TurboOptimizer:
         import numpy as np
         from scipy.stats import qmc
 
-        # For morbo, TR is created in tell() - if still None, return LHD
         if self._tr_state is None:
             return self._draw_initial(num_arms)
 
@@ -303,41 +260,33 @@ class TurboOptimizer:
             tr_state=self._tr_state,
         )
         self._dt_sel = time.perf_counter() - t0_sel
-
-        # For morbo, TR is updated in tell() with raw multi-objective y
-        if self._config.tr_type != "morbo":
-            self._mode_impl.update_trust_region(
-                self._tr_state,
-                self._x_obs_list,
-                self._y_tr_list,
-                x_center=x_center,
-                k=self._k,
-            )
         return selected
 
     def _trim_trailing_obs(self) -> None:
         import numpy as np
 
-        from .turbo_utils import argmax_random_tie
-
         if len(self._x_obs_list) <= self._trailing_obs:
             return
         y_tr_array = np.asarray(self._y_tr_list, dtype=float)
-        incumbent_idx = argmax_random_tie(y_tr_array, rng=self._rng)
+        incumbent_indices = self._tr_state.get_incumbent_indices(y_tr_array, self._rng)
         num_total = len(self._x_obs_list)
         start_idx = max(0, num_total - self._trailing_obs)
-        if incumbent_idx < start_idx:
-            indices = np.array(
-                [incumbent_idx]
-                + list(range(num_total - (self._trailing_obs - 1), num_total)),
-                dtype=int,
-            )
-        else:
-            indices = np.arange(start_idx, num_total, dtype=int)
-        if incumbent_idx not in indices:
-            raise RuntimeError("Incumbent must be included in trimmed list")
+
+        recent_indices = set(range(start_idx, num_total))
+        keep_indices = set(incumbent_indices.tolist()) | recent_indices
+
+        if len(keep_indices) > self._trailing_obs:
+            keep_indices = set(incumbent_indices.tolist())
+            remaining_slots = self._trailing_obs - len(keep_indices)
+            if remaining_slots > 0:
+                recent_non_incumbent = [
+                    i for i in range(num_total - 1, -1, -1) if i not in keep_indices
+                ][:remaining_slots]
+                keep_indices.update(recent_non_incumbent)
+
+        indices = np.array(sorted(keep_indices), dtype=int)
+
         x_array = np.asarray(self._x_obs_list, dtype=float)
-        incumbent_value = y_tr_array[incumbent_idx]
         self._x_obs_list = x_array[indices].tolist()
         y_obs_array = np.asarray(self._y_obs_list, dtype=float)
         self._y_obs_list = y_obs_array[indices].tolist()
@@ -345,9 +294,6 @@ class TurboOptimizer:
         if len(self._yvar_obs_list) == len(y_obs_array):
             yvar_array = np.asarray(self._yvar_obs_list, dtype=float)
             self._yvar_obs_list = yvar_array[indices].tolist()
-        y_trimmed = np.asarray(self._y_tr_list, dtype=float)
-        if not np.any(np.abs(y_trimmed - incumbent_value) < 1e-10):
-            raise RuntimeError("Incumbent value must be preserved in trimmed list")
 
     def tell(
         self,
@@ -362,29 +308,32 @@ class TurboOptimizer:
         if x.ndim != 2 or x.shape[1] != self._num_dim:
             raise ValueError(x.shape)
 
-        # morbo accepts 2D y with shape (n, num_metrics)
-        is_morbo = self._config.tr_type == "morbo"
-        if is_morbo:
-            if y.ndim == 1:
-                y = y.reshape(-1, 1)
-            if y.ndim != 2 or y.shape[0] != x.shape[0]:
+        if y.ndim == 2:
+            if y.shape[0] != x.shape[0]:
                 raise ValueError((x.shape, y.shape))
             num_metrics = y.shape[1]
-            # Create TR lazily for morbo, inferring num_metrics from y
-            if self._tr_state is None:
-                self._tr_state = self._mode_impl.create_trust_region(
-                    self._num_dim, x.shape[0], self._rng, num_metrics=num_metrics
-                )
-            cfg_num_metrics = self._config.num_metrics
-            if cfg_num_metrics is not None and num_metrics != cfg_num_metrics:
-                raise ValueError(
-                    f"y has {num_metrics} metrics but expected {cfg_num_metrics}"
-                )
-        else:
-            if self._tr_state is None:
-                raise ValueError("tell() called before ask()")
-            if y.ndim != 1 or y.shape[0] != x.shape[0]:
+        elif y.ndim == 1:
+            if y.shape[0] != x.shape[0]:
                 raise ValueError((x.shape, y.shape))
+            num_metrics = 1
+        else:
+            raise ValueError(y.shape)
+
+        if self._config.tr_type != "morbo" and num_metrics != 1:
+            raise ValueError(
+                f"Single-objective mode requires num_metrics=1, got {num_metrics}"
+            )
+
+        if self._tr_state is None:
+            self._tr_state = self._mode_impl.create_trust_region(
+                self._num_dim, x.shape[0], self._rng, num_metrics=num_metrics
+            )
+
+        cfg_num_metrics = self._config.num_metrics
+        if cfg_num_metrics is not None and num_metrics != cfg_num_metrics:
+            raise ValueError(
+                f"y has {num_metrics} metrics but expected {cfg_num_metrics}"
+            )
 
         if self._expects_yvar is None:
             self._expects_yvar = y_var is not None
@@ -397,109 +346,45 @@ class TurboOptimizer:
             if y_var.shape != y.shape:
                 raise ValueError((y.shape, y_var.shape))
         if x.shape[0] == 0:
-            return np.array([], dtype=float)
+            if num_metrics == 1:
+                return np.array([], dtype=float)
+            return np.array([], dtype=float).reshape(0, num_metrics)
+
         x_unit = to_unit(x, self._bounds)
         self._x_obs_list.extend(x_unit.tolist())
+        self._y_obs_list.extend(y.tolist())
+        if y_var is not None:
+            self._yvar_obs_list.extend(y_var.tolist())
 
-        if is_morbo:
-            y_estimate = y
-            self._y_obs_list.extend(y.tolist())
-            if y_var is not None:
-                self._yvar_obs_list.extend(y_var.tolist())
-            y_all = np.asarray(self._y_obs_list, dtype=float)
-            if y_all.ndim == 1:
-                y_all = y_all.reshape(-1, num_metrics)
-            x_all = np.asarray(self._x_obs_list, dtype=float)
-            self._tr_state.update_xy(x_all, y_all, k=self._k)
-        else:
-            from .turbo_mode import TurboMode
+        x_all = np.asarray(self._x_obs_list, dtype=float)
+        y_all = np.asarray(self._y_obs_list, dtype=float)
 
-            self._y_obs_list.extend(y.tolist())
-            if y_var is not None:
-                self._yvar_obs_list.extend(y_var.tolist())
+        self._mode_impl.prepare_ask(
+            self._x_obs_list,
+            self._y_obs_list,
+            self._yvar_obs_list,
+            self._num_dim,
+            0,
+            rng=self._rng,
+        )
+        mu_all = np.asarray(self._mode_impl.estimate_y(x_all, y_all), dtype=float)
+        y_estimate = np.asarray(self._mode_impl.estimate_y(x_unit, y), dtype=float)
 
-            if self._mode in (TurboMode.TURBO_ONE, TurboMode.TURBO_ENN):
-                self._mode_impl.prepare_ask(
-                    self._x_obs_list,
-                    self._y_obs_list,
-                    self._yvar_obs_list,
-                    self._num_dim,
-                    0,
-                    rng=self._rng,
-                )
-                x_all = np.asarray(self._x_obs_list, dtype=float)
-                y_all = np.asarray(self._y_obs_list, dtype=float)
-                if self._mode == TurboMode.TURBO_ONE:
-                    # We intentionally evaluate the GP posterior at the training inputs
-                    # (the observed points) right after conditioning the model. GPyTorch
-                    # warns about this in debug mode, but it's expected for our TR logic.
-                    import warnings
+        self._y_tr_list = mu_all.tolist()
 
-                    try:
-                        from gpytorch.utils.warnings import GPInputWarning
-                    except Exception:  # pragma: no cover
-                        GPInputWarning = None
+        if self._trailing_obs is not None:
+            self._trim_trailing_obs()
 
-                    if GPInputWarning is None:
-                        mu_all = np.asarray(
-                            self._mode_impl.estimate_y(x_all, y_all), dtype=float
-                        ).reshape(-1)
-                    else:
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings(
-                                "ignore",
-                                message=r"The input matches the stored training data\..*",
-                                category=GPInputWarning,
-                            )
-                            mu_all = np.asarray(
-                                self._mode_impl.estimate_y(x_all, y_all), dtype=float
-                            ).reshape(-1)
-                else:
-                    mu_all = np.asarray(
-                        self._mode_impl.estimate_y(x_all, y_all), dtype=float
-                    ).reshape(-1)
-                self._y_tr_list = mu_all.tolist()
-                if self._mode == TurboMode.TURBO_ONE:
-                    import warnings
+        prev_n = int(getattr(self._tr_state, "prev_num_obs", 0))
+        if prev_n > 0 and prev_n <= len(self._y_tr_list):
+            if hasattr(self._tr_state, "best_value"):
+                y_tr_array = np.asarray(self._y_tr_list, dtype=float)
+                if y_tr_array.ndim == 2:
+                    y_tr_array = y_tr_array[:, 0]
+                self._tr_state.best_value = float(np.max(y_tr_array[:prev_n]))
 
-                    try:
-                        from gpytorch.utils.warnings import GPInputWarning
-                    except Exception:  # pragma: no cover
-                        GPInputWarning = None
-
-                    if GPInputWarning is None:
-                        y_estimate = np.asarray(
-                            self._mode_impl.estimate_y(x_unit, y), dtype=float
-                        )
-                    else:
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings(
-                                "ignore",
-                                message=r"The input matches the stored training data\..*",
-                                category=GPInputWarning,
-                            )
-                            y_estimate = np.asarray(
-                                self._mode_impl.estimate_y(x_unit, y), dtype=float
-                            )
-                else:
-                    y_estimate = np.asarray(
-                        self._mode_impl.estimate_y(x_unit, y), dtype=float
-                    )
-            else:
-                y_estimate = self._mode_impl.estimate_y(x_unit, y)
-                self._y_tr_list.extend(np.asarray(y_estimate, dtype=float).tolist())
-
-            if self._trailing_obs is not None:
-                self._trim_trailing_obs()
-            prev_n = int(getattr(self._tr_state, "prev_num_obs", 0))
-            if prev_n > 0 and prev_n <= len(self._y_tr_list):
-                if hasattr(self._tr_state, "best_value"):
-                    self._tr_state.best_value = float(
-                        np.max(np.asarray(self._y_tr_list, dtype=float)[:prev_n])
-                    )
-            self._mode_impl.update_trust_region(
-                self._tr_state, self._x_obs_list, self._y_tr_list, k=self._k
-            )
+        mu_all = np.asarray(self._y_tr_list, dtype=float)
+        self._tr_state.update(mu_all)
 
         return y_estimate
 
@@ -523,3 +408,27 @@ class TurboOptimizer:
             else:
                 result = np.vstack([result, self._draw_initial(num_remaining)])
         return result
+
+    @staticmethod
+    def _make_turbo_one_impl(config: TurboConfig) -> TurboModeImpl:
+        from .turbo_one_impl import TurboOneImpl
+
+        return TurboOneImpl(config)
+
+    @staticmethod
+    def _make_turbo_zero_impl(config: TurboConfig) -> TurboModeImpl:
+        from .turbo_zero_impl import TurboZeroImpl
+
+        return TurboZeroImpl(config)
+
+    @staticmethod
+    def _make_turbo_enn_impl(config: TurboConfig) -> TurboModeImpl:
+        from .turbo_enn_impl import TurboENNImpl
+
+        return TurboENNImpl(config)
+
+    @staticmethod
+    def _make_lhd_only_impl(config: TurboConfig) -> TurboModeImpl:
+        from .lhd_only_impl import LHDOnlyImpl
+
+        return LHDOnlyImpl(config)

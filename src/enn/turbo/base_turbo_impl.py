@@ -120,25 +120,13 @@ class BaseTurboImpl:
     ) -> np.ndarray:
         raise NotImplementedError("Subclasses must implement select_candidates")
 
-    def update_trust_region(
-        self,
-        tr_state: Any,
-        x_obs_list: list,
-        y_obs_list: list,
-        x_center: np.ndarray | None = None,
-        k: int | None = None,
-    ) -> None:
+    def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
         import numpy as np
 
-        x_obs_array = np.asarray(x_obs_list, dtype=float)
-        y_obs_array = np.asarray(y_obs_list, dtype=float)
-        if hasattr(tr_state, "update_xy"):
-            tr_state.update_xy(x_obs_array, y_obs_array, k=k)
-        else:
-            tr_state.update(y_obs_array)
-
-    def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
-        return y_observed
+        y = np.asarray(y_observed, dtype=float)
+        if y.ndim == 1:
+            return y.reshape(-1, 1)
+        return y
 
     def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         return None
