@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 
 class EpistemicNearestNeighbors:
+    _EPS_VAR = 1e-9
+
     def __init__(
         self,
         train_x: np.ndarray,
@@ -40,7 +42,6 @@ class EpistemicNearestNeighbors:
         self._train_yvar = train_yvar
         self._num_obs, self._num_dim = self._train_x.shape
         _, self._num_metrics = self._train_y.shape
-        self._eps_var = 1e-9
         self._scale_x = bool(scale_x)
         if self._scale_x:
             if len(self._train_x) < 2:
@@ -146,6 +147,78 @@ class EpistemicNearestNeighbors:
         se = post_batch.se[0]
         return ENNNormal(mu, se)
 
+    def _empty_posterior_internals(
+        self, batch_size: int
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        import numpy as np
+
+        mu = np.zeros((batch_size, self._num_metrics), dtype=float)
+        se = np.ones((batch_size, self._num_metrics), dtype=float)
+        idx = np.zeros((batch_size, 0), dtype=int)
+        w_normalized = np.zeros((batch_size, 0, self._num_metrics), dtype=float)
+        l2 = np.ones((batch_size, self._num_metrics), dtype=float)
+        return idx, w_normalized, l2, mu, se
+
+    def _compute_posterior_internals(
+        self,
+        x: np.ndarray,
+        params: ENNParams,
+        *,
+        exclude_nearest: bool = False,
+        observation_noise: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        import numpy as np
+
+        x = np.asarray(x, dtype=float)
+        if x.ndim != 2:
+            raise ValueError(x.shape)
+        if x.shape[1] != self._num_dim:
+            raise ValueError(x.shape)
+        batch_size = x.shape[0]
+        if len(self) == 0:
+            return self._empty_posterior_internals(batch_size)
+        if exclude_nearest:
+            if len(self) <= 1:
+                raise ValueError(len(self))
+            search_k = int(min(params.k + 1, len(self)))
+        else:
+            search_k = int(min(params.k, len(self)))
+        dist2s_full, idx_full = self._search_index(
+            x, search_k=search_k, exclude_nearest=exclude_nearest
+        )
+        available_k = search_k - 1 if exclude_nearest else search_k
+        k = min(params.k, available_k)
+        if k > dist2s_full.shape[1]:
+            raise RuntimeError(
+                f"k={k} exceeds available columns={dist2s_full.shape[1]}"
+            )
+        if k == 0:
+            return self._empty_posterior_internals(batch_size)
+        dist2s = dist2s_full[:, :k]
+        idx = idx_full[:, :k]
+        y_neighbors = self._train_y[idx]
+
+        dist2s_expanded = dist2s[..., np.newaxis]
+        var_epi_obs = params.epi_var_scale * dist2s_expanded
+        var_ale_obs = params.ale_homoscedastic_scale
+        if self._train_yvar is not None:
+            var_ale_obs = var_ale_obs + self._train_yvar[idx] / self._y_scale**2
+
+        # Inverse-variance weighting: neighbors with lower variance get higher weight
+        w = 1.0 / (self._EPS_VAR + var_epi_obs + var_ale_obs)
+        norm = np.sum(w, axis=1, keepdims=True)
+        w_normalized = w / norm
+        l2 = np.sqrt(np.sum(w_normalized**2, axis=1))
+        mu = np.sum(w_normalized * y_neighbors, axis=1)
+        epistemic_var = 1.0 / norm.squeeze(axis=1)
+        if observation_noise:
+            aleatoric_var = np.sum(w_normalized * var_ale_obs, axis=1)
+        else:
+            aleatoric_var = 0.0
+        vvar = np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR)
+        se = np.sqrt(vvar) * self._y_scale
+        return idx, w_normalized, l2, mu, se
+
     def batch_posterior(
         self,
         x: np.ndarray,
@@ -167,53 +240,17 @@ class EpistemicNearestNeighbors:
             raise ValueError("paramss must be non-empty")
         batch_size = x.shape[0]
         num_params = len(paramss)
-        if len(self) == 0:
-            mu = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
-            se = np.ones((num_params, batch_size, self._num_metrics), dtype=float)
-            return ENNNormal(mu, se)
-        max_k = max(params.k for params in paramss)
-        if exclude_nearest:
-            if len(self) <= 1:
-                raise ValueError(len(self))
-            search_k = int(min(max_k + 1, len(self)))
-        else:
-            search_k = int(min(max_k, len(self)))
-        dist2s_full, idx_full = self._search_index(
-            x, search_k=search_k, exclude_nearest=exclude_nearest
-        )
         mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
         se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
-        available_k = search_k - 1 if exclude_nearest else search_k
         for i, params in enumerate(paramss):
-            k = min(params.k, available_k)
-            if k > dist2s_full.shape[1]:
-                raise RuntimeError(
-                    f"k={k} exceeds available columns={dist2s_full.shape[1]}"
-                )
-            if k == 0:
-                mu_all[i] = np.zeros((batch_size, self._num_metrics), dtype=float)
-                se_all[i] = np.ones((batch_size, self._num_metrics), dtype=float)
-                continue
-            dist2s = dist2s_full[:, :k]
-            idx = idx_full[:, :k]
-            y_neighbors = self._train_y[idx]
-
-            dist2s_expanded = dist2s[..., np.newaxis]
-            var_epi_obs = params.epi_var_scale * dist2s_expanded
-            var_ale_obs = params.ale_homoscedastic_scale
-            if self._train_yvar is not None:
-                var_ale_obs = var_ale_obs + self._train_yvar[idx] / self._y_scale**2
-
-            w = 1.0 / (self._eps_var + var_epi_obs + var_ale_obs)
-            norm = np.sum(w, axis=1)
-            mu_all[i] = np.sum(w * y_neighbors, axis=1) / norm
-            epistemic_var = 1.0 / norm
-            if observation_noise:
-                aleatoric_var = np.sum(w * var_ale_obs, axis=1) / norm
-            else:
-                aleatoric_var = 0.0
-            vvar = np.maximum(epistemic_var + aleatoric_var, self._eps_var)
-            se_all[i] = np.sqrt(vvar) * self._y_scale
+            _, _, _, mu, se = self._compute_posterior_internals(
+                x,
+                params,
+                exclude_nearest=exclude_nearest,
+                observation_noise=observation_noise,
+            )
+            mu_all[i] = mu
+            se_all[i] = se
         return ENNNormal(mu_all, se_all)
 
     def neighbors(
@@ -261,3 +298,65 @@ class EpistemicNearestNeighbors:
             y_neighbor = self._train_y[i].copy()
             result.append((x_neighbor, y_neighbor))
         return result
+
+    def posterior_function_sample(
+        self,
+        x: np.ndarray,
+        params: ENNParams,
+        *,
+        function_seed: int,
+        exclude_nearest: bool = False,
+        observation_noise: bool = False,
+    ) -> np.ndarray:
+        import numpy as np
+
+        idx, w_normalized, l2, mu, se = self._compute_posterior_internals(
+            x,
+            params,
+            exclude_nearest=exclude_nearest,
+            observation_noise=observation_noise,
+        )
+        n, k = idx.shape
+        m = self._num_metrics
+        if k == 0:
+            return mu
+        u = _normal_hash_batch(function_seed, idx, m)
+        weighted_u = np.sum(w_normalized * u, axis=1)
+        l2_safe = np.maximum(l2, 1e-12)
+        deviation = se * weighted_u / l2_safe
+        return mu + deviation
+
+
+def _normal_hash_batch(
+    function_seed: int, data_indices: np.ndarray, num_metrics: int
+) -> np.ndarray:
+    import numpy as np
+    from scipy.special import ndtri
+
+    unique_indices = np.unique(data_indices)
+    num_unique = len(unique_indices)
+
+    # Vectorized seed computation for all (unique_idx, metric) pairs
+    idx_grid, metric_grid = np.meshgrid(
+        unique_indices, np.arange(num_metrics), indexing="ij"
+    )
+    idx_flat = idx_grid.ravel().astype(np.uint64)
+    metric_flat = metric_grid.ravel().astype(np.uint64)
+    combined_seeds = (
+        np.uint64(function_seed) * np.uint64(1_000_003) + idx_flat
+    ) * np.uint64(1_000_003) + metric_flat
+
+    # Batch generate uniform values using Philox with vectorized keys
+    uniform_vals = np.empty(len(combined_seeds), dtype=float)
+    for i, seed in enumerate(combined_seeds):
+        rng = np.random.Generator(np.random.Philox(int(seed)))
+        uniform_vals[i] = rng.random()
+    uniform_vals = np.clip(uniform_vals, 1e-10, 1.0 - 1e-10)
+    normal_vals = ndtri(uniform_vals).reshape(num_unique, num_metrics)
+
+    # Build lookup table and use vectorized indexing
+    max_idx = int(unique_indices.max()) + 1
+    lookup = np.zeros((max_idx, num_metrics), dtype=float)
+    lookup[unique_indices] = normal_vals
+
+    return lookup[data_indices]
