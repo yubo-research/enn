@@ -299,16 +299,19 @@ class EpistemicNearestNeighbors:
             result.append((x_neighbor, y_neighbor))
         return result
 
-    def posterior_function_sample(
+    def batch_posterior_function_sample(
         self,
         x: np.ndarray,
         params: ENNParams,
         *,
-        function_seed: int,
+        function_seeds: np.ndarray | list[int],
         exclude_nearest: bool = False,
         observation_noise: bool = False,
     ) -> np.ndarray:
         import numpy as np
+
+        function_seeds = np.asarray(function_seeds, dtype=np.int64)
+        num_seeds = len(function_seeds)
 
         idx, w_normalized, l2, mu, se = self._compute_posterior_internals(
             x,
@@ -319,44 +322,69 @@ class EpistemicNearestNeighbors:
         n, k = idx.shape
         m = self._num_metrics
         if k == 0:
-            return mu
-        u = _normal_hash_batch(function_seed, idx, m)
-        weighted_u = np.sum(w_normalized * u, axis=1)
+            return np.broadcast_to(mu, (num_seeds, n, m)).copy()
+
+        u = _normal_hash_batch_multi_seed(function_seeds, idx, m)
+        weighted_u = np.sum(w_normalized[np.newaxis, :, :, :] * u, axis=2)
         l2_safe = np.maximum(l2, 1e-12)
-        deviation = se * weighted_u / l2_safe
-        return mu + deviation
+        deviation = se[np.newaxis, :, :] * weighted_u / l2_safe[np.newaxis, :, :]
+        return mu[np.newaxis, :, :] + deviation
+
+    def posterior_function_sample(
+        self,
+        x: np.ndarray,
+        params: ENNParams,
+        *,
+        function_seed: int,
+        exclude_nearest: bool = False,
+        observation_noise: bool = False,
+    ) -> np.ndarray:
+        result = self.batch_posterior_function_sample(
+            x,
+            params,
+            function_seeds=[function_seed],
+            exclude_nearest=exclude_nearest,
+            observation_noise=observation_noise,
+        )
+        return result[0]
 
 
-def _normal_hash_batch(
-    function_seed: int, data_indices: np.ndarray, num_metrics: int
+def _normal_hash_batch_multi_seed(
+    function_seeds: np.ndarray, data_indices: np.ndarray, num_metrics: int
 ) -> np.ndarray:
     import numpy as np
     from scipy.special import ndtri
 
+    num_seeds = len(function_seeds)
     unique_indices = np.unique(data_indices)
     num_unique = len(unique_indices)
+    max_idx = int(unique_indices.max()) + 1
 
-    # Vectorized seed computation for all (unique_idx, metric) pairs
-    idx_grid, metric_grid = np.meshgrid(
-        unique_indices, np.arange(num_metrics), indexing="ij"
+    # Build grids for (seed, unique_idx, metric) combinations
+    seed_grid, idx_grid, metric_grid = np.meshgrid(
+        function_seeds.astype(np.uint64),
+        unique_indices.astype(np.uint64),
+        np.arange(num_metrics, dtype=np.uint64),
+        indexing="ij",
     )
-    idx_flat = idx_grid.ravel().astype(np.uint64)
-    metric_flat = metric_grid.ravel().astype(np.uint64)
-    combined_seeds = (
-        np.uint64(function_seed) * np.uint64(1_000_003) + idx_flat
-    ) * np.uint64(1_000_003) + metric_flat
+    seed_flat = seed_grid.ravel()
+    idx_flat = idx_grid.ravel()
+    metric_flat = metric_grid.ravel()
 
-    # Batch generate uniform values using Philox with vectorized keys
+    combined_seeds = (seed_flat * np.uint64(1_000_003) + idx_flat) * np.uint64(
+        1_000_003
+    ) + metric_flat
+
+    # Generate uniform values
     uniform_vals = np.empty(len(combined_seeds), dtype=float)
     for i, seed in enumerate(combined_seeds):
         rng = np.random.Generator(np.random.Philox(int(seed)))
         uniform_vals[i] = rng.random()
     uniform_vals = np.clip(uniform_vals, 1e-10, 1.0 - 1e-10)
-    normal_vals = ndtri(uniform_vals).reshape(num_unique, num_metrics)
+    normal_vals = ndtri(uniform_vals).reshape(num_seeds, num_unique, num_metrics)
 
-    # Build lookup table and use vectorized indexing
-    max_idx = int(unique_indices.max()) + 1
-    lookup = np.zeros((max_idx, num_metrics), dtype=float)
-    lookup[unique_indices] = normal_vals
+    # Build lookup table per seed and use vectorized indexing
+    lookup = np.zeros((num_seeds, max_idx, num_metrics), dtype=float)
+    lookup[:, unique_indices, :] = normal_vals
 
-    return lookup[data_indices]
+    return lookup[:, data_indices, :]

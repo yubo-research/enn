@@ -160,15 +160,15 @@ class TurboENNImpl(BaseTurboImpl):
             idx = shuffled_indices[top_k_in_shuffled]
             x_arms = x_cand[idx]
         elif acq_type == "thompson":
-            samples = posterior.sample(num_samples=1, rng=rng)
-            scores = samples[:, 0, 0]
-            shuffled_indices = rng.permutation(len(scores))
-            shuffled_scores = scores[shuffled_indices]
-            top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[
-                :num_arms
-            ]
-            idx = shuffled_indices[top_k_in_shuffled]
-            x_arms = x_cand[idx]
+            # One function sample per arm; each arm = argmax over all candidates
+            base_seed = rng.integers(0, 2**31)
+            function_seeds = np.arange(base_seed, base_seed + num_arms, dtype=np.int64)
+            f_samples = self._enn.batch_posterior_function_sample(
+                x_cand, params, function_seeds=function_seeds
+            )
+            # f_samples: (num_arms, num_candidates, num_metrics)
+            arm_indices = np.argmax(f_samples[:, :, 0], axis=1)
+            x_arms = x_cand[arm_indices]
         else:
             raise ValueError(f"Unknown acq_type: {acq_type}")
 
