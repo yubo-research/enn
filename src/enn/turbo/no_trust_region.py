@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import numpy as np
-    from numpy.random import Generator
-    from scipy.stats._qmc import QMCEngine
+
+from .trust_region_mixin import TrustRegionCandidateMixin
 
 
 @dataclass
-class NoTrustRegion:
+class NoTrustRegion(TrustRegionCandidateMixin):
     num_dim: int
     num_arms: int
     length: float = 1.0
@@ -25,16 +25,9 @@ class NoTrustRegion:
         return
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
-        if is_fallback:
-            if num_arms > self.num_arms:
-                raise ValueError(
-                    f"num_arms {num_arms} > configured num_arms {self.num_arms}"
-                )
-        else:
-            if num_arms != self.num_arms:
-                raise ValueError(
-                    f"num_arms {num_arms} != configured num_arms {self.num_arms}"
-                )
+        from .turbo_utils import validate_trust_region_request
+
+        validate_trust_region_request(num_arms, self.num_arms, is_fallback=is_fallback)
 
     def compute_bounds_1d(
         self, x_center: np.ndarray | Any, lengthscales: np.ndarray | None = None
@@ -44,22 +37,3 @@ class NoTrustRegion:
         lb = np.zeros_like(x_center, dtype=float)
         ub = np.ones_like(x_center, dtype=float)
         return lb, ub
-
-    def generate_candidates(
-        self,
-        x_center: np.ndarray,
-        lengthscales: np.ndarray | None,
-        num_candidates: int,
-        rng: Generator,
-        sobol_engine: QMCEngine,
-    ) -> np.ndarray:
-        from .turbo_utils import generate_trust_region_candidates
-
-        return generate_trust_region_candidates(
-            x_center,
-            lengthscales,
-            num_candidates,
-            compute_bounds_1d=self.compute_bounds_1d,
-            rng=rng,
-            sobol_engine=sobol_engine,
-        )

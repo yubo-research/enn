@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
+
+from enn.enn import EpistemicNearestNeighbors
+from enn.enn.enn_params import ENNParams
 
 
 def _params(
     k: int, *, epi_var_scale: float = 1.0, ale_homoscedastic_scale: float = 0.0
 ):
-    from enn.enn.enn_params import ENNParams
-
     return ENNParams(
         k=int(k),
         epi_var_scale=float(epi_var_scale),
@@ -16,19 +18,14 @@ def _params(
 
 
 def _make_single_metric_train_data(*, rng, n: int, d: int, noise_std: float):
-    import numpy as np
-
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True) + rng.standard_normal((n, 1)) * float(
         noise_std
     )
-    train_yvar = 0.1 * np.ones_like(train_y)
-    return train_x, train_y, train_yvar
+    return train_x, train_y, 0.1 * np.ones_like(train_y)
 
 
 def test_ennnormal_sample_shape_and_clip():
-    import numpy as np
-
     from enn.enn.enn_normal import ENNNormal
 
     rng = np.random.default_rng(0)
@@ -43,8 +40,6 @@ def test_ennnormal_sample_shape_and_clip():
 
 def test_epistemic_nearest_neighbors_posterior_and_var_scale():
     import conftest
-
-    from enn.enn.enn_params import ENNParams
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
     x_test = rng.standard_normal((4, 3))
@@ -62,11 +57,6 @@ def test_epistemic_nearest_neighbors_posterior_and_var_scale():
 
 
 def test_epistemic_nearest_neighbors_with_no_observations_returns_prior_like_posterior():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-    from enn.enn.enn_params import ENNParams
-
     rng = np.random.default_rng(0)
     d = 3
     x = np.zeros((0, d), dtype=float)
@@ -89,10 +79,6 @@ def test_epistemic_nearest_neighbors_with_no_observations_returns_prior_like_pos
 def test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior(
     num_obs: int,
 ):
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-
     rng = np.random.default_rng(0)
     d = 3
     x = rng.standard_normal((num_obs, d))
@@ -107,55 +93,32 @@ def test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior(
     assert np.all(np.isfinite(post.se))
 
 
-def test_batch_posterior_matches_individual_posterior_calls():
+@pytest.mark.parametrize(
+    "exclude_nearest,k_vals",
+    [
+        (False, [3, 5, 7]),
+        (True, [3, 5]),
+    ],
+)
+def test_batch_posterior_matches_individual_posterior_calls(exclude_nearest, k_vals):
     import conftest
-    import numpy as np
-
-    from enn.enn.enn_params import ENNParams
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
     x_test = rng.standard_normal((4, 3))
     paramss = [
-        ENNParams(k=3, epi_var_scale=1.0, ale_homoscedastic_scale=0.0),
-        ENNParams(k=5, epi_var_scale=0.5, ale_homoscedastic_scale=0.0),
-        ENNParams(k=7, epi_var_scale=2.0, ale_homoscedastic_scale=0.0),
+        ENNParams(k=k, epi_var_scale=1.0 / (i + 1), ale_homoscedastic_scale=0.0)
+        for i, k in enumerate(k_vals)
     ]
-    post_batch = model.batch_posterior(x_test, paramss, exclude_nearest=False)
+    post_batch = model.batch_posterior(x_test, paramss, exclude_nearest=exclude_nearest)
     assert post_batch.mu.shape == (len(paramss), x_test.shape[0], model.num_outputs)
     assert post_batch.se.shape == (len(paramss), x_test.shape[0], model.num_outputs)
     for i, params in enumerate(paramss):
-        post = model.posterior(x_test, params=params, exclude_nearest=False)
-        assert np.allclose(post_batch.mu[i], post.mu)
-        assert np.allclose(post_batch.se[i], post.se)
-
-
-def test_batch_posterior_matches_individual_posterior_calls_with_exclude_nearest():
-    import conftest
-    import numpy as np
-
-    from enn.enn.enn_params import ENNParams
-
-    model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
-    x_test = rng.standard_normal((4, 3))
-    paramss = [
-        ENNParams(k=3, epi_var_scale=1.0, ale_homoscedastic_scale=0.0),
-        ENNParams(k=5, epi_var_scale=0.5, ale_homoscedastic_scale=0.0),
-    ]
-    post_batch = model.batch_posterior(x_test, paramss, exclude_nearest=True)
-    assert post_batch.mu.shape == (len(paramss), x_test.shape[0], model.num_outputs)
-    assert post_batch.se.shape == (len(paramss), x_test.shape[0], model.num_outputs)
-    for i, params in enumerate(paramss):
-        post = model.posterior(x_test, params=params, exclude_nearest=True)
+        post = model.posterior(x_test, params=params, exclude_nearest=exclude_nearest)
         assert np.allclose(post_batch.mu[i], post.mu)
         assert np.allclose(post_batch.se[i], post.se)
 
 
 def test_epistemic_nearest_neighbors_with_sobol_indices():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-    from enn.enn.enn_params import ENNParams
-
     rng = np.random.default_rng(0)
     n = 50
     d = 3
@@ -173,11 +136,6 @@ def test_epistemic_nearest_neighbors_with_sobol_indices():
 
 
 def test_epistemic_nearest_neighbors_multiple_metrics():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-    from enn.enn.enn_params import ENNParams
-
     rng = np.random.default_rng(0)
     n = 20
     d = 3
@@ -192,166 +150,6 @@ def test_epistemic_nearest_neighbors_multiple_metrics():
     assert post.se.shape == (4, 2)
 
 
-def test_neighbors_returns_correct_number_and_ordering():
-    import conftest
-    import numpy as np
-
-    model, train_x, train_y, _train_yvar, _rng = conftest.make_enn_model()
-    d = 3
-
-    # Query point at origin
-    x_query = np.zeros(d, dtype=float)
-    neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
-
-    assert len(neighbors) == 5
-    neighbor_indices = []
-    for x_neighbor, y_neighbor in neighbors:
-        assert x_neighbor.shape == (d,)
-        assert y_neighbor.shape == (1,)
-        # Find which training point this corresponds to
-        row_diffs = np.abs(train_x - x_neighbor[np.newaxis, :])
-        matches = np.all(row_diffs < 1e-6, axis=1)
-        assert np.any(matches), "Neighbor x not found in training data"
-        idx = np.where(matches)[0][0]
-        neighbor_indices.append(idx)
-        assert np.allclose(
-            train_y[idx], y_neighbor
-        ), "Neighbor y doesn't match training data"
-
-    # Verify ordering: distances should be non-decreasing
-    distances = [np.linalg.norm(train_x[idx] - x_query) for idx in neighbor_indices]
-    for i in range(len(distances) - 1):
-        assert (
-            distances[i] <= distances[i + 1] + 1e-6
-        ), f"Distances not ordered: {distances}"
-
-
-def test_neighbors_exclude_nearest():
-    import conftest
-    import numpy as np
-
-    model, train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model()
-
-    # Query point exactly matching a training point
-    x_query = train_x[5].copy()
-    neighbors_exclude = model.neighbors(x_query, k=5, exclude_nearest=True)
-    neighbors_include = model.neighbors(x_query, k=5, exclude_nearest=False)
-
-    assert len(neighbors_exclude) == 5
-    assert len(neighbors_include) == 5
-    # The first neighbor when include=True should be the exact match
-    assert np.allclose(neighbors_include[0][0], x_query)
-    # The first neighbor when exclude=True should NOT be the exact match
-    assert not np.allclose(neighbors_exclude[0][0], x_query)
-
-
-def test_neighbors_with_empty_observations():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-
-    d = 3
-    train_x = np.zeros((0, d), dtype=float)
-    train_y = np.zeros((0, 1), dtype=float)
-    train_yvar = np.ones((0, 1), dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
-
-    x_query = np.zeros(d, dtype=float)
-    neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
-    assert neighbors == []
-
-
-def test_neighbors_k_larger_than_available():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-
-    rng = np.random.default_rng(0)
-    n = 5
-    d = 3
-    train_x = rng.standard_normal((n, d))
-    train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
-    train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
-
-    x_query = np.zeros(d, dtype=float)
-    neighbors = model.neighbors(x_query, k=20, exclude_nearest=False)
-    assert len(neighbors) == n
-
-
-def test_neighbors_k_zero():
-    import conftest
-    import numpy as np
-
-    model, _train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model(n=10)
-
-    x_query = np.zeros(3, dtype=float)
-    neighbors = model.neighbors(x_query, k=0, exclude_nearest=False)
-    assert neighbors == []
-
-
-def test_neighbors_with_multiple_metrics():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-
-    rng = np.random.default_rng(0)
-    n = 15
-    d = 3
-    train_x = rng.standard_normal((n, d))
-    train_y = rng.standard_normal((n, 2))
-    train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
-
-    x_query = np.zeros(d, dtype=float)
-    neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
-
-    assert len(neighbors) == 5
-    for x_neighbor, y_neighbor in neighbors:
-        assert x_neighbor.shape == (d,)
-        assert y_neighbor.shape == (2,)
-
-
-def test_neighbors_accepts_2d_input():
-    import conftest
-    import numpy as np
-
-    model, _train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model(n=10)
-    d = 3
-
-    # Test with 1D input
-    x_query_1d = np.zeros(d, dtype=float)
-    neighbors_1d = model.neighbors(x_query_1d, k=3, exclude_nearest=False)
-
-    # Test with 2D input
-    x_query_2d = np.zeros((1, d), dtype=float)
-    neighbors_2d = model.neighbors(x_query_2d, k=3, exclude_nearest=False)
-
-    assert len(neighbors_1d) == len(neighbors_2d) == 3
-    for (x1, y1), (x2, y2) in zip(neighbors_1d, neighbors_2d):
-        assert np.allclose(x1, x2)
-        assert np.allclose(y1, y2)
-
-
-def test_neighbors_exclude_nearest_requires_multiple_observations():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-
-    rng = np.random.default_rng(0)
-    d = 3
-    train_x = rng.standard_normal((1, d))
-    train_y = np.array([[1.0]])
-    train_yvar = np.array([[0.1]])
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
-
-    x_query = np.zeros(d, dtype=float)
-    with pytest.raises(
-        ValueError, match="exclude_nearest=True requires at least 2 observations"
-    ):
-        model.neighbors(x_query, k=1, exclude_nearest=True)
-
-
 def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
     """
     Forces the off-by-one bug when exclude_nearest=True and k > len(self) - 1.
@@ -361,11 +159,6 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
     - After slicing [:, 1:], arrays have 4 columns
     - BUG: k = min(10, 5) = 5, but should be min(10, 4) = 4
     """
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-    from enn.enn.enn_params import ENNParams
-
     rng = np.random.default_rng(0)
     n = 5
     d = 3
@@ -384,68 +177,42 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
 
 
 def test_epistemic_nearest_neighbors_scale_invariance():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-
     rng = np.random.default_rng(42)
-    n = 20
-    d = 3
-    train_x, train_y_base, train_yvar_base = _make_single_metric_train_data(
-        rng=rng, n=n, d=d, noise_std=0.1
+    train_x, train_y, train_yvar = _make_single_metric_train_data(
+        rng=rng, n=20, d=3, noise_std=0.1
     )
 
-    scale_factor = 100.0
-    train_y_scaled = train_y_base * scale_factor
-    train_yvar_scaled = train_yvar_base * (scale_factor**2)
+    model_base = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model_scaled = EpistemicNearestNeighbors(
+        train_x, train_y * 100.0, train_yvar * 10000.0
+    )
 
-    model_base = EpistemicNearestNeighbors(train_x, train_y_base, train_yvar_base)
-    model_scaled = EpistemicNearestNeighbors(train_x, train_y_scaled, train_yvar_scaled)
-
-    x_test = rng.standard_normal((10, d))
-    params = _params(5)
-
+    x_test, params = rng.standard_normal((10, 3)), _params(5)
     post_base = model_base.posterior(x_test, params=params)
     post_scaled = model_scaled.posterior(x_test, params=params)
 
-    assert np.allclose(post_scaled.mu, post_base.mu * scale_factor, rtol=1e-10)
-    assert np.allclose(post_scaled.se, post_base.se * scale_factor, rtol=1e-10)
+    assert np.allclose(post_scaled.mu, post_base.mu * 100.0, rtol=1e-10)
+    assert np.allclose(post_scaled.se, post_base.se * 100.0, rtol=1e-10)
 
 
 def test_epistemic_nearest_neighbors_shift_invariance():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-
     rng = np.random.default_rng(42)
-    n = 20
-    d = 3
-    train_x, train_y_base, train_yvar = _make_single_metric_train_data(
-        rng=rng, n=n, d=d, noise_std=0.1
+    train_x, train_y, train_yvar = _make_single_metric_train_data(
+        rng=rng, n=20, d=3, noise_std=0.1
     )
 
-    shift = 1000.0
-    train_y_shifted = train_y_base + shift
+    model_base = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model_shifted = EpistemicNearestNeighbors(train_x, train_y + 1000.0, train_yvar)
 
-    model_base = EpistemicNearestNeighbors(train_x, train_y_base, train_yvar)
-    model_shifted = EpistemicNearestNeighbors(train_x, train_y_shifted, train_yvar)
-
-    x_test = rng.standard_normal((10, d))
-    params = _params(5)
-
+    x_test, params = rng.standard_normal((10, 3)), _params(5)
     post_base = model_base.posterior(x_test, params=params)
     post_shifted = model_shifted.posterior(x_test, params=params)
 
-    assert np.allclose(post_shifted.mu, post_base.mu + shift, rtol=1e-10)
+    assert np.allclose(post_shifted.mu, post_base.mu + 1000.0, rtol=1e-10)
     assert np.allclose(post_shifted.se, post_base.se, rtol=1e-10)
 
 
 def test_epistemic_nearest_neighbors_with_yvar_none():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-    from enn.enn.enn_params import ENNParams
-
     rng = np.random.default_rng(42)
     n = 20
     d = 3
@@ -468,11 +235,6 @@ def test_epistemic_nearest_neighbors_with_yvar_none():
 
 
 def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-    from enn.enn.enn_params import ENNParams
-
     rng = np.random.default_rng(0)
     n = 20
     d = 3
@@ -489,30 +251,64 @@ def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
 
 
 def test_epistemic_nearest_neighbors_x_rescaling_is_invariant_when_scale_x_enabled():
-    import numpy as np
-
-    from enn.enn import EpistemicNearestNeighbors
-    from enn.enn.enn_params import ENNParams
-
     rng = np.random.default_rng(0)
-    n = 50
-    d = 4
+    train_x = rng.standard_normal((50, 4))
+    train_y = train_x.sum(axis=1, keepdims=True)
+    scale = np.array([[100.0, 0.1, 3.0, 1.0]])
+    x_test = rng.standard_normal((10, 4))
+
+    params = ENNParams(k=7, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, 0.1 * np.ones_like(train_y), scale_x=True
+    )
+    model_scaled = EpistemicNearestNeighbors(
+        train_x * scale, train_y, 0.1 * np.ones_like(train_y), scale_x=True
+    )
+
+    post = model.posterior(x_test, params=params)
+    post_scaled = model_scaled.posterior(x_test * scale, params=params)
+    assert np.allclose(post.mu, post_scaled.mu, rtol=1e-6, atol=1e-8)
+    assert np.allclose(post.se, post_scaled.se, rtol=1e-6, atol=1e-8)
+
+
+def test_epistemic_nearest_neighbors_init_validates_inputs():
+    rng = np.random.default_rng(0)
+
+    # x must be 2D
+    with pytest.raises(ValueError):
+        EpistemicNearestNeighbors(rng.random(10), np.zeros((10, 1)))
+
+    # y must be 2D
+    with pytest.raises(ValueError):
+        EpistemicNearestNeighbors(rng.random((10, 3)), rng.random(10))
+
+    # x and y must have matching rows
+    with pytest.raises(ValueError):
+        EpistemicNearestNeighbors(rng.random((10, 3)), rng.random((5, 1)))
+
+    # yvar must be 2D if provided
+    with pytest.raises(ValueError):
+        EpistemicNearestNeighbors(
+            rng.random((10, 3)), rng.random((10, 1)), rng.random(10)
+        )
+
+    # yvar must match y shape
+    with pytest.raises(ValueError):
+        EpistemicNearestNeighbors(
+            rng.random((10, 3)), rng.random((10, 1)), rng.random((10, 2))
+        )
+
+
+def test_epistemic_nearest_neighbors_init_explicit():
+    rng = np.random.default_rng(42)
+    n, d = 20, 3
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True)
     train_yvar = 0.1 * np.ones_like(train_y)
 
-    feature_scale = np.array([100.0, 0.1, 3.0, 1.0], dtype=float).reshape(1, -1)
-    train_x_scaled = train_x * feature_scale
-
-    x_test = rng.standard_normal((10, d))
-    x_test_scaled = x_test * feature_scale
-
-    params = ENNParams(k=7, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar, scale_x=True)
-    model_scaled = EpistemicNearestNeighbors(
-        train_x_scaled, train_y, train_yvar, scale_x=True
-    )
-    post = model.posterior(x_test, params=params)
-    post_scaled = model_scaled.posterior(x_test_scaled, params=params)
-    assert np.allclose(post.mu, post_scaled.mu, rtol=1e-6, atol=1e-8)
-    assert np.allclose(post.se, post_scaled.se, rtol=1e-6, atol=1e-8)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    assert len(model) == n
+    assert model.num_outputs == 1
+    assert model.train_x is not None
+    assert model.train_y is not None
+    assert model.train_yvar is not None

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
@@ -66,8 +66,11 @@ class EpistemicNearestNeighbors:
                 np.isfinite(y_scale) & (y_scale > 0.0), y_scale, 1.0
             )
 
-        self._index: Any | None = None
-        self._build_index()
+        from .enn_index import ENNIndex
+
+        self._enn_index = ENNIndex(
+            self._train_x_scaled, self._num_dim, self._x_scale, self._scale_x
+        )
 
     @property
     def train_x(self) -> np.ndarray:
@@ -88,17 +91,6 @@ class EpistemicNearestNeighbors:
     def __len__(self) -> int:
         return self._num_obs
 
-    def _build_index(self) -> None:
-        import faiss
-        import numpy as np
-
-        if self._num_obs == 0:
-            return
-        x_f32 = self._train_x_scaled.astype(np.float32, copy=False)
-        index = faiss.IndexFlatL2(self._num_dim)
-        index.add(x_f32)
-        self._index = index
-
     def _search_index(
         self,
         x: np.ndarray,
@@ -106,26 +98,9 @@ class EpistemicNearestNeighbors:
         search_k: int,
         exclude_nearest: bool,
     ) -> tuple[np.ndarray, np.ndarray]:
-        import numpy as np
-
-        search_k = int(search_k)
-        if search_k <= 0:
-            raise ValueError(search_k)
-        x = np.asarray(x, dtype=float)
-        if x.ndim != 2 or x.shape[1] != self._num_dim:
-            raise ValueError(x.shape)
-        if self._index is None:
-            raise RuntimeError("index is not initialized")
-
-        x_scaled = x / self._x_scale if self._scale_x else x
-        x_f32 = x_scaled.astype(np.float32, copy=False)
-        dist2s_full, idx_full = self._index.search(x_f32, search_k)
-        dist2s_full = dist2s_full.astype(float)
-        idx_full = idx_full.astype(int)
-        if exclude_nearest:
-            dist2s_full = dist2s_full[:, 1:]
-            idx_full = idx_full[:, 1:]
-        return dist2s_full, idx_full
+        return self._enn_index.search(
+            x, search_k=search_k, exclude_nearest=exclude_nearest
+        )
 
     def posterior(
         self,
@@ -159,24 +134,9 @@ class EpistemicNearestNeighbors:
         l2 = np.ones((batch_size, self._num_metrics), dtype=float)
         return idx, w_normalized, l2, mu, se
 
-    def _compute_posterior_internals(
-        self,
-        x: np.ndarray,
-        params: ENNParams,
-        *,
-        exclude_nearest: bool = False,
-        observation_noise: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        import numpy as np
-
-        x = np.asarray(x, dtype=float)
-        if x.ndim != 2:
-            raise ValueError(x.shape)
-        if x.shape[1] != self._num_dim:
-            raise ValueError(x.shape)
-        batch_size = x.shape[0]
-        if len(self) == 0:
-            return self._empty_posterior_internals(batch_size)
+    def _get_neighbor_data(
+        self, x: np.ndarray, params: ENNParams, exclude_nearest: bool
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int] | None:
         if exclude_nearest:
             if len(self) <= 1:
                 raise ValueError(len(self))
@@ -193,31 +153,62 @@ class EpistemicNearestNeighbors:
                 f"k={k} exceeds available columns={dist2s_full.shape[1]}"
             )
         if k == 0:
-            return self._empty_posterior_internals(batch_size)
-        dist2s = dist2s_full[:, :k]
-        idx = idx_full[:, :k]
-        y_neighbors = self._train_y[idx]
+            return None
+        return dist2s_full[:, :k], idx_full[:, :k], self._train_y[idx_full[:, :k]], k
+
+    def _compute_weighted_posterior(
+        self,
+        dist2s: np.ndarray,
+        idx: np.ndarray,
+        y_neighbors: np.ndarray,
+        params: ENNParams,
+        observation_noise: bool,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        import numpy as np
 
         dist2s_expanded = dist2s[..., np.newaxis]
-        var_epi_obs = params.epi_var_scale * dist2s_expanded
-        var_ale_obs = params.ale_homoscedastic_scale
+        var_epi = params.epi_var_scale * dist2s_expanded
+        var_ale = params.ale_homoscedastic_scale
         if self._train_yvar is not None:
-            var_ale_obs = var_ale_obs + self._train_yvar[idx] / self._y_scale**2
-
-        # Inverse-variance weighting: neighbors with lower variance get higher weight
-        w = 1.0 / (self._EPS_VAR + var_epi_obs + var_ale_obs)
+            var_ale = var_ale + self._train_yvar[idx] / self._y_scale**2
+        w = 1.0 / (self._EPS_VAR + var_epi + var_ale)
         norm = np.sum(w, axis=1, keepdims=True)
         w_normalized = w / norm
         l2 = np.sqrt(np.sum(w_normalized**2, axis=1))
         mu = np.sum(w_normalized * y_neighbors, axis=1)
         epistemic_var = 1.0 / norm.squeeze(axis=1)
-        if observation_noise:
-            aleatoric_var = np.sum(w_normalized * var_ale_obs, axis=1)
-        else:
-            aleatoric_var = 0.0
-        vvar = np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR)
-        se = np.sqrt(vvar) * self._y_scale
+        aleatoric_var = (
+            np.sum(w_normalized * var_ale, axis=1) if observation_noise else 0.0
+        )
+        se = (
+            np.sqrt(np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR))
+            * self._y_scale
+        )
         return idx, w_normalized, l2, mu, se
+
+    def _compute_posterior_internals(
+        self,
+        x: np.ndarray,
+        params: ENNParams,
+        *,
+        exclude_nearest: bool = False,
+        observation_noise: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        import numpy as np
+
+        x = np.asarray(x, dtype=float)
+        if x.ndim != 2 or x.shape[1] != self._num_dim:
+            raise ValueError(x.shape)
+        batch_size = x.shape[0]
+        if len(self) == 0:
+            return self._empty_posterior_internals(batch_size)
+        neighbor_data = self._get_neighbor_data(x, params, exclude_nearest)
+        if neighbor_data is None:
+            return self._empty_posterior_internals(batch_size)
+        dist2s, idx, y_neighbors, _ = neighbor_data
+        return self._compute_weighted_posterior(
+            dist2s, idx, y_neighbors, params, observation_noise
+        )
 
     def batch_posterior(
         self,
@@ -254,50 +245,33 @@ class EpistemicNearestNeighbors:
         return ENNNormal(mu_all, se_all)
 
     def neighbors(
-        self,
-        x: np.ndarray,
-        k: int,
-        *,
-        exclude_nearest: bool = False,
+        self, x: np.ndarray, k: int, *, exclude_nearest: bool = False
     ) -> list[tuple[np.ndarray, np.ndarray]]:
         import numpy as np
 
         x = np.asarray(x, dtype=float)
         if x.ndim == 1:
             x = x[np.newaxis, :]
-        if x.ndim != 2:
-            raise ValueError(f"x must be 1D or 2D, got shape {x.shape}")
-        if x.shape[0] != 1:
-            raise ValueError(f"x must be a single point, got shape {x.shape}")
-        if x.shape[1] != self._num_dim:
+        if x.ndim != 2 or x.shape[0] != 1 or x.shape[1] != self._num_dim:
             raise ValueError(
-                f"x must have {self._num_dim} dimensions, got {x.shape[1]}"
+                f"x must be single point with {self._num_dim} dims, got {x.shape}"
             )
         if k < 0:
             raise ValueError(f"k must be non-negative, got {k}")
         if len(self) == 0:
             return []
-        if exclude_nearest:
-            if len(self) <= 1:
-                raise ValueError(
-                    f"exclude_nearest=True requires at least 2 observations, got {len(self)}"
-                )
-            search_k = int(min(k + 1, len(self)))
-        else:
-            search_k = int(min(k, len(self)))
+        if exclude_nearest and len(self) <= 1:
+            raise ValueError(
+                f"exclude_nearest=True requires at least 2 observations, got {len(self)}"
+            )
+        search_k = int(min(k + 1 if exclude_nearest else k, len(self)))
         if search_k == 0:
             return []
-        dist2s_full, idx_full = self._search_index(
+        _, idx_full = self._search_index(
             x, search_k=search_k, exclude_nearest=exclude_nearest
         )
-        actual_k = min(k, len(idx_full[0]))
-        idx = idx_full[0, :actual_k]
-        result = []
-        for i in idx:
-            x_neighbor = self._train_x[i].copy()
-            y_neighbor = self._train_y[i].copy()
-            result.append((x_neighbor, y_neighbor))
-        return result
+        idx = idx_full[0, : min(k, len(idx_full[0]))]
+        return [(self._train_x[i].copy(), self._train_y[i].copy()) for i in idx]
 
     def batch_posterior_function_sample(
         self,
@@ -309,22 +283,19 @@ class EpistemicNearestNeighbors:
         observation_noise: bool = False,
     ) -> np.ndarray:
         import numpy as np
+        from .enn_hash import normal_hash_batch_multi_seed
 
         function_seeds = np.asarray(function_seeds, dtype=np.int64)
-        num_seeds = len(function_seeds)
-
         idx, w_normalized, l2, mu, se = self._compute_posterior_internals(
             x,
             params,
             exclude_nearest=exclude_nearest,
             observation_noise=observation_noise,
         )
-        n, k = idx.shape
-        m = self._num_metrics
+        n, k, m = idx.shape[0], idx.shape[1], self._num_metrics
         if k == 0:
-            return np.broadcast_to(mu, (num_seeds, n, m)).copy()
-
-        u = _normal_hash_batch_multi_seed(function_seeds, idx, m)
+            return np.broadcast_to(mu, (len(function_seeds), n, m)).copy()
+        u = normal_hash_batch_multi_seed(function_seeds, idx, m)
         weighted_u = np.sum(w_normalized[np.newaxis, :, :, :] * u, axis=2)
         l2_safe = np.maximum(l2, 1e-12)
         deviation = se[np.newaxis, :, :] * weighted_u / l2_safe[np.newaxis, :, :]
@@ -339,52 +310,10 @@ class EpistemicNearestNeighbors:
         exclude_nearest: bool = False,
         observation_noise: bool = False,
     ) -> np.ndarray:
-        result = self.batch_posterior_function_sample(
+        return self.batch_posterior_function_sample(
             x,
             params,
             function_seeds=[function_seed],
             exclude_nearest=exclude_nearest,
             observation_noise=observation_noise,
-        )
-        return result[0]
-
-
-def _normal_hash_batch_multi_seed(
-    function_seeds: np.ndarray, data_indices: np.ndarray, num_metrics: int
-) -> np.ndarray:
-    import numpy as np
-    from scipy.special import ndtri
-
-    num_seeds = len(function_seeds)
-    unique_indices = np.unique(data_indices)
-    num_unique = len(unique_indices)
-    max_idx = int(unique_indices.max()) + 1
-
-    # Build grids for (seed, unique_idx, metric) combinations
-    seed_grid, idx_grid, metric_grid = np.meshgrid(
-        function_seeds.astype(np.uint64),
-        unique_indices.astype(np.uint64),
-        np.arange(num_metrics, dtype=np.uint64),
-        indexing="ij",
-    )
-    seed_flat = seed_grid.ravel()
-    idx_flat = idx_grid.ravel()
-    metric_flat = metric_grid.ravel()
-
-    combined_seeds = (seed_flat * np.uint64(1_000_003) + idx_flat) * np.uint64(
-        1_000_003
-    ) + metric_flat
-
-    # Generate uniform values
-    uniform_vals = np.empty(len(combined_seeds), dtype=float)
-    for i, seed in enumerate(combined_seeds):
-        rng = np.random.Generator(np.random.Philox(int(seed)))
-        uniform_vals[i] = rng.random()
-    uniform_vals = np.clip(uniform_vals, 1e-10, 1.0 - 1e-10)
-    normal_vals = ndtri(uniform_vals).reshape(num_seeds, num_unique, num_metrics)
-
-    # Build lookup table per seed and use vectorized indexing
-    lookup = np.zeros((num_seeds, max_idx, num_metrics), dtype=float)
-    lookup[:, unique_indices, :] = normal_vals
-
-    return lookup[:, data_indices, :]
+        )[0]

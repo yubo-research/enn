@@ -105,8 +105,8 @@ class TurboENNImpl(BaseTurboImpl):
         self._enn, self._fitted_params = mk_enn(
             x_obs_list,
             y_obs_list,
-            yvar_obs_list=yvar_obs_list,
-            k=k,
+            k,
+            yvar_obs_list,
             num_fit_samples=self._config.num_fit_samples,
             num_fit_candidates=self._config.num_fit_candidates,
             scale_x=self._config.scale_x,

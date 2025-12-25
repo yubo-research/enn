@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import numpy as np
+
+from enn.enn import EpistemicNearestNeighbors
+from enn.enn.enn_params import ENNParams
+
+
+def test_posterior_function_sample_basic():
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((20, 3))
+    train_y = train_x.sum(axis=1, keepdims=True)
+    model = EpistemicNearestNeighbors(train_x, train_y, 0.1 * np.ones_like(train_y))
+    x_test = rng.standard_normal((5, 3))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    sample = model.posterior_function_sample(
+        x_test, params, function_seed=123, exclude_nearest=False
+    )
+    assert sample.shape == (5, 1) and np.all(np.isfinite(sample))
+
+
+def test_posterior_function_sample_deterministic():
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((20, 3))
+    model = EpistemicNearestNeighbors(train_x, train_x.sum(axis=1, keepdims=True))
+    x_test = rng.standard_normal((5, 3))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    sample1 = model.posterior_function_sample(x_test, params, function_seed=42)
+    assert np.allclose(
+        sample1, model.posterior_function_sample(x_test, params, function_seed=42)
+    )
+    assert not np.allclose(
+        sample1, model.posterior_function_sample(x_test, params, function_seed=43)
+    )
+
+
+def test_batch_posterior_function_sample_basic():
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((20, 3))
+    train_y = train_x.sum(axis=1, keepdims=True)
+    model = EpistemicNearestNeighbors(train_x, train_y, 0.1 * np.ones_like(train_y))
+    x_test = rng.standard_normal((5, 3))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    samples = model.batch_posterior_function_sample(
+        x_test, params, function_seeds=[10, 20, 30], exclude_nearest=False
+    )
+    assert samples.shape == (3, 5, 1) and np.all(np.isfinite(samples))
+
+
+def test_batch_posterior_function_sample_matches_individual():
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((20, 3))
+    model = EpistemicNearestNeighbors(train_x, train_x.sum(axis=1, keepdims=True))
+    x_test = rng.standard_normal((5, 3))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    batch = model.batch_posterior_function_sample(
+        x_test, params, function_seeds=[100, 200, 300]
+    )
+    for i, seed in enumerate([100, 200, 300]):
+        assert np.allclose(
+            batch[i],
+            model.posterior_function_sample(x_test, params, function_seed=seed),
+        )
+
+
+def test_batch_posterior_function_sample_with_multiple_metrics():
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((20, 3))
+    model = EpistemicNearestNeighbors(train_x, rng.standard_normal((20, 2)))
+    x_test = rng.standard_normal((5, 3))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    samples = model.batch_posterior_function_sample(
+        x_test, params, function_seeds=[1, 2, 3, 4]
+    )
+    assert samples.shape == (4, 5, 2) and np.all(np.isfinite(samples))
+
+
+def test_batch_posterior_function_sample_empty_k():
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((2, 3))
+    train_y = train_x.sum(axis=1, keepdims=True)
+    model = EpistemicNearestNeighbors(train_x, train_y)
+    x_test = rng.standard_normal((5, 3))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    samples = model.batch_posterior_function_sample(
+        x_test, params, function_seeds=[1, 2], exclude_nearest=True
+    )
+    assert samples.shape == (2, 5, 1)
+
+
+def test_posterior_function_sample_with_observation_noise():
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((20, 3))
+    train_y = train_x.sum(axis=1, keepdims=True)
+    model = EpistemicNearestNeighbors(train_x, train_y, 0.5 * np.ones_like(train_y))
+    x_test = rng.standard_normal((5, 3))
+    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    sample_no_noise = model.posterior_function_sample(
+        x_test, params, function_seed=42, observation_noise=False
+    )
+    sample_with_noise = model.posterior_function_sample(
+        x_test, params, function_seed=42, observation_noise=True
+    )
+    assert sample_no_noise.shape == sample_with_noise.shape == (5, 1)
+    assert not np.allclose(sample_no_noise, sample_with_noise)

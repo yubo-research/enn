@@ -6,37 +6,24 @@ def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(0)
-    n = 40
-    d = 2
-    x = rng.standard_normal((n, d))
-    true_w = np.array([1.5, -0.5])
-    y_mean = x @ true_w
-    noise_std = 0.1
-    noise = noise_std * rng.standard_normal(n)
-    y = (y_mean + noise).reshape(-1, 1)
-    yvar = (noise_std**2) * np.ones_like(y)
-    model = EpistemicNearestNeighbors(x, y, yvar)
-    rng_fit = np.random.default_rng(1)
+    x = rng.standard_normal((40, 2))
+    y = (x @ np.array([1.5, -0.5]) + 0.1 * rng.standard_normal(40)).reshape(-1, 1)
+    model = EpistemicNearestNeighbors(x, y, 0.01 * np.ones_like(y))
+
     result = enn_fit(
         model,
         k=10,
         num_fit_candidates=30,
         num_fit_samples=20,
-        rng=rng_fit,
+        rng=np.random.default_rng(1),
     )
-    assert isinstance(result, ENNParams)
-    assert result.k == 10
-    assert result.epi_var_scale > 0.0
-    rng_eval = np.random.default_rng(2)
-    tuned_lls = subsample_loglik(
-        model,
-        x,
-        y[:, 0],
-        paramss=[result],
-        P=20,
-        rng=rng_eval,
+    assert (
+        isinstance(result, ENNParams) and result.k == 10 and result.epi_var_scale > 0.0
     )
-    tuned_ll = tuned_lls[0]
+
+    tuned_ll = subsample_loglik(
+        model, x, y[:, 0], paramss=[result], P=20, rng=np.random.default_rng(2)
+    )[0]
     assert np.isfinite(tuned_ll), "tuned log-likelihood must be finite"
 
 
@@ -136,31 +123,22 @@ def test_enn_fit_supports_multioutput_y():
     from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(123)
-    n = 60
-    d = 3
-    x = rng.standard_normal((n, d))
-    w1 = np.array([1.0, -2.0, 0.5])
-    w2 = np.array([-0.5, 0.25, 1.25])
-    noise_std1 = 0.1
-    noise_std2 = 0.3
-    y1 = x @ w1 + noise_std1 * rng.standard_normal(n)
-    y2 = np.sin(x @ w2) + noise_std2 * rng.standard_normal(n)
+    x = rng.standard_normal((60, 3))
+    y1 = x @ [1.0, -2.0, 0.5] + 0.1 * rng.standard_normal(60)
+    y2 = np.sin(x @ [-0.5, 0.25, 1.25]) + 0.3 * rng.standard_normal(60)
     y = np.column_stack([y1, y2]).astype(float)
-    yvar = np.ones_like(y, dtype=float) * np.array([[noise_std1**2, noise_std2**2]])
-    model = EpistemicNearestNeighbors(x, y, yvar)
+    model = EpistemicNearestNeighbors(x, y, np.ones_like(y) * [[0.01, 0.09]])
 
-    rng_fit = np.random.default_rng(456)
     params = enn_fit(
         model,
         k=12,
         num_fit_candidates=40,
         num_fit_samples=25,
-        rng=rng_fit,
+        rng=np.random.default_rng(456),
     )
-    assert isinstance(params, ENNParams)
-    assert params.k == 12
+    assert isinstance(params, ENNParams) and params.k == 12
 
-    rng_eval = np.random.default_rng(789)
-    lls = subsample_loglik(model, x, y, paramss=[params], P=25, rng=rng_eval)
-    assert len(lls) == 1
-    assert np.isfinite(lls[0])
+    lls = subsample_loglik(
+        model, x, y, paramss=[params], P=25, rng=np.random.default_rng(789)
+    )
+    assert len(lls) == 1 and np.isfinite(lls[0])

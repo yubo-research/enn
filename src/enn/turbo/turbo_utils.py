@@ -1,20 +1,36 @@
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator
 
+import numpy as np
+
 if TYPE_CHECKING:
-    import numpy as np
     import torch
-    from gpytorch.likelihoods import GaussianLikelihood
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
 
-    from .turbo_gp import TurboGP
-    from .turbo_gp_noisy import TurboGPNoisy
+from .turbo_gp_fit import fit_gp
+from .turbo_optimizer_utils import (
+    sobol_seed_for_state,
+    trim_trailing_observations,
+    validate_tell_inputs,
+)
+
+__all__ = [
+    "Telemetry",
+    "fit_gp",
+    "sobol_seed_for_state",
+    "trim_trailing_observations",
+    "validate_tell_inputs",
+]
 
 
-from enn.enn.enn_util import standardize_y
+@dataclass(frozen=True)
+class Telemetry:
+    dt_fit: float
+    dt_sel: float
 
 
 def _next_power_of_2(n: int) -> int:
@@ -43,138 +59,31 @@ def torch_seed_context(
         yield
 
 
-def fit_gp(
-    x_obs_list: list[float] | list[list[float]],
-    y_obs_list: list[float] | list[list[float]],
-    num_dim: int,
-    *,
-    yvar_obs_list: list[float] | None = None,
-    num_steps: int = 50,
-) -> tuple[
-    "TurboGP | TurboGPNoisy | None",
-    "GaussianLikelihood | None",
-    float | np.ndarray,
-    float | np.ndarray,
-]:
-    import numpy as np
-    import torch
-    from gpytorch.constraints import Interval
-    from gpytorch.likelihoods import GaussianLikelihood
-    from gpytorch.mlls import ExactMarginalLogLikelihood
+def get_gp_posterior_suppress_warning(model: Any, x_torch: Any) -> Any:
+    import warnings
 
-    from .turbo_gp import TurboGP
-    from .turbo_gp_noisy import TurboGPNoisy
+    try:
+        from gpytorch.utils.warnings import GPInputWarning
+    except Exception:  # pragma: no cover
+        GPInputWarning = None
 
-    x = np.asarray(x_obs_list, dtype=float)
-    y = np.asarray(y_obs_list, dtype=float)
-    n = x.shape[0]
-    if y.ndim not in (1, 2):
-        raise ValueError(y.shape)
-    is_multi_output = y.ndim == 2 and y.shape[1] > 1
-    if yvar_obs_list is not None:
-        if len(yvar_obs_list) != len(y_obs_list):
-            raise ValueError(
-                f"yvar_obs_list length {len(yvar_obs_list)} != y_obs_list length {len(y_obs_list)}"
-            )
-        if is_multi_output:
-            raise ValueError("yvar_obs_list not supported for multi-output GP")
-    if n == 0:
-        if is_multi_output:
-            num_outputs = int(y.shape[1])
-            return None, None, np.zeros(num_outputs), np.ones(num_outputs)
-        return None, None, 0.0, 1.0
-    if n == 1 and is_multi_output:
-        gp_y_mean = y[0].copy()
-        gp_y_std = np.ones(int(y.shape[1]), dtype=float)
-        return None, None, gp_y_mean, gp_y_std
-
-    if is_multi_output:
-        gp_y_mean = y.mean(axis=0)
-        gp_y_std = y.std(axis=0)
-        gp_y_std = np.where(gp_y_std < 1e-6, 1.0, gp_y_std)
-        z = (y - gp_y_mean) / gp_y_std
-    else:
-        gp_y_mean, gp_y_std = standardize_y(y)
-        y_centered = y - gp_y_mean
-        z = y_centered / gp_y_std
-    train_x = torch.as_tensor(x, dtype=torch.float64)
-    if is_multi_output:
-        train_y = torch.as_tensor(z.T, dtype=torch.float64)
-    else:
-        train_y = torch.as_tensor(z, dtype=torch.float64)
-    lengthscale_constraint = Interval(0.005, 2.0)
-    outputscale_constraint = Interval(0.05, 20.0)
-    if yvar_obs_list is not None:
-        y_var = np.asarray(yvar_obs_list, dtype=float)
-        train_y_var = torch.as_tensor(y_var / (gp_y_std**2), dtype=torch.float64)
-        model = TurboGPNoisy(
-            train_x=train_x,
-            train_y=train_y,
-            train_y_var=train_y_var,
-            lengthscale_constraint=lengthscale_constraint,
-            outputscale_constraint=outputscale_constraint,
-            ard_dims=num_dim,
-        ).to(dtype=train_x.dtype)
-        likelihood = model.likelihood
-    else:
-        noise_constraint = Interval(5e-4, 0.2)
-        if is_multi_output:
-            num_outputs = int(y.shape[1])
-            likelihood = GaussianLikelihood(
-                noise_constraint=noise_constraint,
-                batch_shape=torch.Size([num_outputs]),
-            ).to(dtype=train_y.dtype)
-        else:
-            likelihood = GaussianLikelihood(noise_constraint=noise_constraint).to(
-                dtype=train_y.dtype
-            )
-        model = TurboGP(
-            train_x=train_x,
-            train_y=train_y,
-            likelihood=likelihood,
-            lengthscale_constraint=lengthscale_constraint,
-            outputscale_constraint=outputscale_constraint,
-            ard_dims=num_dim,
-        ).to(dtype=train_x.dtype)
-        if is_multi_output:
-            likelihood.noise = torch.full(
-                (int(y.shape[1]),), 0.005, dtype=train_y.dtype
-            )
-        else:
-            likelihood.noise = torch.tensor(0.005, dtype=train_y.dtype)
-    if is_multi_output:
-        num_outputs = int(y.shape[1])
-        model.covar_module.outputscale = torch.ones(num_outputs, dtype=train_x.dtype)
-        model.covar_module.base_kernel.lengthscale = torch.full(
-            (num_outputs, 1, num_dim), 0.5, dtype=train_x.dtype
+    if GPInputWarning is None:
+        return model.posterior(x_torch)
+    # We intentionally evaluate the GP posterior at the training inputs
+    # (observed points) when choosing the center. GPyTorch warns about this
+    # in debug mode, but it's expected for our usage.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"The input matches the stored training data\..*",
+            category=GPInputWarning,
         )
-    else:
-        model.covar_module.outputscale = torch.tensor(1.0, dtype=train_x.dtype)
-        model.covar_module.base_kernel.lengthscale = torch.full(
-            (num_dim,), 0.5, dtype=train_x.dtype
-        )
-    model.train()
-    likelihood.train()
-    mll = ExactMarginalLogLikelihood(likelihood, model)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
-    for _ in range(num_steps):
-        optimizer.zero_grad()
-        output = model(train_x)
-        loss = -mll(output, train_y)
-        if loss.ndim != 0:
-            loss = loss.sum()
-        loss.backward()
-        optimizer.step()
-    model.eval()
-    likelihood.eval()
-    return model, likelihood, gp_y_mean, gp_y_std
+        return model.posterior(x_torch)
 
 
 def latin_hypercube(
     num_points: int, num_dim: int, *, rng: Generator | Any
 ) -> np.ndarray:
-    import numpy as np
-
     x = np.zeros((num_points, num_dim))
     centers = (1.0 + 2.0 * np.arange(0.0, num_points)) / float(2 * num_points)
     for j in range(num_dim):
@@ -185,8 +94,6 @@ def latin_hypercube(
 
 
 def argmax_random_tie(values: np.ndarray | Any, *, rng: Generator | Any) -> int:
-    import numpy as np
-
     if values.ndim != 1:
         raise ValueError(values.shape)
     max_val = float(np.max(values))
@@ -208,8 +115,6 @@ def sobol_perturb_np(
     *,
     sobol_engine: QMCEngine | Any,
 ) -> np.ndarray:
-    import numpy as np
-
     n_sobol = _next_power_of_2(num_candidates)
     sobol_samples = sobol_engine.random(n_sobol)[:num_candidates]
     lb_array = np.asarray(lb)
@@ -231,8 +136,6 @@ def raasp(
     rng: Generator | Any,
     sobol_engine: QMCEngine | Any,
 ) -> np.ndarray:
-    import numpy as np
-
     num_dim = x_center.shape[-1]
     prob_perturb = min(num_pert / num_dim, 1.0)
     mask = rng.random((num_candidates, num_dim)) <= prob_perturb
@@ -287,9 +190,22 @@ def generate_trust_region_candidates(
     )
 
 
-def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
-    import numpy as np
+def validate_trust_region_request(
+    num_arms: int, configured_num_arms: int, *, is_fallback: bool = False
+) -> None:
+    if is_fallback:
+        if num_arms > configured_num_arms:
+            raise ValueError(
+                f"num_arms {num_arms} > configured num_arms {configured_num_arms}"
+            )
+    else:
+        if num_arms != configured_num_arms:
+            raise ValueError(
+                f"num_arms {num_arms} != configured num_arms {configured_num_arms}"
+            )
 
+
+def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
     lb = bounds[:, 0]
     ub = bounds[:, 1]
     if np.any(ub <= lb):
@@ -298,8 +214,6 @@ def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
 
 
 def from_unit(x_unit: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
-    import numpy as np
-
     lb = np.asarray(bounds[:, 0])
     ub = np.asarray(bounds[:, 1])
     return lb + x_unit * (ub - lb)
@@ -310,11 +224,11 @@ def gp_thompson_sample(
     x_cand: np.ndarray | Any,
     num_arms: int,
     rng: Generator | Any,
+    *,
     gp_y_mean: float,
     gp_y_std: float,
 ) -> np.ndarray:
     import gpytorch
-    import numpy as np
     import torch
 
     x_torch = torch.as_tensor(x_cand, dtype=torch.float64)

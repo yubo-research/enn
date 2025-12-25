@@ -10,15 +10,9 @@ if TYPE_CHECKING:
     from .enn_params import ENNParams
 
 
-def subsample_loglik(
-    model: EpistemicNearestNeighbors | Any,
-    x: np.ndarray | Any,
-    y: np.ndarray | Any,
-    *,
-    paramss: list[ENNParams] | list[Any],
-    P: int = 10,
-    rng: Generator | Any,
-) -> list[float]:
+def _validate_subsample_inputs(
+    x: np.ndarray | Any, y: np.ndarray | Any, P: int, paramss: list
+) -> tuple[np.ndarray, np.ndarray]:
     import numpy as np
 
     x_array = np.asarray(x, dtype=float)
@@ -35,64 +29,63 @@ def subsample_loglik(
         raise ValueError(P)
     if len(paramss) == 0:
         raise ValueError("paramss must be non-empty")
+    return x_array, y_array
+
+
+def _compute_single_loglik(
+    y_scaled: np.ndarray, mu_i: np.ndarray, se_i: np.ndarray
+) -> float:
+    import numpy as np
+
+    if not np.isfinite(mu_i).all() or not np.isfinite(se_i).all():
+        return 0.0
+    if np.any(se_i <= 0.0):
+        return 0.0
+    var_scaled = se_i**2
+    loglik = -0.5 * np.sum(
+        np.log(2.0 * np.pi * var_scaled) + (y_scaled - mu_i) ** 2 / var_scaled
+    )
+    return float(loglik) if np.isfinite(loglik) else 0.0
+
+
+def subsample_loglik(
+    model: EpistemicNearestNeighbors | Any,
+    x: np.ndarray | Any,
+    y: np.ndarray | Any,
+    *,
+    paramss: list[ENNParams] | list[Any],
+    P: int = 10,
+    rng: Generator | Any,
+) -> list[float]:
+    import numpy as np
+
+    x_array, y_array = _validate_subsample_inputs(x, y, P, paramss)
     n = x_array.shape[0]
-    if n == 0:
-        return [0.0] * len(paramss)
-    if len(model) <= 1:
+    if n == 0 or len(model) <= 1:
         return [0.0] * len(paramss)
     P_actual = min(P, n)
-    if P_actual == n:
-        indices = np.arange(n, dtype=int)
-    else:
-        indices = rng.permutation(n)[:P_actual]
-    x_selected = x_array[indices]
-    y_selected = y_array[indices]
-    if not np.isfinite(y_selected).all():
-        return [0.0] * len(paramss)
-    post_batch = model.batch_posterior(
-        x_selected, paramss, exclude_nearest=True, observation_noise=True
+    indices = (
+        np.arange(n, dtype=int) if P_actual == n else rng.permutation(n)[:P_actual]
     )
-    mu_batch = post_batch.mu
-    se_batch = post_batch.se
-    num_params = len(paramss)
-    num_outputs = y_selected.shape[1]
-    if mu_batch.shape != (num_params, P_actual, num_outputs) or se_batch.shape != (
-        num_params,
-        P_actual,
-        num_outputs,
-    ):
-        raise ValueError(
-            (
-                mu_batch.shape,
-                se_batch.shape,
-                (num_params, P_actual, num_outputs),
-            )
-        )
+    x_sel, y_sel = x_array[indices], y_array[indices]
+    if not np.isfinite(y_sel).all():
+        return [0.0] * len(paramss)
+
+    post = model.batch_posterior(
+        x_sel, paramss, exclude_nearest=True, observation_noise=True
+    )
+    num_params, num_outputs = len(paramss), y_sel.shape[1]
+    expected_shape = (num_params, P_actual, num_outputs)
+    if post.mu.shape != expected_shape or post.se.shape != expected_shape:
+        raise ValueError((post.mu.shape, post.se.shape, expected_shape))
+
     y_std = np.std(y_array, axis=0, keepdims=True).astype(float)
     y_std = np.where(np.isfinite(y_std) & (y_std > 0.0), y_std, 1.0)
-    y_scaled = y_selected / y_std
-    mu_scaled = mu_batch / y_std
-    se_scaled = se_batch / y_std
-    result = []
-    for i in range(num_params):
-        mu_i = mu_scaled[i]
-        se_i = se_scaled[i]
-        if not np.isfinite(mu_i).all() or not np.isfinite(se_i).all():
-            result.append(0.0)
-            continue
-        if np.any(se_i <= 0.0):
-            result.append(0.0)
-            continue
-        diff = y_scaled - mu_i
-        var_scaled = se_i**2
-        log_term = np.log(2.0 * np.pi * var_scaled)
-        quad = diff**2 / var_scaled
-        loglik = -0.5 * np.sum(log_term + quad)
-        if not np.isfinite(loglik):
-            result.append(0.0)
-            continue
-        result.append(float(loglik))
-    return result
+    y_scaled, mu_scaled, se_scaled = y_sel / y_std, post.mu / y_std, post.se / y_std
+    return [
+        _compute_single_loglik(y_scaled, mu_scaled[i], se_scaled[i])
+        for i in range(num_params)
+    ]
 
 
 def enn_fit(

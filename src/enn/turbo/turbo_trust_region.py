@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
-    from scipy.stats._qmc import QMCEngine
+
+from .trust_region_mixin import TrustRegionCandidateMixin
 
 
 @dataclass
-class TurboTrustRegion:
+class TurboTrustRegion(TrustRegionCandidateMixin):
     num_dim: int
     num_arms: int
     length: float = 0.8
@@ -82,16 +83,9 @@ class TurboTrustRegion:
         self.prev_num_obs = 0
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
-        if is_fallback:
-            if num_arms > self.num_arms:
-                raise ValueError(
-                    f"num_arms {num_arms} > configured num_arms {self.num_arms}"
-                )
-        else:
-            if num_arms != self.num_arms:
-                raise ValueError(
-                    f"num_arms {num_arms} != configured num_arms {self.num_arms}"
-                )
+        from .turbo_utils import validate_trust_region_request
+
+        validate_trust_region_request(num_arms, self.num_arms, is_fallback=is_fallback)
 
     def compute_bounds_1d(
         self, x_center: np.ndarray | Any, lengthscales: np.ndarray | None = None
@@ -105,25 +99,6 @@ class TurboTrustRegion:
         lb = np.clip(x_center - half_length, 0.0, 1.0)
         ub = np.clip(x_center + half_length, 0.0, 1.0)
         return lb, ub
-
-    def generate_candidates(
-        self,
-        x_center: np.ndarray,
-        lengthscales: np.ndarray | None,
-        num_candidates: int,
-        rng: Generator,
-        sobol_engine: QMCEngine,
-    ) -> np.ndarray:
-        from .turbo_utils import generate_trust_region_candidates
-
-        return generate_trust_region_candidates(
-            x_center,
-            lengthscales,
-            num_candidates,
-            compute_bounds_1d=self.compute_bounds_1d,
-            rng=rng,
-            sobol_engine=sobol_engine,
-        )
 
     def get_incumbent_indices(self, y: np.ndarray | Any, rng: Generator) -> np.ndarray:
         import numpy as np

@@ -17,9 +17,9 @@ from .turbo_utils import gp_thompson_sample
 def mk_enn(
     x_obs_list: list[float] | list[list[float]],
     y_obs_list: list[float] | list[list[float]],
-    *,
-    yvar_obs_list: list[float] | None = None,
     k: int,
+    yvar_obs_list: list[float] | None = None,
+    *,
     num_fit_samples: int | None = None,
     num_fit_candidates: int | None = None,
     scale_x: bool = False,
@@ -98,45 +98,35 @@ def select_uniform(
 def select_gp_thompson(
     x_cand: np.ndarray,
     num_arms: int,
-    x_obs_list: list[float] | list[list[float]],
-    y_obs_list: list[float] | list[list[float]],
+    x_obs_list: list,
+    y_obs_list: list,
     num_dim: int,
+    *,
     gp_num_steps: int,
     rng: Generator | Any,
-    gp_y_mean: float,
-    gp_y_std: float,
+    gp_y_stats: tuple[float, float],
     select_sobol_fn: Callable[[np.ndarray, int], np.ndarray],
     from_unit_fn: Callable[[np.ndarray], np.ndarray],
-    *,
     model: TurboGP | None = None,
-    new_gp_y_mean: float | None = None,
-    new_gp_y_std: float | None = None,
-) -> tuple[np.ndarray, float, float, TurboGP | None]:
+) -> tuple[np.ndarray, tuple[float, float], TurboGP | None]:
     from .turbo_utils import fit_gp
 
+    gp_y_mean, gp_y_std = gp_y_stats
     if len(x_obs_list) == 0:
-        return select_sobol_fn(x_cand, num_arms), gp_y_mean, gp_y_std, None
+        return select_sobol_fn(x_cand, num_arms), (gp_y_mean, gp_y_std), None
+    fitted_mean, fitted_std = gp_y_mean, gp_y_std
     if model is None:
-        model, _likelihood, new_gp_y_mean, new_gp_y_std = fit_gp(
+        model, _likelihood, fitted_mean, fitted_std = fit_gp(
             x_obs_list,
             y_obs_list,
             num_dim,
             num_steps=gp_num_steps,
         )
     if model is None:
-        return select_sobol_fn(x_cand, num_arms), gp_y_mean, gp_y_std, None
-    if new_gp_y_mean is None:
-        new_gp_y_mean = gp_y_mean
-    if new_gp_y_std is None:
-        new_gp_y_std = gp_y_std
+        return select_sobol_fn(x_cand, num_arms), (gp_y_mean, gp_y_std), None
     if x_cand.shape[0] < num_arms:
         raise ValueError((x_cand.shape[0], num_arms))
     idx = gp_thompson_sample(
-        model,
-        x_cand,
-        num_arms,
-        rng,
-        new_gp_y_mean,
-        new_gp_y_std,
+        model, x_cand, num_arms, rng, gp_y_mean=fitted_mean, gp_y_std=fitted_std
     )
-    return from_unit_fn(x_cand[idx]), new_gp_y_mean, new_gp_y_std, model
+    return from_unit_fn(x_cand[idx]), (fitted_mean, fitted_std), model

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable
 
+import numpy as np
+
 if TYPE_CHECKING:
-    import numpy as np
     from numpy.random import Generator
 
 from .base_turbo_impl import BaseTurboImpl
 from .turbo_config import TurboOneConfig
-from .turbo_utils import gp_thompson_sample
+from .turbo_utils import get_gp_posterior_suppress_warning, gp_thompson_sample
 
 
 class TurboOneImpl(BaseTurboImpl):
@@ -20,8 +21,6 @@ class TurboOneImpl(BaseTurboImpl):
         self._fitted_n_obs: int = 0
 
     def _as_2d(self, a: np.ndarray) -> np.ndarray:
-        import numpy as np
-
         a = np.asarray(a, dtype=float)
         if a.ndim == 1:
             return a.reshape(-1, 1)
@@ -30,8 +29,6 @@ class TurboOneImpl(BaseTurboImpl):
         raise ValueError(a.shape)
 
     def _broadcast_gp_mean_std(self, num_metrics: int) -> tuple[np.ndarray, np.ndarray]:
-        import numpy as np
-
         num_metrics = int(num_metrics)
         if num_metrics <= 0:
             raise ValueError(num_metrics)
@@ -46,14 +43,34 @@ class TurboOneImpl(BaseTurboImpl):
         return gp_y_mean, gp_y_std
 
     def _unstandardize(self, y_std_2d: np.ndarray) -> np.ndarray:
-        import numpy as np
-
         y_std_2d = np.asarray(y_std_2d, dtype=float)
         if y_std_2d.ndim != 2:
             raise ValueError(y_std_2d.shape)
         num_metrics = int(y_std_2d.shape[1])
         gp_y_mean, gp_y_std = self._broadcast_gp_mean_std(num_metrics)
         return gp_y_mean.reshape(1, -1) + gp_y_std.reshape(1, -1) * y_std_2d
+
+    def _score_y_2d(self, y_array: np.ndarray, tr_state: Any | None) -> np.ndarray:
+        if self._config.tr_type == "morbo" and tr_state is not None:
+            return tr_state.scalarize(y_array, clip=True)
+        return y_array[:, 0]
+
+    def _get_x_center_no_gp(
+        self,
+        x_obs_list: list,
+        y_obs_list: list,
+        rng: Generator,
+        tr_state: Any = None,
+    ) -> np.ndarray | None:
+        from .turbo_utils import argmax_random_tie
+
+        x_array = np.asarray(x_obs_list, dtype=float)
+        y_array = np.asarray(y_obs_list, dtype=float)
+        if y_array.ndim != 2:
+            return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
+        scores = self._score_y_2d(y_array, tr_state)
+        best_idx = argmax_random_tie(scores, rng=rng)
+        return x_array[best_idx]
 
     def get_x_center(
         self,
@@ -62,27 +79,15 @@ class TurboOneImpl(BaseTurboImpl):
         rng: Generator,
         tr_state: Any = None,
     ) -> np.ndarray | None:
-        import warnings
-
-        import numpy as np
         import torch
 
         from .turbo_utils import argmax_random_tie
 
         if len(y_obs_list) == 0:
             return None
+        if self._gp_model is None and len(y_obs_list) <= 1:
+            return self._get_x_center_no_gp(x_obs_list, y_obs_list, rng, tr_state)
         if self._gp_model is None:
-            if len(y_obs_list) <= 1:
-                x_array = np.asarray(x_obs_list, dtype=float)
-                y_array = np.asarray(y_obs_list, dtype=float)
-                if y_array.ndim == 2:
-                    if self._config.tr_type == "morbo" and tr_state is not None:
-                        scores = tr_state.scalarize(y_array, clip=True)
-                    else:
-                        scores = y_array[:, 0]
-                    best_idx = argmax_random_tie(scores, rng=rng)
-                    return x_array[best_idx]
-                return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
             raise RuntimeError(
                 "TurboOneImpl.get_x_center requires a fitted GP model for 2+ observations; "
                 "call prepare_ask() first."
@@ -94,30 +99,13 @@ class TurboOneImpl(BaseTurboImpl):
 
         x_array = np.asarray(x_obs_list, dtype=float)
         x_torch = torch.as_tensor(x_array, dtype=torch.float64)
-        try:
-            from gpytorch.utils.warnings import GPInputWarning
-        except Exception:  # pragma: no cover
-            GPInputWarning = None
 
         with torch.no_grad():
-            if GPInputWarning is None:
-                posterior = self._gp_model.posterior(x_torch)
-            else:
-                # We intentionally evaluate the GP posterior at the training inputs
-                # (observed points) when choosing the center. GPyTorch warns about this
-                # in debug mode, but it's expected for our usage.
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r"The input matches the stored training data\..*",
-                        category=GPInputWarning,
-                    )
-                    posterior = self._gp_model.posterior(x_torch)
+            posterior = get_gp_posterior_suppress_warning(self._gp_model, x_torch)
             mu_std = posterior.mean.cpu().numpy()
 
         mu = self._unstandardize(self._as_2d(mu_std))
 
-        # For morbo: scalarize mu values
         if self._config.tr_type == "morbo" and tr_state is not None:
             scalarized = tr_state.scalarize(mu, clip=False)
             best_idx = argmax_random_tie(scalarized, rng=rng)
@@ -164,8 +152,6 @@ class TurboOneImpl(BaseTurboImpl):
         gp_num_steps: int,
         rng: Any | None = None,
     ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
-        import numpy as np
-
         from .turbo_utils import fit_gp
 
         if len(x_obs_list) == 0:
@@ -209,8 +195,6 @@ class TurboOneImpl(BaseTurboImpl):
         from_unit_fn: Callable[[np.ndarray], np.ndarray],
         tr_state: Any = None,
     ) -> np.ndarray:
-        import numpy as np
-
         if self._gp_model is None:
             if self._fitted_n_obs >= 2:
                 raise RuntimeError(
@@ -262,14 +246,12 @@ class TurboOneImpl(BaseTurboImpl):
             x_cand,
             num_arms,
             rng,
-            float(self._gp_y_mean),
-            float(self._gp_y_std),
+            gp_y_mean=float(self._gp_y_mean),
+            gp_y_std=float(self._gp_y_std),
         )
         return from_unit_fn(x_cand[idx])
 
     def estimate_y(self, x_unit: np.ndarray, y_observed: np.ndarray) -> np.ndarray:
-        import warnings
-
         import torch
 
         if self._gp_model is None:
@@ -277,23 +259,9 @@ class TurboOneImpl(BaseTurboImpl):
                 "TurboOneImpl.estimate_y requires a fitted GP model; call prepare_ask() first."
             )
 
-        try:
-            from gpytorch.utils.warnings import GPInputWarning
-        except Exception:  # pragma: no cover
-            GPInputWarning = None
-
         x_torch = torch.as_tensor(x_unit, dtype=torch.float64)
         with torch.no_grad():
-            if GPInputWarning is None:
-                posterior = self._gp_model.posterior(x_torch)
-            else:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r"The input matches the stored training data\..*",
-                        category=GPInputWarning,
-                    )
-                    posterior = self._gp_model.posterior(x_torch)
+            posterior = get_gp_posterior_suppress_warning(self._gp_model, x_torch)
             mu_std = posterior.mean.cpu().numpy()
 
         mu = self._unstandardize(self._as_2d(mu_std))

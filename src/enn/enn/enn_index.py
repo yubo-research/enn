@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import numpy as np
+
+
+class ENNIndex:
+    def __init__(
+        self,
+        train_x_scaled: np.ndarray,
+        num_dim: int,
+        x_scale: np.ndarray,
+        scale_x: bool,
+    ) -> None:
+        self._train_x_scaled = train_x_scaled
+        self._num_dim = num_dim
+        self._x_scale = x_scale
+        self._scale_x = scale_x
+        self._index: Any | None = None
+        self._build_index()
+
+    def _build_index(self) -> None:
+        import faiss
+        import numpy as np
+
+        if len(self._train_x_scaled) == 0:
+            return
+        x_f32 = self._train_x_scaled.astype(np.float32, copy=False)
+        index = faiss.IndexFlatL2(self._num_dim)
+        index.add(x_f32)
+        self._index = index
+
+    def search(
+        self,
+        x: np.ndarray,
+        *,
+        search_k: int,
+        exclude_nearest: bool,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        import numpy as np
+
+        search_k = int(search_k)
+        if search_k <= 0:
+            raise ValueError(search_k)
+        x = np.asarray(x, dtype=float)
+        if x.ndim != 2 or x.shape[1] != self._num_dim:
+            raise ValueError(x.shape)
+        if self._index is None:
+            raise RuntimeError("index is not initialized")
+
+        x_scaled = x / self._x_scale if self._scale_x else x
+        x_f32 = x_scaled.astype(np.float32, copy=False)
+        dist2s_full, idx_full = self._index.search(x_f32, search_k)
+        dist2s_full = dist2s_full.astype(float)
+        idx_full = idx_full.astype(int)
+        if exclude_nearest:
+            dist2s_full = dist2s_full[:, 1:]
+            idx_full = idx_full[:, 1:]
+        return dist2s_full, idx_full
