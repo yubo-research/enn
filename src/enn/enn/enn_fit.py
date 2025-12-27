@@ -71,8 +71,12 @@ def subsample_loglik(
     if not np.isfinite(y_sel).all():
         return [0.0] * len(paramss)
 
+    from .enn_params import PosteriorFlags
+
     post = model.batch_posterior(
-        x_sel, paramss, exclude_nearest=True, observation_noise=True
+        x_sel,
+        paramss,
+        flags=PosteriorFlags(exclude_nearest=True, observation_noise=True),
     )
     num_params, num_outputs = len(paramss), y_sel.shape[1]
     expected_shape = (num_params, P_actual, num_outputs)

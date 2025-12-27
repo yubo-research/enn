@@ -23,6 +23,23 @@ if TYPE_CHECKING:
 
 
 class TurboOptimizer:
+    def _init_obs_lists(self) -> None:
+        self._x_obs_list: list[list[float]] = []
+        self._y_obs_list: list[float] | list[list[float]] = []
+        self._y_tr_list: list[float] | list[list[float]] = []
+        self._yvar_obs_list: list[float] | list[list[float]] = []
+        self._expects_yvar: bool | None = None
+
+    def _validate_init_params(self, config) -> None:
+        if self._num_candidates <= 0:
+            raise ValueError(self._num_candidates)
+        if self._k is not None and self._k < 3:
+            raise ValueError(f"k must be >= 3, got {self._k}")
+        if self._trailing_obs is not None and self._trailing_obs <= 0:
+            raise ValueError(f"trailing_obs must be > 0, got {self._trailing_obs}")
+        if self._num_init <= 0:
+            raise ValueError(f"num_init must be > 0, got {self._num_init}")
+
     def __init__(
         self,
         bounds: np.ndarray,
@@ -33,50 +50,35 @@ class TurboOptimizer:
     ) -> None:
         config = validate_config(mode, config)
         self._config = config
-
         bounds = np.asarray(bounds, dtype=float)
         if bounds.ndim != 2 or bounds.shape[1] != 2:
             raise ValueError(bounds.shape)
-        self._bounds = bounds
-        self._num_dim = self._bounds.shape[0]
-        self._mode = mode
-        num_candidates = config.num_candidates
-        if num_candidates is None:
-            num_candidates = min(5000, 100 * self._num_dim)
-
-        self._num_candidates = int(num_candidates)
-        if self._num_candidates <= 0:
-            raise ValueError(self._num_candidates)
-        self._rng = rng
-        self._sobol_seed_base = int(self._rng.integers(2**31 - 1))
-        self._x_obs_list: list[list[float]] = []
-        self._y_obs_list: list[float] | list[list[float]] = []
-        self._y_tr_list: list[float] | list[list[float]] = []
-        self._yvar_obs_list: list[float] | list[list[float]] = []
-        self._expects_yvar: bool | None = None
+        self._bounds, self._num_dim, self._mode, self._rng = (
+            bounds,
+            bounds.shape[0],
+            mode,
+            rng,
+        )
+        self._num_candidates = int(
+            config.num_candidates or min(5000, 100 * self._num_dim)
+        )
+        self._sobol_seed_base = int(rng.integers(2**31 - 1))
+        self._init_obs_lists()
         self._mode_impl: Any = make_impl(mode, config)
         self._tr_state: Any | None = None
         self._gp_num_steps: int = 50
         self._k = None if config.k is None else int(config.k)
-        if self._k is not None and self._k < 3:
-            raise ValueError(f"k must be >= 3, got {self._k}")
         self._trailing_obs = (
             None if config.trailing_obs is None else int(config.trailing_obs)
         )
-        if self._trailing_obs is not None and self._trailing_obs <= 0:
-            raise ValueError(f"trailing_obs must be > 0, got {self._trailing_obs}")
         self._num_init = int(
             config.num_init if config.num_init is not None else 2 * self._num_dim
         )
-        if self._num_init <= 0:
-            raise ValueError(f"num_init must be > 0, got {self._num_init}")
+        self._validate_init_params(config)
         self._init_lhd = from_unit(
-            latin_hypercube(self._num_init, self._num_dim, rng=self._rng),
-            self._bounds,
+            latin_hypercube(self._num_init, self._num_dim, rng=rng), self._bounds
         )
-        self._init_idx = 0
-        self._dt_fit: float = 0.0
-        self._dt_sel: float = 0.0
+        self._init_idx, self._dt_fit, self._dt_sel = 0, 0.0, 0.0
 
     @property
     def tr_obs_count(self) -> int:
@@ -84,9 +86,7 @@ class TurboOptimizer:
 
     @property
     def tr_length(self) -> float | None:
-        if self._tr_state is None:
-            return None
-        if not hasattr(self._tr_state, "length"):
+        if self._tr_state is None or not hasattr(self._tr_state, "length"):
             return None
         return float(self._tr_state.length)
 
@@ -138,11 +138,9 @@ class TurboOptimizer:
         )
         if not should_reset_init:
             return None
-        self._y_tr_list = []
-        self._init_idx = new_init_idx
+        self._y_tr_list, self._init_idx = [], new_init_idx
         self._init_lhd = from_unit(
-            latin_hypercube(self._num_init, self._num_dim, rng=self._rng),
-            self._bounds,
+            latin_hypercube(self._num_init, self._num_dim, rng=self._rng), self._bounds
         )
         return self._get_init_lhd_points(num_arms)
 
@@ -300,15 +298,11 @@ class TurboOptimizer:
 
     def _get_init_lhd_points(
         self, num_arms: int, fallback_fn: Callable[[int], np.ndarray] | None = None
-    ) -> np.ndarray:
-        remaining_init = self._num_init - self._init_idx
-        num_to_return = min(num_arms, remaining_init)
+    ):
+        num_to_return = min(num_arms, self._num_init - self._init_idx)
         result = self._init_lhd[self._init_idx : self._init_idx + num_to_return]
         self._init_idx += num_to_return
         if num_to_return < num_arms:
-            num_remaining = num_arms - num_to_return
-            if fallback_fn is not None:
-                result = np.vstack([result, fallback_fn(num_remaining)])
-            else:
-                result = np.vstack([result, self._draw_initial(num_remaining)])
+            extra = (fallback_fn or self._draw_initial)(num_arms - num_to_return)
+            result = np.vstack([result, extra])
         return result

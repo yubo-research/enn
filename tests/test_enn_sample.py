@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from enn.enn import EpistemicNearestNeighbors
-from enn.enn.enn_params import ENNParams
+from enn.enn.enn_params import ENNParams, PosteriorFlags
 
 
 def test_posterior_function_sample_basic():
@@ -13,9 +13,7 @@ def test_posterior_function_sample_basic():
     model = EpistemicNearestNeighbors(train_x, train_y, 0.1 * np.ones_like(train_y))
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
-    sample = model.posterior_function_sample(
-        x_test, params, function_seed=123, exclude_nearest=False
-    )
+    sample = model.posterior_function_sample(x_test, params, function_seed=123)
     assert sample.shape == (5, 1) and np.all(np.isfinite(sample))
 
 
@@ -42,7 +40,7 @@ def test_batch_posterior_function_sample_basic():
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
     samples = model.batch_posterior_function_sample(
-        x_test, params, function_seeds=[10, 20, 30], exclude_nearest=False
+        x_test, params, function_seeds=[10, 20, 30]
     )
     assert samples.shape == (3, 5, 1) and np.all(np.isfinite(samples))
 
@@ -83,7 +81,10 @@ def test_batch_posterior_function_sample_empty_k():
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
     samples = model.batch_posterior_function_sample(
-        x_test, params, function_seeds=[1, 2], exclude_nearest=True
+        x_test,
+        params,
+        function_seeds=[1, 2],
+        flags=PosteriorFlags(exclude_nearest=True),
     )
     assert samples.shape == (2, 5, 1)
 
@@ -95,11 +96,9 @@ def test_posterior_function_sample_with_observation_noise():
     model = EpistemicNearestNeighbors(train_x, train_y, 0.5 * np.ones_like(train_y))
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
-    sample_no_noise = model.posterior_function_sample(
-        x_test, params, function_seed=42, observation_noise=False
-    )
+    sample_no_noise = model.posterior_function_sample(x_test, params, function_seed=42)
     sample_with_noise = model.posterior_function_sample(
-        x_test, params, function_seed=42, observation_noise=True
+        x_test, params, function_seed=42, flags=PosteriorFlags(observation_noise=True)
     )
     assert sample_no_noise.shape == sample_with_noise.shape == (5, 1)
     assert not np.allclose(sample_no_noise, sample_with_noise)

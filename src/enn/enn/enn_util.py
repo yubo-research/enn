@@ -18,9 +18,7 @@ def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
     return center, scale
 
 
-def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    import numpy as np
-
+def _validate_sobol_inputs(x, y):
     if x.ndim != 2:
         raise ValueError(f"x must be 2D, got shape {x.shape}")
     n, d = x.shape
@@ -28,16 +26,14 @@ def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
         raise ValueError(f"x must have at least 1 dimension, got {d}")
     if y.ndim == 2 and y.shape[1] == 1:
         y = y.reshape(-1)
-    if y.ndim != 1:
-        raise ValueError(f"y must be 1D, got shape {y.shape}")
-    if y.shape[0] != n:
-        raise ValueError(f"y length {y.shape[0]} != x rows {n}")
-    if n < 9:
-        return np.ones(d, dtype=x.dtype)
-    mu = y.mean()
-    vy = y.var(ddof=0)
-    if not np.isfinite(vy) or vy <= 0:
-        return np.ones(d, dtype=x.dtype)
+    if y.ndim != 1 or y.shape[0] != n:
+        raise ValueError(f"y shape {y.shape} incompatible with x rows {n}")
+    return n, d, y
+
+
+def _compute_sobol_bins(x, y, n, d):
+    import numpy as np
+
     B = 10 if n >= 30 else 3
     order = np.argsort(x, axis=0)
     row_idx = np.arange(n).reshape(n, 1).repeat(d, axis=1)
@@ -46,17 +42,25 @@ def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     idx = (ranks * B) // n
     oh = np.zeros((n, d, B), dtype=x.dtype)
     oh[np.arange(n)[:, None], np.arange(d)[None, :], idx] = 1.0
-    counts = oh.sum(axis=0)
-    sums = (oh * y.reshape(n, 1, 1)).sum(axis=0)
+    counts, sums = oh.sum(axis=0), (oh * y.reshape(n, 1, 1)).sum(axis=0)
     mu_b = np.zeros_like(sums)
     mask = counts > 0
     mu_b[mask] = sums[mask] / counts[mask]
-    p_b = counts / float(n)
-    diff = mu_b - mu
-    S = (p_b * (diff * diff)).sum(axis=1) / vy
-    var_x = x.var(axis=0, ddof=0)
-    S = np.where(var_x <= 1e-12, np.zeros_like(S), S)
-    return S
+    return counts / float(n), mu_b
+
+
+def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    import numpy as np
+
+    n, d, y = _validate_sobol_inputs(x, y)
+    if n < 9:
+        return np.ones(d, dtype=x.dtype)
+    mu, vy = y.mean(), y.var(ddof=0)
+    if not np.isfinite(vy) or vy <= 0:
+        return np.ones(d, dtype=x.dtype)
+    p_b, mu_b = _compute_sobol_bins(x, y, n, d)
+    S = (p_b * (mu_b - mu) ** 2).sum(axis=1) / vy
+    return np.where(x.var(axis=0, ddof=0) <= 1e-12, np.zeros_like(S), S)
 
 
 def pareto_front_2d_maximize(
