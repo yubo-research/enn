@@ -7,17 +7,20 @@ import numpy as np
 if TYPE_CHECKING:
     from numpy.random import Generator
 
-from .base_turbo_impl import BaseTurboImpl
 from .turbo_config import TurboOneConfig
 from .turbo_utils import get_gp_posterior_suppress_warning, gp_thompson_sample
 
 
-class TurboOneImpl(BaseTurboImpl):
+class TurboOneImpl:
     def __init__(self, config: TurboOneConfig) -> None:
-        super().__init__(config)
+        self._config = config
         self._gp_model: Any | None = None
         self._gp_y_mean: float | Any = 0.0
         self._gp_y_std: float | Any = 1.0
+
+    @property
+    def always_clears_on_restart(self) -> bool:
+        return True
         self._fitted_n_obs: int = 0
 
     def _as_2d(self, a: np.ndarray) -> np.ndarray:
@@ -62,12 +65,15 @@ class TurboOneImpl(BaseTurboImpl):
         rng: Generator,
         tr_state: Any = None,
     ) -> np.ndarray | None:
+        from .impl_helpers import get_x_center_fallback
         from .turbo_utils import argmax_random_tie
 
         x_array = np.asarray(x_obs_list, dtype=float)
         y_array = np.asarray(y_obs_list, dtype=float)
         if y_array.ndim != 2:
-            return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
+            return get_x_center_fallback(
+                self._config, x_obs_list, y_obs_list, rng, tr_state
+            )
         scores = self._score_y_2d(y_array, tr_state)
         best_idx = argmax_random_tie(scores, rng=rng)
         return x_array[best_idx]
@@ -126,22 +132,7 @@ class TurboOneImpl(BaseTurboImpl):
         draw_initial_fn: Callable[[int], np.ndarray],
         get_init_lhd_points_fn: Callable[[int], np.ndarray],
     ) -> np.ndarray | None:
-        if len(x_obs_list) == 0:
-            return get_init_lhd_points_fn(num_arms)
-        return None
-
-    def handle_restart(
-        self,
-        x_obs_list: list,
-        y_obs_list: list,
-        yvar_obs_list: list,
-        init_idx: int,
-        num_init: int,
-    ) -> tuple[bool, int]:
-        x_obs_list.clear()
-        y_obs_list.clear()
-        yvar_obs_list.clear()
-        return True, 0
+        return get_init_lhd_points_fn(num_arms) if len(x_obs_list) == 0 else None
 
     def prepare_ask(
         self,
@@ -152,7 +143,7 @@ class TurboOneImpl(BaseTurboImpl):
         gp_num_steps: int,
         rng: Any | None = None,
     ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
-        from .turbo_utils import fit_gp
+        from .turbo_gp_fit import fit_gp
 
         if len(x_obs_list) == 0:
             return None, None, None, None

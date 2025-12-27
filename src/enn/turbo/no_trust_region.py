@@ -6,11 +6,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import numpy as np
 
-from .trust_region_mixin import TrustRegionCandidateMixin
-
 
 @dataclass
-class NoTrustRegion(TrustRegionCandidateMixin):
+class NoTrustRegion:
     num_dim: int
     num_arms: int
     length: float = 1.0
@@ -25,7 +23,7 @@ class NoTrustRegion(TrustRegionCandidateMixin):
         return
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
-        from .turbo_utils import validate_trust_region_request
+        from .tr_helpers import validate_trust_region_request
 
         validate_trust_region_request(num_arms, self.num_arms, is_fallback=is_fallback)
 

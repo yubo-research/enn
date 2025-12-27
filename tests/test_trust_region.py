@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 from scipy.stats import qmc
 
-from enn.turbo.no_trust_region import NoTrustRegion
-from enn.turbo.turbo_trust_region import TurboTrustRegion
 from enn.turbo.morbo_trust_region import MorboTrustRegion
-from enn.turbo.turbo_utils import validate_trust_region_request
+from enn.turbo.no_trust_region import NoTrustRegion
+from enn.turbo.tr_helpers import validate_trust_region_request
+from enn.turbo.turbo_trust_region import TurboTrustRegion
 
 
 def test_no_trust_region_init():
@@ -41,11 +41,15 @@ def test_no_trust_region_compute_bounds_1d():
 
 
 def test_no_trust_region_generate_candidates():
+    from enn.turbo.tr_helpers import generate_tr_candidates
+
     tr = NoTrustRegion(num_dim=3, num_arms=4)
     rng = np.random.default_rng(42)
     sobol = qmc.Sobol(d=3, scramble=True, seed=42)
     x_center = np.array([0.5, 0.5, 0.5])
-    candidates = tr.generate_candidates(x_center, None, 100, rng, sobol)
+    candidates = generate_tr_candidates(
+        tr.compute_bounds_1d, x_center, None, 100, rng=rng, sobol_engine=sobol
+    )
     assert candidates.shape == (100, 3)
     assert np.all(candidates >= 0.0) and np.all(candidates <= 1.0)
 

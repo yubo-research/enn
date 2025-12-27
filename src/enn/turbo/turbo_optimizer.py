@@ -1,22 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .proposal import select_uniform
+from . import turbo_optimizer_utils, turbo_utils
 from .turbo_mode_registry import make_impl, validate_config
-from .turbo_utils import (
-    Telemetry,
-    from_unit,
-    latin_hypercube,
-    sobol_seed_for_state,
-    to_unit,
-    trim_trailing_observations,
-    validate_tell_inputs,
-)
 
 if TYPE_CHECKING:
+    from typing import Callable
     from numpy.random import Generator
     from .turbo_config import TurboConfig
     from .turbo_mode import TurboMode
@@ -30,7 +22,7 @@ class TurboOptimizer:
         self._yvar_obs_list: list[float] | list[list[float]] = []
         self._expects_yvar: bool | None = None
 
-    def _validate_init_params(self, config) -> None:
+    def _validate_init_params(self) -> None:
         if self._num_candidates <= 0:
             raise ValueError(self._num_candidates)
         if self._k is not None and self._k < 3:
@@ -74,9 +66,10 @@ class TurboOptimizer:
         self._num_init = int(
             config.num_init if config.num_init is not None else 2 * self._num_dim
         )
-        self._validate_init_params(config)
-        self._init_lhd = from_unit(
-            latin_hypercube(self._num_init, self._num_dim, rng=rng), self._bounds
+        self._validate_init_params()
+        self._init_lhd = turbo_utils.from_unit(
+            turbo_utils.latin_hypercube(self._num_init, self._num_dim, rng=rng),
+            self._bounds,
         )
         self._init_idx, self._dt_fit, self._dt_sel = 0, 0.0, 0.0
 
@@ -86,12 +79,14 @@ class TurboOptimizer:
 
     @property
     def tr_length(self) -> float | None:
-        if self._tr_state is None or not hasattr(self._tr_state, "length"):
-            return None
-        return float(self._tr_state.length)
+        return (
+            None
+            if self._tr_state is None or not hasattr(self._tr_state, "length")
+            else float(self._tr_state.length)
+        )
 
-    def telemetry(self) -> Telemetry:
-        return Telemetry(dt_fit=self._dt_fit, dt_sel=self._dt_sel)
+    def telemetry(self) -> turbo_utils.Telemetry:
+        return turbo_utils.Telemetry(dt_fit=self._dt_fit, dt_sel=self._dt_sel)
 
     def _reset_timing(self) -> None:
         self._dt_fit, self._dt_sel = 0.0, 0.0
@@ -129,20 +124,30 @@ class TurboOptimizer:
         if not self._tr_state.needs_restart():
             return None
         self._tr_state.restart()
-        should_reset_init, new_init_idx = self._mode_impl.handle_restart(
+        should_reset_init, new_init_idx = self._call_handle_restart()
+        if not should_reset_init:
+            return None
+        self._y_tr_list, self._init_idx = [], new_init_idx
+        self._init_lhd = turbo_utils.from_unit(
+            turbo_utils.latin_hypercube(self._num_init, self._num_dim, rng=self._rng),
+            self._bounds,
+        )
+        return self._get_init_lhd_points(num_arms)
+
+    def _call_handle_restart(self) -> tuple[bool, int]:
+        from . import impl_helpers
+
+        if self._mode_impl.always_clears_on_restart:
+            return impl_helpers.handle_restart_clear_always(
+                self._x_obs_list, self._y_obs_list, self._yvar_obs_list
+            )
+        return impl_helpers.handle_restart_check_morbo(
+            self._config,
             self._x_obs_list,
             self._y_obs_list,
             self._yvar_obs_list,
             self._init_idx,
-            self._num_init,
         )
-        if not should_reset_init:
-            return None
-        self._y_tr_list, self._init_idx = [], new_init_idx
-        self._init_lhd = from_unit(
-            latin_hypercube(self._num_init, self._num_dim, rng=self._rng), self._bounds
-        )
-        return self._get_init_lhd_points(num_arms)
 
     def _ask_normal(self, num_arms: int, *, is_fallback: bool = False) -> np.ndarray:
         import time
@@ -178,22 +183,20 @@ class TurboOptimizer:
                 raise RuntimeError("no observations")
             x_center = np.full(self._num_dim, 0.5)
 
-        sobol_seed = sobol_seed_for_state(
+        sobol_seed = turbo_optimizer_utils.sobol_seed_for_state(
             self._sobol_seed_base, n_obs=len(self._x_obs_list), num_arms=num_arms
         )
         sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
-        x_cand = self._tr_state.generate_candidates(
-            x_center,
-            lengthscales,
-            self._num_candidates,
-            self._rng,
-            sobol_engine,
+        x_cand = self._generate_tr_candidates(
+            x_center, lengthscales, self._num_candidates, self._rng, sobol_engine
         )
 
         def from_unit_fn(x):
-            return from_unit(x, self._bounds)
+            return turbo_utils.from_unit(x, self._bounds)
 
         def fallback_fn(x, n):
+            from .proposal import select_uniform
+
             return select_uniform(x, n, self._num_dim, self._rng, from_unit_fn)
 
         self._tr_state.validate_request(num_arms, is_fallback=is_fallback)
@@ -215,7 +218,7 @@ class TurboOptimizer:
         y_tr_array = np.asarray(self._y_tr_list, dtype=float)
         incumbent_indices = self._tr_state.get_incumbent_indices(y_tr_array, self._rng)
         self._x_obs_list, self._y_obs_list, self._y_tr_list, self._yvar_obs_list = (
-            trim_trailing_observations(
+            turbo_optimizer_utils.trim_trailing_observations(
                 self._x_obs_list,
                 self._y_obs_list,
                 self._y_tr_list,
@@ -228,13 +231,15 @@ class TurboOptimizer:
     def tell(
         self, x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None = None
     ) -> np.ndarray:
-        x, y, y_var, num_metrics = validate_tell_inputs(x, y, y_var, self._num_dim)
+        x, y, y_var, num_metrics = turbo_optimizer_utils.validate_tell_inputs(
+            x, y, y_var, self._num_dim
+        )
         if self._config.tr_type != "morbo" and num_metrics != 1:
             raise ValueError(
                 f"Single-objective requires num_metrics=1, got {num_metrics}"
             )
         if self._tr_state is None:
-            self._tr_state = self._mode_impl.create_trust_region(
+            self._tr_state = self._create_trust_region(
                 self._num_dim, x.shape[0], self._rng, num_metrics=num_metrics
             )
         cfg_nm = self._config.num_metrics
@@ -253,7 +258,7 @@ class TurboOptimizer:
                 else np.empty((0, num_metrics), dtype=float)
             )
 
-        x_unit = to_unit(x, self._bounds)
+        x_unit = turbo_utils.to_unit(x, self._bounds)
         self._x_obs_list.extend(x_unit.tolist())
         self._y_obs_list.extend(y.tolist())
         if y_var is not None:
@@ -292,9 +297,39 @@ class TurboOptimizer:
         self._tr_state.update(np.asarray(self._y_tr_list, dtype=float))
         return y_estimate
 
+    def _create_trust_region(
+        self, num_dim: int, num_arms: int, rng: Any, num_metrics: int | None = None
+    ) -> Any:
+        from . import impl_helpers
+
+        return impl_helpers.create_trust_region(
+            self._config, num_dim, num_arms, rng, num_metrics
+        )
+
+    def _generate_tr_candidates(
+        self,
+        x_center: np.ndarray,
+        lengthscales: np.ndarray | None,
+        num_candidates: int,
+        rng: Any,
+        sobol_engine: Any,
+    ) -> np.ndarray:
+        from . import tr_helpers
+
+        return tr_helpers.generate_tr_candidates(
+            self._tr_state.compute_bounds_1d,
+            x_center,
+            lengthscales,
+            num_candidates,
+            rng=rng,
+            sobol_engine=sobol_engine,
+        )
+
     def _draw_initial(self, num_arms: int) -> np.ndarray:
-        unit = latin_hypercube(num_arms, self._num_dim, rng=self._rng)
-        return from_unit(unit, self._bounds)
+        return turbo_utils.from_unit(
+            turbo_utils.latin_hypercube(num_arms, self._num_dim, rng=self._rng),
+            self._bounds,
+        )
 
     def _get_init_lhd_points(
         self, num_arms: int, fallback_fn: Callable[[int], np.ndarray] | None = None

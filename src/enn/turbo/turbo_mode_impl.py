@@ -8,6 +8,9 @@ if TYPE_CHECKING:
 
 
 class TurboModeImpl(Protocol):
+    @property
+    def always_clears_on_restart(self) -> bool: ...
+
     def get_x_center(
         self,
         x_obs_list: list,
@@ -18,14 +21,6 @@ class TurboModeImpl(Protocol):
 
     def needs_tr_list(self) -> bool: ...
 
-    def create_trust_region(
-        self,
-        num_dim: int,
-        num_arms: int,
-        rng: Generator,
-        num_metrics: int | None = None,
-    ) -> Any: ...
-
     def try_early_ask(
         self,
         num_arms: int,
@@ -33,15 +28,6 @@ class TurboModeImpl(Protocol):
         draw_initial_fn: Callable[[int], np.ndarray],
         get_init_lhd_points_fn: Callable[[int], np.ndarray],
     ) -> np.ndarray | None: ...
-
-    def handle_restart(
-        self,
-        x_obs_list: list,
-        y_obs_list: list,
-        yvar_obs_list: list,
-        init_idx: int,
-        num_init: int,
-    ) -> tuple[bool, int]: ...
 
     def prepare_ask(
         self,

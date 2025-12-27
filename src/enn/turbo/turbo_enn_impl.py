@@ -6,16 +6,19 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-from .base_turbo_impl import BaseTurboImpl
 from .turbo_config import TurboENNConfig
 
 
-class TurboENNImpl(BaseTurboImpl):
+class TurboENNImpl:
     def __init__(self, config: TurboENNConfig) -> None:
-        super().__init__(config)
+        self._config = config
         self._enn: Any | None = None
         self._fitted_params: Any | None = None
         self._fitted_n_obs: int = 0
+
+    @property
+    def always_clears_on_restart(self) -> bool:
+        return True
 
     def get_x_center(
         self,
@@ -28,10 +31,14 @@ class TurboENNImpl(BaseTurboImpl):
 
         from .turbo_utils import argmax_random_tie
 
+        from .impl_helpers import get_x_center_fallback
+
         if len(y_obs_list) == 0:
             return None
         if self._enn is None or self._fitted_params is None:
-            return super().get_x_center(x_obs_list, y_obs_list, rng, tr_state)
+            return get_x_center_fallback(
+                self._config, x_obs_list, y_obs_list, rng, tr_state
+            )
         if self._fitted_n_obs != len(x_obs_list):
             raise RuntimeError(
                 f"ENN fitted on {self._fitted_n_obs} obs but get_x_center called with {len(x_obs_list)}"
@@ -77,18 +84,14 @@ class TurboENNImpl(BaseTurboImpl):
     def needs_tr_list(self) -> bool:
         return True
 
-    def handle_restart(
+    def try_early_ask(
         self,
+        num_arms: int,
         x_obs_list: list,
-        y_obs_list: list,
-        yvar_obs_list: list,
-        init_idx: int,
-        num_init: int,
-    ) -> tuple[bool, int]:
-        x_obs_list.clear()
-        y_obs_list.clear()
-        yvar_obs_list.clear()
-        return True, 0
+        draw_initial_fn: Callable[[int], np.ndarray],
+        get_init_lhd_points_fn: Callable[[int], np.ndarray],
+    ) -> np.ndarray | None:
+        return None
 
     def prepare_ask(
         self,

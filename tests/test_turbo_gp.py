@@ -10,8 +10,8 @@ from gpytorch.distributions import MultivariateNormal
 from gpytorch.likelihoods import FixedNoiseGaussianLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
+from enn.turbo.turbo_gp_fit import fit_gp
 from enn.turbo.turbo_gp_noisy import TurboGPNoisy
-from enn.turbo.turbo_utils import fit_gp
 
 
 def _make_turbo_gp_noisy(

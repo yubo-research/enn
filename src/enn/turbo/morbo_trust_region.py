@@ -7,8 +7,6 @@ if TYPE_CHECKING:
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
 
-from .turbo_trust_region import TurboTrustRegion
-
 
 class MorboTrustRegion:
     def __init__(
@@ -20,6 +18,8 @@ class MorboTrustRegion:
         rng: Generator,
     ) -> None:
         import numpy as np
+
+        from .turbo_trust_region import TurboTrustRegion
 
         self._tr = TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
         self._num_dim = int(num_dim)
@@ -163,8 +163,15 @@ class MorboTrustRegion:
         rng: Generator,
         sobol_engine: QMCEngine,
     ) -> np.ndarray:
-        return self._tr.generate_candidates(
-            x_center, lengthscales, num_candidates, rng, sobol_engine
+        from .tr_helpers import generate_tr_candidates
+
+        return generate_tr_candidates(
+            self._tr.compute_bounds_1d,
+            x_center,
+            lengthscales,
+            num_candidates,
+            rng=rng,
+            sobol_engine=sobol_engine,
         )
 
     def get_incumbent_indices(

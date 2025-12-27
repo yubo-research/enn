@@ -211,10 +211,25 @@ class EpistemicNearestNeighbors:
         batch_size, num_params = x.shape[0], len(paramss)
         mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
         se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
-        for i, params in enumerate(paramss):
-            _, _, _, mu_all[i], se_all[i] = self._compute_posterior_internals(
-                x, params, flags
+
+        # Optimization: if all params have same k, do FAISS search only once
+        k_values = {p.k for p in paramss}
+        if len(k_values) == 1 and len(self) > 0:
+            neighbor_data = self._get_neighbor_data(
+                x, paramss[0], flags.exclude_nearest
             )
+            if neighbor_data is None:
+                return ENNNormal(mu_all, se_all)
+            dist2s, idx, y_neighbors, _ = neighbor_data
+            for i, params in enumerate(paramss):
+                _, _, _, mu_all[i], se_all[i] = self._compute_weighted_posterior(
+                    dist2s, idx, y_neighbors, params, flags.observation_noise
+                )
+        else:
+            for i, params in enumerate(paramss):
+                _, _, _, mu_all[i], se_all[i] = self._compute_posterior_internals(
+                    x, params, flags
+                )
         return ENNNormal(mu_all, se_all)
 
     def neighbors(self, x: np.ndarray, k: int, *, exclude_nearest: bool = False):

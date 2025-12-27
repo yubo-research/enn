@@ -11,19 +11,9 @@ if TYPE_CHECKING:
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
 
-from .turbo_gp_fit import fit_gp
-from .turbo_optimizer_utils import (
-    sobol_seed_for_state,
-    trim_trailing_observations,
-    validate_tell_inputs,
-)
 
 __all__ = [
     "Telemetry",
-    "fit_gp",
-    "sobol_seed_for_state",
-    "trim_trailing_observations",
-    "validate_tell_inputs",
 ]
 
 
@@ -168,41 +158,6 @@ def generate_raasp_candidates(
         rng=rng,
         sobol_engine=sobol_engine,
     )
-
-
-def generate_trust_region_candidates(
-    x_center: np.ndarray | Any,
-    lengthscales: np.ndarray | None,
-    num_candidates: int,
-    *,
-    compute_bounds_1d: Any,
-    rng: Generator | Any,
-    sobol_engine: QMCEngine | Any,
-) -> np.ndarray:
-    """
-    Small DRY helper for trust-region candidate generation.
-
-    `compute_bounds_1d` is typically a TR object's bound computation method.
-    """
-    lb, ub = compute_bounds_1d(x_center, lengthscales)
-    return generate_raasp_candidates(
-        x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
-    )
-
-
-def validate_trust_region_request(
-    num_arms: int, configured_num_arms: int, *, is_fallback: bool = False
-) -> None:
-    if is_fallback:
-        if num_arms > configured_num_arms:
-            raise ValueError(
-                f"num_arms {num_arms} > configured num_arms {configured_num_arms}"
-            )
-    else:
-        if num_arms != configured_num_arms:
-            raise ValueError(
-                f"num_arms {num_arms} != configured num_arms {configured_num_arms}"
-            )
 
 
 def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:

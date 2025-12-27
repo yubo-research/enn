@@ -1,5 +1,6 @@
 from .turbo_mode import TurboMode
-from .turbo_optimizer import Telemetry, TurboOptimizer
+from .turbo_optimizer import TurboOptimizer
+from .turbo_utils import Telemetry
 
 Turbo = TurboOptimizer
 

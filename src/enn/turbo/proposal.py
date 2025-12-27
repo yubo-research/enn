@@ -109,7 +109,7 @@ def select_gp_thompson(
     from_unit_fn: Callable[[np.ndarray], np.ndarray],
     model: TurboGP | None = None,
 ) -> tuple[np.ndarray, tuple[float, float], TurboGP | None]:
-    from .turbo_utils import fit_gp
+    from .turbo_gp_fit import fit_gp
 
     gp_y_mean, gp_y_std = gp_y_stats
     if len(x_obs_list) == 0:
