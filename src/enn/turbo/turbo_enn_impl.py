@@ -29,9 +29,8 @@ class TurboENNImpl:
     ) -> np.ndarray | None:
         import numpy as np
 
-        from .turbo_utils import argmax_random_tie
-
         from .impl_helpers import get_x_center_fallback
+        from .turbo_utils import argmax_random_tie
 
         if len(y_obs_list) == 0:
             return None
@@ -166,7 +165,7 @@ class TurboENNImpl:
             # One function sample per arm; each arm = argmax over all candidates
             base_seed = rng.integers(0, 2**31)
             function_seeds = np.arange(base_seed, base_seed + num_arms, dtype=np.int64)
-            f_samples = self._enn.batch_posterior_function_sample(
+            f_samples = self._enn.posterior_function_draw(
                 x_cand, params, function_seeds=function_seeds
             )
             # f_samples: (num_arms, num_candidates, num_metrics)

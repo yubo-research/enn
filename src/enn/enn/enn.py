@@ -151,11 +151,32 @@ class EpistemicNearestNeighbors:
         params: ENNParams,
         observation_noise: bool,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        yvar_neighbors = None
+        if self._train_yvar is not None:
+            yvar_neighbors = self._train_yvar[idx]
+        w_normalized, l2, mu, se = self._compute_weighted_stats(
+            dist2s,
+            y_neighbors,
+            yvar_neighbors=yvar_neighbors,
+            params=params,
+            observation_noise=observation_noise,
+        )
+        return idx, w_normalized, l2, mu, se
+
+    def _compute_weighted_stats(
+        self,
+        dist2s: np.ndarray,
+        y_neighbors: np.ndarray,
+        *,
+        yvar_neighbors: np.ndarray | None,
+        params: ENNParams,
+        observation_noise: bool,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         dist2s_expanded = dist2s[..., np.newaxis]
         var_epi = params.epi_var_scale * dist2s_expanded
         var_ale = params.ale_homoscedastic_scale
-        if self._train_yvar is not None:
-            var_ale = var_ale + self._train_yvar[idx] / self._y_scale**2
+        if yvar_neighbors is not None:
+            var_ale = var_ale + yvar_neighbors / self._y_scale**2
         w = 1.0 / (self._EPS_VAR + var_epi + var_ale)
         norm = np.sum(w, axis=1, keepdims=True)
         w_normalized = w / norm
@@ -169,7 +190,25 @@ class EpistemicNearestNeighbors:
             np.sqrt(np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR))
             * self._y_scale
         )
-        return idx, w_normalized, l2, mu, se
+        return w_normalized, l2, mu, se
+
+    def conditional_posterior(
+        self,
+        x_whatif: np.ndarray,
+        y_whatif: np.ndarray,
+        x: np.ndarray,
+        *,
+        params: ENNParams,
+        flags: PosteriorFlags | None = None,
+    ) -> ENNNormal:
+        from .enn_conditional import compute_conditional_posterior
+        from .enn_params import PosteriorFlags
+
+        if flags is None:
+            flags = PosteriorFlags()
+        return compute_conditional_posterior(
+            self, x_whatif, y_whatif, x, params=params, flags=flags
+        )
 
     def _compute_posterior_internals(
         self,
@@ -257,7 +296,7 @@ class EpistemicNearestNeighbors:
         idx = idx_full[0, : min(k, len(idx_full[0]))]
         return [(self._train_x[i].copy(), self._train_y[i].copy()) for i in idx]
 
-    def batch_posterior_function_sample(
+    def posterior_function_draw(
         self,
         x: np.ndarray,
         params: ENNParams,
@@ -284,15 +323,3 @@ class EpistemicNearestNeighbors:
             mu[np.newaxis, :, :]
             + se[np.newaxis, :, :] * weighted_u / l2_safe[np.newaxis, :, :]
         )
-
-    def posterior_function_sample(
-        self,
-        x: np.ndarray,
-        params: ENNParams,
-        *,
-        function_seed: int,
-        flags: PosteriorFlags | None = None,
-    ) -> np.ndarray:
-        return self.batch_posterior_function_sample(
-            x, params, function_seeds=[function_seed], flags=flags
-        )[0]
