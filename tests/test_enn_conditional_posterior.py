@@ -81,3 +81,32 @@ def test_conditional_posterior_exclude_nearest_drops_whatif_point():
 
     assert np.allclose(post_incl.mu, 100.0)
     assert not np.allclose(post_excl.mu, 100.0)
+
+
+def test_conditional_posterior_matches_augmented_model_exactly():
+    rng = np.random.default_rng(0)
+    n_train, n_whatif, d = 8, 3, 3
+    train_x = rng.standard_normal((n_train, d))
+    train_y = train_x.sum(axis=1, keepdims=True).astype(float)
+
+    x_whatif = rng.standard_normal((n_whatif, d))
+    y_whatif = x_whatif.sum(axis=1, keepdims=True).astype(float)
+
+    x_test = rng.standard_normal((5, d))
+    params = ENNParams(k=4, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
+
+    enn_a = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+    post_a = enn_a.conditional_posterior(
+        x_whatif, y_whatif, x_test, params=params, flags=flags
+    )
+
+    enn_b = EpistemicNearestNeighbors(
+        np.concatenate([train_x, x_whatif], axis=0),
+        np.concatenate([train_y, y_whatif], axis=0),
+        train_yvar=None,
+    )
+    post_b = enn_b.posterior(x_test, params=params, flags=flags)
+
+    assert np.allclose(post_a.mu, post_b.mu)
+    assert np.allclose(post_a.se, post_b.se)

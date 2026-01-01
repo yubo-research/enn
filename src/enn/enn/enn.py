@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -7,6 +8,47 @@ import numpy as np
 if TYPE_CHECKING:
     from .enn_normal import ENNNormal
     from .enn_params import ENNParams, PosteriorFlags
+
+
+@dataclass(frozen=True)
+class _DrawInternals:
+    idx: np.ndarray
+    w_normalized: np.ndarray
+    l2: np.ndarray
+    mu: np.ndarray
+    se: np.ndarray
+
+
+def _compute_conditional_y_scale(
+    model: "EpistemicNearestNeighbors", y_whatif: np.ndarray
+):
+    y_whatif = np.asarray(y_whatif, dtype=float)
+    return model._compute_scale(  # noqa: SLF001
+        np.concatenate([model.train_y, y_whatif], axis=0),
+        0.0,
+    )
+
+
+def _draw_from_internals(
+    model: "EpistemicNearestNeighbors",
+    internals: _DrawInternals,
+    *,
+    function_seeds: np.ndarray | list[int],
+) -> np.ndarray:
+    from .enn_hash import normal_hash_batch_multi_seed
+
+    function_seeds = np.asarray(function_seeds, dtype=np.int64)
+
+    n, k, m = internals.idx.shape[0], internals.idx.shape[1], model.num_outputs
+    if k == 0:
+        return np.broadcast_to(internals.mu, (len(function_seeds), n, m)).copy()
+    u = normal_hash_batch_multi_seed(function_seeds, internals.idx, m)
+    weighted_u = np.sum(internals.w_normalized[np.newaxis, :, :, :] * u, axis=2)
+    l2_safe = np.maximum(internals.l2, 1e-12)
+    return (
+        internals.mu[np.newaxis, :, :]
+        + internals.se[np.newaxis, :, :] * weighted_u / l2_safe[np.newaxis, :, :]
+    )
 
 
 class EpistemicNearestNeighbors:
@@ -171,12 +213,15 @@ class EpistemicNearestNeighbors:
         yvar_neighbors: np.ndarray | None,
         params: ENNParams,
         observation_noise: bool,
+        y_scale: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        if y_scale is None:
+            y_scale = self._y_scale
         dist2s_expanded = dist2s[..., np.newaxis]
         var_epi = params.epi_var_scale * dist2s_expanded
         var_ale = params.ale_homoscedastic_scale
         if yvar_neighbors is not None:
-            var_ale = var_ale + yvar_neighbors / self._y_scale**2
+            var_ale = var_ale + yvar_neighbors / y_scale**2
         w = 1.0 / (self._EPS_VAR + var_epi + var_ale)
         norm = np.sum(w, axis=1, keepdims=True)
         w_normalized = w / norm
@@ -186,10 +231,7 @@ class EpistemicNearestNeighbors:
         aleatoric_var = (
             np.sum(w_normalized * var_ale, axis=1) if observation_noise else 0.0
         )
-        se = (
-            np.sqrt(np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR))
-            * self._y_scale
-        )
+        se = np.sqrt(np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR)) * y_scale
         return w_normalized, l2, mu, se
 
     def conditional_posterior(
@@ -206,8 +248,9 @@ class EpistemicNearestNeighbors:
 
         if flags is None:
             flags = PosteriorFlags()
+        y_scale = _compute_conditional_y_scale(self, y_whatif)
         return compute_conditional_posterior(
-            self, x_whatif, y_whatif, x, params=params, flags=flags
+            self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
         )
 
     def _compute_posterior_internals(
@@ -304,22 +347,57 @@ class EpistemicNearestNeighbors:
         function_seeds: np.ndarray | list[int],
         flags: PosteriorFlags | None = None,
     ) -> np.ndarray:
-        from .enn_hash import normal_hash_batch_multi_seed
         from .enn_params import PosteriorFlags
 
         if flags is None:
             flags = PosteriorFlags()
-        function_seeds = np.asarray(function_seeds, dtype=np.int64)
         idx, w_normalized, l2, mu, se = self._compute_posterior_internals(
             x, params, flags
         )
-        n, k, m = idx.shape[0], idx.shape[1], self._num_metrics
-        if k == 0:
-            return np.broadcast_to(mu, (len(function_seeds), n, m)).copy()
-        u = normal_hash_batch_multi_seed(function_seeds, idx, m)
-        weighted_u = np.sum(w_normalized[np.newaxis, :, :, :] * u, axis=2)
-        l2_safe = np.maximum(l2, 1e-12)
-        return (
-            mu[np.newaxis, :, :]
-            + se[np.newaxis, :, :] * weighted_u / l2_safe[np.newaxis, :, :]
+        return _draw_from_internals(
+            self,
+            _DrawInternals(idx=idx, w_normalized=w_normalized, l2=l2, mu=mu, se=se),
+            function_seeds=function_seeds,
+        )
+
+    def conditional_posterior_function_draw(
+        self,
+        x_whatif: np.ndarray,
+        y_whatif: np.ndarray,
+        x: np.ndarray,
+        *,
+        params: ENNParams,
+        function_seeds: np.ndarray | list[int],
+        flags: PosteriorFlags | None = None,
+    ) -> np.ndarray:
+        from .enn_conditional import compute_conditional_posterior_draw_internals
+        from .enn_params import PosteriorFlags
+
+        if flags is None:
+            flags = PosteriorFlags()
+        x_whatif = np.asarray(x_whatif, dtype=float)
+        if x_whatif.ndim != 2 or x_whatif.shape[1] != self._num_dim:
+            raise ValueError(x_whatif.shape)
+        if x_whatif.shape[0] == 0:
+            return self.posterior_function_draw(
+                x,
+                params,
+                function_seeds=function_seeds,
+                flags=flags,
+            )
+
+        y_scale = _compute_conditional_y_scale(self, y_whatif)
+        internals = compute_conditional_posterior_draw_internals(
+            self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
+        )
+        return _draw_from_internals(
+            self,
+            _DrawInternals(
+                idx=internals.idx,
+                w_normalized=internals.w_normalized,
+                l2=internals.l2,
+                mu=internals.mu,
+                se=internals.se,
+            ),
+            function_seeds=function_seeds,
         )
