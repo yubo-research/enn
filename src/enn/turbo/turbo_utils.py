@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 import numpy as np
 
@@ -21,6 +21,19 @@ __all__ = [
 class Telemetry:
     dt_fit: float
     dt_sel: float
+    dt_gen: float = 0.0
+    dt_tell: float = 0.0
+
+
+@contextlib.contextmanager
+def record_duration(set_dt: Callable[[float], None]) -> Iterator[None]:
+    import time
+
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        set_dt(time.perf_counter() - t0)
 
 
 def _next_power_of_2(n: int) -> int:
@@ -116,6 +129,41 @@ def sobol_perturb_np(
     return candidates
 
 
+def uniform_perturb_np(
+    x_center: np.ndarray | Any,
+    lb: np.ndarray | list[float] | Any,
+    ub: np.ndarray | list[float] | Any,
+    num_candidates: int,
+    mask: np.ndarray | Any,
+    *,
+    rng: Generator | Any,
+) -> np.ndarray:
+    lb_array = np.asarray(lb)
+    ub_array = np.asarray(ub)
+    pert = lb_array + (ub_array - lb_array) * rng.uniform(
+        0.0, 1.0, size=(num_candidates, x_center.shape[-1])
+    )
+    candidates = np.tile(x_center, (num_candidates, 1))
+    if np.any(mask):
+        candidates[mask] = pert[mask]
+    return candidates
+
+
+def _raasp_mask(
+    *,
+    num_candidates: int,
+    num_dim: int,
+    num_pert: int,
+    rng: Generator | Any,
+) -> np.ndarray:
+    prob_perturb = min(num_pert / num_dim, 1.0)
+    mask = rng.random((num_candidates, num_dim)) <= prob_perturb
+    ind = np.nonzero(~mask.any(axis=1))[0]
+    if len(ind) > 0:
+        mask[ind, rng.integers(0, num_dim, size=len(ind))] = True
+    return mask
+
+
 def raasp(
     x_center: np.ndarray | Any,
     lb: np.ndarray | list[float] | Any,
@@ -127,14 +175,28 @@ def raasp(
     sobol_engine: QMCEngine | Any,
 ) -> np.ndarray:
     num_dim = x_center.shape[-1]
-    prob_perturb = min(num_pert / num_dim, 1.0)
-    mask = rng.random((num_candidates, num_dim)) <= prob_perturb
-    ind = np.nonzero(~mask.any(axis=1))[0]
-    if len(ind) > 0:
-        mask[ind, rng.integers(0, num_dim, size=len(ind))] = True
+    mask = _raasp_mask(
+        num_candidates=num_candidates, num_dim=num_dim, num_pert=num_pert, rng=rng
+    )
     return sobol_perturb_np(
         x_center, lb, ub, num_candidates, mask, sobol_engine=sobol_engine
     )
+
+
+def raasp_uniform(
+    x_center: np.ndarray | Any,
+    lb: np.ndarray | list[float] | Any,
+    ub: np.ndarray | list[float] | Any,
+    num_candidates: int,
+    *,
+    num_pert: int = 20,
+    rng: Generator | Any,
+) -> np.ndarray:
+    num_dim = x_center.shape[-1]
+    mask = _raasp_mask(
+        num_candidates=num_candidates, num_dim=num_dim, num_pert=num_pert, rng=rng
+    )
+    return uniform_perturb_np(x_center, lb, ub, num_candidates, mask, rng=rng)
 
 
 def generate_raasp_candidates(
@@ -158,6 +220,20 @@ def generate_raasp_candidates(
         rng=rng,
         sobol_engine=sobol_engine,
     )
+
+
+def generate_raasp_candidates_uniform(
+    center: np.ndarray | Any,
+    lb: np.ndarray | list[float] | Any,
+    ub: np.ndarray | list[float] | Any,
+    num_candidates: int,
+    *,
+    rng: Generator | Any,
+    num_pert: int = 20,
+) -> np.ndarray:
+    if num_candidates <= 0:
+        raise ValueError(num_candidates)
+    return raasp_uniform(center, lb, ub, num_candidates, num_pert=num_pert, rng=rng)
 
 
 def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:

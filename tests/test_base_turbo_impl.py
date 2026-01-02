@@ -220,3 +220,19 @@ def test_generate_raasp_candidates():
     result = generate_raasp_candidates(center, lb, ub, 100, rng=rng, sobol_engine=sobol)
     assert result.shape == (100, 3)
     assert np.all(result >= 0.0) and np.all(result <= 1.0)
+
+
+def _assert_candidates_in_unit_bounds(fn):
+    rng = np.random.default_rng(42)
+    center = np.array([0.5, 0.5, 0.5])
+    lb = np.array([0.0, 0.0, 0.0])
+    ub = np.array([1.0, 1.0, 1.0])
+    result = fn(center, lb, ub, 100, rng=rng)
+    assert result.shape == (100, 3)
+    assert np.all(result >= 0.0) and np.all(result <= 1.0)
+
+
+def test_generate_raasp_candidates_uniform():
+    from enn.turbo.turbo_utils import generate_raasp_candidates_uniform
+
+    _assert_candidates_in_unit_bounds(generate_raasp_candidates_uniform)

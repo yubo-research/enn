@@ -71,7 +71,13 @@ class TurboOptimizer:
             turbo_utils.latin_hypercube(self._num_init, self._num_dim, rng=rng),
             self._bounds,
         )
-        self._init_idx, self._dt_fit, self._dt_sel = 0, 0.0, 0.0
+        self._init_idx, self._dt_fit, self._dt_gen, self._dt_sel, self._dt_tell = (
+            0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
 
     @property
     def tr_obs_count(self) -> int:
@@ -86,10 +92,15 @@ class TurboOptimizer:
         )
 
     def telemetry(self) -> turbo_utils.Telemetry:
-        return turbo_utils.Telemetry(dt_fit=self._dt_fit, dt_sel=self._dt_sel)
+        return turbo_utils.Telemetry(
+            dt_fit=self._dt_fit,
+            dt_gen=self._dt_gen,
+            dt_sel=self._dt_sel,
+            dt_tell=self._dt_tell,
+        )
 
     def _reset_timing(self) -> None:
-        self._dt_fit, self._dt_sel = 0.0, 0.0
+        self._dt_fit, self._dt_gen, self._dt_sel = 0.0, 0.0, 0.0
 
     def ask(self, num_arms: int) -> np.ndarray:
         num_arms = int(num_arms)
@@ -151,7 +162,6 @@ class TurboOptimizer:
 
     def _ask_normal(self, num_arms: int, *, is_fallback: bool = False) -> np.ndarray:
         import time
-        from scipy.stats import qmc
 
         if self._tr_state is None:
             return self._draw_initial(num_arms)
@@ -183,13 +193,15 @@ class TurboOptimizer:
                 raise RuntimeError("no observations")
             x_center = np.full(self._num_dim, 0.5)
 
-        sobol_seed = turbo_optimizer_utils.sobol_seed_for_state(
-            self._sobol_seed_base, n_obs=len(self._x_obs_list), num_arms=num_arms
-        )
-        sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
+        t0_gen = time.perf_counter()
         x_cand = self._generate_tr_candidates(
-            x_center, lengthscales, self._num_candidates, self._rng, sobol_engine
+            x_center,
+            lengthscales,
+            self._num_candidates,
+            self._rng,
+            num_arms=num_arms,
         )
+        self._dt_gen = time.perf_counter() - t0_gen
 
         def from_unit_fn(x):
             return turbo_utils.from_unit(x, self._bounds)
@@ -231,71 +243,74 @@ class TurboOptimizer:
     def tell(
         self, x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None = None
     ) -> np.ndarray:
-        x, y, y_var, num_metrics = turbo_optimizer_utils.validate_tell_inputs(
-            x, y, y_var, self._num_dim
-        )
-        if self._config.tr_type != "morbo" and num_metrics != 1:
-            raise ValueError(
-                f"Single-objective requires num_metrics=1, got {num_metrics}"
-            )
-        if self._tr_state is None:
-            self._tr_state = self._create_trust_region(
-                self._num_dim, x.shape[0], self._rng, num_metrics=num_metrics
-            )
-        cfg_nm = self._config.num_metrics
-        if cfg_nm is not None and num_metrics != cfg_nm:
-            raise ValueError(f"y has {num_metrics} metrics but expected {cfg_nm}")
-        if self._expects_yvar is None:
-            self._expects_yvar = y_var is not None
-        if (y_var is not None) != bool(self._expects_yvar):
-            raise ValueError(
-                f"y_var must be {'provided' if self._expects_yvar else 'omitted'} on every tell()"
-            )
-        if x.shape[0] == 0:
-            return (
-                np.array([], dtype=float)
-                if num_metrics == 1
-                else np.empty((0, num_metrics), dtype=float)
-            )
-
-        x_unit = turbo_utils.to_unit(x, self._bounds)
-        self._x_obs_list.extend(x_unit.tolist())
-        self._y_obs_list.extend(y.tolist())
-        if y_var is not None:
-            self._yvar_obs_list.extend(y_var.tolist())
-
-        x_all, y_all = (
-            np.asarray(self._x_obs_list, dtype=float),
-            np.asarray(self._y_obs_list, dtype=float),
-        )
-        self._mode_impl.prepare_ask(
-            self._x_obs_list,
-            self._y_obs_list,
-            self._yvar_obs_list,
-            self._num_dim,
-            0,
-            rng=self._rng,
-        )
-        mu_all = np.asarray(self._mode_impl.estimate_y(x_all, y_all), dtype=float)
-        y_estimate = np.asarray(self._mode_impl.estimate_y(x_unit, y), dtype=float)
-        self._y_tr_list = mu_all.tolist()
-
-        if self._trailing_obs is not None:
-            self._trim_trailing_obs()
-
-        prev_n = int(getattr(self._tr_state, "prev_num_obs", 0))
-        if (
-            prev_n > 0
-            and prev_n <= len(self._y_tr_list)
-            and hasattr(self._tr_state, "best_value")
+        with turbo_utils.record_duration(
+            lambda dt: setattr(self, "_dt_tell", float(dt))
         ):
-            y_tr = np.asarray(self._y_tr_list, dtype=float)
-            self._tr_state.best_value = float(
-                np.max((y_tr[:, 0] if y_tr.ndim == 2 else y_tr)[:prev_n])
+            x, y, y_var, num_metrics = turbo_optimizer_utils.validate_tell_inputs(
+                x, y, y_var, self._num_dim
             )
+            if self._config.tr_type != "morbo" and num_metrics != 1:
+                raise ValueError(
+                    f"Single-objective requires num_metrics=1, got {num_metrics}"
+                )
+            if self._tr_state is None:
+                self._tr_state = self._create_trust_region(
+                    self._num_dim, x.shape[0], self._rng, num_metrics=num_metrics
+                )
+            cfg_nm = self._config.num_metrics
+            if cfg_nm is not None and num_metrics != cfg_nm:
+                raise ValueError(f"y has {num_metrics} metrics but expected {cfg_nm}")
+            if self._expects_yvar is None:
+                self._expects_yvar = y_var is not None
+            if (y_var is not None) != bool(self._expects_yvar):
+                raise ValueError(
+                    f"y_var must be {'provided' if self._expects_yvar else 'omitted'} on every tell()"
+                )
+            if x.shape[0] == 0:
+                return (
+                    np.array([], dtype=float)
+                    if num_metrics == 1
+                    else np.empty((0, num_metrics), dtype=float)
+                )
 
-        self._tr_state.update(np.asarray(self._y_tr_list, dtype=float))
-        return y_estimate
+            x_unit = turbo_utils.to_unit(x, self._bounds)
+            self._x_obs_list.extend(x_unit.tolist())
+            self._y_obs_list.extend(y.tolist())
+            if y_var is not None:
+                self._yvar_obs_list.extend(y_var.tolist())
+
+            x_all, y_all = (
+                np.asarray(self._x_obs_list, dtype=float),
+                np.asarray(self._y_obs_list, dtype=float),
+            )
+            self._mode_impl.prepare_ask(
+                self._x_obs_list,
+                self._y_obs_list,
+                self._yvar_obs_list,
+                self._num_dim,
+                0,
+                rng=self._rng,
+            )
+            mu_all = np.asarray(self._mode_impl.estimate_y(x_all, y_all), dtype=float)
+            y_estimate = np.asarray(self._mode_impl.estimate_y(x_unit, y), dtype=float)
+            self._y_tr_list = mu_all.tolist()
+
+            if self._trailing_obs is not None:
+                self._trim_trailing_obs()
+
+            prev_n = int(getattr(self._tr_state, "prev_num_obs", 0))
+            if (
+                prev_n > 0
+                and prev_n <= len(self._y_tr_list)
+                and hasattr(self._tr_state, "best_value")
+            ):
+                y_tr = np.asarray(self._y_tr_list, dtype=float)
+                self._tr_state.best_value = float(
+                    np.max((y_tr[:, 0] if y_tr.ndim == 2 else y_tr)[:prev_n])
+                )
+
+            self._tr_state.update(np.asarray(self._y_tr_list, dtype=float))
+            return y_estimate
 
     def _create_trust_region(
         self, num_dim: int, num_arms: int, rng: Any, num_metrics: int | None = None
@@ -312,9 +327,21 @@ class TurboOptimizer:
         lengthscales: np.ndarray | None,
         num_candidates: int,
         rng: Any,
-        sobol_engine: Any,
+        *,
+        num_arms: int,
+        candidate_rv: str = "sobol",
     ) -> np.ndarray:
         from . import tr_helpers
+
+        if candidate_rv == "sobol":
+            from scipy.stats import qmc
+
+            sobol_seed = turbo_optimizer_utils.sobol_seed_for_state(
+                self._sobol_seed_base, n_obs=len(self._x_obs_list), num_arms=num_arms
+            )
+            sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
+        else:
+            sobol_engine = None
 
         return tr_helpers.generate_tr_candidates(
             self._tr_state.compute_bounds_1d,
@@ -322,6 +349,7 @@ class TurboOptimizer:
             lengthscales,
             num_candidates,
             rng=rng,
+            candidate_rv=candidate_rv,
             sobol_engine=sobol_engine,
         )
 

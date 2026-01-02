@@ -54,6 +54,30 @@ def test_turbo_optimizer_accepts_list_bounds():
     assert opt.ask(num_arms=2).shape == (2, 2)
 
 
+def test_turbo_optimizer_uniform_candidates_never_calls_sobol():
+    from enn import Turbo
+    from enn.turbo.turbo_mode import TurboMode
+    from enn.turbo.turbo_config import TurboZeroConfig
+    from unittest import mock
+
+    # If candidate_rv="uniform", TurboOptimizer should not construct a Sobol engine.
+    # We enforce that by making Sobol() raise if called.
+    def _sobol_raises(*args, **kwargs):  # noqa: ARG001
+        raise RuntimeError("Sobol should not be constructed for candidate_rv='uniform'")
+
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(0)
+    with mock.patch("scipy.stats.qmc.Sobol", side_effect=_sobol_raises):
+        opt = Turbo(
+            bounds=bounds,
+            mode=TurboMode.TURBO_ZERO,
+            rng=rng,
+            config=TurboZeroConfig(candidate_rv="uniform"),
+        )
+        x0 = opt.ask(num_arms=4)
+    assert x0.shape == (4, 2)
+
+
 def test_turbo_optimizer_requires_mode_specific_config():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     with pytest.raises(ValueError, match="requires TurboENNConfig"):

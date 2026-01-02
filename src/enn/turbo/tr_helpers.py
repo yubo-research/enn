@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     import numpy as np
@@ -30,11 +30,23 @@ def generate_tr_candidates(
     num_candidates: int,
     *,
     rng: Generator,
-    sobol_engine: QMCEngine,
+    candidate_rv: Literal["sobol", "uniform"] = "sobol",
+    sobol_engine: QMCEngine | None = None,
 ) -> np.ndarray:
-    from .turbo_utils import generate_raasp_candidates
+    from .turbo_utils import (
+        generate_raasp_candidates,
+        generate_raasp_candidates_uniform,
+    )
 
     lb, ub = compute_bounds_1d(x_center, lengthscales)
-    return generate_raasp_candidates(
-        x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
-    )
+    if candidate_rv == "sobol":
+        if sobol_engine is None:
+            raise ValueError("sobol_engine is required when candidate_rv='sobol'")
+        return generate_raasp_candidates(
+            x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
+        )
+    if candidate_rv == "uniform":
+        return generate_raasp_candidates_uniform(
+            x_center, lb, ub, num_candidates, rng=rng
+        )
+    raise ValueError(candidate_rv)

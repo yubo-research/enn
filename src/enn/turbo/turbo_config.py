@@ -14,11 +14,16 @@ class TurboConfig:
     trailing_obs: int | None = None
     tr_type: Literal["turbo", "morbo", "none"] = "turbo"
     num_metrics: int | None = None
+    candidate_rv: Literal["sobol", "uniform"] = "sobol"
 
     def __post_init__(self) -> None:
         if self.tr_type not in ["turbo", "morbo", "none"]:
             raise ValueError(
                 f"tr_type must be 'turbo', 'morbo', or 'none', got {self.tr_type!r}"
+            )
+        if self.candidate_rv not in ["sobol", "uniform"]:
+            raise ValueError(
+                f"candidate_rv must be 'sobol' or 'uniform', got {self.candidate_rv!r}"
             )
         if self.num_metrics is not None and self.num_metrics < 1:
             raise ValueError(f"num_metrics must be >= 1, got {self.num_metrics}")

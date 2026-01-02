@@ -38,7 +38,7 @@ def make_impl(mode: TurboMode, config: TurboConfig) -> TurboModeImpl:
             f"mode={mode} requires {config_class.__name__}, got {type(config).__name__}"
         )
 
-    module = importlib.import_module(f".{module_name}", package="enn.turbo")
+    module = importlib.import_module(f".{module_name}", package=__package__)
     impl_class = getattr(module, class_name)
     return impl_class(config)
 
