@@ -1,24 +1,30 @@
-from .config import (
-    AcqOptimizerConfig,
-    AcquisitionConfig,
+from .base import (
     CandidateGenConfig,
-    DrawAcquisitionConfig,
+    InitConfig,
+    TrustRegionConfig,
+)
+from .surrogate import (
     ENNSurrogateConfig,
     GPSurrogateConfig,
-    InitConfig,
-    LHDOnlyConfig,
-    NDSOptimizerConfig,
     NoSurrogateConfig,
+    SurrogateConfig,
+)
+from .acquisition import (
+    AcqOptimizerConfig,
+    AcquisitionConfig,
+    DrawAcquisitionConfig,
+    NDSOptimizerConfig,
     ParetoAcquisitionConfig,
     RAASPOptimizerConfig,
     RandomAcquisitionConfig,
-    SurrogateConfig,
-    TrustRegionConfig,
+    UCBAcquisitionConfig,
+)
+from .turbo_config import (
+    LHDOnlyConfig,
     TurboConfig,
     TurboENNConfig,
     TurboOneConfig,
     TurboZeroConfig,
-    UCBAcquisitionConfig,
 )
 
 __all__ = [

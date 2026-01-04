@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from enn.turbo.impl_helpers import create_trust_region
+from enn.turbo.lhd_only_impl import LHDOnlyImpl
 from enn.turbo.turbo_config import (
     LHDOnlyConfig,
     TurboZeroConfig,
 )
-from enn.turbo.impl_helpers import create_trust_region
-from enn.turbo.lhd_only_impl import LHDOnlyImpl
 from enn.turbo.turbo_zero_impl import TurboZeroImpl
 
 
@@ -198,19 +198,21 @@ def test_get_x_center_fallback():
 
 
 def test_turbo_optimizer_telemetry():
-    from enn.turbo import TurboOptimizer, TurboMode
+    from enn.turbo.turbo_config import TurboZeroConfig
+    from enn.turbo.turbo_optimizer import TurboOptimizer
 
     rng = np.random.default_rng(42)
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]])
-    opt = TurboOptimizer(bounds, TurboMode.TURBO_ZERO, rng=rng)
+    opt = TurboOptimizer(bounds=bounds, config=TurboZeroConfig(), rng=rng)
     tel = opt.telemetry()
     assert tel.dt_fit == 0.0
     assert tel.dt_sel == 0.0
 
 
 def test_generate_raasp_candidates():
-    from enn.turbo.turbo_utils import generate_raasp_candidates
     from scipy.stats import qmc
+
+    from enn.turbo.turbo_utils import generate_raasp_candidates
 
     rng = np.random.default_rng(42)
     center = np.array([0.5, 0.5, 0.5])

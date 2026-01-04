@@ -1,7 +1,7 @@
 def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     import numpy as np
 
-    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_fit import enn_fit, subsample_loglik
     from enn.enn.enn_params import ENNParams
 
@@ -47,7 +47,7 @@ def _make_linear_1d_regression_data(
 def test_enn_fit_with_yvar_none():
     import numpy as np
 
-    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_fit import enn_fit
     from enn.enn.enn_params import ENNParams
 
@@ -77,7 +77,7 @@ def test_enn_fit_with_yvar_none():
 def test_enn_fit_with_warm_start():
     import numpy as np
 
-    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_fit import enn_fit
     from enn.enn.enn_params import ENNParams
 
@@ -118,7 +118,7 @@ def test_enn_fit_with_warm_start():
 def test_enn_fit_supports_multioutput_y():
     import numpy as np
 
-    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_fit import enn_fit, subsample_loglik
     from enn.enn.enn_params import ENNParams
 

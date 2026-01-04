@@ -10,6 +10,7 @@ from enn.turbo.turbo_utils import (
     from_unit,
     latin_hypercube,
     raasp,
+    record_duration,
     sobol_perturb_np,
     to_unit,
 )
@@ -35,6 +36,18 @@ def test_argmax_random_tie_uses_rng_and_is_deterministic():
     rng = np.random.default_rng(0)
     idx2 = argmax_random_tie(values, rng=rng)
     assert idx1 == idx2
+
+
+def test_record_duration_sets_dt():
+    dt_holder: list[float] = []
+
+    def set_dt(dt: float) -> None:
+        dt_holder.append(float(dt))
+
+    with record_duration(set_dt):
+        pass
+    assert len(dt_holder) == 1
+    assert dt_holder[0] >= 0.0
 
 
 def test_sobol_perturb_np_shape_and_bounds():

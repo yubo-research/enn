@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from enn.turbo.turbo_optimizer_utils import (
+    reset_timing,
     sobol_seed_for_state,
     validate_tell_inputs,
     trim_trailing_observations,
@@ -117,3 +118,14 @@ def test_get_gp_posterior_suppress_warning_basic():
         x_torch = torch.tensor([[0.2, 0.3]], dtype=torch.float64)
         result = get_gp_posterior_suppress_warning(model, x_torch)
         assert result is not None
+
+
+def test_reset_timing():
+    class Obj:
+        _dt_fit = 1.0
+        _dt_gen = 2.0
+        _dt_sel = 3.0
+
+    o = Obj()
+    reset_timing(o)
+    assert o._dt_fit == 0.0 and o._dt_gen == 0.0 and o._dt_sel == 0.0

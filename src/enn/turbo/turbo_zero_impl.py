@@ -6,11 +6,11 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-from .turbo_config import TurboZeroConfig
+from .turbo_config import TurboConfig
 
 
 class TurboZeroImpl:
-    def __init__(self, config: TurboZeroConfig) -> None:
+    def __init__(self, config: TurboConfig) -> None:
         self._config = config
 
     @property

@@ -7,12 +7,12 @@ import numpy as np
 if TYPE_CHECKING:
     from numpy.random import Generator
 
-from .turbo_config import TurboOneConfig
+from .turbo_config import TurboConfig
 from .turbo_utils import get_gp_posterior_suppress_warning, gp_thompson_sample
 
 
 class TurboOneImpl:
-    def __init__(self, config: TurboOneConfig) -> None:
+    def __init__(self, config: TurboConfig) -> None:
         self._config = config
         self._gp_model: Any | None = None
         self._gp_y_mean: float | Any = 0.0

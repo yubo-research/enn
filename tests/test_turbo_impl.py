@@ -5,12 +5,10 @@ import pytest
 
 from enn.turbo.turbo_config import (
     LHDOnlyConfig,
-    TurboConfig,
     TurboENNConfig,
     TurboOneConfig,
 )
 from enn.turbo.turbo_enn_impl import TurboENNImpl
-from enn.turbo.turbo_mode import TurboMode
 from enn.turbo.turbo_one_impl import TurboOneImpl
 from enn.turbo.turbo_optimizer import TurboOptimizer
 
@@ -19,7 +17,7 @@ def test_lhd_only_runs_after_initial_observations():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
     config = LHDOnlyConfig(num_init=4)
-    opt = TurboOptimizer(bounds=bounds, mode=TurboMode.LHD_ONLY, rng=rng, config=config)
+    opt = TurboOptimizer(bounds=bounds, config=config, rng=rng)
     for _ in range(3):
         x = opt.ask(num_arms=2)
         y = -np.sum(x**2, axis=1)
@@ -29,8 +27,10 @@ def test_lhd_only_runs_after_initial_observations():
 
 
 def test_turbo_enn_impl_get_x_center():
+    from enn.turbo.turbo_config import ENNSurrogateConfig
+
     rng = np.random.default_rng(42)
-    config = TurboENNConfig(k=5)
+    config = TurboENNConfig(enn=ENNSurrogateConfig(k=5))
     impl = TurboENNImpl(config)
     assert impl.get_x_center([], [], rng) is None
 
@@ -69,15 +69,17 @@ def test_turbo_one_impl_get_x_center_requires_fit_for_n_ge_2():
 
 
 def test_turbo_config_num_metrics_validation():
-    TurboConfig(tr_type="turbo", num_metrics=None)
-    TurboConfig(tr_type="turbo", num_metrics=1)
+    from enn.turbo.turbo_config import TrustRegionConfig
+
+    TrustRegionConfig(tr_type="turbo", num_metrics=None)
+    TrustRegionConfig(tr_type="turbo", num_metrics=1)
     with pytest.raises(ValueError, match="num_metrics must be 1 for tr_type='turbo'"):
-        TurboConfig(tr_type="turbo", num_metrics=2)
-    TurboConfig(tr_type="none", num_metrics=None)
-    TurboConfig(tr_type="none", num_metrics=1)
+        TrustRegionConfig(tr_type="turbo", num_metrics=2)
+    TrustRegionConfig(tr_type="none", num_metrics=None)
+    TrustRegionConfig(tr_type="none", num_metrics=1)
     with pytest.raises(ValueError, match="num_metrics must be 1 for tr_type='none'"):
-        TurboConfig(tr_type="none", num_metrics=2)
-    TurboConfig(tr_type="morbo", num_metrics=None)
-    TurboConfig(tr_type="morbo", num_metrics=2)
+        TrustRegionConfig(tr_type="none", num_metrics=2)
+    TrustRegionConfig(tr_type="morbo", num_metrics=None)
+    TrustRegionConfig(tr_type="morbo", num_metrics=2)
     with pytest.raises(ValueError, match="num_metrics must be >= 1"):
-        TurboConfig(tr_type="morbo", num_metrics=0)
+        TrustRegionConfig(tr_type="morbo", num_metrics=0)

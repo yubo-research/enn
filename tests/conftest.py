@@ -40,7 +40,7 @@ def make_select_sobol_fn(bounds, rng):
 def make_enn_model(n=20, d=3, seed=0, yvar_scale=0.1):
     import numpy as np
 
-    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn import EpistemicNearestNeighbors
 
     rng = np.random.default_rng(seed)
     train_x = rng.standard_normal((n, d))

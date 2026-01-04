@@ -6,7 +6,10 @@ from scipy.stats import qmc
 
 from enn.turbo.morbo_trust_region import MorboTrustRegion
 from enn.turbo.no_trust_region import NoTrustRegion
-from enn.turbo.tr_helpers import validate_trust_region_request
+from enn.turbo.tr_helpers import (
+    compute_full_box_bounds_1d,
+    validate_trust_region_request,
+)
 from enn.turbo.turbo_trust_region import TurboTrustRegion
 
 
@@ -95,3 +98,8 @@ def test_validate_trust_region_request_fallback():
     validate_trust_region_request(3, 4, is_fallback=True)
     with pytest.raises(ValueError):
         validate_trust_region_request(5, 4, is_fallback=True)
+
+
+def test_compute_full_box_bounds_1d():
+    lb, ub = compute_full_box_bounds_1d(np.array([0.25, 0.5, 0.75]))
+    assert np.allclose(lb, 0.0) and np.allclose(ub, 1.0)

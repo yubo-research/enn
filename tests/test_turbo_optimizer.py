@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import conftest
 import numpy as np
 import pytest
-
-import conftest
 
 from enn.turbo.turbo_config import (
     TurboConfig,
@@ -11,16 +10,15 @@ from enn.turbo.turbo_config import (
     TurboOneConfig,
     TurboZeroConfig,
 )
-from enn.turbo.turbo_mode import TurboMode
 from enn.turbo.turbo_optimizer import TurboOptimizer
 
 
-def _run_bo(mode: TurboMode, num_steps: int = 15) -> float:
+def _run_bo(config: TurboConfig, num_steps: int = 15) -> float:
     from enn import Turbo
 
     bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    opt = Turbo(bounds=bounds, mode=mode, rng=rng)
+    opt = Turbo(bounds=bounds, config=config, rng=rng)
     best = -np.inf
     for _ in range(num_steps):
         x = opt.ask(num_arms=4)
@@ -35,7 +33,7 @@ def test_turbo_zero_ask_tell_and_shape():
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    opt = Turbo(bounds=bounds, mode=TurboMode.TURBO_ZERO, rng=rng)
+    opt = Turbo(bounds=bounds, config=TurboZeroConfig(), rng=rng)
     x0 = opt.ask(num_arms=4)
     assert x0.shape == (4, 2) and np.all(x0 >= 0.0) and np.all(x0 <= 1.0)
     opt.tell(x0, conftest.sphere_objective(x0))
@@ -48,17 +46,17 @@ def test_turbo_optimizer_accepts_list_bounds():
 
     opt = Turbo(
         bounds=[[0.0, 1.0], [0.0, 1.0]],
-        mode=TurboMode.TURBO_ZERO,
+        config=TurboZeroConfig(),
         rng=np.random.default_rng(0),
     )
     assert opt.ask(num_arms=2).shape == (2, 2)
 
 
 def test_turbo_optimizer_uniform_candidates_never_calls_sobol():
-    from enn import Turbo
-    from enn.turbo.turbo_mode import TurboMode
-    from enn.turbo.turbo_config import TurboZeroConfig
     from unittest import mock
+
+    from enn import Turbo
+    from enn.turbo.turbo_config import TurboZeroConfig
 
     # If candidate_rv="uniform", TurboOptimizer should not construct a Sobol engine.
     # We enforce that by making Sobol() raise if called.
@@ -70,27 +68,26 @@ def test_turbo_optimizer_uniform_candidates_never_calls_sobol():
     with mock.patch("scipy.stats.qmc.Sobol", side_effect=_sobol_raises):
         opt = Turbo(
             bounds=bounds,
-            mode=TurboMode.TURBO_ZERO,
-            rng=rng,
             config=TurboZeroConfig(candidate_rv="uniform"),
+            rng=rng,
         )
         x0 = opt.ask(num_arms=4)
     assert x0.shape == (4, 2)
 
 
-def test_turbo_optimizer_requires_mode_specific_config():
+def test_turbo_optimizer_accepts_base_config_as_turbo_zero():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    with pytest.raises(ValueError, match="requires TurboENNConfig"):
-        TurboOptimizer(
-            bounds=bounds,
-            mode=TurboMode.TURBO_ENN,
-            rng=np.random.default_rng(0),
-            config=TurboConfig(),
-        )
+    opt = TurboOptimizer(
+        bounds=bounds,
+        config=TurboConfig(),
+        rng=np.random.default_rng(0),
+    )
+    x = opt.ask(num_arms=2)
+    assert x.shape == (2, 2)
 
 
 def test_turbo_one_improves_on_sphere():
-    assert _run_bo(TurboMode.TURBO_ONE, num_steps=12) > -0.5
+    assert _run_bo(TurboOneConfig(), num_steps=12) > -0.5
 
 
 def test_turbo_one_with_y_var_uses_noisy_gp():
@@ -99,7 +96,7 @@ def test_turbo_one_with_y_var_uses_noisy_gp():
 
     bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
-    opt = Turbo(bounds=bounds, mode=TurboMode.TURBO_ONE, rng=rng)
+    opt = Turbo(bounds=bounds, config=TurboOneConfig(), rng=rng)
     for _ in range(5):
         x = opt.ask(num_arms=4)
         y = conftest.sphere_objective(x)
@@ -109,19 +106,17 @@ def test_turbo_one_with_y_var_uses_noisy_gp():
 
 
 def test_turbo_zero_reasonable_on_sphere():
-    assert _run_bo(TurboMode.TURBO_ZERO, num_steps=12) > -1.5
+    assert _run_bo(TurboZeroConfig(), num_steps=12) > -1.5
 
 
 def test_turbo_enn_uses_enn_and_is_reasonable():
-    assert _run_bo(TurboMode.TURBO_ENN, num_steps=12) > -1.5
+    assert _run_bo(TurboENNConfig(), num_steps=12) > -1.5
 
 
 def test_turbo_enn_with_k_none_fits_hyperparameters():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
-    opt = TurboOptimizer(
-        bounds=bounds, mode=TurboMode.TURBO_ENN, rng=rng, config=TurboENNConfig(k=None)
-    )
+    opt = TurboOptimizer(bounds=bounds, config=TurboENNConfig(), rng=rng)
     x0 = opt.ask(num_arms=4)
     assert x0.shape == (4, 2) and np.all(x0 >= 0.0) and np.all(x0 <= 1.0)
     opt.tell(x0, -np.sum(x0**2, axis=1))
@@ -131,11 +126,12 @@ def test_turbo_enn_with_k_none_fits_hyperparameters():
 
 def test_turbo_enn_config_scale_x_flag_runs():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    from enn.turbo.turbo_config import ENNSurrogateConfig
+
     opt = TurboOptimizer(
         bounds=bounds,
-        mode=TurboMode.TURBO_ENN,
+        config=TurboENNConfig(enn=ENNSurrogateConfig(scale_x=True)),
         rng=np.random.default_rng(0),
-        config=TurboENNConfig(scale_x=True),
     )
     x0 = opt.ask(num_arms=3)
     opt.tell(x0, -np.sum(x0**2, axis=1))
@@ -145,11 +141,11 @@ def test_turbo_enn_config_scale_x_flag_runs():
 def test_turbo_optimizer_with_trailing_obs():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
-    for mode, cfg in [
-        (TurboMode.TURBO_ONE, TurboOneConfig(trailing_obs=5)),
-        (TurboMode.TURBO_ENN, TurboENNConfig(trailing_obs=5)),
+    for cfg in [
+        TurboOneConfig(trailing_obs=5),
+        TurboENNConfig(trailing_obs=5),
     ]:
-        opt = TurboOptimizer(bounds=bounds, mode=mode, rng=rng, config=cfg)
+        opt = TurboOptimizer(bounds=bounds, config=cfg, rng=rng)
         for _ in range(10):
             x = opt.ask(num_arms=2)
             opt.tell(x, -np.sum(x**2, axis=1))
@@ -160,11 +156,11 @@ def test_turbo_optimizer_with_trailing_obs():
 def test_trailing_obs_includes_incumbent():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(123)
-    for mode, cfg in [
-        (TurboMode.TURBO_ONE, TurboOneConfig(trailing_obs=5)),
-        (TurboMode.TURBO_ENN, TurboENNConfig(trailing_obs=5)),
+    for cfg in [
+        TurboOneConfig(trailing_obs=5),
+        TurboENNConfig(trailing_obs=5),
     ]:
-        opt = TurboOptimizer(bounds=bounds, mode=mode, rng=rng, config=cfg)
+        opt = TurboOptimizer(bounds=bounds, config=cfg, rng=rng)
         for i in range(15):
             x = opt.ask(num_arms=2)
             y = (
@@ -180,7 +176,7 @@ def test_trailing_obs_includes_incumbent():
 def test_turbo_optimizer_tell_without_yvar():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     opt = TurboOptimizer(
-        bounds=bounds, mode=TurboMode.TURBO_ENN, rng=np.random.default_rng(42)
+        bounds=bounds, config=TurboENNConfig(), rng=np.random.default_rng(42)
     )
     for _ in range(2):
         x = opt.ask(num_arms=4)
@@ -193,7 +189,7 @@ def test_turbo_optimizer_yvar_policy_enforced():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     # Once yvar provided, must always provide
     opt = TurboOptimizer(
-        bounds=bounds, mode=TurboMode.TURBO_ONE, rng=np.random.default_rng(0)
+        bounds=bounds, config=TurboOneConfig(), rng=np.random.default_rng(0)
     )
     x0 = opt.ask(num_arms=2)
     y0 = -np.sum(x0**2, axis=1)
@@ -203,7 +199,7 @@ def test_turbo_optimizer_yvar_policy_enforced():
         opt.tell(x1, -np.sum(x1**2, axis=1))
     # Once yvar omitted, must always omit
     opt2 = TurboOptimizer(
-        bounds=bounds, mode=TurboMode.TURBO_ONE, rng=np.random.default_rng(0)
+        bounds=bounds, config=TurboOneConfig(), rng=np.random.default_rng(0)
     )
     x0 = opt2.ask(num_arms=2)
     opt2.tell(x0, -np.sum(x0**2, axis=1))
@@ -216,9 +212,8 @@ def test_turbo_one_trust_region_update_is_noise_robust_to_spikes():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     opt = TurboOptimizer(
         bounds=bounds,
-        mode=TurboMode.TURBO_ONE,
-        rng=np.random.default_rng(0),
         config=TurboOneConfig(num_init=1, num_candidates=16),
+        rng=np.random.default_rng(0),
     )
     opt.ask(num_arms=1)
     opt.tell(np.zeros((1, 2)), np.array([0.0]), y_var=np.array([1e6]))
@@ -233,11 +228,17 @@ def test_turbo_one_trust_region_update_is_noise_robust_to_spikes():
 
 def test_turbo_enn_tr_values_use_posterior_mean_over_all_obs():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    from enn.turbo.turbo_config import CandidateGenConfig, ENNSurrogateConfig
+
     opt = TurboOptimizer(
         bounds=bounds,
-        mode=TurboMode.TURBO_ENN,
+        config=TurboENNConfig(
+            enn=ENNSurrogateConfig(k=3),
+            candidates=CandidateGenConfig(num_candidates=16),
+            num_init=1,
+            acq_type="pareto",
+        ),
         rng=np.random.default_rng(0),
-        config=TurboENNConfig(num_init=1, num_candidates=16, acq_type="pareto", k=3),
     )
     opt.ask(num_arms=1)
     opt.tell(np.zeros((1, 2)), np.array([0.0]), y_var=np.array([1e6]))
@@ -255,9 +256,8 @@ def test_turbo_optimizer_no_trust_region_bounds_are_full_box():
     bounds = np.array([[-2.0, 2.0], [-1.0, 1.0], [0.0, 3.0]], dtype=float)
     opt = TurboOptimizer(
         bounds=bounds,
-        mode=TurboMode.TURBO_ZERO,
-        rng=np.random.default_rng(0),
         config=TurboZeroConfig(tr_type="none", num_init=1, num_candidates=16),
+        rng=np.random.default_rng(0),
     )
     x0 = opt.ask(num_arms=1)
     opt.tell(x0, np.array([1.0]))
@@ -270,11 +270,15 @@ def test_turbo_optimizer_morbo_multi_objective():
     num_dim, num_metrics = 3, 2
     bounds = np.array([[0.0, 1.0]] * num_dim, dtype=float)
     rng = np.random.default_rng(42)
+    from enn.turbo.turbo_config import TrustRegionConfig
+
     opt = TurboOptimizer(
         bounds=bounds,
-        mode=TurboMode.TURBO_ENN,
+        config=TurboENNConfig(
+            trust_region=TrustRegionConfig(tr_type="morbo", num_metrics=num_metrics),
+            num_init=4,
+        ),
         rng=rng,
-        config=TurboENNConfig(tr_type="morbo", num_metrics=num_metrics, num_init=4),
     )
     for _ in range(3):
         x = opt.ask(num_arms=2)

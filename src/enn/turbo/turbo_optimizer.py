@@ -5,13 +5,14 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from . import turbo_optimizer_utils, turbo_utils
-from .turbo_mode_registry import make_impl, validate_config
+from .build_components import build_impl
 
 if TYPE_CHECKING:
     from typing import Callable
+
     from numpy.random import Generator
+
     from .turbo_config import TurboConfig
-    from .turbo_mode import TurboMode
 
 
 class TurboOptimizer:
@@ -34,21 +35,18 @@ class TurboOptimizer:
 
     def __init__(
         self,
-        bounds: np.ndarray,
-        mode: TurboMode,
         *,
+        bounds: np.ndarray,
+        config: TurboConfig,
         rng: Generator,
-        config: TurboConfig | None = None,
     ) -> None:
-        config = validate_config(mode, config)
         self._config = config
         bounds = np.asarray(bounds, dtype=float)
         if bounds.ndim != 2 or bounds.shape[1] != 2:
             raise ValueError(bounds.shape)
-        self._bounds, self._num_dim, self._mode, self._rng = (
+        self._bounds, self._num_dim, self._rng = (
             bounds,
             bounds.shape[0],
-            mode,
             rng,
         )
         self._num_candidates = int(
@@ -56,7 +54,7 @@ class TurboOptimizer:
         )
         self._sobol_seed_base = int(rng.integers(2**31 - 1))
         self._init_obs_lists()
-        self._mode_impl: Any = make_impl(mode, config)
+        self._mode_impl: Any = build_impl(config)
         self._tr_state: Any | None = None
         self._gp_num_steps: int = 50
         self._k = None if config.k is None else int(config.k)
@@ -99,9 +97,6 @@ class TurboOptimizer:
             dt_tell=self._dt_tell,
         )
 
-    def _reset_timing(self) -> None:
-        self._dt_fit, self._dt_gen, self._dt_sel = 0.0, 0.0, 0.0
-
     def ask(self, num_arms: int) -> np.ndarray:
         num_arms = int(num_arms)
         if num_arms <= 0:
@@ -115,19 +110,19 @@ class TurboOptimizer:
             self._get_init_lhd_points,
         )
         if early is not None:
-            self._reset_timing()
+            turbo_optimizer_utils.reset_timing(self)
             return early
         if self._init_idx < self._num_init:
 
             def fallback(n):
                 return self._ask_normal(n, is_fallback=True)
 
-            self._reset_timing()
+            turbo_optimizer_utils.reset_timing(self)
             return self._get_init_lhd_points(
                 num_arms, fallback_fn=fallback if self._x_obs_list else None
             )
         if not self._x_obs_list:
-            self._reset_timing()
+            turbo_optimizer_utils.reset_timing(self)
             return self._draw_initial(num_arms)
         return self._ask_normal(num_arms)
 
@@ -135,7 +130,20 @@ class TurboOptimizer:
         if not self._tr_state.needs_restart():
             return None
         self._tr_state.restart()
-        should_reset_init, new_init_idx = self._call_handle_restart()
+        from . import impl_helpers
+
+        if self._mode_impl.always_clears_on_restart:
+            should_reset_init, new_init_idx = impl_helpers.handle_restart_clear_always(
+                self._x_obs_list, self._y_obs_list, self._yvar_obs_list
+            )
+        else:
+            should_reset_init, new_init_idx = impl_helpers.handle_restart_check_morbo(
+                self._config,
+                self._x_obs_list,
+                self._y_obs_list,
+                self._yvar_obs_list,
+                self._init_idx,
+            )
         if not should_reset_init:
             return None
         self._y_tr_list, self._init_idx = [], new_init_idx
@@ -144,21 +152,6 @@ class TurboOptimizer:
             self._bounds,
         )
         return self._get_init_lhd_points(num_arms)
-
-    def _call_handle_restart(self) -> tuple[bool, int]:
-        from . import impl_helpers
-
-        if self._mode_impl.always_clears_on_restart:
-            return impl_helpers.handle_restart_clear_always(
-                self._x_obs_list, self._y_obs_list, self._yvar_obs_list
-            )
-        return impl_helpers.handle_restart_check_morbo(
-            self._config,
-            self._x_obs_list,
-            self._y_obs_list,
-            self._yvar_obs_list,
-            self._init_idx,
-        )
 
     def _ask_normal(self, num_arms: int, *, is_fallback: bool = False) -> np.ndarray:
         import time
@@ -193,6 +186,11 @@ class TurboOptimizer:
                 raise RuntimeError("no observations")
             x_center = np.full(self._num_dim, 0.5)
 
+        def from_unit_fn(x):
+            return turbo_utils.from_unit(x, self._bounds)
+
+        self._tr_state.validate_request(num_arms, is_fallback=is_fallback)
+
         t0_gen = time.perf_counter()
         x_cand = self._generate_tr_candidates(
             x_center,
@@ -203,15 +201,10 @@ class TurboOptimizer:
         )
         self._dt_gen = time.perf_counter() - t0_gen
 
-        def from_unit_fn(x):
-            return turbo_utils.from_unit(x, self._bounds)
-
         def fallback_fn(x, n):
             from .proposal import select_uniform
 
             return select_uniform(x, n, self._num_dim, self._rng, from_unit_fn)
-
-        self._tr_state.validate_request(num_arms, is_fallback=is_fallback)
 
         t0_sel = time.perf_counter()
         selected = self._mode_impl.select_candidates(
@@ -330,6 +323,7 @@ class TurboOptimizer:
         *,
         num_arms: int,
         candidate_rv: str = "sobol",
+        acq_fn: Any = None,
     ) -> np.ndarray:
         from . import tr_helpers
 
@@ -342,6 +336,15 @@ class TurboOptimizer:
             sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
         else:
             sobol_engine = None
+
+        if getattr(self._tr_state, "uses_custom_candidate_gen", False):
+            return self._tr_state.generate_candidates(
+                x_center,
+                num_candidates,
+                rng=rng,
+                sobol_engine=sobol_engine,
+                acq_fn=acq_fn,
+            )
 
         return tr_helpers.generate_tr_candidates(
             self._tr_state.compute_bounds_1d,

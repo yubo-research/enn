@@ -6,11 +6,11 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-from .turbo_config import LHDOnlyConfig
+from .turbo_config import TurboConfig
 
 
 class LHDOnlyImpl:
-    def __init__(self, config: LHDOnlyConfig) -> None:
+    def __init__(self, config: TurboConfig) -> None:
         self._config = config
 
     @property

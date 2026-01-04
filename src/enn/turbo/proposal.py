@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
 
     from .turbo_gp import TurboGP
@@ -28,7 +28,7 @@ def mk_enn(
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
     import numpy as np
 
-    from enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
 
     if len(x_obs_list) == 0:

@@ -19,6 +19,12 @@ def sobol_seed_for_state(seed_base: int, *, n_obs: int, num_arms: int) -> int:
     return int(z & 0xFFFFFFFF)
 
 
+def reset_timing(opt: object) -> None:
+    setattr(opt, "_dt_fit", 0.0)
+    setattr(opt, "_dt_gen", 0.0)
+    setattr(opt, "_dt_sel", 0.0)
+
+
 def validate_tell_inputs(
     x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None, num_dim: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, int]:

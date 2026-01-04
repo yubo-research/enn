@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from enn.enn import EpistemicNearestNeighbors
+from enn.enn.enn import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 
 

@@ -6,12 +6,21 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
-from .turbo_config import TurboENNConfig
+from .turbo_config import (
+    DrawAcquisitionConfig,
+    ENNSurrogateConfig,
+    ParetoAcquisitionConfig,
+    TurboConfig,
+    UCBAcquisitionConfig,
+)
 
 
 class TurboENNImpl:
-    def __init__(self, config: TurboENNConfig) -> None:
+    def __init__(self, config: TurboConfig) -> None:
+        if not isinstance(config.surrogate, ENNSurrogateConfig):
+            raise ValueError("TurboENNImpl requires ENNSurrogateConfig")
         self._config = config
+        self._surrogate_config: ENNSurrogateConfig = config.surrogate
         self._enn: Any | None = None
         self._fitted_params: Any | None = None
         self._fitted_n_obs: int = 0
@@ -45,7 +54,7 @@ class TurboENNImpl:
 
         y_array = np.asarray(y_obs_list, dtype=float)
         x_array = np.asarray(x_obs_list, dtype=float)
-        k = self._config.k if self._config.k is not None else 10
+        k = self._surrogate_config.k if self._surrogate_config.k is not None else 10
 
         # For morbo: top-k per metric → union → scalarize mu
         if self._config.tr_type == "morbo" and tr_state is not None:
@@ -103,20 +112,30 @@ class TurboENNImpl:
     ) -> tuple[Any, float | None, float | None, np.ndarray | None]:
         from .proposal import mk_enn
 
-        k = self._config.k if self._config.k is not None else 10
+        k = self._surrogate_config.k if self._surrogate_config.k is not None else 10
         self._enn, self._fitted_params = mk_enn(
             x_obs_list,
             y_obs_list,
             k,
             yvar_obs_list,
-            num_fit_samples=self._config.num_fit_samples,
-            num_fit_candidates=self._config.num_fit_candidates,
-            scale_x=self._config.scale_x,
+            num_fit_samples=self._surrogate_config.num_fit_samples,
+            num_fit_candidates=self._surrogate_config.num_fit_candidates,
+            scale_x=self._surrogate_config.scale_x,
             rng=rng,
             params_warm_start=self._fitted_params,
         )
         self._fitted_n_obs = len(x_obs_list)
         return None, None, None, None
+
+    def _get_acq_type(self) -> str:
+        acq = self._config.acquisition
+        if isinstance(acq, ParetoAcquisitionConfig):
+            return "pareto"
+        if isinstance(acq, UCBAcquisitionConfig):
+            return "ucb"
+        if isinstance(acq, DrawAcquisitionConfig):
+            return "thompson"
+        raise ValueError(f"Unknown acquisition config: {type(acq).__name__}")
 
     def select_candidates(
         self,
@@ -132,8 +151,8 @@ class TurboENNImpl:
 
         from enn.enn.enn_params import ENNParams
 
-        acq_type = self._config.acq_type
-        k = self._config.k
+        acq_type = self._get_acq_type()
+        k = self._surrogate_config.k
 
         if self._enn is None:
             return fallback_fn(x_cand, num_arms)
@@ -185,7 +204,7 @@ class TurboENNImpl:
     def get_mu_sigma(self, x_unit: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         if self._enn is None:
             return None
-        k = self._config.k if self._config.k is not None else 10
+        k = self._surrogate_config.k if self._surrogate_config.k is not None else 10
         from enn.enn.enn_params import ENNParams
 
         params = (

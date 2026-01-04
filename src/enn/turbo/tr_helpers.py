@@ -8,6 +8,17 @@ if TYPE_CHECKING:
     from scipy.stats._qmc import QMCEngine
 
 
+def compute_full_box_bounds_1d(
+    x_center: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return bounds for the full unit hypercube [0,1]^d."""
+    import numpy as np
+
+    lb = np.zeros_like(x_center, dtype=float)
+    ub = np.ones_like(x_center, dtype=float)
+    return lb, ub
+
+
 def validate_trust_region_request(
     num_arms: int, configured_num_arms: int, *, is_fallback: bool = False
 ) -> None:

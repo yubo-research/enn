@@ -28,10 +28,10 @@ class NoTrustRegion:
         validate_trust_region_request(num_arms, self.num_arms, is_fallback=is_fallback)
 
     def compute_bounds_1d(
-        self, x_center: np.ndarray | Any, lengthscales: np.ndarray | None = None
+        self,
+        x_center: np.ndarray | Any,
+        lengthscales: np.ndarray | None = None,  # noqa: ARG002
     ) -> tuple[np.ndarray, np.ndarray]:
-        import numpy as np
+        from .tr_helpers import compute_full_box_bounds_1d
 
-        lb = np.zeros_like(x_center, dtype=float)
-        ub = np.ones_like(x_center, dtype=float)
-        return lb, ub
+        return compute_full_box_bounds_1d(x_center)
