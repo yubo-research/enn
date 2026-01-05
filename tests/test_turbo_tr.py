@@ -3,12 +3,19 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import qmc
 
+from enn.turbo.config.morbo_tr_config import MorboTRConfig
+from enn.turbo.config.rescalarize import Rescalarize
+from enn.turbo.config.turbo_tr_config import TurboTRConfig
 from enn.turbo.morbo_trust_region import MorboTrustRegion
 from enn.turbo.turbo_trust_region import TurboTrustRegion
 
 
 def test_trust_region_state_update_and_restart_and_bounds():
-    state = TurboTrustRegion(num_dim=2, num_arms=2)
+    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    state = TurboTrustRegion(config=config, num_dim=2)
+    # Initialize with num_arms before update() works
+    state.validate_request(num_arms=2)
+
     values = []
     for v in [0.0, 1.0, 2.0]:
         values.append(v)
@@ -24,8 +31,9 @@ def test_trust_region_state_update_and_restart_and_bounds():
 
 def test_morbo_chebyshev_trust_region_weights_and_scaling():
     rng1, rng2 = np.random.default_rng(0), np.random.default_rng(0)
-    tr1 = MorboTrustRegion(num_dim=3, num_arms=1, num_metrics=2, rng=rng1)
-    tr2 = MorboTrustRegion(num_dim=3, num_arms=1, num_metrics=2, rng=rng2)
+    config = MorboTRConfig(num_metrics=2, rescalarize=Rescalarize.ON_PROPOSE)
+    tr1 = MorboTrustRegion(config=config, num_dim=3, rng=rng1)
+    tr2 = MorboTrustRegion(config=config, num_dim=3, rng=rng2)
     assert np.allclose(tr1.weights, tr2.weights)
     assert tr1.weights.shape == (2,) and np.all(tr1.weights > 0.0)
     assert np.isclose(tr1.weights.sum(), 1.0)

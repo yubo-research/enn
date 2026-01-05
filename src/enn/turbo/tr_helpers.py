@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
+
+from .config.enums import CandidateRV
 
 if TYPE_CHECKING:
     import numpy as np
@@ -19,19 +21,19 @@ def compute_full_box_bounds_1d(
     return lb, ub
 
 
-def validate_trust_region_request(
-    num_arms: int, configured_num_arms: int, *, is_fallback: bool = False
-) -> None:
-    if is_fallback:
-        if num_arms > configured_num_arms:
-            raise ValueError(
-                f"num_arms {num_arms} > configured num_arms {configured_num_arms}"
-            )
-    else:
-        if num_arms != configured_num_arms:
-            raise ValueError(
-                f"num_arms {num_arms} != configured num_arms {configured_num_arms}"
-            )
+def get_single_incumbent_index(
+    selector,
+    y: np.ndarray,
+    rng: Generator,
+    mu: np.ndarray | None = None,
+) -> np.ndarray:
+    import numpy as np
+
+    y = np.asarray(y, dtype=float)
+    if y.size == 0:
+        return np.array([], dtype=int)
+    best_idx = selector.select(y, mu, rng)
+    return np.array([best_idx])
 
 
 def generate_tr_candidates(
@@ -41,7 +43,7 @@ def generate_tr_candidates(
     num_candidates: int,
     *,
     rng: Generator,
-    candidate_rv: Literal["sobol", "uniform"] = "sobol",
+    candidate_rv: CandidateRV = CandidateRV.SOBOL,
     sobol_engine: QMCEngine | None = None,
 ) -> np.ndarray:
     from .turbo_utils import (
@@ -50,13 +52,15 @@ def generate_tr_candidates(
     )
 
     lb, ub = compute_bounds_1d(x_center, lengthscales)
-    if candidate_rv == "sobol":
+    if candidate_rv == CandidateRV.SOBOL:
         if sobol_engine is None:
-            raise ValueError("sobol_engine is required when candidate_rv='sobol'")
+            raise ValueError(
+                "sobol_engine is required when candidate_rv=CandidateRV.SOBOL"
+            )
         return generate_raasp_candidates(
             x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
         )
-    if candidate_rv == "uniform":
+    if candidate_rv == CandidateRV.UNIFORM:
         return generate_raasp_candidates_uniform(
             x_center, lb, ub, num_candidates, rng=rng
         )

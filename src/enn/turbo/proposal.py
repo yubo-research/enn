@@ -11,8 +11,6 @@ if TYPE_CHECKING:
 
     from .turbo_gp import TurboGP
 
-from .turbo_utils import gp_thompson_sample
-
 
 def mk_enn(
     x_obs_list: list[float] | list[list[float]],
@@ -116,16 +114,23 @@ def select_gp_thompson(
         return select_sobol_fn(x_cand, num_arms), (gp_y_mean, gp_y_std), None
     fitted_mean, fitted_std = gp_y_mean, gp_y_std
     if model is None:
-        model, _likelihood, fitted_mean, fitted_std = fit_gp(
+        gp_result = fit_gp(
             x_obs_list,
             y_obs_list,
             num_dim,
             num_steps=gp_num_steps,
         )
+        model, fitted_mean, fitted_std = (
+            gp_result.model,
+            gp_result.y_mean,
+            gp_result.y_std,
+        )
     if model is None:
         return select_sobol_fn(x_cand, num_arms), (gp_y_mean, gp_y_std), None
     if x_cand.shape[0] < num_arms:
         raise ValueError((x_cand.shape[0], num_arms))
+    from .turbo_utils import gp_thompson_sample
+
     idx = gp_thompson_sample(
         model, x_cand, num_arms, rng, gp_y_mean=fitted_mean, gp_y_std=fitted_std
     )

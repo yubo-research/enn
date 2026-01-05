@@ -34,16 +34,20 @@ def test_validate_tell_inputs_valid_2d():
     x = np.random.randn(10, 3)
     y = np.random.randn(10, 2)
     y_var = np.random.rand(10, 2)
-    x_out, y_out, yvar_out, num_metrics = validate_tell_inputs(x, y, y_var, num_dim=3)
-    assert x_out.shape == (10, 3) and y_out.shape == (10, 2)
-    assert yvar_out.shape == (10, 2) and num_metrics == 2
+    result = validate_tell_inputs(x, y, y_var, num_dim=3)
+    assert result.x.shape == (10, 3) and result.y.shape == (10, 2)
+    assert result.y_var.shape == (10, 2) and result.num_metrics == 2
 
 
 def test_validate_tell_inputs_valid_1d():
     x = np.random.randn(10, 3)
     y = np.random.randn(10)
-    x_out, y_out, yvar_out, num_metrics = validate_tell_inputs(x, y, None, num_dim=3)
-    assert x_out.shape == (10, 3) and y_out.shape == (10,) and num_metrics == 1
+    result = validate_tell_inputs(x, y, None, num_dim=3)
+    assert (
+        result.x.shape == (10, 3)
+        and result.y.shape == (10,)
+        and result.num_metrics == 1
+    )
 
 
 def test_validate_tell_inputs_invalid_x_shape():
@@ -73,10 +77,10 @@ def test_trim_trailing_observations_no_trim_needed():
     y_tr = [1.0] * 5
     yvar = [0.1] * 5
     incumbent = np.array([0])
-    x, y, tr, yv = trim_trailing_observations(
+    result = trim_trailing_observations(
         x_list, y_list, y_tr, yvar, trailing_obs=10, incumbent_indices=incumbent
     )
-    assert len(x) == 5
+    assert len(result.x_obs) == 5
 
 
 def test_trim_trailing_observations_trims():
@@ -85,10 +89,10 @@ def test_trim_trailing_observations_trims():
     y_tr = list(range(20))
     yvar = [0.1] * 20
     incumbent = np.array([0])
-    x, y, tr, yv = trim_trailing_observations(
+    result = trim_trailing_observations(
         x_list, y_list, y_tr, yvar, trailing_obs=5, incumbent_indices=incumbent
     )
-    assert len(x) <= 5 and 0 in [row[0] for row in x]
+    assert len(result.x_obs) <= 5 and 0 in [row[0] for row in result.x_obs]
 
 
 def test_telemetry_dataclass():
@@ -113,10 +117,10 @@ def test_get_gp_posterior_suppress_warning_basic():
 
     x = [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]]
     y = [1.0, 2.0, 3.0, 4.0]
-    model, _, _, _ = fit_gp(x, y, num_dim=2, num_steps=10)
-    if model is not None:
+    gp_result = fit_gp(x, y, num_dim=2, num_steps=10)
+    if gp_result.model is not None:
         x_torch = torch.tensor([[0.2, 0.3]], dtype=torch.float64)
-        result = get_gp_posterior_suppress_warning(model, x_torch)
+        result = get_gp_posterior_suppress_warning(gp_result.model, x_torch)
         assert result is not None
 
 

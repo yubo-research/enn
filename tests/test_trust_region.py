@@ -4,40 +4,47 @@ import numpy as np
 import pytest
 from scipy.stats import qmc
 
+from enn.turbo.config.morbo_tr_config import MorboTRConfig
+from enn.turbo.config.no_tr_config import NoTRConfig
+from enn.turbo.config.rescalarize import Rescalarize
+from enn.turbo.config.turbo_tr_config import TurboTRConfig
 from enn.turbo.morbo_trust_region import MorboTrustRegion
 from enn.turbo.no_trust_region import NoTrustRegion
 from enn.turbo.tr_helpers import (
     compute_full_box_bounds_1d,
-    validate_trust_region_request,
 )
 from enn.turbo.turbo_trust_region import TurboTrustRegion
 
 
 def test_no_trust_region_init():
-    tr = NoTrustRegion(num_dim=3, num_arms=4)
-    assert tr.num_dim == 3 and tr.num_arms == 4 and tr.length == 1.0
+    config = NoTRConfig()
+    tr = NoTrustRegion(config=config, num_dim=3)
+    assert tr.num_dim == 3 and tr.length == 1.0
 
 
 def test_no_trust_region_update_does_nothing():
-    tr = NoTrustRegion(num_dim=3, num_arms=4)
+    config = NoTRConfig()
+    tr = NoTrustRegion(config=config, num_dim=3)
     tr.update(np.array([1.0, 2.0, 3.0]))
     assert tr.length == 1.0
 
 
 def test_no_trust_region_needs_restart():
-    tr = NoTrustRegion(num_dim=3, num_arms=4)
+    config = NoTRConfig()
+    tr = NoTrustRegion(config=config, num_dim=3)
     assert not tr.needs_restart()
 
 
 def test_no_trust_region_validate_request():
-    tr = NoTrustRegion(num_dim=3, num_arms=4)
+    config = NoTRConfig()
+    tr = NoTrustRegion(config=config, num_dim=3)
     tr.validate_request(4)
-    with pytest.raises(ValueError):
-        tr.validate_request(5)
+    tr.validate_request(5)  # NoTrustRegion has no constraints
 
 
 def test_no_trust_region_compute_bounds_1d():
-    tr = NoTrustRegion(num_dim=3, num_arms=4)
+    config = NoTRConfig()
+    tr = NoTrustRegion(config=config, num_dim=3)
     x_center = np.array([0.5, 0.5, 0.5])
     lb, ub = tr.compute_bounds_1d(x_center)
     assert np.allclose(lb, 0.0) and np.allclose(ub, 1.0)
@@ -46,7 +53,8 @@ def test_no_trust_region_compute_bounds_1d():
 def test_no_trust_region_generate_candidates():
     from enn.turbo.tr_helpers import generate_tr_candidates
 
-    tr = NoTrustRegion(num_dim=3, num_arms=4)
+    config = NoTRConfig()
+    tr = NoTrustRegion(config=config, num_dim=3)
     rng = np.random.default_rng(42)
     sobol = qmc.Sobol(d=3, scramble=True, seed=42)
     x_center = np.array([0.5, 0.5, 0.5])
@@ -58,14 +66,17 @@ def test_no_trust_region_generate_candidates():
 
 
 def test_turbo_trust_region_validate_request():
-    tr = TurboTrustRegion(num_dim=3, num_arms=4)
+    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    tr = TurboTrustRegion(config=config, num_dim=3)
     tr.validate_request(4)
+    # First call sets num_arms=4; changing it raises
     with pytest.raises(ValueError):
         tr.validate_request(5)
 
 
 def test_turbo_trust_region_get_incumbent_indices():
-    tr = TurboTrustRegion(num_dim=3, num_arms=4)
+    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    tr = TurboTrustRegion(config=config, num_dim=3)
     rng = np.random.default_rng(42)
     y = np.array([1.0, 5.0, 3.0, 2.0, 4.0])
     indices = tr.get_incumbent_indices(y, rng)
@@ -74,30 +85,21 @@ def test_turbo_trust_region_get_incumbent_indices():
 
 def test_morbo_trust_region_validate_request():
     rng = np.random.default_rng(42)
-    tr = MorboTrustRegion(num_dim=3, num_arms=4, num_metrics=2, rng=rng)
+    config = MorboTRConfig(num_metrics=2, rescalarize=Rescalarize.ON_PROPOSE)
+    tr = MorboTrustRegion(config=config, num_dim=3, rng=rng)
     tr.validate_request(4)
+    # First call sets num_arms=4; changing it raises
     with pytest.raises(ValueError):
         tr.validate_request(5)
 
 
 def test_morbo_trust_region_get_incumbent_indices():
     rng = np.random.default_rng(42)
-    tr = MorboTrustRegion(num_dim=3, num_arms=4, num_metrics=2, rng=rng)
+    config = MorboTRConfig(num_metrics=2, rescalarize=Rescalarize.ON_PROPOSE)
+    tr = MorboTrustRegion(config=config, num_dim=3, rng=rng)
     y = np.array([[1.0, 5.0], [5.0, 1.0], [3.0, 3.0], [2.0, 2.0]])
     indices = tr.get_incumbent_indices(y, rng)
     assert len(indices) >= 1
-
-
-def test_validate_trust_region_request_exact():
-    validate_trust_region_request(4, 4)
-    with pytest.raises(ValueError):
-        validate_trust_region_request(3, 4)
-
-
-def test_validate_trust_region_request_fallback():
-    validate_trust_region_request(3, 4, is_fallback=True)
-    with pytest.raises(ValueError):
-        validate_trust_region_request(5, 4, is_fallback=True)
 
 
 def test_compute_full_box_bounds_1d():

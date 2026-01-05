@@ -1,27 +1,10 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class UCBAcquisitionConfig:
-    pass
-
-
-@dataclass(frozen=True)
-class DrawAcquisitionConfig:
-    pass
-
-
-@dataclass(frozen=True)
-class ParetoAcquisitionConfig:
-    pass
-
-
-@dataclass(frozen=True)
-class RandomAcquisitionConfig:
-    pass
-
+from .draw_acquisition_config import DrawAcquisitionConfig
+from .hnr_optimizer_config import HnROptimizerConfig
+from .nds_optimizer_config import NDSOptimizerConfig
+from .pareto_acquisition_config import ParetoAcquisitionConfig
+from .raasp_optimizer_config import RAASPOptimizerConfig
+from .random_acquisition_config import RandomAcquisitionConfig
+from .ucb_acquisition_config import UCBAcquisitionConfig
 
 AcquisitionConfig = (
     UCBAcquisitionConfig
@@ -30,15 +13,16 @@ AcquisitionConfig = (
     | RandomAcquisitionConfig
 )
 
+AcqOptimizerConfig = RAASPOptimizerConfig | HnROptimizerConfig | NDSOptimizerConfig
 
-@dataclass(frozen=True)
-class RAASPOptimizerConfig:
-    pass
-
-
-@dataclass(frozen=True)
-class NDSOptimizerConfig:
-    pass
-
-
-AcqOptimizerConfig = RAASPOptimizerConfig | NDSOptimizerConfig
+__all__ = [
+    "AcqOptimizerConfig",
+    "AcquisitionConfig",
+    "DrawAcquisitionConfig",
+    "HnROptimizerConfig",
+    "NDSOptimizerConfig",
+    "ParetoAcquisitionConfig",
+    "RAASPOptimizerConfig",
+    "RandomAcquisitionConfig",
+    "UCBAcquisitionConfig",
+]

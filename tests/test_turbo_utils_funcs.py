@@ -8,11 +8,16 @@ from scipy.stats import qmc
 from enn.turbo.turbo_utils import (
     argmax_random_tie,
     from_unit,
+    generate_raasp_candidates,
+    generate_raasp_candidates_uniform,
+    gp_thompson_sample,
     latin_hypercube,
     raasp,
+    raasp_uniform,
     record_duration,
     sobol_perturb_np,
     to_unit,
+    uniform_perturb_np,
 )
 
 
@@ -284,3 +289,96 @@ def test_select_gp_thompson_fallback_on_empty_observations():
     assert fallback_called
     assert selected.shape == (num_arms, num_dim)
     assert mean == 0.0 and std == 1.0
+
+
+def test_uniform_perturb_np_shape_and_bounds():
+    num_candidates, num_dim = 10, 3
+    x_center = np.full(num_dim, 0.5)
+    lb, ub = np.zeros(num_dim), np.ones(num_dim)
+    mask = np.ones((num_candidates, num_dim), dtype=bool)
+    rng = np.random.default_rng(0)
+    candidates = uniform_perturb_np(x_center, lb, ub, num_candidates, mask, rng=rng)
+    assert candidates.shape == (num_candidates, num_dim)
+    assert np.all(candidates >= lb) and np.all(candidates <= ub)
+
+
+def test_uniform_perturb_np_mask_application():
+    num_candidates, num_dim = 5, 3
+    x_center = np.full(num_dim, 0.5)
+    lb, ub = np.zeros(num_dim), np.ones(num_dim)
+    mask = np.zeros((num_candidates, num_dim), dtype=bool)
+    mask[:, 0] = True
+    rng = np.random.default_rng(0)
+    candidates = uniform_perturb_np(x_center, lb, ub, num_candidates, mask, rng=rng)
+    for i in range(num_candidates):
+        for j in range(num_dim):
+            if mask[i, j]:
+                pass  # Might or might not equal x_center due to random
+            else:
+                assert candidates[i, j] == x_center[j]
+
+
+def _check_candidate_shape_and_bounds(candidates, num_candidates, num_dim, lb, ub):
+    """Helper to verify candidate array shape and bounds."""
+    assert candidates.shape == (num_candidates, num_dim)
+    assert np.all(candidates >= lb) and np.all(candidates <= ub)
+
+
+def test_raasp_uniform_shape_and_bounds():
+    num_candidates, num_dim = 10, 3
+    x_center = np.full(num_dim, 0.5)
+    lb, ub = np.zeros(num_dim), np.ones(num_dim)
+    rng = np.random.default_rng(0)
+    candidates = raasp_uniform(x_center, lb, ub, num_candidates, num_pert=20, rng=rng)
+    _check_candidate_shape_and_bounds(candidates, num_candidates, num_dim, lb, ub)
+
+
+def test_raasp_uniform_at_least_one_dimension_perturbed():
+    num_candidates, num_dim = 20, 5
+    x_center = np.full(num_dim, 0.5)
+    lb, ub = np.zeros(num_dim), np.ones(num_dim)
+    rng = np.random.default_rng(0)
+    candidates = raasp_uniform(x_center, lb, ub, num_candidates, num_pert=20, rng=rng)
+    for i in range(num_candidates):
+        assert np.any(np.abs(candidates[i] - x_center) > 1e-10)
+
+
+def test_generate_raasp_candidates_shape_and_bounds():
+    num_candidates, num_dim = 10, 3
+    x_center, lb, ub = np.full(num_dim, 0.5), np.zeros(num_dim), np.ones(num_dim)
+    rng = np.random.default_rng(42)
+    sobol = qmc.Sobol(d=num_dim, scramble=True, seed=42)
+    candidates = generate_raasp_candidates(
+        x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol
+    )
+    _check_candidate_shape_and_bounds(candidates, num_candidates, num_dim, lb, ub)
+
+
+def test_generate_raasp_candidates_uniform_shape_and_bounds():
+    num_candidates, num_dim = 10, 3
+    x_center, lb, ub = np.full(num_dim, 0.5), np.zeros(num_dim), np.ones(num_dim)
+    rng = np.random.default_rng(42)
+    candidates = generate_raasp_candidates_uniform(
+        x_center, lb, ub, num_candidates, rng=rng
+    )
+    _check_candidate_shape_and_bounds(candidates, num_candidates, num_dim, lb, ub)
+
+
+def test_gp_thompson_sample_returns_valid_indices():
+    from enn.turbo.turbo_gp_fit import fit_gp
+
+    num_obs, num_dim = 10, 2
+    rng = np.random.default_rng(42)
+    x_obs = rng.random((num_obs, num_dim))
+    y_obs = x_obs.sum(axis=1) + 0.1 * rng.standard_normal(num_obs)
+    result = fit_gp(x_obs.tolist(), y_obs.tolist(), num_dim, num_steps=10)
+
+    x_cand = rng.random((20, num_dim))
+    num_arms = 3
+    y_mean = float(np.mean(y_obs))
+    y_std = float(np.std(y_obs))
+    indices = gp_thompson_sample(
+        result.model, x_cand, num_arms, rng, gp_y_mean=y_mean, gp_y_std=y_std
+    )
+    assert len(indices) == num_arms
+    assert all(0 <= i < len(x_cand) for i in indices)

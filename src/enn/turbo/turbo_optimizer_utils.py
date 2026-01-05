@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .types import ObsLists, TellInputs
+
 if TYPE_CHECKING:
     import numpy as np
 
@@ -27,7 +29,7 @@ def reset_timing(opt: object) -> None:
 
 def validate_tell_inputs(
     x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None, num_dim: int
-) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, int]:
+) -> TellInputs:
     import numpy as np
 
     x = np.asarray(x, dtype=float)
@@ -51,7 +53,7 @@ def validate_tell_inputs(
         if y_var.shape != y.shape:
             raise ValueError((y.shape, y_var.shape))
 
-    return x, y, y_var, num_metrics
+    return TellInputs(x=x, y=y, y_var=y_var, num_metrics=num_metrics)
 
 
 def trim_trailing_observations(
@@ -62,12 +64,17 @@ def trim_trailing_observations(
     *,
     trailing_obs: int,
     incumbent_indices: np.ndarray,
-) -> tuple[list, list, list, list]:
+) -> ObsLists:
     import numpy as np
 
     num_total = len(x_obs_list)
     if num_total <= trailing_obs:
-        return x_obs_list, y_obs_list, y_tr_list, yvar_obs_list
+        return ObsLists(
+            x_obs=x_obs_list,
+            y_obs=y_obs_list,
+            y_tr=y_tr_list,
+            yvar_obs=yvar_obs_list,
+        )
 
     start_idx = max(0, num_total - trailing_obs)
     recent_indices = set(range(start_idx, num_total))
@@ -96,4 +103,4 @@ def trim_trailing_observations(
         yvar_array = np.asarray(yvar_obs_list, dtype=float)
         new_yvar = yvar_array[indices].tolist()
 
-    return new_x, new_y_obs, new_y_tr, new_yvar
+    return ObsLists(x_obs=new_x, y_obs=new_y_obs, y_tr=new_y_tr, yvar_obs=new_yvar)

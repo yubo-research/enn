@@ -6,13 +6,20 @@ from .enn.enn import EpistemicNearestNeighbors
 from .enn.enn_fit import enn_fit
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
-    "TurboOptimizer": (".turbo.turbo_optimizer", "TurboOptimizer"),
+    "Optimizer": (".turbo.optimizer", "Optimizer"),
+    "create_optimizer": (".turbo.optimizer", "create_optimizer"),
     "Telemetry": (".turbo.turbo_utils", "Telemetry"),
-    "Turbo": (".turbo.turbo_optimizer", "TurboOptimizer"),
-    "TurboOneConfig": (".turbo.turbo_config", "TurboOneConfig"),
-    "TurboZeroConfig": (".turbo.turbo_config", "TurboZeroConfig"),
-    "TurboENNConfig": (".turbo.turbo_config", "TurboENNConfig"),
-    "LHDOnlyConfig": (".turbo.turbo_config", "LHDOnlyConfig"),
+    "OptimizerConfig": (".turbo.optimizer_config", "OptimizerConfig"),
+    "turbo_one_config": (".turbo.optimizer_config", "turbo_one_config"),
+    "turbo_zero_config": (".turbo.optimizer_config", "turbo_zero_config"),
+    "turbo_enn_config": (".turbo.optimizer_config", "turbo_enn_config"),
+    "lhd_only_config": (".turbo.optimizer_config", "lhd_only_config"),
+    "TurboTRConfig": (".turbo.config.trust_region", "TurboTRConfig"),
+    "MorboTRConfig": (".turbo.config.trust_region", "MorboTRConfig"),
+    "NoTRConfig": (".turbo.config.trust_region", "NoTRConfig"),
+    "CandidateRV": (".turbo.optimizer_config", "CandidateRV"),
+    "InitStrategy": (".turbo.optimizer_config", "InitStrategy"),
+    "AcqType": (".turbo.optimizer_config", "AcqType"),
 }
 
 

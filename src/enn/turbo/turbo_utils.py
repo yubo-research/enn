@@ -72,9 +72,6 @@ def get_gp_posterior_suppress_warning(model: Any, x_torch: Any) -> Any:
 
     if GPInputWarning is None:
         return model.posterior(x_torch)
-    # We intentionally evaluate the GP posterior at the training inputs
-    # (observed points) when choosing the center. GPyTorch warns about this
-    # in debug mode, but it's expected for our usage.
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",

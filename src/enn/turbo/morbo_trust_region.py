@@ -7,30 +7,46 @@ if TYPE_CHECKING:
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
 
+    from .config.morbo_tr_config import MorboTRConfig
+    from .config.rescalarize import Rescalarize
+
 
 class MorboTrustRegion:
     def __init__(
         self,
+        config: MorboTRConfig,
         num_dim: int,
-        num_arms: int,
-        num_metrics: int,
         *,
         rng: Generator,
     ) -> None:
-        import numpy as np
-
+        from .components.incumbent_selector import ChebyshevIncumbentSelector
+        from .config.turbo_tr_config import TurboTRConfig
         from .turbo_trust_region import TurboTrustRegion
 
-        self._tr = TurboTrustRegion(num_dim=num_dim, num_arms=num_arms)
+        self._config = config
+        inner_config = TurboTRConfig(
+            length_init=config.length_init,
+            length_min=config.length_min,
+            length_max=config.length_max,
+        )
+        self._tr = TurboTrustRegion(
+            config=inner_config,
+            num_dim=num_dim,
+        )
         self._num_dim = int(num_dim)
-        self._num_arms = int(num_arms)
-        self._num_metrics = int(num_metrics)
+        self._num_metrics = int(config.num_metrics)
         if self._num_metrics <= 0:
             raise ValueError(self._num_metrics)
 
-        alpha = np.ones(self._num_metrics, dtype=float)
-        self._weights = np.asarray(rng.dirichlet(alpha), dtype=float)
-        self._alpha = 0.05
+        self._alpha = float(config.alpha)
+        self._rescalarize = config.rescalarize
+        self.incumbent_selector = ChebyshevIncumbentSelector(
+            num_metrics=self._num_metrics,
+            alpha=self._alpha,
+            noise_aware=True,
+        )
+        self.incumbent_selector.reset(rng)
+        self._weights = self.incumbent_selector._weights
 
         self._y_min: np.ndarray | Any | None = None
         self._y_max: np.ndarray | Any | None = None
@@ -38,10 +54,6 @@ class MorboTrustRegion:
     @property
     def num_dim(self) -> int:
         return self._num_dim
-
-    @property
-    def num_arms(self) -> int:
-        return self._num_arms
 
     @property
     def num_metrics(self) -> int:
@@ -54,6 +66,14 @@ class MorboTrustRegion:
     @property
     def length(self) -> float:
         return float(self._tr.length)
+
+    @property
+    def rescalarize(self) -> Rescalarize:
+        return self._rescalarize
+
+    def resample_weights(self, rng: Generator) -> None:
+        self.incumbent_selector.reset(rng)
+        self._weights = self.incumbent_selector._weights
 
     def _update_ranges(self, y_obs, prev_n):
         y_min_all, y_max_all = y_obs.min(axis=0), y_obs.max(axis=0)
@@ -142,10 +162,14 @@ class MorboTrustRegion:
     def needs_restart(self) -> bool:
         return self._tr.needs_restart()
 
-    def restart(self) -> None:
+    def restart(self, rng: Generator | None = None) -> None:
+        from .config.rescalarize import Rescalarize
+
         self._y_min = None
         self._y_max = None
         self._tr.restart()
+        if rng is not None and self._rescalarize == Rescalarize.ON_RESTART:
+            self.resample_weights(rng)
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
         return self._tr.validate_request(num_arms, is_fallback=is_fallback)

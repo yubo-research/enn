@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    import numpy as np
-    from gpytorch.likelihoods import GaussianLikelihood
-
-    from .turbo_gp import TurboGP
-    from .turbo_gp_noisy import TurboGPNoisy
-
+from typing import Any
 
 from enn.enn.enn_util import standardize_y
+
+from .types import GPDataPrep, GPFitResult
 
 
 def _prepare_gp_data(
     x_obs_list: list, y_obs_list: list, yvar_obs_list: list | None
-) -> tuple[Any, Any, bool, Any, Any, Any]:
+) -> GPDataPrep:
     import numpy as np
     import torch
 
@@ -40,7 +34,14 @@ def _prepare_gp_data(
         y_mean, y_std = standardize_y(y)
         z = (y - y_mean) / y_std
         train_y = torch.as_tensor(z, dtype=torch.float64)
-    return torch.as_tensor(x, dtype=torch.float64), train_y, is_multi, y_mean, y_std, y
+    return GPDataPrep(
+        train_x=torch.as_tensor(x, dtype=torch.float64),
+        train_y=train_y,
+        is_multi=is_multi,
+        y_mean=y_mean,
+        y_std=y_std,
+        y_raw=y,
+    )
 
 
 def _build_gp_model(
@@ -143,12 +144,7 @@ def fit_gp(
     *,
     yvar_obs_list: list[float] | None = None,
     num_steps: int = 50,
-) -> tuple[
-    "TurboGP | TurboGPNoisy | None",
-    "GaussianLikelihood | None",
-    float | np.ndarray,
-    float | np.ndarray,
-]:
+) -> GPFitResult:
     import numpy as np
 
     x = np.asarray(x_obs_list, dtype=float)
@@ -156,27 +152,41 @@ def fit_gp(
     n, is_multi = x.shape[0], y.ndim == 2 and y.shape[1] > 1
     if n == 0:
         return (
-            (None, None, np.zeros(y.shape[1]), np.ones(y.shape[1]))
+            GPFitResult(
+                model=None,
+                likelihood=None,
+                y_mean=np.zeros(y.shape[1]),
+                y_std=np.ones(y.shape[1]),
+            )
             if is_multi
-            else (None, None, 0.0, 1.0)
+            else GPFitResult(model=None, likelihood=None, y_mean=0.0, y_std=1.0)
         )
     if n == 1 and is_multi:
-        return None, None, y[0].copy(), np.ones(int(y.shape[1]), dtype=float)
+        return GPFitResult(
+            model=None,
+            likelihood=None,
+            y_mean=y[0].copy(),
+            y_std=np.ones(int(y.shape[1]), dtype=float),
+        )
 
-    train_x, train_y, is_multi, y_mean, y_std, y = _prepare_gp_data(
-        x_obs_list, y_obs_list, yvar_obs_list
-    )
+    gp_data = _prepare_gp_data(x_obs_list, y_obs_list, yvar_obs_list)
     model, likelihood = _build_gp_model(
-        train_x,
-        train_y,
-        is_multi,
+        gp_data.train_x,
+        gp_data.train_y,
+        gp_data.is_multi,
         num_dim,
         yvar_obs_list=yvar_obs_list,
-        gp_y_std=y_std,
-        y=y,
+        gp_y_std=gp_data.y_std,
+        y=gp_data.y_raw,
     )
     _init_gp_hyperparams(
-        model, is_multi, num_dim, int(y.shape[1]) if is_multi else None, train_x.dtype
+        model,
+        gp_data.is_multi,
+        num_dim,
+        int(gp_data.y_raw.shape[1]) if gp_data.is_multi else None,
+        gp_data.train_x.dtype,
     )
-    _train_gp(model, likelihood, train_x, train_y, num_steps)
-    return model, likelihood, y_mean, y_std
+    _train_gp(model, likelihood, gp_data.train_x, gp_data.train_y, num_steps)
+    return GPFitResult(
+        model=model, likelihood=likelihood, y_mean=gp_data.y_mean, y_std=gp_data.y_std
+    )

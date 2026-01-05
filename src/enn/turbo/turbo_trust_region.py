@@ -1,41 +1,85 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
+    from .components.incumbent_selector import IncumbentSelector
+    from .config.turbo_tr_config import TurboTRConfig
+
 
 @dataclass
 class TurboTrustRegion:
+    config: TurboTRConfig
     num_dim: int
-    num_arms: int
-    length: float = 0.8
-    length_init: float = 0.8
-    length_min: float = 0.5**7
-    length_max: float = 1.6
+    length: float = field(init=False)
     failure_counter: int = 0
     success_counter: int = 0
     best_value: float = -float("inf")
     prev_num_obs: int = 0
+    incumbent_selector: IncumbentSelector | None = field(default=None, repr=False)
+    _num_arms: int | None = field(default=None, repr=False)
+    _failure_tolerance: int | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        from .components.incumbent_selector import ScalarIncumbentSelector
+
+        self.length = self.config.length_init
+        self.success_tolerance = 3
+        if self.incumbent_selector is None:
+            self.incumbent_selector = ScalarIncumbentSelector(noise_aware=True)
+
+    @property
+    def length_init(self) -> float:
+        return self.config.length_init
+
+    @property
+    def length_min(self) -> float:
+        return self.config.length_min
+
+    @property
+    def length_max(self) -> float:
+        return self.config.length_max
+
+    @property
+    def num_metrics(self) -> int:
+        """Single-objective trust region always has 1 metric."""
+        return 1
+
+    def _ensure_initialized(self, num_arms: int) -> None:
         import numpy as np
 
-        self.failure_tolerance = int(
-            np.ceil(
-                max(
-                    4.0 / float(self.num_arms),
-                    float(self.num_dim) / float(self.num_arms),
+        if self._num_arms is None:
+            self._num_arms = num_arms
+            self._failure_tolerance = int(
+                np.ceil(
+                    max(
+                        4.0 / float(num_arms),
+                        float(self.num_dim) / float(num_arms),
+                    )
                 )
             )
-        )
-        self.success_tolerance = 3
+        elif num_arms != self._num_arms:
+            raise ValueError(
+                f"num_arms changed from {self._num_arms} to {num_arms}; "
+                "must be consistent across ask() calls"
+            )
+
+    @property
+    def failure_tolerance(self) -> int:
+        if self._failure_tolerance is None:
+            raise RuntimeError("failure_tolerance not initialized; call ask() first")
+        return self._failure_tolerance
 
     def update(self, values: np.ndarray | Any) -> None:
         import numpy as np
+
+        # Skip counter updates until first ask() initializes failure_tolerance
+        if self._failure_tolerance is None:
+            return
 
         values = np.asarray(values, dtype=float)
         if values.ndim == 2:
@@ -63,7 +107,7 @@ class TurboTrustRegion:
         if self.success_counter >= self.success_tolerance:
             self.length = min(2.0 * self.length, self.length_max)
             self.success_counter = 0
-        elif self.failure_counter >= self.failure_tolerance:
+        elif self.failure_counter >= self._failure_tolerance:
             self.length = 0.5 * self.length
             self.failure_counter = 0
 
@@ -73,17 +117,15 @@ class TurboTrustRegion:
     def needs_restart(self) -> bool:
         return self.length < self.length_min
 
-    def restart(self) -> None:
+    def restart(self, rng: Any | None = None) -> None:  # noqa: ARG002
         self.length = self.length_init
         self.failure_counter = 0
         self.success_counter = 0
         self.best_value = -float("inf")
         self.prev_num_obs = 0
 
-    def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
-        from .tr_helpers import validate_trust_region_request
-
-        validate_trust_region_request(num_arms, self.num_arms, is_fallback=is_fallback)
+    def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:  # noqa: ARG002
+        self._ensure_initialized(num_arms)
 
     def compute_bounds_1d(
         self, x_center: np.ndarray | Any, lengthscales: np.ndarray | None = None
@@ -98,11 +140,12 @@ class TurboTrustRegion:
         ub = np.clip(x_center + half_length, 0.0, 1.0)
         return lb, ub
 
-    def get_incumbent_indices(self, y: np.ndarray | Any, rng: Generator) -> np.ndarray:
-        import numpy as np
+    def get_incumbent_indices(
+        self,
+        y: np.ndarray | Any,
+        rng: Generator,
+        mu: np.ndarray | None = None,
+    ) -> np.ndarray:
+        from .tr_helpers import get_single_incumbent_index
 
-        from .turbo_utils import argmax_random_tie
-
-        y = np.asarray(y, dtype=float)
-        y_1d = y[:, 0] if y.ndim == 2 else y
-        return np.array([argmax_random_tie(y_1d, rng=rng)])
+        return get_single_incumbent_index(self.incumbent_selector, y, rng, mu)
