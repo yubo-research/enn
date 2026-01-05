@@ -1,0 +1,42 @@
+[gate]
+test_coverage_threshold = 90
+min_similarity = 0.7
+
+[python]
+imported_names_per_file = 20
+statements_per_file = 400
+types_per_file = 10
+statements_per_function = 35
+positional_args = 5
+keyword_only_args = 6
+max_indentation = 4
+branches_per_function = 10
+local_variables = 20
+methods_per_class = 20
+returns_per_function = 5
+return_values_per_function = 3
+nested_function_depth = 2
+statements_per_try_block = 5
+boolean_parameters = 1
+decorators_per_function = 3
+cycle_size = 3
+transitive_dependencies = 140
+dependency_depth = 7
+
+[rust]
+imported_names_per_file = 20
+statements_per_file = 300
+types_per_file = 8
+statements_per_function = 25
+arguments = 8
+max_indentation = 4
+branches_per_function = 8
+local_variables = 20
+methods_per_class = 15
+returns_per_function = 5
+nested_function_depth = 2
+boolean_parameters = 2
+attributes_per_function = 4
+cycle_size = 3
+transitive_dependencies = 50
+dependency_depth = 4
