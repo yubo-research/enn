@@ -97,7 +97,15 @@ class TurboTrustRegion:
             self.best_value = float(np.max(new_values))
             self.prev_num_obs = values.size
             return
-        improved = np.max(new_values) > self.best_value + 1e-3 * np.abs(self.best_value)
+        # Use a shift-invariant scale for the improvement tolerance so that
+        # trust-region behavior is invariant to affine transforms of y.
+        prev_values = values[: self.prev_num_obs]
+        scale = (
+            float(np.max(prev_values) - np.min(prev_values))
+            if prev_values.size
+            else 0.0
+        )
+        improved = np.max(new_values) > self.best_value + 1e-3 * scale
         if improved:
             self.success_counter += 1
             self.failure_counter = 0
@@ -135,6 +143,13 @@ class TurboTrustRegion:
         if lengthscales is None:
             half_length = 0.5 * self.length
         else:
+            lengthscales = np.asarray(lengthscales, dtype=float).reshape(-1)
+            if lengthscales.shape != (self.num_dim,):
+                raise ValueError(
+                    f"lengthscales must have shape ({self.num_dim},), got {lengthscales.shape}"
+                )
+            if not np.all(np.isfinite(lengthscales)):
+                raise ValueError("lengthscales must be finite")
             half_length = lengthscales * self.length / 2.0
         lb = np.clip(x_center - half_length, 0.0, 1.0)
         ub = np.clip(x_center + half_length, 0.0, 1.0)

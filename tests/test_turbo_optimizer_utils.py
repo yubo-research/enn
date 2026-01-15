@@ -17,17 +17,25 @@ from enn.turbo.turbo_utils import (
 
 
 def test_sobol_seed_for_state_deterministic():
-    result1 = sobol_seed_for_state(12345, n_obs=10, num_arms=4)
-    result2 = sobol_seed_for_state(12345, n_obs=10, num_arms=4)
+    result1 = sobol_seed_for_state(12345, restart_generation=0, n_obs=10, num_arms=4)
+    result2 = sobol_seed_for_state(12345, restart_generation=0, n_obs=10, num_arms=4)
     assert result1 == result2
 
 
 def test_sobol_seed_for_state_changes_with_inputs():
-    base = sobol_seed_for_state(12345, n_obs=10, num_arms=4)
-    diff_seed = sobol_seed_for_state(54321, n_obs=10, num_arms=4)
-    diff_obs = sobol_seed_for_state(12345, n_obs=20, num_arms=4)
-    diff_arms = sobol_seed_for_state(12345, n_obs=10, num_arms=8)
-    assert base != diff_seed and base != diff_obs and base != diff_arms
+    base = sobol_seed_for_state(12345, restart_generation=0, n_obs=10, num_arms=4)
+    diff_seed = sobol_seed_for_state(54321, restart_generation=0, n_obs=10, num_arms=4)
+    diff_restart = sobol_seed_for_state(
+        12345, restart_generation=1, n_obs=10, num_arms=4
+    )
+    diff_obs = sobol_seed_for_state(12345, restart_generation=0, n_obs=20, num_arms=4)
+    diff_arms = sobol_seed_for_state(12345, restart_generation=0, n_obs=10, num_arms=8)
+    assert (
+        base != diff_seed
+        and base != diff_restart
+        and base != diff_obs
+        and base != diff_arms
+    )
 
 
 def test_validate_tell_inputs_valid_2d():

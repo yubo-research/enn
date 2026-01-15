@@ -78,6 +78,7 @@ class TurboHybridStrategy(OptimizationStrategy):
     def ask(self, opt: Optimizer, num_arms: int) -> np.ndarray:
         if opt._tr_state.needs_restart():
             opt._tr_state.restart(opt._rng)
+            opt._restart_generation += 1
             opt._x_obs_list.clear()
             opt._y_obs_list.clear()
             opt._yvar_obs_list.clear()

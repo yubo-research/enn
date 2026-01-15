@@ -73,6 +73,7 @@ class Optimizer:
         self._dt_tell = 0.0
 
         self._sobol_seed_base = int(rng.integers(2**31 - 1))
+        self._restart_generation = 0
 
     @property
     def tr_obs_count(self) -> int:
@@ -179,7 +180,10 @@ class Optimizer:
             from scipy.stats import qmc
 
             sobol_seed = turbo_optimizer_utils.sobol_seed_for_state(
-                self._sobol_seed_base, n_obs=len(self._x_obs_list), num_arms=num_arms
+                self._sobol_seed_base,
+                restart_generation=self._restart_generation,
+                n_obs=len(self._x_obs_list),
+                num_arms=num_arms,
             )
             sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
         else:

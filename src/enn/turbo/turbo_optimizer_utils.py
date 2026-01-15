@@ -8,9 +8,12 @@ if TYPE_CHECKING:
     import numpy as np
 
 
-def sobol_seed_for_state(seed_base: int, *, n_obs: int, num_arms: int) -> int:
+def sobol_seed_for_state(
+    seed_base: int, *, restart_generation: int, n_obs: int, num_arms: int
+) -> int:
     mask64 = (1 << 64) - 1
     x = int(seed_base) & mask64
+    x ^= (int(restart_generation) + 1) * 0xD1342543DE82EF95 & mask64
     x ^= (int(n_obs) + 1) * 0x9E3779B97F4A7C15 & mask64
     x ^= (int(num_arms) + 1) * 0xBF58476D1CE4E5B9 & mask64
     x = (x + 0x9E3779B97F4A7C15) & mask64
