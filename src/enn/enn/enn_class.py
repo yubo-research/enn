@@ -29,14 +29,14 @@ def _draw_from_internals(
     *,
     function_seeds: np.ndarray | list[int],
 ) -> np.ndarray:
-    from .enn_hash import normal_hash_batch_multi_seed
+    from .enn_hash import normal_hash_batch_multi_seed_fast
 
     function_seeds = np.asarray(function_seeds, dtype=np.int64)
 
     n, k, m = internals.idx.shape[0], internals.idx.shape[1], model.num_outputs
     if k == 0:
         return np.broadcast_to(internals.mu, (len(function_seeds), n, m)).copy()
-    u = normal_hash_batch_multi_seed(function_seeds, internals.idx, m)
+    u = normal_hash_batch_multi_seed_fast(function_seeds, internals.idx, m)
     weighted_u = np.sum(internals.w_normalized[np.newaxis, :, :, :] * u, axis=2)
     l2_safe = np.maximum(internals.l2, 1e-12)
     return (

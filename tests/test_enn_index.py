@@ -4,7 +4,10 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_index import ENNIndex
-from enn.enn.enn_hash import normal_hash_batch_multi_seed
+from enn.enn.enn_hash import (
+    normal_hash_batch_multi_seed,
+    normal_hash_batch_multi_seed_fast,
+)
 
 
 def test_enn_index_init_and_search():
@@ -75,3 +78,27 @@ def test_normal_hash_batch_multi_seed_different_seeds():
         np.array([2], dtype=np.int64), data_indices, num_metrics=1
     )
     assert not np.allclose(result1, result2)
+
+
+def test_normal_hash_batch_multi_seed_fast_shape_and_deterministic():
+    function_seeds = np.array([1, 2, 3], dtype=np.int64)
+    data_indices = np.array([[0, 1, 2], [3, 4, 5]], dtype=int)
+    out1 = normal_hash_batch_multi_seed_fast(
+        function_seeds, data_indices, num_metrics=2
+    )
+    out2 = normal_hash_batch_multi_seed_fast(
+        function_seeds, data_indices, num_metrics=2
+    )
+    assert out1.shape == (3, 2, 3, 2)
+    assert np.allclose(out1, out2)
+
+
+def test_normal_hash_batch_multi_seed_fast_different_seeds():
+    data_indices = np.array([[0, 1]], dtype=int)
+    out1 = normal_hash_batch_multi_seed_fast(
+        np.array([1], dtype=np.int64), data_indices, num_metrics=3
+    )
+    out2 = normal_hash_batch_multi_seed_fast(
+        np.array([2], dtype=np.int64), data_indices, num_metrics=3
+    )
+    assert not np.allclose(out1, out2)

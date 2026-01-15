@@ -13,9 +13,8 @@ def normal_hash_batch_multi_seed(
     from scipy.special import ndtri
 
     num_seeds = len(function_seeds)
-    unique_indices = np.unique(data_indices)
+    unique_indices, inverse = np.unique(data_indices, return_inverse=True)
     num_unique = len(unique_indices)
-    max_idx = int(unique_indices.max()) + 1
 
     # Build grids for (seed, unique_idx, metric) combinations
     seed_grid, idx_grid, metric_grid = np.meshgrid(
@@ -40,8 +39,58 @@ def normal_hash_batch_multi_seed(
     uniform_vals = np.clip(uniform_vals, 1e-10, 1.0 - 1e-10)
     normal_vals = ndtri(uniform_vals).reshape(num_seeds, num_unique, num_metrics)
 
-    # Build lookup table per seed and use vectorized indexing
-    lookup = np.zeros((num_seeds, max_idx, num_metrics), dtype=float)
-    lookup[:, unique_indices, :] = normal_vals
+    return normal_vals[:, inverse.ravel(), :].reshape(
+        num_seeds, *data_indices.shape, num_metrics
+    )
 
-    return lookup[:, data_indices, :]
+
+def normal_hash_batch_multi_seed_fast(
+    function_seeds: np.ndarray, data_indices: np.ndarray, num_metrics: int
+) -> np.ndarray:
+    import numpy as np
+
+    function_seeds = np.asarray(function_seeds, dtype=np.int64)
+    data_indices = np.asarray(data_indices)
+    if num_metrics <= 0:
+        raise ValueError(num_metrics)
+
+    num_seeds = len(function_seeds)
+    unique_indices, inverse = np.unique(data_indices, return_inverse=True)
+
+    def _splitmix64(x: np.ndarray) -> np.ndarray:
+        # Overflow is intentional in uint64 arithmetic.
+        with np.errstate(over="ignore"):
+            x = x + np.uint64(0x9E3779B97F4A7C15)
+            z = x
+            z = (z ^ (z >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+            z = (z ^ (z >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+            z = z ^ (z >> np.uint64(31))
+            return z
+
+    # Deterministic hash -> Normal(0,1). Not output-identical to Philox-based path.
+    seeds_u64 = function_seeds.astype(np.uint64, copy=False)
+    unique_u64 = unique_indices.astype(np.uint64, copy=False)
+    metric_u64 = np.arange(num_metrics, dtype=np.uint64)
+
+    normal_vals = np.empty((num_seeds, unique_indices.size, num_metrics), dtype=float)
+
+    p = np.uint64(1_000_003)
+    inv_2p53 = 1.0 / 9007199254740992.0
+
+    for si, s in enumerate(seeds_u64):
+        with np.errstate(over="ignore"):
+            base = (s * p + unique_u64) * p
+        combined = base[:, None] + metric_u64[None, :]
+
+        r1 = _splitmix64(combined)
+        r2 = _splitmix64(combined ^ np.uint64(0xD2B74407B1CE6E93))
+
+        u1 = (r1 >> np.uint64(11)).astype(np.float64) * inv_2p53
+        u2 = (r2 >> np.uint64(11)).astype(np.float64) * inv_2p53
+        u1 = np.clip(u1, 1e-12, 1.0 - 1e-12)
+
+        normal_vals[si, :, :] = np.sqrt(-2.0 * np.log(u1)) * np.cos(2.0 * np.pi * u2)
+
+    return normal_vals[:, inverse.ravel(), :].reshape(
+        num_seeds, *data_indices.shape, num_metrics
+    )
