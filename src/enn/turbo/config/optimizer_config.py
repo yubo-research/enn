@@ -54,7 +54,7 @@ class OptimizerConfig:
         return self.candidates.candidate_rv
 
     @property
-    def num_candidates(self) -> int:
+    def num_candidates(self):
         return self.candidates.num_candidates
 
     @property

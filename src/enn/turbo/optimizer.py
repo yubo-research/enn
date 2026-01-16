@@ -50,7 +50,6 @@ class Optimizer:
             rng=rng,
         )
 
-        self._num_candidates = config.num_candidates
         self._trailing_obs = (
             None if config.trailing_obs is None else int(config.trailing_obs)
         )
@@ -175,6 +174,13 @@ class Optimizer:
     ) -> np.ndarray:
         from . import tr_helpers
 
+        num_candidates = int(
+            self._config.candidates.num_candidates(
+                num_dim=self._num_dim, num_arms=num_arms
+            )
+        )
+        if num_candidates <= 0:
+            raise ValueError(num_candidates)
         candidate_rv = self._config.candidate_rv
         if candidate_rv == CandidateRV.SOBOL:
             from scipy.stats import qmc
@@ -192,7 +198,7 @@ class Optimizer:
         if getattr(self._tr_state, "uses_custom_candidate_gen", False):
             return self._tr_state.generate_candidates(
                 x_center,
-                self._num_candidates,
+                num_candidates,
                 rng=self._rng,
                 sobol_engine=sobol_engine,
             )
@@ -201,7 +207,7 @@ class Optimizer:
             self._tr_state.compute_bounds_1d,
             x_center,
             lengthscales,
-            self._num_candidates,
+            num_candidates,
             rng=self._rng,
             candidate_rv=candidate_rv,
             sobol_engine=sobol_engine,

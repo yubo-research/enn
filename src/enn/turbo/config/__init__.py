@@ -18,6 +18,7 @@ from .enums import (
     CandidateRV,
 )
 from .init_strategies import HybridInit, InitStrategy, LHDOnlyInit
+from .optimizer_config import OptimizerConfig
 from .surrogate import (
     ENNSurrogateConfig,
     GPSurrogateConfig,
@@ -30,7 +31,6 @@ from .trust_region import (
     TrustRegionConfig,
     TurboTRConfig,
 )
-from .optimizer_config import OptimizerConfig
 
 
 def __getattr__(name: str) -> object:

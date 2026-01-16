@@ -1,3 +1,9 @@
-# Re-export all config types from .config
-from .config import *  # noqa: F401,F403
-from .config import __all__  # noqa: F401
+from __future__ import annotations
+
+from . import config as _config
+
+__all__ = list(_config.__all__)
+
+
+def __getattr__(name: str) -> object:
+    return getattr(_config, name)

@@ -13,7 +13,6 @@ from enn.turbo.optimizer_config import (
     HybridInit,
     InitConfig,
     LHDOnlyInit,
-    lhd_only_config,
     MorboTRConfig,
     NDSOptimizerConfig,
     NoSurrogateConfig,
@@ -22,11 +21,12 @@ from enn.turbo.optimizer_config import (
     ParetoAcquisitionConfig,
     RAASPOptimizerConfig,
     RandomAcquisitionConfig,
+    TurboTRConfig,
+    UCBAcquisitionConfig,
+    lhd_only_config,
     turbo_enn_config,
     turbo_one_config,
-    TurboTRConfig,
     turbo_zero_config,
-    UCBAcquisitionConfig,
 )
 
 
@@ -70,13 +70,19 @@ def test_no_tr_config():
 def test_candidate_gen_config_defaults():
     cfg = CandidateGenConfig()
     assert cfg.candidate_rv == CandidateRV.SOBOL
-    assert cfg.num_candidates == 5000
+    assert callable(cfg.num_candidates)
+    assert cfg.num_candidates(num_dim=1, num_arms=1) == 100
+    assert cfg.num_candidates(num_dim=100, num_arms=1) == 5000
 
 
 def test_candidate_gen_config_uniform():
-    cfg = CandidateGenConfig(candidate_rv=CandidateRV.UNIFORM, num_candidates=100)
+    cfg = CandidateGenConfig(
+        candidate_rv=CandidateRV.UNIFORM,
+        num_candidates=lambda *, num_dim, num_arms: 100,
+    )
     assert cfg.candidate_rv == CandidateRV.UNIFORM
-    assert cfg.num_candidates == 100
+    assert callable(cfg.num_candidates)
+    assert cfg.num_candidates(num_dim=3, num_arms=7) == 100
 
 
 def test_candidate_gen_config_invalid_rv():
@@ -86,7 +92,12 @@ def test_candidate_gen_config_invalid_rv():
 
 def test_candidate_gen_config_invalid_num_candidates():
     with pytest.raises(ValueError, match="num_candidates must be > 0"):
-        CandidateGenConfig(num_candidates=0)
+        CandidateGenConfig(num_candidates=lambda *, num_dim, num_arms: 0)
+
+
+def test_candidate_gen_config_num_candidates_per_arms():
+    cfg = CandidateGenConfig(num_candidates=lambda *, num_dim, num_arms: 100 * num_arms)
+    assert cfg.num_candidates(num_dim=3, num_arms=7) == 700
 
 
 def test_init_config_defaults():
@@ -312,11 +323,11 @@ def test_lhd_only_config_factory():
 def test_optimizer_config_properties():
     cfg = turbo_enn_config(
         enn=ENNSurrogateConfig(k=15),
-        candidates=CandidateGenConfig(num_candidates=200),
+        candidates=CandidateGenConfig(num_candidates=lambda *, num_dim, num_arms: 200),
         num_init=10,
     )
     assert cfg.k == 15
-    assert cfg.num_candidates == 200
+    assert cfg.num_candidates(num_dim=3, num_arms=7) == 200
     assert cfg.num_init == 10
 
 

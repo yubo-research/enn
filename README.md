@@ -4,12 +4,16 @@ A fast, alternative surrogate for Bayesian optimization
 ENN estimates a function's value and associated epistemic uncertainty using a K-Nearest Neighbors model. Queries take $O(N lnK)$ time, where $N$ is the number of observations available for KNN lookups. Compare to an exact GP, which takes $O(N^2)$ time. Additionally, measured running times are very small compared to GPs and other alternative surrogates. [1]
 
 ## Contents
-- ENN model, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) [1]
-- TuRBO-ENN optimizer, class [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/turbo_optimizer.py) has four modes
-	- `TURBO_ONE` - A clone of the TuRBO [2] reference [code](https://github.com/uber-research/TuRBO), reworked to have an `ask()`/`tell()` interface.
-	- `TURBO_ENN` - Same as TURBO_ONE, except uses ENN instead of GP and Pareto(mu, se) instead of Thompson sampling.
-	- `TURBO_ZERO` - Same as TURBO_ONE, except randomly-chosen RAASP [3] candidates are picked to be proposals. There is no surrogate.
-	- `LHD_ONLY` - Just creates an LHD design for every `ask()`. Good for a baseline and for testing.
+- ENN surrogate, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) [1]
+- TuRBO-ENN optimizer via [`create_optimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/optimizer.py) with config factories
+	- `turbo_one_config()` - TuRBO [2], matching the reference implementation.
+	- `turbo_enn_config()` - Uses ENN instead of GP.
+	- `turbo_zero_config()` - No surrogate
+	- `lhd_only_config()` - LHD design on every `ask()`. Good for a baseline and for testing.
+The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow TuRBO:
+  - Generate candidates with RAASP [3] sampling.
+  - Select a candidate with Thompson sampling (TuRBO-one), UCB (TuRBO-ENN), or randomly (TURBO-zero).
+
 
 [1] **Sweet, D., & Jadhav, S. A. (2025).** Taking the GP Out of the Loop. *arXiv preprint arXiv:2506.12818*.
    https://arxiv.org/abs/2506.12818
