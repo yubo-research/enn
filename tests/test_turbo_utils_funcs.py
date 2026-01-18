@@ -6,6 +6,7 @@ import pytest
 from scipy.stats import qmc
 
 from enn.turbo.turbo_utils import (
+    _next_power_of_2,
     argmax_random_tie,
     from_unit,
     generate_raasp_candidates,
@@ -364,6 +365,45 @@ def test_generate_raasp_candidates_uniform_shape_and_bounds():
     _check_candidate_shape_and_bounds(candidates, num_candidates, num_dim, lb, ub)
 
 
+def test_generate_raasp_candidates_uniform_respects_num_pert():
+    num_candidates = 200
+    num_dim_low, num_dim_high = 5, 50
+    x_low = np.full(num_dim_low, 0.5)
+    x_high = np.full(num_dim_high, 0.5)
+    lb_low, ub_low = np.zeros(num_dim_low), np.ones(num_dim_low)
+    lb_high, ub_high = np.zeros(num_dim_high), np.ones(num_dim_high)
+
+    rng_low = np.random.default_rng(0)
+    rng_high = np.random.default_rng(0)
+    c_low_pert = generate_raasp_candidates_uniform(
+        x_low, lb_low, ub_low, num_candidates, rng=rng_low, num_pert=1
+    )
+    c_high_pert = generate_raasp_candidates_uniform(
+        x_low, lb_low, ub_low, num_candidates, rng=rng_high, num_pert=20
+    )
+    diff_low = np.mean(np.sum(np.abs(c_low_pert - x_low) > 1e-10, axis=1) / num_dim_low)
+    diff_high = np.mean(
+        np.sum(np.abs(c_high_pert - x_low) > 1e-10, axis=1) / num_dim_low
+    )
+    assert diff_high > diff_low + 0.05
+
+    rng_low = np.random.default_rng(1)
+    rng_high = np.random.default_rng(1)
+    c_low_pert = generate_raasp_candidates_uniform(
+        x_high, lb_high, ub_high, num_candidates, rng=rng_low, num_pert=1
+    )
+    c_high_pert = generate_raasp_candidates_uniform(
+        x_high, lb_high, ub_high, num_candidates, rng=rng_high, num_pert=20
+    )
+    diff_low = np.mean(
+        np.sum(np.abs(c_low_pert - x_high) > 1e-10, axis=1) / num_dim_high
+    )
+    diff_high = np.mean(
+        np.sum(np.abs(c_high_pert - x_high) > 1e-10, axis=1) / num_dim_high
+    )
+    assert diff_high > diff_low + 0.05
+
+
 def test_gp_thompson_sample_returns_valid_indices():
     from enn.turbo.turbo_gp_fit import fit_gp
 
@@ -382,3 +422,24 @@ def test_gp_thompson_sample_returns_valid_indices():
     )
     assert len(indices) == num_arms
     assert all(0 <= i < len(x_cand) for i in indices)
+
+
+@pytest.mark.parametrize(
+    "n,expected",
+    [
+        (0, 1),
+        (1, 1),
+        (2, 2),
+        (3, 4),
+        (4, 4),
+        (5, 8),
+        (7, 8),
+        (8, 8),
+        (9, 16),
+        (15, 16),
+        (16, 16),
+        (17, 32),
+    ],
+)
+def test_next_power_of_2(n, expected):
+    assert _next_power_of_2(n) == expected
