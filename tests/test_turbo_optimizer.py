@@ -165,6 +165,67 @@ def test_turbo_enn_config_scale_x_flag_runs():
     assert opt.ask(num_arms=3).shape == (3, 2)
 
 
+def test_find_x_center_uses_top_k_for_mu_single_objective():
+    from enn.turbo.components.posterior_result import PosteriorResult
+    from enn.turbo.optimizer_config import ENNSurrogateConfig
+
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(0)
+    opt = _make_optimizer(
+        bounds=bounds,
+        config=turbo_enn_config(enn=ENNSurrogateConfig(k=3)),
+        rng=rng,
+    )
+    x_obs = rng.uniform(0.0, 1.0, size=(10, 2))
+    y_obs = np.arange(10, dtype=float)
+    seen: dict[str, tuple[int, int]] = {}
+
+    def _predict(x):
+        seen["shape"] = x.shape
+        mu = np.arange(x.shape[0], dtype=float).reshape(-1, 1)
+        return PosteriorResult(mu=mu, sigma=None)
+
+    opt._surrogate.predict = _predict
+    center = opt._find_x_center(x_obs, y_obs)
+    assert center.shape == (2,)
+    assert seen["shape"] == (3, 2)
+
+
+def test_find_x_center_uses_top_k_union_for_multiobjective():
+    from enn.turbo.components.posterior_result import PosteriorResult
+    from enn.turbo.optimizer_config import ENNSurrogateConfig
+
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(0)
+    opt = _make_optimizer(
+        bounds=bounds,
+        config=turbo_enn_config(enn=ENNSurrogateConfig(k=3)),
+        rng=rng,
+    )
+    x_obs = rng.uniform(0.0, 1.0, size=(5, 2))
+    y_obs = np.array(
+        [
+            [10.0, 0.0],
+            [9.0, 1.0],
+            [0.0, 10.0],
+            [1.0, 9.0],
+            [2.0, 2.0],
+        ],
+        dtype=float,
+    )
+    seen: dict[str, tuple[int, int]] = {}
+
+    def _predict(x):
+        seen["shape"] = x.shape
+        mu = np.zeros((x.shape[0], 2), dtype=float)
+        return PosteriorResult(mu=mu, sigma=None)
+
+    opt._surrogate.predict = _predict
+    center = opt._find_x_center(x_obs, y_obs)
+    assert center.shape == (2,)
+    assert seen["shape"] == (5, 2)
+
+
 def test_optimizer_with_trailing_obs():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)

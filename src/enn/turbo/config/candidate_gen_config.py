@@ -32,9 +32,6 @@ def const_num_candidates(n: int) -> NumCandidatesFn:
 @dataclass(frozen=True)
 class CandidateGenConfig:
     candidate_rv: CandidateRV = CandidateRV.SOBOL
-    # Callable returning num_candidates given runtime context.
-    #
-    # Default: min(5000, 100 * num_dim).
     num_candidates: NumCandidatesFn = field(
         default_factory=lambda: default_num_candidates
     )
