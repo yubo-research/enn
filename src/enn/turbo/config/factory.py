@@ -7,7 +7,7 @@ from .base import CandidateGenConfig, InitConfig
 from .candidate_gen_config import NumCandidatesFn, const_num_candidates
 from .enums import AcqType, CandidateRV
 from .init_strategies import HybridInit, LHDOnlyInit
-from .optimizer_config import OptimizerConfig
+from .optimizer_config import ObservationHistoryConfig, OptimizerConfig
 
 
 def _make_candidate_gen_config(
@@ -37,7 +37,7 @@ def turbo_one_config(
         surrogate=sur.GPSurrogateConfig(),
         acquisition=acq.DrawAcquisitionConfig(),
         acq_optimizer=acq.RAASPOptimizerConfig(),
-        trailing_obs=trailing_obs,
+        observation_history=ObservationHistoryConfig(trailing_obs=trailing_obs),
     )
 
 
@@ -56,7 +56,7 @@ def turbo_zero_config(
         surrogate=sur.NoSurrogateConfig(),
         acquisition=acq.RandomAcquisitionConfig(),
         acq_optimizer=acq.RAASPOptimizerConfig(),
-        trailing_obs=trailing_obs,
+        observation_history=ObservationHistoryConfig(trailing_obs=trailing_obs),
     )
 
 
@@ -95,7 +95,7 @@ def turbo_enn_config(
         surrogate=surrogate,
         acquisition=acquisition,
         acq_optimizer=acq_optimizer,
-        trailing_obs=trailing_obs,
+        observation_history=ObservationHistoryConfig(trailing_obs=trailing_obs),
     )
 
 
@@ -114,5 +114,5 @@ def lhd_only_config(
         surrogate=sur.NoSurrogateConfig(),
         acquisition=acq.RandomAcquisitionConfig(),
         acq_optimizer=acq.RAASPOptimizerConfig(),
-        trailing_obs=trailing_obs,
+        observation_history=ObservationHistoryConfig(trailing_obs=trailing_obs),
     )

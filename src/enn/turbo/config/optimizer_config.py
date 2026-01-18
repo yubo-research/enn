@@ -12,6 +12,15 @@ if TYPE_CHECKING:
     from .enums import CandidateRV
 
 
+@dataclass(frozen=True)
+class ObservationHistoryConfig:
+    trailing_obs: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.trailing_obs is not None and self.trailing_obs <= 0:
+            raise ValueError(f"trailing_obs must be > 0, got {self.trailing_obs}")
+
+
 def _default_acquisition():
     from .acquisition import RandomAcquisitionConfig
 
@@ -32,8 +41,7 @@ class OptimizerConfig:
     surrogate: SurrogateConfig = NoSurrogateConfig()
     acquisition: AcquisitionConfig = field(default_factory=_default_acquisition)
     acq_optimizer: AcqOptimizerConfig = field(default_factory=_default_acq_optimizer)
-
-    trailing_obs: int | None = None
+    observation_history: ObservationHistoryConfig = ObservationHistoryConfig()
 
     def __post_init__(self) -> None:
         from .validation import validate_optimizer_config
@@ -66,3 +74,7 @@ class OptimizerConfig:
         if isinstance(self.surrogate, ENNSurrogateConfig):
             return self.surrogate.k
         return None
+
+    @property
+    def trailing_obs(self) -> int | None:
+        return self.observation_history.trailing_obs
