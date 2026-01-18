@@ -105,3 +105,41 @@ def test_morbo_trust_region_get_incumbent_indices():
 def test_compute_full_box_bounds_1d():
     lb, ub = compute_full_box_bounds_1d(np.array([0.25, 0.5, 0.75]))
     assert np.allclose(lb, 0.0) and np.allclose(ub, 1.0)
+
+
+def test_turbo_trust_region_compute_bounds_1d_with_lengthscales():
+    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    tr = TurboTrustRegion(config=config, num_dim=3)
+    x_center = np.array([0.5, 0.5, 0.5])
+    lengthscales = np.array([0.5, 1.0, 2.0])
+    lb, ub = tr.compute_bounds_1d(x_center, lengthscales=lengthscales)
+    # Expected half-widths: lengthscales * length / 2 = [0.5, 1.0, 2.0] * 0.8 / 2
+    #                     = [0.2, 0.4, 0.8]
+    # lb = clip(0.5 - [0.2, 0.4, 0.8], 0, 1) = [0.3, 0.1, 0.0]
+    # ub = clip(0.5 + [0.2, 0.4, 0.8], 0, 1) = [0.7, 0.9, 1.0]
+    assert np.allclose(lb, [0.3, 0.1, 0.0])
+    assert np.allclose(ub, [0.7, 0.9, 1.0])
+
+
+def test_turbo_trust_region_expansion_and_contraction():
+    config = TurboTRConfig(length_init=0.4, length_min=0.1, length_max=1.6)
+    tr = TurboTrustRegion(config=config, num_dim=4)
+    tr.validate_request(num_arms=4)
+    assert tr.length == 0.4
+    # 3 consecutive successes should double the length (success_tolerance=3)
+    # Feed strictly increasing values to trigger success
+    values = []
+    for v in [1.0, 2.0, 3.0, 4.0]:
+        values.append(v)
+        tr.update(np.array(values, dtype=float))
+    # After 3 successes: length = min(2.0 * 0.4, 1.6) = 0.8
+    assert np.isclose(tr.length, 0.8), f"Expected 0.8 after expansion, got {tr.length}"
+    # Feed failures (values that don't improve) to trigger contraction
+    # failure_tolerance = ceil(max(4/4, 4/4)) = 1
+    for _ in range(tr.failure_tolerance):
+        values.append(values[-1])  # same value = no improvement
+        tr.update(np.array(values, dtype=float))
+    # After failure_tolerance failures: length = 0.5 * 0.8 = 0.4
+    assert np.isclose(
+        tr.length, 0.4
+    ), f"Expected 0.4 after contraction, got {tr.length}"
