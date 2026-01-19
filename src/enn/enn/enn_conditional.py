@@ -55,7 +55,9 @@ def _compute_total_n(enn: ENNLike, num_whatif: int, flags: PosteriorFlags) -> in
 
 
 def _compute_search_k(params: ENNParams, flags: PosteriorFlags, total_n: int) -> int:
-    return int(min(params.k + (1 if flags.exclude_nearest else 0), total_n))
+    return int(
+        min(params.k_num_neighbors + (1 if flags.exclude_nearest else 0), total_n)
+    )
 
 
 def _get_train_candidates(enn: ENNLike, x: np.ndarray, *, search_k: int) -> Candidates:
@@ -248,7 +250,10 @@ def _conditional_neighbors_nonempty_whatif(
         return batch_size, search_k, None
     candidates = _build_candidates(enn, x, x_whatif, y_whatif, search_k=search_k)
     neighbors = _select_effective_neighbors(
-        candidates, search_k=search_k, k=params.k, exclude_nearest=flags.exclude_nearest
+        candidates,
+        search_k=search_k,
+        k=params.k_num_neighbors,
+        exclude_nearest=flags.exclude_nearest,
     )
     return batch_size, search_k, neighbors
 

@@ -7,12 +7,15 @@ from enn.enn.enn_params import ENNParams
 
 
 def _params(
-    k: int, *, epi_var_scale: float = 1.0, ale_homoscedastic_scale: float = 0.0
+    k: int,
+    *,
+    epistemic_variance_scale: float = 1.0,
+    aleatoric_variance_scale: float = 0.0,
 ):
     return ENNParams(
-        k=int(k),
-        epi_var_scale=float(epi_var_scale),
-        ale_homoscedastic_scale=float(ale_homoscedastic_scale),
+        k_num_neighbors=int(k),
+        epistemic_variance_scale=float(epistemic_variance_scale),
+        aleatoric_variance_scale=float(aleatoric_variance_scale),
     )
 
 
@@ -60,7 +63,9 @@ def test_epistemic_nearest_neighbors_x_rescaling_is_invariant_when_scale_x_enabl
     train_y = train_x.sum(axis=1, keepdims=True)
     scale = np.array([[100.0, 0.1, 3.0, 1.0]])
     x_test = rng.standard_normal((10, 4))
-    params = ENNParams(k=7, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=7, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     model = EpistemicNearestNeighbors(
         train_x, train_y, 0.1 * np.ones_like(train_y), scale_x=True
     )

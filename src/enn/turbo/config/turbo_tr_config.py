@@ -26,6 +26,14 @@ class TRLengthConfig:
             raise ValueError(
                 f"length_min must be < length_max, got {self.length_min} >= {self.length_max}"
             )
+        if self.length_init > self.length_max:
+            raise ValueError(
+                f"length_init must be <= length_max, got {self.length_init} > {self.length_max}"
+            )
+        if self.length_min > self.length_init:
+            raise ValueError(
+                f"length_min must be <= length_init, got {self.length_min} > {self.length_init}"
+            )
 
 
 @dataclass(frozen=True)

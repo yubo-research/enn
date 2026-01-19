@@ -35,10 +35,10 @@ def test_scalar_incumbent_selector_noise_aware(scalar_test_data):
     assert idx == 0
 
 
-def test_scalar_incumbent_selector_no_mu_falls_back_to_y(scalar_test_data):
+def test_scalar_incumbent_selector_noise_aware_requires_mu(scalar_test_data):
     selector = ScalarIncumbentSelector(noise_aware=True)
-    idx = selector.select(scalar_test_data["y_obs"], None, scalar_test_data["rng"])
-    assert idx == 1
+    with pytest.raises(ValueError, match="noise_aware=True requires a surrogate"):
+        selector.select(scalar_test_data["y_obs"], None, scalar_test_data["rng"])
 
 
 def test_scalar_incumbent_selector_reset_is_noop():
@@ -63,6 +63,15 @@ def test_chebyshev_incumbent_selector_noise_aware():
     mu_obs = np.array([[0.3, 0.7], [0.6, 0.6], [0.7, 0.3]])
     idx = selector.select(y_obs, mu_obs, rng)
     assert 0 <= idx < 3
+
+
+def test_chebyshev_incumbent_selector_noise_aware_requires_mu():
+    selector = ChebyshevIncumbentSelector(num_metrics=2, alpha=0.05, noise_aware=True)
+    rng = np.random.default_rng(42)
+    selector.reset(rng)
+    y_obs = np.array([[0.2, 0.8], [0.5, 0.5], [0.8, 0.2]])
+    with pytest.raises(ValueError, match="noise_aware=True requires a surrogate"):
+        selector.select(y_obs, None, rng)
 
 
 def test_chebyshev_incumbent_selector_reset_resamples_weights():

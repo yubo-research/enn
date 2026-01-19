@@ -11,7 +11,9 @@ def test_conditional_posterior_matches_posterior_when_no_whatifs():
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
     x_test = rng.standard_normal((6, 3))
-    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
 
     x_whatif = np.zeros((0, 3), dtype=float)
@@ -40,7 +42,11 @@ def test_conditional_posterior_includes_whatif_points_and_does_not_mutate_index(
         x_whatif,
         y_whatif,
         x_test,
-        params=ENNParams(k=1, epi_var_scale=1.0, ale_homoscedastic_scale=0.0),
+        params=ENNParams(
+            k_num_neighbors=1,
+            epistemic_variance_scale=1.0,
+            aleatoric_variance_scale=0.0,
+        ),
         flags=PosteriorFlags(exclude_nearest=False, observation_noise=False),
     )
     neighbors_after = model.neighbors(x_test, k=2, exclude_nearest=False)
@@ -62,7 +68,9 @@ def test_conditional_posterior_exclude_nearest_drops_whatif_point():
     x_test = np.zeros((1, d), dtype=float)
     x_whatif = np.zeros((1, d), dtype=float)
     y_whatif = np.array([[100.0]], dtype=float)
-    params = ENNParams(k=1, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=1, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
 
     post_incl = model.conditional_posterior(
         x_whatif,
@@ -93,7 +101,9 @@ def test_conditional_posterior_matches_augmented_model_exactly():
     y_whatif = x_whatif.sum(axis=1, keepdims=True).astype(float)
 
     x_test = rng.standard_normal((5, d))
-    params = ENNParams(k=4, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=4, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
 
     enn_a = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)

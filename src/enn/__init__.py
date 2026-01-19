@@ -6,7 +6,6 @@ from .enn.enn import EpistemicNearestNeighbors
 from .enn.enn_fit import enn_fit
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
-    "Optimizer": (".turbo.optimizer", "Optimizer"),
     "create_optimizer": (".turbo.optimizer", "create_optimizer"),
     "Telemetry": (".turbo.turbo_utils", "Telemetry"),
     "OptimizerConfig": (".turbo.optimizer_config", "OptimizerConfig"),

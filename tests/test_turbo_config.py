@@ -58,6 +58,16 @@ def test_turbo_tr_config_invalid():
         TRLengthConfig(length_min=1.0, length_max=0.5)
 
 
+def test_turbo_tr_config_invalid_length_init_exceeds_max():
+    with pytest.raises(ValueError, match="length_init must be <= length_max"):
+        TRLengthConfig(length_init=2.0, length_max=1.0)
+
+
+def test_turbo_tr_config_invalid_length_min_exceeds_init():
+    with pytest.raises(ValueError, match="length_min must be <= length_init"):
+        TRLengthConfig(length_init=0.05, length_min=0.1)
+
+
 def test_morbo_tr_config():
     cfg = MorboTRConfig(multi_objective=MultiObjectiveConfig(num_metrics=3))
     assert cfg.num_metrics == 3
@@ -286,7 +296,7 @@ def test_optimizer_config_defaults():
     cfg = OptimizerConfig()
     assert isinstance(cfg.trust_region, TurboTRConfig)
     assert cfg.candidate_rv == CandidateRV.SOBOL
-    assert cfg.num_init is None
+    assert cfg.init.num_init is None
     assert isinstance(cfg.surrogate, NoSurrogateConfig)
 
 
@@ -305,6 +315,28 @@ def test_optimizer_config_lhd_only_requires_no_surrogate():
         surrogate=NoSurrogateConfig(),
     )
     assert config.num_metrics == 2
+
+
+def test_optimizer_config_no_surrogate_rejects_draw():
+    with pytest.raises(
+        ValueError,
+        match="NoSurrogateConfig is not compatible with DrawAcquisitionConfig",
+    ):
+        OptimizerConfig(
+            surrogate=NoSurrogateConfig(),
+            acquisition=DrawAcquisitionConfig(),
+        )
+
+
+def test_optimizer_config_no_surrogate_rejects_ucb():
+    with pytest.raises(
+        ValueError,
+        match="NoSurrogateConfig is not compatible with UCBAcquisitionConfig",
+    ):
+        OptimizerConfig(
+            surrogate=NoSurrogateConfig(),
+            acquisition=UCBAcquisitionConfig(),
+        )
 
 
 def test_optimizer_config_pareto_requires_nds():
@@ -426,7 +458,7 @@ def test_optimizer_config_properties():
     )
     assert cfg.surrogate.k == 15
     assert cfg.num_candidates(num_dim=3, num_arms=7) == 200
-    assert cfg.num_init == 10
+    assert cfg.init.num_init == 10
 
 
 def test_optimizer_config_num_metrics():

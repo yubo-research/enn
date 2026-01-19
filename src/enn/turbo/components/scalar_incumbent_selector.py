@@ -26,7 +26,12 @@ class ScalarIncumbentSelector:
         if y.ndim == 2:
             y = y[:, 0]
 
-        if self.noise_aware and mu_obs is not None:
+        if self.noise_aware:
+            if mu_obs is None:
+                raise ValueError(
+                    "noise_aware=True requires a surrogate that provides mu. "
+                    "Either use a GP/ENN surrogate or set noise_aware=False."
+                )
             mu = np.asarray(mu_obs, dtype=float)
             if mu.ndim == 2:
                 mu = mu[:, 0]

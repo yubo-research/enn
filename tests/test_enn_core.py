@@ -8,12 +8,15 @@ from enn.enn.enn_params import ENNParams, PosteriorFlags
 
 
 def _params(
-    k: int, *, epi_var_scale: float = 1.0, ale_homoscedastic_scale: float = 0.0
+    k: int,
+    *,
+    epistemic_variance_scale: float = 1.0,
+    aleatoric_variance_scale: float = 0.0,
 ):
     return ENNParams(
-        k=int(k),
-        epi_var_scale=float(epi_var_scale),
-        ale_homoscedastic_scale=float(ale_homoscedastic_scale),
+        k_num_neighbors=int(k),
+        epistemic_variance_scale=float(epistemic_variance_scale),
+        aleatoric_variance_scale=float(aleatoric_variance_scale),
     )
 
 
@@ -35,13 +38,19 @@ def test_epistemic_nearest_neighbors_posterior_and_var_scale():
 
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
     x_test = rng.standard_normal((4, 3))
-    params = ENNParams(k=3, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     post = model.posterior(x_test, params=params)
     assert post.mu.shape == (4, 1)
     assert post.se.shape == (4, 1)
     post_changed = model.posterior(
         x_test,
-        params=ENNParams(k=5, epi_var_scale=0.5, ale_homoscedastic_scale=0.0),
+        params=ENNParams(
+            k_num_neighbors=5,
+            epistemic_variance_scale=0.5,
+            aleatoric_variance_scale=0.0,
+        ),
         flags=PosteriorFlags(exclude_nearest=True),
     )
     assert post_changed.mu.shape == (4, 1)
@@ -58,7 +67,11 @@ def test_epistemic_nearest_neighbors_with_no_observations_returns_prior_like_pos
     x_test = rng.standard_normal((5, d))
     post = model.posterior(
         x_test,
-        params=ENNParams(k=3, epi_var_scale=1.0, ale_homoscedastic_scale=0.0),
+        params=ENNParams(
+            k_num_neighbors=3,
+            epistemic_variance_scale=1.0,
+            aleatoric_variance_scale=0.0,
+        ),
     )
     assert post.mu.shape == (5, 1)
     assert post.se.shape == (5, 1)
@@ -97,7 +110,11 @@ def test_batch_posterior_matches_individual_posterior_calls(flags, k_vals):
     model, _train_x, _train_y, _train_yvar, rng = conftest.make_enn_model()
     x_test = rng.standard_normal((4, 3))
     paramss = [
-        ENNParams(k=k, epi_var_scale=1.0 / (i + 1), ale_homoscedastic_scale=0.0)
+        ENNParams(
+            k_num_neighbors=k,
+            epistemic_variance_scale=1.0 / (i + 1),
+            aleatoric_variance_scale=0.0,
+        )
         for i, k in enumerate(k_vals)
     ]
     post_batch = model.batch_posterior(x_test, paramss, flags=flags)
@@ -119,7 +136,9 @@ def test_epistemic_nearest_neighbors_with_sobol_indices():
     yvar = 0.1 * np.ones_like(y)
     model = EpistemicNearestNeighbors(x, y, yvar)
     x_test = rng.standard_normal((4, d))
-    params = ENNParams(k=3, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     post = model.posterior(x_test, params=params)
     assert post.mu.shape == (4, 1) and post.se.shape == (4, 1)
     assert np.all(np.isfinite(post.mu)) and np.all(np.isfinite(post.se))
@@ -134,7 +153,9 @@ def test_epistemic_nearest_neighbors_multiple_metrics():
     yvar = 0.1 * np.ones_like(y)
     model = EpistemicNearestNeighbors(x, y, yvar)
     x_test = rng.standard_normal((4, d))
-    params = ENNParams(k=3, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     post = model.posterior(x_test, params=params)
     assert post.mu.shape == (4, 2) and post.se.shape == (4, 2)
 
@@ -157,7 +178,9 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
 
     x_test = rng.standard_normal((4, d))
-    params = ENNParams(k=10, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     post = model.batch_posterior(
         x_test, [params], flags=PosteriorFlags(exclude_nearest=True)
     )
@@ -179,7 +202,9 @@ def test_epistemic_nearest_neighbors_with_yvar_none():
     assert model.train_yvar is None
 
     x_test = rng.standard_normal((10, d))
-    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     post = model.posterior(x_test, params=params)
 
     assert post.mu.shape == (10, 1)
@@ -198,7 +223,9 @@ def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
 
     x_test = rng.standard_normal((5, d))
-    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     post = model.posterior(x_test, params=params)
     assert np.all(np.isfinite(post.mu))
     assert np.all(np.isfinite(post.se))

@@ -13,7 +13,9 @@ def test_conditional_posterior_function_draw_matches_unconditional_when_no_whati
     model = EpistemicNearestNeighbors(train_x, train_y, 0.1 * np.ones_like(train_y))
 
     x_test = rng.standard_normal((5, 3))
-    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     flags = PosteriorFlags(exclude_nearest=False, observation_noise=True)
     seeds = [1, 2, 3]
 
@@ -43,7 +45,9 @@ def test_conditional_posterior_function_draw_is_deterministic_and_does_not_mutat
 
     neighbors_before = model.neighbors(x_test, k=2, exclude_nearest=False)
 
-    params = ENNParams(k=1, epi_var_scale=1.0, ale_homoscedastic_scale=1.0)
+    params = ENNParams(
+        k_num_neighbors=1, epistemic_variance_scale=1.0, aleatoric_variance_scale=1.0
+    )
     flags = PosteriorFlags(exclude_nearest=False, observation_noise=True)
     seeds = [123, 124]
 
@@ -84,7 +88,9 @@ def test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_ne
     x_whatif = np.zeros((1, d), dtype=float)
     y_whatif = np.array([[100.0]], dtype=float)
 
-    params = ENNParams(k=1, epi_var_scale=1.0, ale_homoscedastic_scale=1.0)
+    params = ENNParams(
+        k_num_neighbors=1, epistemic_variance_scale=1.0, aleatoric_variance_scale=1.0
+    )
     seeds = [7]
 
     draw_base = model.posterior_function_draw(x_test, params, function_seeds=seeds)[
@@ -121,7 +127,9 @@ def test_conditional_posterior_function_draw_matches_augmented_model_exactly():
     y_whatif = x_whatif.sum(axis=1, keepdims=True).astype(float)
 
     x_test = rng.standard_normal((5, d))
-    params = ENNParams(k=4, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+    params = ENNParams(
+        k_num_neighbors=4, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
     flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
     function_seeds = [11, 12, 13]
 

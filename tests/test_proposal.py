@@ -23,4 +23,4 @@ def test_mk_enn_builds_model_and_params():
         rng=rng,
     )
     assert model is not None and params is not None
-    assert params.k == 3
+    assert params.k_num_neighbors == 3

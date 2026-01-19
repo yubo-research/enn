@@ -51,7 +51,12 @@ class ChebyshevIncumbentSelector:
                 f"Expected y with {self.num_metrics} metrics, got {y.shape}"
             )
 
-        if self.noise_aware and mu_obs is not None:
+        if self.noise_aware:
+            if mu_obs is None:
+                raise ValueError(
+                    "noise_aware=True requires a surrogate that provides mu. "
+                    "Either use a GP/ENN surrogate or set noise_aware=False."
+                )
             values = np.asarray(mu_obs, dtype=float)
         else:
             values = y

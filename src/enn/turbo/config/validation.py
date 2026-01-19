@@ -9,6 +9,7 @@ def validate_optimizer_config(cfg: Any) -> None:
         HnROptimizerConfig,
         NDSOptimizerConfig,
         ParetoAcquisitionConfig,
+        UCBAcquisitionConfig,
     )
     from .init_strategies import LHDOnlyInit
     from .surrogate import GPSurrogateConfig, NoSurrogateConfig
@@ -17,6 +18,18 @@ def validate_optimizer_config(cfg: Any) -> None:
         if not isinstance(cfg.surrogate, NoSurrogateConfig):
             raise ValueError(
                 "init_strategy='lhd_only' requires NoSurrogateConfig surrogate"
+            )
+
+    if isinstance(cfg.surrogate, NoSurrogateConfig):
+        if isinstance(cfg.acquisition, DrawAcquisitionConfig):
+            raise ValueError(
+                "DrawAcquisitionConfig (Thompson sampling) requires a surrogate. "
+                "NoSurrogateConfig is not compatible with DrawAcquisitionConfig."
+            )
+        if isinstance(cfg.acquisition, UCBAcquisitionConfig):
+            raise ValueError(
+                "UCBAcquisitionConfig requires a surrogate. "
+                "NoSurrogateConfig is not compatible with UCBAcquisitionConfig."
             )
 
     if isinstance(cfg.acquisition, ParetoAcquisitionConfig):

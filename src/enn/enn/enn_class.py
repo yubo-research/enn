@@ -163,14 +163,14 @@ class EpistemicNearestNeighbors:
         if exclude_nearest:
             if len(self) <= 1:
                 raise ValueError(len(self))
-            search_k = int(min(params.k + 1, len(self)))
+            search_k = int(min(params.k_num_neighbors + 1, len(self)))
         else:
-            search_k = int(min(params.k, len(self)))
+            search_k = int(min(params.k_num_neighbors, len(self)))
         dist2s_full, idx_full = self._search_index(
             x, search_k=search_k, exclude_nearest=exclude_nearest
         )
         available_k = search_k - 1 if exclude_nearest else search_k
-        k = min(params.k, available_k)
+        k = min(params.k_num_neighbors, available_k)
         if k > dist2s_full.shape[1]:
             raise RuntimeError(
                 f"k={k} exceeds available columns={dist2s_full.shape[1]}"
@@ -223,8 +223,8 @@ class EpistemicNearestNeighbors:
         if y_scale is None:
             y_scale = self._y_scale
         dist2s_expanded = dist2s[..., np.newaxis]
-        var_epi = params.epi_var_scale * dist2s_expanded
-        var_ale = params.ale_homoscedastic_scale
+        var_epi = params.epistemic_variance_scale * dist2s_expanded
+        var_ale = params.aleatoric_variance_scale
         if yvar_neighbors is not None:
             var_ale = var_ale + yvar_neighbors / y_scale**2
         w = 1.0 / (self._EPS_VAR + var_epi + var_ale)
@@ -302,7 +302,7 @@ class EpistemicNearestNeighbors:
         mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
         se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
 
-        k_values = {p.k for p in paramss}
+        k_values = {p.k_num_neighbors for p in paramss}
         if len(k_values) == 1 and len(self) > 0:
             neighbor_data = self._get_neighbor_data(
                 x, paramss[0], flags.exclude_nearest

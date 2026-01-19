@@ -72,7 +72,11 @@ def mk_enn(
             params_warm_start=params_warm_start,
         )
     else:
-        fitted_params = ENNParams(k=k, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
+        fitted_params = ENNParams(
+            k_num_neighbors=k,
+            epistemic_variance_scale=1.0,
+            aleatoric_variance_scale=0.0,
+        )
 
     return enn_model, fitted_params
 

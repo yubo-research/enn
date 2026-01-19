@@ -42,7 +42,7 @@ class Optimizer:
             strategy
             if strategy is not None
             else config.init.init_strategy.create_runtime_strategy(
-                bounds=self._bounds, rng=self._rng, num_init=config.num_init
+                bounds=self._bounds, rng=self._rng, num_init=config.init.num_init
             )
         )
         self._tr_state = config.trust_region.build(
