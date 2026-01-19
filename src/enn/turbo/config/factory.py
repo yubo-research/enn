@@ -3,10 +3,12 @@ from __future__ import annotations
 from . import acquisition as acq
 from . import surrogate as sur
 from . import trust_region as tr
-from .base import CandidateGenConfig, InitConfig
-from .candidate_gen_config import NumCandidatesFn, const_num_candidates
+from .candidate_gen_config import (
+    CandidateGenConfig,
+    NumCandidatesFn,
+    const_num_candidates,
+)
 from .enums import AcqType, CandidateRV
-from .init_strategies import HybridInit, LHDOnlyInit
 from .optimizer_config import ObservationHistoryConfig, OptimizerConfig
 
 
@@ -30,10 +32,12 @@ def turbo_one_config(
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
 ) -> OptimizerConfig:
+    from .init_config import InitConfig
+
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=_make_candidate_gen_config(candidate_rv, num_candidates),
-        init=InitConfig(init_strategy=HybridInit(), num_init=num_init),
+        init=InitConfig(num_init=num_init),
         surrogate=sur.GPSurrogateConfig(),
         acquisition=acq.DrawAcquisitionConfig(),
         acq_optimizer=acq.RAASPOptimizerConfig(),
@@ -49,10 +53,12 @@ def turbo_zero_config(
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
 ) -> OptimizerConfig:
+    from .init_config import InitConfig
+
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=_make_candidate_gen_config(candidate_rv, num_candidates),
-        init=InitConfig(init_strategy=HybridInit(), num_init=num_init),
+        init=InitConfig(num_init=num_init),
         surrogate=sur.NoSurrogateConfig(),
         acquisition=acq.RandomAcquisitionConfig(),
         acq_optimizer=acq.RAASPOptimizerConfig(),
@@ -69,6 +75,8 @@ def turbo_enn_config(
     trailing_obs: int | None = None,
     acq_type: AcqType = AcqType.PARETO,
 ) -> OptimizerConfig:
+    from .init_config import InitConfig
+
     if acq_type == AcqType.PARETO:
         acquisition = acq.ParetoAcquisitionConfig()
         acq_optimizer = acq.NDSOptimizerConfig()
@@ -91,7 +99,7 @@ def turbo_enn_config(
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=candidates or CandidateGenConfig(),
-        init=InitConfig(init_strategy=HybridInit(), num_init=num_init),
+        init=InitConfig(num_init=num_init),
         surrogate=surrogate,
         acquisition=acquisition,
         acq_optimizer=acq_optimizer,
@@ -107,6 +115,9 @@ def lhd_only_config(
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
 ) -> OptimizerConfig:
+    from .init_config import InitConfig
+    from .init_strategies import LHDOnlyInit
+
     return OptimizerConfig(
         trust_region=trust_region or tr.NoTRConfig(),
         candidates=_make_candidate_gen_config(candidate_rv, num_candidates),

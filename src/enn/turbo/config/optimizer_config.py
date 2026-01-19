@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from .base import CandidateGenConfig, InitConfig
+from .candidate_gen_config import CandidateGenConfig
+from .init_config import InitConfig
 from .surrogate import ENNSurrogateConfig, NoSurrogateConfig, SurrogateConfig
 from .trust_region import TrustRegionConfig, TurboTRConfig
 

@@ -24,11 +24,7 @@ class MorboTrustRegion:
         from .turbo_trust_region import TurboTrustRegion
 
         self._config = config
-        inner_config = TurboTRConfig(
-            length_init=config.length_init,
-            length_min=config.length_min,
-            length_max=config.length_max,
-        )
+        inner_config = TurboTRConfig(length=config.length)
         self._tr = TurboTrustRegion(
             config=inner_config,
             num_dim=num_dim,

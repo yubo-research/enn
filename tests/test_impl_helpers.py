@@ -8,6 +8,7 @@ from enn.turbo.config import (
     TurboTRConfig,
     turbo_zero_config,
 )
+from enn.turbo.config.turbo_tr_config import TRLengthConfig
 from enn.turbo.impl_helpers import (
     estimate_y_passthrough,
     get_x_center_fallback,
@@ -58,7 +59,9 @@ def test_get_x_center_fallback_with_tr_state():
     from enn.turbo.turbo_trust_region import TurboTrustRegion
 
     rng = np.random.default_rng(42)
-    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    config = TurboTRConfig(
+        length=TRLengthConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    )
     tr_state = TurboTrustRegion(config=config, num_dim=2)
     x_obs = [[0.5, 0.5], [0.3, 0.7], [0.8, 0.2]]
     y_obs = [1.0, 3.0, 2.0]
@@ -82,7 +85,9 @@ def test_handle_restart_clear_always():
 def test_handle_restart_check_multi_objective_single():
     from enn.turbo.turbo_trust_region import TurboTrustRegion
 
-    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    config = TurboTRConfig(
+        length=TRLengthConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    )
     tr_state = TurboTrustRegion(config=config, num_dim=2)
     x = [1, 2, 3]
     y = [4, 5, 6]

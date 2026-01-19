@@ -7,7 +7,7 @@ from scipy.stats import qmc
 from enn.turbo.config.morbo_tr_config import MorboTRConfig
 from enn.turbo.config.no_tr_config import NoTRConfig
 from enn.turbo.config.rescalarize import Rescalarize
-from enn.turbo.config.turbo_tr_config import TurboTRConfig
+from enn.turbo.config.turbo_tr_config import TRLengthConfig, TurboTRConfig
 from enn.turbo.morbo_trust_region import MorboTrustRegion
 from enn.turbo.no_trust_region import NoTrustRegion
 from enn.turbo.tr_helpers import (
@@ -66,7 +66,9 @@ def test_no_trust_region_generate_candidates():
 
 
 def test_turbo_trust_region_validate_request():
-    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    config = TurboTRConfig(
+        length=TRLengthConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    )
     tr = TurboTrustRegion(config=config, num_dim=3)
     tr.validate_request(4)
     # First call sets num_arms=4; changing it raises
@@ -75,7 +77,9 @@ def test_turbo_trust_region_validate_request():
 
 
 def test_turbo_trust_region_get_incumbent_indices():
-    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    config = TurboTRConfig(
+        length=TRLengthConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    )
     tr = TurboTrustRegion(config=config, num_dim=3)
     rng = np.random.default_rng(42)
     y = np.array([1.0, 5.0, 3.0, 2.0, 4.0])
@@ -108,7 +112,9 @@ def test_compute_full_box_bounds_1d():
 
 
 def test_turbo_trust_region_compute_bounds_1d_with_lengthscales():
-    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    config = TurboTRConfig(
+        length=TRLengthConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    )
     tr = TurboTrustRegion(config=config, num_dim=3)
     x_center = np.array([0.5, 0.5, 0.5])
     lengthscales = np.array([0.5, 1.0, 2.0])
@@ -122,7 +128,9 @@ def test_turbo_trust_region_compute_bounds_1d_with_lengthscales():
 
 
 def test_turbo_trust_region_expansion_and_contraction():
-    config = TurboTRConfig(length_init=0.4, length_min=0.1, length_max=1.6)
+    config = TurboTRConfig(
+        length=TRLengthConfig(length_init=0.4, length_min=0.1, length_max=1.6)
+    )
     tr = TurboTrustRegion(config=config, num_dim=4)
     tr.validate_request(num_arms=4)
     assert tr.length == 0.4

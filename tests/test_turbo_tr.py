@@ -5,13 +5,15 @@ from scipy.stats import qmc
 
 from enn.turbo.config.morbo_tr_config import MorboTRConfig
 from enn.turbo.config.rescalarize import Rescalarize
-from enn.turbo.config.turbo_tr_config import TurboTRConfig
+from enn.turbo.config.turbo_tr_config import TRLengthConfig, TurboTRConfig
 from enn.turbo.morbo_trust_region import MorboTrustRegion
 from enn.turbo.turbo_trust_region import TurboTrustRegion
 
 
 def test_trust_region_state_update_and_restart_and_bounds():
-    config = TurboTRConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    config = TurboTRConfig(
+        length=TRLengthConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
+    )
     state = TurboTrustRegion(config=config, num_dim=2)
     # Initialize with num_arms before update() works
     state.validate_request(num_arms=2)

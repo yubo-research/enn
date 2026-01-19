@@ -1,4 +1,5 @@
 from __future__ import annotations
+from enn.turbo.config.turbo_tr_config import TRLengthConfig
 
 import pytest
 
@@ -38,7 +39,9 @@ def test_turbo_tr_config_defaults():
 
 
 def test_turbo_tr_config_custom():
-    cfg = TurboTRConfig(length_init=0.5, length_min=0.01, length_max=2.0)
+    cfg = TurboTRConfig(
+        length=TRLengthConfig(length_init=0.5, length_min=0.01, length_max=2.0)
+    )
     assert cfg.length_init == 0.5
     assert cfg.length_min == 0.01
     assert cfg.length_max == 2.0
@@ -46,9 +49,9 @@ def test_turbo_tr_config_custom():
 
 def test_turbo_tr_config_invalid():
     with pytest.raises(ValueError, match="length_init must be > 0"):
-        TurboTRConfig(length_init=0)
+        TRLengthConfig(length_init=0)
     with pytest.raises(ValueError, match="length_min must be < length_max"):
-        TurboTRConfig(length_min=1.0, length_max=0.5)
+        TRLengthConfig(length_min=1.0, length_max=0.5)
 
 
 def test_morbo_tr_config():
@@ -60,6 +63,27 @@ def test_morbo_tr_config():
 def test_morbo_tr_config_invalid():
     with pytest.raises(ValueError, match="num_metrics must be >= 2"):
         MorboTRConfig(num_metrics=1)
+
+
+def test_morbo_tr_config_length_defaults():
+    cfg = MorboTRConfig(num_metrics=2)
+    assert cfg.length_init == 0.8
+    assert cfg.length_min == 0.5**7
+    assert cfg.length_max == 1.6
+
+
+def test_morbo_tr_config_custom_length():
+    cfg = MorboTRConfig(
+        num_metrics=2,
+        length=TRLengthConfig(
+            length_init=0.5,
+            length_min=0.01,
+            length_max=2.0,
+        ),
+    )
+    assert cfg.length_init == 0.5
+    assert cfg.length_min == 0.01
+    assert cfg.length_max == 2.0
 
 
 def test_no_tr_config():

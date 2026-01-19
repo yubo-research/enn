@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class TurboTRConfig:
+class TRLengthConfig:
     length_init: float = 0.8
     length_min: float = 0.5**7
     length_max: float = 1.6
@@ -26,6 +26,23 @@ class TurboTRConfig:
             raise ValueError(
                 f"length_min must be < length_max, got {self.length_min} >= {self.length_max}"
             )
+
+
+@dataclass(frozen=True)
+class TurboTRConfig:
+    length: TRLengthConfig = TRLengthConfig()
+
+    @property
+    def length_init(self) -> float:
+        return self.length.length_init
+
+    @property
+    def length_min(self) -> float:
+        return self.length.length_min
+
+    @property
+    def length_max(self) -> float:
+        return self.length.length_max
 
     def build(
         self,
