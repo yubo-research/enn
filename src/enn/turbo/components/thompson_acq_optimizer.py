@@ -23,7 +23,6 @@ class ThompsonAcqOptimizer:
         num_candidates = len(x_cand)
         samples = surrogate.sample(x_cand, num_arms, rng)
 
-        # All surrogates should return: (num_samples, num_candidates, num_metrics)
         assert samples.ndim == 3, f"samples.ndim={samples.ndim}, expected 3"
         assert (
             samples.shape[0] == num_arms
@@ -36,7 +35,6 @@ class ThompsonAcqOptimizer:
         if tr_state is not None and hasattr(tr_state, "scalarize"):
             indices = []
             for i in range(num_arms):
-                # samples[i] shape: (num_candidates, num_metrics)
                 sample_i = samples[i]
                 assert sample_i.shape == (num_candidates, num_metrics), (
                     f"sample_i.shape={sample_i.shape}, "
@@ -50,6 +48,5 @@ class ThompsonAcqOptimizer:
                 indices.append(idx)
             return x_cand[indices]
         else:
-            # Single-objective: just pick argmax of first (only) metric
             arm_indices = np.argmax(samples[:, :, 0], axis=1)
             return x_cand[arm_indices]

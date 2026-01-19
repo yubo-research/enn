@@ -39,10 +39,10 @@ class MorboTrustRegion:
         self.incumbent_selector = ChebyshevIncumbentSelector(
             num_metrics=self._num_metrics,
             alpha=self._alpha,
-            noise_aware=True,
+            noise_aware=config.noise_aware,
         )
         self.incumbent_selector.reset(rng)
-        self._weights = self.incumbent_selector._weights
+        self._weights = self.incumbent_selector.weights
 
         self._y_min: np.ndarray | Any | None = None
         self._y_max: np.ndarray | Any | None = None
@@ -69,7 +69,7 @@ class MorboTrustRegion:
 
     def resample_weights(self, rng: Generator) -> None:
         self.incumbent_selector.reset(rng)
-        self._weights = self.incumbent_selector._weights
+        self._weights = self.incumbent_selector.weights
 
     def _update_ranges(self, y_obs, prev_n):
         y_min_all, y_max_all = y_obs.min(axis=0), y_obs.max(axis=0)
@@ -208,19 +208,7 @@ class MorboTrustRegion:
         if n == 0:
             return np.array([], dtype=int)
 
-        if y.shape[1] == 2:
-            from enn.enn.enn_util import pareto_front_2d_maximize
+        from nds import ndomsort
 
-            return pareto_front_2d_maximize(y[:, 0], y[:, 1])
-
-        dominated = np.zeros(n, dtype=bool)
-        for i in range(n):
-            if dominated[i]:
-                continue
-            for j in range(n):
-                if i == j or dominated[j]:
-                    continue
-                if np.all(y[j] >= y[i]) and np.any(y[j] > y[i]):
-                    dominated[i] = True
-                    break
-        return np.where(~dominated)[0]
+        idx_front = np.array(ndomsort.non_domin_sort(-y, only_front_indices=True))
+        return np.where(idx_front == 0)[0]

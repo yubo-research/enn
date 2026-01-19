@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class ScalarIncumbentSelector:
-    noise_aware: bool = True
+    noise_aware: bool  # No default - must be explicitly set by caller
 
     def select(
         self,

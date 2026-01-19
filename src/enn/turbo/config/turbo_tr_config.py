@@ -31,6 +31,7 @@ class TRLengthConfig:
 @dataclass(frozen=True)
 class TurboTRConfig:
     length: TRLengthConfig = TRLengthConfig()
+    noise_aware: bool = False
 
     @property
     def length_init(self) -> float:
@@ -50,9 +51,11 @@ class TurboTRConfig:
         num_dim: int,
         rng: Generator,  # noqa: ARG002
     ) -> TrustRegion:
+        from ..components.incumbent_selector import ScalarIncumbentSelector
         from ..turbo_trust_region import TurboTrustRegion
 
         return TurboTrustRegion(
             config=self,
             num_dim=num_dim,
+            incumbent_selector=ScalarIncumbentSelector(noise_aware=self.noise_aware),
         )

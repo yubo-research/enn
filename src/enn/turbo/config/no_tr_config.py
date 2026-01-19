@@ -11,12 +11,19 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class NoTRConfig:
+    noise_aware: bool = False
+
     def build(
         self,
         *,
         num_dim: int,
         rng: Generator,  # noqa: ARG002
     ) -> TrustRegion:
+        from ..components.incumbent_selector import ScalarIncumbentSelector
         from ..no_trust_region import NoTrustRegion
 
-        return NoTrustRegion(config=self, num_dim=num_dim)
+        return NoTrustRegion(
+            config=self,
+            num_dim=num_dim,
+            incumbent_selector=ScalarIncumbentSelector(noise_aware=self.noise_aware),
+        )

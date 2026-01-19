@@ -45,7 +45,6 @@ class CandidateGenConfig:
             raise ValueError(
                 f"num_candidates must be callable, got {type(self.num_candidates)!r}"
             )
-        # Basic sanity check (helps catch accidental constants like 0).
         test_n = int(self.num_candidates(num_dim=1, num_arms=1))
         if test_n <= 0:
             raise ValueError(f"num_candidates must be > 0, got {test_n}")

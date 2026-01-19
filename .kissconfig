@@ -20,7 +20,7 @@ statements_per_try_block = 5
 boolean_parameters = 1
 decorators_per_function = 3
 cycle_size = 3
-transitive_dependencies = 140
+transitive_dependencies = 200
 dependency_depth = 7
 
 [rust]

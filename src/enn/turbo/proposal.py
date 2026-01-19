@@ -35,7 +35,6 @@ def mk_enn(
     if y_obs_array.size == 0:
         return None, None
 
-    # Preserve multi-metric shape if present, otherwise reshape to (n, 1)
     if y_obs_array.ndim == 1:
         y = y_obs_array.reshape(-1, 1)
     else:

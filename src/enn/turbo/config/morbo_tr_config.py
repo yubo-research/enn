@@ -13,11 +13,11 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class MorboTRConfig:
+class MultiObjectiveConfig:
+    """Configuration for multi-objective optimization."""
+
     num_metrics: int
     alpha: float = 0.05
-    length: TRLengthConfig = TRLengthConfig()
-    rescalarize: Rescalarize = Rescalarize.ON_PROPOSE
 
     def __post_init__(self) -> None:
         if self.num_metrics < 2:
@@ -26,6 +26,36 @@ class MorboTRConfig:
             )
         if self.alpha <= 0:
             raise ValueError(f"alpha must be > 0, got {self.alpha}")
+
+
+@dataclass(frozen=True)
+class RescalePolicyConfig:
+    """Configuration for rescalarization policy."""
+
+    rescalarize: Rescalarize = Rescalarize.ON_PROPOSE
+
+
+@dataclass(frozen=True)
+class MorboTRConfig:
+    multi_objective: MultiObjectiveConfig
+    length: TRLengthConfig = TRLengthConfig()
+    rescale_policy: RescalePolicyConfig = RescalePolicyConfig()
+    noise_aware: bool = False
+
+    @property
+    def rescalarize(self) -> Rescalarize:
+        """Backward-compatible access to rescalarize."""
+        return self.rescale_policy.rescalarize
+
+    @property
+    def num_metrics(self) -> int:
+        """Backward-compatible access to num_metrics."""
+        return self.multi_objective.num_metrics
+
+    @property
+    def alpha(self) -> float:
+        """Backward-compatible access to alpha."""
+        return self.multi_objective.alpha
 
     @property
     def length_init(self) -> float:

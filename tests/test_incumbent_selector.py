@@ -66,7 +66,7 @@ def test_chebyshev_incumbent_selector_noise_aware():
 
 
 def test_chebyshev_incumbent_selector_reset_resamples_weights():
-    selector = ChebyshevIncumbentSelector(num_metrics=2, alpha=0.05)
+    selector = ChebyshevIncumbentSelector(num_metrics=2, noise_aware=False, alpha=0.05)
     rng1 = np.random.default_rng(42)
     rng2 = np.random.default_rng(123)
     selector.reset(rng1)
@@ -80,7 +80,7 @@ def test_chebyshev_incumbent_selector_invalid_num_metrics():
     import pytest
 
     with pytest.raises(ValueError, match="num_metrics must be >= 1"):
-        ChebyshevIncumbentSelector(num_metrics=0)
+        ChebyshevIncumbentSelector(num_metrics=0, noise_aware=False, alpha=0.05)
 
 
 def test_no_incumbent_selector_always_returns_zero(scalar_test_data):

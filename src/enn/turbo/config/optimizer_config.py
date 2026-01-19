@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from .candidate_gen_config import CandidateGenConfig
 from .init_config import InitConfig
-from .surrogate import ENNSurrogateConfig, NoSurrogateConfig, SurrogateConfig
+from .surrogate import NoSurrogateConfig, SurrogateConfig
 from .trust_region import TrustRegionConfig, TurboTRConfig
 
 if TYPE_CHECKING:
@@ -69,12 +69,6 @@ class OptimizerConfig:
     @property
     def num_init(self) -> int | None:
         return self.init.num_init
-
-    @property
-    def k(self) -> int | None:
-        if isinstance(self.surrogate, ENNSurrogateConfig):
-            return self.surrogate.k
-        return None
 
     @property
     def trailing_obs(self) -> int | None:

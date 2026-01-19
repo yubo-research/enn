@@ -4,6 +4,7 @@ import numpy as np
 
 from enn.turbo.config import (
     MorboTRConfig,
+    MultiObjectiveConfig,
     NoTRConfig,
     TurboTRConfig,
     turbo_zero_config,
@@ -35,7 +36,8 @@ def test_trust_region_config_build_turbo_tr():
 
 
 def test_trust_region_config_build_morbo_tr():
-    _build_and_verify_tr(MorboTRConfig(num_metrics=2), np.random.default_rng(42))
+    config = MorboTRConfig(multi_objective=MultiObjectiveConfig(num_metrics=2))
+    _build_and_verify_tr(config, np.random.default_rng(42))
 
 
 def test_get_x_center_fallback_empty():
@@ -101,11 +103,15 @@ def test_handle_restart_check_multi_objective_single():
 
 
 def test_handle_restart_check_multi_objective_multi():
+    from enn.turbo.config.morbo_tr_config import RescalePolicyConfig
     from enn.turbo.config.rescalarize import Rescalarize
     from enn.turbo.morbo_trust_region import MorboTrustRegion
 
     rng = np.random.default_rng(42)
-    config = MorboTRConfig(num_metrics=2, rescalarize=Rescalarize.ON_PROPOSE)
+    config = MorboTRConfig(
+        multi_objective=MultiObjectiveConfig(num_metrics=2),
+        rescale_policy=RescalePolicyConfig(rescalarize=Rescalarize.ON_PROPOSE),
+    )
     tr_state = MorboTrustRegion(config=config, num_dim=2, rng=rng)
     x = [1, 2, 3]
     y = [4, 5, 6]

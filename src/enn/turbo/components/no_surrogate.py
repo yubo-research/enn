@@ -10,6 +10,8 @@ from .surrogate_result import SurrogateResult
 if TYPE_CHECKING:
     from numpy.random import Generator
 
+    from .incumbent_selector import IncumbentSelector
+
 
 class NoSurrogate:
     def __init__(self) -> None:
@@ -43,3 +45,15 @@ class NoSurrogate:
         n = len(x)
         num_metrics = self._y_obs.shape[1] if hasattr(self, "_y_obs") else 1
         return rng.standard_normal((num_samples, n, num_metrics))
+
+    def find_x_center(
+        self,
+        x_obs: np.ndarray,
+        y_obs: np.ndarray,
+        selector: IncumbentSelector,
+        rng: Generator,
+    ) -> np.ndarray | None:
+        if len(y_obs) == 0:
+            return None
+        best_idx = selector.select(y_obs, None, rng)
+        return x_obs[best_idx]

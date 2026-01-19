@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
     from ..config.surrogate import ENNSurrogateConfig
+    from .incumbent_selector import IncumbentSelector
 
 
 class ENNSurrogate:
@@ -66,9 +67,51 @@ class ENNSurrogate:
             x, self._params, function_seeds=function_seeds
         )
 
-        # ENN output: (num_samples, num_candidates, num_metrics)
         assert samples.shape == (num_samples, num_candidates, num_metrics), (
             f"ENN samples shape mismatch: got {samples.shape}, "
             f"expected ({num_samples}, {num_candidates}, {num_metrics})"
         )
         return samples
+
+    def find_x_center(
+        self,
+        x_obs: np.ndarray,
+        y_obs: np.ndarray,
+        selector: IncumbentSelector,
+        rng: Generator,
+    ) -> np.ndarray | None:
+        if len(y_obs) == 0:
+            return None
+
+        x_array = np.asarray(x_obs, dtype=float)
+        y_array = np.asarray(y_obs, dtype=float)
+
+        k = self._config.k
+        if k is None:
+            try:
+                mu = self.predict(x_obs).mu
+            except RuntimeError:
+                mu = None
+            best_idx = selector.select(y_array, mu, rng)
+            return x_array[best_idx]
+
+        if y_array.ndim == 2 and y_array.shape[1] > 1:
+            num_top = min(k, len(y_array))
+            union_indices: set[int] = set()
+            for m in range(y_array.shape[1]):
+                top_m = np.argpartition(-y_array[:, m], num_top - 1)[:num_top]
+                union_indices.update(top_m.tolist())
+            top_indices = np.array(sorted(union_indices), dtype=int)
+        else:
+            y_flat = y_array[:, 0] if y_array.ndim == 2 else y_array
+            num_top = min(k, len(y_flat))
+            top_indices = np.argpartition(-y_flat, num_top - 1)[:num_top]
+
+        x_top = x_array[top_indices]
+        y_top = y_array[top_indices]
+        try:
+            mu_top = self.predict(x_top).mu
+        except RuntimeError:
+            mu_top = None
+        best_idx = selector.select(y_top, mu_top, rng)
+        return x_top[best_idx]

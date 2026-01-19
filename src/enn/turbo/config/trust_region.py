@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from .morbo_tr_config import MorboTRConfig
+from .morbo_tr_config import MorboTRConfig, MultiObjectiveConfig, RescalePolicyConfig
 from .no_tr_config import NoTRConfig
-from .turbo_tr_config import TurboTRConfig
+from .turbo_tr_config import TRLengthConfig, TurboTRConfig
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -25,4 +25,12 @@ class TrustRegionConfig(Protocol):
         ...
 
 
-__all__ = ["MorboTRConfig", "NoTRConfig", "TrustRegionConfig", "TurboTRConfig"]
+__all__ = [
+    "MorboTRConfig",
+    "MultiObjectiveConfig",
+    "NoTRConfig",
+    "RescalePolicyConfig",
+    "TRLengthConfig",
+    "TrustRegionConfig",
+    "TurboTRConfig",
+]

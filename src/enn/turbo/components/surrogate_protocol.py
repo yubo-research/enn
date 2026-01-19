@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
+    from .incumbent_selector import IncumbentSelector
+
 
 class Surrogate(Protocol):
     def fit(
@@ -24,3 +26,11 @@ class Surrogate(Protocol):
     def predict(self, x: np.ndarray) -> PosteriorResult: ...
 
     def sample(self, x: np.ndarray, num_samples: int, rng: Generator) -> np.ndarray: ...
+
+    def find_x_center(
+        self,
+        x_obs: np.ndarray,
+        y_obs: np.ndarray,
+        selector: IncumbentSelector,
+        rng: Generator,
+    ) -> np.ndarray | None: ...

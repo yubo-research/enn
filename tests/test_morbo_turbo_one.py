@@ -4,7 +4,7 @@ import numpy as np
 
 from enn import create_optimizer
 from enn.benchmarks import DoubleAckley
-from enn.turbo.config import MorboTRConfig, turbo_one_config
+from enn.turbo.config import MorboTRConfig, MultiObjectiveConfig, turbo_one_config
 
 
 def test_morbo_turbo_one_two_rounds():
@@ -18,7 +18,11 @@ def test_morbo_turbo_one_two_rounds():
     objective = DoubleAckley(noise=noise, rng=rng)
     bounds = np.array([objective.bounds] * num_dim, dtype=float)
 
-    config = turbo_one_config(trust_region=MorboTRConfig(num_metrics=num_metrics))
+    config = turbo_one_config(
+        trust_region=MorboTRConfig(
+            multi_objective=MultiObjectiveConfig(num_metrics=num_metrics)
+        )
+    )
     optimizer = create_optimizer(bounds=bounds, config=config, rng=rng)
 
     # Run enough iterations for GP to kick in (usually after ~10-20 points)

@@ -54,9 +54,6 @@ class Optimizer:
             None if config.trailing_obs is None else int(config.trailing_obs)
         )
         self._gp_num_steps = 50
-        self._k = config.k
-        if self._k is not None and self._k < 3:
-            raise ValueError(f"k must be >= 3, got {self._k}")
         if self._trailing_obs is not None and self._trailing_obs <= 0:
             raise ValueError(f"trailing_obs must be > 0, got {self._trailing_obs}")
 
@@ -146,37 +143,7 @@ class Optimizer:
         if len(y_obs) == 0:
             return None
         selector = self._get_incumbent_selector()
-        k = self._k
-        if k is None:
-            try:
-                mu = self._surrogate.predict(x_obs).mu
-            except RuntimeError:
-                mu = None
-            best_idx = selector.select(y_obs, mu, self._rng)
-            return x_obs[best_idx]
-
-        x_array = np.asarray(x_obs, dtype=float)
-        y_array = np.asarray(y_obs, dtype=float)
-        if y_array.ndim == 2 and y_array.shape[1] > 1:
-            num_top = min(k, len(y_array))
-            union_indices: set[int] = set()
-            for m in range(y_array.shape[1]):
-                top_m = np.argpartition(-y_array[:, m], num_top - 1)[:num_top]
-                union_indices.update(top_m.tolist())
-            top_indices = np.array(sorted(union_indices), dtype=int)
-        else:
-            y_flat = y_array[:, 0] if y_array.ndim == 2 else y_array
-            num_top = min(k, len(y_flat))
-            top_indices = np.argpartition(-y_flat, num_top - 1)[:num_top]
-
-        x_top = x_array[top_indices]
-        y_top = y_array[top_indices]
-        try:
-            mu_top = self._surrogate.predict(x_top).mu
-        except RuntimeError:
-            mu_top = None
-        best_idx = selector.select(y_top, mu_top, self._rng)
-        return x_top[best_idx]
+        return self._surrogate.find_x_center(x_obs, y_obs, selector, self._rng)
 
     def _get_incumbent_selector(self):
         return self._tr_state.incumbent_selector
@@ -241,7 +208,6 @@ class Optimizer:
     ) -> turbo_optimizer_utils.TellInputs:
         inputs = turbo_optimizer_utils.validate_tell_inputs(x, y, y_var, self._num_dim)
 
-        # Check num_metrics consistency using trust region's num_metrics
         tr_num_metrics = getattr(self._tr_state, "num_metrics", 1)
         if inputs.num_metrics != tr_num_metrics:
             raise ValueError(

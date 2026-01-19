@@ -7,7 +7,6 @@ from .enn_class import (
 from .neighbor_data import NeighborData
 from .weighted_stats import WeightedStats
 
-# Keep old names as aliases for backwards compatibility
 _DrawInternals = DrawInternals
 _NeighborData = NeighborData
 _WeightedStats = WeightedStats

@@ -9,6 +9,7 @@ from .candidate_gen_config import (
     const_num_candidates,
 )
 from .enums import AcqType, CandidateRV
+from .init_config import InitConfig
 from .optimizer_config import ObservationHistoryConfig, OptimizerConfig
 
 
@@ -32,8 +33,6 @@ def turbo_one_config(
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
 ) -> OptimizerConfig:
-    from .init_config import InitConfig
-
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=_make_candidate_gen_config(candidate_rv, num_candidates),
@@ -53,8 +52,6 @@ def turbo_zero_config(
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
 ) -> OptimizerConfig:
-    from .init_config import InitConfig
-
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=_make_candidate_gen_config(candidate_rv, num_candidates),
@@ -75,8 +72,6 @@ def turbo_enn_config(
     trailing_obs: int | None = None,
     acq_type: AcqType = AcqType.PARETO,
 ) -> OptimizerConfig:
-    from .init_config import InitConfig
-
     if acq_type == AcqType.PARETO:
         acquisition = acq.ParetoAcquisitionConfig()
         acq_optimizer = acq.NDSOptimizerConfig()
@@ -115,7 +110,6 @@ def lhd_only_config(
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
 ) -> OptimizerConfig:
-    from .init_config import InitConfig
     from .init_strategies import LHDOnlyInit
 
     return OptimizerConfig(

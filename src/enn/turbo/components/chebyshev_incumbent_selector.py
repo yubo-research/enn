@@ -11,13 +11,17 @@ if TYPE_CHECKING:
 @dataclass
 class ChebyshevIncumbentSelector:
     num_metrics: int
-    alpha: float = 0.05
-    noise_aware: bool = True
+    noise_aware: bool  # No default - must be explicitly set by caller
+    alpha: float  # No default - must be explicitly set by caller
     _weights: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         if self.num_metrics < 1:
             raise ValueError(f"num_metrics must be >= 1, got {self.num_metrics}")
+
+    @property
+    def weights(self) -> np.ndarray | None:
+        return self._weights
 
     def _sample_weights(self, rng: Generator) -> None:
         import numpy as np

@@ -4,7 +4,11 @@ import numpy as np
 import pytest
 from scipy.stats import qmc
 
-from enn.turbo.config.morbo_tr_config import MorboTRConfig
+from enn.turbo.config.morbo_tr_config import (
+    MorboTRConfig,
+    MultiObjectiveConfig,
+    RescalePolicyConfig,
+)
 from enn.turbo.config.no_tr_config import NoTRConfig
 from enn.turbo.config.rescalarize import Rescalarize
 from enn.turbo.config.turbo_tr_config import TRLengthConfig, TurboTRConfig
@@ -89,7 +93,10 @@ def test_turbo_trust_region_get_incumbent_indices():
 
 def test_morbo_trust_region_validate_request():
     rng = np.random.default_rng(42)
-    config = MorboTRConfig(num_metrics=2, rescalarize=Rescalarize.ON_PROPOSE)
+    config = MorboTRConfig(
+        multi_objective=MultiObjectiveConfig(num_metrics=2),
+        rescale_policy=RescalePolicyConfig(rescalarize=Rescalarize.ON_PROPOSE),
+    )
     tr = MorboTrustRegion(config=config, num_dim=3, rng=rng)
     tr.validate_request(4)
     # First call sets num_arms=4; changing it raises
@@ -99,7 +106,10 @@ def test_morbo_trust_region_validate_request():
 
 def test_morbo_trust_region_get_incumbent_indices():
     rng = np.random.default_rng(42)
-    config = MorboTRConfig(num_metrics=2, rescalarize=Rescalarize.ON_PROPOSE)
+    config = MorboTRConfig(
+        multi_objective=MultiObjectiveConfig(num_metrics=2),
+        rescale_policy=RescalePolicyConfig(rescalarize=Rescalarize.ON_PROPOSE),
+    )
     tr = MorboTrustRegion(config=config, num_dim=3, rng=rng)
     y = np.array([[1.0, 5.0], [5.0, 1.0], [3.0, 3.0], [2.0, 2.0]])
     indices = tr.get_incumbent_indices(y, rng)

@@ -8,7 +8,6 @@ from .enn_like_protocol import ENNLike
 from .enn_params import ENNParams, PosteriorFlags
 from .neighbors import Neighbors
 
-# Keep old names as aliases for backwards compatibility
 _ENNLike = ENNLike
 _Candidates = Candidates
 _Neighbors = Neighbors

@@ -30,7 +30,7 @@ class TurboTrustRegion:
         self.length = self.config.length_init
         self.success_tolerance = 3
         if self.incumbent_selector is None:
-            self.incumbent_selector = ScalarIncumbentSelector(noise_aware=True)
+            self.incumbent_selector = ScalarIncumbentSelector(noise_aware=False)
 
     @property
     def length_init(self) -> float:
@@ -77,7 +77,6 @@ class TurboTrustRegion:
     def update(self, values: np.ndarray | Any) -> None:
         import numpy as np
 
-        # Skip counter updates until first ask() initializes failure_tolerance
         if self._failure_tolerance is None:
             return
 

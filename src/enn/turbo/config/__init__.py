@@ -20,6 +20,7 @@ from .enums import (
 from .init_strategies import HybridInit, InitStrategy, LHDOnlyInit
 from .optimizer_config import OptimizerConfig
 from .surrogate import (
+    ENNFitConfig,
     ENNSurrogateConfig,
     GPSurrogateConfig,
     NoSurrogateConfig,
@@ -27,7 +28,10 @@ from .surrogate import (
 )
 from .trust_region import (
     MorboTRConfig,
+    MultiObjectiveConfig,
     NoTRConfig,
+    RescalePolicyConfig,
+    TRLengthConfig,
     TrustRegionConfig,
     TurboTRConfig,
 )
@@ -53,6 +57,7 @@ __all__ = [
     "CandidateGenConfig",
     "CandidateRV",
     "DrawAcquisitionConfig",
+    "ENNFitConfig",
     "ENNSurrogateConfig",
     "GPSurrogateConfig",
     "HnROptimizerConfig",
@@ -62,6 +67,7 @@ __all__ = [
     "LHDOnlyInit",
     "lhd_only_config",
     "MorboTRConfig",
+    "MultiObjectiveConfig",
     "NDSOptimizerConfig",
     "NoSurrogateConfig",
     "NoTRConfig",
@@ -69,7 +75,9 @@ __all__ = [
     "ParetoAcquisitionConfig",
     "RAASPOptimizerConfig",
     "RandomAcquisitionConfig",
+    "RescalePolicyConfig",
     "SurrogateConfig",
+    "TRLengthConfig",
     "TrustRegionConfig",
     "turbo_enn_config",
     "turbo_one_config",

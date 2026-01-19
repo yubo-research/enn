@@ -10,6 +10,8 @@ from .surrogate_result import SurrogateResult
 if TYPE_CHECKING:
     from numpy.random import Generator
 
+    from .incumbent_selector import IncumbentSelector
+
 
 class GPSurrogate:
     def __init__(self) -> None:
@@ -57,12 +59,13 @@ class GPSurrogate:
             if lengthscale.ndim == 3:
                 lengthscale = lengthscale.mean(axis=0)
             lengthscales = lengthscale.ravel()
-            lengthscales = lengthscales / lengthscales.mean()
-            lengthscales = lengthscales / np.prod(
-                np.power(lengthscales, 1.0 / len(lengthscales))
+            lengthscales_stabilized = lengthscales / lengthscales.mean()
+            del lengthscales
+            lengthscales_geom_normed = lengthscales_stabilized / np.prod(
+                np.power(lengthscales_stabilized, 1.0 / len(lengthscales_stabilized))
             )
 
-        return SurrogateResult(model=self._model, lengthscales=lengthscales)
+        return SurrogateResult(model=self._model, lengthscales=lengthscales_geom_normed)
 
     def _as_2d(self, a: np.ndarray) -> np.ndarray:
         a = np.asarray(a, dtype=float)
@@ -133,28 +136,38 @@ class GPSurrogate:
         num_metrics = len(self._y_mean) if hasattr(self._y_mean, "__len__") else 1
 
         if samples_np.ndim == 2:
-            # Single-output case: (num_samples, num_candidates) -> add metric dim
             samples_np = samples_np[:, :, np.newaxis]
-            # Now: (num_samples, num_candidates, 1)
         else:
-            # BoTorch batched multi-output GP: (num_samples, num_metrics, num_candidates)
-            # Transpose to standard shape: (num_samples, num_candidates, num_metrics)
             assert samples_np.shape == (num_samples, num_metrics, num_candidates), (
                 f"GP raw samples shape mismatch: got {samples_np.shape}, "
                 f"expected ({num_samples}, {num_metrics}, {num_candidates})"
             )
             samples_np = np.transpose(samples_np, (0, 2, 1))
 
-        # Now samples_np is (num_samples, num_candidates, num_metrics)
         assert samples_np.shape == (num_samples, num_candidates, num_metrics), (
             f"GP samples shape after transpose: got {samples_np.shape}, "
             f"expected ({num_samples}, {num_candidates}, {num_metrics})"
         )
 
-        # Reshape y_mean and y_std for broadcasting with (num_samples, num_candidates, num_metrics)
         y_mean = np.asarray(self._y_mean, dtype=float).reshape(1, 1, -1)
         y_std = np.asarray(self._y_std, dtype=float).reshape(1, 1, -1)
 
         result = y_mean + y_std * samples_np
         assert result.shape == (num_samples, num_candidates, num_metrics)
         return result
+
+    def find_x_center(
+        self,
+        x_obs: np.ndarray,
+        y_obs: np.ndarray,
+        selector: IncumbentSelector,
+        rng: Generator,
+    ) -> np.ndarray | None:
+        if len(y_obs) == 0:
+            return None
+        try:
+            mu = self.predict(x_obs).mu
+        except RuntimeError:
+            mu = None
+        best_idx = selector.select(y_obs, mu, rng)
+        return x_obs[best_idx]

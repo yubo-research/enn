@@ -16,7 +16,6 @@ def normal_hash_batch_multi_seed(
     unique_indices, inverse = np.unique(data_indices, return_inverse=True)
     num_unique = len(unique_indices)
 
-    # Build grids for (seed, unique_idx, metric) combinations
     seed_grid, idx_grid, metric_grid = np.meshgrid(
         function_seeds.astype(np.uint64),
         unique_indices.astype(np.uint64),
@@ -31,7 +30,6 @@ def normal_hash_batch_multi_seed(
         1_000_003
     ) + metric_flat
 
-    # Generate uniform values
     uniform_vals = np.empty(len(combined_seeds), dtype=float)
     for i, seed in enumerate(combined_seeds):
         rng = np.random.Generator(np.random.Philox(int(seed)))
@@ -67,7 +65,6 @@ def normal_hash_batch_multi_seed_fast(
             z = z ^ (z >> np.uint64(31))
             return z
 
-    # Deterministic hash -> Normal(0,1). Not output-identical to Philox-based path.
     seeds_u64 = function_seeds.astype(np.uint64, copy=False)
     unique_u64 = unique_indices.astype(np.uint64, copy=False)
     metric_u64 = np.arange(num_metrics, dtype=np.uint64)

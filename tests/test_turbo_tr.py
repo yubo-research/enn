@@ -3,7 +3,11 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import qmc
 
-from enn.turbo.config.morbo_tr_config import MorboTRConfig
+from enn.turbo.config.morbo_tr_config import (
+    MorboTRConfig,
+    MultiObjectiveConfig,
+    RescalePolicyConfig,
+)
 from enn.turbo.config.rescalarize import Rescalarize
 from enn.turbo.config.turbo_tr_config import TRLengthConfig, TurboTRConfig
 from enn.turbo.morbo_trust_region import MorboTrustRegion
@@ -33,7 +37,10 @@ def test_trust_region_state_update_and_restart_and_bounds():
 
 def test_morbo_chebyshev_trust_region_weights_and_scaling():
     rng1, rng2 = np.random.default_rng(0), np.random.default_rng(0)
-    config = MorboTRConfig(num_metrics=2, rescalarize=Rescalarize.ON_PROPOSE)
+    config = MorboTRConfig(
+        multi_objective=MultiObjectiveConfig(num_metrics=2),
+        rescale_policy=RescalePolicyConfig(rescalarize=Rescalarize.ON_PROPOSE),
+    )
     tr1 = MorboTrustRegion(config=config, num_dim=3, rng=rng1)
     tr2 = MorboTrustRegion(config=config, num_dim=3, rng=rng2)
     assert np.allclose(tr1.weights, tr2.weights)

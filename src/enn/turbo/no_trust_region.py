@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import numpy as np
 
+    from .components.incumbent_selector import IncumbentSelector
     from .config.no_tr_config import NoTRConfig
 
 
@@ -13,12 +14,14 @@ if TYPE_CHECKING:
 class NoTrustRegion:
     config: NoTRConfig
     num_dim: int
+    incumbent_selector: IncumbentSelector | None = field(default=None, repr=False)
     length: float = field(default=1.0, init=False)
 
     def __post_init__(self) -> None:
         from .components.incumbent_selector import ScalarIncumbentSelector
 
-        self.incumbent_selector = ScalarIncumbentSelector(noise_aware=True)
+        if self.incumbent_selector is None:
+            self.incumbent_selector = ScalarIncumbentSelector(noise_aware=False)
 
     @property
     def num_metrics(self) -> int:
@@ -35,7 +38,7 @@ class NoTrustRegion:
         return
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:  # noqa: ARG002
-        pass  # NoTrustRegion has no constraints on num_arms
+        pass
 
     def compute_bounds_1d(
         self,

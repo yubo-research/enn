@@ -8,6 +8,7 @@ from enn.turbo.optimizer import create_optimizer
 from enn.turbo.optimizer_config import (
     CandidateRV,
     MorboTRConfig,
+    MultiObjectiveConfig,
     NoTRConfig,
     OptimizerConfig,
     turbo_enn_config,
@@ -368,7 +369,9 @@ def test_optimizer_morbo_multi_objective():
     opt = _make_optimizer(
         bounds=bounds,
         config=turbo_enn_config(
-            trust_region=MorboTRConfig(num_metrics=num_metrics),
+            trust_region=MorboTRConfig(
+                multi_objective=MultiObjectiveConfig(num_metrics=num_metrics)
+            ),
             num_init=4,
         ),
         rng=rng,

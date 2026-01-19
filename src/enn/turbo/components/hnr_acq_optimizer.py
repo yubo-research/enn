@@ -31,7 +31,7 @@ class HnRAcqOptimizer:
         return mu + beta * sigma
 
     def _score_fn_thompson(
-        self, x_pt: np.ndarray, surrogate: Surrogate, rng: Generator, seed: int
+        self, x_pt: np.ndarray, surrogate: Surrogate, seed: int
     ) -> float:
         fixed_rng = np.random.default_rng(seed)
         samples = surrogate.sample(x_pt.reshape(1, -1), 1, fixed_rng)
@@ -89,7 +89,7 @@ class HnRAcqOptimizer:
                 seed = int(rng.integers(0, 2**31))
 
                 def score_fn(x_pt, s=seed):
-                    return self._score_fn_thompson(x_pt, surrogate, rng, s)
+                    return self._score_fn_thompson(x_pt, surrogate, s)
 
             x_arms[arm_idx] = self._optimize_one_arm(x_start, num_dim, rng, score_fn)
 

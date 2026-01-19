@@ -28,7 +28,6 @@ class UCBAcqOptimizer:
         mu = posterior.mu
         sigma = posterior.sigma if posterior.sigma is not None else np.zeros_like(mu)
 
-        # mu and sigma should be (num_candidates, num_metrics)
         assert mu.ndim == 2, f"mu.ndim={mu.ndim}, expected 2"
         assert (
             mu.shape[0] == num_candidates
