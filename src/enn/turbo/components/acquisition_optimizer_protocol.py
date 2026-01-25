@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, Protocol
-
 from .surrogate_protocol import Surrogate
 
 if TYPE_CHECKING:

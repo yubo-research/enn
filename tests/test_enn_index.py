@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 import numpy as np
 import pytest
-
 from enn.enn.enn_index import ENNIndex
 from enn.enn.enn_hash import (
     normal_hash_batch_multi_seed,

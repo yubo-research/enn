@@ -1,12 +1,9 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
-
 import numpy as np
 
 if TYPE_CHECKING:
     from numpy.random import Generator
-
     from .protocols import Surrogate
 
 
@@ -27,13 +24,11 @@ class UCBAcqOptimizer:
         posterior = surrogate.predict(x_cand)
         mu = posterior.mu
         sigma = posterior.sigma if posterior.sigma is not None else np.zeros_like(mu)
-
         assert mu.ndim == 2, f"mu.ndim={mu.ndim}, expected 2"
         assert (
             mu.shape[0] == num_candidates
         ), f"mu.shape[0]={mu.shape[0]}, expected {num_candidates}"
         num_metrics = mu.shape[1]
-
         if tr_state is not None and hasattr(tr_state, "scalarize"):
             ucb = mu + self._beta * sigma
             assert ucb.shape == (
@@ -47,7 +42,6 @@ class UCBAcqOptimizer:
         else:
             scores = mu[:, 0] + self._beta * sigma[:, 0]
             assert scores.shape == (num_candidates,)
-
         shuffled_indices = rng.permutation(len(scores))
         shuffled_scores = scores[shuffled_indices]
         top_k_in_shuffled = np.argpartition(-shuffled_scores, num_arms - 1)[:num_arms]

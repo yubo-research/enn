@@ -1,9 +1,7 @@
 from __future__ import annotations
-
 import numpy as np
 import pytest
 from scipy.stats import qmc
-
 from enn.turbo.config.morbo_tr_config import (
     MorboTRConfig,
     MultiObjectiveConfig,
@@ -29,7 +27,7 @@ def test_no_trust_region_init():
 def test_no_trust_region_update_does_nothing():
     config = NoTRConfig()
     tr = NoTrustRegion(config=config, num_dim=3)
-    tr.update(np.array([1.0, 2.0, 3.0]))
+    tr.update(np.array([1.0, 2.0, 3.0]), np.array([3.0]))
     assert tr.length == 1.0
 
 
@@ -43,7 +41,7 @@ def test_no_trust_region_validate_request():
     config = NoTRConfig()
     tr = NoTrustRegion(config=config, num_dim=3)
     tr.validate_request(4)
-    tr.validate_request(5)  # NoTrustRegion has no constraints
+    tr.validate_request(5)
 
 
 def test_no_trust_region_compute_bounds_1d():
@@ -75,7 +73,6 @@ def test_turbo_trust_region_validate_request():
     )
     tr = TurboTrustRegion(config=config, num_dim=3)
     tr.validate_request(4)
-    # First call sets num_arms=4; changing it raises
     with pytest.raises(ValueError):
         tr.validate_request(5)
 
@@ -99,7 +96,6 @@ def test_morbo_trust_region_validate_request():
     )
     tr = MorboTrustRegion(config=config, num_dim=3, rng=rng)
     tr.validate_request(4)
-    # First call sets num_arms=4; changing it raises
     with pytest.raises(ValueError):
         tr.validate_request(5)
 
@@ -129,10 +125,6 @@ def test_turbo_trust_region_compute_bounds_1d_with_lengthscales():
     x_center = np.array([0.5, 0.5, 0.5])
     lengthscales = np.array([0.5, 1.0, 2.0])
     lb, ub = tr.compute_bounds_1d(x_center, lengthscales=lengthscales)
-    # Expected half-widths: lengthscales * length / 2 = [0.5, 1.0, 2.0] * 0.8 / 2
-    #                     = [0.2, 0.4, 0.8]
-    # lb = clip(0.5 - [0.2, 0.4, 0.8], 0, 1) = [0.3, 0.1, 0.0]
-    # ub = clip(0.5 + [0.2, 0.4, 0.8], 0, 1) = [0.7, 0.9, 1.0]
     assert np.allclose(lb, [0.3, 0.1, 0.0])
     assert np.allclose(ub, [0.7, 0.9, 1.0])
 
@@ -144,20 +136,16 @@ def test_turbo_trust_region_expansion_and_contraction():
     tr = TurboTrustRegion(config=config, num_dim=4)
     tr.validate_request(num_arms=4)
     assert tr.length == 0.4
-    # 3 consecutive successes should double the length (success_tolerance=3)
-    # Feed strictly increasing values to trigger success
     values = []
     for v in [1.0, 2.0, 3.0, 4.0]:
         values.append(v)
-        tr.update(np.array(values, dtype=float))
-    # After 3 successes: length = min(2.0 * 0.4, 1.6) = 0.8
+        y_obs = np.array(values, dtype=float)
+        tr.update(y_obs, np.array([float(np.max(y_obs))], dtype=float))
     assert np.isclose(tr.length, 0.8), f"Expected 0.8 after expansion, got {tr.length}"
-    # Feed failures (values that don't improve) to trigger contraction
-    # failure_tolerance = ceil(max(4/4, 4/4)) = 1
     for _ in range(tr.failure_tolerance):
-        values.append(values[-1])  # same value = no improvement
-        tr.update(np.array(values, dtype=float))
-    # After failure_tolerance failures: length = 0.5 * 0.8 = 0.4
+        values.append(values[-1])
+        y_obs = np.array(values, dtype=float)
+        tr.update(y_obs, np.array([float(np.max(y_obs))], dtype=float))
     assert np.isclose(
         tr.length, 0.4
     ), f"Expected 0.4 after contraction, got {tr.length}"

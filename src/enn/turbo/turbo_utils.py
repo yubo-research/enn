@@ -1,17 +1,13 @@
 from __future__ import annotations
-
 import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Iterator
-
 import numpy as np
 
 if TYPE_CHECKING:
     import torch
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
-
-
 __all__ = [
     "Telemetry",
 ]
@@ -67,9 +63,8 @@ def get_gp_posterior_suppress_warning(model: Any, x_torch: Any) -> Any:
 
     try:
         from gpytorch.utils.warnings import GPInputWarning
-    except Exception:  # pragma: no cover
+    except Exception:
         GPInputWarning = None
-
     if GPInputWarning is None:
         return model.posterior(x_torch)
     with warnings.catch_warnings():

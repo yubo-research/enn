@@ -1,7 +1,4 @@
-"""Tests for ENN internal dataclasses."""
-
 import numpy as np
-
 from enn.enn.candidates import Candidates
 from enn.enn.conditional_posterior_draw_internals import (
     ConditionalPosteriorDrawInternals,

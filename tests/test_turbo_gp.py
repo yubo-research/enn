@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 import warnings
-
 import numpy as np
 import pytest
 import torch
@@ -9,7 +7,7 @@ from gpytorch.constraints import Interval
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.likelihoods import FixedNoiseGaussianLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
-
+from enn.turbo.components.gp_surrogate import GPSurrogate
 from enn.turbo.turbo_gp import TurboGP
 from enn.turbo.turbo_gp_base import TurboGPBase
 from enn.turbo.turbo_gp_fit import fit_gp
@@ -57,7 +55,6 @@ def test_fit_gp_returns_none_with_empty_data_and_returns_model_with_single_obs()
     result_empty = fit_gp([], [], num_dim, num_steps=10)
     assert result_empty.model is None and result_empty.likelihood is None
     assert result_empty.y_mean == 0.0 and result_empty.y_std == 1.0
-
     x_single = np.random.default_rng(0).random((1, num_dim))
     result_single = fit_gp(x_single.tolist(), [1.0], num_dim, num_steps=0)
     assert result_single.model is not None and result_single.likelihood is not None
@@ -220,6 +217,20 @@ def test_fit_gp_multi_output_trains_without_scalar_backward_error():
     )
 
 
+def test_gp_surrogate_predict_shapes_multi_output():
+    rng = np.random.default_rng(0)
+    num_dim, num_metrics, n = 3, 2, 6
+    x = rng.uniform(0.0, 1.0, size=(n, num_dim))
+    y = x @ rng.normal(size=(num_dim, num_metrics))
+    surrogate = GPSurrogate()
+    surrogate.fit(x, y, num_steps=2)
+    posterior = surrogate.predict(x)
+    mu = np.asarray(posterior.mu, dtype=float)
+    sigma = np.asarray(posterior.sigma, dtype=float)
+    assert mu.shape == (n, num_metrics)
+    assert sigma.shape == (n, num_metrics)
+
+
 def test_turbo_gp_init_and_forward():
     from gpytorch.likelihoods import GaussianLikelihood
 
@@ -243,7 +254,6 @@ def test_turbo_gp_init_and_forward():
     )
     assert model is not None
     assert isinstance(model, TurboGPBase)
-
     model.eval()
     likelihood.eval()
     test_x = torch.as_tensor(rng.random((5, num_dim)), dtype=torch.float64)
@@ -254,7 +264,5 @@ def test_turbo_gp_init_and_forward():
 
 
 def test_turbo_gp_base_is_subclassed():
-    # Just check that TurboGPBase can be referenced
     assert TurboGPBase is not None
-    # Check that TurboGP inherits from TurboGPBase
     assert issubclass(TurboGP, TurboGPBase)

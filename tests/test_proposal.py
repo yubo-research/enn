@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 import numpy as np
-
 from enn.turbo.proposal import mk_enn
 
 

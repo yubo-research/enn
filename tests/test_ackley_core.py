@@ -1,7 +1,4 @@
-"""Tests for ackley_core function."""
-
 import numpy as np
-
 from enn.benchmarks.ackley_core import ackley_core
 
 

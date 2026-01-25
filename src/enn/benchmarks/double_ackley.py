@@ -1,6 +1,5 @@
 import numpy as np
 from numpy.random import Generator
-
 from .ackley_core import ackley_core
 
 
@@ -17,12 +16,9 @@ class DoubleAckley:
         n, d = x.shape
         if d % 2 != 0:
             raise ValueError("num_dim must be even for DoubleAckley")
-
         mid = d // 2
         x1 = x[:, :mid]
         x2 = x[:, mid:]
-
         y1 = -ackley_core(x1) + self.noise * self.rng.normal(size=n)
         y2 = -ackley_core(x2) + self.noise * self.rng.normal(size=n)
-
         return np.stack([y1, y2], axis=1)

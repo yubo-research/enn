@@ -69,3 +69,22 @@ Trust region / locality
 Observation handling
   ObservationHistoryConfig
     trailing_obs
+
+
+----
+
+# TuRBO-ENN is O(N)
+N is the number of observations at the time of ask() or tell(). These call should be no worse than O(N). Maybe O(NlnK). Maybe even O(NK) if we have to.
+
+Not O(NlnN) or O(N^2).  O(N).
+
+
+## Incumbent: compute once, reuse everywhere
+
+There is **exactly one incumbent** at any time, and it must be **selected once** and then **reused**:
+
+- **Trust region length update**: determine success/failure (improvement) and update TR length.
+- **Trust region center**: the incumbent `x_center` is the center of the trust region.
+- **Trailing window retention**: the incumbent must be kept in the trailing window no matter how old it is.
+
+There are not multiple “paths” or multiple “methods” for finding the incumbent. The incumbent is found **once** and used for these three purposes. This is efficient, maintainable, and sensible.

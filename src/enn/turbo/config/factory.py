@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from . import acquisition as acq
 from . import surrogate as sur
 from . import trust_region as tr
@@ -17,7 +16,6 @@ def _make_candidate_gen_config(
     candidate_rv: CandidateRV,
     num_candidates: NumCandidatesFn | int | None,
 ) -> CandidateGenConfig:
-    """Create CandidateGenConfig, using default num_candidates if None."""
     if num_candidates is None:
         return CandidateGenConfig(candidate_rv=candidate_rv)
     if isinstance(num_candidates, int):
@@ -85,12 +83,9 @@ def turbo_enn_config(
         raise ValueError(
             f"acq_type must be AcqType.THOMPSON, AcqType.PARETO, or AcqType.UCB, got {acq_type!r}"
         )
-
     surrogate = enn if enn is not None else sur.ENNSurrogateConfig()
-
     if surrogate.num_fit_samples is None and acq_type != AcqType.PARETO:
         raise ValueError(f"enn.num_fit_samples required for acq_type={acq_type!r}")
-
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=candidates or CandidateGenConfig(),

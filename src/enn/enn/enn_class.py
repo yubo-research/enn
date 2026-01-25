@@ -1,9 +1,6 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING
-
 import numpy as np
-
 from .draw_internals import DrawInternals
 from .neighbor_data import NeighborData
 from .weighted_stats import WeightedStats
@@ -14,17 +11,17 @@ if TYPE_CHECKING:
 
 
 def _compute_conditional_y_scale(
-    model: "EpistemicNearestNeighbors", y_whatif: np.ndarray
+    model: EpistemicNearestNeighbors, y_whatif: np.ndarray
 ):
     y_whatif = np.asarray(y_whatif, dtype=float)
-    return model._compute_scale(  # noqa: SLF001
+    return model._compute_scale(
         np.concatenate([model.train_y, y_whatif], axis=0),
         0.0,
     )
 
 
 def _draw_from_internals(
-    model: "EpistemicNearestNeighbors",
+    model: EpistemicNearestNeighbors,
     internals: DrawInternals,
     *,
     function_seeds: np.ndarray | list[int],
@@ -32,7 +29,6 @@ def _draw_from_internals(
     from .enn_hash import normal_hash_batch_multi_seed_fast
 
     function_seeds = np.asarray(function_seeds, dtype=np.int64)
-
     n, k, m = internals.idx.shape[0], internals.idx.shape[1], model.num_outputs
     if k == 0:
         return np.broadcast_to(internals.mu, (len(function_seeds), n, m)).copy()
@@ -233,9 +229,13 @@ class EpistemicNearestNeighbors:
         l2 = np.sqrt(np.sum(w_normalized**2, axis=1))
         mu = np.sum(w_normalized * y_neighbors, axis=1)
         epistemic_var = 1.0 / norm.squeeze(axis=1)
-        aleatoric_var = (
-            np.sum(w_normalized * var_ale, axis=1) if observation_noise else 0.0
-        )
+        if observation_noise:
+            if np.isscalar(var_ale):
+                aleatoric_var = np.full_like(epistemic_var, var_ale)
+            else:
+                aleatoric_var = np.sum(w_normalized * var_ale, axis=1)
+        else:
+            aleatoric_var = 0.0
         se = np.sqrt(np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR)) * y_scale
         return WeightedStats(w_normalized=w_normalized, l2=l2, mu=mu, se=se)
 
@@ -301,7 +301,6 @@ class EpistemicNearestNeighbors:
         batch_size, num_params = x.shape[0], len(paramss)
         mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
         se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
-
         k_values = {p.k_num_neighbors for p in paramss}
         if len(k_values) == 1 and len(self) > 0:
             neighbor_data = self._get_neighbor_data(
@@ -389,7 +388,6 @@ class EpistemicNearestNeighbors:
                 function_seeds=function_seeds,
                 flags=flags,
             )
-
         y_scale = _compute_conditional_y_scale(self, y_whatif)
         internals = compute_conditional_posterior_draw_internals(
             self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale

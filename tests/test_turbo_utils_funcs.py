@@ -1,10 +1,8 @@
 from __future__ import annotations
-
 import conftest
 import numpy as np
 import pytest
 from scipy.stats import qmc
-
 from enn.turbo.turbo_utils import (
     _next_power_of_2,
     argmax_random_tie,
@@ -314,13 +312,12 @@ def test_uniform_perturb_np_mask_application():
     for i in range(num_candidates):
         for j in range(num_dim):
             if mask[i, j]:
-                pass  # Might or might not equal x_center due to random
+                pass
             else:
                 assert candidates[i, j] == x_center[j]
 
 
 def _check_candidate_shape_and_bounds(candidates, num_candidates, num_dim, lb, ub):
-    """Helper to verify candidate array shape and bounds."""
     assert candidates.shape == (num_candidates, num_dim)
     assert np.all(candidates >= lb) and np.all(candidates <= ub)
 
@@ -372,7 +369,6 @@ def test_generate_raasp_candidates_uniform_respects_num_pert():
     x_high = np.full(num_dim_high, 0.5)
     lb_low, ub_low = np.zeros(num_dim_low), np.ones(num_dim_low)
     lb_high, ub_high = np.zeros(num_dim_high), np.ones(num_dim_high)
-
     rng_low = np.random.default_rng(0)
     rng_high = np.random.default_rng(0)
     c_low_pert = generate_raasp_candidates_uniform(
@@ -386,7 +382,6 @@ def test_generate_raasp_candidates_uniform_respects_num_pert():
         np.sum(np.abs(c_high_pert - x_low) > 1e-10, axis=1) / num_dim_low
     )
     assert diff_high > diff_low + 0.05
-
     rng_low = np.random.default_rng(1)
     rng_high = np.random.default_rng(1)
     c_low_pert = generate_raasp_candidates_uniform(
@@ -412,7 +407,6 @@ def test_gp_thompson_sample_returns_valid_indices():
     x_obs = rng.random((num_obs, num_dim))
     y_obs = x_obs.sum(axis=1) + 0.1 * rng.standard_normal(num_obs)
     result = fit_gp(x_obs.tolist(), y_obs.tolist(), num_dim, num_steps=10)
-
     x_cand = rng.random((20, num_dim))
     num_arms = 3
     y_mean = float(np.mean(y_obs))

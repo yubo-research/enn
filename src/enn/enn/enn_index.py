@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -49,7 +48,6 @@ class ENNIndex:
             raise ValueError(x.shape)
         if self._index is None:
             raise RuntimeError("index is not initialized")
-
         x_scaled = x / self._x_scale if self._scale_x else x
         x_f32 = x_scaled.astype(np.float32, copy=False)
         dist2s_full, idx_full = self._index.search(x_f32, search_k)

@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -12,11 +11,11 @@ if TYPE_CHECKING:
 class NoIncumbentSelector:
     def select(
         self,
-        y_obs: np.ndarray,  # noqa: ARG002
-        mu_obs: np.ndarray | None,  # noqa: ARG002
-        rng: Generator,  # noqa: ARG002
+        y_obs: np.ndarray,
+        mu_obs: np.ndarray | None,
+        rng: Generator,
     ) -> int:
         return 0
 
-    def reset(self, rng: Generator) -> None:  # noqa: ARG002
+    def reset(self, rng: Generator) -> None:
         pass

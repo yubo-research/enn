@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -78,7 +77,6 @@ def pareto_front_2d_maximize(
         idx = np.asarray(idx, dtype=int)
         if idx.ndim != 1:
             raise ValueError(idx.shape)
-
     order = np.lexsort((-b[idx], -a[idx]))
     sorted_idx = idx[order]
     keep: list[int] = []
@@ -118,7 +116,6 @@ def arms_from_pareto_fronts(
         raise ValueError(num_arms)
     if not np.all(np.isfinite(mu)) or not np.all(np.isfinite(se)):
         raise ValueError("mu and se must be finite")
-
     i_keep: list[int] = []
     remaining = np.arange(mu.size, dtype=int)
     while remaining.size > 0 and len(i_keep) < num_arms:
@@ -137,6 +134,5 @@ def arms_from_pareto_fronts(
             rng.choice(front_indices, size=remaining_arms, replace=False).tolist()
         )
         break
-
     i_keep = np.array(i_keep)
     return x_cand[i_keep[np.argsort(-mu[i_keep])]]

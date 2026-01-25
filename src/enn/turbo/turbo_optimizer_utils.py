@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING
-
 from .types import ObsLists, TellInputs
 
 if TYPE_CHECKING:
@@ -39,7 +37,6 @@ def validate_tell_inputs(
     y = np.asarray(y, dtype=float)
     if x.ndim != 2 or x.shape[1] != num_dim:
         raise ValueError(x.shape)
-
     if y.ndim == 2:
         if y.shape[0] != x.shape[0]:
             raise ValueError((x.shape, y.shape))
@@ -50,12 +47,10 @@ def validate_tell_inputs(
         num_metrics = 1
     else:
         raise ValueError(y.shape)
-
     if y_var is not None:
         y_var = np.asarray(y_var, dtype=float)
         if y_var.shape != y.shape:
             raise ValueError((y.shape, y_var.shape))
-
     return TellInputs(x=x, y=y, y_var=y_var, num_metrics=num_metrics)
 
 
@@ -78,11 +73,9 @@ def trim_trailing_observations(
             y_tr=y_tr_list,
             yvar_obs=yvar_obs_list,
         )
-
     start_idx = max(0, num_total - trailing_obs)
     recent_indices = set(range(start_idx, num_total))
     keep_indices = set(incumbent_indices.tolist()) | recent_indices
-
     if len(keep_indices) > trailing_obs:
         keep_indices = set(incumbent_indices.tolist())
         remaining_slots = trailing_obs - len(keep_indices)
@@ -91,19 +84,15 @@ def trim_trailing_observations(
                 i for i in range(num_total - 1, -1, -1) if i not in keep_indices
             ][:remaining_slots]
             keep_indices.update(recent_non_incumbent)
-
     indices = np.array(sorted(keep_indices), dtype=int)
-
     x_array = np.asarray(x_obs_list, dtype=float)
     y_obs_array = np.asarray(y_obs_list, dtype=float)
     y_tr_array = np.asarray(y_tr_list, dtype=float)
-
     new_x = x_array[indices].tolist()
     new_y_obs = y_obs_array[indices].tolist()
-    new_y_tr = y_tr_array[indices].tolist()
+    new_y_tr = y_tr_array[indices].tolist() if y_tr_array.size > 0 else []
     new_yvar = yvar_obs_list
     if len(yvar_obs_list) == len(y_obs_array):
         yvar_array = np.asarray(yvar_obs_list, dtype=float)
         new_yvar = yvar_array[indices].tolist()
-
     return ObsLists(x_obs=new_x, y_obs=new_y_obs, y_tr=new_y_tr, yvar_obs=new_yvar)

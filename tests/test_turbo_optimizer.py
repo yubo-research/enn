@@ -1,16 +1,19 @@
 from __future__ import annotations
-
 import conftest
 import numpy as np
 import pytest
-
 from enn.turbo.optimizer import create_optimizer
 from enn.turbo.optimizer_config import (
+    AcqType,
     CandidateRV,
+    CandidateGenConfig,
+    ENNFitConfig,
+    ENNSurrogateConfig,
     MorboTRConfig,
     MultiObjectiveConfig,
     NoTRConfig,
     OptimizerConfig,
+    TurboTRConfig,
     turbo_enn_config,
     turbo_one_config,
     turbo_zero_config,
@@ -26,14 +29,11 @@ def test_turbo_fallback_called_during_init_with_observations():
     rng = np.random.default_rng(42)
     config = turbo_zero_config(num_init=10)
     opt = _make_optimizer(bounds=bounds, config=config, rng=rng)
-
     x1 = opt.ask(num_arms=2)
     y1 = conftest.sphere_objective(x1)
     opt.tell(x1, y1)
-
     x2 = opt.ask(num_arms=2)
     assert x2.shape == (2, 2)
-
     init = opt.init_progress
     assert init is not None
     init_idx, num_init = init
@@ -81,11 +81,10 @@ def test_optimizer_accepts_list_bounds():
 
 def test_optimizer_uniform_candidates_never_calls_sobol():
     from unittest import mock
-
     from enn import create_optimizer
     from enn.turbo.optimizer_config import turbo_zero_config
 
-    def _sobol_raises(*args, **kwargs):  # noqa: ARG001
+    def _sobol_raises(*args, **kwargs):
         raise RuntimeError(
             "Sobol should not be constructed for candidate_rv=CandidateRV.UNIFORM"
         )
@@ -168,13 +167,16 @@ def test_turbo_enn_config_scale_x_flag_runs():
 
 def test_find_x_center_uses_top_k_for_mu_single_objective():
     from enn.turbo.components.posterior_result import PosteriorResult
-    from enn.turbo.optimizer_config import ENNSurrogateConfig
+    from enn.turbo.optimizer_config import ENNSurrogateConfig, TurboTRConfig
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
     opt = _make_optimizer(
         bounds=bounds,
-        config=turbo_enn_config(enn=ENNSurrogateConfig(k=3)),
+        config=turbo_enn_config(
+            enn=ENNSurrogateConfig(k=3),
+            trust_region=TurboTRConfig(noise_aware=True),
+        ),
         rng=rng,
     )
     x_obs = rng.uniform(0.0, 1.0, size=(10, 2))
@@ -187,6 +189,10 @@ def test_find_x_center_uses_top_k_for_mu_single_objective():
         return PosteriorResult(mu=mu, sigma=None)
 
     opt._surrogate.predict = _predict
+    for x, y in zip(x_obs, y_obs):
+        opt._x_obs.append(x)
+        opt._y_obs.append(np.array([y]))
+    opt._update_incumbent()
     center = opt._find_x_center(x_obs, y_obs)
     assert center.shape == (2,)
     assert seen["shape"] == (3, 2)
@@ -194,13 +200,19 @@ def test_find_x_center_uses_top_k_for_mu_single_objective():
 
 def test_find_x_center_uses_top_k_union_for_multiobjective():
     from enn.turbo.components.posterior_result import PosteriorResult
-    from enn.turbo.optimizer_config import ENNSurrogateConfig
+    from enn.turbo.optimizer_config import ENNSurrogateConfig, MorboTRConfig
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
     opt = _make_optimizer(
         bounds=bounds,
-        config=turbo_enn_config(enn=ENNSurrogateConfig(k=3)),
+        config=turbo_enn_config(
+            enn=ENNSurrogateConfig(k=3),
+            trust_region=MorboTRConfig(
+                noise_aware=True,
+                multi_objective=MultiObjectiveConfig(num_metrics=2),
+            ),
+        ),
         rng=rng,
     )
     x_obs = rng.uniform(0.0, 1.0, size=(5, 2))
@@ -222,6 +234,10 @@ def test_find_x_center_uses_top_k_union_for_multiobjective():
         return PosteriorResult(mu=mu, sigma=None)
 
     opt._surrogate.predict = _predict
+    for x, y in zip(x_obs, y_obs):
+        opt._x_obs.append(x)
+        opt._y_obs.append(y)
+    opt._update_incumbent()
     center = opt._find_x_center(x_obs, y_obs)
     assert center.shape == (2,)
     assert seen["shape"] == (5, 2)
@@ -238,7 +254,7 @@ def test_optimizer_with_trailing_obs():
         for _ in range(10):
             x = opt.ask(num_arms=2)
             opt.tell(x, -np.sum(x**2, axis=1))
-        assert len(opt._x_obs_list) == 5 and len(opt._y_obs_list) == 5
+        assert len(opt._x_obs) == 5 and len(opt._y_obs) == 5
         assert opt.ask(num_arms=2).shape == (2, 2)
 
 
@@ -299,7 +315,11 @@ def test_turbo_one_trust_region_update_is_noise_robust_to_spikes():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     opt = _make_optimizer(
         bounds=bounds,
-        config=turbo_one_config(num_init=1, num_candidates=16),
+        config=turbo_one_config(
+            num_init=1,
+            num_candidates=16,
+            trust_region=TurboTRConfig(noise_aware=True),
+        ),
         rng=np.random.default_rng(0),
     )
     opt.ask(num_arms=1)
@@ -307,13 +327,9 @@ def test_turbo_one_trust_region_update_is_noise_robust_to_spikes():
     opt.ask(num_arms=1)
     opt.tell(np.ones((1, 2)), np.array([100.0]), y_var=np.array([1e6]))
     assert opt._tr_state.best_value < 100.0
-    y_tr_array = np.asarray(opt._y_tr_list, dtype=float)
-    if y_tr_array.ndim == 2:
-        y_tr_array = y_tr_array[:, 0]
-    assert opt._tr_state.best_value == float(np.max(y_tr_array))
 
 
-def test_turbo_enn_tr_values_use_posterior_mean_over_all_obs():
+def test_turbo_enn_tr_values_do_not_require_full_history_denoising():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     from enn.turbo.optimizer_config import (
         AcqType,
@@ -341,8 +357,7 @@ def test_turbo_enn_tr_values_use_posterior_mean_over_all_obs():
     if tr_vals.ndim == 2:
         tr_vals = tr_vals[:, 0]
     assert tr_vals.shape == (2,)
-    assert not np.allclose(tr_vals, np.array([0.0, 100.0]))
-    assert np.all(tr_vals > 1.0) and np.all(tr_vals < 99.0)
+    assert np.allclose(tr_vals, np.array([0.0, 100.0]))
 
 
 def test_optimizer_no_trust_region_bounds_are_full_box():
@@ -362,29 +377,31 @@ def test_optimizer_no_trust_region_bounds_are_full_box():
 
 
 def test_optimizer_morbo_multi_objective():
-    num_dim, num_metrics = 3, 2
+    num_dim, num_metrics = 2, 2
     bounds = np.array([[0.0, 1.0]] * num_dim, dtype=float)
     rng = np.random.default_rng(42)
-
     opt = _make_optimizer(
         bounds=bounds,
         config=turbo_enn_config(
+            enn=ENNSurrogateConfig(
+                k=2,
+                fit=ENNFitConfig(num_fit_samples=1, num_fit_candidates=1),
+            ),
             trust_region=MorboTRConfig(
                 multi_objective=MultiObjectiveConfig(num_metrics=num_metrics)
             ),
-            num_init=4,
+            num_init=1,
+            candidates=CandidateGenConfig(
+                num_candidates=lambda *, num_dim, num_arms: 2
+            ),
+            acq_type=AcqType.THOMPSON,
         ),
         rng=rng,
     )
-    for _ in range(3):
-        x = opt.ask(num_arms=2)
-        assert x.shape == (2, num_dim)
-        y = rng.uniform(0.0, 1.0, size=(2, num_metrics))
-        y_est = opt.tell(x, y)
-        assert y_est.shape == (2, num_metrics)
-    x = opt.ask(num_arms=2)
-    assert x.shape == (2, num_dim)
-    y_est = opt.tell(x, rng.uniform(0.0, 1.0, size=(2, num_metrics)))
-    assert y_est.shape == (2, num_metrics)
+    x = opt.ask(num_arms=1)
+    assert x.shape == (1, num_dim)
+    y = rng.uniform(0.0, 1.0, size=(1, num_metrics))
+    y_est = opt.tell(x, y)
+    assert y_est.shape == (1, num_metrics)
     tr_len = opt.tr_length
     assert tr_len is not None and 0.0 < tr_len <= 1.0

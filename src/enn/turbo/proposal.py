@@ -1,14 +1,11 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
-
     from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
-
     from .turbo_gp import TurboGP
 
 
@@ -25,7 +22,6 @@ def mk_enn(
     params_warm_start: ENNParams | Any | None = None,
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
     import numpy as np
-
     from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
 
@@ -34,7 +30,6 @@ def mk_enn(
     y_obs_array = np.asarray(y_obs_list, dtype=float)
     if y_obs_array.size == 0:
         return None, None
-
     if y_obs_array.ndim == 1:
         y = y_obs_array.reshape(-1, 1)
     else:
@@ -56,7 +51,6 @@ def mk_enn(
     )
     if len(enn_model) == 0:
         return None, None
-
     fitted_params: ENNParams | None = None
     if num_fit_samples is not None and rng is not None:
         from enn.enn.enn_fit import enn_fit
@@ -77,7 +71,6 @@ def mk_enn(
             epistemic_variance_scale=1.0,
             aleatoric_variance_scale=0.0,
         )
-
     return enn_model, fitted_params
 
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 import numpy as np
 import pytest
-
 from enn.enn.enn import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 
@@ -161,14 +159,6 @@ def test_epistemic_nearest_neighbors_multiple_metrics():
 
 
 def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
-    """
-    Forces the off-by-one bug when exclude_nearest=True and k > len(self) - 1.
-
-    With len(self)=5, max_k=10, exclude_nearest=True:
-    - search_k = min(11, 5) = 5
-    - After slicing [:, 1:], arrays have 4 columns
-    - BUG: k = min(10, 5) = 5, but should be min(10, 4) = 4
-    """
     rng = np.random.default_rng(0)
     n = 5
     d = 3
@@ -176,7 +166,6 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
     train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
     train_yvar = 0.1 * np.ones_like(train_y)
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
-
     x_test = rng.standard_normal((4, d))
     params = ENNParams(
         k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -195,18 +184,14 @@ def test_epistemic_nearest_neighbors_with_yvar_none():
     d = 3
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True) + rng.standard_normal((n, 1)) * 0.1
-
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
-
     assert len(model) == n
     assert model.train_yvar is None
-
     x_test = rng.standard_normal((10, d))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     post = model.posterior(x_test, params=params)
-
     assert post.mu.shape == (10, 1)
     assert post.se.shape == (10, 1)
     assert np.all(np.isfinite(post.mu))
@@ -221,7 +206,6 @@ def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
     train_y = np.zeros((n, 1), dtype=float)
     train_yvar = 0.1 * np.ones_like(train_y)
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
-
     x_test = rng.standard_normal((5, d))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -233,26 +217,16 @@ def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
 
 def test_epistemic_nearest_neighbors_init_validates_inputs():
     rng = np.random.default_rng(0)
-
-    # x must be 2D
     with pytest.raises(ValueError):
         EpistemicNearestNeighbors(rng.random(10), np.zeros((10, 1)))
-
-    # y must be 2D
     with pytest.raises(ValueError):
         EpistemicNearestNeighbors(rng.random((10, 3)), rng.random(10))
-
-    # x and y must have matching rows
     with pytest.raises(ValueError):
         EpistemicNearestNeighbors(rng.random((10, 3)), rng.random((5, 1)))
-
-    # yvar must be 2D if provided
     with pytest.raises(ValueError):
         EpistemicNearestNeighbors(
             rng.random((10, 3)), rng.random((10, 1)), rng.random(10)
         )
-
-    # yvar must match y shape
     with pytest.raises(ValueError):
         EpistemicNearestNeighbors(
             rng.random((10, 3)), rng.random((10, 1)), rng.random((10, 2))
@@ -265,7 +239,6 @@ def test_epistemic_nearest_neighbors_init_explicit():
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True)
     train_yvar = 0.1 * np.ones_like(train_y)
-
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
     assert len(model) == n
     assert model.num_outputs == 1

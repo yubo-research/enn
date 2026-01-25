@@ -1,12 +1,7 @@
-"""Performance regression test for ENN demo operations."""
-
 from __future__ import annotations
-
 import time
-
 import numpy as np
 import pytest
-
 from enn import EpistemicNearestNeighbors, enn_fit
 from enn.enn.enn_params import PosteriorFlags
 
@@ -43,14 +38,10 @@ def plot_enn_posterior_logic(model, params):
 
 @pytest.mark.skip(reason="Timing unreliable across machines; run manually to verify")
 def test_enn_demo_performance():
-    """Ensure demo_enn.ipynb cell 3 runs in under 0.3 seconds."""
     np.random.seed(1)
-
     t0 = time.time()
     x, y, model, params = make_enn_demo_data(num_samples=1_000_000, k=5, noise=0.3, m=3)
     mu, se = plot_enn_posterior_logic(model, params)
     elapsed = time.time() - t0
-
     print(f"\nTime taken: {elapsed:.3f} seconds")
-
     assert elapsed < 0.3, f"Expected < 0.3s, got {elapsed:.3f}s"

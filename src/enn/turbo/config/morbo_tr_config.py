@@ -1,21 +1,16 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
 from .rescalarize import Rescalarize
 from .turbo_tr_config import TRLengthConfig
 
 if TYPE_CHECKING:
     from numpy.random import Generator
-
     from ..components.protocols import TrustRegion
 
 
 @dataclass(frozen=True)
 class MultiObjectiveConfig:
-    """Configuration for multi-objective optimization."""
-
     num_metrics: int
     alpha: float = 0.05
 
@@ -30,8 +25,6 @@ class MultiObjectiveConfig:
 
 @dataclass(frozen=True)
 class RescalePolicyConfig:
-    """Configuration for rescalarization policy."""
-
     rescalarize: Rescalarize = Rescalarize.ON_PROPOSE
 
 
@@ -44,17 +37,14 @@ class MorboTRConfig:
 
     @property
     def rescalarize(self) -> Rescalarize:
-        """Backward-compatible access to rescalarize."""
         return self.rescale_policy.rescalarize
 
     @property
     def num_metrics(self) -> int:
-        """Backward-compatible access to num_metrics."""
         return self.multi_objective.num_metrics
 
     @property
     def alpha(self) -> float:
-        """Backward-compatible access to alpha."""
         return self.multi_objective.alpha
 
     @property

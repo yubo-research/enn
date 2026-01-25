@@ -14,7 +14,7 @@ from enn.turbo.config.candidate_gen_config import (
     const_num_candidates,
 )
 from enn.turbo.config.enums import AcqType
-from enn.turbo.config.surrogate import ENNSurrogateConfig
+from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig, ENNFitConfig
 from enn.turbo.config.trust_region import TurboTRConfig
 from enn.turbo.config.factory import turbo_enn_config
 
@@ -39,8 +39,10 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
     bounds = _make_bounds(cfg.num_dim)
     enn_cfg = ENNSurrogateConfig(
         k=10,
-        num_fit_samples=cfg.num_fit_samples,
-        num_fit_candidates=cfg.num_fit_candidates,
+        fit=ENNFitConfig(
+            num_fit_samples=cfg.num_fit_samples,
+            num_fit_candidates=cfg.num_fit_candidates,
+        ),
     )
     candidates = (
         CandidateGenConfig(num_candidates=const_num_candidates(cfg.num_candidates))
@@ -65,6 +67,8 @@ def _seed_observations(
     bounds = _make_bounds(num_dim)
     x = rng.uniform(bounds[:, 0], bounds[:, 1], size=(num_obs, num_dim))
     y = -np.sum(x**2, axis=1)
+    if y.ndim == 1:
+        y = y.reshape(-1, 1)
     opt.tell(x, y)
     # Skip init LHD since we've already seeded observations.
     if hasattr(opt, "_strategy") and hasattr(opt._strategy, "_num_init"):
@@ -72,6 +76,8 @@ def _seed_observations(
 
 
 def _time_ask(opt: object, num_arms: int, repeats: int = 3) -> float:
+    # Warmup to ensure model is fitted and FAISS index is built
+    _ = opt.ask(num_arms=num_arms)
     t_min = float("inf")
     for _ in range(repeats):
         t0 = time.perf_counter()
@@ -81,11 +87,42 @@ def _time_ask(opt: object, num_arms: int, repeats: int = 3) -> float:
 
 
 def _time_find_center(opt: object, rng: np.random.Generator) -> float:
-    x_obs = np.array(opt._x_obs_list, dtype=float)
-    y_obs = np.array(opt._y_obs_list, dtype=float)
+    x_obs = opt._x_obs.view()
+    y_obs = opt._y_obs.view()
     _ = opt._surrogate.fit(x_obs, y_obs, None, num_steps=0, rng=rng)
     t0 = time.perf_counter()
     _ = opt._find_x_center(x_obs, y_obs)
+    return time.perf_counter() - t0
+
+
+def _time_fit(opt: object, rng: np.random.Generator) -> float:
+    x_obs = opt._x_obs.view()
+    y_obs = opt._y_obs.view()
+    t0 = time.perf_counter()
+    _ = opt._surrogate.fit(x_obs, y_obs, None, num_steps=0, rng=rng)
+    return time.perf_counter() - t0
+
+
+def _time_tell(opt: object, rng: np.random.Generator, cfg: ProfileConfig) -> float:
+    num_dim = int(cfg.num_dim)
+    bounds = _make_bounds(num_dim)
+    x = rng.uniform(bounds[:, 0], bounds[:, 1], size=(cfg.num_arms, num_dim))
+    y = -np.sum(x**2, axis=1)
+    if y.ndim == 1:
+        y = y.reshape(-1, 1)
+
+    # Profile tell() specifically
+    prof = cProfile.Profile()
+    prof.enable()
+    opt.tell(x, y)
+    prof.disable()
+    if cfg.num_obs >= 8000:
+        print(f"\nProfile for tell() at num_obs={cfg.num_obs}:")
+        stats = pstats.Stats(prof).sort_stats("tottime")
+        stats.print_stats(20)
+
+    t0 = time.perf_counter()
+    opt.tell(x, y)
     return time.perf_counter() - t0
 
 
@@ -127,6 +164,8 @@ def _estimate_scaling(ns: list[int], times: list[float], label: str) -> None:
 def run_sweep(cfg: ProfileConfig, *, num_obs_values: list[int]) -> None:
     center_times: list[float] = []
     ask_times: list[float] = []
+    fit_times: list[float] = []
+    tell_times: list[float] = []
     for n in num_obs_values:
         cfg_n = ProfileConfig(
             num_dim=cfg.num_dim,
@@ -141,24 +180,35 @@ def run_sweep(cfg: ProfileConfig, *, num_obs_values: list[int]) -> None:
         opt = _make_optimizer(cfg_n)
         _seed_observations(opt, rng, cfg_n)
         center_times.append(_time_find_center(opt, rng))
+        fit_times.append(_time_fit(opt, rng))
         ask_times.append(_time_ask(opt, cfg_n.num_arms))
+        tell_times.append(_time_tell(opt, rng, cfg_n))
         print(
             "sweep",
             "num_obs",
             cfg_n.num_obs,
             "center_time_sec",
             f"{center_times[-1]:.6f}",
+            "fit_time_sec",
+            f"{fit_times[-1]:.6f}",
             "ask_time_sec",
             f"{ask_times[-1]:.6f}",
+            "tell_time_sec",
+            f"{tell_times[-1]:.6f}",
         )
     _estimate_scaling(num_obs_values, center_times, "center_time_sec")
+    _estimate_scaling(num_obs_values, fit_times, "fit_time_sec")
     _estimate_scaling(num_obs_values, ask_times, "ask_time_sec")
+    _estimate_scaling(num_obs_values, tell_times, "tell_time_sec")
 
 
 def run_profile(cfg: ProfileConfig, *, profile: bool, profile_center: bool) -> None:
     rng = np.random.default_rng(cfg.seed)
     opt = _make_optimizer(cfg)
     _seed_observations(opt, rng, cfg)
+
+    # Warmup to avoid import overhead in profile
+    _ = opt.ask(num_arms=cfg.num_arms)
 
     if profile_center:
         dt_center = _time_find_center(opt, rng)
@@ -199,7 +249,7 @@ def main() -> None:
     parser.add_argument("--num-arms", type=int, default=4)
     parser.add_argument("--num-candidates", type=int, default=None)
     parser.add_argument("--num-fit-samples", type=int, default=50)
-    parser.add_argument("--num-fit-candidates", type=int, default=60)
+    parser.add_argument("--num-fit_candidates", type=int, default=60)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--profile-center", action="store_true")

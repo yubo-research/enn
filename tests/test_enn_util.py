@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 import numpy as np
 import pytest
-
 from enn.enn.enn_util import (
     calculate_sobol_indices,
     arms_from_pareto_fronts,
@@ -22,8 +20,8 @@ def _make_sobol_synth_data(*, rng, n: int, d: int, y_2d: bool) -> tuple:
 @pytest.mark.parametrize(
     "n,d,y_2d,expected_check",
     [
-        (50, 3, False, lambda S: S[0] > S[1] and S[0] > S[2]),  # basic
-        (50, 3, True, lambda S: np.all(S >= 0) and np.all(S <= 1)),  # y_2d
+        (50, 3, False, lambda S: S[0] > S[1] and S[0] > S[2]),
+        (50, 3, True, lambda S: np.all(S >= 0) and np.all(S <= 1)),
     ],
 )
 def test_calculate_sobol_indices_with_data(n, d, y_2d, expected_check):
@@ -39,11 +37,11 @@ def test_calculate_sobol_indices_with_data(n, d, y_2d, expected_check):
         (
             lambda rng: (rng.standard_normal((5, 2)), rng.standard_normal(5)),
             lambda S: np.all(S == 1.0),
-        ),  # small_n
+        ),
         (
             lambda rng: (rng.standard_normal((50, 3)), np.ones(50)),
             lambda S: np.all(S == 1.0),
-        ),  # zero_variance
+        ),
     ],
 )
 def test_calculate_sobol_indices_edge_cases(make_data, expected_check):

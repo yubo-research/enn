@@ -1,10 +1,8 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     import numpy as np
-
     from .enn_params import ENNParams, PosteriorFlags
 
 
@@ -18,7 +16,6 @@ class ENNLike(Protocol):
     _train_yvar: np.ndarray | None
 
     def __len__(self) -> int: ...
-
     def posterior(self, x: np.ndarray, *, params: ENNParams, flags: PosteriorFlags):
         raise NotImplementedError
 

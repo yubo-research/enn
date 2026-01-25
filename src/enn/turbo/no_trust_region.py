@@ -1,20 +1,19 @@
 from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from .tr_helpers import ScalarIncumbentMixin
 
 if TYPE_CHECKING:
     import numpy as np
-
     from .components.incumbent_selector import IncumbentSelector
     from .config.no_tr_config import NoTRConfig
 
 
 @dataclass
-class NoTrustRegion:
+class NoTrustRegion(ScalarIncumbentMixin):
     config: NoTRConfig
     num_dim: int
-    incumbent_selector: IncumbentSelector | None = field(default=None, repr=False)
+    incumbent_selector: IncumbentSelector = field(default=None, repr=False)
     length: float = field(default=1.0, init=False)
 
     def __post_init__(self) -> None:
@@ -25,25 +24,24 @@ class NoTrustRegion:
 
     @property
     def num_metrics(self) -> int:
-        """No trust region defaults to single-objective."""
         return 1
 
-    def update(self, values: np.ndarray | Any) -> None:
+    def update(self, y_obs: np.ndarray | Any, y_incumbent: np.ndarray | Any) -> None:
         return
 
     def needs_restart(self) -> bool:
         return False
 
-    def restart(self, rng=None) -> None:  # noqa: ARG002
+    def restart(self, rng=None) -> None:
         return
 
-    def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:  # noqa: ARG002
+    def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
         pass
 
     def compute_bounds_1d(
         self,
         x_center: np.ndarray | Any,
-        lengthscales: np.ndarray | None = None,  # noqa: ARG002
+        lengthscales: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         from .tr_helpers import compute_full_box_bounds_1d
 
@@ -55,6 +53,6 @@ class NoTrustRegion:
         rng,
         mu: np.ndarray | None = None,
     ) -> np.ndarray:
-        from .tr_helpers import get_single_incumbent_index
+        import numpy as np
 
-        return get_single_incumbent_index(self.incumbent_selector, y, rng, mu)
+        return np.array([self.get_incumbent_index(y, rng, mu=mu)])

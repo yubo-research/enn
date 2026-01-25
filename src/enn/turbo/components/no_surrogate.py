@@ -1,16 +1,11 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING
-
 import numpy as np
-
 from .posterior_result import PosteriorResult
 from .surrogate_result import SurrogateResult
 
 if TYPE_CHECKING:
     from numpy.random import Generator
-
-    from .incumbent_selector import IncumbentSelector
 
 
 class NoSurrogate:
@@ -18,14 +13,18 @@ class NoSurrogate:
         self._x_obs: np.ndarray | None = None
         self._y_obs: np.ndarray | None = None
 
+    @property
+    def lengthscales(self) -> np.ndarray | None:
+        return getattr(self, "_lengthscales", None)
+
     def fit(
         self,
         x_obs: np.ndarray,
         y_obs: np.ndarray,
-        y_var: np.ndarray | None = None,  # noqa: ARG002
+        y_var: np.ndarray | None = None,
         *,
-        num_steps: int = 0,  # noqa: ARG002
-        rng: Generator | None = None,  # noqa: ARG002
+        num_steps: int = 0,
+        rng: Generator | None = None,
     ) -> SurrogateResult:
         self._x_obs = np.asarray(x_obs, dtype=float)
         self._y_obs = np.asarray(y_obs, dtype=float)
@@ -41,19 +40,10 @@ class NoSurrogate:
             return PosteriorResult(mu=self._y_obs.copy(), sigma=None)
         raise RuntimeError("NoSurrogate.predict only works for training points")
 
+    def get_incumbent_candidate_indices(self, y_obs: np.ndarray) -> np.ndarray:
+        return np.arange(len(y_obs), dtype=int)
+
     def sample(self, x: np.ndarray, num_samples: int, rng: Generator) -> np.ndarray:
         n = len(x)
         num_metrics = self._y_obs.shape[1] if hasattr(self, "_y_obs") else 1
         return rng.standard_normal((num_samples, n, num_metrics))
-
-    def find_x_center(
-        self,
-        x_obs: np.ndarray,
-        y_obs: np.ndarray,
-        selector: IncumbentSelector,
-        rng: Generator,
-    ) -> np.ndarray | None:
-        if len(y_obs) == 0:
-            return None
-        best_idx = selector.select(y_obs, None, rng)
-        return x_obs[best_idx]

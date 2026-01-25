@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-
 from .candidate_gen_config import CandidateGenConfig
 from .init_config import InitConfig
 from .surrogate import NoSurrogateConfig, SurrogateConfig
@@ -51,7 +49,6 @@ class OptimizerConfig:
 
     @property
     def num_metrics(self) -> int | None:
-        """Get num_metrics from MorboTRConfig if applicable."""
         from .morbo_tr_config import MorboTRConfig
 
         if isinstance(self.trust_region, MorboTRConfig):

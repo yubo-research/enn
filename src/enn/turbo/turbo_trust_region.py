@@ -1,18 +1,17 @@
 from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from .tr_helpers import ScalarIncumbentMixin
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
-
     from .components.incumbent_selector import IncumbentSelector
     from .config.turbo_tr_config import TurboTRConfig
 
 
 @dataclass
-class TurboTrustRegion:
+class TurboTrustRegion(ScalarIncumbentMixin):
     config: TurboTRConfig
     num_dim: int
     length: float = field(init=False)
@@ -20,7 +19,7 @@ class TurboTrustRegion:
     success_counter: int = 0
     best_value: float = -float("inf")
     prev_num_obs: int = 0
-    incumbent_selector: IncumbentSelector | None = field(default=None, repr=False)
+    incumbent_selector: IncumbentSelector = field(default=None, repr=False)
     _num_arms: int | None = field(default=None, repr=False)
     _failure_tolerance: int | None = field(default=None, repr=False)
 
@@ -46,7 +45,6 @@ class TurboTrustRegion:
 
     @property
     def num_metrics(self) -> int:
-        """Single-objective trust region always has 1 metric."""
         return 1
 
     def _ensure_initialized(self, num_arms: int) -> None:
@@ -74,37 +72,36 @@ class TurboTrustRegion:
             raise RuntimeError("failure_tolerance not initialized; call ask() first")
         return self._failure_tolerance
 
-    def update(self, values: np.ndarray | Any) -> None:
+    def _coerce_y_obs_1d(self, y_obs: np.ndarray | Any) -> np.ndarray:
         import numpy as np
 
-        if self._failure_tolerance is None:
-            return
+        y_obs = np.asarray(y_obs, dtype=float)
+        if y_obs.ndim == 2:
+            if y_obs.shape[1] != 1:
+                raise ValueError(f"TurboTrustRegion expects m=1, got {y_obs.shape}")
+            return y_obs[:, 0]
+        if y_obs.ndim != 1:
+            raise ValueError(y_obs.shape)
+        return y_obs
 
-        values = np.asarray(values, dtype=float)
-        if values.ndim == 2:
-            if values.shape[1] != 1:
-                raise ValueError(f"TurboTrustRegion expects m=1, got {values.shape}")
-            values = values[:, 0]
-        elif values.ndim != 1:
-            raise ValueError(values.shape)
-        if values.size == 0:
-            return
-        new_values = values[self.prev_num_obs :]
-        if new_values.size == 0:
-            return
-        if not np.isfinite(self.best_value):
-            self.best_value = float(np.max(new_values))
-            self.prev_num_obs = values.size
-            return
-        # Use a shift-invariant scale for the improvement tolerance so that
-        # trust-region behavior is invariant to affine transforms of y.
-        prev_values = values[: self.prev_num_obs]
-        scale = (
-            float(np.max(prev_values) - np.min(prev_values))
-            if prev_values.size
-            else 0.0
-        )
-        improved = np.max(new_values) > self.best_value + 1e-3 * scale
+    def _coerce_y_incumbent_value(self, y_incumbent: np.ndarray | Any) -> float:
+        import numpy as np
+
+        y_incumbent = np.asarray(y_incumbent, dtype=float).reshape(-1)
+        if y_incumbent.shape != (self.num_metrics,):
+            raise ValueError(
+                f"y_incumbent must have shape ({self.num_metrics},), got {y_incumbent.shape}"
+            )
+        return float(y_incumbent[0])
+
+    def _improvement_scale(self, prev_values: np.ndarray) -> float:
+        import numpy as np
+
+        if prev_values.size == 0:
+            return 0.0
+        return float(np.max(prev_values) - np.min(prev_values))
+
+    def _update_counters_and_length(self, *, improved: bool) -> None:
         if improved:
             self.success_counter += 1
             self.failure_counter = 0
@@ -114,24 +111,51 @@ class TurboTrustRegion:
         if self.success_counter >= self.success_tolerance:
             self.length = min(2.0 * self.length, self.length_max)
             self.success_counter = 0
-        elif self.failure_counter >= self._failure_tolerance:
+        elif (
+            self._failure_tolerance is not None
+            and self.failure_counter >= self._failure_tolerance
+        ):
             self.length = 0.5 * self.length
             self.failure_counter = 0
 
-        self.best_value = max(self.best_value, float(np.max(new_values)))
-        self.prev_num_obs = values.size
+    def update(self, y_obs: np.ndarray | Any, y_incumbent: np.ndarray | Any) -> None:
+        if self._failure_tolerance is None:
+            return
+        y_obs = self._coerce_y_obs_1d(y_obs)
+        n = int(y_obs.size)
+        if n <= 0:
+            return
+        if n < self.prev_num_obs:
+            raise ValueError((n, self.prev_num_obs))
+        if n == self.prev_num_obs:
+            return
+        y_incumbent_value = self._coerce_y_incumbent_value(y_incumbent)
+        import math
+
+        if not math.isfinite(self.best_value):
+            self.best_value = y_incumbent_value
+            self.prev_num_obs = n
+            return
+        prev_values = y_obs[: self.prev_num_obs]
+        scale = self._improvement_scale(prev_values)
+        improved = y_incumbent_value > self.best_value + 1e-3 * scale
+        self._update_counters_and_length(improved=improved)
+        self.best_value = max(self.best_value, y_incumbent_value)
+        self.prev_num_obs = n
 
     def needs_restart(self) -> bool:
         return self.length < self.length_min
 
-    def restart(self, rng: Any | None = None) -> None:  # noqa: ARG002
+    def restart(self, rng: Any | None = None) -> None:
         self.length = self.length_init
         self.failure_counter = 0
         self.success_counter = 0
         self.best_value = -float("inf")
         self.prev_num_obs = 0
+        self._num_arms = None
+        self._failure_tolerance = None
 
-    def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:  # noqa: ARG002
+    def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
         self._ensure_initialized(num_arms)
 
     def compute_bounds_1d(
@@ -160,6 +184,6 @@ class TurboTrustRegion:
         rng: Generator,
         mu: np.ndarray | None = None,
     ) -> np.ndarray:
-        from .tr_helpers import get_single_incumbent_index
+        import numpy as np
 
-        return get_single_incumbent_index(self.incumbent_selector, y, rng, mu)
+        return np.array([self.get_incumbent_index(y, rng, mu=mu)])

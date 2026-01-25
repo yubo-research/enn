@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -8,26 +7,23 @@ if TYPE_CHECKING:
 
 
 def get_x_center_fallback(
-    config: Any,  # noqa: ARG001
+    config: Any,
     x_obs_list: list,
     y_obs_list: list,
     rng: Generator,
     tr_state: Any = None,
 ) -> np.ndarray | None:
     import numpy as np
-
     from .components.incumbent_selector import ScalarIncumbentSelector
 
     y_array = np.asarray(y_obs_list, dtype=float)
     if y_array.size == 0:
         return None
     x_array = np.asarray(x_obs_list, dtype=float)
-
     if tr_state is not None and hasattr(tr_state, "incumbent_selector"):
         selector = tr_state.incumbent_selector
     else:
         selector = ScalarIncumbentSelector(noise_aware=False)
-
     idx = selector.select(y_array, None, rng)
     return x_array[idx]
 
@@ -37,7 +33,6 @@ def handle_restart_clear_always(
     y_obs_list: list,
     yvar_obs_list: list,
 ) -> tuple[bool, int]:
-    """Clear all observation lists and return (True, 0) - used by turbo_one and turbo_enn."""
     x_obs_list.clear()
     y_obs_list.clear()
     yvar_obs_list.clear()
@@ -51,7 +46,6 @@ def handle_restart_check_multi_objective(
     yvar_obs_list: list,
     init_idx: int,
 ) -> tuple[bool, int]:
-    """Clear observations for multi-objective TRs (num_metrics > 1), else preserve init_idx."""
     is_multi = (
         tr_state is not None
         and hasattr(tr_state, "num_metrics")

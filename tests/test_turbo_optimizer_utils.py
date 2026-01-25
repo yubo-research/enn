@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 import numpy as np
 import pytest
-
 from enn.turbo.turbo_optimizer_utils import (
     reset_timing,
     sobol_seed_for_state,

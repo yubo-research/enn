@@ -1,15 +1,11 @@
 from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
-
 import numpy as np
-
 from .thompson_acq_optimizer import ThompsonAcqOptimizer
 from .ucb_acq_optimizer import UCBAcqOptimizer
 
 if TYPE_CHECKING:
     from numpy.random import Generator
-
     from .protocols import Surrogate
 
 
@@ -46,19 +42,15 @@ class HnRAcqOptimizer:
     ) -> np.ndarray:
         x_current = x_start.copy()
         current_score = score_fn(x_current)
-
         for _ in range(self._num_iterations):
             direction = rng.standard_normal(num_dim)
             direction = direction / np.linalg.norm(direction)
             step_size = rng.uniform(0.01, 0.1)
-
             x_proposed = np.clip(x_current + step_size * direction, 0.0, 1.0)
             proposed_score = score_fn(x_proposed)
-
             if proposed_score > current_score:
                 x_current = x_proposed
                 current_score = proposed_score
-
         return x_current
 
     def select(
@@ -68,23 +60,19 @@ class HnRAcqOptimizer:
         surrogate: Surrogate,
         rng: Generator,
         *,
-        tr_state: Any | None = None,  # noqa: ARG002
+        tr_state: Any | None = None,
     ) -> np.ndarray:
         num_dim = x_cand.shape[1]
         x_arms = np.zeros((num_arms, num_dim), dtype=float)
-
         is_ucb = isinstance(self._base, UCBAcqOptimizer)
-
         for arm_idx in range(num_arms):
             start_idx = rng.integers(0, len(x_cand))
             x_start = x_cand[start_idx]
-
             if is_ucb:
                 beta = getattr(self._base, "_beta", 1.0)
 
                 def score_fn(x_pt):
                     return self._score_fn_ucb(x_pt, surrogate, beta)
-
             else:
                 seed = int(rng.integers(0, 2**31))
 
@@ -92,5 +80,4 @@ class HnRAcqOptimizer:
                     return self._score_fn_thompson(x_pt, surrogate, s)
 
             x_arms[arm_idx] = self._optimize_one_arm(x_start, num_dim, rng, score_fn)
-
         return x_arms

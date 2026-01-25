@@ -1,7 +1,4 @@
-"""Tests for turbo types dataclasses."""
-
 import numpy as np
-
 from enn.turbo.types import (
     GPDataPrep,
     GPFitResult,

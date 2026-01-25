@@ -1,11 +1,6 @@
 from __future__ import annotations
-
 import sys
 from pathlib import Path
-
-# Import torch before faiss to avoid OpenMP conflict on macOS.
-# Both libraries use OpenMP; torch must load its runtime first.
-import torch  # noqa: F401
 
 src_path = Path(__file__).parent.parent / "src"
 if str(src_path) not in sys.path:
@@ -39,7 +34,6 @@ def make_select_sobol_fn(bounds, rng):
 
 def make_enn_model(n=20, d=3, seed=0, yvar_scale=0.1):
     import numpy as np
-
     from enn.enn.enn import EpistemicNearestNeighbors
 
     rng = np.random.default_rng(seed)

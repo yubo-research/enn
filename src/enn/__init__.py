@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 import importlib
-
 from .enn.enn import EpistemicNearestNeighbors
 from .enn.enn_fit import enn_fit
 

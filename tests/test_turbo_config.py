@@ -170,7 +170,7 @@ def test_candidate_gen_config_uniform():
 
 def test_candidate_gen_config_invalid_rv():
     with pytest.raises(ValueError, match="candidate_rv must be"):
-        CandidateGenConfig(candidate_rv="invalid")  # type: ignore[arg-type]
+        CandidateGenConfig(candidate_rv="invalid")
 
 
 def test_candidate_gen_config_invalid_num_candidates():
@@ -197,7 +197,7 @@ def test_init_config_lhd_only():
 
 def test_init_config_invalid_strategy():
     with pytest.raises(ValueError, match="init_strategy must be"):
-        InitConfig(init_strategy="invalid")  # type: ignore[arg-type]
+        InitConfig(init_strategy="invalid")
 
 
 def test_init_config_invalid_num_init():
@@ -308,7 +308,6 @@ def test_optimizer_config_lhd_only_requires_no_surrogate():
             init=InitConfig(init_strategy=LHDOnlyInit()),
             surrogate=GPSurrogateConfig(),
         )
-
     config = OptimizerConfig(
         init=InitConfig(init_strategy=LHDOnlyInit()),
         trust_region=MorboTRConfig(multi_objective=MultiObjectiveConfig(num_metrics=2)),
@@ -464,11 +463,9 @@ def test_optimizer_config_properties():
 def test_optimizer_config_num_metrics():
     cfg_turbo = OptimizerConfig(trust_region=TurboTRConfig())
     assert cfg_turbo.num_metrics is None
-
     cfg_morbo = OptimizerConfig(
         trust_region=MorboTRConfig(multi_objective=MultiObjectiveConfig(num_metrics=2))
     )
     assert cfg_morbo.num_metrics == 2
-
     cfg_none = OptimizerConfig(trust_region=NoTRConfig())
     assert cfg_none.num_metrics is None

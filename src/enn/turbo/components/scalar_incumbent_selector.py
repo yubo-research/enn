@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -10,7 +9,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class ScalarIncumbentSelector:
-    noise_aware: bool  # No default - must be explicitly set by caller
+    noise_aware: bool
 
     def select(
         self,
@@ -19,13 +18,11 @@ class ScalarIncumbentSelector:
         rng: Generator,
     ) -> int:
         import numpy as np
-
         from ..turbo_utils import argmax_random_tie
 
         y = np.asarray(y_obs, dtype=float)
         if y.ndim == 2:
             y = y[:, 0]
-
         if self.noise_aware:
             if mu_obs is None:
                 raise ValueError(
@@ -36,8 +33,7 @@ class ScalarIncumbentSelector:
             if mu.ndim == 2:
                 mu = mu[:, 0]
             return int(argmax_random_tie(mu, rng=rng))
-
         return int(argmax_random_tie(y, rng=rng))
 
-    def reset(self, rng: Generator) -> None:  # noqa: ARG002
+    def reset(self, rng: Generator) -> None:
         pass

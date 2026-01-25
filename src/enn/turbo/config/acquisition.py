@@ -12,9 +12,7 @@ AcquisitionConfig = (
     | ParetoAcquisitionConfig
     | RandomAcquisitionConfig
 )
-
 AcqOptimizerConfig = RAASPOptimizerConfig | HnROptimizerConfig | NDSOptimizerConfig
-
 __all__ = [
     "AcqOptimizerConfig",
     "AcquisitionConfig",

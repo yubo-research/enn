@@ -1,11 +1,9 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from numpy.random import Generator
-
     from ..components.protocols import TrustRegion
 
 
@@ -17,7 +15,7 @@ class NoTRConfig:
         self,
         *,
         num_dim: int,
-        rng: Generator,  # noqa: ARG002
+        rng: Generator,
     ) -> TrustRegion:
         from ..components.incumbent_selector import ScalarIncumbentSelector
         from ..no_trust_region import NoTrustRegion

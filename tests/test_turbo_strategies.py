@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 import numpy as np
 import pytest
-
 from enn.turbo.config.init_strategies import HybridInit, LHDOnlyInit
 from enn.turbo.config.validation import validate_optimizer_config
 from enn.turbo.optimizer import Optimizer, create_optimizer
@@ -29,10 +27,8 @@ def test_draw_lhd_shapes_and_bounds():
 def test_init_strategies_build_runtime_strategies():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-
     hybrid = HybridInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
     assert isinstance(hybrid, TurboHybridStrategy)
-
     lhd_only = LHDOnlyInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
     assert isinstance(lhd_only, LHDOnlyStrategy)
 
@@ -55,12 +51,10 @@ def test_optimizer_init_progress_and_telemetry_smoke():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
     opt = create_optimizer(bounds=bounds, config=turbo_zero_config(num_init=5), rng=rng)
-
     init = opt.init_progress
     assert init is not None
     init_idx, num_init = init
     assert init_idx == 0 and num_init == 5
-
     _ = opt.ask(num_arms=2)
     tel = opt.telemetry()
     assert tel.dt_fit == 0.0
@@ -72,18 +66,13 @@ def test_turbo_hybrid_fallback_executes_when_init_points_exhausted_mid_batch():
     bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
     opt = create_optimizer(bounds=bounds, config=turbo_zero_config(num_init=2), rng=rng)
-
     x1 = opt.ask(num_arms=1)
     y1 = -np.sum(x1**2, axis=1)
     opt.tell(x1, y1)
-
     init_before = opt.init_progress
     assert init_before is not None
     init_idx_before, num_init = init_before
     assert init_idx_before == 1 and num_init == 2
-
-    # This ask should return 1 remaining init point + 1 fallback point, forcing the fallback
-    # callable inside TurboHybridStrategy.ask to execute.
     x2 = opt.ask(num_arms=2)
     assert x2.shape == (2, 2)
 
@@ -95,7 +84,6 @@ def test_optimizer_direct_constructor_builds_strategy_by_default():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
     cfg = turbo_zero_config(num_init=3)
-
     opt = Optimizer(
         bounds=bounds,
         config=cfg,

@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 import numpy as np
-
 from .candidates import Candidates
 from .conditional_posterior_draw_internals import ConditionalPosteriorDrawInternals
 from .enn_like_protocol import ENNLike
@@ -24,7 +22,7 @@ def _pairwise_sq_l2(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def _validate_x(enn: ENNLike, x: np.ndarray) -> np.ndarray:
     x = np.asarray(x, dtype=float)
-    if x.ndim != 2 or x.shape[1] != enn._num_dim:  # noqa: SLF001
+    if x.ndim != 2 or x.shape[1] != enn._num_dim:
         raise ValueError(x.shape)
     return x
 
@@ -34,9 +32,9 @@ def _validate_whatif(
 ) -> tuple[np.ndarray, np.ndarray]:
     x_whatif = np.asarray(x_whatif, dtype=float)
     y_whatif = np.asarray(y_whatif, dtype=float)
-    if x_whatif.ndim != 2 or x_whatif.shape[1] != enn._num_dim:  # noqa: SLF001
+    if x_whatif.ndim != 2 or x_whatif.shape[1] != enn._num_dim:
         raise ValueError(x_whatif.shape)
-    if y_whatif.ndim != 2 or y_whatif.shape[1] != enn._num_metrics:  # noqa: SLF001
+    if y_whatif.ndim != 2 or y_whatif.shape[1] != enn._num_metrics:
         raise ValueError(y_whatif.shape)
     if x_whatif.shape[0] != y_whatif.shape[0]:
         raise ValueError((x_whatif.shape, y_whatif.shape))
@@ -44,7 +42,7 @@ def _validate_whatif(
 
 
 def _scale_x_if_needed(enn: ENNLike, x: np.ndarray) -> np.ndarray:
-    return x / enn._x_scale if enn._scale_x else x  # noqa: SLF001
+    return x / enn._x_scale if enn._scale_x else x
 
 
 def _compute_total_n(enn: ENNLike, num_whatif: int, flags: PosteriorFlags) -> int:
@@ -66,20 +64,19 @@ def _get_train_candidates(enn: ENNLike, x: np.ndarray, *, search_k: int) -> Cand
         return Candidates(
             dist2=np.zeros((batch_size, 0), dtype=float),
             ids=np.zeros((batch_size, 0), dtype=int),
-            y=np.zeros((batch_size, 0, enn._num_metrics), dtype=float),  # noqa: SLF001
+            y=np.zeros((batch_size, 0, enn._num_metrics), dtype=float),
             yvar=(
-                np.zeros((batch_size, 0, enn._num_metrics), dtype=float)  # noqa: SLF001
-                if enn._train_yvar is not None  # noqa: SLF001
+                np.zeros((batch_size, 0, enn._num_metrics), dtype=float)
+                if enn._train_yvar is not None
                 else None
             ),
         )
-
     train_search_k = int(min(search_k, len(enn)))
-    dist2_train, idx_train = enn._enn_index.search(  # noqa: SLF001
+    dist2_train, idx_train = enn._enn_index.search(
         x, search_k=train_search_k, exclude_nearest=False
     )
-    y_train = enn._train_y[idx_train]  # noqa: SLF001
-    yvar_train = enn._train_yvar[idx_train] if enn._train_yvar is not None else None  # noqa: SLF001
+    y_train = enn._train_y[idx_train]
+    yvar_train = enn._train_yvar[idx_train] if enn._train_yvar is not None else None
     return Candidates(dist2=dist2_train, ids=idx_train, y=y_train, yvar=yvar_train)
 
 
@@ -114,10 +111,9 @@ def _merge_candidates(
     y_all = np.concatenate([train.y, y_whatif_batched], axis=1)
     if train.yvar is None:
         return Candidates(dist2=dist2_all, ids=ids_all, y=y_all, yvar=None)
-
     batch_size = dist2_all.shape[0]
     num_whatif = dist2_whatif.shape[1]
-    yvar_whatif = np.zeros((batch_size, num_whatif, enn._num_metrics))  # noqa: SLF001
+    yvar_whatif = np.zeros((batch_size, num_whatif, enn._num_metrics))
     yvar_all = np.concatenate([train.yvar, yvar_whatif], axis=1)
     return Candidates(dist2=dist2_all, ids=ids_all, y=y_all, yvar=yvar_all)
 
@@ -140,7 +136,7 @@ def _take_along_axis_3d(a: np.ndarray, idx_2d: np.ndarray) -> np.ndarray:
 def _make_empty_normal(enn: ENNLike, batch_size: int):
     from .enn_normal import ENNNormal
 
-    internals = enn._empty_posterior_internals(batch_size)  # noqa: SLF001
+    internals = enn._empty_posterior_internals(batch_size)
     return ENNNormal(internals.mu, internals.se)
 
 
@@ -197,7 +193,7 @@ def _compute_mu_se(
     flags: PosteriorFlags,
     y_scale: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    stats = enn._compute_weighted_stats(  # noqa: SLF001
+    stats = enn._compute_weighted_stats(
         neighbors.dist2,
         neighbors.y,
         yvar_neighbors=neighbors.yvar,
@@ -216,7 +212,7 @@ def _compute_draw_internals(
     flags: PosteriorFlags,
     y_scale: np.ndarray,
 ) -> ConditionalPosteriorDrawInternals:
-    stats = enn._compute_weighted_stats(  # noqa: SLF001
+    stats = enn._compute_weighted_stats(
         neighbors.dist2,
         neighbors.y,
         yvar_neighbors=neighbors.yvar,
@@ -274,7 +270,6 @@ def _compute_conditional_posterior_impl(
     x_whatif, y_whatif = _validate_whatif(enn, x_whatif, y_whatif)
     if x_whatif.shape[0] == 0:
         return enn.posterior(x, params=params, flags=flags)
-
     batch_size, search_k, neighbors = _conditional_neighbors_nonempty_whatif(
         enn, x_whatif, y_whatif, x, params=params, flags=flags
     )
@@ -313,12 +308,11 @@ def compute_conditional_posterior_draw_internals(
     x_whatif, y_whatif = _validate_whatif(enn, x_whatif, y_whatif)
     if x_whatif.shape[0] == 0:
         raise ValueError("x_whatif must be non-empty for conditional draw internals")
-
     batch_size, search_k, neighbors = _conditional_neighbors_nonempty_whatif(
         enn, x_whatif, y_whatif, x, params=params, flags=flags
     )
     if search_k == 0 or neighbors is None:
-        empty_internals = enn._empty_posterior_internals(batch_size)  # noqa: SLF001
+        empty_internals = enn._empty_posterior_internals(batch_size)
         return ConditionalPosteriorDrawInternals(
             idx=empty_internals.idx,
             w_normalized=empty_internals.w_normalized,
@@ -326,7 +320,6 @@ def compute_conditional_posterior_draw_internals(
             mu=empty_internals.mu,
             se=empty_internals.se,
         )
-
     return _compute_draw_internals(
         enn, neighbors, params=params, flags=flags, y_scale=y_scale
     )

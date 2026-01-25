@@ -10,7 +10,6 @@ from .weighted_stats import WeightedStats
 _DrawInternals = DrawInternals
 _NeighborData = NeighborData
 _WeightedStats = WeightedStats
-
 __all__ = [
     "DrawInternals",
     "EpistemicNearestNeighbors",

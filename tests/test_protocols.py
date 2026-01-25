@@ -1,7 +1,4 @@
-"""Tests for protocol definitions."""
-
 from typing import Protocol
-
 from enn.turbo.components.acquisition_optimizer_protocol import AcquisitionOptimizer
 from enn.turbo.components.incumbent_selector_protocol import IncumbentSelector
 from enn.turbo.components.surrogate_protocol import Surrogate

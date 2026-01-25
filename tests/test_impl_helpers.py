@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 import numpy as np
-
 from enn.turbo.config import (
     MorboTRConfig,
     MultiObjectiveConfig,
@@ -19,7 +17,6 @@ from enn.turbo.impl_helpers import (
 
 
 def _build_and_verify_tr(tr_config, rng, num_dim=3):
-    """Helper to build a trust region and verify basic attributes."""
     tr = tr_config.build(num_dim=num_dim, rng=rng)
     assert tr is not None
     assert hasattr(tr, "length")

@@ -1,9 +1,7 @@
 from __future__ import annotations
-
 import conftest
 import numpy as np
 import pytest
-
 from enn import create_optimizer
 from enn.turbo.components import NoSurrogate, SurrogateResult
 from enn.turbo.config.enums import CandidateRV
@@ -25,11 +23,9 @@ def test_turbo_enn_affine_invariance_under_dynamic_y_range() -> None:
             x = opt.ask(num_arms=num_arms)
             u = x.copy()
             base_y = conftest.sphere_objective(2.0 * u - 1.0)
-
             a_t = 10.0 ** float(np.sin(t + 1.0)) + 1e-6
             b_t = 1e6 * float(np.cos(t + 1.0))
             y = global_scale * (a_t * base_y + b_t) + global_shift
-
             opt.tell(x, y)
             unit_trajectory.append(u)
             tr_lengths.append(opt.tr_length)
@@ -37,7 +33,6 @@ def test_turbo_enn_affine_invariance_under_dynamic_y_range() -> None:
 
     traj_a, lengths_a = run(global_scale=1.0, global_shift=0.0)
     traj_b, lengths_b = run(global_scale=3.7, global_shift=-0.2)
-
     assert np.allclose(traj_a, traj_b)
     assert np.allclose(lengths_a, lengths_b)
 
@@ -68,7 +63,6 @@ def test_trailing_obs_preserves_unique_best_and_is_deterministic_under_ties() ->
     snaps_unique_best = run(lambda t: 1_000.0 if t == 0 else -float(t))
     for _, y_obs in snaps_unique_best[10:]:
         assert float(np.max(y_obs)) == 1_000.0
-
     snaps_ties_1 = run(lambda t: 0.0)
     snaps_ties_2 = run(lambda t: 0.0)
     assert len(snaps_ties_1) == len(snaps_ties_2)
@@ -96,7 +90,7 @@ class _NoSurrogateWithLengthscales(NoSurrogate):
             y_obs,
             y_var,
             num_steps=num_steps,
-            rng=rng,  # type: ignore[arg-type]
+            rng=rng,
         )
         return SurrogateResult(model=None, lengthscales=self._lengthscales)
 
@@ -106,10 +100,10 @@ class _FirstNAcqOptimizer:
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        surrogate: object,  # noqa: ARG002
-        rng: object,  # noqa: ARG002
+        surrogate: object,
+        rng: object,
         *,
-        tr_state: object | None = None,  # noqa: ARG002
+        tr_state: object | None = None,
     ) -> np.ndarray:
         return np.asarray(x_cand, dtype=float)[: int(num_arms)]
 
@@ -122,7 +116,6 @@ def test_candidate_generation_with_extreme_lengthscales_stays_in_bounds() -> Non
         num_candidates=64,
         candidate_rv=CandidateRV.UNIFORM,
     )
-
     surrogate = _NoSurrogateWithLengthscales(
         lengthscales=np.array([1e-6, 1e6, 1e-3, 1e3, 1.0], dtype=float)
     )
@@ -133,15 +126,12 @@ def test_candidate_generation_with_extreme_lengthscales_stays_in_bounds() -> Non
         surrogate=surrogate,
         acquisition_optimizer=_FirstNAcqOptimizer(),
     )
-
     x0 = opt.ask(num_arms=1)
     opt.tell(x0, np.array([0.0], dtype=float))
-
     x_obs = np.asarray(opt._x_obs_list, dtype=float)
     y_obs = np.asarray(opt._y_obs_list, dtype=float)
     x_center = opt._find_x_center(x_obs, y_obs)
     assert x_center is not None
-
     x = opt.ask(num_arms=4)
     assert x.shape == (4, bounds.shape[0])
     assert np.all(np.isfinite(x))
@@ -167,9 +157,7 @@ def test_candidate_generation_raises_on_nonfinite_lengthscales() -> None:
         surrogate=surrogate,
         acquisition_optimizer=_FirstNAcqOptimizer(),
     )
-
     x0 = opt.ask(num_arms=1)
     opt.tell(x0, np.array([0.0], dtype=float))
-
     with pytest.raises(ValueError, match="lengthscales"):
         _ = opt.ask(num_arms=2)
