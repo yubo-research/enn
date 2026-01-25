@@ -174,6 +174,7 @@ class Optimizer:
             candidate_rv=candidate_rv,
             sobol_engine=sobol_engine,
             raasp_driver=self._config.raasp_driver,
+            num_pert=20,
         )
 
     def _validate_tell_inputs(

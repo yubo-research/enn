@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.stats import qmc
 from enn.turbo.tr_helpers import generate_tr_candidates, generate_tr_candidates_fast
-from enn.turbo.config.enums import CandidateRV
+from enn.turbo.config.enums import CandidateRV, RAASPDriver
 
 
 def test_candidate_generation_statistical_properties():
@@ -30,15 +30,20 @@ def test_candidate_generation_statistical_properties():
         num_candidates,
         rng=rng,
         candidate_rv=CandidateRV.UNIFORM,
+        sobol_engine=None,
+        raasp_driver=RAASPDriver.ORIG,
+        num_pert=num_pert,
     )
 
-    fast_uniform = generate_tr_candidates_fast(
+    fast_uniform = generate_tr_candidates(
         compute_bounds,
         x_center,
         None,
         num_candidates,
         rng=rng,
         candidate_rv=CandidateRV.UNIFORM,
+        sobol_engine=None,
+        raasp_driver=RAASPDriver.FAST,
         num_pert=num_pert,
     )
 
@@ -83,15 +88,19 @@ def test_candidate_generation_statistical_properties():
         rng=rng,
         candidate_rv=CandidateRV.SOBOL,
         sobol_engine=sobol_engine,
+        raasp_driver=RAASPDriver.ORIG,
+        num_pert=num_pert,
     )
 
-    fast_sobol = generate_tr_candidates_fast(
+    fast_sobol = generate_tr_candidates(
         compute_bounds,
         x_center,
         None,
         num_candidates,
         rng=rng,
         candidate_rv=CandidateRV.SOBOL,
+        sobol_engine=None,
+        raasp_driver=RAASPDriver.FAST,
         num_pert=num_pert,
     )
 
@@ -114,9 +123,15 @@ def test_fast_candidates_various_inputs():
     def compute_bounds(center, lengthscales=None):
         return np.full_like(center, -1.0), np.full_like(center, 1.0)
 
-    # Test num_pert = 1
+    # num_pert = 1
     cand = generate_tr_candidates_fast(
-        compute_bounds, x_center, None, num_candidates, rng=rng, num_pert=1
+        compute_bounds,
+        x_center,
+        None,
+        num_candidates,
+        rng=rng,
+        candidate_rv=CandidateRV.UNIFORM,
+        num_pert=1,
     )
     perturbed_mask = ~np.isclose(cand, 0.0)
     # Mean should be 1, but individual rows vary (Binomial)
@@ -125,7 +140,13 @@ def test_fast_candidates_various_inputs():
 
     # Test num_pert = num_dim
     cand = generate_tr_candidates_fast(
-        compute_bounds, x_center, None, num_candidates, rng=rng, num_pert=num_dim
+        compute_bounds,
+        x_center,
+        None,
+        num_candidates,
+        rng=rng,
+        candidate_rv=CandidateRV.UNIFORM,
+        num_pert=num_dim,
     )
     perturbed_mask = ~np.isclose(cand, 0.0)
     assert np.all(perturbed_mask.sum(axis=1) == num_dim)

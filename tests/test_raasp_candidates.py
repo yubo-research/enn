@@ -132,7 +132,10 @@ def test_generate_tr_candidates_dispatcher(rng):
         None,
         num_candidates,
         rng=rng,
+        candidate_rv=CandidateRV.SOBOL,
+        sobol_engine=None,
         raasp_driver=RAASPDriver.FAST,
+        num_pert=2,
     )
     assert cand_fast.shape == (num_candidates, num_dim)
 
@@ -146,6 +149,7 @@ def test_generate_tr_candidates_dispatcher(rng):
         candidate_rv=CandidateRV.SOBOL,
         sobol_engine=sobol_engine,
         raasp_driver=RAASPDriver.ORIG,
+        num_pert=2,
     )
     assert cand_orig.shape == (num_candidates, num_dim)
 
@@ -157,7 +161,13 @@ def test_generate_tr_candidates_fast_edge_cases(rng):
 
     # num_pert = 1
     cand = generate_tr_candidates_fast(
-        _compute_bounds, x_center, None, num_candidates, rng=rng, num_pert=1
+        _compute_bounds,
+        x_center,
+        None,
+        num_candidates,
+        rng=rng,
+        candidate_rv=CandidateRV.UNIFORM,
+        num_pert=1,
     )
     assert cand.shape == (num_candidates, num_dim)
     # Because of binomial sampling and np.maximum(ks, 1),
@@ -166,6 +176,12 @@ def test_generate_tr_candidates_fast_edge_cases(rng):
 
     # num_pert = num_dim
     cand = generate_tr_candidates_fast(
-        _compute_bounds, x_center, None, num_candidates, rng=rng, num_pert=num_dim
+        _compute_bounds,
+        x_center,
+        None,
+        num_candidates,
+        rng=rng,
+        candidate_rv=CandidateRV.UNIFORM,
+        num_pert=num_dim,
     )
     assert np.all((~np.isclose(cand, 0.0)).sum(axis=1) == num_dim)

@@ -33,7 +33,7 @@ class CandidateGenConfig:
     num_candidates: NumCandidatesFn = field(
         default_factory=lambda: default_num_candidates
     )
-    raasp_driver: RAASPDriver = RAASPDriver.FAST
+    raasp_driver: RAASPDriver = RAASPDriver.ORIG
 
     def __post_init__(self) -> None:
         if not isinstance(self.candidate_rv, CandidateRV):

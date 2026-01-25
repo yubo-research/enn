@@ -136,8 +136,8 @@ def generate_tr_candidates_fast(
     num_candidates: int,
     *,
     rng: Generator,
-    candidate_rv: CandidateRV = CandidateRV.SOBOL,
-    num_pert: int = 20,
+    candidate_rv: CandidateRV,
+    num_pert: int,
 ) -> np.ndarray:
     import numpy as np
     from scipy.stats import qmc
@@ -176,10 +176,10 @@ def generate_tr_candidates(
     num_candidates: int,
     *,
     rng: Generator,
-    candidate_rv: CandidateRV = CandidateRV.SOBOL,
-    sobol_engine: QMCEngine | None = None,
-    raasp_driver: RAASPDriver = RAASPDriver.FAST,
-    num_pert: int = 20,
+    candidate_rv: CandidateRV,
+    sobol_engine: QMCEngine | None,
+    raasp_driver: RAASPDriver,
+    num_pert: int,
 ) -> np.ndarray:
     if raasp_driver == RAASPDriver.FAST:
         return generate_tr_candidates_fast(
