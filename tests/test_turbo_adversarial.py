@@ -54,8 +54,8 @@ def test_trailing_obs_preserves_unique_best_and_is_deterministic_under_ties() ->
             opt.tell(x, y)
             snapshots.append(
                 (
-                    np.asarray(opt._x_obs_list, dtype=float),
-                    np.asarray(opt._y_obs_list, dtype=float),
+                    opt._x_obs.view().copy(),
+                    opt._y_obs.view().copy(),
                 )
             )
         return snapshots
@@ -128,8 +128,8 @@ def test_candidate_generation_with_extreme_lengthscales_stays_in_bounds() -> Non
     )
     x0 = opt.ask(num_arms=1)
     opt.tell(x0, np.array([0.0], dtype=float))
-    x_obs = np.asarray(opt._x_obs_list, dtype=float)
-    y_obs = np.asarray(opt._y_obs_list, dtype=float)
+    x_obs = opt._x_obs.view()
+    y_obs = opt._y_obs.view()
     x_center = opt._find_x_center(x_obs, y_obs)
     assert x_center is not None
     x = opt.ask(num_arms=4)

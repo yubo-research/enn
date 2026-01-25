@@ -8,7 +8,7 @@ from .trust_region import TrustRegionConfig, TurboTRConfig
 
 if TYPE_CHECKING:
     from .acquisition import AcqOptimizerConfig, AcquisitionConfig
-    from .enums import CandidateRV
+    from .enums import CandidateRV, RAASPDriver
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,10 @@ class OptimizerConfig:
     @property
     def candidate_rv(self) -> CandidateRV:
         return self.candidates.candidate_rv
+
+    @property
+    def raasp_driver(self) -> RAASPDriver:
+        return self.candidates.raasp_driver
 
     @property
     def num_candidates(self):

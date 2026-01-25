@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
-from .config.enums import CandidateRV
+
+from .config.enums import CandidateRV, RAASPDriver
 
 if TYPE_CHECKING:
     import numpy as np
@@ -96,7 +98,7 @@ class ScalarIncumbentMixin:
         )
 
 
-def generate_tr_candidates(
+def generate_tr_candidates_orig(
     compute_bounds_1d: Any,
     x_center: np.ndarray,
     lengthscales: np.ndarray | None,
@@ -125,3 +127,76 @@ def generate_tr_candidates(
             x_center, lb, ub, num_candidates, rng=rng
         )
     raise ValueError(candidate_rv)
+
+
+def generate_tr_candidates_fast(
+    compute_bounds_1d: Any,
+    x_center: np.ndarray,
+    lengthscales: np.ndarray | None,
+    num_candidates: int,
+    *,
+    rng: Generator,
+    candidate_rv: CandidateRV = CandidateRV.SOBOL,
+    num_pert: int = 20,
+) -> np.ndarray:
+    import numpy as np
+    from scipy.stats import qmc
+
+    lb, ub = compute_bounds_1d(x_center, lengthscales)
+    num_dim = x_center.shape[-1]
+
+    candidates = np.empty((num_candidates, num_dim), dtype=float)
+    candidates[:] = x_center
+
+    prob_perturb = min(num_pert / num_dim, 1.0)
+    ks = rng.binomial(num_dim, prob_perturb, size=num_candidates)
+    ks = np.maximum(ks, 1)
+    max_k = int(np.max(ks))
+
+    if candidate_rv == CandidateRV.SOBOL:
+        sobol = qmc.Sobol(d=max_k, scramble=True, seed=int(rng.integers(0, 2**31)))
+        samples = sobol.random(num_candidates)
+    elif candidate_rv == CandidateRV.UNIFORM:
+        samples = rng.random((num_candidates, max_k))
+    else:
+        raise ValueError(candidate_rv)
+
+    for i in range(num_candidates):
+        k = ks[i]
+        idx = rng.choice(num_dim, size=k, replace=False)
+        candidates[i, idx] = lb[idx] + (ub[idx] - lb[idx]) * samples[i, :k]
+
+    return candidates
+
+
+def generate_tr_candidates(
+    compute_bounds_1d: Any,
+    x_center: np.ndarray,
+    lengthscales: np.ndarray | None,
+    num_candidates: int,
+    *,
+    rng: Generator,
+    candidate_rv: CandidateRV = CandidateRV.SOBOL,
+    sobol_engine: QMCEngine | None = None,
+    raasp_driver: RAASPDriver = RAASPDriver.FAST,
+    num_pert: int = 20,
+) -> np.ndarray:
+    if raasp_driver == RAASPDriver.FAST:
+        return generate_tr_candidates_fast(
+            compute_bounds_1d,
+            x_center,
+            lengthscales,
+            num_candidates,
+            rng=rng,
+            candidate_rv=candidate_rv,
+            num_pert=num_pert,
+        )
+    return generate_tr_candidates_orig(
+        compute_bounds_1d,
+        x_center,
+        lengthscales,
+        num_candidates,
+        rng=rng,
+        candidate_rv=candidate_rv,
+        sobol_engine=sobol_engine,
+    )

@@ -16,44 +16,50 @@ class AppendableArray:
             return (0, 0)
         return (self._size, self._num_cols)
 
-    def append(self, row: np.ndarray) -> None:
-        row = np.asarray(row)
+    def _initialize_buffer(self, row: np.ndarray) -> None:
+        if row.ndim == 0:
+            self._num_cols = 1
+            row = row.reshape(1, 1)
+        elif row.ndim == 1:
+            self._num_cols = row.shape[0]
+            row = row[np.newaxis, :]
+        elif row.ndim == 2:
+            if row.shape[0] != 1:
+                raise ValueError(f"Expected row shape (1, D), got {row.shape}")
+            self._num_cols = row.shape[1]
+        else:
+            raise ValueError(f"Expected 0D, 1D or 2D array, got {row.ndim}D")
 
-        if self._num_cols is None:
-            if row.ndim == 0:
-                self._num_cols = 1
-                row = row.reshape(1, 1)
-            elif row.ndim == 1:
-                self._num_cols = row.shape[0]
-                row = row[np.newaxis, :]
-            elif row.ndim == 2:
-                if row.shape[0] != 1:
-                    raise ValueError(f"Expected row shape (1, D), got {row.shape}")
-                self._num_cols = row.shape[1]
-            else:
-                raise ValueError(f"Expected 0D, 1D or 2D array, got {row.ndim}D")
+        self._buffer = np.empty(
+            (self._initial_capacity, self._num_cols), dtype=row.dtype
+        )
 
-            self._buffer = np.empty(
-                (self._initial_capacity, self._num_cols), dtype=row.dtype
-            )
-
+    def _validate_row(self, row: np.ndarray) -> np.ndarray:
         if row.ndim == 0:
             if self._num_cols != 1:
                 raise ValueError(f"Expected {self._num_cols} columns, got 1 (scalar)")
-            row = row.reshape(1, 1)
-        elif row.ndim == 1:
+            return row.reshape(1, 1)
+        if row.ndim == 1:
             if row.shape[0] != self._num_cols:
                 raise ValueError(
                     f"Expected {self._num_cols} columns, got {row.shape[0]}"
                 )
-            row = row[np.newaxis, :]
-        elif row.ndim == 2:
+            return row[np.newaxis, :]
+        if row.ndim == 2:
             if row.shape != (1, self._num_cols):
                 raise ValueError(
                     f"Expected shape (1, {self._num_cols}), got {row.shape}"
                 )
-        else:
-            raise ValueError(f"Expected 0D, 1D or 2D array, got {row.ndim}D")
+            return row
+        raise ValueError(f"Expected 0D, 1D or 2D array, got {row.ndim}D")
+
+    def append(self, row: np.ndarray) -> None:
+        row = np.asarray(row)
+
+        if self._num_cols is None:
+            self._initialize_buffer(row)
+
+        row = self._validate_row(row)
 
         assert self._buffer is not None
         if self._size + 1 > self._buffer.shape[0]:

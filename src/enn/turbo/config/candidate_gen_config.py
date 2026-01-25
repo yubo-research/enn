@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from .candidate_rv import CandidateRV
+from .raasp_driver import RAASPDriver
 
 if TYPE_CHECKING:
 
@@ -32,6 +33,7 @@ class CandidateGenConfig:
     num_candidates: NumCandidatesFn = field(
         default_factory=lambda: default_num_candidates
     )
+    raasp_driver: RAASPDriver = RAASPDriver.FAST
 
     def __post_init__(self) -> None:
         if not isinstance(self.candidate_rv, CandidateRV):
