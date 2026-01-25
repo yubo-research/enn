@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from numpy.random import Generator
     from ..components.protocols import TrustRegion
+    from .enums import CandidateRV
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class TurboTRConfig:
         *,
         num_dim: int,
         rng: Generator,
+        candidate_rv: CandidateRV | None = None,
     ) -> TrustRegion:
         from ..components.incumbent_selector import ScalarIncumbentSelector
         from ..turbo_trust_region import TurboTrustRegion

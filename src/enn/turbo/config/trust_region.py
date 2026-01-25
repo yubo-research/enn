@@ -7,6 +7,7 @@ from .turbo_tr_config import TRLengthConfig, TurboTRConfig
 if TYPE_CHECKING:
     from numpy.random import Generator
     from ..components.protocols import TrustRegion
+    from .enums import CandidateRV
 
 
 class TrustRegionConfig(Protocol):
@@ -15,6 +16,7 @@ class TrustRegionConfig(Protocol):
         *,
         num_dim: int,
         rng: Generator,
+        candidate_rv: CandidateRV,
     ) -> TrustRegion: ...
 
 

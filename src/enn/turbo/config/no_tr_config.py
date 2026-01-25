@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from numpy.random import Generator
     from ..components.protocols import TrustRegion
+    from .enums import CandidateRV
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class NoTRConfig:
         *,
         num_dim: int,
         rng: Generator,
+        candidate_rv: CandidateRV | None = None,
     ) -> TrustRegion:
         from ..components.incumbent_selector import ScalarIncumbentSelector
         from ..no_trust_region import NoTrustRegion

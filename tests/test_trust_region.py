@@ -54,6 +54,7 @@ def test_no_trust_region_compute_bounds_1d():
 
 def test_no_trust_region_generate_candidates():
     from enn.turbo.tr_helpers import generate_tr_candidates
+    from enn.turbo.config.enums import CandidateRV, RAASPDriver
 
     config = NoTRConfig()
     tr = NoTrustRegion(config=config, num_dim=3)
@@ -61,7 +62,15 @@ def test_no_trust_region_generate_candidates():
     sobol = qmc.Sobol(d=3, scramble=True, seed=42)
     x_center = np.array([0.5, 0.5, 0.5])
     candidates = generate_tr_candidates(
-        tr.compute_bounds_1d, x_center, None, 100, rng=rng, sobol_engine=sobol
+        tr.compute_bounds_1d,
+        x_center,
+        None,
+        100,
+        rng=rng,
+        candidate_rv=CandidateRV.SOBOL,
+        sobol_engine=sobol,
+        raasp_driver=RAASPDriver.ORIG,
+        num_pert=20,
     )
     assert candidates.shape == (100, 3)
     assert np.all(candidates >= 0.0) and np.all(candidates <= 1.0)

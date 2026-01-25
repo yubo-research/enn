@@ -43,6 +43,7 @@ class Optimizer:
         self._tr_state = config.trust_region.build(
             num_dim=self._num_dim,
             rng=rng,
+            candidate_rv=config.candidate_rv,
         )
         self._trailing_obs = (
             None if config.trailing_obs is None else int(config.trailing_obs)
@@ -161,9 +162,12 @@ class Optimizer:
         if getattr(self._tr_state, "uses_custom_candidate_gen", False):
             return self._tr_state.generate_candidates(
                 x_center,
+                lengthscales,
                 num_candidates,
                 rng=self._rng,
                 sobol_engine=sobol_engine,
+                raasp_driver=self._config.raasp_driver,
+                num_pert=20,
             )
         return tr_helpers.generate_tr_candidates(
             self._tr_state.compute_bounds_1d,

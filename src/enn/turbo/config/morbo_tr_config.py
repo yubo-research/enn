@@ -7,6 +7,9 @@ from .turbo_tr_config import TRLengthConfig
 if TYPE_CHECKING:
     from numpy.random import Generator
     from ..components.protocols import TrustRegion
+    from .enums import CandidateRV
+
+from .enums import CandidateRV
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,7 @@ class MorboTRConfig:
         *,
         num_dim: int,
         rng: Generator,
+        candidate_rv: CandidateRV = CandidateRV.SOBOL,
     ) -> TrustRegion:
         from ..morbo_trust_region import MorboTrustRegion
 
@@ -71,4 +75,5 @@ class MorboTRConfig:
             config=self,
             num_dim=num_dim,
             rng=rng,
+            candidate_rv=candidate_rv,
         )

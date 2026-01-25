@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from .config.morbo_tr_config import MorboTRConfig
     from .config.rescalarize import Rescalarize
 
+from .config.enums import CandidateRV, RAASPDriver
+
 
 class MorboTrustRegion(ScalarIncumbentMixin):
     def __init__(
@@ -17,12 +19,14 @@ class MorboTrustRegion(ScalarIncumbentMixin):
         num_dim: int,
         *,
         rng: Generator,
+        candidate_rv: CandidateRV = CandidateRV.SOBOL,
     ) -> None:
         from .components.incumbent_selector import ChebyshevIncumbentSelector
         from .config.turbo_tr_config import TurboTRConfig
         from .turbo_trust_region import TurboTrustRegion
 
         self._config = config
+        self._candidate_rv = candidate_rv
         inner_config = TurboTRConfig(length=config.length)
         self._tr = TurboTrustRegion(
             config=inner_config,
@@ -186,6 +190,8 @@ class MorboTrustRegion(ScalarIncumbentMixin):
         num_candidates: int,
         rng: Generator,
         sobol_engine: QMCEngine,
+        raasp_driver: RAASPDriver = RAASPDriver.ORIG,
+        num_pert: int = 20,
     ) -> np.ndarray:
         from .tr_helpers import generate_tr_candidates
 
@@ -195,7 +201,10 @@ class MorboTrustRegion(ScalarIncumbentMixin):
             lengthscales,
             num_candidates,
             rng=rng,
+            candidate_rv=self._candidate_rv,
             sobol_engine=sobol_engine,
+            raasp_driver=raasp_driver,
+            num_pert=num_pert,
         )
 
     def get_incumbent_indices(
