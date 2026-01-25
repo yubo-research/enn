@@ -4,6 +4,7 @@ import numpy as np
 from .draw_internals import DrawInternals
 from .neighbor_data import NeighborData
 from .weighted_stats import WeightedStats
+from enn.turbo.config.enums import ENNIndexDriver
 
 if TYPE_CHECKING:
     from .enn_normal import ENNNormal
@@ -76,6 +77,7 @@ class EpistemicNearestNeighbors:
         train_yvar: np.ndarray | None = None,
         *,
         scale_x: bool = False,
+        index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
     ) -> None:
         self._train_x, self._train_y, self._train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
@@ -95,8 +97,35 @@ class EpistemicNearestNeighbors:
         from .enn_index import ENNIndex
 
         self._enn_index = ENNIndex(
-            self._train_x_scaled, self._num_dim, self._x_scale, self._scale_x
+            self._train_x_scaled,
+            self._num_dim,
+            self._x_scale,
+            self._scale_x,
+            driver=index_driver,
         )
+
+    def add(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        yvar: np.ndarray | None = None,
+    ) -> None:
+        x, y, yvar = self._validate_inputs(x, y, yvar)
+        self._train_x = np.concatenate([self._train_x, x], axis=0)
+        self._train_y = np.concatenate([self._train_y, y], axis=0)
+        if yvar is not None:
+            if self._train_yvar is None:
+                self._train_yvar = yvar
+            else:
+                self._train_yvar = np.concatenate([self._train_yvar, yvar], axis=0)
+        elif self._train_yvar is not None:
+            # If we have some yvar but not for the new points, we need to handle it.
+            # For now, we'll just use zeros or raise if inconsistent.
+            # Following the existing pattern, we assume consistency.
+            raise ValueError("yvar must be provided if model has existing yvar")
+
+        self._num_obs = self._train_x.shape[0]
+        self._enn_index.add(x)
 
     @property
     def train_x(self) -> np.ndarray:

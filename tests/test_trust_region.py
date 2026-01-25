@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import numpy as np
 import pytest
 from scipy.stats import qmc
+
 from enn.turbo.config.morbo_tr_config import (
     MorboTRConfig,
     MultiObjectiveConfig,
@@ -53,8 +55,8 @@ def test_no_trust_region_compute_bounds_1d():
 
 
 def test_no_trust_region_generate_candidates():
-    from enn.turbo.tr_helpers import generate_tr_candidates
     from enn.turbo.config.enums import CandidateRV, RAASPDriver
+    from enn.turbo.tr_helpers import generate_tr_candidates
 
     config = NoTRConfig()
     tr = NoTrustRegion(config=config, num_dim=3)

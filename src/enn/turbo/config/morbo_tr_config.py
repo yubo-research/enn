@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
 from .rescalarize import Rescalarize
 from .turbo_tr_config import TRLengthConfig
 
 if TYPE_CHECKING:
     from numpy.random import Generator
+
     from ..components.protocols import TrustRegion
     from .enums import CandidateRV
 

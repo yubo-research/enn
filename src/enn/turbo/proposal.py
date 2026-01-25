@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
     from .turbo_gp import TurboGP
+    from .config.enums import ENNIndexDriver
 
 
 def mk_enn(
@@ -18,12 +19,17 @@ def mk_enn(
     num_fit_samples: int | None = None,
     num_fit_candidates: int | None = None,
     scale_x: bool = False,
+    index_driver: ENNIndexDriver | Any | None = None,
     rng: Generator | Any | None = None,
     params_warm_start: ENNParams | Any | None = None,
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
     import numpy as np
     from enn.enn.enn import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
+    from .config.enums import ENNIndexDriver
+
+    if index_driver is None:
+        index_driver = ENNIndexDriver.FLAT
 
     if len(x_obs_list) == 0:
         return None, None
@@ -48,6 +54,7 @@ def mk_enn(
         y,
         yvar,
         scale_x=scale_x,
+        index_driver=index_driver,
     )
     if len(enn_model) == 0:
         return None, None

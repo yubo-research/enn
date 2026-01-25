@@ -29,19 +29,45 @@ class ENNSurrogate:
         rng: Generator | None = None,
     ) -> SurrogateResult:
         from ..proposal import mk_enn
+        from ..config.enums import ENNIndexDriver
 
         k = self._config.k if self._config.k is not None else 10
-        self._enn, self._params = mk_enn(
-            list(x_obs),
-            list(y_obs),
-            k,
-            list(y_var) if y_var is not None else [],
-            num_fit_samples=self._config.num_fit_samples,
-            num_fit_candidates=self._config.num_fit_candidates,
-            scale_x=self._config.scale_x,
-            rng=rng,
-            params_warm_start=self._params,
-        )
+        if (
+            self._config.index_driver == ENNIndexDriver.HNSW
+            and self._enn is not None
+            and len(x_obs) > len(self._enn)
+        ):
+            n_old = len(self._enn)
+            new_x = x_obs[n_old:]
+            new_y = y_obs[n_old:]
+            new_yvar = y_var[n_old:] if y_var is not None else None
+            self._enn.add(new_x, new_y, new_yvar)
+            if self._config.num_fit_samples is not None and rng is not None:
+                from ...enn.enn_fit import enn_fit
+
+                self._params = enn_fit(
+                    self._enn,
+                    k=k,
+                    num_fit_candidates=self._config.num_fit_candidates
+                    if self._config.num_fit_candidates is not None
+                    else 30,
+                    num_fit_samples=self._config.num_fit_samples,
+                    rng=rng,
+                    params_warm_start=self._params,
+                )
+        else:
+            self._enn, self._params = mk_enn(
+                list(x_obs),
+                list(y_obs),
+                k,
+                list(y_var) if y_var is not None else [],
+                num_fit_samples=self._config.num_fit_samples,
+                num_fit_candidates=self._config.num_fit_candidates,
+                scale_x=self._config.scale_x,
+                index_driver=self._config.index_driver,
+                rng=rng,
+                params_warm_start=self._params,
+            )
         return SurrogateResult(model=self._enn, lengthscales=None)
 
     def get_incumbent_candidate_indices(self, y_obs: np.ndarray) -> np.ndarray:

@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
+
 from .tr_helpers import ScalarIncumbentMixin
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
+
     from .config.morbo_tr_config import MorboTRConfig
     from .config.rescalarize import Rescalarize
 

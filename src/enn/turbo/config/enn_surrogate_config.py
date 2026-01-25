@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from .enums import ENNIndexDriver
 
 if TYPE_CHECKING:
     from ..components.protocols import Surrogate
@@ -25,6 +26,7 @@ class ENNSurrogateConfig:
     k: int | None = None
     fit: ENNFitConfig = ENNFitConfig()
     scale_x: bool = False
+    index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
 
     @property
     def num_fit_samples(self) -> int | None:

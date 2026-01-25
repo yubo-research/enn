@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import time
 from typing import TYPE_CHECKING
+
 import numpy as np
+
 from . import turbo_optimizer_utils, turbo_utils
 from .components import AcquisitionOptimizer, Surrogate
 from .config.enums import CandidateRV
@@ -10,6 +13,7 @@ from .types.appendable_array import AppendableArray
 
 if TYPE_CHECKING:
     from numpy.random import Generator
+
     from .config.optimizer_config import OptimizerConfig
 
 

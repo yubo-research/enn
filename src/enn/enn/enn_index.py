@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
+from enn.turbo.config.enums import ENNIndexDriver
+
 if TYPE_CHECKING:
     import numpy as np
 
@@ -12,11 +14,13 @@ class ENNIndex:
         num_dim: int,
         x_scale: np.ndarray,
         scale_x: bool,
+        driver: ENNIndexDriver = ENNIndexDriver.FLAT,
     ) -> None:
         self._train_x_scaled = train_x_scaled
         self._num_dim = num_dim
         self._x_scale = x_scale
         self._scale_x = scale_x
+        self._driver = driver
         self._index: Any | None = None
         self._build_index()
 
@@ -27,9 +31,34 @@ class ENNIndex:
         if len(self._train_x_scaled) == 0:
             return
         x_f32 = self._train_x_scaled.astype(np.float32, copy=False)
-        index = faiss.IndexFlatL2(self._num_dim)
+        if self._driver == ENNIndexDriver.FLAT:
+            index = faiss.IndexFlatL2(self._num_dim)
+        elif self._driver == ENNIndexDriver.HNSW:
+            # TODO: Make M configurable
+            index = faiss.IndexHNSWFlat(self._num_dim, 32)
+        else:
+            raise ValueError(f"Unknown driver: {self._driver}")
         index.add(x_f32)
         self._index = index
+
+    def add(self, x: np.ndarray) -> None:
+        import numpy as np
+
+        x = np.asarray(x, dtype=float)
+        if x.ndim != 2 or x.shape[1] != self._num_dim:
+            raise ValueError(x.shape)
+        x_scaled = x / self._x_scale if self._scale_x else x
+        x_f32 = x_scaled.astype(np.float32, copy=False)
+        if self._index is None:
+            import faiss
+
+            if self._driver == ENNIndexDriver.FLAT:
+                self._index = faiss.IndexFlatL2(self._num_dim)
+            elif self._driver == ENNIndexDriver.HNSW:
+                self._index = faiss.IndexHNSWFlat(self._num_dim, 32)
+            else:
+                raise ValueError(f"Unknown driver: {self._driver}")
+        self._index.add(x_f32)
 
     def search(
         self,
