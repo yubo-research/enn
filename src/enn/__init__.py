@@ -1,6 +1,6 @@
 from __future__ import annotations
 import importlib
-from .enn.enn import EpistemicNearestNeighbors
+from .enn.enn_class import EpistemicNearestNeighbors
 from .enn.enn_fit import enn_fit
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {

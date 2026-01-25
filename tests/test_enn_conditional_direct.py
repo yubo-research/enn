@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from enn.enn.enn import EpistemicNearestNeighbors
+from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_conditional import (
     compute_conditional_posterior,
     compute_conditional_posterior_draw_internals,

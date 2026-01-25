@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
-    from .enn import EpistemicNearestNeighbors
+    from .enn_class import EpistemicNearestNeighbors
     from .enn_params import ENNParams
 
 

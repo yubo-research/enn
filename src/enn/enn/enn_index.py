@@ -1,8 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
-from enn.turbo.config.enums import ENNIndexDriver
-
 if TYPE_CHECKING:
     import numpy as np
 
@@ -14,8 +12,12 @@ class ENNIndex:
         num_dim: int,
         x_scale: np.ndarray,
         scale_x: bool,
-        driver: ENNIndexDriver = ENNIndexDriver.FLAT,
+        driver: Any = None,
     ) -> None:
+        from enn.turbo.config.enums import ENNIndexDriver
+
+        if driver is None:
+            driver = ENNIndexDriver.FLAT
         self._train_x_scaled = train_x_scaled
         self._num_dim = num_dim
         self._x_scale = x_scale
@@ -27,6 +29,7 @@ class ENNIndex:
     def _build_index(self) -> None:
         import faiss
         import numpy as np
+        from enn.turbo.config.enums import ENNIndexDriver
 
         if len(self._train_x_scaled) == 0:
             return
@@ -43,6 +46,7 @@ class ENNIndex:
 
     def add(self, x: np.ndarray) -> None:
         import numpy as np
+        from enn.turbo.config.enums import ENNIndexDriver
 
         x = np.asarray(x, dtype=float)
         if x.ndim != 2 or x.shape[1] != self._num_dim:

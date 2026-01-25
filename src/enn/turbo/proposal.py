@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Callable
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
-    from enn.enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
     from .turbo_gp import TurboGP
     from .config.enums import ENNIndexDriver
@@ -24,7 +24,7 @@ def mk_enn(
     params_warm_start: ENNParams | Any | None = None,
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
     import numpy as np
-    from enn.enn.enn import EpistemicNearestNeighbors
+    from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
     from .config.enums import ENNIndexDriver
 

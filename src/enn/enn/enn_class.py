@@ -146,17 +146,6 @@ class EpistemicNearestNeighbors:
     def __len__(self) -> int:
         return self._num_obs
 
-    def _search_index(
-        self,
-        x: np.ndarray,
-        *,
-        search_k: int,
-        exclude_nearest: bool,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        return self._enn_index.search(
-            x, search_k=search_k, exclude_nearest=exclude_nearest
-        )
-
     def posterior(
         self,
         x: np.ndarray,
@@ -191,7 +180,7 @@ class EpistemicNearestNeighbors:
             search_k = int(min(params.k_num_neighbors + 1, len(self)))
         else:
             search_k = int(min(params.k_num_neighbors, len(self)))
-        dist2s_full, idx_full = self._search_index(
+        dist2s_full, idx_full = self._enn_index.search(
             x, search_k=search_k, exclude_nearest=exclude_nearest
         )
         available_k = search_k - 1 if exclude_nearest else search_k
@@ -371,7 +360,7 @@ class EpistemicNearestNeighbors:
         search_k = int(min(k + 1 if exclude_nearest else k, len(self)))
         if search_k == 0:
             return []
-        _, idx_full = self._search_index(
+        _, idx_full = self._enn_index.search(
             x, search_k=search_k, exclude_nearest=exclude_nearest
         )
         idx = idx_full[0, : min(k, len(idx_full[0]))]
