@@ -166,7 +166,7 @@ def test_turbo_enn_config_scale_x_flag_runs():
 
 
 def test_find_x_center_uses_top_k_for_mu_single_objective():
-    from enn.turbo.components.posterior_result import PosteriorResult
+    from enn.turbo.components import PosteriorResult
     from enn.turbo.optimizer_config import ENNSurrogateConfig, TurboTRConfig
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
@@ -199,7 +199,7 @@ def test_find_x_center_uses_top_k_for_mu_single_objective():
 
 
 def test_find_x_center_uses_top_k_union_for_multiobjective():
-    from enn.turbo.components.posterior_result import PosteriorResult
+    from enn.turbo.components import PosteriorResult
     from enn.turbo.optimizer_config import ENNSurrogateConfig, MorboTRConfig
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-from .tr_helpers import ScalarIncumbentMixin
+from .turbo_utils import ScalarIncumbentMixin
 
 if TYPE_CHECKING:
     import numpy as np

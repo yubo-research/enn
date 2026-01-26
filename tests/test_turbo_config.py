@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from enn.turbo.config.rescalarize import Rescalarize
+from enn.turbo.config import Rescalarize
 from enn.turbo.config.turbo_tr_config import TRLengthConfig
 from enn.turbo.optimizer_config import (
     AcqType,

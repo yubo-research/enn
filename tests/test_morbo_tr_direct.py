@@ -15,7 +15,7 @@ def test_morbo_resample_weights():
 
 
 def test_morbo_restart_resamples():
-    from enn.turbo.config.rescalarize import Rescalarize
+    from enn.turbo.config import Rescalarize
     from enn.turbo.config.morbo_tr_config import RescalePolicyConfig
 
     rng = np.random.default_rng(42)

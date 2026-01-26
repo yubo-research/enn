@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .tr_helpers import ScalarIncumbentMixin
+from .turbo_utils import ScalarIncumbentMixin
 
 if TYPE_CHECKING:
     import numpy as np
@@ -10,9 +10,10 @@ if TYPE_CHECKING:
     from scipy.stats._qmc import QMCEngine
 
     from .config.morbo_tr_config import MorboTRConfig
-    from .config.rescalarize import Rescalarize
+    from .config.enums import Rescalarize
 
-from .config.enums import CandidateRV, RAASPDriver
+from .config.driver_enums import CandidateRV
+from .config.driver_enums import RAASPDriver
 
 
 class MorboTrustRegion(ScalarIncumbentMixin):
@@ -169,7 +170,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
         return self._tr.needs_restart()
 
     def restart(self, rng: Generator | None = None) -> None:
-        from .config.rescalarize import Rescalarize
+        from .config.enums import Rescalarize
 
         self._y_min = None
         self._y_max = None
@@ -196,7 +197,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
         raasp_driver: RAASPDriver = RAASPDriver.ORIG,
         num_pert: int = 20,
     ) -> np.ndarray:
-        from .tr_helpers import generate_tr_candidates
+        from .turbo_utils import generate_tr_candidates
 
         return generate_tr_candidates(
             self._tr.compute_bounds_1d,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-from .tr_helpers import ScalarIncumbentMixin
+from .turbo_utils import ScalarIncumbentMixin, compute_full_box_bounds_1d
 
 if TYPE_CHECKING:
     import numpy as np
@@ -43,8 +43,6 @@ class NoTrustRegion(ScalarIncumbentMixin):
         x_center: np.ndarray | Any,
         lengthscales: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        from .tr_helpers import compute_full_box_bounds_1d
-
         return compute_full_box_bounds_1d(x_center)
 
     def get_incumbent_indices(

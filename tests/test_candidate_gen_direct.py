@@ -5,7 +5,7 @@ from enn.turbo.config.candidate_gen_config import (
     const_num_candidates,
     CandidateGenConfig,
 )
-from enn.turbo.config.candidate_rv import CandidateRV
+from enn.turbo.config import CandidateRV
 
 
 def test_default_num_candidates():

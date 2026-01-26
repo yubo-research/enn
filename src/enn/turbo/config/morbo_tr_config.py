@@ -3,16 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .rescalarize import Rescalarize
+from .enums import Rescalarize
 from .turbo_tr_config import TRLengthConfig
+from .driver_enums import CandidateRV
 
 if TYPE_CHECKING:
     from numpy.random import Generator
-
     from ..components.protocols import TrustRegion
-    from .enums import CandidateRV
-
-from .enums import CandidateRV
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,8 @@ from .candidate_gen_config import (
     NumCandidatesFn,
     const_num_candidates,
 )
-from .enums import AcqType, CandidateRV
+from .enums import AcqType
+from .driver_enums import CandidateRV
 from .init_config import InitConfig
 from .optimizer_config import ObservationHistoryConfig, OptimizerConfig
 

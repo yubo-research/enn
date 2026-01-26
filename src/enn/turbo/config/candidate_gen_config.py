@@ -1,8 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-from .candidate_rv import CandidateRV
-from .raasp_driver import RAASPDriver
+from .driver_enums import CandidateRV, RAASPDriver
 
 if TYPE_CHECKING:
 

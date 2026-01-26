@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from scipy.stats import qmc
 
-from enn.turbo.config.enums import CandidateRV, RAASPDriver
-from enn.turbo.tr_helpers import (
+from enn.turbo.config import CandidateRV, RAASPDriver
+from enn.turbo.turbo_utils import (
     generate_tr_candidates,
     generate_tr_candidates_fast,
     generate_tr_candidates_orig,

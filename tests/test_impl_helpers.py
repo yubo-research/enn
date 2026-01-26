@@ -101,7 +101,7 @@ def test_handle_restart_check_multi_objective_single():
 
 def test_handle_restart_check_multi_objective_multi():
     from enn.turbo.config.morbo_tr_config import RescalePolicyConfig
-    from enn.turbo.config.rescalarize import Rescalarize
+    from enn.turbo.config import Rescalarize
     from enn.turbo.morbo_trust_region import MorboTrustRegion
 
     rng = np.random.default_rng(42)

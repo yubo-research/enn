@@ -15,7 +15,12 @@ from .base import (
 )
 from .enums import (
     AcqType,
+    ENNIndexDriver,
+    Rescalarize,
+)
+from .driver_enums import (
     CandidateRV,
+    RAASPDriver,
 )
 from .init_strategies import HybridInit, InitStrategy, LHDOnlyInit
 from .optimizer_config import OptimizerConfig
@@ -56,6 +61,9 @@ __all__ = [
     "AcquisitionConfig",
     "CandidateGenConfig",
     "CandidateRV",
+    "ENNIndexDriver",
+    "RAASPDriver",
+    "Rescalarize",
     "DrawAcquisitionConfig",
     "ENNFitConfig",
     "ENNSurrogateConfig",

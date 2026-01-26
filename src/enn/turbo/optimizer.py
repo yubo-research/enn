@@ -7,7 +7,7 @@ import numpy as np
 
 from . import turbo_optimizer_utils, turbo_utils
 from .components import AcquisitionOptimizer, Surrogate
-from .config.enums import CandidateRV
+from .config.driver_enums import CandidateRV
 from .strategies import OptimizationStrategy
 from .types.appendable_array import AppendableArray
 
@@ -124,7 +124,7 @@ class Optimizer:
         return self._incumbent_x_unit
 
     def _maybe_resample_weights(self) -> None:
-        from .config.rescalarize import Rescalarize
+        from .config.enums import Rescalarize
 
         if hasattr(self._tr_state, "rescalarize"):
             if self._tr_state.rescalarize == Rescalarize.ON_PROPOSE:
@@ -137,8 +137,6 @@ class Optimizer:
         *,
         num_arms: int,
     ) -> np.ndarray:
-        from . import tr_helpers
-
         if lengthscales is not None:
             lengthscales = np.asarray(lengthscales, dtype=float).reshape(-1)
             if not np.all(np.isfinite(lengthscales)):
@@ -173,7 +171,7 @@ class Optimizer:
                 raasp_driver=self._config.raasp_driver,
                 num_pert=20,
             )
-        return tr_helpers.generate_tr_candidates(
+        return turbo_utils.generate_tr_candidates(
             self._tr_state.compute_bounds_1d,
             x_center,
             lengthscales,

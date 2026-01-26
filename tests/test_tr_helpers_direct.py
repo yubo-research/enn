@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from enn.turbo.tr_helpers import (
+from enn.turbo.turbo_utils import (
     ScalarIncumbentMixin,
     get_incumbent_index,
     get_scalar_incumbent_value,

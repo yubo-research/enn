@@ -10,11 +10,11 @@ from enn.turbo.config.morbo_tr_config import (
     RescalePolicyConfig,
 )
 from enn.turbo.config.no_tr_config import NoTRConfig
-from enn.turbo.config.rescalarize import Rescalarize
+from enn.turbo.config import Rescalarize
 from enn.turbo.config.turbo_tr_config import TRLengthConfig, TurboTRConfig
 from enn.turbo.morbo_trust_region import MorboTrustRegion
 from enn.turbo.no_trust_region import NoTrustRegion
-from enn.turbo.tr_helpers import (
+from enn.turbo.turbo_utils import (
     compute_full_box_bounds_1d,
 )
 from enn.turbo.turbo_trust_region import TurboTrustRegion
@@ -55,8 +55,8 @@ def test_no_trust_region_compute_bounds_1d():
 
 
 def test_no_trust_region_generate_candidates():
-    from enn.turbo.config.enums import CandidateRV, RAASPDriver
-    from enn.turbo.tr_helpers import generate_tr_candidates
+    from enn.turbo.config import CandidateRV, RAASPDriver
+    from enn.turbo.turbo_utils import generate_tr_candidates
 
     config = NoTRConfig()
     tr = NoTrustRegion(config=config, num_dim=3)

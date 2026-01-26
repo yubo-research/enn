@@ -1,7 +1,6 @@
 from .acquisition_optimizer_protocol import AcquisitionOptimizer
-from .posterior_result import PosteriorResult
+from .results import PosteriorResult, SurrogateResult
 from .surrogate_protocol import Surrogate
-from .surrogate_result import SurrogateResult
 from .trust_region_protocol import TrustRegion
 
 __all__ = [

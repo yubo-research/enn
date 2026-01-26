@@ -1,7 +1,18 @@
-from .acq_type import AcqType
-from .candidate_rv import CandidateRV
-from .enn_index_driver import ENNIndexDriver
-from .raasp_driver import RAASPDriver
-from .rescalarize import Rescalarize
+from __future__ import annotations
+from enum import Enum, auto
 
-__all__ = ["AcqType", "CandidateRV", "ENNIndexDriver", "RAASPDriver", "Rescalarize"]
+
+class AcqType(Enum):
+    THOMPSON = "thompson"
+    PARETO = "pareto"
+    UCB = "ucb"
+
+
+class ENNIndexDriver(Enum):
+    FLAT = auto()
+    HNSW = auto()
+
+
+class Rescalarize(Enum):
+    ON_RESTART = "on_restart"
+    ON_PROPOSE = "on_propose"

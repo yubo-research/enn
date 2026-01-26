@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from enn import create_optimizer
 from enn.turbo.components import NoSurrogate, SurrogateResult
-from enn.turbo.config.enums import CandidateRV
+from enn.turbo.config import CandidateRV
 from enn.turbo.optimizer import Optimizer
 from enn.turbo.optimizer_config import turbo_enn_config, turbo_zero_config
 
