@@ -5,17 +5,17 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .types.telemetry import Telemetry
 from . import turbo_optimizer_utils, turbo_utils
+from .components import AcquisitionOptimizer, Surrogate
 from .components.builder import (
     build_acquisition_optimizer,
     build_surrogate,
     build_trust_region,
 )
-from .components import AcquisitionOptimizer, Surrogate
 from .config.candidate_rv import CandidateRV
 from .strategies import OptimizationStrategy
 from .types.appendable_array import AppendableArray
+from .types.telemetry import Telemetry
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -297,12 +297,12 @@ def create_optimizer(
     surrogate = build_surrogate(config.surrogate)
     base_acq_optimizer = build_acquisition_optimizer(config.acquisition)
 
-    from .config.acquisition import HnROptimizerConfig
     from .components.acquisition import (
         HnRAcqOptimizer,
         ThompsonAcqOptimizer,
         UCBAcqOptimizer,
     )
+    from .config.acquisition import HnROptimizerConfig
 
     if isinstance(config.acq_optimizer, HnROptimizerConfig):
         if isinstance(base_acq_optimizer, (ThompsonAcqOptimizer, UCBAcqOptimizer)):
