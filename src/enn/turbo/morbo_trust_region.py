@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+import numpy as np
 
 from .turbo_utils import ScalarIncumbentMixin
 
 if TYPE_CHECKING:
-    import numpy as np
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
 
@@ -83,9 +83,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
             self._num_metrics,
         )
 
-    def update(self, y_obs: np.ndarray | Any, y_incumbent: np.ndarray | Any) -> None:
-        import numpy as np
-
+    def update(self, y_obs: np.ndarray, y_incumbent: np.ndarray) -> None:
         y_obs = np.asarray(y_obs, dtype=float)
         if y_obs.ndim != 2 or y_obs.shape[1] != self._num_metrics:
             raise ValueError((y_obs.shape, self._num_metrics))
@@ -119,16 +117,12 @@ class MorboTrustRegion(ScalarIncumbentMixin):
             self._incumbent_y_raw = y_incumbent.copy()
 
     def _handle_initial_update(self, y_incumbent: np.ndarray, n: int) -> None:
-        import numpy as np
-
         self._incumbent_y_raw = y_incumbent.copy()
         score = self.scalarize(y_incumbent, clip=True)
         dummy_y_obs = np.zeros((n, 1))
         self._tr.update(dummy_y_obs, score)
 
-    def scalarize(self, y: np.ndarray | Any, *, clip: bool) -> np.ndarray:
-        import numpy as np
-
+    def scalarize(self, y: np.ndarray, *, clip: bool) -> np.ndarray:
         y = np.asarray(y, dtype=float)
         if y.ndim != 2 or y.shape[1] != self._num_metrics:
             raise ValueError(y.shape)
@@ -140,14 +134,12 @@ class MorboTrustRegion(ScalarIncumbentMixin):
 
     def _scalarize_with_ranges(
         self,
-        y: np.ndarray | Any,
+        y: np.ndarray,
         *,
         y_min: np.ndarray,
         y_max: np.ndarray,
         clip: bool,
     ) -> np.ndarray:
-        import numpy as np
-
         y = np.asarray(y, dtype=float)
         if y.ndim != 2 or y.shape[1] != self._num_metrics:
             raise ValueError(y.shape)

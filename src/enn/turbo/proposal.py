@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Callable
+import numpy as np
 
 if TYPE_CHECKING:
-    import numpy as np
     from numpy.random import Generator
 
     from enn.enn.enn_class import EpistemicNearestNeighbors
@@ -14,20 +14,18 @@ if TYPE_CHECKING:
 
 
 def mk_enn(
-    x_obs_list: list[float] | list[list[float]],
-    y_obs_list: list[float] | list[list[float]],
+    x_obs: np.ndarray,
+    y_obs: np.ndarray,
     k: int,
-    yvar_obs_list: list[float] | None = None,
+    yvar_obs: np.ndarray | None = None,
     *,
     num_fit_samples: int | None = None,
     num_fit_candidates: int | None = None,
     scale_x: bool = False,
-    index_driver: ENNIndexDriver | Any | None = None,
-    rng: Generator | Any | None = None,
-    params_warm_start: ENNParams | Any | None = None,
+    index_driver: ENNIndexDriver | None = None,
+    rng: Generator | None = None,
+    params_warm_start: ENNParams | None = None,
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
-    import numpy as np
-
     from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
 
@@ -36,24 +34,27 @@ def mk_enn(
     if index_driver is None:
         index_driver = ENNIndexDriver.FLAT
 
-    if len(x_obs_list) == 0:
+    x_obs_array = np.asarray(x_obs, dtype=float)
+    if x_obs_array.size == 0:
         return None, None
-    y_obs_array = np.asarray(y_obs_list, dtype=float)
+    y_obs_array = np.asarray(y_obs, dtype=float)
     if y_obs_array.size == 0:
         return None, None
     if y_obs_array.ndim == 1:
         y = y_obs_array.reshape(-1, 1)
     else:
         y = y_obs_array
-    if yvar_obs_list is not None and len(yvar_obs_list) > 0:
-        yvar_array = np.asarray(yvar_obs_list, dtype=float)
-        if yvar_array.ndim == 1:
-            yvar = yvar_array.reshape(-1, 1)
+    if yvar_obs is not None:
+        yvar_array = np.asarray(yvar_obs, dtype=float)
+        if yvar_array.size > 0:
+            if yvar_array.ndim == 1:
+                yvar = yvar_array.reshape(-1, 1)
+            else:
+                yvar = yvar_array
         else:
-            yvar = yvar_array
+            yvar = None
     else:
         yvar = None
-    x_obs_array = np.asarray(x_obs_list, dtype=float)
     enn_model = EpistemicNearestNeighbors(
         x_obs_array,
         y,
@@ -90,7 +91,7 @@ def select_uniform(
     x_cand: np.ndarray,
     num_arms: int,
     num_dim: int,
-    rng: Generator | Any,
+    rng: Generator,
     from_unit_fn: Callable[[np.ndarray], np.ndarray],
 ) -> np.ndarray:
     if x_cand.ndim != 2 or x_cand.shape[1] != num_dim:
@@ -109,7 +110,7 @@ def select_gp_thompson(
     num_dim: int,
     *,
     gp_num_steps: int,
-    rng: Generator | Any,
+    rng: Generator,
     gp_y_stats: tuple[float, float],
     select_sobol_fn: Callable[[np.ndarray, int], np.ndarray],
     from_unit_fn: Callable[[np.ndarray], np.ndarray],

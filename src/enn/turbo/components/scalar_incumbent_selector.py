@@ -1,9 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+import numpy as np
 
 if TYPE_CHECKING:
-    import numpy as np
     from numpy.random import Generator
 
 
@@ -17,7 +17,6 @@ class ScalarIncumbentSelector:
         mu_obs: np.ndarray | None,
         rng: Generator,
     ) -> int:
-        import numpy as np
         from ..turbo_utils import argmax_random_tie
 
         y = np.asarray(y_obs, dtype=float)

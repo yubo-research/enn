@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+import numpy as np
 
 if TYPE_CHECKING:
-    import numpy as np
     from numpy.random import Generator
 
     from .enn_class import EpistemicNearestNeighbors
@@ -11,10 +11,8 @@ if TYPE_CHECKING:
 
 
 def _validate_subsample_inputs(
-    x: np.ndarray | Any, y: np.ndarray | Any, P: int, paramss: list
+    x: np.ndarray, y: np.ndarray, P: int, paramss: list
 ) -> tuple[np.ndarray, np.ndarray]:
-    import numpy as np
-
     x_array = np.asarray(x, dtype=float)
     if x_array.ndim != 2:
         raise ValueError(x_array.shape)
@@ -35,8 +33,6 @@ def _validate_subsample_inputs(
 def _compute_single_loglik(
     y_scaled: np.ndarray, mu_i: np.ndarray, se_i: np.ndarray
 ) -> float:
-    import numpy as np
-
     if not np.isfinite(mu_i).all() or not np.isfinite(se_i).all():
         return 0.0
     if np.any(se_i <= 0.0):
@@ -49,16 +45,15 @@ def _compute_single_loglik(
 
 
 def subsample_loglik(
-    model: EpistemicNearestNeighbors | Any,
-    x: np.ndarray | Any,
-    y: np.ndarray | Any,
+    model: EpistemicNearestNeighbors,
+    x: np.ndarray,
+    y: np.ndarray,
     *,
-    paramss: list[ENNParams] | list[Any],
+    paramss: list[ENNParams],
     P: int = 10,
-    rng: Generator | Any,
+    rng: Generator,
+    y_std: np.ndarray | None = None,
 ) -> list[float]:
-    import numpy as np
-
     x_array, y_array = _validate_subsample_inputs(x, y, P, paramss)
     n = x_array.shape[0]
     if n == 0 or len(model) <= 1:
@@ -81,7 +76,8 @@ def subsample_loglik(
     expected_shape = (num_params, P_actual, num_outputs)
     if post.mu.shape != expected_shape or post.se.shape != expected_shape:
         raise ValueError((post.mu.shape, post.se.shape, expected_shape))
-    y_std = np.std(y_array, axis=0, keepdims=True).astype(float)
+    if y_std is None:
+        y_std = np.std(y_array, axis=0, keepdims=True).astype(float)
     y_std = np.where(np.isfinite(y_std) & (y_std > 0.0), y_std, 1.0)
     y_scaled = y_sel / y_std
     mu_scaled = post.mu / y_std
@@ -93,13 +89,13 @@ def subsample_loglik(
 
 
 def enn_fit(
-    model: EpistemicNearestNeighbors | Any,
+    model: EpistemicNearestNeighbors,
     *,
     k: int,
     num_fit_candidates: int,
     num_fit_samples: int = 10,
-    rng: Generator | Any,
-    params_warm_start: ENNParams | Any | None = None,
+    rng: Generator,
+    params_warm_start: ENNParams | None = None,
 ) -> ENNParams:
     from .enn_params import ENNParams
 
@@ -135,10 +131,16 @@ def enn_fit(
             epistemic_variance_scale=1.0,
             aleatoric_variance_scale=0.0,
         )
-    import numpy as np
 
+    y_std = np.std(train_y, axis=0, keepdims=True).astype(float)
     logliks = subsample_loglik(
-        model, train_x, train_y, paramss=paramss, P=num_fit_samples, rng=rng
+        model,
+        train_x,
+        train_y,
+        paramss=paramss,
+        P=num_fit_samples,
+        rng=rng,
+        y_std=y_std,
     )
     if len(logliks) == 0:
         return paramss[0]

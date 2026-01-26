@@ -137,10 +137,12 @@ def raasp_perturb(
 ) -> np.ndarray:
     num_dim = x_center.shape[-1]
     prob_perturb = min(num_pert / num_dim, 1.0)
-    mask = rng.random((num_candidates, num_dim)) <= prob_perturb
-    ind = np.nonzero(~mask.any(axis=1))[0]
-    if len(ind) > 0:
-        mask[ind, rng.integers(0, num_dim, size=len(ind))] = True
+    # Use binomial to determine how many dimensions to perturb for each candidate
+    ks = np.maximum(rng.binomial(num_dim, prob_perturb, size=num_candidates), 1)
+    mask = np.zeros((num_candidates, num_dim), dtype=bool)
+    for i in range(num_candidates):
+        idx = rng.choice(num_dim, size=ks[i], replace=False)
+        mask[i, idx] = True
 
     from .config.candidate_rv import CandidateRV
 

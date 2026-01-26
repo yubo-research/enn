@@ -17,6 +17,8 @@ class ThompsonAcqOptimizer:
         *,
         tr_state: Any | None = None,
     ) -> np.ndarray:
+        from ..turbo_utils import argmax_random_tie
+
         num_candidates = len(x_cand)
         samples = surrogate.sample(x_cand, num_arms, rng)
         assert samples.ndim == 3, f"samples.ndim={samples.ndim}, expected 3"
@@ -29,21 +31,22 @@ class ThompsonAcqOptimizer:
         num_metrics = samples.shape[2]
         if tr_state is not None and hasattr(tr_state, "scalarize"):
             indices = []
+            # Vectorize scalarization across all arms and candidates
+            # samples is (num_arms, num_candidates, num_metrics)
+            # Reshape to (num_arms * num_candidates, num_metrics) for scalarize
+            flat_samples = samples.reshape(-1, num_metrics)
+            flat_scores = tr_state.scalarize(flat_samples, clip=False)
+            all_scores = flat_scores.reshape(num_arms, num_candidates)
+
             for i in range(num_arms):
-                sample_i = samples[i]
-                assert sample_i.shape == (num_candidates, num_metrics), (
-                    f"sample_i.shape={sample_i.shape}, "
-                    f"expected ({num_candidates}, {num_metrics})"
-                )
-                scores = tr_state.scalarize(sample_i, clip=False)
-                assert scores.shape == (num_candidates,), (
-                    f"scores.shape={scores.shape}, expected ({num_candidates},)"
-                )
+                scores = all_scores[i].copy()
                 for prev_idx in indices:
                     scores[prev_idx] = -np.inf
-                idx = np.argmax(scores)
+                idx = argmax_random_tie(scores, rng=rng)
                 indices.append(idx)
             return x_cand[indices]
         else:
-            arm_indices = np.argmax(samples[:, :, 0], axis=1)
+            arm_indices = [
+                argmax_random_tie(samples[i, :, 0], rng=rng) for i in range(num_arms)
+            ]
             return x_cand[arm_indices]

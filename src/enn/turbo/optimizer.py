@@ -225,11 +225,13 @@ class Optimizer:
             )
         elif hasattr(self._tr_state, "config"):
             noise_aware = getattr(self._tr_state.config, "noise_aware", False)
+
         if noise_aware:
             try:
                 mu_cand = self._surrogate.predict(x_cand).mu
             except RuntimeError:
                 mu_cand = None
+
         idx_in_cand = self._tr_state.get_incumbent_index(y_cand, self._rng, mu=mu_cand)
         self._incumbent_idx = int(candidate_indices[idx_in_cand])
         self._incumbent_x_unit = x_obs[self._incumbent_idx]

@@ -1,9 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+import numpy as np
 
 if TYPE_CHECKING:
-    import numpy as np
     from numpy.random import Generator
 
 
@@ -37,7 +37,6 @@ class ChebyshevIncumbentSelector:
         mu_obs: np.ndarray | None,
         rng: Generator,
     ) -> int:
-        import numpy as np
         from ..turbo_utils import argmax_random_tie
 
         if self._weights is None:
@@ -60,8 +59,6 @@ class ChebyshevIncumbentSelector:
         return int(argmax_random_tie(scores, rng=rng))
 
     def _scalarize(self, values: np.ndarray) -> np.ndarray:
-        import numpy as np
-
         if self._weights is None:
             raise RuntimeError("Weights not initialized; call reset() first")
         v_min = values.min(axis=0)
