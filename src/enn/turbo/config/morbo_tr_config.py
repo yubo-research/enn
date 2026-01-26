@@ -52,11 +52,6 @@ class MorboTRConfig:
         rng: Generator,
         candidate_rv: CandidateRV = CandidateRV.SOBOL,
     ) -> TrustRegion:
-        from ..morbo_trust_region import MorboTrustRegion
+        from ..components.builder import build_trust_region
 
-        return MorboTrustRegion(
-            config=self,
-            num_dim=num_dim,
-            rng=rng,
-            candidate_rv=candidate_rv,
-        )
+        return build_trust_region(self, num_dim, rng, candidate_rv)

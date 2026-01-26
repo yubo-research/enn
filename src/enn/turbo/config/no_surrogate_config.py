@@ -9,6 +9,6 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class NoSurrogateConfig:
     def build(self) -> Surrogate:
-        from ..components.surrogates import NoSurrogate
+        from ..components.builder import build_surrogate
 
-        return NoSurrogate()
+        return build_surrogate(self)

@@ -9,6 +9,6 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class UCBAcquisitionConfig:
     def build(self) -> AcquisitionOptimizer:
-        from ..components.acquisition import UCBAcqOptimizer
+        from ..components.builder import build_acquisition_optimizer
 
-        return UCBAcqOptimizer()
+        return build_acquisition_optimizer(self)

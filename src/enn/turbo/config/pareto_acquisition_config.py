@@ -9,6 +9,6 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class ParetoAcquisitionConfig:
     def build(self) -> AcquisitionOptimizer:
-        from ..components.acquisition import ParetoAcqOptimizer
+        from ..components.builder import build_acquisition_optimizer
 
-        return ParetoAcqOptimizer()
+        return build_acquisition_optimizer(self)

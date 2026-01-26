@@ -63,12 +63,10 @@ def get_gp_posterior_suppress_warning(model: Any, x_torch: Any) -> Any:
 def latin_hypercube(
     num_points: int, num_dim: int, *, rng: Generator | Any
 ) -> np.ndarray:
-    x = np.zeros((num_points, num_dim))
-    centers = (1.0 + 2.0 * np.arange(0.0, num_points)) / float(2 * num_points)
-    for j in range(num_dim):
-        x[:, j] = centers[rng.permutation(num_points)]
-    pert = rng.uniform(-1.0, 1.0, size=(num_points, num_dim)) / float(2 * num_points)
-    x += pert
+    x = (1.0 + 2.0 * np.arange(0.0, num_points)) / float(2 * num_points)
+    x = np.stack([x[rng.permutation(num_points)] for _ in range(num_dim)], axis=1)
+    x += rng.uniform(-1.0, 1.0, size=(num_points, num_dim)) / float(2 * num_points)
+    assert x.shape == (num_points, num_dim)
     return x
 
 
@@ -380,28 +378,21 @@ def generate_tr_candidates_fast(
 
     lb, ub = compute_bounds_1d(x_center, lengthscales)
     num_dim = x_center.shape[-1]
-
-    candidates = np.empty((num_candidates, num_dim), dtype=float)
-    candidates[:] = x_center
-
+    candidates = np.tile(x_center, (num_candidates, 1))
     prob_perturb = min(num_pert / num_dim, 1.0)
-    ks = rng.binomial(num_dim, prob_perturb, size=num_candidates)
-    ks = np.maximum(ks, 1)
+    ks = np.maximum(rng.binomial(num_dim, prob_perturb, size=num_candidates), 1)
     max_k = int(np.max(ks))
-
-    if candidate_rv == CandidateRV.SOBOL:
-        sobol = qmc.Sobol(d=max_k, scramble=True, seed=int(rng.integers(0, 2**31)))
-        samples = sobol.random(num_candidates)
-    elif candidate_rv == CandidateRV.UNIFORM:
-        samples = rng.random((num_candidates, max_k))
-    else:
-        raise ValueError(candidate_rv)
-
+    samples = (
+        qmc.Sobol(d=max_k, scramble=True, seed=int(rng.integers(0, 2**31))).random(
+            num_candidates
+        )
+        if candidate_rv == CandidateRV.SOBOL
+        else rng.random((num_candidates, max_k))
+    )
     for i in range(num_candidates):
-        k = ks[i]
-        idx = rng.choice(num_dim, size=k, replace=False)
-        candidates[i, idx] = lb[idx] + (ub[idx] - lb[idx]) * samples[i, :k]
-
+        idx = rng.choice(num_dim, size=ks[i], replace=False)
+        candidates[i, idx] = lb[idx] + (ub[idx] - lb[idx]) * samples[i, : ks[i]]
+    assert candidates.shape == (num_candidates, num_dim)
     return candidates
 
 

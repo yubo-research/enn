@@ -7,6 +7,11 @@ import numpy as np
 
 from .types.telemetry import Telemetry
 from . import turbo_optimizer_utils, turbo_utils
+from .components.builder import (
+    build_acquisition_optimizer,
+    build_surrogate,
+    build_trust_region,
+)
 from .components import AcquisitionOptimizer, Surrogate
 from .config.candidate_rv import CandidateRV
 from .strategies import OptimizationStrategy
@@ -45,7 +50,8 @@ class Optimizer:
                 bounds=self._bounds, rng=self._rng, num_init=config.init.num_init
             )
         )
-        self._tr_state = config.trust_region.build(
+        self._tr_state = build_trust_region(
+            config.trust_region,
             num_dim=self._num_dim,
             rng=rng,
             candidate_rv=config.candidate_rv,
@@ -286,10 +292,26 @@ def create_optimizer(
     config: OptimizerConfig,
     rng: Generator,
 ) -> Optimizer:
-    from .components.builder import build_acquisition_optimizer, build_surrogate
+    surrogate = build_surrogate(config.surrogate)
+    base_acq_optimizer = build_acquisition_optimizer(config.acquisition)
 
-    surrogate = build_surrogate(config)
-    acq_optimizer = build_acquisition_optimizer(config)
+    from .config.acquisition import HnROptimizerConfig
+    from .components.acquisition import (
+        HnRAcqOptimizer,
+        ThompsonAcqOptimizer,
+        UCBAcqOptimizer,
+    )
+
+    if isinstance(config.acq_optimizer, HnROptimizerConfig):
+        if isinstance(base_acq_optimizer, (ThompsonAcqOptimizer, UCBAcqOptimizer)):
+            acq_optimizer = HnRAcqOptimizer(base_acq_optimizer)
+        else:
+            raise ValueError(
+                f"HnR not supported with {type(base_acq_optimizer).__name__}"
+            )
+    else:
+        acq_optimizer = base_acq_optimizer
+
     return Optimizer(
         bounds=bounds,
         config=config,

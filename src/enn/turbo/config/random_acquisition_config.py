@@ -9,6 +9,6 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class RandomAcquisitionConfig:
     def build(self) -> AcquisitionOptimizer:
-        from ..components.acquisition import RandomAcqOptimizer
+        from ..components.builder import build_acquisition_optimizer
 
-        return RandomAcqOptimizer()
+        return build_acquisition_optimizer(self)

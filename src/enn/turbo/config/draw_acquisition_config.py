@@ -9,6 +9,6 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class DrawAcquisitionConfig:
     def build(self) -> AcquisitionOptimizer:
-        from ..components.acquisition import ThompsonAcqOptimizer
+        from ..components.builder import build_acquisition_optimizer
 
-        return ThompsonAcqOptimizer()
+        return build_acquisition_optimizer(self)

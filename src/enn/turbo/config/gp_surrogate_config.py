@@ -9,6 +9,6 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class GPSurrogateConfig:
     def build(self) -> Surrogate:
-        from ..components.surrogates import GPSurrogate
+        from ..components.builder import build_surrogate
 
-        return GPSurrogate()
+        return build_surrogate(self)

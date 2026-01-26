@@ -37,11 +37,6 @@ class TurboTRConfig:
         rng: Generator,
         candidate_rv: CandidateRV | None = None,
     ) -> TrustRegion:
-        from ..components.incumbent_selector import ScalarIncumbentSelector
-        from ..turbo_trust_region import TurboTrustRegion
+        from ..components.builder import build_trust_region
 
-        return TurboTrustRegion(
-            config=self,
-            num_dim=num_dim,
-            incumbent_selector=ScalarIncumbentSelector(noise_aware=self.noise_aware),
-        )
+        return build_trust_region(self, num_dim, rng, candidate_rv)

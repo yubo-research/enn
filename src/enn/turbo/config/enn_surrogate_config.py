@@ -24,6 +24,6 @@ class ENNSurrogateConfig:
         return self.fit.num_fit_candidates
 
     def build(self) -> Surrogate:
-        from ..components.surrogates import ENNSurrogate
+        from ..components.builder import build_surrogate
 
-        return ENNSurrogate(self)
+        return build_surrogate(self)

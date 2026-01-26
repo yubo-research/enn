@@ -103,10 +103,9 @@ class TurboTrustRegion(ScalarIncumbentMixin):
         return float(np.max(prev_values) - np.min(prev_values))
 
     def _update_counters_and_length(self, *, improved: bool) -> None:
-        if improved:
-            self.success_counter, self.failure_counter = self.success_counter + 1, 0
-        else:
-            self.success_counter, self.failure_counter = 0, self.failure_counter + 1
+        self.success_counter, self.failure_counter = (
+            (self.success_counter + 1, 0) if improved else (0, self.failure_counter + 1)
+        )
         if self.success_counter >= self.success_tolerance:
             self.length, self.success_counter = (
                 min(2.0 * self.length, self.length_max),
