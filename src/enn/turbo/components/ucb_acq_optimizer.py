@@ -25,9 +25,9 @@ class UCBAcqOptimizer:
         mu = posterior.mu
         sigma = posterior.sigma if posterior.sigma is not None else np.zeros_like(mu)
         assert mu.ndim == 2, f"mu.ndim={mu.ndim}, expected 2"
-        assert (
-            mu.shape[0] == num_candidates
-        ), f"mu.shape[0]={mu.shape[0]}, expected {num_candidates}"
+        assert mu.shape[0] == num_candidates, (
+            f"mu.shape[0]={mu.shape[0]}, expected {num_candidates}"
+        )
         num_metrics = mu.shape[1]
         if tr_state is not None and hasattr(tr_state, "scalarize"):
             ucb = mu + self._beta * sigma
@@ -36,9 +36,9 @@ class UCBAcqOptimizer:
                 num_metrics,
             ), f"ucb.shape={ucb.shape}, expected ({num_candidates}, {num_metrics})"
             scores = tr_state.scalarize(ucb, clip=False)
-            assert scores.shape == (
-                num_candidates,
-            ), f"scores.shape={scores.shape}, expected ({num_candidates},)"
+            assert scores.shape == (num_candidates,), (
+                f"scores.shape={scores.shape}, expected ({num_candidates},)"
+            )
         else:
             scores = mu[:, 0] + self._beta * sigma[:, 0]
             assert scores.shape == (num_candidates,)

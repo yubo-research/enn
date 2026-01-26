@@ -157,6 +157,6 @@ def test_turbo_trust_region_expansion_and_contraction():
         values.append(values[-1])
         y_obs = np.array(values, dtype=float)
         tr.update(y_obs, np.array([float(np.max(y_obs))], dtype=float))
-    assert np.isclose(
-        tr.length, 0.4
-    ), f"Expected 0.4 after contraction, got {tr.length}"
+    assert np.isclose(tr.length, 0.4), (
+        f"Expected 0.4 after contraction, got {tr.length}"
+    )
