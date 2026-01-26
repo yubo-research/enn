@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from .init_strategies import HybridInit, InitStrategy
+from .trust_region import InitStrategy
+from .init_strategies.hybrid_init import HybridInit
 
 
 @dataclass(frozen=True)

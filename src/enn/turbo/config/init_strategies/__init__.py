@@ -1,5 +1,5 @@
 from .hybrid_init import HybridInit
-from .init_strategy import InitStrategy
+from ..trust_region import InitStrategy
 from .lhd_only_init import LHDOnlyInit
 
 __all__ = [

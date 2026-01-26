@@ -10,9 +10,9 @@ from .incumbent_selector import (
     NoIncumbentSelector,
     ScalarIncumbentSelector,
 )
-from .incumbent_selector_protocol import IncumbentSelector
 from .protocols import (
     AcquisitionOptimizer,
+    IncumbentSelector,
     Surrogate,
     TrustRegion,
 )

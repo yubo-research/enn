@@ -63,14 +63,6 @@ class GPSurrogate:
             self._lengthscales = lengthscales_geom_normed
         return SurrogateResult(model=self._model, lengthscales=self._lengthscales)
 
-    def _as_2d(self, a: np.ndarray) -> np.ndarray:
-        a = np.asarray(a, dtype=float)
-        if a.ndim == 1:
-            return a.reshape(-1, 1)
-        if a.ndim == 2:
-            return a.T
-        raise ValueError(a.shape)
-
     def _unstandardize(self, y_std_2d: np.ndarray) -> np.ndarray:
         y_std_2d = np.asarray(y_std_2d, dtype=float)
         if y_std_2d.ndim != 2:
@@ -95,8 +87,25 @@ class GPSurrogate:
             posterior = get_gp_posterior_suppress_warning(self._model, x_torch)
             mu_std = posterior.mean.cpu().numpy()
             var_std = posterior.variance.cpu().numpy()
-        mu = self._unstandardize(self._as_2d(mu_std))
-        sigma_std_2d = self._as_2d(var_std**0.5)
+
+        mu_std_2d = np.asarray(mu_std, dtype=float)
+        if mu_std_2d.ndim == 1:
+            mu_std_2d = mu_std_2d.reshape(-1, 1)
+        elif mu_std_2d.ndim == 2:
+            mu_std_2d = mu_std_2d.T
+        else:
+            raise ValueError(mu_std_2d.shape)
+        mu = self._unstandardize(mu_std_2d)
+
+        sigma_std = var_std**0.5
+        sigma_std_2d = np.asarray(sigma_std, dtype=float)
+        if sigma_std_2d.ndim == 1:
+            sigma_std_2d = sigma_std_2d.reshape(-1, 1)
+        elif sigma_std_2d.ndim == 2:
+            sigma_std_2d = sigma_std_2d.T
+        else:
+            raise ValueError(sigma_std_2d.shape)
+
         y_std = np.asarray(self._y_std, dtype=float).reshape(-1)
         if y_std.size == 1 and sigma_std_2d.shape[1] != 1:
             y_std = np.full(sigma_std_2d.shape[1], float(y_std[0]), dtype=float)

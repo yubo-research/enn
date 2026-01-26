@@ -3,7 +3,7 @@ import conftest
 import numpy as np
 import pytest
 from enn.turbo.optimizer import create_optimizer
-from enn.turbo.optimizer_config import (
+from enn.turbo.config import (
     AcqType,
     CandidateRV,
     CandidateGenConfig,
@@ -331,7 +331,7 @@ def test_turbo_one_trust_region_update_is_noise_robust_to_spikes():
 
 def test_turbo_enn_tr_values_do_not_require_full_history_denoising():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    from enn.turbo.optimizer_config import (
+    from enn.turbo.config import (
         AcqType,
         CandidateGenConfig,
         ENNSurrogateConfig,

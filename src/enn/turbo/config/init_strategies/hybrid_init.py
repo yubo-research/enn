@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-from .init_strategy import InitStrategy
+from ..trust_region import InitStrategy
 
 if TYPE_CHECKING:
     import numpy as np

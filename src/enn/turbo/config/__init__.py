@@ -31,7 +31,9 @@ __all__ = [
     "CandidateRV",
     "RAASPDriver",
 ]
-from .init_strategies import HybridInit, InitStrategy, LHDOnlyInit
+from .trust_region import InitStrategy
+from .init_strategies.hybrid_init import HybridInit
+from .init_strategies.lhd_only_init import LHDOnlyInit
 from .optimizer_config import OptimizerConfig
 from .surrogate import (
     ENNFitConfig,
@@ -82,8 +84,8 @@ __all__ = [
     "GPSurrogateConfig",
     "HnROptimizerConfig",
     "InitConfig",
-    "InitStrategy",
     "HybridInit",
+    "InitStrategy",
     "LHDOnlyInit",
     "lhd_only_config",
     "MorboTRConfig",

@@ -1,10 +1,10 @@
 from __future__ import annotations
 import numpy as np
 import pytest
-from enn.turbo.config.init_strategies import HybridInit, LHDOnlyInit
+from enn.turbo.config import HybridInit, LHDOnlyInit
 from enn.turbo.config.validation import validate_optimizer_config
 from enn.turbo.optimizer import Optimizer, create_optimizer
-from enn.turbo.optimizer_config import (
+from enn.turbo.config import (
     GPSurrogateConfig,
     InitConfig,
     RAASPOptimizerConfig,

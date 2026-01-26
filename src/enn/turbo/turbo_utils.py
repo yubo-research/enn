@@ -22,12 +22,6 @@ def record_duration(set_dt: Callable[[float], None]) -> Iterator[None]:
         set_dt(time.perf_counter() - t0)
 
 
-def _next_power_of_2(n: int) -> int:
-    if n <= 0:
-        return 1
-    return 1 << (n - 1).bit_length()
-
-
 @contextlib.contextmanager
 def torch_seed_context(
     seed: int, device: torch.device | Any | None = None
@@ -100,7 +94,8 @@ def sobol_perturb_np(
     *,
     sobol_engine: QMCEngine | Any,
 ) -> np.ndarray:
-    n_sobol = _next_power_of_2(num_candidates)
+    n = num_candidates
+    n_sobol = 1 if n <= 0 else 1 << (n - 1).bit_length()
     sobol_samples = sobol_engine.random(n_sobol)[:num_candidates]
     lb_array = np.asarray(lb)
     ub_array = np.asarray(ub)
@@ -131,53 +126,32 @@ def uniform_perturb_np(
     return candidates
 
 
-def _raasp_mask(
-    *,
+def raasp_perturb(
+    x_center: np.ndarray | Any,
+    lb: np.ndarray | list[float] | Any,
+    ub: np.ndarray | list[float] | Any,
     num_candidates: int,
-    num_dim: int,
-    num_pert: int,
+    *,
+    num_pert: int = 20,
     rng: Generator | Any,
+    candidate_rv: CandidateRV,
+    sobol_engine: QMCEngine | Any | None = None,
 ) -> np.ndarray:
+    num_dim = x_center.shape[-1]
     prob_perturb = min(num_pert / num_dim, 1.0)
     mask = rng.random((num_candidates, num_dim)) <= prob_perturb
     ind = np.nonzero(~mask.any(axis=1))[0]
     if len(ind) > 0:
         mask[ind, rng.integers(0, num_dim, size=len(ind))] = True
-    return mask
 
+    from .config.candidate_rv import CandidateRV
 
-def raasp(
-    x_center: np.ndarray | Any,
-    lb: np.ndarray | list[float] | Any,
-    ub: np.ndarray | list[float] | Any,
-    num_candidates: int,
-    *,
-    num_pert: int = 20,
-    rng: Generator | Any,
-    sobol_engine: QMCEngine | Any,
-) -> np.ndarray:
-    num_dim = x_center.shape[-1]
-    mask = _raasp_mask(
-        num_candidates=num_candidates, num_dim=num_dim, num_pert=num_pert, rng=rng
-    )
-    return sobol_perturb_np(
-        x_center, lb, ub, num_candidates, mask, sobol_engine=sobol_engine
-    )
-
-
-def raasp_uniform(
-    x_center: np.ndarray | Any,
-    lb: np.ndarray | list[float] | Any,
-    ub: np.ndarray | list[float] | Any,
-    num_candidates: int,
-    *,
-    num_pert: int = 20,
-    rng: Generator | Any,
-) -> np.ndarray:
-    num_dim = x_center.shape[-1]
-    mask = _raasp_mask(
-        num_candidates=num_candidates, num_dim=num_dim, num_pert=num_pert, rng=rng
-    )
+    if candidate_rv == CandidateRV.SOBOL:
+        if sobol_engine is None:
+            raise ValueError("sobol_engine required for CandidateRV.SOBOL")
+        return sobol_perturb_np(
+            x_center, lb, ub, num_candidates, mask, sobol_engine=sobol_engine
+        )
     return uniform_perturb_np(x_center, lb, ub, num_candidates, mask, rng=rng)
 
 
@@ -188,18 +162,20 @@ def generate_raasp_candidates(
     num_candidates: int,
     *,
     rng: Generator | Any,
-    sobol_engine: QMCEngine | Any,
+    candidate_rv: CandidateRV,
+    sobol_engine: QMCEngine | Any | None = None,
     num_pert: int = 20,
 ) -> np.ndarray:
     if num_candidates <= 0:
         raise ValueError(num_candidates)
-    return raasp(
+    return raasp_perturb(
         center,
         lb,
         ub,
         num_candidates,
         num_pert=num_pert,
         rng=rng,
+        candidate_rv=candidate_rv,
         sobol_engine=sobol_engine,
     )
 
@@ -213,9 +189,17 @@ def generate_raasp_candidates_uniform(
     rng: Generator | Any,
     num_pert: int = 20,
 ) -> np.ndarray:
-    if num_candidates <= 0:
-        raise ValueError(num_candidates)
-    return raasp_uniform(center, lb, ub, num_candidates, num_pert=num_pert, rng=rng)
+    from .config.candidate_rv import CandidateRV
+
+    return generate_raasp_candidates(
+        center,
+        lb,
+        ub,
+        num_candidates,
+        rng=rng,
+        candidate_rv=CandidateRV.UNIFORM,
+        num_pert=num_pert,
+    )
 
 
 def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
@@ -354,6 +338,7 @@ def generate_tr_candidates_orig(
     rng: Generator,
     candidate_rv: CandidateRV,
     sobol_engine: QMCEngine | None = None,
+    num_pert: int = 20,
 ) -> np.ndarray:
     from .config.candidate_rv import CandidateRV
 
@@ -364,11 +349,18 @@ def generate_tr_candidates_orig(
                 "sobol_engine is required when candidate_rv=CandidateRV.SOBOL"
             )
         return generate_raasp_candidates(
-            x_center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol_engine
+            x_center,
+            lb,
+            ub,
+            num_candidates,
+            rng=rng,
+            candidate_rv=candidate_rv,
+            sobol_engine=sobol_engine,
+            num_pert=num_pert,
         )
     if candidate_rv == CandidateRV.UNIFORM:
         return generate_raasp_candidates_uniform(
-            x_center, lb, ub, num_candidates, rng=rng
+            x_center, lb, ub, num_candidates, rng=rng, num_pert=num_pert
         )
     raise ValueError(candidate_rv)
 
@@ -445,4 +437,5 @@ def generate_tr_candidates(
         rng=rng,
         candidate_rv=candidate_rv,
         sobol_engine=sobol_engine,
+        num_pert=num_pert,
     )
