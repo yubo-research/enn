@@ -1,13 +1,16 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
+
     from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
-    from .turbo_gp import TurboGP
+
     from .config.enums import ENNIndexDriver
+    from .turbo_gp import TurboGP
 
 
 def mk_enn(
@@ -24,8 +27,10 @@ def mk_enn(
     params_warm_start: ENNParams | Any | None = None,
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
     import numpy as np
+
     from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
+
     from .config.enums import ENNIndexDriver
 
     if index_driver is None:

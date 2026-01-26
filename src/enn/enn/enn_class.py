@@ -1,10 +1,14 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
+
 import numpy as np
+
+from enn.turbo.config.enums import ENNIndexDriver
+
 from .draw_internals import DrawInternals
 from .neighbor_data import NeighborData
 from .weighted_stats import WeightedStats
-from enn.turbo.config.enums import ENNIndexDriver
 
 if TYPE_CHECKING:
     from .enn_normal import ENNNormal
