@@ -44,16 +44,6 @@ class AcquisitionOptimizer(Protocol):
     ) -> np.ndarray: ...
 
 
-class IncumbentSelector(Protocol):
-    def select(
-        self,
-        y_obs: np.ndarray,
-        mu_obs: np.ndarray | None,
-        rng: Generator,
-    ) -> int: ...
-    def reset(self, rng: Generator) -> None: ...
-
-
 class TrustRegion(Protocol):
     @property
     def length(self) -> float: ...

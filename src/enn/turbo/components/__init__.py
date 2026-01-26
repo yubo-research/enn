@@ -12,10 +12,10 @@ from .incumbent_selector import (
 )
 from .protocols import (
     AcquisitionOptimizer,
-    IncumbentSelector,
     Surrogate,
     TrustRegion,
 )
+from .incumbent_selector_protocol import IncumbentSelector
 from .posterior_result import PosteriorResult
 from .surrogate_result import SurrogateResult
 from .surrogates import ENNSurrogate, GPSurrogate, NoSurrogate
