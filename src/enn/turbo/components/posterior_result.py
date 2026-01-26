@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
@@ -10,9 +10,3 @@ if TYPE_CHECKING:
 class PosteriorResult:
     mu: np.ndarray
     sigma: np.ndarray | None = None
-
-
-@dataclass
-class SurrogateResult:
-    model: Any
-    lengthscales: np.ndarray | None = None

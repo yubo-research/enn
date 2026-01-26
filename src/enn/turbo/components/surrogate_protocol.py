@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
-from .results import SurrogateResult, PosteriorResult
+from .posterior_result import PosteriorResult
+from .surrogate_result import SurrogateResult
 
 if TYPE_CHECKING:
     import numpy as np

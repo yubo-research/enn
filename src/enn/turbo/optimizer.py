@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from .types.telemetry import Telemetry
 from . import turbo_optimizer_utils, turbo_utils
 from .components import AcquisitionOptimizer, Surrogate
-from .config.driver_enums import CandidateRV
+from .config.candidate_rv import CandidateRV
 from .strategies import OptimizationStrategy
 from .types.appendable_array import AppendableArray
 
@@ -78,8 +79,8 @@ class Optimizer:
     def tr_length(self) -> float:
         return float(self._tr_state.length)
 
-    def telemetry(self) -> turbo_utils.Telemetry:
-        return turbo_utils.Telemetry(
+    def telemetry(self) -> Telemetry:
+        return Telemetry(
             dt_fit=self._dt_fit,
             dt_gen=self._dt_gen,
             dt_sel=self._dt_sel,
@@ -124,7 +125,7 @@ class Optimizer:
         return self._incumbent_x_unit
 
     def _maybe_resample_weights(self) -> None:
-        from .config.enums import Rescalarize
+        from .config.rescalarize import Rescalarize
 
         if hasattr(self._tr_state, "rescalarize"):
             if self._tr_state.rescalarize == Rescalarize.ON_PROPOSE:

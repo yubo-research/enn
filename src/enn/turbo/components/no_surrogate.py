@@ -1,7 +1,8 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import numpy as np
-from .results import PosteriorResult, SurrogateResult
+from .posterior_result import PosteriorResult
+from .surrogate_result import SurrogateResult
 
 if TYPE_CHECKING:
     from numpy.random import Generator

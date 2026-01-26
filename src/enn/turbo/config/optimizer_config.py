@@ -5,19 +5,12 @@ from .candidate_gen_config import CandidateGenConfig
 from .init_config import InitConfig
 from .surrogate import NoSurrogateConfig, SurrogateConfig
 from .trust_region import TrustRegionConfig, TurboTRConfig
+from .observation_history_config import ObservationHistoryConfig
 
 if TYPE_CHECKING:
     from .acquisition import AcqOptimizerConfig, AcquisitionConfig
-    from .enums import CandidateRV, RAASPDriver
-
-
-@dataclass(frozen=True)
-class ObservationHistoryConfig:
-    trailing_obs: int | None = None
-
-    def __post_init__(self) -> None:
-        if self.trailing_obs is not None and self.trailing_obs <= 0:
-            raise ValueError(f"trailing_obs must be > 0, got {self.trailing_obs}")
+    from .candidate_rv import CandidateRV
+    from .raasp_driver import RAASPDriver
 
 
 def _default_acquisition():
@@ -27,7 +20,7 @@ def _default_acquisition():
 
 
 def _default_acq_optimizer():
-    from .acquisition import RAASPOptimizerConfig
+    from .raasp_optimizer_config import RAASPOptimizerConfig
 
     return RAASPOptimizerConfig()
 

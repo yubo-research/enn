@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from numpy.random import Generator
 
     from ..components.protocols import TrustRegion
-    from .enums import CandidateRV
+    from .candidate_rv import CandidateRV
 
 
 class TrustRegionConfig(Protocol):

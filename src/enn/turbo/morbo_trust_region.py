@@ -10,10 +10,10 @@ if TYPE_CHECKING:
     from scipy.stats._qmc import QMCEngine
 
     from .config.morbo_tr_config import MorboTRConfig
-    from .config.enums import Rescalarize
+    from .config.rescalarize import Rescalarize
 
-from .config.driver_enums import CandidateRV
-from .config.driver_enums import RAASPDriver
+from .config.candidate_rv import CandidateRV
+from .config.raasp_driver import RAASPDriver
 
 
 class MorboTrustRegion(ScalarIncumbentMixin):
@@ -170,7 +170,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
         return self._tr.needs_restart()
 
     def restart(self, rng: Generator | None = None) -> None:
-        from .config.enums import Rescalarize
+        from .config.rescalarize import Rescalarize
 
         self._y_min = None
         self._y_max = None

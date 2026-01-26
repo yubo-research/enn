@@ -15,7 +15,7 @@ class ENNIndex:
         scale_x: bool,
         driver: Any = None,
     ) -> None:
-        from enn.turbo.config.enums import ENNIndexDriver
+        from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
         if driver is None:
             driver = ENNIndexDriver.FLAT
@@ -31,7 +31,7 @@ class ENNIndex:
         import faiss
         import numpy as np
 
-        from enn.turbo.config.enums import ENNIndexDriver
+        from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
         if len(self._train_x_scaled) == 0:
             return
@@ -49,7 +49,7 @@ class ENNIndex:
     def add(self, x: np.ndarray) -> None:
         import numpy as np
 
-        from enn.turbo.config.enums import ENNIndexDriver
+        from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
         x = np.asarray(x, dtype=float)
         if x.ndim != 2 or x.shape[1] != self._num_dim:

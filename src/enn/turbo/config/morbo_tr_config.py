@@ -3,32 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .enums import Rescalarize
+from .rescalarize import Rescalarize
 from .turbo_tr_config import TRLengthConfig
-from .driver_enums import CandidateRV
+from .candidate_rv import CandidateRV
+from .multi_objective_config import MultiObjectiveConfig
+from .rescale_policy_config import RescalePolicyConfig
 
 if TYPE_CHECKING:
     from numpy.random import Generator
     from ..components.protocols import TrustRegion
-
-
-@dataclass(frozen=True)
-class MultiObjectiveConfig:
-    num_metrics: int
-    alpha: float = 0.05
-
-    def __post_init__(self) -> None:
-        if self.num_metrics < 2:
-            raise ValueError(
-                f"num_metrics must be >= 2 for MORBO, got {self.num_metrics}"
-            )
-        if self.alpha <= 0:
-            raise ValueError(f"alpha must be > 0, got {self.alpha}")
-
-
-@dataclass(frozen=True)
-class RescalePolicyConfig:
-    rescalarize: Rescalarize = Rescalarize.ON_PROPOSE
 
 
 @dataclass(frozen=True)

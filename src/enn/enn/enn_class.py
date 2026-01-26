@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from enn.turbo.config.enums import ENNIndexDriver
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 from .draw_internals import DrawInternals
 from .neighbor_data import NeighborData

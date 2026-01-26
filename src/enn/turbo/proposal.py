@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
 
-    from .config.enums import ENNIndexDriver
+    from .config.enn_index_driver import ENNIndexDriver
     from .turbo_gp import TurboGP
 
 
@@ -31,7 +31,7 @@ def mk_enn(
     from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
 
-    from .config.enums import ENNIndexDriver
+    from .config.enn_index_driver import ENNIndexDriver
 
     if index_driver is None:
         index_driver = ENNIndexDriver.FLAT

@@ -1,6 +1,5 @@
 from __future__ import annotations
 import contextlib
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 import numpy as np
 
@@ -8,19 +7,8 @@ if TYPE_CHECKING:
     import torch
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
-    from .config.driver_enums import CandidateRV, RAASPDriver
-
-__all__ = [
-    "Telemetry",
-]
-
-
-@dataclass(frozen=True)
-class Telemetry:
-    dt_fit: float
-    dt_sel: float
-    dt_gen: float = 0.0
-    dt_tell: float = 0.0
+    from .config.candidate_rv import CandidateRV
+from .config.raasp_driver import RAASPDriver
 
 
 @contextlib.contextmanager
@@ -367,7 +355,7 @@ def generate_tr_candidates_orig(
     candidate_rv: CandidateRV,
     sobol_engine: QMCEngine | None = None,
 ) -> np.ndarray:
-    from .config.driver_enums import CandidateRV
+    from .config.candidate_rv import CandidateRV
 
     lb, ub = compute_bounds_1d(x_center, lengthscales)
     if candidate_rv == CandidateRV.SOBOL:
@@ -396,7 +384,7 @@ def generate_tr_candidates_fast(
     num_pert: int,
 ) -> np.ndarray:
     from scipy.stats import qmc
-    from .config.driver_enums import CandidateRV
+    from .config.candidate_rv import CandidateRV
 
     lb, ub = compute_bounds_1d(x_center, lengthscales)
     num_dim = x_center.shape[-1]
@@ -437,7 +425,7 @@ def generate_tr_candidates(
     raasp_driver: RAASPDriver,
     num_pert: int,
 ) -> np.ndarray:
-    from .config.driver_enums import RAASPDriver
+    from .config.raasp_driver import RAASPDriver
 
     if raasp_driver == RAASPDriver.FAST:
         return generate_tr_candidates_fast(

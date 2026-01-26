@@ -13,15 +13,24 @@ from .base import (
     CandidateGenConfig,
     InitConfig,
 )
-from .enums import (
-    AcqType,
-    ENNIndexDriver,
-    Rescalarize,
+from .acq_type import AcqType
+from .enn_index_driver import ENNIndexDriver
+from .rescalarize import Rescalarize
+from .candidate_rv import CandidateRV
+from .raasp_driver import RAASPDriver
+from .num_candidates_fn import (
+    NumCandidatesFn,
+    const_num_candidates,
+    default_num_candidates,
 )
-from .driver_enums import (
-    CandidateRV,
-    RAASPDriver,
-)
+
+__all__ = [
+    "AcqType",
+    "ENNIndexDriver",
+    "Rescalarize",
+    "CandidateRV",
+    "RAASPDriver",
+]
 from .init_strategies import HybridInit, InitStrategy, LHDOnlyInit
 from .optimizer_config import OptimizerConfig
 from .surrogate import (
@@ -61,6 +70,9 @@ __all__ = [
     "AcquisitionConfig",
     "CandidateGenConfig",
     "CandidateRV",
+    "const_num_candidates",
+    "default_num_candidates",
+    "NumCandidatesFn",
     "ENNIndexDriver",
     "RAASPDriver",
     "Rescalarize",

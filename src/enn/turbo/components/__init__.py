@@ -1,23 +1,23 @@
 from .acquisition import (
-    HnRAcqOptimizer,
-    ParetoAcqOptimizer,
-    RandomAcqOptimizer,
     ThompsonAcqOptimizer,
     UCBAcqOptimizer,
+    RandomAcqOptimizer,
 )
+from .hnr_acq_optimizer import HnRAcqOptimizer
+from .pareto_acq_optimizer import ParetoAcqOptimizer
 from .incumbent_selector import (
     ChebyshevIncumbentSelector,
-    IncumbentSelector,
     NoIncumbentSelector,
     ScalarIncumbentSelector,
 )
+from .incumbent_selector_protocol import IncumbentSelector
 from .protocols import (
     AcquisitionOptimizer,
-    PosteriorResult,
     Surrogate,
-    SurrogateResult,
     TrustRegion,
 )
+from .posterior_result import PosteriorResult
+from .surrogate_result import SurrogateResult
 from .surrogates import ENNSurrogate, GPSurrogate, NoSurrogate
 
 __all__ = [

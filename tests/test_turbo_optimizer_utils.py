@@ -7,8 +7,8 @@ from enn.turbo.turbo_optimizer_utils import (
     validate_tell_inputs,
     trim_trailing_observations,
 )
+from enn.turbo.types.telemetry import Telemetry
 from enn.turbo.turbo_utils import (
-    Telemetry,
     torch_seed_context,
     get_gp_posterior_suppress_warning,
 )
