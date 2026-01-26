@@ -51,20 +51,21 @@ class TurboTrustRegion(ScalarIncumbentMixin):
         import numpy as np
 
         if self._num_arms is None:
-            self._num_arms = num_arms
-            self._failure_tolerance = int(
-                np.ceil(
-                    max(
-                        4.0 / float(num_arms),
-                        float(self.num_dim) / float(num_arms),
+            self._num_arms, self._failure_tolerance = (
+                num_arms,
+                int(
+                    np.ceil(
+                        max(
+                            4.0 / float(num_arms), float(self.num_dim) / float(num_arms)
+                        )
                     )
-                )
+                ),
             )
         elif num_arms != self._num_arms:
             raise ValueError(
-                f"num_arms changed from {self._num_arms} to {num_arms}; "
-                "must be consistent across ask() calls"
+                f"num_arms changed from {self._num_arms} to {num_arms}; must be consistent across ask() calls"
             )
+        assert self._failure_tolerance is not None
 
     @property
     def failure_tolerance(self) -> int:
@@ -103,57 +104,55 @@ class TurboTrustRegion(ScalarIncumbentMixin):
 
     def _update_counters_and_length(self, *, improved: bool) -> None:
         if improved:
-            self.success_counter += 1
-            self.failure_counter = 0
+            self.success_counter, self.failure_counter = self.success_counter + 1, 0
         else:
-            self.success_counter = 0
-            self.failure_counter += 1
+            self.success_counter, self.failure_counter = 0, self.failure_counter + 1
         if self.success_counter >= self.success_tolerance:
-            self.length = min(2.0 * self.length, self.length_max)
-            self.success_counter = 0
+            self.length, self.success_counter = (
+                min(2.0 * self.length, self.length_max),
+                0,
+            )
         elif (
             self._failure_tolerance is not None
             and self.failure_counter >= self._failure_tolerance
         ):
-            self.length = 0.5 * self.length
-            self.failure_counter = 0
+            self.length, self.failure_counter = 0.5 * self.length, 0
 
     def update(self, y_obs: np.ndarray | Any, y_incumbent: np.ndarray | Any) -> None:
         if self._failure_tolerance is None:
             return
         y_obs = self._coerce_y_obs_1d(y_obs)
         n = int(y_obs.size)
-        if n <= 0:
+        if n <= 0 or n == self.prev_num_obs:
             return
         if n < self.prev_num_obs:
             raise ValueError((n, self.prev_num_obs))
-        if n == self.prev_num_obs:
-            return
         y_incumbent_value = self._coerce_y_incumbent_value(y_incumbent)
         import math
 
         if not math.isfinite(self.best_value):
-            self.best_value = y_incumbent_value
-            self.prev_num_obs = n
+            self.best_value, self.prev_num_obs = y_incumbent_value, n
             return
         prev_values = y_obs[: self.prev_num_obs]
         scale = self._improvement_scale(prev_values)
-        improved = y_incumbent_value > self.best_value + 1e-3 * scale
-        self._update_counters_and_length(improved=improved)
-        self.best_value = max(self.best_value, y_incumbent_value)
-        self.prev_num_obs = n
+        self._update_counters_and_length(
+            improved=y_incumbent_value > self.best_value + 1e-3 * scale
+        )
+        self.best_value, self.prev_num_obs = max(self.best_value, y_incumbent_value), n
 
     def needs_restart(self) -> bool:
         return self.length < self.length_min
 
     def restart(self, rng: Any | None = None) -> None:
-        self.length = self.length_init
-        self.failure_counter = 0
-        self.success_counter = 0
-        self.best_value = -float("inf")
-        self.prev_num_obs = 0
-        self._num_arms = None
-        self._failure_tolerance = None
+        (
+            self.length,
+            self.failure_counter,
+            self.success_counter,
+            self.best_value,
+            self.prev_num_obs,
+            self._num_arms,
+            self._failure_tolerance,
+        ) = self.length_init, 0, 0, -float("inf"), 0, None, None
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
         self._ensure_initialized(num_arms)

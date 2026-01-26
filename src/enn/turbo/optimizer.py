@@ -203,17 +203,16 @@ class Optimizer:
 
     def _update_incumbent(self) -> None:
         if len(self._y_obs) == 0:
-            self._incumbent_idx = None
-            self._incumbent_x_unit = None
-            self._incumbent_y_scalar = None
+            self._incumbent_idx, self._incumbent_x_unit, self._incumbent_y_scalar = (
+                None,
+                None,
+                None,
+            )
             return
-        x_obs = self._x_obs.view()
-        y_obs = self._y_obs.view()
+        x_obs, y_obs = self._x_obs.view(), self._y_obs.view()
         candidate_indices = self._surrogate.get_incumbent_candidate_indices(y_obs)
-        x_cand = x_obs[candidate_indices]
-        y_cand = y_obs[candidate_indices]
-        mu_cand = None
-        noise_aware = False
+        x_cand, y_cand = x_obs[candidate_indices], y_obs[candidate_indices]
+        mu_cand, noise_aware = None, False
         if hasattr(self._tr_state, "incumbent_selector"):
             noise_aware = getattr(
                 self._tr_state.incumbent_selector, "noise_aware", False
@@ -228,10 +227,11 @@ class Optimizer:
         idx_in_cand = self._tr_state.get_incumbent_index(y_cand, self._rng, mu=mu_cand)
         self._incumbent_idx = int(candidate_indices[idx_in_cand])
         self._incumbent_x_unit = x_obs[self._incumbent_idx]
-        if noise_aware and mu_cand is not None:
-            self._incumbent_y_scalar = mu_cand[idx_in_cand : idx_in_cand + 1].copy()
-        else:
-            self._incumbent_y_scalar = y_cand[idx_in_cand : idx_in_cand + 1].copy()
+        self._incumbent_y_scalar = (
+            mu_cand[idx_in_cand : idx_in_cand + 1]
+            if noise_aware and mu_cand is not None
+            else y_cand[idx_in_cand : idx_in_cand + 1]
+        ).copy()
 
     def _trim_trailing_obs(self) -> None:
         incumbent_indices = np.array([self._incumbent_idx], dtype=int)

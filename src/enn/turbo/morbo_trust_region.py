@@ -79,6 +79,9 @@ class MorboTrustRegion(ScalarIncumbentMixin):
 
     def _update_ranges(self, y_obs):
         self._y_min, self._y_max = y_obs.min(axis=0), y_obs.max(axis=0)
+        assert self._y_min.shape == (self._num_metrics,) and self._y_max.shape == (
+            self._num_metrics,
+        )
 
     def update(self, y_obs: np.ndarray | Any, y_incumbent: np.ndarray | Any) -> None:
         import numpy as np
@@ -88,33 +91,30 @@ class MorboTrustRegion(ScalarIncumbentMixin):
             raise ValueError((y_obs.shape, self._num_metrics))
         n = int(y_obs.shape[0])
         if n == 0:
-            self._y_min, self._y_max = None, None
-            self._incumbent_y_raw = None
+            self._y_min, self._y_max, self._incumbent_y_raw = None, None, None
             self._tr.restart()
             return
         prev_n = int(self._tr.prev_num_obs)
         if n < prev_n:
             raise ValueError((n, prev_n))
         self._y_min, self._y_max = y_obs.min(axis=0), y_obs.max(axis=0)
+        assert self._y_min.shape == (self._num_metrics,) and self._y_max.shape == (
+            self._num_metrics,
+        )
         y_incumbent = np.asarray(y_incumbent, dtype=float).reshape(1, -1)
         if y_incumbent.shape != (1, self._num_metrics):
             raise ValueError(
                 f"y_incumbent must have shape (1, {self._num_metrics}), got {y_incumbent.shape}"
             )
-        if prev_n == 0:
-            self._handle_initial_update(y_incumbent, n)
-            return
-        if self._incumbent_y_raw is None:
+        if prev_n == 0 or self._incumbent_y_raw is None:
             self._handle_initial_update(y_incumbent, n)
             return
         scores = self.scalarize(
             np.vstack([self._incumbent_y_raw, y_incumbent]), clip=True
         )
-        old_score = float(scores[0])
-        new_score = float(scores[1])
+        old_score, new_score = float(scores[0]), float(scores[1])
         self._tr.best_value = old_score
-        dummy_y_obs = np.zeros((n, 1))
-        self._tr.update(dummy_y_obs, np.array([new_score]))
+        self._tr.update(np.zeros((n, 1)), np.array([new_score]))
         if new_score > old_score:
             self._incumbent_y_raw = y_incumbent.copy()
 
@@ -172,9 +172,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
     def restart(self, rng: Generator | None = None) -> None:
         from .config.rescalarize import Rescalarize
 
-        self._y_min = None
-        self._y_max = None
-        self._incumbent_y_raw = None
+        self._y_min, self._y_max, self._incumbent_y_raw = None, None, None
         self._tr.restart()
         if rng is not None and self._rescalarize == Rescalarize.ON_RESTART:
             self.resample_weights(rng)
