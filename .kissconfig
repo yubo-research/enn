@@ -2,46 +2,49 @@
 # Thresholds based on max values of analyzed codebase
 
 [gate]
-test_coverage_threshold = 90
+duplication_enabled = true
 min_similarity = 0.7
+test_coverage_threshold = 93
 
 [python]
-statements_per_function = 34
-positional_args = 8
-keyword_only_args = 6
-max_indentation = 4
-nested_function_depth = 1
-returns_per_function = 5
-branches_per_function = 10
-local_variables = 19
-methods_per_class = 20
-statements_per_file = 229
-interface_types_per_file = 3
-concrete_types_per_file = 1
-imported_names_per_file = 30
-transitive_dependencies = 215
-dependency_depth = 6
-
-statements_per_try_block = 5
 boolean_parameters = 1
-decorators_per_function = 3
+branches_per_function = 10
+calls_per_function = 32
+concrete_types_per_file = 2
 cycle_size = 3
+decorators_per_function = 1
+dependency_depth = 10
+functions_per_file = 62
+imported_names_per_file = 36
+interface_types_per_file = 3
+keyword_only_args = 6
+local_variables = 19
+max_indentation = 4
+methods_per_class = 20
+nested_function_depth = 1
+positional_args = 8
+return_values_per_function = 5
+returns_per_function = 5
+statements_per_file = 213
+statements_per_function = 34
+statements_per_try_block = 5
+transitive_dependencies = 234
 
 [rust]
-statements_per_function = 25
 arguments = 8
-max_indentation = 4
+attributes_per_function = 4
+boolean_parameters = 2
 branches_per_function = 8
+concrete_types_per_file = 8
+cycle_size = 3
+dependency_depth = 4
+imported_names_per_file = 20
+interface_types_per_file = 3
 local_variables = 20
+max_indentation = 4
 methods_per_class = 15
 nested_function_depth = 2
 returns_per_function = 5
 statements_per_file = 300
-interface_types_per_file = 3
-concrete_types_per_file = 8
-imported_names_per_file = 20
+statements_per_function = 25
 transitive_dependencies = 50
-dependency_depth = 4
-boolean_parameters = 2
-attributes_per_function = 4
-cycle_size = 3
