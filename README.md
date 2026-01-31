@@ -60,7 +60,7 @@ pytest -x -sv tests
 and they should all pass fairly quickly (~10s-30s).
 
 
-If your code still crashes or hangs your, try this [hack](https://discuss.pytorch.org/t/ran-into-this-issue-while-executing/101460):
+If your code still crashes or hangs, try this [hack](https://discuss.pytorch.org/t/ran-into-this-issue-while-executing/101460):
 ```
 export KMP_DUPLICATE_LIB_OK=TRUE
 export OMP_NUM_THREADS=1
