@@ -8,20 +8,14 @@ def test_neighbors_returns_correct_number_and_ordering():
     import conftest
 
     model, train_x, train_y, _, _ = conftest.make_enn_model()
-    neighbors = model.neighbors(np.zeros(3, dtype=float), k=5, exclude_nearest=False)
-    assert len(neighbors) == 5
-    indices = []
-    for x_n, y_n in neighbors:
-        assert x_n.shape == (3,) and y_n.shape == (1,)
-        matches = np.all(np.abs(train_x - x_n[np.newaxis, :]) < 1e-6, axis=1)
-        assert np.any(matches), "Neighbor x not found in training data"
-        idx = np.where(matches)[0][0]
-        indices.append(idx)
-        assert np.allclose(train_y[idx], y_n), "Neighbor y doesn't match training data"
+    indices = model.neighbors(np.zeros(3, dtype=float), k=5, exclude_nearest=False)
+    assert indices.shape == (5,)
+    assert np.all((0 <= indices) & (indices < len(train_x)))
     distances = [np.linalg.norm(train_x[i]) for i in indices]
     assert all(
         distances[i] <= distances[i + 1] + 1e-6 for i in range(len(distances) - 1)
     )
+    assert train_y[indices].shape == (5, 1)
 
 
 def test_neighbors_exclude_nearest():
@@ -31,9 +25,10 @@ def test_neighbors_exclude_nearest():
     x_query = train_x[5].copy()
     neighbors_exclude = model.neighbors(x_query, k=5, exclude_nearest=True)
     neighbors_include = model.neighbors(x_query, k=5, exclude_nearest=False)
-    assert len(neighbors_exclude) == 5 and len(neighbors_include) == 5
-    assert np.allclose(neighbors_include[0][0], x_query)
-    assert not np.allclose(neighbors_exclude[0][0], x_query)
+    assert neighbors_exclude.shape == (5,) and neighbors_include.shape == (5,)
+    assert neighbors_include[0] == 5
+    assert neighbors_exclude[0] != 5
+    assert 5 not in set(neighbors_exclude.tolist())
 
 
 def test_neighbors_with_empty_observations():
@@ -44,7 +39,7 @@ def test_neighbors_with_empty_observations():
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
     x_query = np.zeros(d, dtype=float)
     neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
-    assert neighbors == []
+    assert neighbors.shape == (0,)
 
 
 def test_neighbors_k_larger_than_available():
@@ -56,7 +51,7 @@ def test_neighbors_k_larger_than_available():
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
     x_query = np.zeros(d, dtype=float)
     neighbors = model.neighbors(x_query, k=20, exclude_nearest=False)
-    assert len(neighbors) == n
+    assert neighbors.shape == (n,)
 
 
 def test_neighbors_k_zero():
@@ -65,7 +60,7 @@ def test_neighbors_k_zero():
     model, _train_x, _train_y, _train_yvar, _rng = conftest.make_enn_model(n=10)
     x_query = np.zeros(3, dtype=float)
     neighbors = model.neighbors(x_query, k=0, exclude_nearest=False)
-    assert neighbors == []
+    assert neighbors.shape == (0,)
 
 
 def test_neighbors_with_multiple_metrics():
@@ -77,9 +72,8 @@ def test_neighbors_with_multiple_metrics():
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
     x_query = np.zeros(d, dtype=float)
     neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
-    assert len(neighbors) == 5
-    for x_neighbor, y_neighbor in neighbors:
-        assert x_neighbor.shape == (d,) and y_neighbor.shape == (2,)
+    assert neighbors.shape == (5,)
+    assert np.all((0 <= neighbors) & (neighbors < n))
 
 
 def test_neighbors_accepts_2d_input():
@@ -91,9 +85,8 @@ def test_neighbors_accepts_2d_input():
     neighbors_1d = model.neighbors(x_query_1d, k=3, exclude_nearest=False)
     x_query_2d = np.zeros((1, d), dtype=float)
     neighbors_2d = model.neighbors(x_query_2d, k=3, exclude_nearest=False)
-    assert len(neighbors_1d) == len(neighbors_2d) == 3
-    for (x1, y1), (x2, y2) in zip(neighbors_1d, neighbors_2d):
-        assert np.allclose(x1, x2) and np.allclose(y1, y2)
+    assert neighbors_1d.shape == neighbors_2d.shape == (3,)
+    assert np.all(neighbors_1d == neighbors_2d)
 
 
 def test_neighbors_exclude_nearest_requires_multiple_observations():

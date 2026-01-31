@@ -345,7 +345,9 @@ class EpistemicNearestNeighbors:
                 mu_all[i], se_all[i] = internals.mu, internals.se
         return ENNNormal(mu_all, se_all)
 
-    def neighbors(self, x: np.ndarray, k: int, *, exclude_nearest: bool = False):
+    def neighbors(
+        self, x: np.ndarray, k: int, *, exclude_nearest: bool = False
+    ) -> np.ndarray:
         x = np.asarray(x, dtype=float)
         if x.ndim == 1:
             x = x[np.newaxis, :]
@@ -356,19 +358,19 @@ class EpistemicNearestNeighbors:
         if k < 0:
             raise ValueError(f"k must be non-negative, got {k}")
         if len(self) == 0:
-            return []
+            return np.zeros((0,), dtype=np.int64)
         if exclude_nearest and len(self) <= 1:
             raise ValueError(
                 f"exclude_nearest=True requires at least 2 observations, got {len(self)}"
             )
         search_k = int(min(k + 1 if exclude_nearest else k, len(self)))
         if search_k == 0:
-            return []
+            return np.zeros((0,), dtype=np.int64)
         _, idx_full = self._enn_index.search(
             x, search_k=search_k, exclude_nearest=exclude_nearest
         )
-        idx = idx_full[0, : min(k, len(idx_full[0]))]
-        return [(self._train_x[i].copy(), self._train_y[i].copy()) for i in idx]
+        idx = idx_full[0, : min(k, idx_full.shape[1])]
+        return idx.astype(np.int64, copy=False)
 
     def posterior_function_draw(
         self,

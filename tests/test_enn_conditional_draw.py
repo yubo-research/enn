@@ -60,10 +60,7 @@ def test_conditional_posterior_function_draw_is_deterministic_and_does_not_mutat
         flags=flags,
     )
     neighbors_after = model.neighbors(x_test, k=2, exclude_nearest=False)
-    assert len(neighbors_before) == len(neighbors_after)
-    for (xb, yb), (xa, ya) in zip(neighbors_before, neighbors_after):
-        assert np.allclose(xb, xa)
-        assert np.allclose(yb, ya)
+    assert np.all(neighbors_before == neighbors_after)
     assert draws1.shape == (len(seeds), 1, 1)
     assert np.allclose(draws1, draws2)
 

@@ -44,10 +44,7 @@ def test_conditional_posterior_includes_whatif_points_and_does_not_mutate_index(
         flags=PosteriorFlags(exclude_nearest=False, observation_noise=False),
     )
     neighbors_after = model.neighbors(x_test, k=2, exclude_nearest=False)
-    assert len(neighbors_before) == len(neighbors_after)
-    for (xb, yb), (xa, ya) in zip(neighbors_before, neighbors_after):
-        assert np.allclose(xb, xa)
-        assert np.allclose(yb, ya)
+    assert np.all(neighbors_before == neighbors_after)
     assert np.allclose(post_cond.mu, 5.0)
 
 

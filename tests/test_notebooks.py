@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import importlib.util
 from pathlib import Path
 import pytest
 
@@ -13,6 +14,8 @@ def set_fast_test():
 
 
 def run_nbmake(notebook_path: str) -> None:
+    if importlib.util.find_spec("nbmake") is None:
+        pytest.skip("nbmake is not installed")
     repo_root = Path(__file__).resolve().parent.parent
     shim_dir = Path(__file__).resolve().parent / "_nbmake_sitecustomize"
     src_dir = repo_root / "src"
