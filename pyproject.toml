@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ennbo"
-version = "0.1.9"
+version = "0.2.0"
 description = "Epistemic Nearest Neighbors"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,13 +12,7 @@ license = { file = "LICENSE" }
 authors = [
   { name = "YUBO Lab", email = "david.sweet@yu.edu" },
 ]
-dependencies = [
-    "numpy>=1.26.4,<2.0.0",
-    "torch>=2.5.1",
-    "gpytorch>=1.13",
-    "faiss-cpu>=1.9.0",
-    "scipy>=1.15.3",
-]
+dependencies = []
 
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -36,6 +30,13 @@ Homepage = "https://github.com/yubo-research/enn"
 Source = "https://github.com/yubo-research/enn"
 
 [project.optional-dependencies]
+with-deps = [
+    "numpy>=1.26.4,<2.0.0",
+    "torch>=2.5.1",
+    "gpytorch>=1.13",
+    "faiss-cpu>=1.9.0",
+    "scipy>=1.15.3",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",

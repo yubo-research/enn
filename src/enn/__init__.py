@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import importlib
-
-from .enn.enn_class import EpistemicNearestNeighbors
-from .enn.enn_fit import enn_fit
+from ._lazy import lazy_getattr
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
+    "EpistemicNearestNeighbors": (".enn.enn_class", "EpistemicNearestNeighbors"),
+    "enn_fit": (".enn.enn_fit", "enn_fit"),
     "create_optimizer": (".turbo.optimizer", "create_optimizer"),
     "Telemetry": (".turbo.turbo_utils", "Telemetry"),
     "OptimizerConfig": (".turbo.optimizer_config", "OptimizerConfig"),
@@ -23,16 +22,15 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str):
-    spec = _LAZY_ATTRS.get(name)
-    if spec is not None:
-        module_name, attr_name = spec
-        module = importlib.import_module(module_name, __package__)
-        return getattr(module, attr_name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return lazy_getattr(
+        name=name,
+        module_name=__name__,
+        package=__package__,
+        mapping=_LAZY_ATTRS,
+        extra="`pip install 'ennbo[with-deps]'`",
+    )
 
 
 __all__: list[str] = [
-    "EpistemicNearestNeighbors",
-    "enn_fit",
     *_LAZY_ATTRS.keys(),
 ]
