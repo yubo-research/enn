@@ -96,6 +96,7 @@ def enn_fit(
     num_fit_samples: int = 10,
     rng: Generator,
     params_warm_start: ENNParams | None = None,
+    infer_aleatoric_variance_scale: bool = True,
 ) -> ENNParams:
     from .enn_params import ENNParams
 
@@ -105,10 +106,11 @@ def enn_fit(
     log_max = 3.0
     epi_var_scale_log_values = rng.uniform(log_min, log_max, size=num_fit_candidates)
     epi_var_scale_values = 10**epi_var_scale_log_values
-    ale_homoscedastic_log_values = rng.uniform(
-        log_min, log_max, size=num_fit_candidates
+    ale_homoscedastic_values = (
+        10 ** rng.uniform(log_min, log_max, size=num_fit_candidates)
+        if infer_aleatoric_variance_scale
+        else np.zeros(num_fit_candidates, dtype=float)
     )
-    ale_homoscedastic_values = 10**ale_homoscedastic_log_values
     paramss = [
         ENNParams(
             k_num_neighbors=k,
@@ -122,7 +124,11 @@ def enn_fit(
             ENNParams(
                 k_num_neighbors=k,
                 epistemic_variance_scale=params_warm_start.epistemic_variance_scale,
-                aleatoric_variance_scale=params_warm_start.aleatoric_variance_scale,
+                aleatoric_variance_scale=(
+                    params_warm_start.aleatoric_variance_scale
+                    if infer_aleatoric_variance_scale
+                    else 0.0
+                ),
             )
         )
     if len(paramss) == 0:

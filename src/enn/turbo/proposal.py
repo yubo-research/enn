@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
 
+    from .config.enn_fit_config import ENNFitConfig
     from .config.enn_index_driver import ENNIndexDriver
     from .turbo_gp import TurboGP
 
@@ -19,8 +20,7 @@ def mk_enn(
     k: int,
     yvar_obs: np.ndarray | None = None,
     *,
-    num_fit_samples: int | None = None,
-    num_fit_candidates: int | None = None,
+    fit: ENNFitConfig | None = None,
     scale_x: bool = False,
     index_driver: ENNIndexDriver | None = None,
     rng: Generator | None = None,
@@ -65,18 +65,19 @@ def mk_enn(
     if len(enn_model) == 0:
         return None, None
     fitted_params: ENNParams | None = None
-    if num_fit_samples is not None and rng is not None:
+    if fit is not None and fit.num_fit_samples is not None and rng is not None:
         from enn.enn.enn_fit import enn_fit
 
         fitted_params = enn_fit(
             enn_model,
             k=k,
-            num_fit_candidates=num_fit_candidates
-            if num_fit_candidates is not None
-            else 30,
-            num_fit_samples=num_fit_samples,
+            num_fit_candidates=(
+                fit.num_fit_candidates if fit.num_fit_candidates is not None else 30
+            ),
+            num_fit_samples=fit.num_fit_samples,
             rng=rng,
             params_warm_start=params_warm_start,
+            infer_aleatoric_variance_scale=fit.infer_aleatoric_variance_scale,
         )
     else:
         fitted_params = ENNParams(

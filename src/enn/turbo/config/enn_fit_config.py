@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 class ENNFitConfig:
     num_fit_samples: int | None = None
     num_fit_candidates: int | None = None
+    infer_aleatoric_variance_scale: bool = True
 
     def __post_init__(self) -> None:
         if self.num_fit_samples is not None and self.num_fit_samples <= 0:

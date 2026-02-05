@@ -127,3 +127,33 @@ def test_enn_fit_supports_multioutput_y():
         model, x, y, paramss=[params], P=25, rng=np.random.default_rng(789)
     )
     assert len(lls) == 1 and np.isfinite(lls[0])
+
+
+def test_enn_fit_can_disable_aleatoric_inference():
+    import numpy as np
+    from enn.enn.enn_class import EpistemicNearestNeighbors
+    from enn.enn.enn_fit import enn_fit
+    from enn.enn.enn_params import ENNParams
+
+    rng = np.random.default_rng(42)
+    x, y, yvar = _make_linear_1d_regression_data(
+        rng=rng, n=40, d=3, noise_std=0.2, yvar=0.01
+    )
+    model = EpistemicNearestNeighbors(x, y, yvar)
+    warm = ENNParams(
+        k_num_neighbors=5,
+        epistemic_variance_scale=1.0,
+        aleatoric_variance_scale=123.0,
+    )
+    result = enn_fit(
+        model,
+        k=5,
+        num_fit_candidates=25,
+        num_fit_samples=15,
+        rng=rng,
+        params_warm_start=warm,
+        infer_aleatoric_variance_scale=False,
+    )
+    assert isinstance(result, ENNParams)
+    assert result.k_num_neighbors == 5
+    assert result.aleatoric_variance_scale == 0.0
