@@ -15,10 +15,10 @@ def test_conditional_posterior_function_draw_matches_unconditional_when_no_whati
     )
     flags = PosteriorFlags(exclude_nearest=False, observation_noise=True)
     seeds = [1, 2, 3]
-    draws = model.posterior_function_draw(
+    draws, idx = model.posterior_function_draw(
         x_test, params, function_seeds=seeds, flags=flags
     )
-    draws_cond = model.conditional_posterior_function_draw(
+    draws_cond, idx_cond = model.conditional_posterior_function_draw(
         np.zeros((0, 3), dtype=float),
         np.zeros((0, 1), dtype=float),
         x_test,
@@ -27,6 +27,7 @@ def test_conditional_posterior_function_draw_matches_unconditional_when_no_whati
         flags=flags,
     )
     assert np.allclose(draws, draws_cond)
+    assert np.all(idx == idx_cond)
 
 
 def test_conditional_posterior_function_draw_is_deterministic_and_does_not_mutate_index():
@@ -43,7 +44,7 @@ def test_conditional_posterior_function_draw_is_deterministic_and_does_not_mutat
     )
     flags = PosteriorFlags(exclude_nearest=False, observation_noise=True)
     seeds = [123, 124]
-    draws1 = model.conditional_posterior_function_draw(
+    draws1, idx1 = model.conditional_posterior_function_draw(
         x_whatif,
         y_whatif,
         x_test,
@@ -51,7 +52,7 @@ def test_conditional_posterior_function_draw_is_deterministic_and_does_not_mutat
         function_seeds=seeds,
         flags=flags,
     )
-    draws2 = model.conditional_posterior_function_draw(
+    draws2, idx2 = model.conditional_posterior_function_draw(
         x_whatif,
         y_whatif,
         x_test,
@@ -63,6 +64,7 @@ def test_conditional_posterior_function_draw_is_deterministic_and_does_not_mutat
     assert np.all(neighbors_before == neighbors_after)
     assert draws1.shape == (len(seeds), 1, 1)
     assert np.allclose(draws1, draws2)
+    assert np.all(idx1 == idx2)
 
 
 def test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_nearest():
@@ -77,7 +79,7 @@ def test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_ne
         k_num_neighbors=1, epistemic_variance_scale=1.0, aleatoric_variance_scale=1.0
     )
     seeds = [7]
-    draw_base = model.posterior_function_draw(x_test, params, function_seeds=seeds)[
+    draw_base = model.posterior_function_draw(x_test, params, function_seeds=seeds)[0][
         0, 0, 0
     ]
     draw_incl = model.conditional_posterior_function_draw(
@@ -87,7 +89,7 @@ def test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_ne
         params=params,
         function_seeds=seeds,
         flags=PosteriorFlags(exclude_nearest=False, observation_noise=True),
-    )[0, 0, 0]
+    )[0][0, 0, 0]
     draw_excl = model.conditional_posterior_function_draw(
         x_whatif,
         y_whatif,
@@ -95,7 +97,7 @@ def test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_ne
         params=params,
         function_seeds=seeds,
         flags=PosteriorFlags(exclude_nearest=True, observation_noise=True),
-    )[0, 0, 0]
+    )[0][0, 0, 0]
     assert not np.allclose(draw_base, draw_incl)
     assert not np.allclose(draw_incl, draw_excl)
 
@@ -114,7 +116,7 @@ def test_conditional_posterior_function_draw_matches_augmented_model_exactly():
     flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
     function_seeds = [11, 12, 13]
     enn_a = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
-    draws_a = enn_a.conditional_posterior_function_draw(
+    draws_a, idx_a = enn_a.conditional_posterior_function_draw(
         x_whatif,
         y_whatif,
         x_test,
@@ -127,7 +129,8 @@ def test_conditional_posterior_function_draw_matches_augmented_model_exactly():
         np.concatenate([train_y, y_whatif], axis=0),
         train_yvar=None,
     )
-    draws_b = enn_b.posterior_function_draw(
+    draws_b, idx_b = enn_b.posterior_function_draw(
         x_test, params, function_seeds=function_seeds, flags=flags
     )
     assert np.allclose(draws_a, draws_b)
+    assert np.all(idx_a == idx_b)

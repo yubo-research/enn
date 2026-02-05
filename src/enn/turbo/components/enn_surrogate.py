@@ -107,7 +107,7 @@ class ENNSurrogate:
         num_metrics = self._enn.num_outputs
         base_seed = rng.integers(0, 2**31)
         function_seeds = np.arange(base_seed, base_seed + num_samples, dtype=np.int64)
-        samples = self._enn.posterior_function_draw(
+        samples, _ = self._enn.posterior_function_draw(
             x, self._params, function_seeds=function_seeds
         )
         assert samples.shape == (num_samples, num_candidates, num_metrics), (

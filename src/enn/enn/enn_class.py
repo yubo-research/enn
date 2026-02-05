@@ -162,8 +162,8 @@ class EpistemicNearestNeighbors:
 
         if flags is None:
             flags = PosteriorFlags()
-        post_batch = self.batch_posterior(x, [params], flags=flags)
-        return ENNNormal(post_batch.mu[0], post_batch.se[0])
+        internals = self._compute_posterior_internals(x, params, flags)
+        return ENNNormal(internals.mu, internals.se, idx=internals.idx)
 
     def _empty_posterior_internals(self, batch_size: int) -> DrawInternals:
         m = self._num_metrics
@@ -285,7 +285,7 @@ class EpistemicNearestNeighbors:
         x: np.ndarray,
         params: ENNParams,
         flags: PosteriorFlags,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> DrawInternals:
         x = np.asarray(x, dtype=float)
         if x.ndim != 2 or x.shape[1] != self._num_dim:
             raise ValueError(x.shape)
@@ -379,13 +379,16 @@ class EpistemicNearestNeighbors:
         *,
         function_seeds: np.ndarray | list[int],
         flags: PosteriorFlags | None = None,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, np.ndarray]:
         from .enn_params import PosteriorFlags
 
         if flags is None:
             flags = PosteriorFlags()
         internals = self._compute_posterior_internals(x, params, flags)
-        return _draw_from_internals(self, internals, function_seeds=function_seeds)
+        return (
+            _draw_from_internals(self, internals, function_seeds=function_seeds),
+            internals.idx,
+        )
 
     def conditional_posterior_function_draw(
         self,
@@ -396,7 +399,7 @@ class EpistemicNearestNeighbors:
         params: ENNParams,
         function_seeds: np.ndarray | list[int],
         flags: PosteriorFlags | None = None,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, np.ndarray]:
         from .enn_conditional import compute_conditional_posterior_draw_internals
         from .enn_params import PosteriorFlags
 
@@ -416,7 +419,7 @@ class EpistemicNearestNeighbors:
         internals = compute_conditional_posterior_draw_internals(
             self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
         )
-        return _draw_from_internals(
+        draws = _draw_from_internals(
             self,
             DrawInternals(
                 idx=internals.idx,
@@ -427,3 +430,4 @@ class EpistemicNearestNeighbors:
             ),
             function_seeds=function_seeds,
         )
+        return draws, internals.idx

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ennbo"
-version = "0.2.0"
+version = "0.2.1"
 description = "Epistemic Nearest Neighbors"
 readme = "README.md"
 requires-python = ">=3.11"
