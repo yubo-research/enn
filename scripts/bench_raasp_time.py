@@ -33,6 +33,7 @@ def _bench_one(
     box: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> float:
     from enn.turbo.turbo_utils import generate_raasp_candidates
+    from enn.turbo.config.candidate_rv import CandidateRV
     from scipy.stats import qmc
 
     center, lb, ub = box
@@ -45,6 +46,7 @@ def _bench_one(
         ub,
         num_candidates,
         rng=rng,
+        candidate_rv=CandidateRV.SOBOL,
         sobol_engine=sobol,
     )
     _ = float(np.sum(x))

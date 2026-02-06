@@ -9,11 +9,9 @@ from dataclasses import dataclass
 import numpy as np
 
 from enn import create_optimizer
-from enn.turbo.config.candidate_gen_config import (
-    CandidateGenConfig,
-    const_num_candidates,
-)
-from enn.turbo.config.enums import AcqType
+from enn.turbo.config.candidate_gen_config import CandidateGenConfig
+from enn.turbo.config.num_candidates_fn import const_num_candidates
+from enn.turbo.config.acq_type import AcqType
 from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig, ENNFitConfig
 from enn.turbo.config.trust_region import TurboTRConfig
 from enn.turbo.config.factory import turbo_enn_config

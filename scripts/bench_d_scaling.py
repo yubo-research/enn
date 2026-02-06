@@ -37,7 +37,7 @@ def benchmark_d_scaling(ds=[100, 1000, 5000, 10000], n=1000, num_candidates=5000
 
         # 2. FAISS Search
         t0 = time.perf_counter()
-        _, _ = model._search_index(cand_x, search_k=10, exclude_nearest=False)
+        _, _ = model._enn_index.search(cand_x, search_k=10, exclude_nearest=False)
         row["FAISS_Search (s)"] = time.perf_counter() - t0
 
         # 3. RAASP Candidate Generation (Sobol)
@@ -45,8 +45,16 @@ def benchmark_d_scaling(ds=[100, 1000, 5000, 10000], n=1000, num_candidates=5000
         center = np.full(d, 0.5)
         lb, ub = np.zeros(d), np.ones(d)
         sobol = qmc.Sobol(d=d, scramble=True, seed=0)
+        from enn.turbo.config.candidate_rv import CandidateRV
+
         _ = generate_raasp_candidates(
-            center, lb, ub, num_candidates, rng=rng, sobol_engine=sobol
+            center,
+            lb,
+            ub,
+            num_candidates,
+            rng=rng,
+            candidate_rv=CandidateRV.SOBOL,
+            sobol_engine=sobol,
         )
         row["RAASP_Sobol (s)"] = time.perf_counter() - t0
 
