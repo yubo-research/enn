@@ -25,6 +25,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: kiss-check
+        name: kiss check
+        entry: kiss check
+        language: system
+        pass_filenames: false
+        always_run: true
+
   # Linting, formatting, and import sorting via Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.14
