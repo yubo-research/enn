@@ -40,21 +40,12 @@ def mk_enn(
     y_obs_array = np.asarray(y_obs, dtype=float)
     if y_obs_array.size == 0:
         return None, None
-    if y_obs_array.ndim == 1:
-        y = y_obs_array.reshape(-1, 1)
-    else:
-        y = y_obs_array
+    y = y_obs_array.reshape(-1, 1) if y_obs_array.ndim == 1 else y_obs_array
+    yvar = None
     if yvar_obs is not None:
         yvar_array = np.asarray(yvar_obs, dtype=float)
         if yvar_array.size > 0:
-            if yvar_array.ndim == 1:
-                yvar = yvar_array.reshape(-1, 1)
-            else:
-                yvar = yvar_array
-        else:
-            yvar = None
-    else:
-        yvar = None
+            yvar = yvar_array.reshape(-1, 1) if yvar_array.ndim == 1 else yvar_array
     enn_model = EpistemicNearestNeighbors(
         x_obs_array,
         y,

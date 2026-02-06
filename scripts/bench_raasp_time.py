@@ -25,6 +25,57 @@ def _parse_int_list(csv: str) -> list[int]:
     return values
 
 
+def _bench_one(
+    *,
+    num_dim: int,
+    num_candidates: int,
+    rep_seed: int,
+    box: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> float:
+    from enn.turbo.turbo_utils import generate_raasp_candidates
+    from scipy.stats import qmc
+
+    center, lb, ub = box
+    rng = np.random.default_rng(rep_seed)
+    t0 = time.perf_counter()
+    sobol = qmc.Sobol(d=num_dim, scramble=True, seed=rep_seed)
+    x = generate_raasp_candidates(
+        center,
+        lb,
+        ub,
+        num_candidates,
+        rng=rng,
+        sobol_engine=sobol,
+    )
+    _ = float(np.sum(x))
+    return time.perf_counter() - t0
+
+
+def _bench_repeats(
+    *,
+    num_dim: int,
+    num_candidates: int,
+    repeats: int,
+    seed: int,
+    box: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> tuple[list[float], str | None]:
+    times_s: list[float] = []
+    for rep in range(repeats):
+        rep_seed = seed + rep
+        try:
+            times_s.append(
+                _bench_one(
+                    num_dim=num_dim,
+                    num_candidates=num_candidates,
+                    rep_seed=rep_seed,
+                    box=box,
+                )
+            )
+        except MemoryError:
+            return times_s, "MemoryError"
+    return times_s, None
+
+
 def bench_raasp(
     *,
     num_dim: int,
@@ -32,9 +83,6 @@ def bench_raasp(
     repeats: int,
     seed: int,
 ) -> list[BenchResult]:
-    from enn.turbo.turbo_utils import generate_raasp_candidates
-    from scipy.stats import qmc
-
     if num_dim <= 0:
         raise ValueError(num_dim)
     if repeats <= 0:
@@ -46,28 +94,13 @@ def bench_raasp(
 
     results: list[BenchResult] = []
     for num_candidates in num_candidates_list:
-        times_s: list[float] = []
-        error: str | None = None
-        for rep in range(repeats):
-            rep_seed = seed + rep
-            rng = np.random.default_rng(rep_seed)
-            try:
-                t0 = time.perf_counter()
-                sobol = qmc.Sobol(d=num_dim, scramble=True, seed=rep_seed)
-                x = generate_raasp_candidates(
-                    center,
-                    lb,
-                    ub,
-                    num_candidates,
-                    rng=rng,
-                    sobol_engine=sobol,
-                )
-                # Ensure full materialization (defensive; should already be a numpy array).
-                _ = float(np.sum(x))
-                times_s.append(time.perf_counter() - t0)
-            except MemoryError:
-                error = "MemoryError"
-                break
+        times_s, error = _bench_repeats(
+            num_dim=num_dim,
+            num_candidates=num_candidates,
+            repeats=repeats,
+            seed=seed,
+            box=(center, lb, ub),
+        )
         results.append(
             BenchResult(num_candidates=num_candidates, times_s=times_s, error=error)
         )

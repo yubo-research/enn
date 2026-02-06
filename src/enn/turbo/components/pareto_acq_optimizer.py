@@ -37,11 +37,11 @@ class ParetoAcqOptimizer:
                 if len(i_keep) + len(front_indices) <= num_arms:
                     i_keep.extend(front_indices.tolist())
                     remaining_mask[front_indices] = False
-                else:
-                    needed = num_arms - len(i_keep)
-                    selected = rng.choice(front_indices, size=needed, replace=False)
-                    i_keep.extend(selected.tolist())
-                    break
+                    continue
+                needed = num_arms - len(i_keep)
+                selected = rng.choice(front_indices, size=needed, replace=False)
+                i_keep.extend(selected.tolist())
+                break
             return x_cand[np.array(i_keep, dtype=int)]
         else:
             mu_1d = mu[:, 0] if mu.ndim == 2 else mu

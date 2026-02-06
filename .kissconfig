@@ -28,7 +28,7 @@ returns_per_function = 5
 statements_per_file = 213
 statements_per_function = 34
 statements_per_try_block = 5
-transitive_dependencies = 234
+transitive_dependencies = 89
 
 [rust]
 arguments = 8

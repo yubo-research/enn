@@ -10,9 +10,8 @@ def build_surrogate(cfg: Any) -> Surrogate:
     from .enn_surrogate import ENNSurrogate
     from .gp_surrogate import GPSurrogate
     from .no_surrogate import NoSurrogate
-    from ..config.optimizer_config import OptimizerConfig
 
-    if isinstance(cfg, OptimizerConfig):
+    if type(cfg).__name__ == "OptimizerConfig":
         cfg = cfg.surrogate
 
     name = type(cfg).__name__
@@ -27,9 +26,8 @@ def build_surrogate(cfg: Any) -> Surrogate:
 
 def build_acquisition_optimizer(cfg: Any) -> AcquisitionOptimizer:
     from .acquisition import ParetoAcqOptimizer, RandomAcqOptimizer
-    from ..config.optimizer_config import OptimizerConfig
 
-    if isinstance(cfg, OptimizerConfig):
+    if type(cfg).__name__ == "OptimizerConfig":
         cfg = cfg.acquisition
 
     name = type(cfg).__name__
@@ -51,9 +49,8 @@ def build_trust_region(
     from ..morbo_trust_region import MorboTrustRegion
     from ..no_trust_region import NoTrustRegion
     from ..turbo_trust_region import TurboTrustRegion
-    from ..config.optimizer_config import OptimizerConfig
 
-    if isinstance(cfg, OptimizerConfig):
+    if type(cfg).__name__ == "OptimizerConfig":
         candidate_rv = cfg.candidate_rv
         cfg = cfg.trust_region
 
