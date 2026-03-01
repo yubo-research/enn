@@ -300,6 +300,86 @@ impl PyEpistemicNearestNeighbors {
         Ok((draws.into_dyn().into_pyarray_bound(py), idx))
     }
 
+    /// Conditional posterior with what-if scenarios.
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (x_whatif, y_whatif, x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, exclude_nearest=false, observation_noise=false))]
+    fn conditional_posterior<'py>(
+        &self,
+        py: Python<'py>,
+        x_whatif: PyReadonlyArray2<f64>,
+        y_whatif: PyReadonlyArray2<f64>,
+        x: PyReadonlyArray2<f64>,
+        k_num_neighbors: i32,
+        epistemic_variance_scale: f64,
+        aleatoric_variance_scale: f64,
+        exclude_nearest: bool,
+        observation_noise: bool,
+    ) -> PyResult<PosteriorPyOut<'py>> {
+        let params = enn_core::ENNParams::new(
+            k_num_neighbors,
+            epistemic_variance_scale,
+            aleatoric_variance_scale,
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let flags = enn_core::PosteriorFlags::new()
+            .with_exclude_nearest(exclude_nearest)
+            .with_observation_noise(observation_noise);
+        let out = self
+            .inner
+            .conditional_posterior(
+                &x_whatif.as_array(),
+                &y_whatif.as_array(),
+                &x.as_array(),
+                &params,
+                &flags,
+            )
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok((
+            out.mu.into_pyarray_bound(py),
+            out.se.into_pyarray_bound(py),
+            out.idx,
+        ))
+    }
+
+    /// Conditional posterior function draw.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    #[pyo3(signature = (x_whatif, y_whatif, x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, function_seeds, exclude_nearest=false, observation_noise=false))]
+    fn conditional_posterior_function_draw<'py>(
+        &self,
+        py: Python<'py>,
+        x_whatif: PyReadonlyArray2<f64>,
+        y_whatif: PyReadonlyArray2<f64>,
+        x: PyReadonlyArray2<f64>,
+        k_num_neighbors: i32,
+        epistemic_variance_scale: f64,
+        aleatoric_variance_scale: f64,
+        function_seeds: Vec<i64>,
+        exclude_nearest: bool,
+        observation_noise: bool,
+    ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Vec<Vec<usize>>)> {
+        let params = enn_core::ENNParams::new(
+            k_num_neighbors,
+            epistemic_variance_scale,
+            aleatoric_variance_scale,
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let flags = enn_core::PosteriorFlags::new()
+            .with_exclude_nearest(exclude_nearest)
+            .with_observation_noise(observation_noise);
+        let (draws, idx) = self
+            .inner
+            .conditional_posterior_function_draw(
+                &x_whatif.as_array(),
+                &y_whatif.as_array(),
+                &x.as_array(),
+                &params,
+                &function_seeds,
+                &flags,
+            )
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok((draws.into_dyn().into_pyarray_bound(py), idx))
+    }
+
     /// Get k nearest neighbors for query points.
     #[pyo3(signature = (x, k, exclude_nearest=false))]
     fn neighbors<'py>(

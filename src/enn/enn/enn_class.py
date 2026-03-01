@@ -312,11 +312,25 @@ class EpistemicNearestNeighbors:
         params: ENNParams,
         flags: PosteriorFlags | None = None,
     ) -> ENNNormal:
-        from .enn_conditional import compute_conditional_posterior
+        from .enn_normal import ENNNormal
         from .enn_params import PosteriorFlags
 
         if flags is None:
             flags = PosteriorFlags()
+        if self._rust_model is not None:
+            mu, se, _ = self._rust_model.conditional_posterior(
+                x_whatif,
+                y_whatif,
+                x,
+                k_num_neighbors=params.k_num_neighbors,
+                epistemic_variance_scale=params.epistemic_variance_scale,
+                aleatoric_variance_scale=params.aleatoric_variance_scale,
+                exclude_nearest=flags.exclude_nearest,
+                observation_noise=flags.observation_noise,
+            )
+            return ENNNormal(mu, se)
+        from .enn_conditional import compute_conditional_posterior
+
         y_scale = _compute_conditional_y_scale(self, y_whatif)
         return compute_conditional_posterior(
             self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
@@ -476,7 +490,6 @@ class EpistemicNearestNeighbors:
         function_seeds: np.ndarray | list[int],
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        from .enn_conditional import compute_conditional_posterior_draw_internals
         from .enn_params import PosteriorFlags
 
         if flags is None:
@@ -491,6 +504,27 @@ class EpistemicNearestNeighbors:
                 function_seeds=function_seeds,
                 flags=flags,
             )
+        if self._rust_model is not None:
+            seeds = (
+                np.asarray(function_seeds, dtype=np.int64).tolist()
+                if hasattr(function_seeds, "__iter__")
+                else list(function_seeds)
+            )
+            draws, idx = self._rust_model.conditional_posterior_function_draw(
+                x_whatif,
+                y_whatif,
+                x,
+                k_num_neighbors=params.k_num_neighbors,
+                epistemic_variance_scale=params.epistemic_variance_scale,
+                aleatoric_variance_scale=params.aleatoric_variance_scale,
+                function_seeds=seeds,
+                exclude_nearest=flags.exclude_nearest,
+                observation_noise=flags.observation_noise,
+            )
+            idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0))
+            return draws, idx_arr
+        from .enn_conditional import compute_conditional_posterior_draw_internals
+
         y_scale = _compute_conditional_y_scale(self, y_whatif)
         internals = compute_conditional_posterior_draw_internals(
             self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale

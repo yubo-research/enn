@@ -124,6 +124,8 @@ pub fn normal_hash_batch_multi_seed_fast(
     // Output shape: (num_seeds, data_indices.len(), num_metrics)
     let mut output = Array::zeros(IxDyn(&[num_seeds, num_indices, num_metrics]));
 
+    let mut temp_values: Vec<f64> = Vec::with_capacity(num_unique * num_metrics);
+
     // Generate values for each seed
     for (si, &seed) in function_seeds.iter().enumerate() {
         let seed_u64 = seed as u64;
@@ -166,8 +168,7 @@ pub fn normal_hash_batch_multi_seed_fast(
         }
 
         // Map from unique positions to data_indices positions
-        // Use a temporary array to avoid reading from output while writing to it
-        let mut temp_values: Vec<f64> = Vec::with_capacity(num_unique * num_metrics);
+        temp_values.clear();
         for ui in 0..num_unique {
             for metric in 0..num_metrics {
                 temp_values.push(output[IxDyn(&[si, ui, metric])]);

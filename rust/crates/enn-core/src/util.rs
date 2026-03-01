@@ -172,7 +172,7 @@ pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Arra
             bins[*idx] = (rank * num_bins) / n;
         }
 
-        // Compute variance contribution for this dimension
+        let y_mean = y.mean().unwrap_or(0.0);
         let mut var_explained = 0.0;
         for bin in 0..num_bins {
             let bin_mask: Vec<bool> = bins.iter().map(|&b| b == bin).collect();
@@ -189,7 +189,7 @@ pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Arra
 
             let bin_mean = bin_y.iter().sum::<f64>() / bin_y.len() as f64;
             let p_b = bin_y.len() as f64 / n as f64;
-            var_explained += p_b * (bin_mean - y.mean().unwrap()).powi(2);
+            var_explained += p_b * (bin_mean - y_mean).powi(2);
         }
 
         sobol[dim] = var_explained / vy;
@@ -200,7 +200,8 @@ pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Arra
 
 /// Select arms from Pareto fronts.
 ///
-/// Iteratively extracts Pareto fronts to select diverse arms.
+/// Iteratively extracts Pareto fronts (mu, se) and selects arms.
+/// When the last front overflows, uses seed for deterministic random selection.
 ///
 /// # Arguments
 ///
@@ -208,38 +209,65 @@ pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Arra
 /// * `mu` - Mean predictions
 /// * `se` - Standard errors
 /// * `num_arms` - Number of arms to select
-/// * `seed` - RNG seed for random selection
+/// * `seed` - RNG seed for random selection when front overflows
 ///
 /// # Returns
 ///
-/// Selected arm indices.
+/// Selected arm indices, sorted by mu descending.
 pub fn arms_from_pareto_fronts(
     _x_cand: &ArrayView2<f64>,
     mu: &ArrayView1<f64>,
-    _se: &ArrayView1<f64>,
+    se: &ArrayView1<f64>,
     num_arms: usize,
-    _seed: u64,
+    seed: u64,
 ) -> Vec<usize> {
     let n = mu.len();
     if n == 0 || num_arms == 0 {
         return Vec::new();
     }
 
-    // Simple selection: sort by mu descending and take top
-    // Full implementation would do iterative Pareto front extraction
-    let mut indexed: Vec<(usize, f64)> = mu.iter().enumerate().map(|(i, &v)| (i, v)).collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    let mut i_keep: Vec<usize> = Vec::with_capacity(num_arms);
+    let mut remaining: Vec<usize> = (0..n).collect();
 
-    // Use seed for deterministic selection
-    let mut selected: Vec<usize> = indexed
-        .iter()
-        .take(num_arms.min(n))
-        .map(|(idx, _)| *idx)
-        .collect();
+    while !remaining.is_empty() && i_keep.len() < num_arms {
+        let front = pareto_front_2d_maximize(mu, se, Some(&remaining));
+        if front.is_empty() {
+            break;
+        }
 
-    // Sort by mu descending
-    selected.sort_by(|&a, &b| mu[b].partial_cmp(&mu[a]).unwrap());
+        let mut front_sorted = front;
+        front_sorted.sort_by(|&a, &b| mu[b].partial_cmp(&mu[a]).unwrap());
+        let in_front: std::collections::HashSet<usize> =
+            front_sorted.iter().copied().collect();
 
+        if i_keep.len() + front_sorted.len() <= num_arms {
+            i_keep.extend(&front_sorted);
+            remaining.retain(|&i| !in_front.contains(&i));
+        } else {
+            let remaining_arms = num_arms - i_keep.len();
+            let selected = deterministic_choice(&front_sorted, remaining_arms, seed);
+            i_keep.extend(selected);
+            break;
+        }
+    }
+
+    i_keep.sort_by(|&a, &b| mu[b].partial_cmp(&mu[a]).unwrap());
+    i_keep
+}
+
+/// Deterministic subset selection using seed (simple LCG).
+fn deterministic_choice(indices: &[usize], k: usize, seed: u64) -> Vec<usize> {
+    if k >= indices.len() {
+        return indices.to_vec();
+    }
+    let mut state = seed;
+    let mut pool = indices.to_vec();
+    let mut selected = Vec::with_capacity(k);
+    for _ in 0..k {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let idx = (state as usize) % pool.len();
+        selected.push(pool.remove(idx));
+    }
     selected
 }
 
@@ -330,7 +358,30 @@ mod tests {
         let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42);
 
         assert_eq!(arms.len(), 2);
-        // Should select highest mu values
-        assert!(arms.contains(&1)); // mu=1.0
+        assert!(arms.contains(&1));
+    }
+
+    #[test]
+    fn test_arms_from_pareto_front_overflow() {
+        let x_cand = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5], [0.2, 0.8]];
+        let mu = array![5.0, 4.0, 3.0, 2.0, 1.0, 0.0];
+        let se = array![0.10, 0.20, 0.15, 0.40, 0.05, 0.50];
+
+        let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 5, 0);
+
+        assert_eq!(arms.len(), 5);
+        assert!(arms.contains(&0));
+        assert!(arms.contains(&1));
+    }
+
+    #[test]
+    fn test_arms_from_pareto_deterministic_choice() {
+        let x_cand = array![[0.0], [1.0], [2.0], [3.0], [4.0]];
+        let mu = array![1.0, 1.0, 1.0, 0.0, 0.0];
+        let se = array![0.0, 0.0, 0.0, 0.0, 0.0];
+        let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42);
+        assert_eq!(arms.len(), 2);
+        let arms2 = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42);
+        assert_eq!(arms, arms2);
     }
 }

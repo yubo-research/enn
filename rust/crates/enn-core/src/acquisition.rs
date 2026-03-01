@@ -108,13 +108,17 @@ impl ThompsonAcquisition {
 
         use rand::distributions::{Distribution, Standard};
 
+        const CLIP_MIN: f64 = 1e-12;
+        const CLIP_MAX: f64 = 1.0 - 1e-12;
+
         // Sample from posterior
         let mut samples = Array1::zeros(mu.len());
         for i in 0..mu.len() {
             let mean = mu[i];
             let std = sigma[i];
-            // Box-Muller transform for normal sample
-            let u1: f64 = Standard.sample(rng);
+            // Box-Muller transform for normal sample (clamp u1 to avoid log(0) -> inf)
+            let mut u1: f64 = Standard.sample(rng);
+            u1 = u1.clamp(CLIP_MIN, CLIP_MAX);
             let u2: f64 = Standard.sample(rng);
             let z: f64 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
             samples[i] = mean + std * z;

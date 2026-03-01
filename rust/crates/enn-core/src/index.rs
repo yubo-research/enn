@@ -158,8 +158,13 @@ impl ENNIndex {
             IndexDriver::KDTree => self.kdtree_search(&x_scaled.view(), k),
         };
 
-        // Exclude nearest if requested
-        if exclude_nearest && k > 1 {
+        // Exclude nearest if requested (need at least 2 to exclude 1)
+        if exclude_nearest {
+            if k < 2 {
+                return Err(IndexError::InvalidParameter(
+                    "exclude_nearest=True requires search_k >= 2".to_string(),
+                ));
+            }
             dist2s = dist2s.slice_axis(Axis(1), ndarray::Slice::from(1..)).to_owned();
             indices = indices.slice_axis(Axis(1), ndarray::Slice::from(1..)).to_owned();
         }
