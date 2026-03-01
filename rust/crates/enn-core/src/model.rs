@@ -238,6 +238,10 @@ impl EpistemicNearestNeighbors {
     }
 
     // Internal accessor methods for posterior computation
+    pub(crate) fn train_x(&self) -> &Array2<f64> {
+        &self.train_x
+    }
+
     pub(crate) fn train_y(&self) -> &Array2<f64> {
         &self.train_y
     }

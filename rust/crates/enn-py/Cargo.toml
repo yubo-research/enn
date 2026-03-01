@@ -17,6 +17,7 @@ enn-core = { path = "../enn-core" }
 ndarray = { workspace = true }
 numpy = { workspace = true }
 pyo3 = { workspace = true }
+rand = { workspace = true }
 
 [build-dependencies]
 pyo3-build-config = "0.22"

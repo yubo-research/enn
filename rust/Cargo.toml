@@ -14,8 +14,10 @@ repository = "https://github.com/yubo-research/enn"
 
 [workspace.dependencies]
 ndarray = "0.16"
+ndarray-linalg = "0.16"
 numpy = "0.22"
 pyo3 = { version = "0.22", features = ["extension-module"] }
+rand = "0.8"
 thiserror = "1.0"
 
 [profile.release]

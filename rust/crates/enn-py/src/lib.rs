@@ -406,11 +406,318 @@ impl PyEpistemicNearestNeighbors {
     }
 }
 
+/// Parameter fitting module
+#[pymodule]
+fn fit(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(enn_fit_py, m)?)?;
+    m.add_function(wrap_pyfunction!(subsample_loglik_py, m)?)?;
+    Ok(())
+}
+
+/// Python wrapper for enn_fit
+#[allow(clippy::too_many_arguments)]
+#[pyfunction(name = "enn_fit")]
+#[pyo3(signature = (model, k, num_fit_candidates, num_fit_samples, seed, params_warm_start=None, infer_aleatoric_variance_scale=true))]
+fn enn_fit_py(
+    model: &PyEpistemicNearestNeighbors,
+    k: i32,
+    num_fit_candidates: usize,
+    num_fit_samples: usize,
+    seed: u64,
+    params_warm_start: Option<PyENNParams>,
+    infer_aleatoric_variance_scale: bool,
+) -> PyResult<PyENNParams> {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
+    let warm_start = params_warm_start.as_ref().map(|p| p.inner);
+
+    let result = enn_core::enn_fit(
+        &model.inner,
+        k,
+        num_fit_candidates,
+        num_fit_samples,
+        &mut rng,
+        warm_start.as_ref(),
+        infer_aleatoric_variance_scale,
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(PyENNParams { inner: result })
+}
+
+/// Python wrapper for subsample_loglik
+#[allow(clippy::too_many_arguments)]
+#[pyfunction(name = "subsample_loglik")]
+#[pyo3(signature = (model, x, y, k_values, epistemic_scales, aleatoric_scales, p, seed, y_std=None))]
+fn subsample_loglik_py(
+    model: &PyEpistemicNearestNeighbors,
+    x: PyReadonlyArray2<f64>,
+    y: PyReadonlyArray2<f64>,
+    k_values: Vec<i32>,
+    epistemic_scales: Vec<f64>,
+    aleatoric_scales: Vec<f64>,
+    p: usize,
+    seed: u64,
+    y_std: Option<PyReadonlyArray1<f64>>,
+) -> PyResult<Vec<f64>> {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
+    // Build params list
+    let n_params = k_values.len();
+    if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {
+        return Err(PyValueError::new_err(
+            "k_values, epistemic_scales, and aleatoric_scales must have same length"
+        ));
+    }
+
+    let mut paramss = Vec::with_capacity(n_params);
+    for i in 0..n_params {
+        let params = enn_core::ENNParams::new(
+            k_values[i],
+            epistemic_scales[i],
+            aleatoric_scales[i],
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        paramss.push(params);
+    }
+
+    let y_std_arr = y_std.as_ref().map(|v| v.as_array());
+
+    let result = enn_core::subsample_loglik(
+        &model.inner,
+        &x.as_array(),
+        &y.as_array(),
+        &paramss,
+        p,
+        &mut rng,
+        y_std_arr.as_ref(),
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(result)
+}
+
+/// Wrapper for ENNParams
+#[pyclass(name = "ENNParams")]
+#[derive(Clone, Copy)]
+struct PyENNParams {
+    inner: enn_core::ENNParams,
+}
+
+#[pymethods]
+impl PyENNParams {
+    #[new]
+    #[pyo3(signature = (k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale))]
+    fn new(
+        k_num_neighbors: i32,
+        epistemic_variance_scale: f64,
+        aleatoric_variance_scale: f64,
+    ) -> PyResult<Self> {
+        let inner = enn_core::ENNParams::new(
+            k_num_neighbors,
+            epistemic_variance_scale,
+            aleatoric_variance_scale,
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    #[getter]
+    fn k_num_neighbors(&self) -> i32 {
+        self.inner.k_num_neighbors
+    }
+
+    #[getter]
+    fn epistemic_variance_scale(&self) -> f64 {
+        self.inner.epistemic_variance_scale
+    }
+
+    #[getter]
+    fn aleatoric_variance_scale(&self) -> f64 {
+        self.inner.aleatoric_variance_scale
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ENNParams(k={}, epi={:.4}, ale={:.4})",
+            self.inner.k_num_neighbors,
+            self.inner.epistemic_variance_scale,
+            self.inner.aleatoric_variance_scale
+        )
+    }
+}
+
 /// ENN model module
 #[pymodule]
 fn model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEpistemicNearestNeighbors>()?;
+    m.add_class::<PyENNParams>()?;
     Ok(())
+}
+
+/// Optimizer module
+#[pymodule]
+fn optimizer(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyOptimizer>()?;
+    m.add_function(wrap_pyfunction!(create_optimizer_enn_py, m)?)?;
+    m.add_function(wrap_pyfunction!(create_optimizer_zero_py, m)?)?;
+    m.add_function(wrap_pyfunction!(create_optimizer_lhd_py, m)?)?;
+    Ok(())
+}
+
+/// Python wrapper for Optimizer
+#[pyclass(name = "Optimizer")]
+struct PyOptimizer {
+    inner: enn_core::Optimizer,
+}
+
+#[pymethods]
+impl PyOptimizer {
+    /// Ask for candidate points
+    #[pyo3(signature = (num_arms, seed))]
+    fn ask<'py>(
+        &mut self,
+        py: Python<'py>,
+        num_arms: usize,
+        seed: u64,
+    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let result = self
+            .inner
+            .ask(num_arms, &mut rng)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(result.into_dyn().into_pyarray_bound(py))
+    }
+
+    /// Tell observations
+    #[pyo3(signature = (x, y, seed))]
+    fn tell(
+        &mut self,
+        x: PyReadonlyArray2<f64>,
+        y: PyReadonlyArray2<f64>,
+        seed: u64,
+    ) -> PyResult<()> {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        self.inner
+            .tell(&x.as_array(), &y.as_array(), &mut rng)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Get init progress if in initialization phase
+    fn init_progress(&self) -> Option<(usize, usize)> {
+        self.inner.init_progress()
+    }
+
+    /// Get current telemetry
+    fn telemetry(&self) -> PyTelemetry {
+        let t = self.inner.telemetry();
+        PyTelemetry {
+            dt_fit: t.dt_fit,
+            dt_gen: t.dt_gen,
+            dt_sel: t.dt_sel,
+            dt_tell: t.dt_tell,
+        }
+    }
+}
+
+/// Telemetry data structure for Python
+#[pyclass(name = "Telemetry")]
+#[derive(Clone, Copy)]
+struct PyTelemetry {
+    #[pyo3(get)]
+    dt_fit: f64,
+    #[pyo3(get)]
+    dt_gen: f64,
+    #[pyo3(get)]
+    dt_sel: f64,
+    #[pyo3(get)]
+    dt_tell: f64,
+}
+
+/// Create TuRBO-ENN optimizer
+#[pyfunction(name = "create_optimizer_enn")]
+#[pyo3(signature = (bounds, k=10, num_init=10, seed=42))]
+fn create_optimizer_enn_py(
+    bounds: PyReadonlyArray2<f64>,
+    k: i32,
+    num_init: usize,
+    seed: u64,
+) -> PyResult<PyOptimizer> {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
+    let optimizer = enn_core::create_optimizer_enn(
+        bounds.as_array().to_owned(),
+        k,
+        num_init,
+        &mut rng,
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(PyOptimizer { inner: optimizer })
+}
+
+/// Create TuRBO-ZERO optimizer
+#[pyfunction(name = "create_optimizer_zero")]
+#[pyo3(signature = (bounds, num_init=10, seed=42))]
+fn create_optimizer_zero_py(
+    bounds: PyReadonlyArray2<f64>,
+    num_init: usize,
+    seed: u64,
+) -> PyResult<PyOptimizer> {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
+    let optimizer = enn_core::create_optimizer_zero(
+        bounds.as_array().to_owned(),
+        num_init,
+        &mut rng,
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(PyOptimizer { inner: optimizer })
+}
+
+/// Create LHD-only optimizer
+#[pyfunction(name = "create_optimizer_lhd")]
+#[pyo3(signature = (bounds, num_init=10, seed=42))]
+fn create_optimizer_lhd_py(
+    bounds: PyReadonlyArray2<f64>,
+    num_init: usize,
+    seed: u64,
+) -> PyResult<PyOptimizer> {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
+    let optimizer = enn_core::create_optimizer_lhd(
+        bounds.as_array().to_owned(),
+        num_init,
+        &mut rng,
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(PyOptimizer { inner: optimizer })
 }
 
 /// Main module
@@ -420,5 +727,7 @@ fn enn_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(hash))?;
     m.add_wrapped(wrap_pymodule!(util))?;
     m.add_wrapped(wrap_pymodule!(model))?;
+    m.add_wrapped(wrap_pymodule!(fit))?;
+    m.add_wrapped(wrap_pymodule!(optimizer))?;
     Ok(())
 }

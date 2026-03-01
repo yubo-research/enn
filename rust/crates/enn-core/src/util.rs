@@ -384,4 +384,15 @@ mod tests {
         let arms2 = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42);
         assert_eq!(arms, arms2);
     }
+
+    #[test]
+    fn test_deterministic_choice_edge_cases() {
+        let indices = vec![1, 2, 3];
+        let all = deterministic_choice(&indices, 10, 0);
+        assert_eq!(all, indices);
+        let subset1 = deterministic_choice(&indices, 2, 123);
+        let subset2 = deterministic_choice(&indices, 2, 123);
+        assert_eq!(subset1, subset2);
+        assert_eq!(subset1.len(), 2);
+    }
 }
