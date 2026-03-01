@@ -173,7 +173,8 @@ impl TurboTrustRegion {
             self.failure_counter = 0;
         }
 
-        // Update previous values
+        // Update previous values (B3: scale computed from single batch only;
+        // Python may use a larger window — verify parity if TR length diverges)
         self.prev_values.clear();
         self.prev_values.extend(y_new.iter().copied());
         self.prev_num_obs = num_obs;

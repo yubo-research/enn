@@ -14,6 +14,7 @@ pub mod hypervolume;
 pub mod index;
 pub mod model;
 pub mod optimizer;
+pub mod optimizer_factory;
 pub mod params;
 pub mod posterior;
 pub mod surrogate;
@@ -29,7 +30,7 @@ pub use acquisition::{
 };
 pub use candidates::{CandidateRV, generate_candidates, generate_lhd, to_unit, from_unit};
 pub use config::{OptimizerConfig, CandidateConfig, AcquisitionConfig, SurrogateConfig,
-    InitStrategy, OptimizerVariant, turbo_enn_config, turbo_zero_config, lhd_only_config};
+    ConfigOverrides, InitStrategy, turbo_enn_config, turbo_zero_config, lhd_only_config};
 pub use draw::{Candidates, ConditionalPosteriorDrawInternals, DrawInternals, NeighborData};
 pub use error::{ENNError, EPS_VAR};
 pub use fit::{enn_fit, subsample_loglik};
@@ -37,7 +38,8 @@ pub use hash::{normal_hash_batch_multi_seed, normal_hash_batch_multi_seed_fast};
 pub use hypervolume::hypervolume_2d_max;
 pub use index::{ENNIndex, IndexDriver, IndexError};
 pub use model::EpistemicNearestNeighbors;
-pub use optimizer::{Optimizer, Telemetry, create_optimizer_enn, create_optimizer_zero, create_optimizer_lhd};
+pub use optimizer::{Optimizer, Telemetry};
+pub use optimizer_factory::{create_optimizer_enn, create_optimizer_lhd, create_optimizer_zero};
 pub use params::{ENNNormal, ENNParams, ParamsError, PosteriorFlags};
 pub use posterior::{compute_posterior_internals, WeightedPosteriorData};
 pub use surrogate::{Surrogate, ENNSurrogate, NoSurrogate, ENNSurrogateConfig, SurrogatePrediction};

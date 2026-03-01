@@ -136,18 +136,19 @@ fn calculate_sobol_indices_py<'py>(
 
 /// Python helper for deterministic Sobol sequence generation.
 #[pyfunction(name = "sobol_sequence")]
-#[pyo3(signature = (dimension, num_points))]
+#[pyo3(signature = (dimension, num_points, seed=0))]
 fn sobol_sequence_py<'py>(
     py: Python<'py>,
     dimension: usize,
     num_points: usize,
+    seed: u64,
 ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
     let mut engine = enn_core::candidates::SobolEngine::new(dimension)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    let mut rng = StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(seed);
     let mut out = Array2::zeros((num_points, dimension));
     for i in 0..num_points {
         let row = engine
@@ -670,6 +671,26 @@ impl PyOptimizer {
     /// Current trust-region length.
     fn tr_length(&self) -> f64 {
         self.inner.trust_region().length()
+    }
+
+    /// Get observations x in unit space (if any).
+    fn x_obs<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
+        self.inner.x_obs().map(|x| x.into_dyn().into_pyarray_bound(py))
+    }
+
+    /// Get observation values y (if any).
+    fn y_obs<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
+        self.inner.y_obs().map(|y| y.into_dyn().into_pyarray_bound(py))
+    }
+
+    /// Get incumbent x in unit space (if any).
+    fn incumbent_x_unit<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
+        self.inner.incumbent_x_unit().map(|x| x.view().to_owned().into_dyn().into_pyarray_bound(py))
+    }
+
+    /// Get optimizer bounds.
+    fn bounds<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
+        self.inner.bounds().view().to_owned().into_dyn().into_pyarray_bound(py)
     }
 }
 
