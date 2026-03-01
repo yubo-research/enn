@@ -29,6 +29,14 @@ def _get_rust_enn():
     return _RUST_ENN if _RUST_ENN else None
 
 
+def _rust_index_driver_name(index_driver: ENNIndexDriver) -> str:
+    if index_driver == ENNIndexDriver.FLAT:
+        return "Exact"
+    if index_driver == ENNIndexDriver.HNSW:
+        return "HNSW"
+    raise ValueError(f"Unsupported index driver: {index_driver}")
+
+
 def _compute_conditional_y_scale(
     model: EpistemicNearestNeighbors, y_whatif: np.ndarray
 ):
@@ -126,9 +134,7 @@ class EpistemicNearestNeighbors:
         if backend != "python":
             _RustENN = _get_rust_enn()
             if _RustENN is not None:
-                idx_driver = (
-                    "Exact" if index_driver == ENNIndexDriver.FLAT else "KDTree"
-                )
+                idx_driver = _rust_index_driver_name(index_driver)
                 self._rust_model = _RustENN(
                     self._train_x,
                     self._train_y,

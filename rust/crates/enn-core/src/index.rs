@@ -29,6 +29,8 @@ pub enum IndexDriver {
     Exact,
     /// Use K-d tree for approximate search.
     KDTree,
+    /// Use HNSW for approximate search.
+    HNSW,
 }
 
 /// K-Nearest Neighbors index for ENN.
@@ -156,6 +158,7 @@ impl ENNIndex {
         let (mut dist2s, mut indices) = match self.driver {
             IndexDriver::Exact => self.exact_search(&x_scaled.view(), k),
             IndexDriver::KDTree => self.kdtree_search(&x_scaled.view(), k),
+            IndexDriver::HNSW => self.hnsw_search(&x_scaled.view(), k),
         };
 
         // Exclude nearest if requested (need at least 2 to exclude 1)
@@ -243,6 +246,16 @@ impl ENNIndex {
     ) -> (Array2<f64>, Array2<i64>) {
         // For now, delegate to exact search
         // TODO: Implement proper K-d tree using kdtree crate
+        self.exact_search(x, k)
+    }
+
+    /// HNSW search (placeholder for future implementation).
+    fn hnsw_search(
+        &self,
+        x: &ArrayView2<f64>,
+        k: usize,
+    ) -> (Array2<f64>, Array2<i64>) {
+        // For now, delegate to exact search.
         self.exact_search(x, k)
     }
 

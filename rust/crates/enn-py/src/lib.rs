@@ -2,7 +2,7 @@
 
 #![allow(clippy::useless_conversion)]
 
-use ndarray::{Array1, IxDyn};
+use ndarray::{Array1, Array2, IxDyn};
 use numpy::{
     IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn,
 };
@@ -85,6 +85,7 @@ fn util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(standardize_y_py, m)?)?;
     m.add_function(wrap_pyfunction!(pareto_front_2d_maximize_py, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_sobol_indices_py, m)?)?;
+    m.add_function(wrap_pyfunction!(sobol_sequence_py, m)?)?;
     Ok(())
 }
 
@@ -133,6 +134,32 @@ fn calculate_sobol_indices_py<'py>(
     Ok(Array1::from_vec(sobol.to_vec()).into_pyarray_bound(py))
 }
 
+/// Python helper for deterministic Sobol sequence generation.
+#[pyfunction(name = "sobol_sequence")]
+#[pyo3(signature = (dimension, num_points))]
+fn sobol_sequence_py<'py>(
+    py: Python<'py>,
+    dimension: usize,
+    num_points: usize,
+) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    let mut engine = enn_core::candidates::SobolEngine::new(dimension)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let mut rng = StdRng::seed_from_u64(0);
+    let mut out = Array2::zeros((num_points, dimension));
+    for i in 0..num_points {
+        let row = engine
+            .sample(&mut rng)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        for j in 0..dimension {
+            out[[i, j]] = row[j];
+        }
+    }
+    Ok(out.into_dyn().into_pyarray_bound(py))
+}
+
 #[pyclass(name = "EpistemicNearestNeighbors")]
 struct PyEpistemicNearestNeighbors {
     inner: enn_core::EpistemicNearestNeighbors,
@@ -157,7 +184,8 @@ impl PyEpistemicNearestNeighbors {
     ) -> PyResult<Self> {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => enn_core::IndexDriver::Exact,
-            "KDTree" | "kdtree" | "HNSW" | "hnsw" => enn_core::IndexDriver::KDTree,
+            "KDTree" | "kdtree" => enn_core::IndexDriver::KDTree,
+            "HNSW" | "hnsw" => enn_core::IndexDriver::HNSW,
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {index_driver}"
@@ -632,6 +660,16 @@ impl PyOptimizer {
             dt_sel: t.dt_sel,
             dt_tell: t.dt_tell,
         }
+    }
+
+    /// Number of retained trust-region observations.
+    fn tr_obs_count(&self) -> usize {
+        self.inner.y_obs().map_or(0, |y| y.nrows())
+    }
+
+    /// Current trust-region length.
+    fn tr_length(&self) -> f64 {
+        self.inner.trust_region().length()
     }
 }
 
