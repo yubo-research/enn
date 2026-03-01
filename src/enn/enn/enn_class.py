@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import functools
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from enn._rust import EpistemicNearestNeighbors as _RustENN
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 from .draw_internals import DrawInternals
@@ -16,22 +16,19 @@ if TYPE_CHECKING:
     from .enn_params import ENNParams, PosteriorFlags
 
 
-@functools.lru_cache(maxsize=1)
-def _get_rust_enn():
-    try:
-        from enn._rust import EpistemicNearestNeighbors as _R
-
-        return _R
-    except ImportError:
-        return None
+def _to_rust_seeds(function_seeds: np.ndarray | list[int]) -> list[int]:
+    """Convert function_seeds to Rust list[int] format."""
+    if hasattr(function_seeds, "__iter__"):
+        return np.asarray(function_seeds, dtype=np.int64).tolist()
+    return list(function_seeds)
 
 
 def _rust_index_driver_name(index_driver: ENNIndexDriver) -> str:
-    if index_driver == ENNIndexDriver.FLAT:
-        return "Exact"
-    if index_driver == ENNIndexDriver.HNSW:
-        return "HNSW"
-    raise ValueError(f"Unsupported index driver: {index_driver}")
+    from enn.turbo.config.enn_index_driver import ENN_INDEX_DRIVER_TO_RUST
+
+    if index_driver not in ENN_INDEX_DRIVER_TO_RUST:
+        raise ValueError(f"Unsupported index driver: {index_driver}")
+    return ENN_INDEX_DRIVER_TO_RUST[index_driver]
 
 
 def _compute_conditional_y_scale(
@@ -92,26 +89,6 @@ class _RustDispatchMixin:
         if check_rust and self._rust_model is not None:
             return rust_fn(self._rust_model)
         return python_fn()
-
-    def _if_rust_else_with_args(
-        self,
-        rust_fn: callable,
-        python_fn: callable,
-        *args,
-        **kwargs,
-    ):
-        """Execute rust_fn if Rust backend is available, otherwise python_fn.
-
-        Args:
-            rust_fn: Function taking (rust_model, *args, **kwargs)
-            python_fn: Function taking (*args, **kwargs)
-
-        Returns:
-            Result from either rust_fn or python_fn
-        """
-        if self._rust_model is not None:
-            return rust_fn(self._rust_model, *args, **kwargs)
-        return python_fn(*args, **kwargs)
 
 
 class _PosteriorMixin:
@@ -268,7 +245,6 @@ class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
         *,
         scale_x: bool = False,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
-        backend: str = "rust",
     ) -> None:
         self._train_x, self._train_y, self._train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
@@ -294,18 +270,14 @@ class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
             self._scale_x,
             driver=index_driver,
         )
-        self._rust_model = None
-        if backend != "python":
-            _RustENN = _get_rust_enn()
-            if _RustENN is not None:
-                idx_driver = _rust_index_driver_name(index_driver)
-                self._rust_model = _RustENN(
-                    self._train_x,
-                    self._train_y,
-                    train_yvar=self._train_yvar,
-                    scale_x=scale_x,
-                    index_driver=idx_driver,
-                )
+        idx_driver = _rust_index_driver_name(index_driver)
+        self._rust_model = _RustENN(
+            self._train_x,
+            self._train_y,
+            train_yvar=self._train_yvar,
+            scale_x=scale_x,
+            index_driver=idx_driver,
+        )
 
     def add(
         self,
@@ -535,11 +507,7 @@ class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
             flags = PosteriorFlags()
 
         def _rust_draw(rust_model):
-            seeds = (
-                np.asarray(function_seeds, dtype=np.int64).tolist()
-                if hasattr(function_seeds, "__iter__")
-                else list(function_seeds)
-            )
+            seeds = _to_rust_seeds(function_seeds)
             draws, idx = rust_model.posterior_function_draw(
                 x,
                 k_num_neighbors=params.k_num_neighbors,
@@ -587,11 +555,7 @@ class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
             )
 
         def _rust_conditional_draw(rust_model):
-            seeds = (
-                np.asarray(function_seeds, dtype=np.int64).tolist()
-                if hasattr(function_seeds, "__iter__")
-                else list(function_seeds)
-            )
+            seeds = _to_rust_seeds(function_seeds)
             draws, idx = rust_model.conditional_posterior_function_draw(
                 x_whatif,
                 y_whatif,

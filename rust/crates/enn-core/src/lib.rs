@@ -42,7 +42,7 @@ pub use optimizer::{Optimizer, Telemetry};
 pub use optimizer_factory::{create_optimizer_enn, create_optimizer_lhd, create_optimizer_zero};
 pub use params::{ENNNormal, ENNParams, ParamsError, PosteriorFlags};
 pub use posterior::{compute_posterior_internals, WeightedPosteriorData};
-pub use surrogate::{Surrogate, ENNSurrogate, NoSurrogate, ENNSurrogateConfig, SurrogatePrediction};
+pub use surrogate::{Surrogate, ENNSurrogate, ENNSurrogateConfig, SurrogatePrediction};
 pub use strategy::Strategy;
 pub use traits::PosteriorComputation;
 pub use stats::WeightedStats;

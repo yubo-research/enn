@@ -100,25 +100,14 @@ impl EpistemicNearestNeighbors {
         })
     }
 
-    /// Compute scale for normalization.
     fn compute_scale(data: ArrayView2<f64>, min_val: f64) -> Array1<f64> {
         if data.nrows() < 2 {
             return Array1::ones(data.ncols());
         }
-
-        let mut scale = Array1::zeros(data.ncols());
-        for j in 0..data.ncols() {
-            let col = data.column(j);
-            let var = col.var(0.0);
-            let std = var.sqrt();
-            scale[j] = if std.is_finite() && std > min_val {
-                std
-            } else {
-                1.0
-            };
-        }
-
-        scale
+        Array1::from_iter((0..data.ncols()).map(|j| {
+            let std = data.column(j).var(0.0).sqrt();
+            if std.is_finite() && std > min_val { std } else { 1.0 }
+        }))
     }
 
     /// Add new observations to the model.
