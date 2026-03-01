@@ -4,6 +4,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import numpy as np
 
+try:
+    from enn._rust import normal_hash_batch_multi_seed_fast as _rust_hash_fast
+except ImportError:  # pragma: no cover
+    _rust_hash_fast = None
+
 
 def normal_hash_batch_multi_seed(
     function_seeds: np.ndarray, data_indices: np.ndarray, num_metrics: int
@@ -46,6 +51,10 @@ def normal_hash_batch_multi_seed_fast(
     data_indices = np.asarray(data_indices)
     if num_metrics <= 0:
         raise ValueError(num_metrics)
+    if _rust_hash_fast is not None:
+        return np.asarray(
+            _rust_hash_fast(function_seeds, data_indices, num_metrics), dtype=float
+        )
     num_seeds = len(function_seeds)
     unique_indices, inverse = np.unique(data_indices, return_inverse=True)
 

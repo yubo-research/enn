@@ -14,6 +14,20 @@ if TYPE_CHECKING:
     from .enn_normal import ENNNormal
     from .enn_params import ENNParams, PosteriorFlags
 
+_RUST_ENN = None
+
+
+def _get_rust_enn():
+    global _RUST_ENN
+    if _RUST_ENN is None:
+        try:
+            from enn._rust import EpistemicNearestNeighbors as _R
+
+            _RUST_ENN = _R
+        except ImportError:
+            _RUST_ENN = False
+    return _RUST_ENN if _RUST_ENN else None
+
 
 def _compute_conditional_y_scale(
     model: EpistemicNearestNeighbors, y_whatif: np.ndarray
@@ -82,6 +96,7 @@ class EpistemicNearestNeighbors:
         *,
         scale_x: bool = False,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
+        backend: str = "rust",
     ) -> None:
         self._train_x, self._train_y, self._train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
@@ -107,6 +122,20 @@ class EpistemicNearestNeighbors:
             self._scale_x,
             driver=index_driver,
         )
+        self._rust_model = None
+        if backend != "python":
+            _RustENN = _get_rust_enn()
+            if _RustENN is not None:
+                idx_driver = (
+                    "Exact" if index_driver == ENNIndexDriver.FLAT else "KDTree"
+                )
+                self._rust_model = _RustENN(
+                    self._train_x,
+                    self._train_y,
+                    train_yvar=self._train_yvar,
+                    scale_x=scale_x,
+                    index_driver=idx_driver,
+                )
 
     def add(
         self,
@@ -130,6 +159,8 @@ class EpistemicNearestNeighbors:
 
         self._num_obs = self._train_x.shape[0]
         self._enn_index.add(x)
+        if self._rust_model is not None:
+            self._rust_model.add(x, y, yvar)
 
     @property
     def train_x(self) -> np.ndarray:
@@ -162,6 +193,17 @@ class EpistemicNearestNeighbors:
 
         if flags is None:
             flags = PosteriorFlags()
+        if self._rust_model is not None:
+            mu, se, idx = self._rust_model.posterior(
+                x,
+                k_num_neighbors=params.k_num_neighbors,
+                epistemic_variance_scale=params.epistemic_variance_scale,
+                aleatoric_variance_scale=params.aleatoric_variance_scale,
+                exclude_nearest=flags.exclude_nearest,
+                observation_noise=flags.observation_noise,
+            )
+            idx_arr = np.array(idx, dtype=int) if idx else None
+            return ENNNormal(mu, se, idx=idx_arr)
         internals = self._compute_posterior_internals(x, params, flags)
         return ENNNormal(internals.mu, internals.se, idx=internals.idx)
 
@@ -320,6 +362,19 @@ class EpistemicNearestNeighbors:
             raise ValueError(x.shape)
         if not paramss:
             raise ValueError("paramss must be non-empty")
+        if self._rust_model is not None:
+            k_values = [p.k_num_neighbors for p in paramss]
+            epistemic_scales = [p.epistemic_variance_scale for p in paramss]
+            aleatoric_scales = [p.aleatoric_variance_scale for p in paramss]
+            mu_all, se_all = self._rust_model.batch_posterior(
+                x,
+                k_values=k_values,
+                epistemic_scales=epistemic_scales,
+                aleatoric_scales=aleatoric_scales,
+                exclude_nearest=flags.exclude_nearest,
+                observation_noise=flags.observation_noise,
+            )
+            return ENNNormal(mu_all, se_all)
         batch_size, num_params = x.shape[0], len(paramss)
         mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
         se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
@@ -363,6 +418,10 @@ class EpistemicNearestNeighbors:
             raise ValueError(
                 f"exclude_nearest=True requires at least 2 observations, got {len(self)}"
             )
+        if self._rust_model is not None:
+            idx_2d = self._rust_model.neighbors(x, k, exclude_nearest=exclude_nearest)
+            idx = idx_2d[0, :] if idx_2d.size > 0 else np.array([], dtype=np.int64)
+            return idx.astype(np.int64, copy=False)
         search_k = int(min(k + 1 if exclude_nearest else k, len(self)))
         if search_k == 0:
             return np.zeros((0,), dtype=np.int64)
@@ -384,6 +443,23 @@ class EpistemicNearestNeighbors:
 
         if flags is None:
             flags = PosteriorFlags()
+        if self._rust_model is not None:
+            seeds = (
+                np.asarray(function_seeds, dtype=np.int64).tolist()
+                if hasattr(function_seeds, "__iter__")
+                else list(function_seeds)
+            )
+            draws, idx = self._rust_model.posterior_function_draw(
+                x,
+                k_num_neighbors=params.k_num_neighbors,
+                epistemic_variance_scale=params.epistemic_variance_scale,
+                aleatoric_variance_scale=params.aleatoric_variance_scale,
+                function_seeds=seeds,
+                exclude_nearest=flags.exclude_nearest,
+                observation_noise=flags.observation_noise,
+            )
+            idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0))
+            return draws, idx_arr
         internals = self._compute_posterior_internals(x, params, flags)
         return (
             _draw_from_internals(self, internals, function_seeds=function_seeds),

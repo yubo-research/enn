@@ -5,11 +5,25 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
 
+try:
+    from enn._rust import (
+        calculate_sobol_indices as _rust_calculate_sobol_indices,
+        pareto_front_2d_maximize as _rust_pareto_front_2d_maximize,
+        standardize_y as _rust_standardize_y,
+    )
+except ImportError:  # pragma: no cover
+    _rust_standardize_y = None
+    _rust_pareto_front_2d_maximize = None
+    _rust_calculate_sobol_indices = None
+
 
 def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
     import numpy as np
 
     y_array = np.asarray(y, dtype=float)
+    if _rust_standardize_y is not None:
+        center, scale = _rust_standardize_y(y_array)
+        return float(center), float(scale)
     center = float(np.median(y_array))
     scale = float(np.std(y_array))
     if not np.isfinite(scale) or scale <= 0.0:
@@ -52,6 +66,15 @@ def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     import numpy as np
 
     n, d, y = _validate_sobol_inputs(x, y)
+
+    # Use Rust implementation if available (Rust expects float64)
+    if _rust_calculate_sobol_indices is not None:
+        x_f64 = np.asarray(x, dtype=np.float64)
+        y_f64 = np.asarray(y, dtype=np.float64)
+        result = _rust_calculate_sobol_indices(x_f64, y_f64)
+        return np.asarray(result, dtype=x.dtype)
+
+    # Python fallback
     if n < 9:
         return np.ones(d, dtype=x.dtype)
     mu, vy = y.mean(), y.var(ddof=0)
@@ -77,6 +100,12 @@ def pareto_front_2d_maximize(
         idx = np.asarray(idx, dtype=int)
         if idx.ndim != 1:
             raise ValueError(idx.shape)
+    if (
+        _rust_pareto_front_2d_maximize is not None
+        and idx is not None
+        and np.array_equal(idx, np.arange(a.size, dtype=int))
+    ):
+        return np.asarray(_rust_pareto_front_2d_maximize(a, b), dtype=int)
     order = np.lexsort((-b[idx], -a[idx]))
     sorted_idx = idx[order]
     keep: list[int] = []

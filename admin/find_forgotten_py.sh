@@ -40,4 +40,10 @@ fi
 
 echo "Potential forgotten Python files:"
 printf "%s\n" "$py_files"
-exit 1
+
+# In local development, report but do not block. CI keeps this as a hard gate.
+if [[ "${CI:-}" == "true" ]]; then
+  exit 1
+fi
+echo "Non-CI run: reporting only."
+exit 0
