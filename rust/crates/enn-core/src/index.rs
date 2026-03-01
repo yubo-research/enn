@@ -248,7 +248,8 @@ impl ENNIndex {
         Ok((dist2s, indices))
     }
 
-    /// Exact search using matrix operations.
+    /// Exact search: single-pass heap per query, O(n_query * k) memory.
+    /// Avoids allocating the full n_query × n_train distance matrix.
     fn exact_search(
         &self,
         x: &ArrayView2<f64>,
@@ -256,34 +257,26 @@ impl ENNIndex {
     ) -> (Array2<f64>, Array2<i64>) {
         let n_query = x.nrows();
         let n_train = self.train_x_scaled.nrows();
+        let train = &self.train_x_scaled;
 
-        // Compute squared distances using matrix operations
-        // d2[i,j] = ||x[i] - train_x[j]||^2
-        //         = ||x[i]||^2 + ||train_x[j]||^2 - 2 * x[i] dot train_x[j]
+        // Precompute ||x[i]||^2 and ||train[j]||^2 (O(n_query*d) and O(n_train*d))
         let x2: Array1<f64> = x.map_axis(Axis(1), |row| row.dot(&row));
-        let y2: Array1<f64> = self
-            .train_x_scaled
-            .map_axis(Axis(1), |row| row.dot(&row));
+        let y2: Array1<f64> = train.map_axis(Axis(1), |row| row.dot(&row));
 
-        // d2 = x2[:, None] + y2[None, :] - 2 * x.dot(train_x.T)
-        let xy = x.dot(&self.train_x_scaled.t());
-        let d2 =
-            x2.view().insert_axis(Axis(1)).to_owned() + y2.view().insert_axis(Axis(0)) - 2.0 * xy;
-
-        // Find k smallest distances for each query
         let mut dist2s = Array2::from_elem((n_query, k), f64::INFINITY);
         let mut indices = Array2::from_elem((n_query, k), -1i64);
 
         for i in 0..n_query {
-            // Get distances for this query
-            let row = d2.row(i);
+            let x_row = x.row(i);
+            let xi2 = x2[i];
 
-            // Keep a max-heap of size k, so the worst current neighbor is at the top.
             let mut heap: BinaryHeap<(ordered_float::OrderedFloat<f64>, usize)> =
-                BinaryHeap::with_capacity(k);
+                BinaryHeap::with_capacity(k + 1);
 
             for j in 0..n_train {
-                let dist = ordered_float::OrderedFloat(row[j]);
+                let d2 = xi2 + y2[j] - 2.0 * x_row.dot(&train.row(j));
+                let dist = ordered_float::OrderedFloat(d2);
+
                 if heap.len() < k {
                     heap.push((dist, j));
                 } else if let Some(&(top_dist, _)) = heap.peek() {
@@ -294,14 +287,12 @@ impl ENNIndex {
                 }
             }
 
-            // Extract and sort by distance
             let mut neighbors: Vec<(f64, usize)> = heap
                 .into_iter()
                 .map(|(dist, idx)| (dist.into_inner(), idx))
                 .collect();
-            neighbors.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            neighbors.sort_by(|a, b| a.0.total_cmp(&b.0));
 
-            // Store results
             for (j, (dist, idx)) in neighbors.iter().enumerate() {
                 dist2s[[i, j]] = *dist;
                 indices[[i, j]] = *idx as i64;

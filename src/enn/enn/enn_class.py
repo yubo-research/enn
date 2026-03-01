@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -14,19 +15,15 @@ if TYPE_CHECKING:
     from .enn_normal import ENNNormal
     from .enn_params import ENNParams, PosteriorFlags
 
-_RUST_ENN = None
 
-
+@functools.lru_cache(maxsize=1)
 def _get_rust_enn():
-    global _RUST_ENN
-    if _RUST_ENN is None:
-        try:
-            from enn._rust import EpistemicNearestNeighbors as _R
+    try:
+        from enn._rust import EpistemicNearestNeighbors as _R
 
-            _RUST_ENN = _R
-        except ImportError:
-            _RUST_ENN = False
-    return _RUST_ENN if _RUST_ENN else None
+        return _R
+    except ImportError:
+        return None
 
 
 def _rust_index_driver_name(index_driver: ENNIndexDriver) -> str:
@@ -68,7 +65,125 @@ def _draw_from_internals(
     )
 
 
-class EpistemicNearestNeighbors:
+class _PosteriorMixin:
+    """Mixin for posterior computation helpers."""
+
+    def _empty_posterior_internals(self, batch_size: int) -> DrawInternals:
+        m = self._num_metrics
+        return DrawInternals(
+            idx=np.zeros((batch_size, 0), dtype=int),
+            w_normalized=np.zeros((batch_size, 0, m), dtype=float),
+            l2=np.ones((batch_size, m), dtype=float),
+            mu=np.zeros((batch_size, m), dtype=float),
+            se=np.ones((batch_size, m), dtype=float),
+        )
+
+    def _get_neighbor_data(
+        self, x: np.ndarray, params, exclude_nearest: bool
+    ) -> NeighborData | None:
+        if exclude_nearest:
+            if len(self) <= 1:
+                raise ValueError(len(self))
+            search_k = int(min(params.k_num_neighbors + 1, len(self)))
+        else:
+            search_k = int(min(params.k_num_neighbors, len(self)))
+        dist2s_full, idx_full = self._enn_index.search(
+            x, search_k=search_k, exclude_nearest=exclude_nearest
+        )
+        available_k = search_k - 1 if exclude_nearest else search_k
+        k = min(params.k_num_neighbors, available_k)
+        if k > dist2s_full.shape[1]:
+            raise RuntimeError(
+                f"k={k} exceeds available columns={dist2s_full.shape[1]}"
+            )
+        if k == 0:
+            return None
+        return NeighborData(
+            dist2s=dist2s_full[:, :k],
+            idx=idx_full[:, :k],
+            y_neighbors=self._train_y[idx_full[:, :k]],
+            k=k,
+        )
+
+    def _compute_weighted_posterior(
+        self,
+        dist2s: np.ndarray,
+        idx: np.ndarray,
+        y_neighbors: np.ndarray,
+        params,
+        observation_noise: bool,
+    ) -> DrawInternals:
+        yvar_neighbors = None
+        if self._train_yvar is not None:
+            yvar_neighbors = self._train_yvar[idx]
+        stats = self._compute_weighted_stats(
+            dist2s,
+            y_neighbors,
+            yvar_neighbors=yvar_neighbors,
+            params=params,
+            observation_noise=observation_noise,
+        )
+        return DrawInternals(
+            idx=idx,
+            w_normalized=stats.w_normalized,
+            l2=stats.l2,
+            mu=stats.mu,
+            se=stats.se,
+        )
+
+    def _compute_weighted_stats(
+        self,
+        dist2s: np.ndarray,
+        y_neighbors: np.ndarray,
+        *,
+        yvar_neighbors: np.ndarray | None,
+        params,
+        observation_noise: bool,
+        y_scale: np.ndarray | None = None,
+    ) -> WeightedStats:
+        if y_scale is None:
+            y_scale = self._y_scale
+        dist2s_expanded = dist2s[..., np.newaxis]
+        var_epi = params.epistemic_variance_scale * dist2s_expanded
+        var_ale = params.aleatoric_variance_scale
+        if yvar_neighbors is not None:
+            var_ale = var_ale + yvar_neighbors / y_scale**2
+        w = 1.0 / (self._EPS_VAR + var_epi + var_ale)
+        norm = np.sum(w, axis=1, keepdims=True)
+        w_normalized = w / norm
+        l2 = np.sqrt(np.sum(w_normalized**2, axis=1))
+        mu = np.sum(w_normalized * y_neighbors, axis=1)
+        epistemic_var = 1.0 / norm.squeeze(axis=1)
+        if observation_noise:
+            if np.isscalar(var_ale):
+                aleatoric_var = np.full_like(epistemic_var, var_ale)
+            else:
+                aleatoric_var = np.sum(w_normalized * var_ale, axis=1)
+        else:
+            aleatoric_var = 0.0
+        se = np.sqrt(np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR)) * y_scale
+        return WeightedStats(w_normalized=w_normalized, l2=l2, mu=mu, se=se)
+
+    def _compute_posterior_internals(self, x, params, flags) -> DrawInternals:
+        x = np.asarray(x, dtype=float)
+        if x.ndim != 2 or x.shape[1] != self._num_dim:
+            raise ValueError(x.shape)
+        batch_size = x.shape[0]
+        if len(self) == 0:
+            return self._empty_posterior_internals(batch_size)
+        neighbor_data = self._get_neighbor_data(x, params, flags.exclude_nearest)
+        if neighbor_data is None:
+            return self._empty_posterior_internals(batch_size)
+        return self._compute_weighted_posterior(
+            neighbor_data.dist2s,
+            neighbor_data.idx,
+            neighbor_data.y_neighbors,
+            params,
+            flags.observation_noise,
+        )
+
+
+class EpistemicNearestNeighbors(_PosteriorMixin):
     _EPS_VAR = 1e-9
 
     @staticmethod
@@ -184,6 +299,11 @@ class EpistemicNearestNeighbors:
     def num_outputs(self) -> int:
         return self._num_metrics
 
+    @property
+    def rust_backend(self):
+        """Return the Rust backend model if available, otherwise None."""
+        return self._rust_model
+
     def __len__(self) -> int:
         return self._num_obs
 
@@ -212,102 +332,6 @@ class EpistemicNearestNeighbors:
             return ENNNormal(mu, se, idx=idx_arr)
         internals = self._compute_posterior_internals(x, params, flags)
         return ENNNormal(internals.mu, internals.se, idx=internals.idx)
-
-    def _empty_posterior_internals(self, batch_size: int) -> DrawInternals:
-        m = self._num_metrics
-        return DrawInternals(
-            idx=np.zeros((batch_size, 0), dtype=int),
-            w_normalized=np.zeros((batch_size, 0, m), dtype=float),
-            l2=np.ones((batch_size, m), dtype=float),
-            mu=np.zeros((batch_size, m), dtype=float),
-            se=np.ones((batch_size, m), dtype=float),
-        )
-
-    def _get_neighbor_data(
-        self, x: np.ndarray, params: ENNParams, exclude_nearest: bool
-    ) -> NeighborData | None:
-        if exclude_nearest:
-            if len(self) <= 1:
-                raise ValueError(len(self))
-            search_k = int(min(params.k_num_neighbors + 1, len(self)))
-        else:
-            search_k = int(min(params.k_num_neighbors, len(self)))
-        dist2s_full, idx_full = self._enn_index.search(
-            x, search_k=search_k, exclude_nearest=exclude_nearest
-        )
-        available_k = search_k - 1 if exclude_nearest else search_k
-        k = min(params.k_num_neighbors, available_k)
-        if k > dist2s_full.shape[1]:
-            raise RuntimeError(
-                f"k={k} exceeds available columns={dist2s_full.shape[1]}"
-            )
-        if k == 0:
-            return None
-        return NeighborData(
-            dist2s=dist2s_full[:, :k],
-            idx=idx_full[:, :k],
-            y_neighbors=self._train_y[idx_full[:, :k]],
-            k=k,
-        )
-
-    def _compute_weighted_posterior(
-        self,
-        dist2s: np.ndarray,
-        idx: np.ndarray,
-        y_neighbors: np.ndarray,
-        params: ENNParams,
-        observation_noise: bool,
-    ) -> DrawInternals:
-        yvar_neighbors = None
-        if self._train_yvar is not None:
-            yvar_neighbors = self._train_yvar[idx]
-        stats = self._compute_weighted_stats(
-            dist2s,
-            y_neighbors,
-            yvar_neighbors=yvar_neighbors,
-            params=params,
-            observation_noise=observation_noise,
-        )
-        return DrawInternals(
-            idx=idx,
-            w_normalized=stats.w_normalized,
-            l2=stats.l2,
-            mu=stats.mu,
-            se=stats.se,
-        )
-
-    def _compute_weighted_stats(
-        self,
-        dist2s: np.ndarray,
-        y_neighbors: np.ndarray,
-        *,
-        yvar_neighbors: np.ndarray | None,
-        params: ENNParams,
-        observation_noise: bool,
-        y_scale: np.ndarray | None = None,
-    ) -> WeightedStats:
-        if y_scale is None:
-            y_scale = self._y_scale
-        dist2s_expanded = dist2s[..., np.newaxis]
-        var_epi = params.epistemic_variance_scale * dist2s_expanded
-        var_ale = params.aleatoric_variance_scale
-        if yvar_neighbors is not None:
-            var_ale = var_ale + yvar_neighbors / y_scale**2
-        w = 1.0 / (self._EPS_VAR + var_epi + var_ale)
-        norm = np.sum(w, axis=1, keepdims=True)
-        w_normalized = w / norm
-        l2 = np.sqrt(np.sum(w_normalized**2, axis=1))
-        mu = np.sum(w_normalized * y_neighbors, axis=1)
-        epistemic_var = 1.0 / norm.squeeze(axis=1)
-        if observation_noise:
-            if np.isscalar(var_ale):
-                aleatoric_var = np.full_like(epistemic_var, var_ale)
-            else:
-                aleatoric_var = np.sum(w_normalized * var_ale, axis=1)
-        else:
-            aleatoric_var = 0.0
-        se = np.sqrt(np.maximum(epistemic_var + aleatoric_var, self._EPS_VAR)) * y_scale
-        return WeightedStats(w_normalized=w_normalized, l2=l2, mu=mu, se=se)
 
     def conditional_posterior(
         self,
@@ -340,29 +364,6 @@ class EpistemicNearestNeighbors:
         y_scale = _compute_conditional_y_scale(self, y_whatif)
         return compute_conditional_posterior(
             self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
-        )
-
-    def _compute_posterior_internals(
-        self,
-        x: np.ndarray,
-        params: ENNParams,
-        flags: PosteriorFlags,
-    ) -> DrawInternals:
-        x = np.asarray(x, dtype=float)
-        if x.ndim != 2 or x.shape[1] != self._num_dim:
-            raise ValueError(x.shape)
-        batch_size = x.shape[0]
-        if len(self) == 0:
-            return self._empty_posterior_internals(batch_size)
-        neighbor_data = self._get_neighbor_data(x, params, flags.exclude_nearest)
-        if neighbor_data is None:
-            return self._empty_posterior_internals(batch_size)
-        return self._compute_weighted_posterior(
-            neighbor_data.dist2s,
-            neighbor_data.idx,
-            neighbor_data.y_neighbors,
-            params,
-            flags.observation_noise,
         )
 
     def batch_posterior(

@@ -119,25 +119,27 @@ pub fn normal_hash_batch_multi_seed_fast(
         inverse.push(pos);
     }
 
-    let num_unique = unique_indices.len();
-
     // Output shape: (num_seeds, data_indices.len(), num_metrics)
     let mut output = Array::zeros(IxDyn(&[num_seeds, num_indices, num_metrics]));
-
-    let mut temp_values: Vec<f64> = Vec::with_capacity(num_unique * num_metrics);
 
     // Generate values for each seed
     for (si, &seed) in function_seeds.iter().enumerate() {
         let seed_u64 = seed as u64;
 
+        // Build a cache of values for unique indices to avoid recomputation
+        // when the same unique index appears multiple times in data_indices
+        let mut unique_cache: Vec<Vec<f64>> = Vec::with_capacity(unique_indices.len());
+
         // Generate for each unique index
-        for (ui, &unique_idx) in unique_indices.iter().enumerate() {
+        for &unique_idx in &unique_indices {
             let unique_u64 = unique_idx as u64;
 
             // base = (seed * p + unique_idx) * p
             let base = (seed_u64.wrapping_mul(SEED_PRIME)
                 .wrapping_add(unique_u64))
             .wrapping_mul(SEED_PRIME);
+
+            let mut metric_values = Vec::with_capacity(num_metrics);
 
             // Generate for each metric
             for metric in 0..num_metrics {
@@ -160,34 +162,21 @@ pub fn normal_hash_batch_multi_seed_fast(
 
                 // Box-Muller transform
                 let normal = box_muller(u1, u2);
-
-                // Store in output
-                let idx = output.index_mut(IxDyn(&[si, ui, metric]));
-                *idx = normal;
+                metric_values.push(normal);
             }
+
+            unique_cache.push(metric_values);
         }
 
-        // Map from unique positions to data_indices positions
-        temp_values.clear();
-        for ui in 0..num_unique {
-            for metric in 0..num_metrics {
-                temp_values.push(output[IxDyn(&[si, ui, metric])]);
-            }
-        }
-
-        // Now copy from temp to output positions
+        // Write directly to output using inverse mapping
         for (di, &inv) in inverse.iter().enumerate() {
             for metric in 0..num_metrics {
-                let val = temp_values[inv * num_metrics + metric];
+                let val = unique_cache[inv][metric];
                 let idx = output.index_mut(IxDyn(&[si, di, metric]));
                 *idx = val;
             }
         }
     }
-
-    // Reshape to final output shape: (num_seeds, *data_indices_shape, num_metrics)
-    // For simplicity, we treat data_indices as 1D here
-    // Full implementation would need to handle arbitrary shapes
 
     Ok(output)
 }

@@ -87,9 +87,8 @@ pub fn pareto_front_2d_maximize(
 
     // Sort by a descending (for maximization), then by b descending
     pairs.sort_by(|x, y| {
-        y.1.partial_cmp(&x.1)
-            .unwrap()
-            .then_with(|| y.2.partial_cmp(&x.2).unwrap())
+        y.1.total_cmp(&x.1)
+            .then_with(|| y.2.total_cmp(&x.2))
     });
 
     // Walk frontier: keep points with b better than or equal to any seen so far
@@ -164,7 +163,7 @@ pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Arra
 
         // Rank values
         let mut indexed: Vec<(usize, f64)> = x_dim.iter().enumerate().map(|(i, &v)| (i, v)).collect();
-        indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        indexed.sort_by(|a, b| a.1.total_cmp(&b.1));
 
         // Assign bins based on rank
         let mut bins = vec![0usize; n];
@@ -236,7 +235,7 @@ pub fn arms_from_pareto_fronts(
         }
 
         let mut front_sorted = front;
-        front_sorted.sort_by(|&a, &b| mu[b].partial_cmp(&mu[a]).unwrap());
+        front_sorted.sort_by(|&a, &b| mu[b].total_cmp(&mu[a]));
         let in_front: std::collections::HashSet<usize> =
             front_sorted.iter().copied().collect();
 
@@ -251,7 +250,7 @@ pub fn arms_from_pareto_fronts(
         }
     }
 
-    i_keep.sort_by(|&a, &b| mu[b].partial_cmp(&mu[a]).unwrap());
+    i_keep.sort_by(|&a, &b| mu[b].total_cmp(&mu[a]));
     i_keep
 }
 

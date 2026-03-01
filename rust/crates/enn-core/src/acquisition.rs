@@ -65,7 +65,7 @@ impl UCBAcquisition {
         indices.sort_by(|&a, &b| {
             let ucb_a = ucb[a];
             let ucb_b = ucb[b];
-            ucb_b.partial_cmp(&ucb_a).unwrap() // Descending
+            ucb_b.total_cmp(&ucb_a) // Descending
         });
 
         // Return top num_arms
@@ -128,7 +128,7 @@ impl ThompsonAcquisition {
         let mut indices: Vec<usize> = (0..samples.len()).collect();
         indices.shuffle(rng);
         indices.sort_by(|&a, &b| {
-            samples[b].partial_cmp(&samples[a]).unwrap() // Descending
+            samples[b].total_cmp(&samples[a]) // Descending
         });
 
         Ok(indices.into_iter().take(num_arms).collect())
@@ -387,7 +387,7 @@ impl ParetoAcquisition {
         indices.sort_by(|&a, &b| {
             let score_a = mu[a] + sigma[a];
             let score_b = mu[b] + sigma[b];
-            score_b.partial_cmp(&score_a).unwrap()
+            score_b.total_cmp(&score_a)
         });
 
         Ok(indices.into_iter().take(num_arms).collect())

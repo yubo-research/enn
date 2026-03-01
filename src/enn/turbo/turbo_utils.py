@@ -362,6 +362,17 @@ def generate_tr_candidates_orig(
         return generate_raasp_candidates_uniform(
             x_center, lb, ub, num_candidates, rng=rng, num_pert=num_pert
         )
+    if candidate_rv == CandidateRV.RAASP:
+        return generate_raasp_candidates(
+            x_center,
+            lb,
+            ub,
+            num_candidates,
+            rng=rng,
+            candidate_rv=CandidateRV.RAASP,
+            sobol_engine=sobol_engine,
+            num_pert=num_pert,
+        )
     raise ValueError(candidate_rv)
 
 

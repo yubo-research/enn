@@ -1,6 +1,6 @@
 //! Trust region implementations for TuRBO optimizer.
 
-use ndarray::{Array1, ArrayView1};
+use ndarray::{s, Array1, ArrayView1};
 use thiserror::Error;
 
 /// Errors that can occur in trust region operations.
@@ -61,8 +61,6 @@ pub struct TurboTrustRegion {
     best_value: f64,
     /// Number of observations at last update.
     prev_num_obs: usize,
-    /// Previous observed values for scale computation.
-    prev_values: Vec<f64>,
     /// Success tolerance (consecutive successes before expansion).
     success_tolerance: i32,
     /// Failure tolerance (consecutive failures before contraction).
@@ -84,7 +82,6 @@ impl TurboTrustRegion {
             success_counter: 0,
             best_value: f64::NEG_INFINITY,
             prev_num_obs: 0,
-            prev_values: Vec::new(),
             success_tolerance: 3,
             failure_tolerance: None,
             num_dim,
@@ -121,29 +118,60 @@ impl TurboTrustRegion {
 
     /// Update trust region based on new observations.
     ///
+    /// Matches Python: scale is computed from all observations before the current batch
+    /// (y_all[0..prev_num_obs]), not just the current batch.
+    ///
     /// # Arguments
     ///
-    /// * `y_new` - New objective values
-    /// * `num_obs` - Total number of observations so far
+    /// * `y_all` - All objective values so far (full observation history)
+    /// * `num_obs` - Total number of observations (must equal y_all.len())
     pub fn update(
         &mut self,
-        y_new: &ArrayView1<f64>,
+        y_all: &ArrayView1<f64>,
         num_obs: usize,
     ) -> Result<(), TrustRegionError> {
-        if y_new.is_empty() {
+        let n = y_all.len();
+        if n == 0 || n == self.prev_num_obs {
+            return Ok(());
+        }
+        if n < self.prev_num_obs {
+            return Err(TrustRegionError::InvalidState(format!(
+                "num_obs went backwards: {} < {}",
+                n, self.prev_num_obs
+            )));
+        }
+        if num_obs != n {
+            return Err(TrustRegionError::InvalidParameter(format!(
+                "num_obs {} must equal y_all.len() {}",
+                num_obs, n
+            )));
+        }
+
+        // First update: establish best value and return
+        if !self.best_value.is_finite() {
+            let new_best = y_all.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            self.best_value = new_best;
+            self.prev_num_obs = n;
             return Ok(());
         }
 
-        // Get new best value
-        let new_best = y_new.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+        // prev_values = observations before this batch (matches Python)
+        let prev_slice = y_all.slice(s![..self.prev_num_obs]);
+        let new_batch = y_all.slice(s![self.prev_num_obs..]);
 
-        // Compute scale from previous values
-        let scale = if self.prev_values.len() >= 2 {
-            let min_val = self.prev_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-            let max_val = self.prev_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+        let new_best = new_batch.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+
+        // Scale from prev_values (all observations before current batch)
+        let prev_len = prev_slice.len();
+        let scale = if prev_len >= 2 {
+            let min_val = prev_slice.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+            let max_val = prev_slice.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
             (max_val - min_val).max(1e-6)
+        } else if prev_len == 0 {
+            0.0
         } else {
-            1.0
+            // Single value: max - min = 0 (matches Python)
+            0.0
         };
 
         // Check for improvement
@@ -153,7 +181,7 @@ impl TurboTrustRegion {
         if improved {
             self.success_counter += 1;
             self.failure_counter = 0;
-            self.best_value = new_best;
+            self.best_value = self.best_value.max(new_best);
         } else {
             self.failure_counter += 1;
             self.success_counter = 0;
@@ -173,12 +201,7 @@ impl TurboTrustRegion {
             self.failure_counter = 0;
         }
 
-        // Update previous values (B3: scale computed from single batch only;
-        // Python may use a larger window — verify parity if TR length diverges)
-        self.prev_values.clear();
-        self.prev_values.extend(y_new.iter().copied());
-        self.prev_num_obs = num_obs;
-
+        self.prev_num_obs = n;
         Ok(())
     }
 
@@ -214,7 +237,6 @@ impl TurboTrustRegion {
         self.success_counter = 0;
         self.best_value = f64::NEG_INFINITY;
         self.prev_num_obs = 0;
-        self.prev_values.clear();
     }
 }
 
@@ -280,14 +302,14 @@ mod tests {
         let mut tr = TurboTrustRegion::new(5, config);
         tr.set_num_arms(1);
 
-        // First update - establish best value
+        // First update - establish best value (y_all = [1.0])
         tr.update(&array![1.0].view(), 1).unwrap();
         assert_eq!(tr.length(), 0.8);
 
-        // Three consecutive improvements should expand
-        tr.update(&array![2.0].view(), 2).unwrap();
-        tr.update(&array![3.0].view(), 3).unwrap();
-        tr.update(&array![4.0].view(), 4).unwrap();
+        // Three consecutive improvements should expand (y_all grows each time)
+        tr.update(&array![1.0, 2.0].view(), 2).unwrap();
+        tr.update(&array![1.0, 2.0, 3.0].view(), 3).unwrap();
+        tr.update(&array![1.0, 2.0, 3.0, 4.0].view(), 4).unwrap();
 
         assert!(tr.length() > 0.8); // Should have expanded
     }
@@ -301,10 +323,13 @@ mod tests {
         // Establish best value
         tr.update(&array![1.0].view(), 1).unwrap();
 
-        // Multiple failures should contract
+        // Multiple failures should contract (y_all grows: [1, 0.5], [1, 0.5, 0.5], ...)
         let failure_tol = tr.failure_tolerance.unwrap();
-        for i in 0..failure_tol {
-            tr.update(&array![0.5].view(), (2 + i) as usize).unwrap();
+        let mut y_all = vec![1.0];
+        for _ in 0..failure_tol {
+            y_all.push(0.5);
+            let y_arr = ndarray::Array1::from_vec(y_all.clone());
+            tr.update(&y_arr.view(), y_all.len()).unwrap();
         }
 
         assert!(tr.length() < 0.8); // Should have contracted
@@ -316,10 +341,13 @@ mod tests {
         let mut tr = TurboTrustRegion::new(5, config);
         tr.set_num_arms(1);
 
-        // Contract length
+        // Contract length (y_all grows: [1], [1,0.5], [1,0.5,0.5], ...)
         tr.update(&array![1.0].view(), 1).unwrap();
+        let mut y_all = vec![1.0, 0.5];
         for _ in 0..10 {
-            tr.update(&array![0.5].view(), 2).unwrap();
+            let y_arr = ndarray::Array1::from_vec(y_all.clone());
+            tr.update(&y_arr.view(), y_all.len()).unwrap();
+            y_all.push(0.5);
         }
 
         assert!(tr.length() < 0.8);

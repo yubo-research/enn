@@ -1,5 +1,6 @@
 //! Python bindings for ENN core algorithms using PyO3.
 
+// PyResult return types trigger false positive useless_conversion warnings
 #![allow(clippy::useless_conversion)]
 
 use ndarray::{Array1, Array2, IxDyn};
@@ -9,6 +10,8 @@ use numpy::{
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 use enn_core::traits::PosteriorComputation;
 
@@ -143,9 +146,6 @@ fn sobol_sequence_py<'py>(
     num_points: usize,
     seed: u64,
 ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
-
     let mut engine = enn_core::candidates::SobolEngine::new(dimension)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
     let mut rng = StdRng::seed_from_u64(seed);
@@ -456,9 +456,6 @@ fn enn_fit_py(
     params_warm_start: Option<PyENNParams>,
     infer_aleatoric_variance_scale: bool,
 ) -> PyResult<PyENNParams> {
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
-
     let mut rng = StdRng::seed_from_u64(seed);
 
     let warm_start = params_warm_start.as_ref().map(|p| p.inner);
@@ -492,9 +489,6 @@ fn subsample_loglik_py(
     seed: u64,
     y_std: Option<PyReadonlyArray1<f64>>,
 ) -> PyResult<Vec<f64>> {
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
-
     let mut rng = StdRng::seed_from_u64(seed);
 
     // Build params list
@@ -616,9 +610,6 @@ impl PyOptimizer {
         num_arms: usize,
         seed: u64,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        use rand::SeedableRng;
-        use rand::rngs::StdRng;
-
         let mut rng = StdRng::seed_from_u64(seed);
 
         let result = self
@@ -637,9 +628,6 @@ impl PyOptimizer {
         y: PyReadonlyArray2<f64>,
         seed: u64,
     ) -> PyResult<()> {
-        use rand::SeedableRng;
-        use rand::rngs::StdRng;
-
         let mut rng = StdRng::seed_from_u64(seed);
 
         self.inner
@@ -708,25 +696,93 @@ struct PyTelemetry {
     dt_tell: f64,
 }
 
+fn parse_config_overrides_from_dict(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+) -> PyResult<enn_core::ConfigOverrides> {
+    use enn_core::{AcquisitionConfig, CandidateRV, ConfigOverrides};
+    use enn_core::index::IndexDriver;
+
+    let mut overrides = ConfigOverrides::default();
+
+    if let Some(v) = dict.get_item("index_driver")? {
+        let s: String = v.extract()?;
+        overrides.index_driver = Some(match s.to_lowercase().as_str() {
+            "exact" | "flat" => IndexDriver::Exact,
+            "kdtree" => IndexDriver::KDTree,
+            "hnsw" => IndexDriver::HNSW,
+            _ => return Err(PyValueError::new_err(format!("Unknown index_driver: {}", s))),
+        });
+    }
+    if let Some(acq) = dict.get_item("acquisition")? {
+        let s: String = acq.extract()?;
+        overrides.acquisition = Some(match s.as_str() {
+            "ucb" => {
+                let beta = dict
+                    .get_item("acquisition_beta")?
+                    .map(|v| v.extract::<f64>())
+                    .transpose()?
+                    .unwrap_or(2.0);
+                AcquisitionConfig::UCB { beta }
+            }
+            "thompson" => AcquisitionConfig::Thompson,
+            "random" => AcquisitionConfig::Random,
+            _ => return Err(PyValueError::new_err(format!("Unknown acquisition: {}", s))),
+        });
+    }
+    if let Some(rv) = dict.get_item("candidate_rv")? {
+        let s: String = rv.extract()?;
+        overrides.candidate_rv = Some(match s.as_str() {
+            "sobol" => CandidateRV::Sobol,
+            "uniform" => CandidateRV::Uniform,
+            "raasp" => CandidateRV::RAASP,
+            _ => return Err(PyValueError::new_err(format!("Unknown candidate_rv: {}", s))),
+        });
+    }
+    if let Some(v) = dict.get_item("num_candidates_factor")? {
+        overrides.num_candidates_factor = Some(v.extract::<f64>()?);
+    }
+    if let Some(v) = dict.get_item("min_candidates")? {
+        overrides.min_candidates = Some(v.extract::<usize>()?);
+    }
+    if let Some(v) = dict.get_item("length_init")? {
+        overrides.length_init = Some(v.extract::<f64>()?);
+    }
+    if let Some(v) = dict.get_item("length_min")? {
+        overrides.length_min = Some(v.extract::<f64>()?);
+    }
+    if let Some(v) = dict.get_item("length_max")? {
+        overrides.length_max = Some(v.extract::<f64>()?);
+    }
+    if let Some(v) = dict.get_item("trailing_obs")? {
+        overrides.trailing_obs = Some(v.extract::<usize>()?);
+    }
+    Ok(overrides)
+}
+
 /// Create TuRBO-ENN optimizer
 #[pyfunction(name = "create_optimizer_enn")]
-#[pyo3(signature = (bounds, k=10, num_init=10, seed=42))]
+#[pyo3(signature = (bounds, k=10, num_init=10, seed=42, config_overrides=None))]
 fn create_optimizer_enn_py(
     bounds: PyReadonlyArray2<f64>,
     k: i32,
     num_init: usize,
     seed: u64,
+    config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
+    use enn_core::optimizer_factory::create_optimizer_enn_with_overrides;
 
     let mut rng = StdRng::seed_from_u64(seed);
+    let overrides: Option<enn_core::ConfigOverrides> = config_overrides
+        .as_ref()
+        .map(|d| parse_config_overrides_from_dict(d))
+        .transpose()?;
 
-    let optimizer = enn_core::create_optimizer_enn(
+    let optimizer = create_optimizer_enn_with_overrides(
         bounds.as_array().to_owned(),
         k,
         num_init,
         &mut rng,
+        overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -735,21 +791,26 @@ fn create_optimizer_enn_py(
 
 /// Create TuRBO-ZERO optimizer
 #[pyfunction(name = "create_optimizer_zero")]
-#[pyo3(signature = (bounds, num_init=10, seed=42))]
+#[pyo3(signature = (bounds, num_init=10, seed=42, config_overrides=None))]
 fn create_optimizer_zero_py(
     bounds: PyReadonlyArray2<f64>,
     num_init: usize,
     seed: u64,
+    config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
+    use enn_core::optimizer_factory::create_optimizer_zero_with_overrides;
 
     let mut rng = StdRng::seed_from_u64(seed);
+    let overrides: Option<enn_core::ConfigOverrides> = config_overrides
+        .as_ref()
+        .map(|d| parse_config_overrides_from_dict(d))
+        .transpose()?;
 
-    let optimizer = enn_core::create_optimizer_zero(
+    let optimizer = create_optimizer_zero_with_overrides(
         bounds.as_array().to_owned(),
         num_init,
         &mut rng,
+        overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -758,21 +819,26 @@ fn create_optimizer_zero_py(
 
 /// Create LHD-only optimizer
 #[pyfunction(name = "create_optimizer_lhd")]
-#[pyo3(signature = (bounds, num_init=10, seed=42))]
+#[pyo3(signature = (bounds, num_init=10, seed=42, config_overrides=None))]
 fn create_optimizer_lhd_py(
     bounds: PyReadonlyArray2<f64>,
     num_init: usize,
     seed: u64,
+    config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
+    use enn_core::optimizer_factory::create_optimizer_lhd_with_overrides;
 
     let mut rng = StdRng::seed_from_u64(seed);
+    let overrides: Option<enn_core::ConfigOverrides> = config_overrides
+        .as_ref()
+        .map(|d| parse_config_overrides_from_dict(d))
+        .transpose()?;
 
-    let optimizer = enn_core::create_optimizer_lhd(
+    let optimizer = create_optimizer_lhd_with_overrides(
         bounds.as_array().to_owned(),
         num_init,
         &mut rng,
+        overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
