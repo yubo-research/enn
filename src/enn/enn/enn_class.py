@@ -65,6 +65,55 @@ def _draw_from_internals(
     )
 
 
+class _RustDispatchMixin:
+    """Mixin providing Rust/Python dispatch helpers.
+
+    This mixin must come FIRST in the inheritance list to ensure
+    proper MRO when combined with other mixins.
+    """
+
+    def _if_rust_else(
+        self,
+        rust_fn: callable,
+        python_fn: callable,
+        *,
+        check_rust: bool = True,
+    ):
+        """Execute rust_fn if Rust backend is available, otherwise python_fn.
+
+        Args:
+            rust_fn: Function to call with signature (rust_model) -> result
+            python_fn: Function to call with signature () -> result
+            check_rust: If False, always use Python path (for testing parity)
+
+        Returns:
+            Result from either rust_fn or python_fn
+        """
+        if check_rust and self._rust_model is not None:
+            return rust_fn(self._rust_model)
+        return python_fn()
+
+    def _if_rust_else_with_args(
+        self,
+        rust_fn: callable,
+        python_fn: callable,
+        *args,
+        **kwargs,
+    ):
+        """Execute rust_fn if Rust backend is available, otherwise python_fn.
+
+        Args:
+            rust_fn: Function taking (rust_model, *args, **kwargs)
+            python_fn: Function taking (*args, **kwargs)
+
+        Returns:
+            Result from either rust_fn or python_fn
+        """
+        if self._rust_model is not None:
+            return rust_fn(self._rust_model, *args, **kwargs)
+        return python_fn(*args, **kwargs)
+
+
 class _PosteriorMixin:
     """Mixin for posterior computation helpers."""
 
@@ -183,7 +232,7 @@ class _PosteriorMixin:
         )
 
 
-class EpistemicNearestNeighbors(_PosteriorMixin):
+class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
     _EPS_VAR = 1e-9
 
     @staticmethod
@@ -319,8 +368,9 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
 
         if flags is None:
             flags = PosteriorFlags()
-        if self._rust_model is not None:
-            mu, se, idx = self._rust_model.posterior(
+
+        def _rust_posterior(rust_model):
+            mu, se, idx = rust_model.posterior(
                 x,
                 k_num_neighbors=params.k_num_neighbors,
                 epistemic_variance_scale=params.epistemic_variance_scale,
@@ -330,8 +380,12 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
             )
             idx_arr = np.array(idx, dtype=int) if idx else None
             return ENNNormal(mu, se, idx=idx_arr)
-        internals = self._compute_posterior_internals(x, params, flags)
-        return ENNNormal(internals.mu, internals.se, idx=internals.idx)
+
+        def _python_posterior():
+            internals = self._compute_posterior_internals(x, params, flags)
+            return ENNNormal(internals.mu, internals.se, idx=internals.idx)
+
+        return self._if_rust_else(_rust_posterior, _python_posterior)
 
     def conditional_posterior(
         self,
@@ -347,8 +401,9 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
 
         if flags is None:
             flags = PosteriorFlags()
-        if self._rust_model is not None:
-            mu, se, _ = self._rust_model.conditional_posterior(
+
+        def _rust_conditional(rust_model):
+            mu, se, _ = rust_model.conditional_posterior(
                 x_whatif,
                 y_whatif,
                 x,
@@ -359,12 +414,16 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
                 observation_noise=flags.observation_noise,
             )
             return ENNNormal(mu, se)
-        from .enn_conditional import compute_conditional_posterior
 
-        y_scale = _compute_conditional_y_scale(self, y_whatif)
-        return compute_conditional_posterior(
-            self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
-        )
+        def _python_conditional():
+            from .enn_conditional import compute_conditional_posterior
+
+            y_scale = _compute_conditional_y_scale(self, y_whatif)
+            return compute_conditional_posterior(
+                self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
+            )
+
+        return self._if_rust_else(_rust_conditional, _python_conditional)
 
     def batch_posterior(
         self,
@@ -383,11 +442,12 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
             raise ValueError(x.shape)
         if not paramss:
             raise ValueError("paramss must be non-empty")
-        if self._rust_model is not None:
+
+        def _rust_batch(rust_model):
             k_values = [p.k_num_neighbors for p in paramss]
             epistemic_scales = [p.epistemic_variance_scale for p in paramss]
             aleatoric_scales = [p.aleatoric_variance_scale for p in paramss]
-            mu_all, se_all = self._rust_model.batch_posterior(
+            mu_all, se_all = rust_model.batch_posterior(
                 x,
                 k_values=k_values,
                 epistemic_scales=epistemic_scales,
@@ -396,30 +456,34 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
                 observation_noise=flags.observation_noise,
             )
             return ENNNormal(mu_all, se_all)
-        batch_size, num_params = x.shape[0], len(paramss)
-        mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
-        se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
-        k_values = {p.k_num_neighbors for p in paramss}
-        if len(k_values) == 1 and len(self) > 0:
-            neighbor_data = self._get_neighbor_data(
-                x, paramss[0], flags.exclude_nearest
-            )
-            if neighbor_data is None:
-                return ENNNormal(mu_all, se_all)
-            for i, params in enumerate(paramss):
-                internals = self._compute_weighted_posterior(
-                    neighbor_data.dist2s,
-                    neighbor_data.idx,
-                    neighbor_data.y_neighbors,
-                    params,
-                    flags.observation_noise,
+
+        def _python_batch():
+            batch_size, num_params = x.shape[0], len(paramss)
+            mu_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
+            se_all = np.zeros((num_params, batch_size, self._num_metrics), dtype=float)
+            k_values = {p.k_num_neighbors for p in paramss}
+            if len(k_values) == 1 and len(self) > 0:
+                neighbor_data = self._get_neighbor_data(
+                    x, paramss[0], flags.exclude_nearest
                 )
-                mu_all[i], se_all[i] = internals.mu, internals.se
-        else:
-            for i, params in enumerate(paramss):
-                internals = self._compute_posterior_internals(x, params, flags)
-                mu_all[i], se_all[i] = internals.mu, internals.se
-        return ENNNormal(mu_all, se_all)
+                if neighbor_data is None:
+                    return ENNNormal(mu_all, se_all)
+                for i, params in enumerate(paramss):
+                    internals = self._compute_weighted_posterior(
+                        neighbor_data.dist2s,
+                        neighbor_data.idx,
+                        neighbor_data.y_neighbors,
+                        params,
+                        flags.observation_noise,
+                    )
+                    mu_all[i], se_all[i] = internals.mu, internals.se
+            else:
+                for i, params in enumerate(paramss):
+                    internals = self._compute_posterior_internals(x, params, flags)
+                    mu_all[i], se_all[i] = internals.mu, internals.se
+            return ENNNormal(mu_all, se_all)
+
+        return self._if_rust_else(_rust_batch, _python_batch)
 
     def neighbors(
         self, x: np.ndarray, k: int, *, exclude_nearest: bool = False
@@ -439,18 +503,23 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
             raise ValueError(
                 f"exclude_nearest=True requires at least 2 observations, got {len(self)}"
             )
-        if self._rust_model is not None:
-            idx_2d = self._rust_model.neighbors(x, k, exclude_nearest=exclude_nearest)
+
+        def _rust_neighbors(rust_model):
+            idx_2d = rust_model.neighbors(x, k, exclude_nearest=exclude_nearest)
             idx = idx_2d[0, :] if idx_2d.size > 0 else np.array([], dtype=np.int64)
             return idx.astype(np.int64, copy=False)
-        search_k = int(min(k + 1 if exclude_nearest else k, len(self)))
-        if search_k == 0:
-            return np.zeros((0,), dtype=np.int64)
-        _, idx_full = self._enn_index.search(
-            x, search_k=search_k, exclude_nearest=exclude_nearest
-        )
-        idx = idx_full[0, : min(k, idx_full.shape[1])]
-        return idx.astype(np.int64, copy=False)
+
+        def _python_neighbors():
+            search_k = int(min(k + 1 if exclude_nearest else k, len(self)))
+            if search_k == 0:
+                return np.zeros((0,), dtype=np.int64)
+            _, idx_full = self._enn_index.search(
+                x, search_k=search_k, exclude_nearest=exclude_nearest
+            )
+            idx = idx_full[0, : min(k, idx_full.shape[1])]
+            return idx.astype(np.int64, copy=False)
+
+        return self._if_rust_else(_rust_neighbors, _python_neighbors)
 
     def posterior_function_draw(
         self,
@@ -464,13 +533,14 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
 
         if flags is None:
             flags = PosteriorFlags()
-        if self._rust_model is not None:
+
+        def _rust_draw(rust_model):
             seeds = (
                 np.asarray(function_seeds, dtype=np.int64).tolist()
                 if hasattr(function_seeds, "__iter__")
                 else list(function_seeds)
             )
-            draws, idx = self._rust_model.posterior_function_draw(
+            draws, idx = rust_model.posterior_function_draw(
                 x,
                 k_num_neighbors=params.k_num_neighbors,
                 epistemic_variance_scale=params.epistemic_variance_scale,
@@ -481,11 +551,15 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
             )
             idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0))
             return draws, idx_arr
-        internals = self._compute_posterior_internals(x, params, flags)
-        return (
-            _draw_from_internals(self, internals, function_seeds=function_seeds),
-            internals.idx,
-        )
+
+        def _python_draw():
+            internals = self._compute_posterior_internals(x, params, flags)
+            return (
+                _draw_from_internals(self, internals, function_seeds=function_seeds),
+                internals.idx,
+            )
+
+        return self._if_rust_else(_rust_draw, _python_draw)
 
     def conditional_posterior_function_draw(
         self,
@@ -511,13 +585,14 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
                 function_seeds=function_seeds,
                 flags=flags,
             )
-        if self._rust_model is not None:
+
+        def _rust_conditional_draw(rust_model):
             seeds = (
                 np.asarray(function_seeds, dtype=np.int64).tolist()
                 if hasattr(function_seeds, "__iter__")
                 else list(function_seeds)
             )
-            draws, idx = self._rust_model.conditional_posterior_function_draw(
+            draws, idx = rust_model.conditional_posterior_function_draw(
                 x_whatif,
                 y_whatif,
                 x,
@@ -530,21 +605,25 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
             )
             idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0))
             return draws, idx_arr
-        from .enn_conditional import compute_conditional_posterior_draw_internals
 
-        y_scale = _compute_conditional_y_scale(self, y_whatif)
-        internals = compute_conditional_posterior_draw_internals(
-            self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
-        )
-        draws = _draw_from_internals(
-            self,
-            DrawInternals(
-                idx=internals.idx,
-                w_normalized=internals.w_normalized,
-                l2=internals.l2,
-                mu=internals.mu,
-                se=internals.se,
-            ),
-            function_seeds=function_seeds,
-        )
-        return draws, internals.idx
+        def _python_conditional_draw():
+            from .enn_conditional import compute_conditional_posterior_draw_internals
+
+            y_scale = _compute_conditional_y_scale(self, y_whatif)
+            internals = compute_conditional_posterior_draw_internals(
+                self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
+            )
+            draws = _draw_from_internals(
+                self,
+                DrawInternals(
+                    idx=internals.idx,
+                    w_normalized=internals.w_normalized,
+                    l2=internals.l2,
+                    mu=internals.mu,
+                    se=internals.se,
+                ),
+                function_seeds=function_seeds,
+            )
+            return draws, internals.idx
+
+        return self._if_rust_else(_rust_conditional_draw, _python_conditional_draw)
