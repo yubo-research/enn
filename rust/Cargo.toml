@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "crates/enn-core",
-    "crates/enn-py",
+    "crates/ennbo-py",
 ]
 resolver = "2"
 
