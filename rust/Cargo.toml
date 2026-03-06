@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/enn-core",
+    "crates/ennbo",
     "crates/ennbo-py",
 ]
 resolver = "2"
@@ -11,6 +11,8 @@ edition = "2021"
 license = "MIT"
 authors = ["YUBO Lab <david.sweet@yu.edu>"]
 repository = "https://github.com/yubo-research/enn"
+keywords = ["bayesian", "optimization", "ENN", "turbo", "turbo-enn"]
+categories = ["science", "simulation"]
 
 [workspace.dependencies]
 ndarray = "0.16"
