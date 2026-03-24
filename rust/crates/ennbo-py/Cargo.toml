@@ -1,0 +1,23 @@
+[package]
+name = "ennbo-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Python bindings for ENN core algorithms"
+build = "build.rs"
+
+[lib]
+name = "enn_rust"
+crate-type = ["cdylib"]
+
+[dependencies]
+ennbo = { path = "../ennbo", version = "0.1" }
+ndarray = { workspace = true }
+numpy = { workspace = true }
+pyo3 = { workspace = true }
+rand = { workspace = true }
+
+[build-dependencies]
+pyo3-build-config = "0.22"

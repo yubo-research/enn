@@ -1,0 +1,30 @@
+[package]
+name = "ennbo"
+version = "0.1.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Epistemic Nearest Neighbor Bayesian Optimization"
+readme = "README.md"
+
+[dependencies]
+ndarray = { workspace = true }
+ordered-float = "4.0"
+rand = "0.8"
+sobol = "1.0.2"
+thiserror = { workspace = true }
+kdtree = "0.8"
+hnsw_rs = "0.3"
+
+[dev-dependencies]
+approx = "0.5"
+numpy = "0.22"
+rand_chacha = "0.3"
+criterion = "0.5"
+
+[[bench]]
+name = "inefficiencies"
+harness = false
