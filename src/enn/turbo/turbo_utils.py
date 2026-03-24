@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     import torch
     from numpy.random import Generator
     from scipy.stats._qmc import QMCEngine
-    from .config.candidate_rv import CandidateRV
+from .config.candidate_rv import CandidateRV
 from .config.raasp_driver import RAASPDriver
 
 
@@ -329,6 +329,31 @@ class ScalarIncumbentMixin:
         )
 
 
+def _generate_tr_candidates_raasp(
+    x_center: np.ndarray,
+    lb: np.ndarray,
+    ub: np.ndarray,
+    num_candidates: int,
+    *,
+    rng: Generator,
+    candidate_rv: CandidateRV,
+    sobol_engine: QMCEngine | None,
+    num_pert: int,
+) -> np.ndarray:
+    if candidate_rv == CandidateRV.SOBOL and sobol_engine is None:
+        raise ValueError("sobol_engine is required when candidate_rv=CandidateRV.SOBOL")
+    return generate_raasp_candidates(
+        x_center,
+        lb,
+        ub,
+        num_candidates,
+        rng=rng,
+        candidate_rv=candidate_rv,
+        sobol_engine=sobol_engine,
+        num_pert=num_pert,
+    )
+
+
 def generate_tr_candidates_orig(
     compute_bounds_1d: Any,
     x_center: np.ndarray,
@@ -340,15 +365,9 @@ def generate_tr_candidates_orig(
     sobol_engine: QMCEngine | None = None,
     num_pert: int = 20,
 ) -> np.ndarray:
-    from .config.candidate_rv import CandidateRV
-
     lb, ub = compute_bounds_1d(x_center, lengthscales)
-    if candidate_rv == CandidateRV.SOBOL:
-        if sobol_engine is None:
-            raise ValueError(
-                "sobol_engine is required when candidate_rv=CandidateRV.SOBOL"
-            )
-        return generate_raasp_candidates(
+    _dispatch = {
+        CandidateRV.SOBOL: lambda: _generate_tr_candidates_raasp(
             x_center,
             lb,
             ub,
@@ -357,11 +376,23 @@ def generate_tr_candidates_orig(
             candidate_rv=candidate_rv,
             sobol_engine=sobol_engine,
             num_pert=num_pert,
-        )
-    if candidate_rv == CandidateRV.UNIFORM:
-        return generate_raasp_candidates_uniform(
+        ),
+        CandidateRV.UNIFORM: lambda: generate_raasp_candidates_uniform(
             x_center, lb, ub, num_candidates, rng=rng, num_pert=num_pert
-        )
+        ),
+        CandidateRV.RAASP: lambda: _generate_tr_candidates_raasp(
+            x_center,
+            lb,
+            ub,
+            num_candidates,
+            rng=rng,
+            candidate_rv=CandidateRV.RAASP,
+            sobol_engine=sobol_engine,
+            num_pert=num_pert,
+        ),
+    }
+    if candidate_rv in _dispatch:
+        return _dispatch[candidate_rv]()
     raise ValueError(candidate_rv)
 
 
@@ -376,7 +407,6 @@ def generate_tr_candidates_fast(
     num_pert: int,
 ) -> np.ndarray:
     from scipy.stats import qmc
-    from .config.candidate_rv import CandidateRV
 
     lb, ub = compute_bounds_1d(x_center, lengthscales)
     num_dim = x_center.shape[-1]
@@ -410,8 +440,6 @@ def generate_tr_candidates(
     raasp_driver: RAASPDriver,
     num_pert: int,
 ) -> np.ndarray:
-    from .config.raasp_driver import RAASPDriver
-
     if raasp_driver == RAASPDriver.FAST:
         return generate_tr_candidates_fast(
             compute_bounds_1d,

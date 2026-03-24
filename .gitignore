@@ -1,7 +1,11 @@
 *~
 dist/
+parity_report.json
 style.md
 requirements.md
 .cursorrules
 __pycache__/
 enn.code-workspace
+plan.md
+review.md
+rust/target/

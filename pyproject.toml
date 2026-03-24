@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ennbo"
-version = "0.2.1"
+version = "0.3.0"
 description = "Epistemic Nearest Neighbors"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,7 +47,7 @@ dev = [
 packages = ["src/enn"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning:importlib._bootstrap",

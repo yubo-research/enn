@@ -35,8 +35,9 @@ def _make_bounds(num_dim: int) -> np.ndarray:
 def _make_optimizer(cfg: ProfileConfig) -> object:
     rng = np.random.default_rng(cfg.seed)
     bounds = _make_bounds(cfg.num_dim)
+    # k=None routes to Python optimizer (profile script uses _x_obs, _surrogate, _find_x_center)
     enn_cfg = ENNSurrogateConfig(
-        k=10,
+        k=None,
         fit=ENNFitConfig(
             num_fit_samples=cfg.num_fit_samples,
             num_fit_candidates=cfg.num_fit_candidates,

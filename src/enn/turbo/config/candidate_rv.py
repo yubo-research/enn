@@ -5,3 +5,4 @@ from enum import Enum
 class CandidateRV(Enum):
     SOBOL = "sobol"
     UNIFORM = "uniform"
+    RAASP = "raasp"

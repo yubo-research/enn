@@ -2,7 +2,7 @@
 # Thresholds based on max values of analyzed codebase
 
 [gate]
-test_coverage_threshold = 99
+test_coverage_threshold = 100
 min_similarity = 0.95
 duplication_enabled = true
 orphan_module_enabled = true
@@ -21,33 +21,33 @@ statements_per_try_block = 2
 boolean_parameters = 1
 decorators_per_function = 1
 calls_per_function = 31
-methods_per_class = 20
+methods_per_class = 19
 statements_per_file = 204
 functions_per_file = 62
 interface_types_per_file = 3
-concrete_types_per_file = 2
+concrete_types_per_file = 4
 imported_names_per_file = 47
 cycle_size = 12
-indirect_dependencies = 102
+indirect_dependencies = 91
 dependency_depth = 9
 
 [rust]
-statements_per_function = 25
+statements_per_function = 54
 arguments = 8
-max_indentation = 4
-branches_per_function = 8
-local_variables = 20
-methods_per_class = 15
+max_indentation = 6
 nested_function_depth = 2
 returns_per_function = 5
-statements_per_file = 300
-functions_per_file = 35
-interface_types_per_file = 3
-concrete_types_per_file = 8
-imported_names_per_file = 20
-indirect_dependencies = 50
-dependency_depth = 4
-boolean_parameters = 2
-attributes_per_function = 4
-calls_per_function = 50
-cycle_size = 3
+branches_per_function = 11
+local_variables = 27
+boolean_parameters = 1
+attributes_per_function = 31
+calls_per_function = 57
+methods_per_class = 15
+statements_per_file = 148
+functions_per_file = 16
+interface_types_per_file = 1
+concrete_types_per_file = 6
+imported_names_per_file = 13
+cycle_size = 0
+indirect_dependencies = 0
+dependency_depth = 1

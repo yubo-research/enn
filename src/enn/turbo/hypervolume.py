@@ -1,6 +1,11 @@
 from __future__ import annotations
 import numpy as np
 
+try:
+    from enn._rust import hypervolume_2d_max as _rust_hypervolume_2d_max
+except ImportError:  # pragma: no cover
+    _rust_hypervolume_2d_max = None
+
 
 def hypervolume_2d_max(y: np.ndarray, ref_point: np.ndarray) -> float:
     y = np.asarray(y, dtype=float)
@@ -13,6 +18,12 @@ def hypervolume_2d_max(y: np.ndarray, ref_point: np.ndarray) -> float:
         raise ValueError(y.shape)
     if ref_point.shape != (2,):
         raise ValueError(ref_point.shape)
+
+    # Use Rust implementation if available
+    if _rust_hypervolume_2d_max is not None:
+        return _rust_hypervolume_2d_max(y, ref_point)
+
+    # Python fallback
     mask = (y[:, 0] > ref_point[0]) & (y[:, 1] > ref_point[1])
     y = y[mask]
     if y.size == 0:

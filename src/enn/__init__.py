@@ -5,8 +5,8 @@ from ._lazy import lazy_getattr
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "EpistemicNearestNeighbors": (".enn.enn_class", "EpistemicNearestNeighbors"),
     "enn_fit": (".enn.enn_fit", "enn_fit"),
-    "create_optimizer": (".turbo.optimizer", "create_optimizer"),
-    "Telemetry": (".turbo.turbo_utils", "Telemetry"),
+    "create_optimizer": (".turbo.rust_optimizer", "create_optimizer"),
+    "Telemetry": (".turbo.types.telemetry", "Telemetry"),
     "OptimizerConfig": (".turbo.optimizer_config", "OptimizerConfig"),
     "turbo_one_config": (".turbo.optimizer_config", "turbo_one_config"),
     "turbo_zero_config": (".turbo.optimizer_config", "turbo_zero_config"),

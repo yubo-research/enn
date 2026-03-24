@@ -1,23 +1,26 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
+from enn._rust import (
+    calculate_sobol_indices as _rust_calculate_sobol_indices,
+    pareto_front_2d_maximize as _rust_pareto_front_2d_maximize,
+    standardize_y as _rust_standardize_y,
+)
+
 if TYPE_CHECKING:
-    import numpy as np
     from numpy.random import Generator
 
 
 def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
-    import numpy as np
-
     y_array = np.asarray(y, dtype=float)
-    center = float(np.median(y_array))
-    scale = float(np.std(y_array))
-    if not np.isfinite(scale) or scale <= 0.0:
-        scale = 1.0
-    return center, scale
+    center, scale = _rust_standardize_y(y_array)
+    return float(center), float(scale)
 
 
-def _validate_sobol_inputs(x, y):
+def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Calculate Sobol indices using Rust backend."""
     if x.ndim != 2:
         raise ValueError(f"x must be 2D, got shape {x.shape}")
     n, d = x.shape
@@ -27,56 +30,28 @@ def _validate_sobol_inputs(x, y):
         y = y.reshape(-1)
     if y.ndim != 1 or y.shape[0] != n:
         raise ValueError(f"y shape {y.shape} incompatible with x rows {n}")
-    return n, d, y
 
-
-def _compute_sobol_bins(x, y, n, d):
-    import numpy as np
-
-    B = 10 if n >= 30 else 3
-    order = np.argsort(x, axis=0)
-    row_idx = np.arange(n).reshape(n, 1).repeat(d, axis=1)
-    ranks = np.empty_like(order)
-    ranks[order, np.arange(d)[None, :]] = row_idx
-    idx = (ranks * B) // n
-    oh = np.zeros((n, d, B), dtype=x.dtype)
-    oh[np.arange(n)[:, None], np.arange(d)[None, :], idx] = 1.0
-    counts, sums = oh.sum(axis=0), (oh * y.reshape(n, 1, 1)).sum(axis=0)
-    mu_b = np.zeros_like(sums)
-    mask = counts > 0
-    mu_b[mask] = sums[mask] / counts[mask]
-    return counts / float(n), mu_b
-
-
-def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    import numpy as np
-
-    n, d, y = _validate_sobol_inputs(x, y)
-    if n < 9:
-        return np.ones(d, dtype=x.dtype)
-    mu, vy = y.mean(), y.var(ddof=0)
-    if not np.isfinite(vy) or vy <= 0:
-        return np.ones(d, dtype=x.dtype)
-    p_b, mu_b = _compute_sobol_bins(x, y, n, d)
-    S = (p_b * (mu_b - mu) ** 2).sum(axis=1) / vy
-    return np.where(x.var(axis=0, ddof=0) <= 1e-12, np.zeros_like(S), S)
+    x_f64 = np.asarray(x, dtype=np.float64)
+    y_f64 = np.asarray(y, dtype=np.float64)
+    result = _rust_calculate_sobol_indices(x_f64, y_f64)
+    return np.asarray(result, dtype=x.dtype)
 
 
 def pareto_front_2d_maximize(
     a: np.ndarray | Any, b: np.ndarray | Any, idx: np.ndarray | Any | None = None
 ) -> np.ndarray:
-    import numpy as np
-
+    """Compute 2D Pareto front (maximize both objectives) using Rust backend."""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     if a.shape != b.shape or a.ndim != 1:
         raise ValueError((a.shape, b.shape))
     if idx is None:
-        idx = np.arange(a.size, dtype=int)
-    else:
-        idx = np.asarray(idx, dtype=int)
-        if idx.ndim != 1:
-            raise ValueError(idx.shape)
+        return np.asarray(_rust_pareto_front_2d_maximize(a, b), dtype=int)
+    idx = np.asarray(idx, dtype=int)
+    if idx.ndim != 1:
+        raise ValueError(idx.shape)
+    if np.array_equal(idx, np.arange(a.size, dtype=int)):
+        return np.asarray(_rust_pareto_front_2d_maximize(a, b), dtype=int)
     order = np.lexsort((-b[idx], -a[idx]))
     sorted_idx = idx[order]
     keep: list[int] = []
@@ -103,8 +78,6 @@ def arms_from_pareto_fronts(
     num_arms: int,
     rng: Generator | Any,
 ) -> np.ndarray:
-    import numpy as np
-
     if x_cand.ndim != 2:
         raise ValueError(x_cand.shape)
     if mu.shape != se.shape or mu.ndim != 1:
