@@ -8,10 +8,7 @@ from typing import Sequence
 import numpy as np
 
 from enn import AcqType, create_optimizer, turbo_enn_config
-from enn.turbo.config import (
-    ENNFitConfig,
-    ENNSurrogateConfig,
-)
+from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig
 
 
 def make_bounds(num_dim: int) -> np.ndarray:
@@ -83,6 +80,7 @@ def _build_optimizer(
     k: int,
     num_fit_samples: int,
     num_fit_candidates: int,
+    num_arms: int,
     seed: int,
 ):
     rng = np.random.default_rng(seed)
@@ -95,7 +93,7 @@ def _build_optimizer(
                 num_fit_candidates=num_fit_candidates,
             ),
         ),
-        num_init=1,
+        num_init=num_arms,
         acq_type=AcqType.UCB,
     )
     return bounds, rng, create_optimizer(bounds=bounds, config=config, rng=rng)
@@ -128,7 +126,7 @@ def _print_setup(num_obs: int, num_dim: int, k: int, num_arms: int):
         f"N={num_obs}",
         f"D={num_dim}",
         f"k={k}",
-        f"num_candidates=min(5000, 100*D)={min(5000, 100 * num_dim)}",
+        f"num_candidates={min(5000, 100 * num_dim)}",
         f"num_arms={num_arms}",
     )
 
@@ -144,6 +142,7 @@ def run_benchmark(argv: Sequence[str] | None = None) -> None:
         k=args.k,
         num_fit_samples=args.num_fit_samples,
         num_fit_candidates=args.num_fit_candidates,
+        num_arms=args.num_arms,
         seed=args.seed,
     )
     _print_setup(
