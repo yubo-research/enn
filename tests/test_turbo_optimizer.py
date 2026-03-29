@@ -116,6 +116,22 @@ def test_turbo_one_improves_on_sphere():
     assert _run_bo(turbo_one_config(), num_steps=12) > -0.5
 
 
+def test_turbo_one_pareto_ask_tell_runs():
+    from enn import create_optimizer
+
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(42)
+    config = turbo_one_config(acq_type=AcqType.PARETO, num_init=2)
+    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    for _ in range(3):
+        x = opt.ask(num_arms=2)
+        assert x.shape == (2, 2)
+        y = conftest.sphere_objective(x)
+        opt.tell(x, y)
+    x_final = opt.ask(num_arms=2)
+    assert x_final.shape == (2, 2)
+
+
 def test_turbo_one_with_y_var_uses_noisy_gp():
     from enn import create_optimizer
     from enn.turbo.turbo_gp_noisy import TurboGPNoisy

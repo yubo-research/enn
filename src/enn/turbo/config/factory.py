@@ -21,6 +21,20 @@ def _make_candidate_gen_config(
     return CandidateGenConfig(candidate_rv=candidate_rv, num_candidates=num_candidates)
 
 
+def _acq_configs(
+    acq_type: AcqType,
+) -> tuple[acq.AcquisitionConfig, acq.AcqOptimizerConfig]:
+    if acq_type == AcqType.PARETO:
+        return acq.ParetoAcquisitionConfig(), acq.NDSOptimizerConfig()
+    if acq_type == AcqType.UCB:
+        return acq.UCBAcquisitionConfig(), acq.RAASPOptimizerConfig()
+    if acq_type == AcqType.THOMPSON:
+        return acq.DrawAcquisitionConfig(), acq.RAASPOptimizerConfig()
+    raise ValueError(
+        f"acq_type must be AcqType.THOMPSON, AcqType.PARETO, or AcqType.UCB, got {acq_type!r}"
+    )
+
+
 def turbo_one_config(
     *,
     num_candidates: int | None = None,
@@ -28,14 +42,16 @@ def turbo_one_config(
     trailing_obs: int | None = None,
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
+    acq_type: AcqType = AcqType.THOMPSON,
 ) -> OptimizerConfig:
+    acquisition, acq_optimizer = _acq_configs(acq_type)
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=_make_candidate_gen_config(candidate_rv, num_candidates),
         init=InitConfig(num_init=num_init),
         surrogate=sur.GPSurrogateConfig(),
-        acquisition=acq.DrawAcquisitionConfig(),
-        acq_optimizer=acq.RAASPOptimizerConfig(),
+        acquisition=acquisition,
+        acq_optimizer=acq_optimizer,
         observation_history=ObservationHistoryConfig(trailing_obs=trailing_obs),
     )
 
@@ -68,19 +84,7 @@ def turbo_enn_config(
     trailing_obs: int | None = None,
     acq_type: AcqType = AcqType.PARETO,
 ) -> OptimizerConfig:
-    if acq_type == AcqType.PARETO:
-        acquisition = acq.ParetoAcquisitionConfig()
-        acq_optimizer = acq.NDSOptimizerConfig()
-    elif acq_type == AcqType.UCB:
-        acquisition = acq.UCBAcquisitionConfig()
-        acq_optimizer = acq.RAASPOptimizerConfig()
-    elif acq_type == AcqType.THOMPSON:
-        acquisition = acq.DrawAcquisitionConfig()
-        acq_optimizer = acq.RAASPOptimizerConfig()
-    else:
-        raise ValueError(
-            f"acq_type must be AcqType.THOMPSON, AcqType.PARETO, or AcqType.UCB, got {acq_type!r}"
-        )
+    acquisition, acq_optimizer = _acq_configs(acq_type)
     surrogate = enn if enn is not None else sur.ENNSurrogateConfig()
     if surrogate.num_fit_samples is None and acq_type != AcqType.PARETO:
         raise ValueError(f"enn.num_fit_samples required for acq_type={acq_type!r}")

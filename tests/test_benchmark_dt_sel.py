@@ -95,7 +95,7 @@ def test_main_runs_with_monkeypatched_dependencies(monkeypatch, capsys):
 
     def fake_create_optimizer(*, bounds, config, rng):
         assert bounds.shape == (2, 2)
-        assert config["num_init"] == 1
+        assert config["num_init"] == 2
         assert rng is not None
         return FakeOpt()
 

@@ -402,6 +402,28 @@ def test_turbo_one_config_factory():
     assert isinstance(cfg.trust_region, TurboTRConfig)
     assert isinstance(cfg.surrogate, GPSurrogateConfig)
     assert isinstance(cfg.acquisition, DrawAcquisitionConfig)
+    assert isinstance(cfg.acq_optimizer, RAASPOptimizerConfig)
+
+
+def test_turbo_one_config_factory_pareto():
+    cfg = turbo_one_config(acq_type=AcqType.PARETO)
+    assert isinstance(cfg.surrogate, GPSurrogateConfig)
+    assert isinstance(cfg.acquisition, ParetoAcquisitionConfig)
+    assert isinstance(cfg.acq_optimizer, NDSOptimizerConfig)
+
+
+def test_turbo_one_config_factory_ucb():
+    cfg = turbo_one_config(acq_type=AcqType.UCB)
+    assert isinstance(cfg.surrogate, GPSurrogateConfig)
+    assert isinstance(cfg.acquisition, UCBAcquisitionConfig)
+    assert isinstance(cfg.acq_optimizer, RAASPOptimizerConfig)
+
+
+def test_turbo_one_config_factory_thompson_explicit():
+    cfg = turbo_one_config(acq_type=AcqType.THOMPSON)
+    assert isinstance(cfg.surrogate, GPSurrogateConfig)
+    assert isinstance(cfg.acquisition, DrawAcquisitionConfig)
+    assert isinstance(cfg.acq_optimizer, RAASPOptimizerConfig)
 
 
 def test_turbo_zero_config_factory():
