@@ -146,6 +146,10 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
 
         if surrogate.index_driver in ENN_INDEX_DRIVER_TO_RUST:
             overrides["index_driver"] = ENN_INDEX_DRIVER_TO_RUST[surrogate.index_driver]
+        if surrogate.num_fit_samples is not None:
+            overrides["num_fit_samples"] = int(surrogate.num_fit_samples)
+        if surrogate.num_fit_candidates is not None:
+            overrides["num_fit_candidates"] = int(surrogate.num_fit_candidates)
     trailing_obs = getattr(config, "trailing_obs", None)
     if trailing_obs is not None:
         overrides["trailing_obs"] = int(trailing_obs)
