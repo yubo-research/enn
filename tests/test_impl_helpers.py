@@ -8,6 +8,7 @@ from enn.turbo.config import (
     turbo_zero_config,
 )
 from enn.turbo.config.turbo_tr_config import TRLengthConfig
+from enn.turbo.components.builder import build_trust_region
 from enn.turbo.impl_helpers import (
     estimate_y_passthrough,
     get_x_center_fallback,
@@ -17,7 +18,7 @@ from enn.turbo.impl_helpers import (
 
 
 def _build_and_verify_tr(tr_config, rng, num_dim=3):
-    tr = tr_config.build(num_dim=num_dim, rng=rng)
+    tr = build_trust_region(tr_config, num_dim=num_dim, rng=rng)
     assert tr is not None
     assert hasattr(tr, "length")
     return tr

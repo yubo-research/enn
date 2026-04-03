@@ -154,6 +154,7 @@ impl EpistemicNearestNeighbors {
         }
 
         self.num_obs = self.train_x.nrows();
+        self.y_scale = Self::compute_scale(self.train_y.view(), 0.0);
 
         Ok(())
     }

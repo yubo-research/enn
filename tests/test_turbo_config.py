@@ -185,7 +185,8 @@ def test_candidate_gen_config_num_candidates_per_arms():
 
 def test_init_config_defaults():
     cfg = InitConfig()
-    assert isinstance(cfg.init_strategy, HybridInit)
+    assert cfg.init_strategy is None
+    assert isinstance(cfg.get_init_strategy(), HybridInit)
     assert cfg.num_init is None
 
 

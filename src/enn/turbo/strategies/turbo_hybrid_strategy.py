@@ -1,14 +1,13 @@
 from __future__ import annotations
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 import numpy as np
 from ..sampling import draw_lhd
 from ..types.appendable_array import AppendableArray
 from .optimization_strategy import OptimizationStrategy
 
 if TYPE_CHECKING:
-    from ..optimizer import Optimizer
     from ..types import TellInputs
 
 
@@ -68,7 +67,7 @@ class TurboHybridStrategy(OptimizationStrategy):
             result = np.vstack([result, extra])
         return result
 
-    def ask(self, opt: Optimizer, num_arms: int) -> np.ndarray:
+    def ask(self, opt: Any, num_arms: int) -> np.ndarray:
         if opt._tr_state.needs_restart():
             opt._tr_state.restart(opt._rng)
             opt._restart_generation += 1
@@ -98,9 +97,7 @@ class TurboHybridStrategy(OptimizationStrategy):
     def init_progress(self) -> tuple[int, int] | None:
         return (int(self._init_idx), int(self._num_init))
 
-    def tell(
-        self, opt: Optimizer, inputs: TellInputs, *, x_unit: np.ndarray
-    ) -> np.ndarray:
+    def tell(self, opt: Any, inputs: TellInputs, *, x_unit: np.ndarray) -> np.ndarray:
         x_all = opt._x_obs.view()
         y_all = opt._y_obs.view()
         y_var_all = opt._yvar_obs.view() if len(opt._yvar_obs) > 0 else None

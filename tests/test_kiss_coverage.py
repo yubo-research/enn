@@ -109,8 +109,9 @@ def test_observation_history_config_trailing_obs():
 
 def test_trust_region_config_protocol():
     from enn.turbo.config.trust_region import TrustRegionConfig, InitStrategy
+    from typing import get_args
 
-    assert hasattr(TrustRegionConfig, "build")
+    assert get_args(TrustRegionConfig)
     assert hasattr(InitStrategy, "create_runtime_strategy")
 
 

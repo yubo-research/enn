@@ -292,9 +292,11 @@ def test_acquisition_optimizer_protocol_compliance():
 
 
 def test_trust_region_protocol_from_config_build():
+    from enn.turbo.components.builder import build_trust_region
+
     tr_config = NoTRConfig()
     rng = np.random.default_rng(42)
-    tr = tr_config.build(num_dim=3, rng=rng)
+    tr = build_trust_region(tr_config, num_dim=3, rng=rng)
     assert hasattr(tr, "length")
     assert hasattr(tr, "compute_bounds_1d")
     assert hasattr(tr, "update")

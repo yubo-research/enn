@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from .rescalarize import Rescalarize
 from .turbo_tr_config import TRLengthConfig
-from .candidate_rv import CandidateRV
 from .multi_objective_config import MultiObjectiveConfig
 from .rescale_policy_config import RescalePolicyConfig
-
-if TYPE_CHECKING:
-    from numpy.random import Generator
-    from ..components.protocols import TrustRegion
 
 
 @dataclass(frozen=True)
@@ -44,14 +38,3 @@ class MorboTRConfig:
     @property
     def length_max(self) -> float:
         return self.length.length_max
-
-    def build(
-        self,
-        *,
-        num_dim: int,
-        rng: Generator,
-        candidate_rv: CandidateRV = CandidateRV.SOBOL,
-    ) -> TrustRegion:
-        from ..components.builder import build_trust_region
-
-        return build_trust_region(self, num_dim, rng, candidate_rv)

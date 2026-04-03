@@ -27,7 +27,7 @@ functions_per_file = 62
 interface_types_per_file = 3
 concrete_types_per_file = 4
 imported_names_per_file = 47
-cycle_size = 12
+cycle_size = 0
 indirect_dependencies = 91
 dependency_depth = 9
 

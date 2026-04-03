@@ -300,6 +300,7 @@ class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
             raise ValueError("yvar must be provided if model has existing yvar")
 
         self._num_obs = self._train_x.shape[0]
+        self._y_scale = self._compute_scale(self._train_y, 0.0)
         self._enn_index.add(x)
         if self._rust_model is not None:
             self._rust_model.add(x, y, yvar)

@@ -10,10 +10,9 @@ def validate_optimizer_config(cfg: Any) -> None:
         ParetoAcquisitionConfig,
         UCBAcquisitionConfig,
     )
-    from .init_strategies import LHDOnlyInit
     from .surrogate import GPSurrogateConfig, NoSurrogateConfig
 
-    if isinstance(cfg.init.init_strategy, LHDOnlyInit):
+    if type(cfg.init.init_strategy).__name__ == "LHDOnlyInit":
         if not isinstance(cfg.surrogate, NoSurrogateConfig):
             raise ValueError(
                 "init_strategy='lhd_only' requires NoSurrogateConfig surrogate"

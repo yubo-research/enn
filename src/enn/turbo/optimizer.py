@@ -46,7 +46,7 @@ class Optimizer:
         self._strategy = (
             strategy
             if strategy is not None
-            else config.init.init_strategy.create_runtime_strategy(
+            else config.init.get_init_strategy().create_runtime_strategy(
                 bounds=self._bounds, rng=self._rng, num_init=config.init.num_init
             )
         )
