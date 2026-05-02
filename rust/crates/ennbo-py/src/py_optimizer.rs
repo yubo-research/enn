@@ -18,7 +18,6 @@ pub fn parse_config_overrides_from_dict(
         let s: String = v.extract()?;
         overrides.index_driver = Some(match s.to_lowercase().as_str() {
             "exact" | "flat" => IndexDriver::Exact,
-            "kdtree" => IndexDriver::KDTree,
             "hnsw" => IndexDriver::HNSW,
             _ => return Err(PyValueError::new_err(format!("Unknown index_driver: {}", s))),
         });

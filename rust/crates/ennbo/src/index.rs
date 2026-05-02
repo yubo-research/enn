@@ -1,10 +1,8 @@
 //! K-Nearest Neighbors index for ENN.
 //!
-//! Provides efficient KNN search using exact matrix operations, K-d tree,
-//! or HNSW (Hierarchical Navigable Small World) graph.
+//! Provides efficient KNN search using exact matrix operations or HNSW
+//! (Hierarchical Navigable Small World) graph.
 
-use kdtree::distance::squared_euclidean;
-use kdtree::KdTree;
 use ndarray::{s, Array1, Array2, ArrayView2, Axis};
 use std::collections::BinaryHeap;
 use thiserror::Error;
@@ -32,8 +30,6 @@ pub enum IndexDriver {
     /// Use exact search with matrix operations.
     #[default]
     Exact,
-    /// Use K-d tree for approximate search.
-    KDTree,
     /// Use HNSW for approximate search.
     HNSW,
 }
@@ -52,8 +48,6 @@ pub struct ENNIndex {
     scale_x: bool,
     /// Search driver.
     driver: IndexDriver,
-    /// KD-tree backend (when driver is KDTree).
-    kdtree: Option<KdTree<f64, usize, Vec<f64>>>,
     /// HNSW backend (when driver is HNSW). T=f64 means points are &[f64].
     hnsw: Option<Hnsw<'static, f64, DistL2>>,
 }
@@ -75,11 +69,6 @@ impl ENNIndex {
         scale_x: bool,
         driver: IndexDriver,
     ) -> Self {
-        let kdtree = if driver == IndexDriver::KDTree && !train_x_scaled.is_empty() {
-            Some(Self::build_kdtree(&train_x_scaled, num_dim))
-        } else {
-            None
-        };
         let hnsw = if driver == IndexDriver::HNSW && !train_x_scaled.is_empty() {
             Some(Self::build_hnsw(&train_x_scaled))
         } else {
@@ -91,9 +80,13 @@ impl ENNIndex {
             x_scale,
             scale_x,
             driver,
-            kdtree,
             hnsw,
         }
+    }
+
+    /// Index search driver (needed to rebuild after rescaling training inputs).
+    pub fn driver(&self) -> IndexDriver {
+        self.driver
     }
 
     /// Build an HNSW index from training data.
@@ -115,16 +108,6 @@ impl ENNIndex {
         }
         hnsw.set_searching_mode(true);
         hnsw
-    }
-
-    /// Build a KD-tree from training data.
-    fn build_kdtree(train_x: &Array2<f64>, num_dim: usize) -> KdTree<f64, usize, Vec<f64>> {
-        let mut tree = KdTree::new(num_dim);
-        for (i, row) in train_x.outer_iter().enumerate() {
-            let pt: Vec<f64> = row.iter().copied().collect();
-            tree.add(pt, i).expect("kdtree add");
-        }
-        tree
     }
 
     /// Add new points to the index.
@@ -158,16 +141,6 @@ impl ENNIndex {
             self.train_x_scaled.view(),
             x_scaled.view()
         ];
-
-        // Update KD-tree if present
-        if let Some(ref mut tree) = self.kdtree {
-            for (i, row) in x_scaled.outer_iter().enumerate() {
-                let pt: Vec<f64> = row.iter().copied().collect();
-                tree.add(pt, start_idx + i).map_err(|e| {
-                    IndexError::InvalidParameter(format!("kdtree add: {}", e))
-                })?;
-            }
-        }
 
         // Update HNSW if present
         if let Some(ref mut hnsw) = self.hnsw {
@@ -230,7 +203,6 @@ impl ENNIndex {
         // Compute distances based on driver
         let (mut dist2s, mut indices) = match self.driver {
             IndexDriver::Exact => self.exact_search(&x_scaled.view(), k),
-            IndexDriver::KDTree => self.kdtree_search(&x_scaled.view(), k),
             IndexDriver::HNSW => self.hnsw_search(&x_scaled.view(), k),
         };
 
@@ -316,41 +288,6 @@ impl ENNIndex {
         (dist2s, indices)
     }
 
-    /// KD-tree search using kiddo/kdtree crate.
-    fn kdtree_search(
-        &self,
-        x: &ArrayView2<f64>,
-        k: usize,
-    ) -> (Array2<f64>, Array2<i64>) {
-        let Some(ref tree) = self.kdtree else {
-            return self.exact_search(x, k);
-        };
-        let n_query = x.nrows();
-        let mut dist2s = Array2::from_elem((n_query, k), f64::INFINITY);
-        let mut indices_arr = Array2::from_elem((n_query, k), -1i64);
-        for (i, row) in x.outer_iter().enumerate() {
-            let pt: Vec<f64> = row.iter().copied().collect();
-            match tree.nearest(&pt, k, &squared_euclidean) {
-                Ok(neighbors) => {
-                    for (j, (dist, &idx)) in neighbors.iter().enumerate().take(k) {
-                        dist2s[[i, j]] = *dist;
-                        indices_arr[[i, j]] = idx as i64;
-                    }
-                }
-                Err(_) => {
-                    // Fall back to exact for this query if kdtree fails
-                    let row_arr = row.to_owned().insert_axis(Axis(0));
-                    let (d, idx) = self.exact_search(&row_arr.view(), k);
-                    dist2s.row_mut(i).assign(&d.row(0));
-                    for j in 0..k {
-                        indices_arr[[i, j]] = idx[[0, j]];
-                    }
-                }
-            }
-        }
-        (dist2s, indices_arr)
-    }
-
     /// HNSW search using hnsw_rs. DistL2 returns L2 distance; we square for API.
     fn hnsw_search(
         &self,
@@ -374,6 +311,31 @@ impl ENNIndex {
                 indices_arr[[i, j]] = nb.d_id as i64;
             }
         }
+        // `hnsw.search` can return fewer than `k` neighbors; unfilled slots stay (-1, inf).
+        // Match Python `_pad_neighbor_cols_to_search_k`: repeat farthest retrieved id, +inf dist.
+        for i in 0..n_query {
+            let mut last_valid: Option<usize> = None;
+            for j in 0..k {
+                if indices_arr[[i, j]] >= 0 {
+                    last_valid = Some(j);
+                }
+            }
+            match last_valid {
+                Some(last) => {
+                    let far_id = indices_arr[[i, last]];
+                    for j in (last + 1)..k {
+                        indices_arr[[i, j]] = far_id;
+                        dist2s[[i, j]] = f64::INFINITY;
+                    }
+                }
+                None => {
+                    let row_arr = x.row(i).to_owned().insert_axis(Axis(0));
+                    let (d, idx) = self.exact_search(&row_arr.view(), k);
+                    dist2s.row_mut(i).assign(&d.row(0));
+                    indices_arr.row_mut(i).assign(&idx.row(0));
+                }
+            }
+        }
         (dist2s, indices_arr)
     }
 
@@ -392,6 +354,7 @@ impl ENNIndex {
 mod tests {
     use super::*;
     use ndarray::array;
+    use ndarray::Array2;
 
     #[test]
     fn test_index_creation() {
@@ -475,20 +438,6 @@ mod tests {
     }
 
     #[test]
-    fn test_kdtree_search() {
-        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
-        let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::KDTree);
-
-        let query = array![[0.0, 0.0]];
-        let (dist2s, indices) = index.search(&query.view(), 2, false).unwrap();
-
-        assert_eq!(indices[[0, 0]], 0);
-        assert_eq!(dist2s[[0, 0]], 0.0);
-        assert!(dist2s[[0, 1]] > 0.0);
-    }
-
-    #[test]
     fn test_hnsw_search() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let x_scale = array![1.0, 1.0];
@@ -500,6 +449,34 @@ mod tests {
         assert_eq!(indices[[0, 0]], 0);
         assert!(dist2s[[0, 0]] < 0.001);
         assert!(dist2s[[0, 1]] > 0.0);
+    }
+
+    /// Regression: `hnsw_search` pre-fills indices with -1; if `hnsw.search` returns
+    /// fewer than `k` neighbors, tail slots stay -1 (unsafe for `train_y[idx]`).
+    /// Python pads widened columns via `_pad_neighbor_cols_to_search_k`; Rust HNSW must not emit -1.
+    #[test]
+    fn test_hnsw_search_regression_all_indices_valid_for_k_equals_n() {
+        let n = 10usize;
+        let train_x = Array2::from_shape_fn((n, 2), |(i, j)| {
+            if j == 0 {
+                i as f64
+            } else {
+                (i * 13) as f64 % 5.0
+            }
+        });
+        let x_scale = array![1.0, 1.0];
+        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::HNSW);
+        let query = array![[0.25_f64, 0.25]];
+        let k = n as i32;
+        let (_dist2s, indices) = index.search(&query.view(), k, false).unwrap();
+        assert_eq!(indices.ncols(), n);
+        for j in 0..n {
+            let id = indices[[0, j]];
+            assert!(
+                id >= 0 && (id as usize) < n,
+                "neighbor slot j={j} must be a valid train row index, got id={id}"
+            );
+        }
     }
 
     #[test]

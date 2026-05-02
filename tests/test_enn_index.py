@@ -10,6 +10,25 @@ from enn.enn.enn_hash import (
 from enn.enn.enn_index import ENNIndex
 
 
+def test_enn_index_faiss_search_k_larger_than_n_train_never_emits_invalid_neighbor_index():
+    """Regression for FAISS padding with -1 when search_k > n_train.
+
+    NumPy integer array indexing interprets -1 as the last row, so ``y[idx]``
+    silently duplicates the final observation for fake neighbor slots.
+    """
+    rng = np.random.default_rng(0)
+    n_train = 3
+    train_x = rng.standard_normal((n_train, 2))
+    x_scale = np.ones((1, 2), dtype=float)
+    index = ENNIndex(train_x, num_dim=2, x_scale=x_scale, scale_x=False)
+    query = rng.standard_normal((1, 2))
+    search_k = 8
+    _dist2s, idx = index.search(query, search_k=search_k, exclude_nearest=False)
+    assert idx.shape == (1, search_k)
+    assert np.all(idx >= 0), "FAISS tail -1 is not a valid training index for gathers"
+    assert np.all(idx < n_train)
+
+
 def test_enn_index_init_and_search():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))

@@ -8,7 +8,7 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Python bindings for ENN core algorithms"
-readme = "../../README.md"
+readme = "../../../README.md"
 
 [lib]
 name = "enn_rust"

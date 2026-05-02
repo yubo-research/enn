@@ -291,3 +291,34 @@ def test_add_updates_y_scale_for_posterior_se():
     # se values should also match - this is where the bug manifests
     # Without the fix, se values differ by ~1000x
     np.testing.assert_allclose(post_incremental.se, post_fresh.se, rtol=0.01)
+
+
+def test_incremental_add_scale_x_recomputes_x_scale_like_fresh_model():
+    """Regression: with scale_x=True, add() should keep x normalization aligned with full data.
+
+    Bug: add() updates _y_scale from all y but leaves _x_scale fixed from __init__, so
+    neighbor distances use stale input scaling. Incremental model then diverges from
+    EpistemicNearestNeighbors built on the same stacked (x, y) in one shot.
+    """
+    rng = np.random.default_rng(42)
+    d = 3
+    n0, n1 = 20, 30
+    train_x0 = rng.standard_normal((n0, d))
+    train_y0 = rng.standard_normal((n0, 1))
+    m_inc = EpistemicNearestNeighbors(train_x0, train_y0, scale_x=True)
+    add_x = rng.standard_normal((n1, d)) * 50.0
+    add_y = rng.standard_normal((n1, 1))
+    for i in range(n1):
+        m_inc.add(add_x[i : i + 1], add_y[i : i + 1])
+
+    all_x = np.vstack([train_x0, add_x])
+    all_y = np.vstack([train_y0, add_y])
+    m_fresh = EpistemicNearestNeighbors(all_x, all_y, scale_x=True)
+
+    np.testing.assert_allclose(
+        m_inc._x_scale,
+        m_fresh._x_scale,
+        rtol=1e-6,
+        atol=1e-9,
+        err_msg="incremental add() must refresh _x_scale when scale_x=True",
+    )

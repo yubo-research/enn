@@ -142,8 +142,6 @@ impl EpistemicNearestNeighbors {
             ));
         }
 
-        self.index.add(x)?;
-
         self.train_x = ndarray::concatenate![Axis(0), self.train_x.view(), x.view()];
         self.train_y = ndarray::concatenate![Axis(0), self.train_y.view(), y.view()];
 
@@ -155,6 +153,21 @@ impl EpistemicNearestNeighbors {
 
         self.num_obs = self.train_x.nrows();
         self.y_scale = Self::compute_scale(self.train_y.view(), 0.0);
+
+        if self.scale_x {
+            self.x_scale = Self::compute_scale(self.train_x.view(), 1e-12);
+            self.train_x_scaled = &self.train_x / &self.x_scale.view().insert_axis(Axis(0));
+            let driver = self.index.driver();
+            self.index = ENNIndex::new(
+                self.train_x_scaled.clone(),
+                self.num_dim,
+                self.x_scale.clone(),
+                true,
+                driver,
+            );
+        } else {
+            self.index.add(x)?;
+        }
 
         Ok(())
     }

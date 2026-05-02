@@ -30,7 +30,6 @@ impl PyEpistemicNearestNeighbors {
     ) -> PyResult<Self> {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
-            "KDTree" | "kdtree" => ennbo::IndexDriver::KDTree,
             "HNSW" | "hnsw" => ennbo::IndexDriver::HNSW,
             _ => {
                 return Err(PyValueError::new_err(format!(

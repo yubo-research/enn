@@ -12,6 +12,69 @@ def _use_faiss() -> bool:
     return True
 
 
+def _pad_neighbor_cols_to_search_k(
+    dist2s: np.ndarray,
+    idx: np.ndarray,
+    *,
+    search_k: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Widen neighbor columns to ``search_k`` without FAISS -1 tail indices.
+
+    FAISS pads missing slots with -1; NumPy ``y[idx]`` would treat -1 as the last
+    row. Repeat the farthest retrieved neighbor index and use +inf distance.
+    """
+    import numpy as np
+
+    k_eff = int(dist2s.shape[1])
+    if k_eff >= search_k:
+        return dist2s, idx
+    if k_eff == 0:
+        n_query = int(dist2s.shape[0])
+        return (
+            np.full((n_query, search_k), np.inf, dtype=float),
+            np.full((n_query, search_k), -1, dtype=int),
+        )
+    n_query = int(dist2s.shape[0])
+    pad_w = search_k - k_eff
+    pad_dist = np.full((n_query, pad_w), np.inf, dtype=float)
+    far_idx = idx[:, k_eff - 1 : k_eff]
+    pad_idx = np.tile(far_idx, (1, pad_w))
+    return (
+        np.concatenate([dist2s, pad_dist], axis=1),
+        np.concatenate([idx, pad_idx], axis=1),
+    )
+
+
+def _numpy_l2_neighbor_search(
+    x_f32: np.ndarray,
+    train_x_scaled: np.ndarray,
+    *,
+    search_k: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    import numpy as np
+
+    n_query = int(x_f32.shape[0])
+    n_train = len(train_x_scaled)
+    k = min(search_k, n_train)
+    if k == 0:
+        return (
+            np.full((n_query, search_k), np.inf, dtype=float),
+            np.full((n_query, search_k), -1, dtype=int),
+        )
+    x2 = np.sum(x_f32**2, axis=1, keepdims=True)
+    y2 = np.sum(train_x_scaled**2, axis=1, keepdims=True).T
+    d2 = x2 + y2 - 2.0 * (x_f32 @ train_x_scaled.T)
+    part = np.argpartition(d2, kth=k - 1, axis=1)[:, :k]
+    rows = np.arange(n_query)[:, None]
+    d2_part = d2[rows, part]
+    order = np.argsort(d2_part, axis=1)
+    part_sorted = part[rows, order]
+    d2_sorted = d2_part[rows, order]
+    dist_k = d2_sorted.astype(float)
+    idx_k = part_sorted.astype(int)
+    return _pad_neighbor_cols_to_search_k(dist_k, idx_k, search_k=search_k)
+
+
 class ENNIndex:
     def __init__(
         self,
@@ -85,27 +148,18 @@ class ENNIndex:
         x_scaled = x / self._x_scale if self._scale_x else x
         x_f32 = x_scaled.astype(np.float32, copy=False)
         if self._index is not None:
-            dist2s_full, idx_full = self._index.search(x_f32, search_k)
+            n_train = len(self._train_x_scaled)
+            k_eff = min(search_k, n_train)
+            dist2s_full, idx_full = self._index.search(x_f32, k_eff)
             dist2s_full = dist2s_full.astype(float)
             idx_full = idx_full.astype(int)
+            dist2s_full, idx_full = _pad_neighbor_cols_to_search_k(
+                dist2s_full, idx_full, search_k=search_k
+            )
         else:
-            n_query = x_f32.shape[0]
-            n_train = len(self._train_x_scaled)
-            k = min(search_k, n_train)
-            dist2s_full = np.full((n_query, search_k), np.inf, dtype=float)
-            idx_full = np.full((n_query, search_k), -1, dtype=int)
-            if k:
-                x2 = np.sum(x_f32**2, axis=1, keepdims=True)
-                y2 = np.sum(self._train_x_scaled**2, axis=1, keepdims=True).T
-                d2 = x2 + y2 - 2.0 * (x_f32 @ self._train_x_scaled.T)
-                part = np.argpartition(d2, kth=k - 1, axis=1)[:, :k]
-                rows = np.arange(n_query)[:, None]
-                d2_part = d2[rows, part]
-                order = np.argsort(d2_part, axis=1)
-                part_sorted = part[rows, order]
-                d2_sorted = d2_part[rows, order]
-                idx_full[:, :k] = part_sorted.astype(int)
-                dist2s_full[:, :k] = d2_sorted.astype(float)
+            dist2s_full, idx_full = _numpy_l2_neighbor_search(
+                x_f32, self._train_x_scaled, search_k=search_k
+            )
         if exclude_nearest:
             dist2s_full = dist2s_full[:, 1:]
             idx_full = idx_full[:, 1:]
