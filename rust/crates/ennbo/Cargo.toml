@@ -23,8 +23,3 @@ hnsw_rs = "0.3"
 approx = "0.5"
 numpy = "0.22"
 rand_chacha = "0.3"
-criterion = "0.5"
-
-[[bench]]
-name = "inefficiencies"
-harness = false

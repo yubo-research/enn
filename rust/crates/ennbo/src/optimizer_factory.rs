@@ -87,3 +87,26 @@ pub fn create_optimizer_lhd_with_overrides(
     let strategy = Strategy::init(InitStrategy::LHD, num_init);
     Optimizer::new_with_strategy(bounds, config, strategy, rng)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    #[test]
+    fn create_optimizer_public_wrappers_smoke() {
+        let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+        let mut rng = StdRng::seed_from_u64(101);
+
+        let mut enn = create_optimizer_enn(bounds.clone(), 3, 2, &mut rng).unwrap();
+        let _ = enn.ask(1, &mut rng).unwrap();
+
+        let mut zero = create_optimizer_zero(bounds.clone(), 2, &mut rng).unwrap();
+        let _ = zero.ask(1, &mut rng).unwrap();
+
+        let mut lhd = create_optimizer_lhd(bounds, 2, &mut rng).unwrap();
+        let _ = lhd.ask(1, &mut rng).unwrap();
+    }
+}

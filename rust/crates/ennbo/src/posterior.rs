@@ -948,6 +948,24 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_scale_for_conditional_branches() {
+        use ndarray::Array2;
+
+        let train = array![[1.0f64]];
+        let whatif_empty: Array2<f64> = Array2::zeros((0, 1));
+        let s0 = compute_scale_for_conditional(&train.view(), &whatif_empty.view());
+        assert_eq!(s0.len(), 1);
+        assert!((s0[0] - 1.0).abs() < 1e-12);
+
+        let train_c = array![[1.0, 2.0], [1.0, 3.0]];
+        let whatif_c = array![[1.0, 0.0]];
+        let s1 = compute_scale_for_conditional(&train_c.view(), &whatif_c.view());
+        assert_eq!(s1.len(), 2);
+        assert!((s1[0] - 1.0).abs() < 1e-9, "constant column uses scale=1");
+        assert!(s1[1] > 0.0);
+    }
+
+    #[test]
     fn test_conditional_posterior_y_whatif_shape_error_reports_y_whatif_shape() {
         let model = create_test_model();
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();

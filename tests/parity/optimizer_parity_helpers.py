@@ -8,6 +8,26 @@ from enn import create_optimizer
 from enn.turbo.rust_optimizer import is_rust_supported_config
 
 
+def assert_rust_optimizer_tr_obs_after_cycles(
+    bounds: np.ndarray,
+    config,
+    *,
+    opt_seed: int,
+    cycle_rng_seed: int,
+    obj_fn,
+) -> None:
+    rng = np.random.default_rng(cycle_rng_seed)
+    opt = get_rust_optimizer(bounds, config, seed=opt_seed)
+    x0 = opt.ask(num_arms=2)
+    assert opt.tr_obs_count == 0
+    y0 = obj_fn(x0).reshape(-1, 1)
+    opt.tell(x0, y0)
+    assert opt.tr_obs_count == 2
+    _, _, best = run_ask_tell_cycle(opt, rng, num_arms=2, obj_fn=obj_fn, num_cycles=3)
+    assert opt.tr_obs_count == 8
+    assert best >= -1.0
+
+
 def run_ask_tell_cycle(opt, rng, num_arms: int, obj_fn, num_cycles: int):
     """Run num_cycles ask/tell cycles, return xs, ys, and final best y."""
     xs, ys = [], []

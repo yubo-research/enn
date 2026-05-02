@@ -10,12 +10,12 @@
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
 
-mod py_hypervolume;
-mod py_hash;
-mod py_util;
-mod py_model;
-mod py_fit;
-mod py_optimizer;
+pub mod py_hypervolume;
+pub mod py_hash;
+pub mod py_util;
+pub mod py_model;
+pub mod py_fit;
+pub mod py_optimizer;
 
 /// Hypervolume calculation module
 #[pymodule]

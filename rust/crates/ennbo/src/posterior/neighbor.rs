@@ -218,3 +218,42 @@ pub(crate) fn get_conditional_neighbor_data(
     let dist2s = dist2_all.slice_axis(Axis(1), ndarray::Slice::from(..k_out)).to_owned();
     Ok(Some(NeighborData::new(dist2s, ids_all, y_neighbors, k_out)))
 }
+
+#[cfg(test)]
+mod pairwise_tests {
+    use ndarray::{array, Array2};
+    use super::pairwise_sq_l2;
+
+    #[test]
+    fn pairwise_sq_l2_scaled_and_unscaled() {
+        let x = array![[0.0, 0.0], [1.0, 0.0]];
+        let y = array![[0.0, 1.0], [1.0, 1.0]];
+        let scale = array![1.0, 2.0];
+        let d_unscaled = pairwise_sq_l2(&x.view(), &y.view(), false, &scale.view());
+        assert_eq!(d_unscaled.nrows(), 2);
+        assert_eq!(d_unscaled.ncols(), 2);
+        let d_scaled = pairwise_sq_l2(&x.view(), &y.view(), true, &scale.view());
+        assert_eq!(d_scaled.shape(), d_unscaled.shape());
+        assert!(d_scaled.iter().all(|v| v.is_finite() && *v >= 0.0));
+    }
+
+    #[test]
+    fn pairwise_sq_l2_single_row_each() {
+        let x = array![[3.0, 4.0]];
+        let y = array![[0.0, 0.0]];
+        let scale = array![1.0, 1.0];
+        let d = pairwise_sq_l2(&x.view(), &y.view(), false, &scale.view());
+        assert_eq!(d.nrows(), 1);
+        assert_eq!(d.ncols(), 1);
+        assert!((d[[0, 0]] - 25.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pairwise_sq_l2_empty_y_cols() {
+        let x = array![[1.0, 2.0]];
+        let y = Array2::<f64>::zeros((1, 2));
+        let scale = array![1.0, 1.0];
+        let d = pairwise_sq_l2(&x.view(), &y.view(), false, &scale.view());
+        assert_eq!(d[[0, 0]], 5.0);
+    }
+}

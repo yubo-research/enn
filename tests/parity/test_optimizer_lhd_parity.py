@@ -33,20 +33,13 @@ def test_optimizer_lhd_contract_and_shape():
 
 def test_optimizer_lhd_ask_tell_state():
     """Rust LHD_ONLY: tr_obs_count increases after tell."""
-    from .optimizer_parity_helpers import get_rust_optimizer, run_ask_tell_cycle
+    from .optimizer_parity_helpers import assert_rust_optimizer_tr_obs_after_cycles
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     config = lhd_only_config(num_init=5)
-    rng = np.random.default_rng(37)
-    opt = get_rust_optimizer(bounds, config, seed=37)
-    x0 = opt.ask(num_arms=2)
-    assert opt.tr_obs_count == 0
-    y0 = _obj(x0).reshape(-1, 1)
-    opt.tell(x0, y0)
-    assert opt.tr_obs_count == 2
-    _, _, best = run_ask_tell_cycle(opt, rng, num_arms=2, obj_fn=_obj, num_cycles=3)
-    assert opt.tr_obs_count == 8
-    assert best >= -1.0
+    assert_rust_optimizer_tr_obs_after_cycles(
+        bounds, config, opt_seed=37, cycle_rng_seed=37, obj_fn=_obj
+    )
 
 
 def test_optimizer_lhd_vs_python_convergence_tolerance():

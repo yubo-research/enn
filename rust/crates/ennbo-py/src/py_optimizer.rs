@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-fn parse_config_overrides_from_dict(
+pub fn parse_config_overrides_from_dict(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<ennbo::ConfigOverrides> {
     use ennbo::{AcquisitionConfig, CandidateRV, ConfigOverrides};

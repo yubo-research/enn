@@ -9,11 +9,10 @@ keywords.workspace = true
 categories.workspace = true
 description = "Python bindings for ENN core algorithms"
 readme = "../../README.md"
-build = "build.rs"
 
 [lib]
 name = "enn_rust"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ennbo = { path = "../ennbo", version = "0.1" }
@@ -21,6 +20,3 @@ ndarray = { workspace = true }
 numpy = { workspace = true }
 pyo3 = { workspace = true }
 rand = { workspace = true }
-
-[build-dependencies]
-pyo3-build-config = "0.22"
