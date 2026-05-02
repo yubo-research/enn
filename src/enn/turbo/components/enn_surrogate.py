@@ -1,11 +1,15 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
+
 import numpy as np
+
 from .posterior_result import PosteriorResult
 from .surrogate_result import SurrogateResult
 
 if TYPE_CHECKING:
     from numpy.random import Generator
+
     from ..config.surrogate import ENNSurrogateConfig
 
 
@@ -28,8 +32,8 @@ class ENNSurrogate:
         num_steps: int = 0,
         rng: Generator | None = None,
     ) -> SurrogateResult:
-        from ..proposal import mk_enn
         from ..config.enn_index_driver import ENNIndexDriver
+        from ..proposal import mk_enn
 
         k = self._config.k if self._config.k is not None else 10
         if (

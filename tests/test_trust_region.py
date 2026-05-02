@@ -4,20 +4,20 @@ import numpy as np
 import pytest
 from scipy.stats import qmc
 
+from enn.turbo.config import Rescalarize
 from enn.turbo.config.morbo_tr_config import (
     MorboTRConfig,
     MultiObjectiveConfig,
     RescalePolicyConfig,
 )
 from enn.turbo.config.no_tr_config import NoTRConfig
-from enn.turbo.config import Rescalarize
 from enn.turbo.config.turbo_tr_config import TRLengthConfig, TurboTRConfig
 from enn.turbo.morbo_trust_region import MorboTrustRegion
 from enn.turbo.no_trust_region import NoTrustRegion
+from enn.turbo.turbo_trust_region import TurboTrustRegion
 from enn.turbo.turbo_utils import (
     compute_full_box_bounds_1d,
 )
-from enn.turbo.turbo_trust_region import TurboTrustRegion
 
 
 def test_no_trust_region_init():

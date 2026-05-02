@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 import conftest
 import numpy as np
 import pytest
-from enn.turbo.optimizer import create_optimizer
+
 from enn.turbo.config import (
     AcqType,
-    CandidateRV,
     CandidateGenConfig,
+    CandidateRV,
     ENNFitConfig,
     ENNSurrogateConfig,
     MorboTRConfig,
@@ -18,6 +19,7 @@ from enn.turbo.config import (
     turbo_one_config,
     turbo_zero_config,
 )
+from enn.turbo.optimizer import create_optimizer
 
 
 def _make_optimizer(*, bounds, config, rng):
@@ -81,6 +83,7 @@ def test_optimizer_accepts_list_bounds():
 
 def test_optimizer_uniform_candidates_never_calls_sobol():
     from unittest import mock
+
     from enn import create_optimizer
     from enn.turbo.optimizer_config import turbo_zero_config
 

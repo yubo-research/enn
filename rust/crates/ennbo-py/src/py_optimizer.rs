@@ -70,6 +70,12 @@ fn parse_config_overrides_from_dict(
     if let Some(v) = dict.get_item("trailing_obs")? {
         overrides.trailing_obs = Some(v.extract::<usize>()?);
     }
+    if let Some(v) = dict.get_item("num_fit_samples")? {
+        overrides.num_fit_samples = Some(v.extract::<usize>()?);
+    }
+    if let Some(v) = dict.get_item("num_fit_candidates")? {
+        overrides.num_fit_candidates = Some(v.extract::<usize>()?);
+    }
     Ok(overrides)
 }
 

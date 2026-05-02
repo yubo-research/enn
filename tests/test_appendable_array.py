@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from enn.turbo.types.appendable_array import AppendableArray
 
 

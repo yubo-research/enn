@@ -11,16 +11,20 @@ import pytest
 
 from enn.enn.enn_util import (
     calculate_sobol_indices,
-    standardize_y,
     pareto_front_2d_maximize,
+    standardize_y,
 )
 
 # Try to import Rust implementation
 try:
     from enn._rust import (
         calculate_sobol_indices as rust_calculate_sobol_indices,
-        standardize_y as rust_standardize_y,
+    )
+    from enn._rust import (
         pareto_front_2d_maximize as rust_pareto_front,
+    )
+    from enn._rust import (
+        standardize_y as rust_standardize_y,
     )
 
     RUST_AVAILABLE = True

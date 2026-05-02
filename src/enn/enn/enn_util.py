@@ -1,11 +1,16 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from enn._rust import (
     calculate_sobol_indices as _rust_calculate_sobol_indices,
+)
+from enn._rust import (
     pareto_front_2d_maximize as _rust_pareto_front_2d_maximize,
+)
+from enn._rust import (
     standardize_y as _rust_standardize_y,
 )
 

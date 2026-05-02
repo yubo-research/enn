@@ -3,6 +3,8 @@
 //! This crate provides the algorithmic core of the Epistemic Nearest Neighbors
 //! library, with implementations designed for parity with the Python reference.
 
+#![allow(clippy::pedantic, clippy::nursery, clippy::cargo)]
+
 pub mod acquisition;
 pub mod candidates;
 pub mod config;

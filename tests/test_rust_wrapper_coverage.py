@@ -85,6 +85,8 @@ def test__rust_module_exports_optimizer_when_available():
 
 
 def test_rust_optimizer_factory_rust_and_python_paths(monkeypatch):
+    import enn.turbo.optimizer as py_opt
+    import enn.turbo.rust_optimizer as ro
     from enn.turbo.config import (
         AcqType,
         ENNFitConfig,
@@ -92,8 +94,6 @@ def test_rust_optimizer_factory_rust_and_python_paths(monkeypatch):
         turbo_enn_config,
         turbo_one_config,
     )
-    import enn.turbo.rust_optimizer as ro
-    import enn.turbo.optimizer as py_opt
 
     created = {}
 
@@ -126,8 +126,8 @@ def test_rust_optimizer_factory_rust_and_python_paths(monkeypatch):
 
 
 def test_rust_optimizer_factory_no_surrogate_path(monkeypatch):
-    from enn.turbo.config import turbo_zero_config
     import enn.turbo.rust_optimizer as ro
+    from enn.turbo.config import turbo_zero_config
 
     called = {}
 
@@ -145,8 +145,8 @@ def test_rust_optimizer_factory_no_surrogate_path(monkeypatch):
 
 
 def test_rust_optimizer_factory_lhd_only_path(monkeypatch):
-    from enn.turbo.config import lhd_only_config
     import enn.turbo.rust_optimizer as ro
+    from enn.turbo.config import lhd_only_config
 
     called = {}
 

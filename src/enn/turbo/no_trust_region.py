@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
 from .turbo_utils import ScalarIncumbentMixin, compute_full_box_bounds_1d
 
 if TYPE_CHECKING:
     import numpy as np
+
     from .components.incumbent_selector import IncumbentSelector
     from .config.no_tr_config import NoTRConfig
 

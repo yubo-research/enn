@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
+
 from .candidate_rv import CandidateRV
-from .raasp_driver import RAASPDriver
 from .num_candidates_fn import NumCandidatesFn, default_num_candidates
+from .raasp_driver import RAASPDriver
 
 
 @dataclass(frozen=True)

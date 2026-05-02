@@ -7,11 +7,8 @@ if TYPE_CHECKING:
 
 
 def _use_faiss() -> bool:
-    import os
-    import sys
-
-    if sys.platform == "darwin":
-        return os.environ.get("ENN_USE_FAISS", "0") == "1"
+    # if sys.platform == "darwin":
+    #     return os.environ.get("ENN_USE_FAISS", "0") == "1"
     return True
 
 

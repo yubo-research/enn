@@ -1,5 +1,7 @@
 //! Benchmarks for x_obs/y_obs cache, exact_search memory, and ENN incremental fit.
 
+#![allow(clippy::pedantic, clippy::nursery)]
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use ndarray::{Array1, Array2};
 use rand::Rng;

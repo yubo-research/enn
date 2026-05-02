@@ -1,4 +1,5 @@
 import numpy as np
+
 from enn import create_optimizer
 from enn.benchmarks import DoubleAckley
 from enn.turbo.config import MorboTRConfig, MultiObjectiveConfig, turbo_one_config

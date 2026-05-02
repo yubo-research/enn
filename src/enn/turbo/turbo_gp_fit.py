@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from typing import Any
+
 from enn.enn.enn_util import standardize_y
+
 from .types import GPDataPrep, GPFitResult
 
 
@@ -55,6 +58,7 @@ def _build_gp_model(
     import torch
     from gpytorch.constraints import Interval
     from gpytorch.likelihoods import GaussianLikelihood
+
     from .turbo_gp import TurboGP
     from .turbo_gp_noisy import TurboGPNoisy
 

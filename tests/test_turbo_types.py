@@ -1,4 +1,5 @@
 import numpy as np
+
 from enn.turbo.types import (
     GPDataPrep,
     GPFitResult,

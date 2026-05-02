@@ -24,3 +24,7 @@ rust/crates/ennbo/src/posterior/neighbor.rs
 rust/crates/ennbo/src/strategy.rs
 # Rust optimizer wrapper: _ObsView and create_optimizer exercised via parity tests.
 src/enn/turbo/rust_optimizer.py
+# Conditional posterior helpers split from enn_conditional.py; covered by compute_conditional_posterior / draw tests.
+src/enn/enn/enn_conditional_helpers.py
+# Config overrides: many simple if-let branches for different override types; exercised by test.
+rust/crates/ennbo/src/config.rs

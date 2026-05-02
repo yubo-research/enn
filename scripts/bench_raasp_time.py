@@ -32,9 +32,10 @@ def _bench_one(
     rep_seed: int,
     box: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> float:
-    from enn.turbo.turbo_utils import generate_raasp_candidates
-    from enn.turbo.config.candidate_rv import CandidateRV
     from scipy.stats import qmc
+
+    from enn.turbo.config.candidate_rv import CandidateRV
+    from enn.turbo.turbo_utils import generate_raasp_candidates
 
     center, lb, ub = box
     rng = np.random.default_rng(rep_seed)

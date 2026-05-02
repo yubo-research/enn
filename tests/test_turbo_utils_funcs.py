@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import conftest
 import numpy as np
 import pytest
 from scipy.stats import qmc
+
 from enn.turbo.turbo_utils import (
     argmax_random_tie,
     from_unit,

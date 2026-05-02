@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
 from .turbo_utils import ScalarIncumbentMixin
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.random import Generator
+
     from .components.incumbent_selector import IncumbentSelector
     from .config.turbo_tr_config import TurboTRConfig
 

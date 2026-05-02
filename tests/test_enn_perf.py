@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import time
+
 import numpy as np
 import pytest
+
 from enn import EpistemicNearestNeighbors, enn_fit
 from enn.enn.enn_params import PosteriorFlags
 

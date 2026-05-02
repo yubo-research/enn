@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -12,15 +11,13 @@ from .components.builder import (
     build_surrogate,
     build_trust_region,
 )
-from .config.candidate_rv import CandidateRV
 from .strategies import OptimizationStrategy
 from .types.appendable_array import AppendableArray
 from .types.telemetry import Telemetry
 
-if TYPE_CHECKING:
-    from numpy.random import Generator
+from numpy.random import Generator
 
-    from .config.optimizer_config import OptimizerConfig
+from .config.optimizer_config import OptimizerConfig
 
 
 class Optimizer:
@@ -144,50 +141,25 @@ class Optimizer:
         *,
         num_arms: int,
     ) -> np.ndarray:
-        if lengthscales is not None:
-            lengthscales = np.asarray(lengthscales, dtype=float).reshape(-1)
-            if not np.all(np.isfinite(lengthscales)):
-                raise ValueError("lengthscales must be finite")
-        num_candidates = int(
-            self._config.candidates.num_candidates(
-                num_dim=self._num_dim, num_arms=num_arms
-            )
+        from .optimizer_generate import (
+            _CandidateGenContext,
+            generate_optimizer_candidates,
         )
-        if num_candidates <= 0:
-            raise ValueError(num_candidates)
-        candidate_rv = self._config.candidate_rv
-        if candidate_rv == CandidateRV.SOBOL:
-            from scipy.stats import qmc
 
-            sobol_seed = turbo_optimizer_utils.sobol_seed_for_state(
-                self._sobol_seed_base,
-                restart_generation=self._restart_generation,
-                n_obs=len(self._x_obs),
-                num_arms=num_arms,
-            )
-            sobol_engine = qmc.Sobol(d=self._num_dim, scramble=True, seed=sobol_seed)
-        else:
-            sobol_engine = None
-        if getattr(self._tr_state, "uses_custom_candidate_gen", False):
-            return self._tr_state.generate_candidates(
-                x_center,
-                lengthscales,
-                num_candidates,
-                rng=self._rng,
-                sobol_engine=sobol_engine,
-                raasp_driver=self._config.raasp_driver,
-                num_pert=20,
-            )
-        return turbo_utils.generate_tr_candidates(
-            self._tr_state.compute_bounds_1d,
+        ctx = _CandidateGenContext(
+            config=self._config,
+            tr_state=self._tr_state,
+            num_dim=self._num_dim,
+            sobol_seed_base=self._sobol_seed_base,
+            restart_generation=self._restart_generation,
+            rng=self._rng,
+        )
+        return generate_optimizer_candidates(
+            ctx,
             x_center,
             lengthscales,
-            num_candidates,
-            rng=self._rng,
-            candidate_rv=candidate_rv,
-            sobol_engine=sobol_engine,
-            raasp_driver=self._config.raasp_driver,
-            num_pert=20,
+            len(self._x_obs),
+            num_arms=num_arms,
         )
 
     def _validate_tell_inputs(

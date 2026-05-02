@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
+
 import numpy as np
+
 from .posterior_result import PosteriorResult
 from .surrogate_result import SurrogateResult
 
@@ -78,6 +81,7 @@ class GPSurrogate:
 
     def predict(self, x: np.ndarray) -> PosteriorResult:
         import torch
+
         from ..turbo_utils import get_gp_posterior_suppress_warning
 
         if self._model is None:
@@ -118,6 +122,7 @@ class GPSurrogate:
     def sample(self, x: np.ndarray, num_samples: int, rng: Generator) -> np.ndarray:
         import gpytorch
         import torch
+
         from ..turbo_utils import torch_seed_context
 
         if self._model is None:

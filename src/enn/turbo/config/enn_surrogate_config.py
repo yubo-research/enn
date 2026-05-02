@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from .enn_index_driver import ENNIndexDriver
+
 from .enn_fit_config import ENNFitConfig
+from .enn_index_driver import ENNIndexDriver
 
 
 @dataclass(frozen=True)

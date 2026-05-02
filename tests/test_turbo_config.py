@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from enn.turbo.config import Rescalarize
-from enn.turbo.config.turbo_tr_config import TRLengthConfig
 from enn.turbo.config import (
     AcqType,
     CandidateGenConfig,
@@ -25,6 +23,7 @@ from enn.turbo.config import (
     ParetoAcquisitionConfig,
     RAASPOptimizerConfig,
     RandomAcquisitionConfig,
+    Rescalarize,
     RescalePolicyConfig,
     TurboTRConfig,
     UCBAcquisitionConfig,
@@ -33,6 +32,7 @@ from enn.turbo.config import (
     turbo_one_config,
     turbo_zero_config,
 )
+from enn.turbo.config.turbo_tr_config import TRLengthConfig
 
 
 def test_turbo_tr_config_defaults():

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -34,6 +35,7 @@ def make_select_sobol_fn(bounds, rng):
 
 def make_enn_model(n=20, d=3, seed=0, yvar_scale=0.1):
     import numpy as np
+
     from enn.enn.enn_class import EpistemicNearestNeighbors
 
     rng = np.random.default_rng(seed)

@@ -41,10 +41,10 @@ class TestPublicAPIExports:
     def test_config_classes(self):
         """All config classes are available and constructible."""
         from enn import (
-            OptimizerConfig,
-            TurboTRConfig,
             MorboTRConfig,
             NoTRConfig,
+            OptimizerConfig,
+            TurboTRConfig,
         )
 
         # These are dataclasses or similar - should be constructible
@@ -56,10 +56,10 @@ class TestPublicAPIExports:
     def test_config_factory_functions(self):
         """All config factory functions are callable."""
         from enn import (
+            lhd_only_config,
+            turbo_enn_config,
             turbo_one_config,
             turbo_zero_config,
-            turbo_enn_config,
-            lhd_only_config,
         )
 
         assert callable(turbo_one_config)
@@ -75,7 +75,7 @@ class TestPublicAPIExports:
 
     def test_enum_types(self):
         """Enum types are available."""
-        from enn import CandidateRV, InitStrategy, AcqType
+        from enn import AcqType, CandidateRV, InitStrategy
 
         assert inspect.isclass(CandidateRV)
         assert inspect.isclass(InitStrategy)

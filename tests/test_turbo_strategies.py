@@ -1,16 +1,19 @@
 from __future__ import annotations
+
 import numpy as np
 import pytest
-from enn.turbo.config import HybridInit, LHDOnlyInit
-from enn.turbo.config.validation import validate_optimizer_config
-from enn.turbo.optimizer import Optimizer, create_optimizer
+
 from enn.turbo.config import (
     GPSurrogateConfig,
+    HybridInit,
     InitConfig,
+    LHDOnlyInit,
     RAASPOptimizerConfig,
     RandomAcquisitionConfig,
     turbo_zero_config,
 )
+from enn.turbo.config.validation import validate_optimizer_config
+from enn.turbo.optimizer import Optimizer, create_optimizer
 from enn.turbo.sampling import draw_lhd
 from enn.turbo.strategies import LHDOnlyStrategy, TurboHybridStrategy
 
@@ -78,8 +81,7 @@ def test_turbo_hybrid_fallback_executes_when_init_points_exhausted_mid_batch():
 
 
 def test_optimizer_direct_constructor_builds_strategy_by_default():
-    from enn.turbo.components import NoSurrogate
-    from enn.turbo.components import RandomAcqOptimizer
+    from enn.turbo.components import NoSurrogate, RandomAcqOptimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)

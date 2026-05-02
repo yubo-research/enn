@@ -1,5 +1,8 @@
 from __future__ import annotations
+
 import numpy as np
+
+from enn.turbo.components.builder import build_trust_region
 from enn.turbo.config import (
     MorboTRConfig,
     MultiObjectiveConfig,
@@ -8,7 +11,6 @@ from enn.turbo.config import (
     turbo_zero_config,
 )
 from enn.turbo.config.turbo_tr_config import TRLengthConfig
-from enn.turbo.components.builder import build_trust_region
 from enn.turbo.impl_helpers import (
     estimate_y_passthrough,
     get_x_center_fallback,
@@ -101,8 +103,8 @@ def test_handle_restart_check_multi_objective_single():
 
 
 def test_handle_restart_check_multi_objective_multi():
-    from enn.turbo.config.morbo_tr_config import RescalePolicyConfig
     from enn.turbo.config import Rescalarize
+    from enn.turbo.config.morbo_tr_config import RescalePolicyConfig
     from enn.turbo.morbo_trust_region import MorboTrustRegion
 
     rng = np.random.default_rng(42)

@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
 from scipy.stats import qmc
-from enn.turbo.turbo_utils import generate_tr_candidates, generate_tr_candidates_fast
+
 from enn.turbo.config import CandidateRV, RAASPDriver
+from enn.turbo.turbo_utils import generate_tr_candidates, generate_tr_candidates_fast
 
 
 def test_candidate_generation_statistical_properties():

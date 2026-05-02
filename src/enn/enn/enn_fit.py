@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
 import numpy as np
 
-from enn._rust import subsample_loglik as _rust_subsample_loglik
-from enn._rust import enn_fit as _rust_enn_fit
 from enn._rust import ENNParams as RustENNParams
+from enn._rust import enn_fit as _rust_enn_fit
+from enn._rust import subsample_loglik as _rust_subsample_loglik
 
 if TYPE_CHECKING:
     from numpy.random import Generator

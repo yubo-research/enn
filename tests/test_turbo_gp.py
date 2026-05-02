@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import warnings
+
 import numpy as np
 import pytest
 import torch
@@ -7,6 +9,7 @@ from gpytorch.constraints import Interval
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.likelihoods import FixedNoiseGaussianLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
+
 from enn.turbo.components.gp_surrogate import GPSurrogate
 from enn.turbo.turbo_gp import TurboGP
 from enn.turbo.turbo_gp_base import TurboGPBase

@@ -1,7 +1,7 @@
 from __future__ import annotations
+
 import numpy as np
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers (reduce duplication across config/trust-region tests)
@@ -23,8 +23,8 @@ def _morbo_trust_region():
 
 
 def _turbo_trust_region():
-    from enn.turbo.turbo_trust_region import TurboTrustRegion
     from enn.turbo.config import TurboTRConfig
+    from enn.turbo.turbo_trust_region import TurboTrustRegion
 
     tr = TurboTrustRegion(config=TurboTRConfig(), num_dim=5)
     tr.validate_request(4)
@@ -40,8 +40,8 @@ def _enn_model():
 
 
 def _optimizer():
-    from enn.turbo.optimizer import create_optimizer
     from enn.turbo.config import turbo_zero_config
+    from enn.turbo.optimizer import create_optimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]])
     return create_optimizer(
@@ -56,10 +56,10 @@ def _optimizer():
 
 def test_morbo_tr_config_rescalarize():
     from enn.turbo.config import (
-        RescalePolicyConfig,
-        Rescalarize,
         MorboTRConfig,
         MultiObjectiveConfig,
+        Rescalarize,
+        RescalePolicyConfig,
     )
 
     mo = MultiObjectiveConfig(num_metrics=2, alpha=0.05)
@@ -90,7 +90,7 @@ def test_turbo_tr_config_properties():
 
 
 def test_enn_surrogate_config_properties():
-    from enn.turbo.config import ENNSurrogateConfig, ENNFitConfig
+    from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig
 
     cfg = ENNSurrogateConfig(
         fit=ENNFitConfig(num_fit_samples=50, num_fit_candidates=30)
@@ -108,8 +108,9 @@ def test_observation_history_config_trailing_obs():
 
 
 def test_trust_region_config_protocol():
-    from enn.turbo.config.trust_region import TrustRegionConfig, InitStrategy
     from typing import get_args
+
+    from enn.turbo.config.trust_region import InitStrategy, TrustRegionConfig
 
     assert get_args(TrustRegionConfig)
     assert hasattr(InitStrategy, "create_runtime_strategy")
@@ -128,7 +129,7 @@ def test_num_candidates_fn_protocol():
 
 
 def test_optimizer_config_properties():
-    from enn.turbo.config import OptimizerConfig, MorboTRConfig, MultiObjectiveConfig
+    from enn.turbo.config import MorboTRConfig, MultiObjectiveConfig, OptimizerConfig
 
     cfg = OptimizerConfig()
     # num_metrics
@@ -169,8 +170,8 @@ def test_turbo_trust_region_properties():
 
 
 def test_no_trust_region_num_metrics():
-    from enn.turbo.no_trust_region import NoTrustRegion
     from enn.turbo.config import NoTRConfig
+    from enn.turbo.no_trust_region import NoTrustRegion
 
     tr = NoTrustRegion(config=NoTRConfig(), num_dim=3)
     assert tr.num_metrics == 1
@@ -320,7 +321,7 @@ def test_turbo_hybrid_strategy():
 
 def test_build_trust_region():
     from enn.turbo.components.builder import build_trust_region
-    from enn.turbo.config import TurboTRConfig, NoTRConfig
+    from enn.turbo.config import NoTRConfig, TurboTRConfig
 
     rng = np.random.default_rng(0)
     tr = build_trust_region(TurboTRConfig(), num_dim=3, rng=rng)
@@ -433,7 +434,7 @@ def test_profile_config():
 
 
 def test_run_profile():
-    from scripts.profile_turbo_enn import run_profile, ProfileConfig
+    from scripts.profile_turbo_enn import ProfileConfig, run_profile
 
     cfg = ProfileConfig(
         num_dim=2,
@@ -448,7 +449,7 @@ def test_run_profile():
 
 
 def test_run_sweep():
-    from scripts.profile_turbo_enn import run_sweep, ProfileConfig
+    from scripts.profile_turbo_enn import ProfileConfig, run_sweep
 
     cfg = ProfileConfig(
         num_dim=2,

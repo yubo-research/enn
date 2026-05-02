@@ -1,11 +1,15 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
+
 import numpy as np
+
 from .thompson_acq_optimizer import ThompsonAcqOptimizer
 from .ucb_acq_optimizer import UCBAcqOptimizer
 
 if TYPE_CHECKING:
     from numpy.random import Generator
+
     from .protocols import Surrogate
 
 

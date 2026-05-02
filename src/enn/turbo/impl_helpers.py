@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -14,6 +15,7 @@ def get_x_center_fallback(
     tr_state: Any = None,
 ) -> np.ndarray | None:
     import numpy as np
+
     from .components.incumbent_selector import ScalarIncumbentSelector
 
     y_array = np.asarray(y_obs_list, dtype=float)

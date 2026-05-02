@@ -1,3 +1,4 @@
+from .acq_type import AcqType
 from .acquisition import (
     AcqOptimizerConfig,
     AcquisitionConfig,
@@ -13,18 +14,16 @@ from .base import (
     CandidateGenConfig,
     InitConfig,
 )
-from .acq_type import AcqType
-from .enn_index_driver import ENNIndexDriver
-from .rescalarize import Rescalarize
 from .candidate_rv import CandidateRV
-from .raasp_driver import RAASPDriver
+from .enn_index_driver import ENNIndexDriver
 from .num_candidates_fn import (
     NumCandidatesFn,
     const_num_candidates,
     default_num_candidates,
 )
-from .trust_region import InitStrategy
 from .optimizer_config import OptimizerConfig
+from .raasp_driver import RAASPDriver
+from .rescalarize import Rescalarize
 from .surrogate import (
     ENNFitConfig,
     ENNSurrogateConfig,
@@ -33,6 +32,7 @@ from .surrogate import (
     SurrogateConfig,
 )
 from .trust_region import (
+    InitStrategy,
     MorboTRConfig,
     MultiObjectiveConfig,
     NoTRConfig,

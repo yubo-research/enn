@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from . import config as _config
 
 __all__ = list(_config.__all__)

@@ -1,17 +1,19 @@
 from __future__ import annotations
+
 import numpy as np
 import pytest
+
 from enn.turbo.turbo_optimizer_utils import (
     reset_timing,
     sobol_seed_for_state,
-    validate_tell_inputs,
     trim_trailing_observations,
+    validate_tell_inputs,
+)
+from enn.turbo.turbo_utils import (
+    get_gp_posterior_suppress_warning,
+    torch_seed_context,
 )
 from enn.turbo.types.telemetry import Telemetry
-from enn.turbo.turbo_utils import (
-    torch_seed_context,
-    get_gp_posterior_suppress_warning,
-)
 
 
 def test_sobol_seed_for_state_deterministic():
@@ -118,8 +120,9 @@ def test_torch_seed_context(seed1, seed2, should_match):
 
 
 def test_get_gp_posterior_suppress_warning_basic():
-    from enn.turbo.turbo_gp_fit import fit_gp
     import torch
+
+    from enn.turbo.turbo_gp_fit import fit_gp
 
     x = [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]]
     y = [1.0, 2.0, 3.0, 4.0]

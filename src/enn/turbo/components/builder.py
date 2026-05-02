@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
+
 from .acquisition import ThompsonAcqOptimizer, UCBAcqOptimizer
 
 if TYPE_CHECKING:
@@ -45,10 +47,10 @@ def build_acquisition_optimizer(cfg: Any) -> AcquisitionOptimizer:
 def build_trust_region(
     cfg: Any, num_dim: int, rng: Any, candidate_rv: Any = None
 ) -> Any:
-    from .incumbent_selector import ScalarIncumbentSelector
     from ..morbo_trust_region import MorboTrustRegion
     from ..no_trust_region import NoTrustRegion
     from ..turbo_trust_region import TurboTrustRegion
+    from .incumbent_selector import ScalarIncumbentSelector
 
     if type(cfg).__name__ == "OptimizerConfig":
         candidate_rv = cfg.candidate_rv

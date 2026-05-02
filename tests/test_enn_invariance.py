@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import numpy as np
+
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 

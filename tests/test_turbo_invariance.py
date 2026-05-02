@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import conftest
 import numpy as np
 import pytest
+
 from enn.turbo.config import (
     OptimizerConfig,
     turbo_enn_config,

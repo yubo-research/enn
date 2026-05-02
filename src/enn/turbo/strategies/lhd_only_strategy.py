@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
 import numpy as np
+
 from ..sampling import draw_lhd
 from .optimization_strategy import OptimizationStrategy
 

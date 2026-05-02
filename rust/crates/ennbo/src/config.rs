@@ -98,6 +98,8 @@ pub struct ConfigOverrides {
     pub length_max: Option<f64>,
     pub index_driver: Option<IndexDriver>,
     pub trailing_obs: Option<usize>,
+    pub num_fit_samples: Option<usize>,
+    pub num_fit_candidates: Option<usize>,
 }
 
 impl ConfigOverrides {
@@ -134,6 +136,20 @@ impl ConfigOverrides {
         }
         if let Some(t) = self.trailing_obs {
             config.trailing_obs = Some(t);
+        }
+        if let Some(nfs) = self.num_fit_samples {
+            if let SurrogateConfig::ENN(enn_cfg) = &config.surrogate {
+                let mut enn = enn_cfg.clone();
+                enn.num_fit_samples = nfs;
+                config.surrogate = SurrogateConfig::ENN(enn);
+            }
+        }
+        if let Some(nfc) = self.num_fit_candidates {
+            if let SurrogateConfig::ENN(enn_cfg) = &config.surrogate {
+                let mut enn = enn_cfg.clone();
+                enn.num_fit_candidates = nfc;
+                config.surrogate = SurrogateConfig::ENN(enn);
+            }
         }
         config
     }
@@ -302,6 +318,8 @@ mod tests {
             candidate_rv: Some(CandidateRV::Sobol),
             trailing_obs: Some(20),
             index_driver: Some(IndexDriver::HNSW),
+            num_fit_samples: Some(123),
+            num_fit_candidates: Some(456),
             ..Default::default()
         };
 
@@ -313,6 +331,8 @@ mod tests {
         assert_eq!(applied.trailing_obs, Some(20));
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
             assert_eq!(enn.index_driver, IndexDriver::HNSW);
+            assert_eq!(enn.num_fit_samples, 123);
+            assert_eq!(enn.num_fit_candidates, 456);
         } else {
             panic!("expected ENN surrogate");
         }

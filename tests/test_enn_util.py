@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 import numpy as np
 import pytest
+
 from enn.enn.enn_util import (
-    calculate_sobol_indices,
     arms_from_pareto_fronts,
+    calculate_sobol_indices,
     pareto_front_2d_maximize,
     standardize_y,
 )

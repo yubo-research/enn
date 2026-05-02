@@ -1,4 +1,5 @@
 import numpy as np
+
 from enn.benchmarks import Ackley, DoubleAckley
 
 

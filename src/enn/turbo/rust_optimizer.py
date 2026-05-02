@@ -13,12 +13,12 @@ from .config.acquisition import (
     UCBAcquisitionConfig,
 )
 from .config.candidate_gen_config import CandidateGenConfig
-from .config.num_candidates_fn import default_num_candidates
 from .config.candidate_rv import CandidateRV
 from .config.init_strategies import LHDOnlyInit
+from .config.num_candidates_fn import default_num_candidates
+from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .config.trust_region import NoTRConfig, TurboTRConfig
-from .config.optimizer_config import OptimizerConfig
 from .optimizer import Optimizer as PythonOptimizer
 from .types.telemetry import Telemetry
 

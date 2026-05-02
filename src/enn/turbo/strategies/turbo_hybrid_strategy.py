@@ -1,8 +1,11 @@
 from __future__ import annotations
+
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
 import numpy as np
+
 from ..sampling import draw_lhd
 from ..types.appendable_array import AppendableArray
 from .optimization_strategy import OptimizationStrategy

@@ -1,12 +1,14 @@
 from __future__ import annotations
+
 import numpy as np
 from scipy.stats import qmc
+
+from enn.turbo.config import Rescalarize
 from enn.turbo.config.morbo_tr_config import (
     MorboTRConfig,
     MultiObjectiveConfig,
     RescalePolicyConfig,
 )
-from enn.turbo.config import Rescalarize
 from enn.turbo.config.turbo_tr_config import TRLengthConfig, TurboTRConfig
 from enn.turbo.morbo_trust_region import MorboTrustRegion
 from enn.turbo.turbo_trust_region import TurboTrustRegion

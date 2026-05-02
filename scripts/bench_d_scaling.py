@@ -1,13 +1,15 @@
 import time
+
 import numpy as np
 import pandas as pd
+from scipy.stats import qmc
+
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.turbo_utils import (
     generate_raasp_candidates,
     generate_raasp_candidates_uniform,
 )
-from scipy.stats import qmc
 
 
 def benchmark_d_scaling(ds=[100, 1000, 5000, 10000], n=1000, num_candidates=5000):

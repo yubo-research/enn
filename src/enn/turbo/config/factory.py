@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 from . import acquisition as acq
 from . import surrogate as sur
 from . import trust_region as tr
-from .candidate_gen_config import CandidateGenConfig
-from .num_candidates_fn import NumCandidatesFn, const_num_candidates
 from .acq_type import AcqType
+from .candidate_gen_config import CandidateGenConfig
 from .candidate_rv import CandidateRV
 from .init_config import InitConfig
+from .num_candidates_fn import NumCandidatesFn, const_num_candidates
 from .optimizer_config import ObservationHistoryConfig, OptimizerConfig
 
 

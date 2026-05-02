@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .rescalarize import Rescalarize
-from .turbo_tr_config import TRLengthConfig
 from .multi_objective_config import MultiObjectiveConfig
+from .rescalarize import Rescalarize
 from .rescale_policy_config import RescalePolicyConfig
+from .turbo_tr_config import TRLengthConfig
 
 
 @dataclass(frozen=True)

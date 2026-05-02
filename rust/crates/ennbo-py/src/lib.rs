@@ -1,7 +1,11 @@
 //! Python bindings for ENN core algorithms using PyO3.
 
-// PyResult return types trigger false positive useless_conversion warnings
-#![allow(clippy::useless_conversion)]
+#![allow(
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::useless_conversion,
+)]
 
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;

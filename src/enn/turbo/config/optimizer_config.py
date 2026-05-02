@@ -1,11 +1,13 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
 from .candidate_gen_config import CandidateGenConfig
 from .init_config import InitConfig
+from .observation_history_config import ObservationHistoryConfig
 from .surrogate import NoSurrogateConfig, SurrogateConfig
 from .trust_region import TrustRegionConfig, TurboTRConfig
-from .observation_history_config import ObservationHistoryConfig
 
 if TYPE_CHECKING:
     from .acquisition import AcqOptimizerConfig, AcquisitionConfig

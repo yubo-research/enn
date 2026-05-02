@@ -7,8 +7,7 @@ import inspect
 import numpy as np
 
 from enn import create_optimizer, turbo_enn_config, turbo_one_config, turbo_zero_config
-from enn.turbo.config import ENNSurrogateConfig
-from enn.turbo.config import lhd_only_config
+from enn.turbo.config import ENNSurrogateConfig, lhd_only_config
 
 
 class TestCreateOptimizerContract:

@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import numpy as np
 import pytest
+
 from enn.turbo.components.incumbent_selector import (
     ChebyshevIncumbentSelector,
     NoIncumbentSelector,

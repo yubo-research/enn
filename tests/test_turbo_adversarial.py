@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import conftest
 import numpy as np
 import pytest
+
 from enn import create_optimizer
 from enn.turbo.components import NoSurrogate, SurrogateResult
 from enn.turbo.config import CandidateRV

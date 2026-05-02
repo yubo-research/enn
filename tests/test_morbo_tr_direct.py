@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import numpy as np
-from enn.turbo.morbo_trust_region import MorboTrustRegion
+
 from enn.turbo.config.morbo_tr_config import MorboTRConfig, MultiObjectiveConfig
+from enn.turbo.morbo_trust_region import MorboTrustRegion
 
 
 def test_morbo_resample_weights():
