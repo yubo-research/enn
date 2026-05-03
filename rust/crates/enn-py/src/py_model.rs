@@ -1,7 +1,7 @@
 //! ENN model Python bindings.
 
 use ennbo::traits::PosteriorComputation;
-use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -298,6 +298,47 @@ impl PyEpistemicNearestNeighbors {
     #[getter]
     fn num_outputs(&self) -> usize {
         self.inner.num_outputs()
+    }
+
+    #[getter]
+    fn num_dim(&self) -> usize {
+        self.inner.num_dim()
+    }
+
+    #[getter]
+    fn scale_x(&self) -> bool {
+        self.inner.scale_x_enabled()
+    }
+
+    #[getter]
+    fn train_x<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        Ok(self.inner.train_x().clone().into_pyarray_bound(py))
+    }
+
+    #[getter]
+    fn train_y<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        Ok(self.inner.train_y().clone().into_pyarray_bound(py))
+    }
+
+    #[getter]
+    fn train_yvar<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, PyArray2<f64>>>> {
+        Ok(self
+            .inner
+            .train_yvar()
+            .map(|a| a.clone().into_pyarray_bound(py)))
+    }
+
+    #[getter]
+    fn x_scale_row<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        Ok(self.inner.x_scale_row().into_pyarray_bound(py))
+    }
+
+    #[getter]
+    fn y_scale_row<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        Ok(self.inner.y_scale_row().into_pyarray_bound(py))
     }
 }
 

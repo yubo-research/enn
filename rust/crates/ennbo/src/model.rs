@@ -22,11 +22,8 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) num_dim: usize,
     /// Number of output metrics.
     pub(crate) num_metrics: usize,
-    #[allow(dead_code)]
     pub(crate) scale_x: bool,
-    #[allow(dead_code)]
     pub(crate) x_scale: Array1<f64>,
-    #[allow(dead_code)]
     pub(crate) train_x_scaled: Array2<f64>,
     /// Scale factors for outputs.
     pub(crate) y_scale: Array1<f64>,
@@ -240,21 +237,37 @@ impl EpistemicNearestNeighbors {
         Ok(result)
     }
 
-    // Internal accessor methods for posterior computation
-    pub(crate) fn train_x(&self) -> &Array2<f64> {
+    /// Training inputs (read-only).
+    pub fn train_x(&self) -> &Array2<f64> {
         &self.train_x
     }
 
-    pub(crate) fn train_y(&self) -> &Array2<f64> {
+    /// Training targets (read-only).
+    pub fn train_y(&self) -> &Array2<f64> {
         &self.train_y
     }
 
-    pub(crate) fn train_yvar(&self) -> &Option<Array2<f64>> {
-        &self.train_yvar
+    pub fn train_yvar(&self) -> Option<&Array2<f64>> {
+        self.train_yvar.as_ref()
     }
 
     pub(crate) fn y_scale(&self) -> &Array1<f64> {
         &self.y_scale
+    }
+
+    /// Input scale as a single row `(1, num_dim)` for NumPy-style broadcasting.
+    pub fn x_scale_row(&self) -> Array2<f64> {
+        self.x_scale.clone().insert_axis(Axis(0))
+    }
+
+    /// Output scale as a single row `(1, num_metrics)` for NumPy-style broadcasting.
+    pub fn y_scale_row(&self) -> Array2<f64> {
+        self.y_scale.clone().insert_axis(Axis(0))
+    }
+
+    /// Whether training inputs are divided by per-dimension std scales.
+    pub fn scale_x_enabled(&self) -> bool {
+        self.scale_x
     }
 
     pub(crate) fn index(&self) -> &ENNIndex {
@@ -274,11 +287,11 @@ impl EpistemicNearestNeighbors {
         self.num_obs
     }
 
-    pub(crate) fn num_dim(&self) -> usize {
+    pub fn num_dim(&self) -> usize {
         self.num_dim
     }
 
-    pub(crate) fn num_metrics(&self) -> usize {
+    pub fn num_metrics(&self) -> usize {
         self.num_metrics
     }
 }

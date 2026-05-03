@@ -190,7 +190,7 @@ pub fn compute_weighted_posterior(
 
     let yvar_neighbors: Option<Array2<f64>> = if let Some(ov) = data.yvar_neighbors_override {
         Some(ov.clone())
-    } else if let Some(ref yvar) = model.train_yvar() {
+    } else if let Some(yvar) = model.train_yvar() {
         let n_query = data.dist2s.nrows();
         // Handle empty query case (n_query == 0 or data.idx is empty)
         let k = if data.idx.is_empty() { 0 } else { data.idx[0].len() };
