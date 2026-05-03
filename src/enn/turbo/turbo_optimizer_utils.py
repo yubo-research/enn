@@ -56,6 +56,36 @@ def validate_tell_inputs(
     return TellInputs(x=x, y=y, y_var=y_var, num_metrics=num_metrics)
 
 
+def _extend_keep_from_high_indices(
+    k: set[int], num_total: int, trailing_obs: int
+) -> set[int]:
+    for i in range(num_total - 1, -1, -1):
+        if len(k) >= trailing_obs:
+            break
+        if i not in k:
+            k.add(i)
+    return k
+
+
+def _keep_indices_when_union_exceeds_cap(
+    inc_set: set[int],
+    recent_indices: set[int],
+    num_total: int,
+    trailing_obs: int,
+) -> set[int]:
+    k = set(inc_set)
+    if trailing_obs > len(k):
+        return _extend_keep_from_high_indices(k, num_total, trailing_obs)
+    k = set(recent_indices)
+    for i in sorted(inc_set):
+        if len(k) >= trailing_obs:
+            break
+        k.add(i)
+    if len(k) >= trailing_obs:
+        return k
+    return _extend_keep_from_high_indices(k, num_total, trailing_obs)
+
+
 def trim_trailing_observations(
     x_obs_list: list,
     y_obs_list: list,
@@ -77,15 +107,12 @@ def trim_trailing_observations(
         )
     start_idx = max(0, num_total - trailing_obs)
     recent_indices = set(range(start_idx, num_total))
-    keep_indices = set(incumbent_indices.tolist()) | recent_indices
+    inc_set = set(incumbent_indices.tolist())
+    keep_indices = inc_set | recent_indices
     if len(keep_indices) > trailing_obs:
-        keep_indices = set(incumbent_indices.tolist())
-        remaining_slots = trailing_obs - len(keep_indices)
-        if remaining_slots > 0:
-            recent_non_incumbent = [
-                i for i in range(num_total - 1, -1, -1) if i not in keep_indices
-            ][:remaining_slots]
-            keep_indices.update(recent_non_incumbent)
+        keep_indices = _keep_indices_when_union_exceeds_cap(
+            inc_set, recent_indices, num_total, trailing_obs
+        )
     indices = np.array(sorted(keep_indices), dtype=int)
     x_array = np.asarray(x_obs_list, dtype=float)
     y_obs_array = np.asarray(y_obs_list, dtype=float)

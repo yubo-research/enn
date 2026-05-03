@@ -36,11 +36,35 @@ class ENNSurrogate:
         from ..proposal import mk_enn
 
         k = self._config.k if self._config.k is not None else 10
-        if (
+        use_incremental = (
             self._config.index_driver == ENNIndexDriver.HNSW
             and self._enn is not None
             and len(x_obs) > len(self._enn)
-        ):
+        )
+        if use_incremental:
+            n_old = len(self._enn)
+            x_obs_f = np.asarray(x_obs, dtype=float)
+            y_obs_f = np.asarray(y_obs, dtype=float)
+            prefix_xy_ok = np.allclose(
+                x_obs_f[:n_old], self._enn.train_x, atol=1e-12, rtol=0.0
+            ) and np.allclose(y_obs_f[:n_old], self._enn.train_y, atol=1e-12, rtol=0.0)
+            tyv = self._enn.train_yvar
+            if tyv is None:
+                yvar_prefix_ok = y_var is None
+            else:
+                yvar_prefix_ok = (
+                    y_var is not None
+                    and np.asarray(y_var, dtype=float).shape[0] >= n_old
+                    and np.allclose(
+                        np.asarray(y_var, dtype=float)[:n_old],
+                        tyv,
+                        atol=1e-12,
+                        rtol=0.0,
+                    )
+                )
+            use_incremental = prefix_xy_ok and yvar_prefix_ok
+
+        if use_incremental:
             n_old = len(self._enn)
             new_x = x_obs[n_old:]
             new_y = y_obs[n_old:]

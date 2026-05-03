@@ -115,7 +115,21 @@ impl ENNSurrogate {
                 .zip(model.train_y.iter())
                 .all(|(a, b)| (a - b).abs() < 1e-12);
 
-        if !same_prefix {
+        let same_yvar_prefix = match (model.train_yvar(), yvar) {
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+            (Some(m_yv), Some(in_yv)) => {
+                if in_yv.nrows() < n_old {
+                    false
+                } else {
+                    let p = in_yv.slice(s![..n_old, ..]);
+                    p.shape() == m_yv.shape()
+                        && p.iter().zip(m_yv.iter()).all(|(a, b)| (a - b).abs() < 1e-12)
+                }
+            }
+        };
+
+        if !same_prefix || !same_yvar_prefix {
             return Ok(false);
         }
 
@@ -301,6 +315,46 @@ mod tests {
         let pred = surrogate.predict(&x_query.view()).unwrap();
         assert_eq!(pred.mu.shape(), &[1, 1]);
         assert!(pred.mu[[0, 0]].is_finite());
+    }
+
+    /// Regression: incremental `fit` must not reuse stale `train_yvar` when the caller
+    /// updates observation noise on prefix rows (same `x`/`y`, new `yvar` on old rows).
+    #[test]
+    fn regression_incremental_fit_refreshes_prefix_yvar_to_match_full_refit() {
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 4,
+            num_fit_samples: 2,
+            ..Default::default()
+        };
+        let x0 = array![[0.0, 0.0], [1.0, 0.0]];
+        let y0 = array![[0.0], [1.0]];
+        let yvar0 = array![[1.0], [2.0]];
+        let x1 = array![[0.0, 0.0], [1.0, 0.0], [3.0, 0.0]];
+        let y1 = array![[0.0], [1.0], [5.0]];
+        let yvar1 = array![[1.0e6], [2.0], [1.0]];
+
+        let mut rng_a = StdRng::seed_from_u64(11);
+        let mut sur_inc = ENNSurrogate::new(config.clone());
+        sur_inc
+            .fit(&x0.view(), &y0.view(), Some(&yvar0.view()), &mut rng_a)
+            .unwrap();
+        sur_inc
+            .fit(&x1.view(), &y1.view(), Some(&yvar1.view()), &mut rng_a)
+            .unwrap();
+        let v_inc = sur_inc.model().unwrap().train_yvar().unwrap()[[0, 0]];
+
+        let mut rng_b = StdRng::seed_from_u64(11);
+        let mut sur_full = ENNSurrogate::new(config);
+        sur_full
+            .fit(&x1.view(), &y1.view(), Some(&yvar1.view()), &mut rng_b)
+            .unwrap();
+        let v_full = sur_full.model().unwrap().train_yvar().unwrap()[[0, 0]];
+
+        assert!(
+            (v_inc - v_full).abs() < 1e-9,
+            "train_yvar row0 incremental={v_inc} full_refit={v_full} (prefix yvar must refresh)"
+        );
     }
 
     #[test]
