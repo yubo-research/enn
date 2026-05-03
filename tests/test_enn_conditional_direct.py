@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_conditional import (
@@ -49,6 +50,29 @@ def test_compute_conditional_posterior_draw_internals_direct():
         enn, x_w, y_w, x_t, params=p, flags=f, y_scale=s
     )
     assert internals.idx.shape == (1, 2) and internals.mu.shape == (1, 1)
+
+
+def test_compute_conditional_posterior_empty_enn_exclude_nearest_one_whatif_raises():
+    """exclude_nearest with total_n <= 1 is invalid (compute_total_n)."""
+    train_x = np.zeros((0, 2), dtype=float)
+    train_y = np.zeros((0, 1), dtype=float)
+    enn = EpistemicNearestNeighbors(train_x, train_y)
+    x_whatif = np.array([[0.5, 0.5]], dtype=float)
+    y_whatif = np.array([[0.5]], dtype=float)
+    x_test = np.array([[0.25, 0.25]], dtype=float)
+    params = ENNParams(
+        k_num_neighbors=1, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
+    flags = PosteriorFlags(exclude_nearest=True, observation_noise=False)
+    y_scale = np.array([[1.0]], dtype=float)
+    with pytest.raises(ValueError, match="^1$"):
+        compute_conditional_posterior(
+            enn, x_whatif, y_whatif, x_test, params=params, flags=flags, y_scale=y_scale
+        )
+    with pytest.raises(ValueError, match="^1$"):
+        compute_conditional_posterior_draw_internals(
+            enn, x_whatif, y_whatif, x_test, params=params, flags=flags, y_scale=y_scale
+        )
 
 
 def test_compute_conditional_posterior_empty_neighbors():

@@ -8,6 +8,7 @@ from enn.enn.enn_hash import (
     normal_hash_batch_multi_seed_fast,
 )
 from enn.enn.enn_index import ENNIndex
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 
 def test_enn_index_faiss_search_k_larger_than_n_train_never_emits_invalid_neighbor_index():
@@ -27,6 +28,59 @@ def test_enn_index_faiss_search_k_larger_than_n_train_never_emits_invalid_neighb
     assert idx.shape == (1, search_k)
     assert np.all(idx >= 0), "FAISS tail -1 is not a valid training index for gathers"
     assert np.all(idx < n_train)
+
+
+def test_enn_index_empty_train_search_sentinel_never_uses_negative_one():
+    """No -1 columns: empty corpus uses +inf distance and index 0 as sentinel.
+
+    Callers must not use ``idx`` for ``y[idx]`` when ``n_train == 0`` (no rows).
+    """
+    train_x = np.zeros((0, 2), dtype=float)
+    x_scale = np.ones((1, 2), dtype=float)
+    index = ENNIndex(train_x, num_dim=2, x_scale=x_scale, scale_x=False)
+    query = np.array([[1.0, 2.0], [-0.5, 0.25]], dtype=float)
+    search_k = 4
+    dist2s, idx = index.search(query, search_k=search_k, exclude_nearest=False)
+    assert dist2s.shape == (2, search_k) and idx.shape == (2, search_k)
+    assert np.all(np.isposinf(dist2s))
+    assert np.all(idx == 0)
+    assert np.all(idx >= 0)
+    d2_ex, idx_ex = index.search(query, search_k=search_k, exclude_nearest=True)
+    assert d2_ex.shape == (2, search_k - 1) and idx_ex.shape == (2, search_k - 1)
+    assert np.all(np.isposinf(d2_ex))
+    assert np.all(idx_ex == 0)
+
+
+def test_enn_index_search_k_one_exclude_nearest_yields_zero_columns():
+    rng = np.random.default_rng(7)
+    train_x = rng.standard_normal((10, 2))
+    x_scale = np.ones((1, 2), dtype=float)
+    index = ENNIndex(train_x, num_dim=2, x_scale=x_scale, scale_x=False)
+    q = rng.standard_normal((3, 2))
+    dist2s, idx = index.search(q, search_k=1, exclude_nearest=True)
+    assert dist2s.shape == (3, 0) and idx.shape == (3, 0)
+
+
+def test_enn_index_hnsw_search_valid_indices_and_shapes():
+    rng = np.random.default_rng(11)
+    n_train, dim = 40, 3
+    train_x = rng.standard_normal((n_train, dim))
+    x_scale = np.ones((1, dim), dtype=float)
+    index = ENNIndex(
+        train_x,
+        num_dim=dim,
+        x_scale=x_scale,
+        scale_x=False,
+        driver=ENNIndexDriver.HNSW,
+    )
+    query = rng.standard_normal((4, dim))
+    search_k = 6
+    dist2s, idx = index.search(query, search_k=search_k, exclude_nearest=False)
+    assert dist2s.shape == (4, search_k) and idx.shape == (4, search_k)
+    assert np.all(idx >= 0) and np.all(idx < n_train)
+    finite = np.isfinite(dist2s)
+    assert np.any(finite)
+    assert np.all(dist2s[finite] >= 0.0)
 
 
 def test_enn_index_init_and_search():

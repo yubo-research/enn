@@ -30,9 +30,11 @@ def _pad_neighbor_cols_to_search_k(
         return dist2s, idx
     if k_eff == 0:
         n_query = int(dist2s.shape[0])
+        # Sentinel index 0 (not for ``y[idx]`` when n_train==0); avoid -1 so
+        # ``y[idx]`` never aliases the last row when n_train > 0.
         return (
             np.full((n_query, search_k), np.inf, dtype=float),
-            np.full((n_query, search_k), -1, dtype=int),
+            np.zeros((n_query, search_k), dtype=int),
         )
     n_query = int(dist2s.shape[0])
     pad_w = search_k - k_eff
@@ -59,7 +61,7 @@ def _numpy_l2_neighbor_search(
     if k == 0:
         return (
             np.full((n_query, search_k), np.inf, dtype=float),
-            np.full((n_query, search_k), -1, dtype=int),
+            np.zeros((n_query, search_k), dtype=int),
         )
     x2 = np.sum(x_f32**2, axis=1, keepdims=True)
     y2 = np.sum(train_x_scaled**2, axis=1, keepdims=True).T

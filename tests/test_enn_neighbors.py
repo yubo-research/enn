@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 
 def test_neighbors_returns_correct_number_and_ordering():
@@ -18,6 +19,20 @@ def test_neighbors_returns_correct_number_and_ordering():
         distances[i] <= distances[i + 1] + 1e-6 for i in range(len(distances) - 1)
     )
     assert train_y[indices].shape == (5, 1)
+
+
+def test_neighbors_hnsw_index_driver_returns_valid_indices():
+    rng = np.random.default_rng(3)
+    n, d = 35, 4
+    train_x = rng.standard_normal((n, d))
+    train_y = train_x.sum(axis=1, keepdims=True).astype(float)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, scale_x=False, index_driver=ENNIndexDriver.HNSW
+    )
+    x_query = rng.standard_normal(d)
+    neighbors = model.neighbors(x_query, k=6, exclude_nearest=False)
+    assert neighbors.shape == (6,)
+    assert np.all((0 <= neighbors) & (neighbors < n))
 
 
 def test_neighbors_exclude_nearest():
