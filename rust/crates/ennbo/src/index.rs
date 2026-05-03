@@ -1,93 +1,131 @@
-//! K-Nearest Neighbors index for ENN.
-//!
-//! Exact kNN uses blocked matrix multiply with per-query heaps (L2, same geometry as
-//! FAISS `IndexFlatL2`). `IndexDriver::HNSW` uses that exact path in the Rust core until
-//! libfaiss-backed approximate search is wired here; Python uses FAISS `IndexHNSWFlat`.
-
+use faiss::error::Error as FaissError;
+use faiss::index::IndexImpl;
+use faiss::{index_factory, Idx, Index, MetricType};
 use ndarray::{s, Array1, Array2, ArrayView2, Axis};
-use std::collections::BinaryHeap;
+use std::sync::Mutex;
 use thiserror::Error;
 
-/// Errors that can occur during index operations.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum IndexError {
-    /// Invalid dimensionality.
     #[error("Invalid shape: expected {expected} dims, got {got}")]
     InvalidShape { expected: usize, got: usize },
-    /// Invalid search parameter.
     #[error("Invalid search parameter: {0}")]
     InvalidParameter(String),
-    /// Empty index.
-    #[error("Index is empty")]
-    EmptyIndex,
 }
 
-/// Driver for KNN search algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum IndexDriver {
-    /// Use exact search with matrix operations.
     #[default]
     Exact,
-    /// Request HNSW-style approximate search (Rust core uses exact L2 until FAISS HNSW).
     HNSW,
 }
 
-/// K-Nearest Neighbors index for ENN.
-///
-/// Stores training data and provides efficient KNN search.
 pub struct ENNIndex {
-    /// Scaled training data.
-    train_x_scaled: Array2<f64>,
-    /// Number of dimensions.
+    inner: Mutex<IndexImpl>,
     num_dim: usize,
-    /// Scale factors for each dimension.
     x_scale: Array1<f64>,
-    /// Whether to scale inputs.
     scale_x: bool,
-    /// Search driver.
     driver: IndexDriver,
 }
 
+fn faiss_spec(driver: IndexDriver) -> &'static str {
+    match driver {
+        IndexDriver::Exact => "Flat",
+        IndexDriver::HNSW => "HNSW32",
+    }
+}
+
+fn faiss_map_err(e: FaissError) -> IndexError {
+    IndexError::InvalidParameter(e.to_string())
+}
+
+fn arr2_rows_to_f32(a: &ArrayView2<f64>) -> Vec<f32> {
+    a.iter().map(|v| *v as f32).collect()
+}
+
+fn make_faiss(
+    num_dim: usize,
+    driver: IndexDriver,
+    train_scaled: &ArrayView2<f64>,
+) -> Result<IndexImpl, IndexError> {
+    let mut index = index_factory(num_dim as u32, faiss_spec(driver), MetricType::L2)
+        .map_err(faiss_map_err)?;
+    if train_scaled.nrows() > 0 {
+        let data = arr2_rows_to_f32(train_scaled);
+        index.add(&data).map_err(faiss_map_err)?;
+    }
+    Ok(index)
+}
+
+fn pad_neighbor_cols_to_search_k(
+    dist2s: Array2<f64>,
+    idx: Array2<i64>,
+    search_k: usize,
+) -> (Array2<f64>, Array2<i64>) {
+    let k_eff = dist2s.ncols();
+    if k_eff >= search_k {
+        return (dist2s, idx);
+    }
+    let n_query = dist2s.nrows();
+    if k_eff == 0 {
+        return (
+            Array2::from_elem((n_query, search_k), f64::INFINITY),
+            Array2::zeros((n_query, search_k)),
+        );
+    }
+    let pad_w = search_k - k_eff;
+    let pad_dist = Array2::from_elem((n_query, pad_w), f64::INFINITY);
+    let far = idx.slice(s![.., k_eff - 1..k_eff]).to_owned();
+    let mut pad_idx = Array2::zeros((n_query, pad_w));
+    for j in 0..pad_w {
+        pad_idx.column_mut(j).assign(&far.column(0));
+    }
+    (
+        ndarray::concatenate![Axis(1), dist2s.view(), pad_dist.view()],
+        ndarray::concatenate![Axis(1), idx.view(), pad_idx.view()],
+    )
+}
+
+fn unpack_faiss_search(
+    n_query: usize,
+    k: usize,
+    distances: &[f32],
+    labels: &[Idx],
+) -> (Array2<f64>, Array2<i64>) {
+    let mut dist2s = Array2::zeros((n_query, k));
+    let mut indices = Array2::zeros((n_query, k));
+    for i in 0..n_query {
+        for j in 0..k {
+            let o = i * k + j;
+            dist2s[[i, j]] = f64::from(distances[o]);
+            indices[[i, j]] = labels[o].to_native();
+        }
+    }
+    (dist2s, indices)
+}
+
 impl ENNIndex {
-    /// Create a new ENNIndex.
-    ///
-    /// # Arguments
-    ///
-    /// * `train_x_scaled` - Pre-scaled training data
-    /// * `num_dim` - Number of dimensions
-    /// * `x_scale` - Scale factors for each dimension
-    /// * `scale_x` - Whether to scale new inputs
-    /// * `driver` - Search algorithm to use
     pub fn new(
         train_x_scaled: Array2<f64>,
         num_dim: usize,
         x_scale: Array1<f64>,
         scale_x: bool,
         driver: IndexDriver,
-    ) -> Self {
-        Self {
-            train_x_scaled,
+    ) -> Result<Self, IndexError> {
+        let inner = Mutex::new(make_faiss(num_dim, driver, &train_x_scaled.view())?);
+        Ok(Self {
+            inner,
             num_dim,
             x_scale,
             scale_x,
             driver,
-        }
+        })
     }
 
-    /// Index search driver (needed to rebuild after rescaling training inputs).
     pub fn driver(&self) -> IndexDriver {
         self.driver
     }
 
-    /// Add new points to the index.
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - New points to add, shape (n, num_dim)
-    ///
-    /// # Errors
-    ///
-    /// Returns `IndexError::InvalidShape` if dimensions don't match.
     pub fn add(&mut self, x: &ArrayView2<f64>) -> Result<(), IndexError> {
         if x.ncols() != self.num_dim {
             return Err(IndexError::InvalidShape {
@@ -95,38 +133,19 @@ impl ENNIndex {
                 got: x.ncols(),
             });
         }
-
-        // Scale if needed
-        let x_scaled = if self.scale_x {
+        let x_scaled: Array2<f64> = if self.scale_x {
             x / &self.x_scale.view().insert_axis(Axis(0))
         } else {
             x.to_owned()
         };
-
-        self.train_x_scaled = ndarray::concatenate![
-            Axis(0),
-            self.train_x_scaled.view(),
-            x_scaled.view()
-        ];
-
-        Ok(())
+        let data = arr2_rows_to_f32(&x_scaled.view());
+        self.inner
+            .lock()
+            .expect("faiss index mutex poisoned")
+            .add(&data)
+            .map_err(faiss_map_err)
     }
 
-    /// Search for k nearest neighbors.
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - Query points, shape (n_query, num_dim)
-    /// * `search_k` - Number of neighbors to find
-    /// * `exclude_nearest` - If true, exclude the nearest neighbor (return 1..k instead of 0..k)
-    ///
-    /// # Returns
-    ///
-    /// Tuple of (distances_squared, indices), each with shape (n_query, k).
-    ///
-    /// # Errors
-    ///
-    /// Returns `IndexError` if parameters are invalid.
     pub fn search(
         &self,
         x: &ArrayView2<f64>,
@@ -135,11 +154,9 @@ impl ENNIndex {
     ) -> Result<(Array2<f64>, Array2<i64>), IndexError> {
         if search_k <= 0 {
             return Err(IndexError::InvalidParameter(format!(
-                "search_k must be > 0, got {}",
-                search_k
+                "search_k must be > 0, got {search_k}"
             )));
         }
-
         if x.ncols() != self.num_dim {
             return Err(IndexError::InvalidShape {
                 expected: self.num_dim,
@@ -147,107 +164,65 @@ impl ENNIndex {
             });
         }
 
-        let n_train = self.train_x_scaled.nrows();
-        let k = (search_k as usize).min(n_train);
+        let n_train = self
+            .inner
+            .lock()
+            .expect("faiss index mutex poisoned")
+            .ntotal() as usize;
+        let n_query = x.nrows();
+        let search_k = search_k as usize;
 
-        // Scale query points
-        let x_scaled = if self.scale_x {
+        let x_scaled: Array2<f64> = if self.scale_x {
             x / &self.x_scale.view().insert_axis(Axis(0))
         } else {
             x.to_owned()
         };
+        let q = arr2_rows_to_f32(&x_scaled.view());
 
-        let (mut dist2s, mut indices) = self.exact_search(&x_scaled.view(), k);
+        let (mut dist2s, mut indices) = if n_train == 0 {
+            (
+                Array2::from_elem((n_query, search_k), f64::INFINITY),
+                Array2::zeros((n_query, search_k)),
+            )
+        } else {
+            let k_eff = search_k.min(n_train);
+            let res = self
+                .inner
+                .lock()
+                .expect("faiss index mutex poisoned")
+                .search(&q, k_eff)
+                .map_err(faiss_map_err)?;
+            let (d, i) = unpack_faiss_search(n_query, k_eff, &res.distances, &res.labels);
+            pad_neighbor_cols_to_search_k(d, i, search_k)
+        };
 
         if exclude_nearest {
-            if k < 2 {
-                return Err(IndexError::InvalidParameter(
-                    "exclude_nearest=True requires search_k >= 2".to_string(),
-                ));
+            let nc = dist2s.ncols();
+            if nc <= 1 {
+                dist2s = Array2::zeros((n_query, nc.saturating_sub(1)));
+                indices = Array2::zeros((n_query, nc.saturating_sub(1)));
+            } else {
+                dist2s = dist2s.slice_axis(Axis(1), ndarray::Slice::from(1..)).to_owned();
+                indices = indices.slice_axis(Axis(1), ndarray::Slice::from(1..)).to_owned();
             }
-            dist2s = dist2s.slice_axis(Axis(1), ndarray::Slice::from(1..)).to_owned();
-            indices = indices.slice_axis(Axis(1), ndarray::Slice::from(1..)).to_owned();
         }
 
         Ok((dist2s, indices))
     }
 
-    /// Exact search: single-pass heap per query, O(n_query * k) memory.
-    /// Avoids allocating the full n_query × n_train distance matrix.
-    fn exact_search(
-        &self,
-        x: &ArrayView2<f64>,
-        k: usize,
-    ) -> (Array2<f64>, Array2<i64>) {
-        let n_query = x.nrows();
-        let n_train = self.train_x_scaled.nrows();
-        let train = &self.train_x_scaled;
-
-        // Precompute ||x[i]||^2 and ||train[j]||^2 (O(n_query*d) and O(n_train*d))
-        let x2: Array1<f64> = x.map_axis(Axis(1), |row| row.dot(&row));
-        let y2: Array1<f64> = train.map_axis(Axis(1), |row| row.dot(&row));
-
-        let mut heaps: Vec<BinaryHeap<(ordered_float::OrderedFloat<f64>, usize)>> =
-            (0..n_query)
-                .map(|_| BinaryHeap::with_capacity(k + 1))
-                .collect();
-
-        // Block over training points so we can use matrix multiply kernels
-        // without materializing the full n_query x n_train matrix.
-        let block_size = 256usize;
-        let mut start = 0usize;
-        while start < n_train {
-            let end = (start + block_size).min(n_train);
-            let train_block = train.slice(s![start..end, ..]);
-            let xy_block = x.dot(&train_block.t());
-
-            for i in 0..n_query {
-                let xi2 = x2[i];
-                let heap = &mut heaps[i];
-                for local_j in 0..(end - start) {
-                    let j = start + local_j;
-                    let d2 = xi2 + y2[j] - 2.0 * xy_block[[i, local_j]];
-                    let dist = ordered_float::OrderedFloat(d2);
-                    if heap.len() < k {
-                        heap.push((dist, j));
-                    } else if let Some(&(top_dist, _)) = heap.peek() {
-                        if dist < top_dist {
-                            heap.pop();
-                            heap.push((dist, j));
-                        }
-                    }
-                }
-            }
-
-            start = end;
-        }
-
-        let mut dist2s = Array2::from_elem((n_query, k), f64::INFINITY);
-        let mut indices = Array2::from_elem((n_query, k), -1i64);
-
-        for (i, heap) in heaps.into_iter().enumerate() {
-            let mut neighbors: Vec<(f64, usize)> = heap
-                .into_iter()
-                .map(|(dist, idx)| (dist.into_inner(), idx))
-                .collect();
-            neighbors.sort_by(|a, b| a.0.total_cmp(&b.0));
-            for (j, (dist, idx)) in neighbors.iter().enumerate() {
-                dist2s[[i, j]] = *dist;
-                indices[[i, j]] = *idx as i64;
-            }
-        }
-
-        (dist2s, indices)
-    }
-
-    /// Get the number of training points.
     pub fn len(&self) -> usize {
-        self.train_x_scaled.nrows()
+        self.inner
+            .lock()
+            .expect("faiss index mutex poisoned")
+            .ntotal() as usize
     }
 
-    /// Check if the index is empty.
     pub fn is_empty(&self) -> bool {
-        self.train_x_scaled.is_empty()
+        self.inner
+            .lock()
+            .expect("faiss index mutex poisoned")
+            .ntotal()
+            == 0
     }
 }
 
@@ -262,7 +237,7 @@ mod tests {
         let train_x = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
         let x_scale = array![1.0, 1.0];
 
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact);
+        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
 
         assert_eq!(index.len(), 3);
         assert!(!index.is_empty());
@@ -272,16 +247,14 @@ mod tests {
     fn test_index_search() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact);
+        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
 
         let query = array![[0.0, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 2, false).unwrap();
 
-        // Nearest should be point 0 at distance 0
         assert_eq!(indices[[0, 0]], 0);
-        assert_eq!(dist2s[[0, 0]], 0.0);
+        assert!(dist2s[[0, 0]] < 1e-6);
 
-        // Second nearest should be either point 1 or 2 at distance 1
         assert!(dist2s[[0, 1]] > 0.0);
     }
 
@@ -289,24 +262,22 @@ mod tests {
     fn test_index_search_exclude_nearest() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact);
+        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
 
         let query = array![[0.0, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 2, true).unwrap();
 
-        // Should only return 1 neighbor (excluding the nearest)
         assert_eq!(dist2s.ncols(), 1);
         assert_eq!(indices.ncols(), 1);
 
-        // The result should be point 1 or 2, not point 0
-        assert!(indices[[0, 0]] != 0);
+        assert_ne!(indices[[0, 0]], 0);
     }
 
     #[test]
     fn test_index_add() {
         let train_x = array![[0.0, 0.0]];
         let x_scale = array![1.0, 1.0];
-        let mut index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact);
+        let mut index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
 
         let new_point = array![[1.0, 1.0]];
         index.add(&new_point.view()).unwrap();
@@ -318,7 +289,7 @@ mod tests {
     fn test_invalid_search_k() {
         let train_x = array![[0.0, 0.0]];
         let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact);
+        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
 
         let query = array![[0.0, 0.0]];
         let result = index.search(&query.view(), 0, false);
@@ -330,9 +301,9 @@ mod tests {
     fn test_invalid_dimensions() {
         let train_x = array![[0.0, 0.0]];
         let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact);
+        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
 
-        let query = array![[0.0, 0.0, 0.0]]; // Wrong dimensions
+        let query = array![[0.0, 0.0, 0.0]];
         let result = index.search(&query.view(), 1, false);
 
         assert!(matches!(result, Err(IndexError::InvalidShape { expected: 2, got: 3 })));
@@ -342,7 +313,7 @@ mod tests {
     fn test_hnsw_search() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::HNSW);
+        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::HNSW).unwrap();
 
         let query = array![[0.0, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 2, false).unwrap();
@@ -363,7 +334,7 @@ mod tests {
             }
         });
         let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::HNSW);
+        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::HNSW).unwrap();
         let query = array![[0.25_f64, 0.25]];
         let k = n as i32;
         let (_dist2s, indices) = index.search(&query.view(), k, false).unwrap();
@@ -379,22 +350,19 @@ mod tests {
 
     #[test]
     fn test_scaled_search() {
-        // When scale_x=true, train_x_scaled should be pre-scaled
         let x_scale = array![2.0, 2.0];
-        // train_x_scaled = [[0,0], [1,1]]
         let index = ENNIndex::new(
-            array![[0.0, 0.0], [1.0, 1.0]], // Pre-scaled
+            array![[0.0, 0.0], [1.0, 1.0]],
             2,
             x_scale,
             true,
             IndexDriver::Exact,
-        );
+        )
+        .unwrap();
 
-        // Query [2.0, 2.0] unscaled becomes [1.0, 1.0] scaled, which matches point 1
         let query = array![[2.0, 2.0]];
         let (dist2s, indices) = index.search(&query.view(), 1, false).unwrap();
 
-        // Should find point 1 (index 1) at distance 0
         assert_eq!(indices[[0, 0]], 1);
         assert!(dist2s[[0, 0]] < 0.0001);
     }

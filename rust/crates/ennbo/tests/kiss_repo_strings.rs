@@ -5,7 +5,7 @@ fn kiss_fullrepo_static_name_registry() {
         "Candidates",
         "ConditionalPosteriorDrawInternals",
         "DrawInternals",
-        "ENNIndex",
+        "neighbor_distances_and_indices",
         "ENNNormal",
         "ENNParams",
         "EpistemicNearestNeighbors",

@@ -248,13 +248,17 @@ def test_enn_class_add():
     assert len(enn) == 3
 
 
-def test_enn_index_add():
-    from enn.enn.enn_index import ENNIndex
+def test_enn_neighbor_distances_add_and_search():
+    from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
 
-    x = np.array([[0.1, 0.2], [0.3, 0.4]], dtype=float)
-    idx = ENNIndex(x, num_dim=2, x_scale=np.ones(2), scale_x=False)
-    idx.add(np.array([[0.5, 0.6]], dtype=float))
-    d2, nn = idx.search(np.array([[0.5, 0.6]]), search_k=3, exclude_nearest=False)
+    enn = _enn_model()
+    enn.add(np.array([[0.5, 0.6]], dtype=float), np.array([[3.0]], dtype=float))
+    _d2, nn = enn_neighbor_distances_and_indices(
+        enn.rust_backend,
+        np.array([[0.5, 0.6]], dtype=float),
+        search_k=3,
+        exclude_nearest=False,
+    )
     assert nn.shape[1] == 3
 
 

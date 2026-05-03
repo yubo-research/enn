@@ -13,9 +13,11 @@ class ENNLike(Protocol):
     _num_metrics: int
     _x_scale: np.ndarray
     _scale_x: bool
-    _enn_index: Any
     _train_y: np.ndarray
     _train_yvar: np.ndarray | None
+
+    @property
+    def rust_backend(self) -> Any: ...
 
     def __len__(self) -> int: ...
     def posterior(self, x: np.ndarray, *, params: ENNParams, flags: PosteriorFlags):

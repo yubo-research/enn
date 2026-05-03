@@ -8,7 +8,7 @@ ENN estimates a function's value and epistemic uncertainty using K-Nearest Neigh
 
 - **EpistemicNearestNeighbors** — ENN surrogate with posterior computation
 - **TuRBO-ENN optimizer** — Thompson sampling, UCB, RAASP candidate generation
-- Index backends: Exact (flat), KD-tree, HNSW
+- Neighbor search via Faiss (`IndexFlatL2`, `IndexHNSWFlat`-style factory string `HNSW32`)
 
 ## Usage
 

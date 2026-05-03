@@ -5,6 +5,7 @@ import pandas as pd
 from scipy.stats import qmc
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
 from enn.enn.enn_params import ENNParams
 from enn.turbo.turbo_utils import (
     generate_raasp_candidates,
@@ -37,10 +38,15 @@ def benchmark_d_scaling(ds=[100, 1000, 5000, 10000], n=1000, num_candidates=5000
         model = EpistemicNearestNeighbors(train_x, train_y, scale_x=True)
         row["ENN_Init (s)"] = time.perf_counter() - t0
 
-        # 2. FAISS Search
+        # 2. Neighbor search (Rust + libfaiss)
         t0 = time.perf_counter()
-        _, _ = model._enn_index.search(cand_x, search_k=10, exclude_nearest=False)
-        row["FAISS_Search (s)"] = time.perf_counter() - t0
+        _, _ = enn_neighbor_distances_and_indices(
+            model.rust_backend,
+            cand_x,
+            search_k=10,
+            exclude_nearest=False,
+        )
+        row["ENN_Search (s)"] = time.perf_counter() - t0
 
         # 3. RAASP Candidate Generation (Sobol)
         t0 = time.perf_counter()

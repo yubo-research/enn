@@ -83,7 +83,7 @@ impl EpistemicNearestNeighbors {
             x_scale.clone(),
             scale_x,
             driver,
-        );
+        )?;
 
         Ok(Self {
             train_x,
@@ -164,7 +164,7 @@ impl EpistemicNearestNeighbors {
                 self.x_scale.clone(),
                 true,
                 driver,
-            );
+            )?;
         } else {
             self.index.add(x)?;
         }
@@ -259,6 +259,15 @@ impl EpistemicNearestNeighbors {
 
     pub(crate) fn index(&self) -> &ENNIndex {
         &self.index
+    }
+
+    pub fn neighbor_distances_and_indices(
+        &self,
+        x: &ArrayView2<f64>,
+        search_k: i32,
+        exclude_nearest: bool,
+    ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
+        Ok(self.index.search(x, search_k, exclude_nearest)?)
     }
 
     pub(crate) fn num_obs(&self) -> usize {

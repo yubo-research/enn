@@ -3,79 +3,79 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
 from enn.enn.enn_hash import (
     normal_hash_batch_multi_seed,
     normal_hash_batch_multi_seed_fast,
 )
-from enn.enn.enn_index import ENNIndex
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 
-def test_enn_index_faiss_search_k_larger_than_n_train_never_emits_invalid_neighbor_index():
-    """Regression for FAISS padding with -1 when search_k > n_train.
+def _enn(train_x, *, scale_x=False, index_driver=ENNIndexDriver.FLAT, train_y=None):
+    if train_y is None:
+        train_y = np.zeros((train_x.shape[0], 1), dtype=float)
+    return EpistemicNearestNeighbors(
+        train_x, train_y, scale_x=scale_x, index_driver=index_driver
+    )
 
-    NumPy integer array indexing interprets -1 as the last row, so ``y[idx]``
-    silently duplicates the final observation for fake neighbor slots.
-    """
+
+def test_enn_neighbor_search_k_larger_than_n_train_never_emits_invalid_neighbor_index():
     rng = np.random.default_rng(0)
     n_train = 3
     train_x = rng.standard_normal((n_train, 2))
-    x_scale = np.ones((1, 2), dtype=float)
-    index = ENNIndex(train_x, num_dim=2, x_scale=x_scale, scale_x=False)
+    enn = _enn(train_x, scale_x=False)
     query = rng.standard_normal((1, 2))
     search_k = 8
-    _dist2s, idx = index.search(query, search_k=search_k, exclude_nearest=False)
+    _dist2s, idx = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=search_k, exclude_nearest=False
+    )
     assert idx.shape == (1, search_k)
-    assert np.all(idx >= 0), "FAISS tail -1 is not a valid training index for gathers"
+    assert np.all(idx >= 0)
     assert np.all(idx < n_train)
 
 
-def test_enn_index_empty_train_search_sentinel_never_uses_negative_one():
-    """No -1 columns: empty corpus uses +inf distance and index 0 as sentinel.
-
-    Callers must not use ``idx`` for ``y[idx]`` when ``n_train == 0`` (no rows).
-    """
+def test_enn_neighbor_search_empty_train_sentinel_never_uses_negative_one():
     train_x = np.zeros((0, 2), dtype=float)
-    x_scale = np.ones((1, 2), dtype=float)
-    index = ENNIndex(train_x, num_dim=2, x_scale=x_scale, scale_x=False)
+    enn = _enn(train_x, scale_x=False)
     query = np.array([[1.0, 2.0], [-0.5, 0.25]], dtype=float)
     search_k = 4
-    dist2s, idx = index.search(query, search_k=search_k, exclude_nearest=False)
+    dist2s, idx = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=search_k, exclude_nearest=False
+    )
     assert dist2s.shape == (2, search_k) and idx.shape == (2, search_k)
     assert np.all(np.isposinf(dist2s))
     assert np.all(idx == 0)
     assert np.all(idx >= 0)
-    d2_ex, idx_ex = index.search(query, search_k=search_k, exclude_nearest=True)
+    d2_ex, idx_ex = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=search_k, exclude_nearest=True
+    )
     assert d2_ex.shape == (2, search_k - 1) and idx_ex.shape == (2, search_k - 1)
     assert np.all(np.isposinf(d2_ex))
     assert np.all(idx_ex == 0)
 
 
-def test_enn_index_search_k_one_exclude_nearest_yields_zero_columns():
+def test_enn_neighbor_search_k_one_exclude_nearest_yields_zero_columns():
     rng = np.random.default_rng(7)
     train_x = rng.standard_normal((10, 2))
-    x_scale = np.ones((1, 2), dtype=float)
-    index = ENNIndex(train_x, num_dim=2, x_scale=x_scale, scale_x=False)
+    enn = _enn(train_x, scale_x=False)
     q = rng.standard_normal((3, 2))
-    dist2s, idx = index.search(q, search_k=1, exclude_nearest=True)
+    dist2s, idx = enn_neighbor_distances_and_indices(
+        enn.rust_backend, q, search_k=1, exclude_nearest=True
+    )
     assert dist2s.shape == (3, 0) and idx.shape == (3, 0)
 
 
-def test_enn_index_hnsw_search_valid_indices_and_shapes():
+def test_enn_neighbor_search_hnsw_valid_indices_and_shapes():
     rng = np.random.default_rng(11)
     n_train, dim = 40, 3
     train_x = rng.standard_normal((n_train, dim))
-    x_scale = np.ones((1, dim), dtype=float)
-    index = ENNIndex(
-        train_x,
-        num_dim=dim,
-        x_scale=x_scale,
-        scale_x=False,
-        driver=ENNIndexDriver.HNSW,
-    )
+    enn = _enn(train_x, scale_x=False, index_driver=ENNIndexDriver.HNSW)
     query = rng.standard_normal((4, dim))
     search_k = 6
-    dist2s, idx = index.search(query, search_k=search_k, exclude_nearest=False)
+    dist2s, idx = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=search_k, exclude_nearest=False
+    )
     assert dist2s.shape == (4, search_k) and idx.shape == (4, search_k)
     assert np.all(idx >= 0) and np.all(idx < n_train)
     finite = np.isfinite(dist2s)
@@ -83,47 +83,55 @@ def test_enn_index_hnsw_search_valid_indices_and_shapes():
     assert np.all(dist2s[finite] >= 0.0)
 
 
-def test_enn_index_init_and_search():
+def test_enn_neighbor_search_init_and_search():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    x_scale = np.ones((1, 3), dtype=float)
-    index = ENNIndex(train_x, num_dim=3, x_scale=x_scale, scale_x=False)
+    enn = _enn(train_x, scale_x=False)
     query = rng.standard_normal((5, 3))
-    dist2s, idx = index.search(query, search_k=3, exclude_nearest=False)
+    dist2s, idx = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=3, exclude_nearest=False
+    )
     assert dist2s.shape == (5, 3) and idx.shape == (5, 3)
     assert np.all(idx >= 0) and np.all(idx < 20)
 
 
-def test_enn_index_search_exclude_nearest():
+def test_enn_neighbor_search_exclude_nearest():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    x_scale = np.ones((1, 3), dtype=float)
-    index = ENNIndex(train_x, num_dim=3, x_scale=x_scale, scale_x=False)
+    enn = _enn(train_x, scale_x=False)
     query = train_x[:3]
-    dist2s_include, idx_include = index.search(query, search_k=3, exclude_nearest=False)
-    dist2s_exclude, idx_exclude = index.search(query, search_k=3, exclude_nearest=True)
+    dist2s_include, idx_include = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=3, exclude_nearest=False
+    )
+    dist2s_exclude, idx_exclude = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=3, exclude_nearest=True
+    )
     assert dist2s_include.shape == (3, 3) and dist2s_exclude.shape == (3, 2)
     assert np.allclose(dist2s_include[:, 0], 0.0, atol=1e-6)
 
 
-def test_enn_index_with_scaling():
+def test_enn_neighbor_search_with_scaling():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    x_scale = np.array([[2.0, 0.5, 1.0]])
-    index = ENNIndex(train_x / x_scale, num_dim=3, x_scale=x_scale, scale_x=True)
+    enn = _enn(train_x, scale_x=True)
     query = rng.standard_normal((5, 3))
-    dist2s, idx = index.search(query, search_k=3, exclude_nearest=False)
+    dist2s, idx = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=3, exclude_nearest=False
+    )
     assert dist2s.shape == (5, 3) and idx.shape == (5, 3)
 
 
 @pytest.mark.parametrize("query_shape,search_k", [((5, 3), 0), ((5, 4), 3)])
-def test_enn_index_search_invalid_inputs(query_shape, search_k):
+def test_enn_neighbor_search_invalid_inputs(query_shape, search_k):
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    index = ENNIndex(train_x, num_dim=3, x_scale=np.ones((1, 3)), scale_x=False)
+    enn = _enn(train_x, scale_x=False)
     with pytest.raises(ValueError):
-        index.search(
-            rng.standard_normal(query_shape), search_k=search_k, exclude_nearest=False
+        enn_neighbor_distances_and_indices(
+            enn.rust_backend,
+            rng.standard_normal(query_shape),
+            search_k=search_k,
+            exclude_nearest=False,
         )
 
 

@@ -15,8 +15,8 @@ from .enn_class_support import (
     _draw_from_internals,
     _rust_index_driver_name,
     _to_rust_seeds,
+    enn_neighbor_distances_and_indices,
 )
-from .enn_index import ENNIndex
 
 if TYPE_CHECKING:
     from .enn_normal import ENNNormal
@@ -76,13 +76,6 @@ class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
             self._train_x / self._x_scale if scale_x else self._train_x
         )
         self._y_scale = self._compute_scale(self._train_y, 0.0)
-        self._enn_index = ENNIndex(
-            self._train_x_scaled,
-            self._num_dim,
-            self._x_scale,
-            self._scale_x,
-            driver=index_driver,
-        )
         idx_driver = _rust_index_driver_name(index_driver)
         self._rust_model = _RustENN(
             self._train_x,
@@ -117,17 +110,7 @@ class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
         if self._scale_x:
             self._x_scale = self._compute_scale(self._train_x, 1e-12)
             self._train_x_scaled = self._train_x / self._x_scale
-            self._enn_index = ENNIndex(
-                self._train_x_scaled,
-                self._num_dim,
-                self._x_scale,
-                self._scale_x,
-                driver=self._index_driver,
-            )
-        else:
-            self._enn_index.add(x)
-        if self._rust_model is not None:
-            self._rust_model.add(x, y, yvar)
+        self._rust_model.add(x, y, yvar)
 
     @property
     def train_x(self) -> np.ndarray:
@@ -310,8 +293,11 @@ class EpistemicNearestNeighbors(_RustDispatchMixin, _PosteriorMixin):
             search_k = int(min(k + 1 if exclude_nearest else k, len(self)))
             if search_k == 0:
                 return np.zeros((0,), dtype=np.int64)
-            _, idx_full = self._enn_index.search(
-                x, search_k=search_k, exclude_nearest=exclude_nearest
+            _, idx_full = enn_neighbor_distances_and_indices(
+                self._rust_model,
+                x,
+                search_k=search_k,
+                exclude_nearest=exclude_nearest,
             )
             idx = idx_full[0, : min(k, idx_full.shape[1])]
             return idx.astype(np.int64, copy=False)

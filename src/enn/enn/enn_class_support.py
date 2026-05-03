@@ -28,6 +28,21 @@ def _to_rust_seeds(function_seeds: np.ndarray | list[int]) -> list[int]:
     return list(function_seeds)
 
 
+def enn_neighbor_distances_and_indices(
+    rust_model,
+    x: np.ndarray,
+    *,
+    search_k: int,
+    exclude_nearest: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    dist2s, idx = rust_model.neighbor_distances_and_indices(
+        np.asarray(x, dtype=float),
+        int(search_k),
+        bool(exclude_nearest),
+    )
+    return np.asarray(dist2s, dtype=float), np.asarray(idx, dtype=int)
+
+
 def _rust_index_driver_name(index_driver: ENNIndexDriver) -> str:
     from enn.turbo.config.enn_index_driver import ENN_INDEX_DRIVER_TO_RUST
 
@@ -109,8 +124,11 @@ class _PosteriorMixin:
             search_k = int(min(params.k_num_neighbors + 1, len(self)))
         else:
             search_k = int(min(params.k_num_neighbors, len(self)))
-        dist2s_full, idx_full = self._enn_index.search(
-            x, search_k=search_k, exclude_nearest=exclude_nearest
+        dist2s_full, idx_full = enn_neighbor_distances_and_indices(
+            self._rust_model,
+            x,
+            search_k=search_k,
+            exclude_nearest=exclude_nearest,
         )
         available_k = search_k - 1 if exclude_nearest else search_k
         k = min(params.k_num_neighbors, available_k)

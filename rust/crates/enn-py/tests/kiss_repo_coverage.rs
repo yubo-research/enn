@@ -31,6 +31,7 @@ fn kiss_pymodule_entrypoint_names_and_methods() {
         "init_progress",
         "k_num_neighbors",
         "neighbors",
+        "neighbor_distances_and_indices",
         "new",
         "num_outputs",
         "posterior",

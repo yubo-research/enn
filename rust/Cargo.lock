@@ -64,10 +64,10 @@ name = "ennbo"
 version = "0.1.1"
 dependencies = [
  "approx",
+ "faiss",
  "ndarray",
  "ndarray-linalg",
  "numpy",
- "ordered-float",
  "rand",
  "rand_chacha",
  "sobol",
@@ -84,6 +84,21 @@ dependencies = [
  "pyo3",
  "rand",
 ]
+
+[[package]]
+name = "faiss"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3618cbbe48ebdc63b461cd1bf52f64c27a40e4d294beceedbf2fd4898571e204"
+dependencies = [
+ "faiss-sys",
+]
+
+[[package]]
+name = "faiss-sys"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4a8fa67f7070bb81f41dc71c98813b3e40a66bedab12d6c2ac2af50f0837a7e"
 
 [[package]]
 name = "getrandom"
@@ -272,15 +287,6 @@ name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
-
-[[package]]
-name = "ordered-float"
-version = "4.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bb71e1b3fa6ca1c61f383464aaf2bb0e2f8e772a1f01d486832464de363b951"
-dependencies = [
- "num-traits",
-]
 
 [[package]]
 name = "portable-atomic"

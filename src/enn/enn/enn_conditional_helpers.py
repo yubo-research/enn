@@ -4,6 +4,7 @@ import numpy as np
 
 from .candidates import Candidates
 from .conditional_posterior_draw_internals import ConditionalPosteriorDrawInternals
+from .enn_class_support import enn_neighbor_distances_and_indices
 from .enn_like_protocol import ENNLike
 from .enn_params import ENNParams, PosteriorFlags
 from .neighbors import Neighbors
@@ -70,8 +71,11 @@ def get_train_candidates(enn: ENNLike, x: np.ndarray, *, search_k: int) -> Candi
             ),
         )
     train_search_k = int(min(search_k, len(enn)))
-    dist2_train, idx_train = enn._enn_index.search(
-        x, search_k=train_search_k, exclude_nearest=False
+    dist2_train, idx_train = enn_neighbor_distances_and_indices(
+        enn.rust_backend,
+        x,
+        search_k=train_search_k,
+        exclude_nearest=False,
     )
     y_train = enn._train_y[idx_train]
     yvar_train = enn._train_yvar[idx_train] if enn._train_yvar is not None else None

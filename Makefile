@@ -2,12 +2,12 @@
 
 # Default target: build the Rust extension in release mode
 all:
-	cd rust/crates/ennbo-py && maturin build --release
+	cd rust/crates/enn-py && maturin build --release
 
 # Install both the Rust extension and Python package
 install:
-	@echo "Building and installing Rust extension (ennbo-py)..."
-	cd rust/crates/ennbo-py && maturin develop --release
+	@echo "Building and installing Rust extension (rust/crates/enn-py)..."
+	cd rust/crates/enn-py && maturin develop --release
 	@echo "Installing Python package (ennbo)..."
 	pip install -e .
 	@echo "Installation complete!"
