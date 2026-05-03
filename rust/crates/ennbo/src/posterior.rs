@@ -487,6 +487,7 @@ mod tests {
     use crate::index::IndexDriver;
     use crate::model::EpistemicNearestNeighbors;
     use ndarray::array;
+    use ndarray::ArrayView2;
 
     fn create_test_model() -> EpistemicNearestNeighbors {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
@@ -500,6 +501,20 @@ mod tests {
             IndexDriver::Exact,
         )
         .unwrap()
+    }
+
+    fn assert_batch_neighbor_fill<F>(model: &EpistemicNearestNeighbors, paramss: Vec<ENNParams>, mut run: F)
+    where
+        F: FnMut(&EpistemicNearestNeighbors, &ArrayView2<f64>, &[ENNParams], &PosteriorFlags, &mut Array3<f64>, &mut Array3<f64>) -> Result<(), ENNError>,
+    {
+        let flags = PosteriorFlags::new();
+        let query = array![[0.5, 0.5]];
+        let (bs, np) = (query.nrows(), paramss.len());
+        let mut mu_all = Array3::zeros((np, bs, model.num_metrics()));
+        let mut se_all = Array3::zeros((np, bs, model.num_metrics()));
+        assert!(run(model, &query.view(), &paramss, &flags, &mut mu_all, &mut se_all).is_ok());
+        assert_eq!(mu_all.shape(), &[np, bs, 1]);
+        assert_eq!(se_all.shape(), &[np, bs, 1]);
     }
 
     #[test]
@@ -731,20 +746,9 @@ mod tests {
         let params1 = ENNParams::new(2, 1.0, 0.1).unwrap();
         let params2 = ENNParams::new(2, 2.0, 0.2).unwrap();
         let paramss = vec![params1, params2];
-        let flags = PosteriorFlags::new();
-        let query = array![[0.5, 0.5]];
-
-        let batch_size = query.nrows();
-        let num_params = paramss.len();
-        let mut mu_all = Array3::zeros((num_params, batch_size, model.num_metrics()));
-        let mut se_all = Array3::zeros((num_params, batch_size, model.num_metrics()));
-
-        let result = compute_batch_with_shared_neighbors(
-            &model, &query.view(), &paramss, &flags, &mut mu_all, &mut se_all,
-        );
-        assert!(result.is_ok());
-        assert_eq!(mu_all.shape(), &[2, 1, 1]);
-        assert_eq!(se_all.shape(), &[2, 1, 1]);
+        assert_batch_neighbor_fill(&model, paramss, |m, q, p, f, mu, se| {
+            compute_batch_with_shared_neighbors(m, q, p, f, mu, se)
+        });
     }
 
     #[test]
@@ -753,20 +757,9 @@ mod tests {
         let params1 = ENNParams::new(2, 1.0, 0.1).unwrap();
         let params2 = ENNParams::new(3, 2.0, 0.2).unwrap(); // Different k values
         let paramss = vec![params1, params2];
-        let flags = PosteriorFlags::new();
-        let query = array![[0.5, 0.5]];
-
-        let batch_size = query.nrows();
-        let num_params = paramss.len();
-        let mut mu_all = Array3::zeros((num_params, batch_size, model.num_metrics()));
-        let mut se_all = Array3::zeros((num_params, batch_size, model.num_metrics()));
-
-        let result = compute_batch_separate_neighbors(
-            &model, &query.view(), &paramss, &flags, &mut mu_all, &mut se_all,
-        );
-        assert!(result.is_ok());
-        assert_eq!(mu_all.shape(), &[2, 1, 1]);
-        assert_eq!(se_all.shape(), &[2, 1, 1]);
+        assert_batch_neighbor_fill(&model, paramss, |m, q, p, f, mu, se| {
+            compute_batch_separate_neighbors(m, q, p, f, mu, se)
+        });
     }
 
     #[test]

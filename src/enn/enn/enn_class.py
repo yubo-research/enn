@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -16,6 +16,30 @@ from .enn_class_support import (
 if TYPE_CHECKING:
     from .enn_normal import ENNNormal
     from .enn_params import ENNParams, PosteriorFlags
+
+
+def _posterior_flags_coerced(flags):
+    from .enn_params import PosteriorFlags
+
+    return flags if flags is not None else PosteriorFlags()
+
+
+def _rust_function_draw_kwargs(params, flags, seeds: list[int]) -> dict[str, Any]:
+    return {
+        "k_num_neighbors": params.k_num_neighbors,
+        "epistemic_variance_scale": params.epistemic_variance_scale,
+        "aleatoric_variance_scale": params.aleatoric_variance_scale,
+        "function_seeds": seeds,
+        "exclude_nearest": flags.exclude_nearest,
+        "observation_noise": flags.observation_noise,
+    }
+
+
+def _finalize_function_draw(
+    x: np.ndarray, draws: np.ndarray, idx: list | None
+) -> tuple[np.ndarray, np.ndarray]:
+    idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0), dtype=int)
+    return draws, idx_arr
 
 
 class EpistemicNearestNeighbors(_PosteriorMixin):
@@ -133,10 +157,8 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
         flags: PosteriorFlags | None = None,
     ) -> ENNNormal:
         from .enn_normal import ENNNormal
-        from .enn_params import PosteriorFlags
 
-        if flags is None:
-            flags = PosteriorFlags()
+        flags = _posterior_flags_coerced(flags)
 
         mu, se, idx = self._rust_model.posterior(
             x,
@@ -159,10 +181,8 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
         flags: PosteriorFlags | None = None,
     ) -> ENNNormal:
         from .enn_normal import ENNNormal
-        from .enn_params import PosteriorFlags
 
-        if flags is None:
-            flags = PosteriorFlags()
+        flags = _posterior_flags_coerced(flags)
 
         mu, se, _ = self._rust_model.conditional_posterior(
             x_whatif,
@@ -184,10 +204,8 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
         flags: PosteriorFlags | None = None,
     ) -> ENNNormal:
         from .enn_normal import ENNNormal
-        from .enn_params import PosteriorFlags
 
-        if flags is None:
-            flags = PosteriorFlags()
+        flags = _posterior_flags_coerced(flags)
         x = np.asarray(x, dtype=float)
         if x.ndim != 2 or x.shape[1] != self._num_dim:
             raise ValueError(x.shape)
@@ -238,23 +256,11 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
         function_seeds: np.ndarray | list[int],
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        from .enn_params import PosteriorFlags
-
-        if flags is None:
-            flags = PosteriorFlags()
-
+        flags = _posterior_flags_coerced(flags)
         seeds = _to_rust_seeds(function_seeds)
-        draws, idx = self._rust_model.posterior_function_draw(
-            x,
-            k_num_neighbors=params.k_num_neighbors,
-            epistemic_variance_scale=params.epistemic_variance_scale,
-            aleatoric_variance_scale=params.aleatoric_variance_scale,
-            function_seeds=seeds,
-            exclude_nearest=flags.exclude_nearest,
-            observation_noise=flags.observation_noise,
-        )
-        idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0))
-        return draws, idx_arr
+        kw = _rust_function_draw_kwargs(params, flags, seeds)
+        draws, idx = self._rust_model.posterior_function_draw(x, **kw)
+        return _finalize_function_draw(x, draws, idx)
 
     def conditional_posterior_function_draw(
         self,
@@ -266,10 +272,7 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
         function_seeds: np.ndarray | list[int],
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        from .enn_params import PosteriorFlags
-
-        if flags is None:
-            flags = PosteriorFlags()
+        flags = _posterior_flags_coerced(flags)
         x_whatif = np.asarray(x_whatif, dtype=float)
         if x_whatif.ndim != 2 or x_whatif.shape[1] != self._num_dim:
             raise ValueError(x_whatif.shape)
@@ -282,16 +285,11 @@ class EpistemicNearestNeighbors(_PosteriorMixin):
             )
 
         seeds = _to_rust_seeds(function_seeds)
+        kw = _rust_function_draw_kwargs(params, flags, seeds)
         draws, idx = self._rust_model.conditional_posterior_function_draw(
             x_whatif,
             y_whatif,
             x,
-            k_num_neighbors=params.k_num_neighbors,
-            epistemic_variance_scale=params.epistemic_variance_scale,
-            aleatoric_variance_scale=params.aleatoric_variance_scale,
-            function_seeds=seeds,
-            exclude_nearest=flags.exclude_nearest,
-            observation_noise=flags.observation_noise,
+            **kw,
         )
-        idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0))
-        return draws, idx_arr
+        return _finalize_function_draw(x, draws, idx)

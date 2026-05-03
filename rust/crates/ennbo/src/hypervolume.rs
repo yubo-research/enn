@@ -132,37 +132,36 @@ pub fn hypervolume_2d_max_1d(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{array, Array2};
+    use ndarray::{array, Array2, ArrayView2};
+
+    fn hypervolume_at_origin(y: &ArrayView2<f64>) -> f64 {
+        let ref_point = array![0.0, 0.0];
+        hypervolume_2d_max(y, &ref_point.view()).unwrap()
+    }
 
     #[test]
     fn test_empty_array() {
         let y = Array2::<f64>::zeros((0, 2));
-        let ref_point = array![0.0, 0.0];
-        let result = hypervolume_2d_max(&y.view(), &ref_point.view()).unwrap();
-        assert_eq!(result, 0.0);
+        assert_eq!(hypervolume_at_origin(&y.view()), 0.0);
     }
 
     #[test]
     fn test_no_dominating_points() {
         let y = array![[-1.0, -1.0], [-0.5, -0.5]];
-        let ref_point = array![0.0, 0.0];
-        let result = hypervolume_2d_max(&y.view(), &ref_point.view()).unwrap();
-        assert_eq!(result, 0.0);
+        assert_eq!(hypervolume_at_origin(&y.view()), 0.0);
     }
 
     #[test]
     fn test_simple_hypervolume() {
         let y = array![[1.0, 0.5], [0.5, 1.0]];
-        let ref_point = array![0.0, 0.0];
-        let result = hypervolume_2d_max(&y.view(), &ref_point.view()).unwrap();
+        let result = hypervolume_at_origin(&y.view());
         assert!((result - 0.75).abs() < 1e-10);
     }
 
     #[test]
     fn test_three_points() {
         let y = array![[1.0, 1.0], [0.2, 0.2], [0.5, 0.5]];
-        let ref_point = array![0.0, 0.0];
-        let result = hypervolume_2d_max(&y.view(), &ref_point.view()).unwrap();
+        let result = hypervolume_at_origin(&y.view());
         assert!((result - 1.0).abs() < 1e-10);
     }
 

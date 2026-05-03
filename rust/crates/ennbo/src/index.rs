@@ -232,12 +232,15 @@ mod tests {
     use ndarray::array;
     use ndarray::Array2;
 
+    fn index_unit(train_x: Array2<f64>, driver: IndexDriver) -> ENNIndex {
+        let x_scale = array![1.0, 1.0];
+        ENNIndex::new(train_x, 2, x_scale, false, driver).unwrap()
+    }
+
     #[test]
     fn test_index_creation() {
         let train_x = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
-        let x_scale = array![1.0, 1.0];
-
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
+        let index = index_unit(train_x, IndexDriver::Exact);
 
         assert_eq!(index.len(), 3);
         assert!(!index.is_empty());
@@ -246,8 +249,7 @@ mod tests {
     #[test]
     fn test_index_search() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
-        let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
+        let index = index_unit(train_x, IndexDriver::Exact);
 
         let query = array![[0.0, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 2, false).unwrap();
@@ -261,8 +263,7 @@ mod tests {
     #[test]
     fn test_index_search_exclude_nearest() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
-        let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
+        let index = index_unit(train_x, IndexDriver::Exact);
 
         let query = array![[0.0, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 2, true).unwrap();
@@ -275,9 +276,7 @@ mod tests {
 
     #[test]
     fn test_index_add() {
-        let train_x = array![[0.0, 0.0]];
-        let x_scale = array![1.0, 1.0];
-        let mut index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
+        let mut index = index_unit(array![[0.0, 0.0]], IndexDriver::Exact);
 
         let new_point = array![[1.0, 1.0]];
         index.add(&new_point.view()).unwrap();
@@ -287,9 +286,7 @@ mod tests {
 
     #[test]
     fn test_invalid_search_k() {
-        let train_x = array![[0.0, 0.0]];
-        let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
+        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Exact);
 
         let query = array![[0.0, 0.0]];
         let result = index.search(&query.view(), 0, false);
@@ -299,9 +296,7 @@ mod tests {
 
     #[test]
     fn test_invalid_dimensions() {
-        let train_x = array![[0.0, 0.0]];
-        let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::Exact).unwrap();
+        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Exact);
 
         let query = array![[0.0, 0.0, 0.0]];
         let result = index.search(&query.view(), 1, false);
@@ -312,8 +307,7 @@ mod tests {
     #[test]
     fn test_hnsw_search() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
-        let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::HNSW).unwrap();
+        let index = index_unit(train_x, IndexDriver::HNSW);
 
         let query = array![[0.0, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 2, false).unwrap();
@@ -333,8 +327,7 @@ mod tests {
                 (i * 13) as f64 % 5.0
             }
         });
-        let x_scale = array![1.0, 1.0];
-        let index = ENNIndex::new(train_x, 2, x_scale, false, IndexDriver::HNSW).unwrap();
+        let index = index_unit(train_x, IndexDriver::HNSW);
         let query = array![[0.25_f64, 0.25]];
         let k = n as i32;
         let (_dist2s, indices) = index.search(&query.view(), k, false).unwrap();
