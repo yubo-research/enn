@@ -1,14 +1,12 @@
 //! K-Nearest Neighbors index for ENN.
 //!
-//! Provides efficient KNN search using exact matrix operations or HNSW
-//! (Hierarchical Navigable Small World) graph.
+//! Exact kNN uses blocked matrix multiply with per-query heaps (L2, same geometry as
+//! FAISS `IndexFlatL2`). `IndexDriver::HNSW` uses that exact path in the Rust core until
+//! libfaiss-backed approximate search is wired here; Python uses FAISS `IndexHNSWFlat`.
 
 use ndarray::{s, Array1, Array2, ArrayView2, Axis};
 use std::collections::BinaryHeap;
 use thiserror::Error;
-
-use hnsw_rs::hnsw::Hnsw;
-use hnsw_rs::prelude::DistL2;
 
 /// Errors that can occur during index operations.
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -30,7 +28,7 @@ pub enum IndexDriver {
     /// Use exact search with matrix operations.
     #[default]
     Exact,
-    /// Use HNSW for approximate search.
+    /// Request HNSW-style approximate search (Rust core uses exact L2 until FAISS HNSW).
     HNSW,
 }
 
@@ -48,8 +46,6 @@ pub struct ENNIndex {
     scale_x: bool,
     /// Search driver.
     driver: IndexDriver,
-    /// HNSW backend (when driver is HNSW). T=f64 means points are &[f64].
-    hnsw: Option<Hnsw<'static, f64, DistL2>>,
 }
 
 impl ENNIndex {
@@ -69,45 +65,18 @@ impl ENNIndex {
         scale_x: bool,
         driver: IndexDriver,
     ) -> Self {
-        let hnsw = if driver == IndexDriver::HNSW && !train_x_scaled.is_empty() {
-            Some(Self::build_hnsw(&train_x_scaled))
-        } else {
-            None
-        };
         Self {
             train_x_scaled,
             num_dim,
             x_scale,
             scale_x,
             driver,
-            hnsw,
         }
     }
 
     /// Index search driver (needed to rebuild after rescaling training inputs).
     pub fn driver(&self) -> IndexDriver {
         self.driver
-    }
-
-    /// Build an HNSW index from training data.
-    fn build_hnsw(train_x: &Array2<f64>) -> Hnsw<'static, f64, DistL2> {
-        let n = train_x.nrows();
-        let max_nb_connection = 24usize.min(n.saturating_sub(1));
-        let max_layer = (n as f64).ln().clamp(1.0, 16.0) as usize;
-        let ef_construction = 400.min(n * 2);
-        let mut hnsw = Hnsw::<f64, DistL2>::new(
-            max_nb_connection.max(2),
-            n,
-            max_layer.max(1),
-            ef_construction.max(2),
-            DistL2 {},
-        );
-        for (i, row) in train_x.outer_iter().enumerate() {
-            let pt: Vec<f64> = row.iter().copied().collect();
-            hnsw.insert_slice((pt.as_slice(), i));
-        }
-        hnsw.set_searching_mode(true);
-        hnsw
     }
 
     /// Add new points to the index.
@@ -134,23 +103,11 @@ impl ENNIndex {
             x.to_owned()
         };
 
-        // Concatenate with existing data
-        let start_idx = self.train_x_scaled.nrows();
         self.train_x_scaled = ndarray::concatenate![
             Axis(0),
             self.train_x_scaled.view(),
             x_scaled.view()
         ];
-
-        // Update HNSW if present
-        if let Some(ref mut hnsw) = self.hnsw {
-            hnsw.set_searching_mode(false);
-            for (i, row) in x_scaled.outer_iter().enumerate() {
-                let pt: Vec<f64> = row.iter().copied().collect();
-                hnsw.insert_slice((pt.as_slice(), start_idx + i));
-            }
-            hnsw.set_searching_mode(true);
-        }
 
         Ok(())
     }
@@ -200,13 +157,8 @@ impl ENNIndex {
             x.to_owned()
         };
 
-        // Compute distances based on driver
-        let (mut dist2s, mut indices) = match self.driver {
-            IndexDriver::Exact => self.exact_search(&x_scaled.view(), k),
-            IndexDriver::HNSW => self.hnsw_search(&x_scaled.view(), k),
-        };
+        let (mut dist2s, mut indices) = self.exact_search(&x_scaled.view(), k);
 
-        // Exclude nearest if requested (need at least 2 to exclude 1)
         if exclude_nearest {
             if k < 2 {
                 return Err(IndexError::InvalidParameter(
@@ -286,57 +238,6 @@ impl ENNIndex {
         }
 
         (dist2s, indices)
-    }
-
-    /// HNSW search using hnsw_rs. DistL2 returns L2 distance; we square for API.
-    fn hnsw_search(
-        &self,
-        x: &ArrayView2<f64>,
-        k: usize,
-    ) -> (Array2<f64>, Array2<i64>) {
-        let Some(ref hnsw) = self.hnsw else {
-            return self.exact_search(x, k);
-        };
-        let n_query = x.nrows();
-        let ef_arg = k.max(32);
-        let mut dist2s = Array2::from_elem((n_query, k), f64::INFINITY);
-        let mut indices_arr = Array2::from_elem((n_query, k), -1i64);
-        for (i, row) in x.outer_iter().enumerate() {
-            let pt: Vec<f64> = row.iter().copied().collect();
-            let neighbors = hnsw.search(pt.as_slice(), k, ef_arg);
-            for (j, nb) in neighbors.iter().enumerate().take(k) {
-                // Neighbour: d_id is our payload (index), distance is L2; square for API
-                let dist = nb.distance as f64;
-                dist2s[[i, j]] = dist * dist;
-                indices_arr[[i, j]] = nb.d_id as i64;
-            }
-        }
-        // `hnsw.search` can return fewer than `k` neighbors; unfilled slots stay (-1, inf).
-        // Match Python `_pad_neighbor_cols_to_search_k`: repeat farthest retrieved id, +inf dist.
-        for i in 0..n_query {
-            let mut last_valid: Option<usize> = None;
-            for j in 0..k {
-                if indices_arr[[i, j]] >= 0 {
-                    last_valid = Some(j);
-                }
-            }
-            match last_valid {
-                Some(last) => {
-                    let far_id = indices_arr[[i, last]];
-                    for j in (last + 1)..k {
-                        indices_arr[[i, j]] = far_id;
-                        dist2s[[i, j]] = f64::INFINITY;
-                    }
-                }
-                None => {
-                    let row_arr = x.row(i).to_owned().insert_axis(Axis(0));
-                    let (d, idx) = self.exact_search(&row_arr.view(), k);
-                    dist2s.row_mut(i).assign(&d.row(0));
-                    indices_arr.row_mut(i).assign(&idx.row(0));
-                }
-            }
-        }
-        (dist2s, indices_arr)
     }
 
     /// Get the number of training points.
@@ -451,9 +352,6 @@ mod tests {
         assert!(dist2s[[0, 1]] > 0.0);
     }
 
-    /// Regression: `hnsw_search` pre-fills indices with -1; if `hnsw.search` returns
-    /// fewer than `k` neighbors, tail slots stay -1 (unsafe for `train_y[idx]`).
-    /// Python pads widened columns via `_pad_neighbor_cols_to_search_k`; Rust HNSW must not emit -1.
     #[test]
     fn test_hnsw_search_regression_all_indices_valid_for_k_equals_n() {
         let n = 10usize;
@@ -482,7 +380,6 @@ mod tests {
     #[test]
     fn test_scaled_search() {
         // When scale_x=true, train_x_scaled should be pre-scaled
-        let _train_x = array![[0.0, 0.0], [2.0, 2.0]]; // Original unscaled
         let x_scale = array![2.0, 2.0];
         // train_x_scaled = [[0,0], [1,1]]
         let index = ENNIndex::new(

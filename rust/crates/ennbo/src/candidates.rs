@@ -17,7 +17,7 @@ pub enum CandidateRV {
     /// Uniform random sampling.
     #[default]
     Uniform,
-    /// RAASP (Random Adaptive Anchor Search Perturbation).
+    /// RAASP (Random Axis-Aligned Subspace Perturbation).
     RAASP,
 }
 

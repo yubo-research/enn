@@ -12,11 +12,11 @@ readme = "README.md"
 
 [dependencies]
 ndarray = { workspace = true }
+ndarray-linalg = { workspace = true }
 ordered-float = "4.0"
 rand = "0.8"
 sobol = "1.0.2"
 thiserror = { workspace = true }
-hnsw_rs = "0.3"
 
 [dev-dependencies]
 approx = "0.5"
