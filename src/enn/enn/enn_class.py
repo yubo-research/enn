@@ -7,11 +7,7 @@ import numpy as np
 from enn._rust import EpistemicNearestNeighbors as _RustENN
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
-from .enn_class_support import (
-    _PosteriorMixin,
-    _rust_index_driver_name,
-    _to_rust_seeds,
-)
+from .enn_class_support import _rust_index_driver_name, _to_rust_seeds
 
 if TYPE_CHECKING:
     from .enn_normal import ENNNormal
@@ -42,7 +38,7 @@ def _finalize_function_draw(
     return draws, idx_arr
 
 
-class EpistemicNearestNeighbors(_PosteriorMixin):
+class EpistemicNearestNeighbors:
     _EPS_VAR = 1e-9
 
     @staticmethod

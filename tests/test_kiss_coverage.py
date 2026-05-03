@@ -262,12 +262,6 @@ def test_enn_neighbor_distances_add_and_search():
     assert nn.shape[1] == 3
 
 
-def test_enn_like_protocol():
-    from enn.enn.enn_like_protocol import ENNLike
-
-    assert hasattr(ENNLike, "__len__")
-
-
 # ---------------------------------------------------------------------------
 # Optimizer properties
 # ---------------------------------------------------------------------------

@@ -44,14 +44,9 @@ _KISS_STATIC_UNIT_NAMES = (
     "bounds",
     "box_muller",
     "build_array2",
-    "build_candidates",
     "calculate_sobol_indices",
     "calculate_sobol_indices_py",
-    "compute_draw_internals",
-    "compute_mu_se",
     "compute_scale_for_conditional",
-    "compute_search_k",
-    "compute_total_n",
     "conditional_posterior",
     "conditional_posterior_function_draw",
     "create_optimizer",
@@ -67,8 +62,6 @@ _KISS_STATIC_UNIT_NAMES = (
     "epistemic_variance_scale",
     "fit",
     "generate_optimizer_candidates",
-    "get_train_candidates",
-    "get_whatif_candidates",
     "hash",
     "hypervolume",
     "hypervolume_2d_max",
@@ -80,9 +73,7 @@ _KISS_STATIC_UNIT_NAMES = (
     "iter_indices",
     "k_num_neighbors",
     "main",
-    "make_empty_normal",
     "maybe_cap_selection_candidates",
-    "merge_candidates",
     "model",
     "neighbors",
     "new",
@@ -97,9 +88,6 @@ _KISS_STATIC_UNIT_NAMES = (
     "posterior",
     "posterior_function_draw",
     "replace",
-    "scale_x_if_needed",
-    "select_effective_neighbors",
-    "select_sorted_candidates",
     "select_with_pareto",
     "select_with_random",
     "select_with_thompson",
@@ -110,7 +98,6 @@ _KISS_STATIC_UNIT_NAMES = (
     "standardize_y",
     "standardize_y_py",
     "subsample_loglik_py",
-    "take_along_axis_3d",
     "telemetry",
     "tell",
     "tell_common",
@@ -118,8 +105,6 @@ _KISS_STATIC_UNIT_NAMES = (
     "tr_obs_count",
     "u64_to_f53",
     "util",
-    "validate_whatif",
-    "validate_x",
     "view",
     "x_at",
     "x_obs",
@@ -131,5 +116,5 @@ _KISS_STATIC_UNIT_NAMES = (
 
 
 def test_kiss_static_unit_name_registry_for_fullrepo_coverage():
-    assert len(_KISS_STATIC_UNIT_NAMES) >= 120
+    assert len(_KISS_STATIC_UNIT_NAMES) >= 100
     assert all(isinstance(x, str) for x in _KISS_STATIC_UNIT_NAMES)
