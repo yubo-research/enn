@@ -15,7 +15,7 @@ The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow Tu
   - Select a candidate with Thompson sampling (TuRBO-one), UCB (TuRBO-ENN), or randomly (TURBO-zero).
 
 
-[1] **Sweet, D., & Jadhav, S. A. (2025).** Taking the GP Out of the Loop. *arXiv preprint arXiv:2506.12818*.
+[1] **M. Bafna, Jadhav, S. a., & Sweet, D., (2025).** Taking the GP Out of the Loop. *arXiv preprint arXiv:2506.12818*.
    https://arxiv.org/abs/2506.12818
 [2] **Eriksson, D., Pearce, M., Gardner, J. R., Turner, R., & Poloczek, M. (2020).** Scalable Global Optimization via Local Bayesian Optimization. *Advances in Neural Information Processing Systems, 32*.
    https://arxiv.org/abs/1910.01739

@@ -388,7 +388,7 @@ fn select_with_pareto(
     let pred = surrogate.predict(x_cand)?;
     let pareto = ParetoAcquisition::new();
     let indices = pareto
-        .select(&pred.mu.view(), num_arms, rng)
+        .select(&pred.mu.view(), &pred.se.view(), num_arms, rng)
         .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
     Ok(select_by_indices(x_cand, &indices))
 }

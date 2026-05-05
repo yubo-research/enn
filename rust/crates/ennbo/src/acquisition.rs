@@ -189,6 +189,7 @@ impl ParetoAcquisition {
     pub fn select<R: Rng + ?Sized>(
         &self,
         mu: &ArrayView2<f64>,
+        se: &ArrayView2<f64>,
         num_arms: usize,
         rng: &mut R,
     ) -> AcquisitionResult {
@@ -203,10 +204,17 @@ impl ParetoAcquisition {
             return Ok(Vec::new());
         }
 
+        if mu.shape() != se.shape() {
+            return Err(AcquisitionError::InvalidParameter(format!(
+                "mu shape {:?} does not match se shape {:?}",
+                mu.shape(),
+                se.shape()
+            )));
+        }
+
         if n_objectives == 1 {
-            // Single objective - use 2D Pareto front on (mu, sigma)
             let mu_1d = mu.column(0).to_owned();
-            let sigma_1d = Array1::ones(n_candidates); // Placeholder
+            let sigma_1d = se.column(0).to_owned();
             return Self::arms_from_pareto_fronts_2d(&mu_1d.view(), &sigma_1d.view(), num_arms, rng);
         }
 
@@ -449,24 +457,36 @@ mod tests {
     fn test_pareto_single_objective() {
         let pareto = ParetoAcquisition::new();
         let mu = array![[1.0], [2.0], [3.0], [4.0], [5.0]];
+        let se = array![[0.1], [0.2], [0.3], [0.4], [0.5]];
 
         let mut rng = ChaCha8Rng::seed_from_u64(42);
-        let selected = pareto.select(&mu.view(), 3, &mut rng).unwrap();
+        let selected = pareto.select(&mu.view(), &se.view(), 3, &mut rng).unwrap();
 
         assert_eq!(selected.len(), 3);
     }
 
     #[test]
-    fn test_pareto_multi_objective() {
+    fn test_pareto_single_objective_uses_predictive_se_bug_md() {
         let pareto = ParetoAcquisition::new();
-        // 5 candidates, 2 objectives
-        let mu = array![[1.0, 1.0], [2.0, 0.5], [0.5, 2.0], [1.5, 1.5], [3.0, 3.0]];
+        let mu = array![[1.0], [1.0], [2.0]];
+        let se = array![[0.01], [10.0], [1.5]];
 
         let mut rng = ChaCha8Rng::seed_from_u64(42);
-        let selected = pareto.select(&mu.view(), 3, &mut rng).unwrap();
+        let selected = pareto.select(&mu.view(), &se.view(), 1, &mut rng).unwrap();
+
+        assert_eq!(selected, vec![1]);
+    }
+
+    #[test]
+    fn test_pareto_multi_objective() {
+        let pareto = ParetoAcquisition::new();
+        let mu = array![[1.0, 1.0], [2.0, 0.5], [0.5, 2.0], [1.5, 1.5], [3.0, 3.0]];
+        let se = array![[0.1, 0.1], [0.1, 0.1], [0.1, 0.1], [0.1, 0.1], [0.1, 0.1]];
+
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        let selected = pareto.select(&mu.view(), &se.view(), 3, &mut rng).unwrap();
 
         assert_eq!(selected.len(), 3);
-        // Point [3.0, 3.0] should dominate all others
         assert!(selected.contains(&4));
     }
 
