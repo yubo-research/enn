@@ -14,6 +14,9 @@ The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow Tu
   - Generate candidates with RAASP [3] sampling.
   - Select a candidate with Thompson sampling (TuRBO-one), UCB (TuRBO-ENN), or randomly (TURBO-zero).
 
+- Overview of algorithms: [algos.pdf](docs/algos.pdf)
+
+
 
 [1] **M. Bafna, Jadhav, S. a., & Sweet, D., (2025).** Taking the GP Out of the Loop. *arXiv preprint arXiv:2506.12818*.
    https://arxiv.org/abs/2506.12818
@@ -28,11 +31,6 @@ The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow Tu
 or
 `cargo add ennbo`
 
-## Rust extension and Faiss
-
-The `ennbo` crate performs ENN neighbor search through [Faiss](https://github.com/facebookresearch/faiss) using the [`faiss`](https://crates.io/crates/faiss) crate, which dynamically links `libfaiss_c`. Install Faiss with the C API (for example `brew install faiss` on macOS, or a distribution package / source build per upstream `c_api/INSTALL.md`). If the linker cannot find the library, set `FAISS_LIB_DIR` to the directory that contains `libfaiss_c`. `rust/crates/ennbo/build.rs` adds common default search paths on macOS and Linux when `FAISS_LIB_DIR` is not set.
-
-`src/enn/_rust.py` sets conservative defaults when unset (`KMP_DUPLICATE_LIB_OK`, `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`), imports PyTorch when available, then loads the native extension so typical Faiss/PyTorch stacks stay stable.
 
 ## Demonstration
 [`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_enn.ipynb) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) to build and query an ENN model.
