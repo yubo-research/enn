@@ -12,11 +12,15 @@ repos:
   # Forbid committing binary files and run custom checks
   - repo: local
     hooks:
+      # Git LFS leaves the real bytes on disk for smudge/checkout, so pre-commit
+      # still classifies *.pdf as binary. Exclude PDFs here; track them via LFS
+      # (.gitattributes) and rely on forbid-binary for all other binaries.
       - id: forbid-binary
         name: Forbid committing binary files
         entry: bash -c 'echo \"Binary files are not allowed in this repository.\"; exit 1'
         language: system
         types: [binary]
+        exclude: (?i)\.pdf$
 
       - id: find-forgotten-py
         name: Find forgotten Python files via git status
