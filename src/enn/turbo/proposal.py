@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
     from .config.enn_fit_config import ENNFitConfig
     from .config.enn_index_driver import ENNIndexDriver
-    from .turbo_gp import TurboGP
 
 
 def mk_enn(
@@ -78,62 +77,3 @@ def mk_enn(
             aleatoric_variance_scale=0.0,
         )
     return enn_model, fitted_params
-
-
-def select_uniform(
-    x_cand: np.ndarray,
-    num_arms: int,
-    num_dim: int,
-    rng: Generator,
-    from_unit_fn: Callable[[np.ndarray], np.ndarray],
-) -> np.ndarray:
-    if x_cand.ndim != 2 or x_cand.shape[1] != num_dim:
-        raise ValueError(x_cand.shape)
-    if x_cand.shape[0] < num_arms:
-        raise ValueError((x_cand.shape[0], num_arms))
-    idx = rng.choice(x_cand.shape[0], size=num_arms, replace=False)
-    return from_unit_fn(x_cand[idx])
-
-
-def select_gp_thompson(
-    x_cand: np.ndarray,
-    num_arms: int,
-    x_obs_list: list,
-    y_obs_list: list,
-    num_dim: int,
-    *,
-    gp_num_steps: int,
-    rng: Generator,
-    gp_y_stats: tuple[float, float],
-    select_sobol_fn: Callable[[np.ndarray, int], np.ndarray],
-    from_unit_fn: Callable[[np.ndarray], np.ndarray],
-    model: TurboGP | None = None,
-) -> tuple[np.ndarray, tuple[float, float], TurboGP | None]:
-    from .turbo_gp_fit import fit_gp
-
-    gp_y_mean, gp_y_std = gp_y_stats
-    if len(x_obs_list) == 0:
-        return select_sobol_fn(x_cand, num_arms), (gp_y_mean, gp_y_std), None
-    fitted_mean, fitted_std = gp_y_mean, gp_y_std
-    if model is None:
-        gp_result = fit_gp(
-            x_obs_list,
-            y_obs_list,
-            num_dim,
-            num_steps=gp_num_steps,
-        )
-        model, fitted_mean, fitted_std = (
-            gp_result.model,
-            gp_result.y_mean,
-            gp_result.y_std,
-        )
-    if model is None:
-        return select_sobol_fn(x_cand, num_arms), (gp_y_mean, gp_y_std), None
-    if x_cand.shape[0] < num_arms:
-        raise ValueError((x_cand.shape[0], num_arms))
-    from .turbo_utils import gp_thompson_sample
-
-    idx = gp_thompson_sample(
-        model, x_cand, num_arms, rng, gp_y_mean=fitted_mean, gp_y_std=fitted_std
-    )
-    return from_unit_fn(x_cand[idx]), (fitted_mean, fitted_std), model

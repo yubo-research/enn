@@ -15,40 +15,6 @@ if TYPE_CHECKING:
     from .enn_params import ENNParams
 
 
-def _validate_subsample_inputs(
-    x: np.ndarray, y: np.ndarray, P: int, paramss: list
-) -> tuple[np.ndarray, np.ndarray]:
-    x_array = np.asarray(x, dtype=float)
-    if x_array.ndim != 2:
-        raise ValueError(x_array.shape)
-    y_array = np.asarray(y, dtype=float)
-    if y_array.ndim == 1:
-        y_array = y_array.reshape(-1, 1)
-    if y_array.ndim != 2:
-        raise ValueError(y_array.shape)
-    if x_array.shape[0] != y_array.shape[0]:
-        raise ValueError((x_array.shape, y_array.shape))
-    if P <= 0:
-        raise ValueError(P)
-    if len(paramss) == 0:
-        raise ValueError("paramss must be non-empty")
-    return x_array, y_array
-
-
-def _compute_single_loglik(
-    y_scaled: np.ndarray, mu_i: np.ndarray, se_i: np.ndarray
-) -> float:
-    if not np.isfinite(mu_i).all() or not np.isfinite(se_i).all():
-        return 0.0
-    if np.any(se_i <= 0.0):
-        return 0.0
-    var_scaled = se_i**2
-    loglik = -0.5 * np.sum(
-        np.log(2.0 * np.pi * var_scaled) + (y_scaled - mu_i) ** 2 / var_scaled
-    )
-    return float(loglik) if np.isfinite(loglik) else 0.0
-
-
 def subsample_loglik(
     model: EpistemicNearestNeighbors,
     x: np.ndarray,

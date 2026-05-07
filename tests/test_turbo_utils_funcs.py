@@ -3,6 +3,7 @@ from __future__ import annotations
 import conftest
 import numpy as np
 import pytest
+import turbo_utils_selection_helpers as selection_helpers
 from scipy.stats import qmc
 
 from enn.turbo.turbo_utils import (
@@ -228,35 +229,33 @@ def test_to_unit_bounds_validation():
 
 
 def test_select_uniform_shape_and_uniformity():
-    from enn.turbo.proposal import select_uniform
-
     num_candidates, num_dim, num_arms = 128, 4, 8
     x_cand = np.random.default_rng(0).random((num_candidates, num_dim))
     bounds = np.array([[0.0, 1.0]] * num_dim, dtype=float)
     rng = np.random.default_rng(42)
     from_unit_fn = conftest.make_from_unit_fn(bounds)
-    selected = select_uniform(x_cand, num_arms, num_dim, rng, from_unit_fn)
+    selected = selection_helpers.select_uniform(
+        x_cand, num_arms, num_dim, rng, from_unit_fn
+    )
     assert selected.shape == (num_arms, num_dim)
     assert len(np.unique([tuple(row) for row in selected], axis=0)) == num_arms
 
 
 def test_select_uniform_validation():
-    from enn.turbo.proposal import select_uniform
-
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
     from_unit_fn = conftest.make_from_unit_fn(bounds)
     with pytest.raises(ValueError):
-        select_uniform(
+        selection_helpers.select_uniform(
             np.random.default_rng(0).random((10, 3)), 5, 2, rng, from_unit_fn
         )
     with pytest.raises(ValueError):
-        select_uniform(np.random.default_rng(0).random((3, 2)), 5, 2, rng, from_unit_fn)
+        selection_helpers.select_uniform(
+            np.random.default_rng(0).random((3, 2)), 5, 2, rng, from_unit_fn
+        )
 
 
 def test_select_gp_thompson_uses_gp_and_returns_correct_shape():
-    from enn.turbo.proposal import select_gp_thompson
-
     num_candidates, num_dim, num_arms = 30, 2, 5
     x_cand = np.random.default_rng(0).random((num_candidates, num_dim))
     x_obs = np.random.default_rng(1).random((15, num_dim))
@@ -265,7 +264,7 @@ def test_select_gp_thompson_uses_gp_and_returns_correct_shape():
     rng = np.random.default_rng(42)
     from_unit_fn = conftest.make_from_unit_fn(bounds)
     select_sobol_fn = conftest.make_select_sobol_fn(bounds, rng)
-    selected, (new_mean, new_std), _ = select_gp_thompson(
+    selected, (new_mean, new_std), _ = selection_helpers.select_gp_thompson(
         x_cand,
         num_arms,
         x_obs.tolist(),
@@ -284,8 +283,6 @@ def test_select_gp_thompson_uses_gp_and_returns_correct_shape():
 
 
 def test_select_gp_thompson_fallback_on_empty_observations():
-    from enn.turbo.proposal import select_gp_thompson
-
     num_candidates, num_dim, num_arms = 20, 2, 3
     x_cand = np.random.default_rng(0).random((num_candidates, num_dim))
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
@@ -299,7 +296,7 @@ def test_select_gp_thompson_fallback_on_empty_observations():
         idx = rng.choice(x.shape[0], size=n, replace=False)
         return from_unit_fn(x[idx])
 
-    selected, (mean, std), _ = select_gp_thompson(
+    selected, (mean, std), _ = selection_helpers.select_gp_thompson(
         x_cand,
         num_arms,
         [],
