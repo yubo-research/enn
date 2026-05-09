@@ -2,6 +2,7 @@
 name = "ennbo-py"
 version.workspace = true
 edition.workspace = true
+build = "build.rs"
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

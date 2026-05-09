@@ -146,15 +146,14 @@ class TurboTrustRegion(ScalarIncumbentMixin):
         return self.length < self.length_min
 
     def restart(self, rng: Any | None = None) -> None:
+        # Keep _num_arms / _failure_tolerance: update() may run before validate_request (TR restart path).
         (
             self.length,
             self.failure_counter,
             self.success_counter,
             self.best_value,
             self.prev_num_obs,
-            self._num_arms,
-            self._failure_tolerance,
-        ) = self.length_init, 0, 0, -float("inf"), 0, None, None
+        ) = (self.length_init, 0, 0, -float("inf"), 0)
 
     def validate_request(self, num_arms: int, *, is_fallback: bool = False) -> None:
         self._ensure_initialized(num_arms)

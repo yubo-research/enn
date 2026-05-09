@@ -50,6 +50,9 @@ dev = [
 manifest-path = "rust/crates/enn-py/Cargo.toml"
 python-source = "src"
 module-name = "enn.enn_rust"
+# `.cargo/` is outside the Rust workspace; include it so `pip install` / sdist
+# builds pick up `CMAKE_TOOLCHAIN_FILE` for Faiss BLAS detection on Linux.
+include = [{ path = ".cargo/**/*", format = "sdist" }]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
