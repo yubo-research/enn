@@ -14,9 +14,7 @@ fn install_patchelf_if_needed() {
         .arg(script)
         .status()
         .unwrap_or_else(|e| panic!("install_patchelf_root.sh: {e}"));
-    if !status.success() {
-        panic!("install_patchelf_root.sh failed: {status}");
-    }
+    assert!(status.success(), "install_patchelf_root.sh failed: {status}");
 }
 
 fn main() {
@@ -29,7 +27,7 @@ fn main() {
         let lib = PathBuf::from(prefix).join("lib");
         if blas_libs_present(&lib) {
             let p = lib.to_string_lossy();
-            println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", p);
+            println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{p}");
         }
     }
     for p in ["/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu"] {

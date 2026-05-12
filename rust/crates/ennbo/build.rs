@@ -15,8 +15,22 @@ fn has_blas_for_link(dir: &Path) -> bool {
         || dir.join("libopenblas.so.0").exists()
 }
 
+fn openblas_for_link(dir: &Path) -> Option<PathBuf> {
+    ["libopenblas.so", "libopenblas.so.0"]
+        .iter()
+        .map(|name| dir.join(name))
+        .find(|path| path.exists())
+}
+
+fn emit_openblas_link(dir: &Path) {
+    if let Some(openblas) = openblas_for_link(dir) {
+        println!("cargo:rustc-link-arg={}", openblas.display());
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display());
+    }
+}
+
 /// `faiss-sys` (static Linux) links `-lblas -llapack`; ensure the linker sees them
-/// (conda OpenBLAS provides `libblas.so`, Debian needs `libblas-dev` / `libopenblas0`).
+/// (conda `OpenBLAS` provides `libblas.so`, Debian needs `libblas-dev` / `libopenblas0`).
 fn emit_blas_lapack_link_search_linux() {
     // Only link-search here: `rustc-link-arg` rpath from a dependency build script
     // does not apply to the final cdylib (`enn-py` adds rpath via its own `build.rs`).
@@ -27,11 +41,13 @@ fn emit_blas_lapack_link_search_linux() {
                 "cargo:rustc-link-search=native={}",
                 lib.to_str().expect("utf-8 conda lib path")
             );
+            emit_openblas_link(&lib);
         }
     }
     for p in ["/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu"] {
         if has_blas_for_link(Path::new(p)) {
             println!("cargo:rustc-link-search=native={p}");
+            emit_openblas_link(Path::new(p));
         }
     }
 }
