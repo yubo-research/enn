@@ -1,7 +1,7 @@
-.PHONY: all install clean test rust-test python-test lint \
+.PHONY: all install clean test rust-test python-test lint wheels wheelsl \
 	pypi-build pypi-publish pypi-auth-check
 
-# Default: release extension with bundled static Faiss.
+# Default: build a release extension for the local platform.
 all:
 	maturin build --release
 
@@ -29,6 +29,12 @@ lint:
 	cd rust && cargo clippy --all-targets --all-features -- -D warnings
 	ruff check
 	kiss check
+
+# Build local PyPI wheel artifacts for the supported release tags.
+wheels:
+	scripts/build_wheels.sh
+
+wheelsl: wheels
 
 # --- PyPI (ennbo): token in MATURIN_PYPI_TOKEN, or credentials in ~/.pypirc ---
 pypi-build:

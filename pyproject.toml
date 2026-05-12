@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "ennbo"
-version = "0.3.5"
+version = "0.3.6"
 description = "Epistemic Nearest Neighbors"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -54,8 +54,10 @@ manifest-path = "rust/crates/enn-py/Cargo.toml"
 python-source = "src"
 module-name = "enn.enn_rust"
 profile = "release"
-auditwheel = "skip"
-# Faiss is always built and linked statically by the Rust crate configuration.
+# Linux release builds should repair wheels; macOS wheels are repaired in CI with delocate.
+auditwheel = "repair"
+# Linux builds link Faiss statically by Rust target configuration; macOS builds link
+# Homebrew/CI dylibs and bundle them into the wheel during repair.
 # `.cargo/` is outside the Rust workspace; include it for any workspace-level Cargo config.
 include = [
     { path = ".cargo/**/*", format = "sdist" },
