@@ -5,12 +5,10 @@
 all:
 	maturin build --release
 
-# Install both the Rust extension and Python package
+# Install the mixed Python/Rust package in editable mode.
 install:
-	@echo "Building and installing Rust extension (see pyproject [tool.maturin])..."
+	@echo "Building and installing Python/Rust package (see pyproject [tool.maturin])..."
 	maturin develop --release
-	@echo "Installing Python package (ennbo)..."
-	pip install -e .
 	@echo "Installation complete!"
 
 # Run all tests (Rust and Python)

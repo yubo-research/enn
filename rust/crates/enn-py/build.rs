@@ -14,7 +14,10 @@ fn install_patchelf_if_needed() {
         .arg(script)
         .status()
         .unwrap_or_else(|e| panic!("install_patchelf_root.sh: {e}"));
-    assert!(status.success(), "install_patchelf_root.sh failed: {status}");
+    assert!(
+        status.success(),
+        "install_patchelf_root.sh failed: {status}"
+    );
 }
 
 fn main() {

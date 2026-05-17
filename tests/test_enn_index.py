@@ -9,6 +9,7 @@ from enn.enn.enn_hash import (
     normal_hash_batch_multi_seed,
     normal_hash_batch_multi_seed_fast,
 )
+from enn.enn.enn_params import ENNParams
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 
@@ -18,6 +19,73 @@ def _enn(train_x, *, scale_x=False, index_driver=ENNIndexDriver.FLAT, train_y=No
     return EpistemicNearestNeighbors(
         train_x, train_y, scale_x=scale_x, index_driver=index_driver
     )
+
+
+@pytest.mark.parametrize("scale_x", [False, True])
+def test_add_rejects_wrong_output_width_without_mutating_model(scale_x):
+    train_x = np.array([[0.0, 0.0], [10.0, 0.0]], dtype=float)
+    train_y = np.array([[0.0], [10.0]], dtype=float)
+    enn = EpistemicNearestNeighbors(train_x, train_y, scale_x=scale_x)
+
+    with pytest.raises(ValueError):
+        enn.add(np.array([[20.0, 0.0]], dtype=float), np.array([[20.0, 200.0]]))
+
+    assert len(enn) == 2
+    np.testing.assert_allclose(enn.train_x, train_x)
+    np.testing.assert_allclose(enn.train_y, train_y)
+
+    enn.add(np.array([[30.0, 0.0]], dtype=float), np.array([[30.0]], dtype=float))
+    assert len(enn) == 3
+    assert enn.train_x.shape[0] == enn.train_y.shape[0]
+
+    params = ENNParams(
+        k_num_neighbors=1,
+        epistemic_variance_scale=1.0,
+        aleatoric_variance_scale=0.1,
+    )
+    out = enn.posterior(np.array([[30.0, 0.0]], dtype=float), params=params)
+    np.testing.assert_allclose(out.mu, [[30.0]])
+
+
+@pytest.mark.parametrize("scale_x", [False, True])
+def test_add_first_observations_can_initialize_yvar_on_empty_model(scale_x):
+    empty_x = np.empty((0, 2), dtype=float)
+    empty_y = np.empty((0, 1), dtype=float)
+    x = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)
+    y = np.array([[10.0], [20.0]], dtype=float)
+    yvar = np.array([[0.1], [0.2]], dtype=float)
+
+    incremental = EpistemicNearestNeighbors(empty_x, empty_y, scale_x=scale_x)
+    incremental.add(x, y, yvar)
+    fresh = EpistemicNearestNeighbors(x, y, yvar, scale_x=scale_x)
+
+    assert len(incremental) == len(fresh) == 2
+    np.testing.assert_allclose(incremental.train_x, fresh.train_x)
+    np.testing.assert_allclose(incremental.train_y, fresh.train_y)
+    np.testing.assert_allclose(incremental.train_yvar, fresh.train_yvar)
+
+
+@pytest.mark.parametrize("scale_x", [False, True])
+def test_zero_row_add_does_not_change_empty_model_yvar_contract(scale_x):
+    empty_x = np.empty((0, 2), dtype=float)
+    empty_y = np.empty((0, 1), dtype=float)
+    empty_yvar = np.empty((0, 1), dtype=float)
+    x = np.array([[1.0, 2.0]], dtype=float)
+    y = np.array([[10.0]], dtype=float)
+
+    incremental = EpistemicNearestNeighbors(empty_x, empty_y, scale_x=scale_x)
+    incremental.add(empty_x, empty_y, empty_yvar)
+
+    assert len(incremental) == 0
+    assert incremental.train_yvar is None
+
+    incremental.add(x, y)
+    fresh = EpistemicNearestNeighbors(x, y, scale_x=scale_x)
+
+    assert len(incremental) == len(fresh) == 1
+    np.testing.assert_allclose(incremental.train_x, fresh.train_x)
+    np.testing.assert_allclose(incremental.train_y, fresh.train_y)
+    assert incremental.train_yvar is None
 
 
 def test_enn_neighbor_search_k_larger_than_n_train_never_emits_invalid_neighbor_index():

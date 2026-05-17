@@ -124,6 +124,18 @@ impl EpistemicNearestNeighbors {
                 got: vec![x.nrows(), x.ncols()],
             });
         }
+        if x.ncols() != self.num_dim {
+            return Err(ENNError::InvalidShape {
+                expected: vec![x.nrows(), self.num_dim],
+                got: vec![x.nrows(), x.ncols()],
+            });
+        }
+        if y.ncols() != self.num_metrics {
+            return Err(ENNError::InvalidShape {
+                expected: vec![y.nrows(), self.num_metrics],
+                got: vec![y.nrows(), y.ncols()],
+            });
+        }
 
         if let Some(yv) = yvar {
             if yv.shape() != y.shape() {
@@ -132,7 +144,7 @@ impl EpistemicNearestNeighbors {
                     got: yv.shape().to_vec(),
                 });
             }
-            if self.train_yvar.is_none() {
+            if self.train_yvar.is_none() && self.num_obs > 0 {
                 return Err(ENNError::InvalidParameter(
                     "yvar provided but model has no existing yvar".to_string(),
                 ));
@@ -142,32 +154,44 @@ impl EpistemicNearestNeighbors {
                 "yvar must be provided if model has existing yvar".to_string(),
             ));
         }
+        if x.nrows() > 0 {
+            let next_train_x = ndarray::concatenate(Axis(0), &[self.train_x.view(), x.view()])?;
+            let next_train_y = ndarray::concatenate(Axis(0), &[self.train_y.view(), y.view()])?;
+            let next_train_yvar = match (&self.train_yvar, yvar) {
+                (Some(yvar_model), Some(yv)) => Some(ndarray::concatenate(
+                    Axis(0),
+                    &[yvar_model.view(), yv.view()],
+                )?),
+                (None, Some(yv)) => Some(yv.to_owned()),
+                (Some(yvar_model), None) => Some(yvar_model.clone()),
+                (None, None) => None,
+            };
+            let next_y_scale = Self::compute_scale(next_train_y.view(), 0.0);
 
-        self.train_x = ndarray::concatenate![Axis(0), self.train_x.view(), x.view()];
-        self.train_y = ndarray::concatenate![Axis(0), self.train_y.view(), y.view()];
-
-        if let Some(ref mut yvar_model) = self.train_yvar {
-            if let Some(yv) = yvar {
-                *yvar_model = ndarray::concatenate![Axis(0), yvar_model.view(), yv.view()];
+            if self.scale_x {
+                let next_x_scale = Self::compute_scale(next_train_x.view(), 1e-12);
+                let next_train_x_scaled = &next_train_x / &next_x_scale.view().insert_axis(Axis(0));
+                let driver = self.index.driver();
+                let next_index = ENNIndex::new(
+                    next_train_x_scaled.clone(),
+                    self.num_dim,
+                    next_x_scale.clone(),
+                    true,
+                    driver,
+                )?;
+                self.x_scale = next_x_scale;
+                self.train_x_scaled = next_train_x_scaled;
+                self.index = next_index;
+            } else {
+                self.index.add(x)?;
+                self.train_x_scaled = next_train_x.clone();
             }
-        }
 
-        self.num_obs = self.train_x.nrows();
-        self.y_scale = Self::compute_scale(self.train_y.view(), 0.0);
-
-        if self.scale_x {
-            self.x_scale = Self::compute_scale(self.train_x.view(), 1e-12);
-            self.train_x_scaled = &self.train_x / &self.x_scale.view().insert_axis(Axis(0));
-            let driver = self.index.driver();
-            self.index = ENNIndex::new(
-                self.train_x_scaled.clone(),
-                self.num_dim,
-                self.x_scale.clone(),
-                true,
-                driver,
-            )?;
-        } else {
-            self.index.add(x)?;
+            self.train_x = next_train_x;
+            self.train_y = next_train_y;
+            self.train_yvar = next_train_yvar;
+            self.num_obs = self.train_x.nrows();
+            self.y_scale = next_y_scale;
         }
 
         Ok(())
