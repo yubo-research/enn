@@ -70,7 +70,7 @@ pub struct EpistemicNearestNeighbors {
     /// Training targets.
     pub(crate) train_y_rows: RowStorage,
     /// Observation noise variance (optional).
-    pub(crate) train_yvar: Option<Array2<f64>>,
+    pub(crate) train_yvar_rows: Option<RowStorage>,
     /// Number of observations.
     pub(crate) num_obs: usize,
     /// Number of input dimensions.
@@ -150,11 +150,12 @@ impl EpistemicNearestNeighbors {
 
         let train_x_rows = RowStorage::from_array2(train_x);
         let train_y_rows = RowStorage::from_array2(train_y);
+        let train_yvar_rows = train_yvar.map(RowStorage::from_array2);
 
         Ok(Self {
             train_x_rows,
             train_y_rows,
-            train_yvar,
+            train_yvar_rows,
             num_obs,
             num_dim,
             num_metrics,
@@ -222,12 +223,12 @@ impl EpistemicNearestNeighbors {
                     got: yv.shape().to_vec(),
                 });
             }
-            if self.train_yvar.is_none() && self.num_obs > 0 {
+            if self.train_yvar_rows.is_none() && self.num_obs > 0 {
                 return Err(ENNError::InvalidParameter(
                     "yvar provided but model has no existing yvar".to_string(),
                 ));
             }
-        } else if self.train_yvar.is_some() {
+        } else if self.train_yvar_rows.is_some() {
             return Err(ENNError::InvalidParameter(
                 "yvar must be provided if model has existing yvar".to_string(),
             ));
@@ -235,12 +236,13 @@ impl EpistemicNearestNeighbors {
         if x.nrows() > 0 {
             self.train_x_rows.push_rows(x)?;
             self.train_y_rows.push_rows(y)?;
-            let next_train_yvar = match (&self.train_yvar, yvar) {
-                (Some(yvar_model), Some(yv)) => Some(append_rows_f64(yvar_model.clone(), yv)?),
-                (None, Some(yv)) => Some(yv.to_owned()),
-                (Some(yvar_model), None) => Some(yvar_model.clone()),
-                (None, None) => None,
-            };
+            match (&mut self.train_yvar_rows, yvar) {
+                (Some(yvar_rows), Some(yv)) => yvar_rows.push_rows(yv)?,
+                (None, Some(yv)) => {
+                    self.train_yvar_rows = Some(RowStorage::from_array2(yv.to_owned()));
+                }
+                (Some(_), None) | (None, None) => {}
+            }
 
             accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y.view());
             let n = self.train_y_rows.nrows();
@@ -255,7 +257,6 @@ impl EpistemicNearestNeighbors {
                 .lock()
                 .expect("index_stale mutex poisoned") = true;
 
-            self.train_yvar = next_train_yvar;
             self.num_obs = self.train_x_rows.nrows();
         }
 
@@ -343,8 +344,8 @@ impl EpistemicNearestNeighbors {
         self.train_y_rows.view()
     }
 
-    pub fn train_yvar(&self) -> Option<&Array2<f64>> {
-        self.train_yvar.as_ref()
+    pub fn train_yvar(&self) -> Option<ArrayView2<'_, f64>> {
+        self.train_yvar_rows.as_ref().map(|r| r.view())
     }
 
     pub(crate) fn y_scale(&self) -> &Array1<f64> {
@@ -439,40 +440,6 @@ fn scale_from_moments(
             1.0
         }
     }))
-}
-
-fn append_rows_f64(existing: Array2<f64>, extra: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
-    if extra.nrows() == 0 {
-        return Ok(existing);
-    }
-    if existing.ncols() != extra.ncols() {
-        return Err(ENNError::InvalidShape {
-            expected: vec![existing.nrows(), existing.ncols()],
-            got: vec![extra.nrows(), extra.ncols()],
-        });
-    }
-    let (n0, d) = (existing.nrows(), existing.ncols());
-    let n1 = extra.nrows();
-    if !(existing.is_standard_layout() && extra.is_standard_layout()) {
-        let ex = existing.clone();
-        let ey = extra.to_owned();
-        return Ok(ndarray::concatenate(Axis(0), &[ex.view(), ey.view()])?);
-    }
-    let (mut v, offset) = existing.into_raw_vec_and_offset();
-    if offset.is_some() {
-        let restored = Array2::from_shape_vec((n0, d), v)?;
-        let ey = extra.to_owned();
-        return Ok(ndarray::concatenate(Axis(0), &[restored.view(), ey.view()])?);
-    }
-    v.reserve(n1 * d);
-    for row in extra.axis_iter(Axis(0)) {
-        v.extend(row.iter().copied());
-    }
-    let l = v.len();
-    if v.capacity() < l.saturating_mul(2) {
-        v.reserve(l);
-    }
-    Ok(Array2::from_shape_vec((n0 + n1, d), v)?)
 }
 
 #[cfg(test)]

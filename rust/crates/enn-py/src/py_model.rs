@@ -312,7 +312,7 @@ impl PyEpistemicNearestNeighbors {
         Ok(self
             .inner
             .train_yvar()
-            .map(|a| a.clone().into_pyarray_bound(py)))
+            .map(|a| a.to_owned().into_pyarray_bound(py)))
     }
 
     #[getter]
