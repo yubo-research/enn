@@ -1,7 +1,7 @@
 //! ENN model Python bindings.
 
 use ennbo::traits::PosteriorComputation;
-use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray2, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -299,12 +299,12 @@ impl PyEpistemicNearestNeighbors {
 
     #[getter]
     fn train_x<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        Ok(self.inner.train_x().clone().into_pyarray_bound(py))
+        Ok(self.inner.train_x().to_owned().to_pyarray_bound(py))
     }
 
     #[getter]
     fn train_y<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        Ok(self.inner.train_y().clone().into_pyarray_bound(py))
+        Ok(self.inner.train_y().to_owned().to_pyarray_bound(py))
     }
 
     #[getter]

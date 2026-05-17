@@ -1,9 +1,64 @@
 //! Epistemic Nearest Neighbors model implementation.
 
 use ndarray::{Array1, Array2, ArrayView2, Axis};
+use std::sync::Mutex;
 
 use crate::error::ENNError;
 use crate::index::{ENNIndex, IndexDriver};
+
+#[derive(Debug)]
+pub(crate) struct RowStorage {
+    buf: Vec<f64>,
+    nrows: usize,
+    ncols: usize,
+}
+
+impl RowStorage {
+    fn from_array2(a: Array2<f64>) -> Self {
+        let (nrows, ncols) = a.dim();
+        let a = a.as_standard_layout().into_owned();
+        let mut buf = Vec::with_capacity(nrows.saturating_mul(ncols));
+        buf.extend(a.iter());
+        let cur_elems = nrows.saturating_mul(ncols);
+        buf.reserve(cur_elems.max(ncols.saturating_mul(4096)));
+        Self { buf, nrows, ncols }
+    }
+
+    fn nrows(&self) -> usize {
+        self.nrows
+    }
+
+    fn view(&self) -> ArrayView2<'_, f64> {
+        ArrayView2::from_shape((self.nrows, self.ncols), &self.buf[..self.nrows * self.ncols])
+            .expect("row-major view")
+    }
+
+    fn push_rows(&mut self, extra: &ArrayView2<f64>) -> Result<(), ENNError> {
+        if extra.ncols() != self.ncols {
+            return Err(ENNError::InvalidShape {
+                expected: vec![self.nrows, self.ncols],
+                got: vec![extra.nrows(), extra.ncols()],
+            });
+        }
+        let n1 = extra.nrows();
+        if n1 == 0 {
+            return Ok(());
+        }
+        let cur_elems = self.nrows * self.ncols;
+        let add_elems = n1 * self.ncols;
+        let new_elems = cur_elems + add_elems;
+        if self.buf.capacity() < new_elems {
+            let growth = new_elems.saturating_sub(self.buf.capacity());
+            let slack = cur_elems.max(self.ncols.saturating_mul(4096));
+            self.buf.reserve(growth + slack);
+        }
+        for row in extra.axis_iter(Axis(0)) {
+            self.buf.extend(row.iter().copied());
+        }
+        self.nrows += n1;
+        Ok(())
+    }
+}
 
 /// Epistemic Nearest Neighbors model.
 ///
@@ -11,9 +66,9 @@ use crate::index::{ENNIndex, IndexDriver};
 /// predictions using k-nearest neighbors with epistemic variance modeling.
 pub struct EpistemicNearestNeighbors {
     /// Training inputs.
-    pub(crate) train_x: Array2<f64>,
+    pub(crate) train_x_rows: RowStorage,
     /// Training targets.
-    pub(crate) train_y: Array2<f64>,
+    pub(crate) train_y_rows: RowStorage,
     /// Observation noise variance (optional).
     pub(crate) train_yvar: Option<Array2<f64>>,
     /// Number of observations.
@@ -24,11 +79,15 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) num_metrics: usize,
     pub(crate) scale_x: bool,
     pub(crate) x_scale: Array1<f64>,
-    pub(crate) train_x_scaled: Array2<f64>,
     /// Scale factors for outputs.
     pub(crate) y_scale: Array1<f64>,
     /// KNN index.
     pub(crate) index: ENNIndex,
+    y_sum: Array1<f64>,
+    y_sumsq: Array1<f64>,
+    x_sum: Array1<f64>,
+    x_sumsq: Array1<f64>,
+    index_stale: Mutex<bool>,
 }
 
 impl EpistemicNearestNeighbors {
@@ -60,55 +119,74 @@ impl EpistemicNearestNeighbors {
         let num_dim = train_x.ncols();
         let num_metrics = train_y.ncols();
 
-        let x_scale = if scale_x {
-            Self::compute_scale(train_x.view(), 1e-12)
+        let (y_sum, y_sumsq) = column_sums_and_sumsq(train_y.view());
+        let y_scale = scale_from_moments(num_obs, num_metrics, &y_sum, &y_sumsq, 0.0);
+
+        let (x_scale, x_sum, x_sumsq) = if scale_x {
+            let (xs, xsq) = column_sums_and_sumsq(train_x.view());
+            let xscl = scale_from_moments(num_obs, num_dim, &xs, &xsq, 1e-12);
+            (xscl, xs, xsq)
         } else {
-            Array1::ones(num_dim)
+            (
+                Array1::ones(num_dim),
+                Array1::zeros(num_dim),
+                Array1::zeros(num_dim),
+            )
         };
 
-        let y_scale = Self::compute_scale(train_y.view(), 0.0);
-
         let train_x_scaled = if scale_x {
-            &train_x / &x_scale.view().insert_axis(Axis(0))
+            (&train_x / &x_scale.view().insert_axis(Axis(0))).to_owned()
         } else {
             train_x.clone()
         };
 
         let index = ENNIndex::new(
-            train_x_scaled.clone(),
+            train_x_scaled,
             num_dim,
             x_scale.clone(),
             scale_x,
             driver,
         )?;
 
+        let train_x_rows = RowStorage::from_array2(train_x);
+        let train_y_rows = RowStorage::from_array2(train_y);
+
         Ok(Self {
-            train_x,
-            train_y,
+            train_x_rows,
+            train_y_rows,
             train_yvar,
             num_obs,
             num_dim,
             num_metrics,
             scale_x,
             x_scale,
-            train_x_scaled,
             y_scale,
             index,
+            y_sum,
+            y_sumsq,
+            x_sum,
+            x_sumsq,
+            index_stale: Mutex::new(false),
         })
     }
 
-    fn compute_scale(data: ArrayView2<f64>, min_val: f64) -> Array1<f64> {
-        if data.nrows() < 2 {
-            return Array1::ones(data.ncols());
+    pub(crate) fn ensure_index_sync(&self) -> Result<(), ENNError> {
+        let mut stale = self
+            .index_stale
+            .lock()
+            .expect("index_stale mutex poisoned");
+        if !*stale {
+            return Ok(());
         }
-        Array1::from_iter((0..data.ncols()).map(|j| {
-            let std = data.column(j).var(0.0).sqrt();
-            if std.is_finite() && std > min_val {
-                std
-            } else {
-                1.0
-            }
-        }))
+        let train_x_scaled = if self.scale_x {
+            (&self.train_x_rows.view() / &self.x_scale.view().insert_axis(Axis(0))).to_owned()
+        } else {
+            self.train_x_rows.view().to_owned()
+        };
+        self.index
+            .rebuild_from_scaled(train_x_scaled, self.x_scale.clone())?;
+        *stale = false;
+        Ok(())
     }
 
     /// Add new observations to the model.
@@ -155,43 +233,30 @@ impl EpistemicNearestNeighbors {
             ));
         }
         if x.nrows() > 0 {
-            let next_train_x = ndarray::concatenate(Axis(0), &[self.train_x.view(), x.view()])?;
-            let next_train_y = ndarray::concatenate(Axis(0), &[self.train_y.view(), y.view()])?;
+            self.train_x_rows.push_rows(x)?;
+            self.train_y_rows.push_rows(y)?;
             let next_train_yvar = match (&self.train_yvar, yvar) {
-                (Some(yvar_model), Some(yv)) => Some(ndarray::concatenate(
-                    Axis(0),
-                    &[yvar_model.view(), yv.view()],
-                )?),
+                (Some(yvar_model), Some(yv)) => Some(append_rows_f64(yvar_model.clone(), yv)?),
                 (None, Some(yv)) => Some(yv.to_owned()),
                 (Some(yvar_model), None) => Some(yvar_model.clone()),
                 (None, None) => None,
             };
-            let next_y_scale = Self::compute_scale(next_train_y.view(), 0.0);
+
+            accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y.view());
+            let n = self.train_y_rows.nrows();
+            self.y_scale = scale_from_moments(n, self.num_metrics, &self.y_sum, &self.y_sumsq, 0.0);
 
             if self.scale_x {
-                let next_x_scale = Self::compute_scale(next_train_x.view(), 1e-12);
-                let next_train_x_scaled = &next_train_x / &next_x_scale.view().insert_axis(Axis(0));
-                let driver = self.index.driver();
-                let next_index = ENNIndex::new(
-                    next_train_x_scaled.clone(),
-                    self.num_dim,
-                    next_x_scale.clone(),
-                    true,
-                    driver,
-                )?;
-                self.x_scale = next_x_scale;
-                self.train_x_scaled = next_train_x_scaled;
-                self.index = next_index;
-            } else {
-                self.index.add(x)?;
-                self.train_x_scaled = next_train_x.clone();
+                accumulate_columns(&mut self.x_sum, &mut self.x_sumsq, x.view());
+                self.x_scale = scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
             }
+            *self
+                .index_stale
+                .lock()
+                .expect("index_stale mutex poisoned") = true;
 
-            self.train_x = next_train_x;
-            self.train_y = next_train_y;
             self.train_yvar = next_train_yvar;
-            self.num_obs = self.train_x.nrows();
-            self.y_scale = next_y_scale;
+            self.num_obs = self.train_x_rows.nrows();
         }
 
         Ok(())
@@ -254,6 +319,7 @@ impl EpistemicNearestNeighbors {
             return Ok(Array2::zeros((x.nrows(), 0)));
         }
 
+        self.ensure_index_sync()?;
         let (_, idx_full) = self.index.search(x, search_k as i32, exclude_nearest)?;
 
         let k_out = (k as usize).min(idx_full.ncols());
@@ -268,13 +334,13 @@ impl EpistemicNearestNeighbors {
     }
 
     /// Training inputs (read-only).
-    pub fn train_x(&self) -> &Array2<f64> {
-        &self.train_x
+    pub fn train_x(&self) -> ArrayView2<'_, f64> {
+        self.train_x_rows.view()
     }
 
     /// Training targets (read-only).
-    pub fn train_y(&self) -> &Array2<f64> {
-        &self.train_y
+    pub fn train_y(&self) -> ArrayView2<'_, f64> {
+        self.train_y_rows.view()
     }
 
     pub fn train_yvar(&self) -> Option<&Array2<f64>> {
@@ -310,6 +376,7 @@ impl EpistemicNearestNeighbors {
         search_k: i32,
         exclude_nearest: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
+        self.ensure_index_sync()?;
         Ok(self.index.search(x, search_k, exclude_nearest)?)
     }
 
@@ -324,6 +391,88 @@ impl EpistemicNearestNeighbors {
     pub fn num_metrics(&self) -> usize {
         self.num_metrics
     }
+}
+
+fn column_sums_and_sumsq(a: ArrayView2<f64>) -> (Array1<f64>, Array1<f64>) {
+    let ncol = a.ncols();
+    let mut sum = Array1::zeros(ncol);
+    let mut sumsq = Array1::zeros(ncol);
+    for row in a.axis_iter(Axis(0)) {
+        for j in 0..ncol {
+            let v = row[j];
+            sum[j] += v;
+            sumsq[j] += v * v;
+        }
+    }
+    (sum, sumsq)
+}
+
+fn accumulate_columns(sum: &mut Array1<f64>, sumsq: &mut Array1<f64>, extra: ArrayView2<f64>) {
+    let ncol = extra.ncols();
+    for row in extra.axis_iter(Axis(0)) {
+        for j in 0..ncol {
+            let v = row[j];
+            sum[j] += v;
+            sumsq[j] += v * v;
+        }
+    }
+}
+
+fn scale_from_moments(
+    n: usize,
+    ncol: usize,
+    sum: &Array1<f64>,
+    sumsq: &Array1<f64>,
+    min_std: f64,
+) -> Array1<f64> {
+    if n < 2 {
+        return Array1::ones(ncol);
+    }
+    let nf = n as f64;
+    Array1::from_iter((0..ncol).map(|j| {
+        let mean = sum[j] / nf;
+        let var = (sumsq[j] / nf - mean * mean).max(0.0);
+        let std = var.sqrt();
+        if std.is_finite() && std > min_std {
+            std
+        } else {
+            1.0
+        }
+    }))
+}
+
+fn append_rows_f64(existing: Array2<f64>, extra: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
+    if extra.nrows() == 0 {
+        return Ok(existing);
+    }
+    if existing.ncols() != extra.ncols() {
+        return Err(ENNError::InvalidShape {
+            expected: vec![existing.nrows(), existing.ncols()],
+            got: vec![extra.nrows(), extra.ncols()],
+        });
+    }
+    let (n0, d) = (existing.nrows(), existing.ncols());
+    let n1 = extra.nrows();
+    if !(existing.is_standard_layout() && extra.is_standard_layout()) {
+        let ex = existing.clone();
+        let ey = extra.to_owned();
+        return Ok(ndarray::concatenate(Axis(0), &[ex.view(), ey.view()])?);
+    }
+    let (mut v, offset) = existing.into_raw_vec_and_offset();
+    if offset.is_some() {
+        let restored = Array2::from_shape_vec((n0, d), v)?;
+        let ey = extra.to_owned();
+        return Ok(ndarray::concatenate(Axis(0), &[restored.view(), ey.view()])?);
+    }
+    v.reserve(n1 * d);
+    for row in extra.axis_iter(Axis(0)) {
+        v.extend(row.iter().copied());
+    }
+    let l = v.len();
+    if v.capacity() < l.saturating_mul(2) {
+        v.reserve(l);
+    }
+    Ok(Array2::from_shape_vec((n0 + n1, d), v)?)
 }
 
 #[cfg(test)]

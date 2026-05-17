@@ -285,8 +285,8 @@ pub fn enn_fit<R: Rng>(
     // Compute log-likelihoods
     let logliks = subsample_loglik(
         model,
-        &train_x.view(),
-        &train_y.view(),
+        &train_x,
+        &train_y,
         &paramss,
         num_fit_samples,
         rng,

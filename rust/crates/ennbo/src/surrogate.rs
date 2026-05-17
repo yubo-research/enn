@@ -108,11 +108,11 @@ impl ENNSurrogate {
         let prefix_y = y.slice(s![..n_old, ..]);
         let same_prefix = prefix_x
             .iter()
-            .zip(model.train_x.iter())
+            .zip(model.train_x().iter())
             .all(|(a, b)| (a - b).abs() < 1e-12)
             && prefix_y
                 .iter()
-                .zip(model.train_y.iter())
+                .zip(model.train_y().iter())
                 .all(|(a, b)| (a - b).abs() < 1e-12);
 
         let same_yvar_prefix = match (model.train_yvar(), yvar) {

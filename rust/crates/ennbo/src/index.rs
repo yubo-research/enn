@@ -23,7 +23,7 @@ pub enum IndexDriver {
 pub struct ENNIndex {
     inner: Mutex<IndexImpl>,
     num_dim: usize,
-    x_scale: Array1<f64>,
+    x_scale: Mutex<Array1<f64>>,
     scale_x: bool,
     driver: IndexDriver,
 }
@@ -116,7 +116,7 @@ impl ENNIndex {
         Ok(Self {
             inner,
             num_dim,
-            x_scale,
+            x_scale: Mutex::new(x_scale),
             scale_x,
             driver,
         })
@@ -126,6 +126,23 @@ impl ENNIndex {
         self.driver
     }
 
+    pub fn rebuild_from_scaled(
+        &self,
+        train_x_scaled: Array2<f64>,
+        x_scale: Array1<f64>,
+    ) -> Result<(), IndexError> {
+        let new_inner = make_faiss(self.num_dim, self.driver, &train_x_scaled.view())?;
+        *self
+            .inner
+            .lock()
+            .expect("faiss index mutex poisoned") = new_inner;
+        *self
+            .x_scale
+            .lock()
+            .expect("faiss x_scale mutex poisoned") = x_scale;
+        Ok(())
+    }
+
     pub fn add(&mut self, x: &ArrayView2<f64>) -> Result<(), IndexError> {
         if x.ncols() != self.num_dim {
             return Err(IndexError::InvalidShape {
@@ -133,8 +150,13 @@ impl ENNIndex {
                 got: x.ncols(),
             });
         }
+        let x_scale = self
+            .x_scale
+            .lock()
+            .expect("faiss x_scale mutex poisoned")
+            .clone();
         let x_scaled: Array2<f64> = if self.scale_x {
-            x / &self.x_scale.view().insert_axis(Axis(0))
+            x / &x_scale.view().insert_axis(Axis(0))
         } else {
             x.to_owned()
         };
@@ -172,8 +194,13 @@ impl ENNIndex {
         let n_query = x.nrows();
         let search_k = search_k as usize;
 
+        let x_scale = self
+            .x_scale
+            .lock()
+            .expect("faiss x_scale mutex poisoned")
+            .clone();
         let x_scaled: Array2<f64> = if self.scale_x {
-            x / &self.x_scale.view().insert_axis(Axis(0))
+            x / &x_scale.view().insert_axis(Axis(0))
         } else {
             x.to_owned()
         };

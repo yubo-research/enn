@@ -29,6 +29,16 @@ fn pairwise_sq_l2(
     d2.mapv(|v| v.max(0.0))
 }
 
+fn index_search(
+    model: &EpistemicNearestNeighbors,
+    x: &ArrayView2<f64>,
+    search_k: i32,
+    exclude_nearest: bool,
+) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
+    model.ensure_index_sync()?;
+    Ok(model.index().search(x, search_k, exclude_nearest)?)
+}
+
 pub(crate) fn get_neighbor_data(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -51,7 +61,7 @@ pub(crate) fn get_neighbor_data(
         return Ok(None);
     }
 
-    let (dist2s_full, idx_full) = model.index().search(x, search_k as i32, exclude_nearest)?;
+    let (dist2s_full, idx_full) = index_search(model, x, search_k as i32, exclude_nearest)?;
 
     let available_k = if exclude_nearest {
         search_k.saturating_sub(1)
@@ -121,7 +131,7 @@ pub(crate) fn get_conditional_neighbor_data(
 
     let train_search_k = search_k.min(n_train);
     let (dist2_train, idx_train) = if train_search_k > 0 {
-        model.index().search(x, train_search_k as i32, false)?
+        index_search(model, x, train_search_k as i32, false)?
     } else {
         (
             Array2::zeros((batch_size, 0)),
