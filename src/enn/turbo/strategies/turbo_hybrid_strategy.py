@@ -81,6 +81,7 @@ class TurboHybridStrategy(OptimizationStrategy):
             opt._incumbent_idx = None
             opt._incumbent_x_unit = None
             opt._incumbent_y_scalar = None
+            opt._incumbent_tracker.reset()
             self._reset_init()
             return self._get_init_points(num_arms)
         if self._init_idx < self._num_init:

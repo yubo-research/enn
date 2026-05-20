@@ -11,6 +11,7 @@ from .components.builder import (
     build_surrogate,
     build_trust_region,
 )
+from .components.incumbent_tracker import build_incumbent_tracker
 from .strategies import OptimizationStrategy
 from .types.appendable_array import AppendableArray
 from .types.telemetry import Telemetry
@@ -73,6 +74,9 @@ class Optimizer:
         self._incumbent_idx: int | None = None
         self._incumbent_x_unit: np.ndarray | None = None
         self._incumbent_y_scalar: np.ndarray | None = None
+        self._incumbent_tracker = build_incumbent_tracker(
+            config.surrogate, self._tr_state
+        )
 
     @property
     def tr_obs_count(self) -> int:
@@ -188,7 +192,9 @@ class Optimizer:
             )
             return
         x_obs, y_obs = self._x_obs.view(), self._y_obs.view()
-        candidate_indices = self._surrogate.get_incumbent_candidate_indices(y_obs)
+        if self._incumbent_tracker.observation_count() != len(self._y_obs):
+            self._incumbent_tracker.rebuild(y_obs)
+        candidate_indices = self._incumbent_tracker.ask()
         x_cand, y_cand = x_obs[candidate_indices], y_obs[candidate_indices]
         mu_cand, noise_aware = None, False
         if hasattr(self._tr_state, "incumbent_selector"):
@@ -234,6 +240,7 @@ class Optimizer:
             for yvar in obs.yvar_obs:
                 self._yvar_obs.append(np.array(yvar))
         self._y_tr_list = obs.y_tr
+        self._incumbent_tracker.rebuild(self._y_obs.view())
 
     def _update_best_value_if_needed(self) -> None:
         pass
@@ -253,8 +260,10 @@ class Optimizer:
                 )
             x_unit = turbo_utils.to_unit(inputs.x, self._bounds)
             for i in range(inputs.x.shape[0]):
+                obs_idx = len(self._y_obs)
                 self._x_obs.append(x_unit[i])
                 self._y_obs.append(inputs.y[i])
+                self._incumbent_tracker.tell(obs_idx, inputs.y[i])
                 if inputs.y_var is not None:
                     self._yvar_obs.append(inputs.y_var[i])
             return self._strategy.tell(self, inputs, x_unit=x_unit)
