@@ -63,6 +63,13 @@ include = [
     { path = ".cargo/**/*", format = "sdist" },
     { path = "rust/.cargo/**/*", format = "sdist" },
 ]
+# Agent / malvin working dirs at repo root (also in .gitignore); keep out of sdist/wheels.
+exclude = [
+    "_malvin/**/*",
+    "_kpop/**/*",
+    "malvin_memories/**/*",
+    ".malvin_memories/**/*",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

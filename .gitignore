@@ -12,3 +12,7 @@ rust/target/
 # Maturin mixed-layout develop copies the extension next to `src/enn/`.
 src/enn/*.so
 src/enn/*.pyd
+_malvin/
+_kpop/
+malvin_memories/
+.malvin_memories

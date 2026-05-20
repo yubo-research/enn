@@ -16,7 +16,7 @@ test: rust-test python-test
 
 # Run Rust tests only
 rust-test:
-	cd rust && cargo test
+	cd rust && cargo nextest run
 
 # Run Python tests only
 python-test:

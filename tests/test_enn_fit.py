@@ -27,6 +27,95 @@ def test_subsample_loglik_and_enn_fit_improve_hyperparameters():
     assert np.isfinite(tuned_ll), "tuned log-likelihood must be finite"
 
 
+def test_enn_fit_num_fit_samples_sweep_prints_results():
+    import json
+
+    import numpy as np
+
+    from enn.enn.enn_class import EpistemicNearestNeighbors
+    from enn.enn.enn_fit import enn_fit, subsample_loglik
+
+    rng = np.random.default_rng(20260522)
+    x_train = rng.standard_normal((1000, 3))
+    y_train = (
+        x_train @ np.array([1.5, -0.5, 0.25]) + 0.1 * rng.standard_normal(1000)
+    ).reshape(-1, 1)
+    y_var_train = 0.01 * np.ones_like(y_train)
+
+    def capture_result(model, params, num_fit_samples, eval_x, eval_y):
+        loglik = subsample_loglik(
+            model,
+            eval_x,
+            eval_y,
+            paramss=[params],
+            P=len(eval_x),
+            rng=np.random.default_rng(2000 + num_fit_samples),
+        )[0]
+        return {
+            "num_fit_samples": num_fit_samples,
+            "params": {
+                "k_num_neighbors": params.k_num_neighbors,
+                "epistemic_variance_scale": params.epistemic_variance_scale,
+                "aleatoric_variance_scale": params.aleatoric_variance_scale,
+            },
+            "subsample_loglik": loglik,
+        }
+
+    batch_captured = []
+    for num_fit_samples in [10, 30, 100, 300, 1000]:
+        model = EpistemicNearestNeighbors(x_train, y_train, y_var_train)
+        params = enn_fit(
+            model,
+            k=10,
+            num_fit_candidates=100,
+            num_fit_samples=num_fit_samples,
+            rng=np.random.default_rng(1000 + num_fit_samples),
+        )
+        batch_captured.append(
+            capture_result(model, params, num_fit_samples, x_train, y_train)
+        )
+
+    incremental_captured = []
+    incremental_model = EpistemicNearestNeighbors(
+        np.empty((0, x_train.shape[1])),
+        np.empty((0, y_train.shape[1])),
+        np.empty((0, y_var_train.shape[1])),
+    )
+    params_warm_start = None
+    for num_fit_samples, (x, y, y_var) in enumerate(
+        zip(x_train, y_train, y_var_train), start=1
+    ):
+        incremental_model.add(
+            x.reshape(1, -1),
+            y.reshape(1, -1),
+            y_var.reshape(1, -1),
+        )
+        params_warm_start = enn_fit(
+            incremental_model,
+            k=10,
+            num_fit_candidates=1,
+            num_fit_samples=100,
+            rng=np.random.default_rng(3000 + num_fit_samples),
+            params_warm_start=params_warm_start,
+        )
+        if num_fit_samples in [10, 30, 100, 300, 1000]:
+            incremental_captured.append(
+                capture_result(
+                    incremental_model,
+                    params_warm_start,
+                    num_fit_samples,
+                    x_train[:num_fit_samples],
+                    y_train[:num_fit_samples],
+                )
+            )
+
+    print(
+        json.dumps(
+            {"batch": batch_captured, "incremental": incremental_captured}, indent=2
+        )
+    )
+
+
 def _make_linear_1d_regression_data(
     *,
     rng,

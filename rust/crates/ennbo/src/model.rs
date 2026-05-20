@@ -190,6 +190,10 @@ impl EpistemicNearestNeighbors {
         Ok(())
     }
 
+    pub fn sync_index(&self) -> Result<(), ENNError> {
+        self.ensure_index_sync()
+    }
+
     /// Add new observations to the model.
     pub fn add(
         &mut self,
@@ -475,5 +479,22 @@ mod tests {
         model.add(&new_x.view(), &new_y.view(), None).unwrap();
 
         assert_eq!(model.len(), 3);
+    }
+
+    #[test]
+    fn test_sync_index_idempotent() {
+        let train_x = array![[0.0, 0.0], [1.0, 0.0]];
+        let train_y = array![[0.0], [1.0]];
+
+        let mut model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+
+        let new_x = array![[0.0, 1.0]];
+        let new_y = array![[1.0]];
+        model.add(&new_x.view(), &new_y.view(), None).unwrap();
+
+        model.sync_index().unwrap();
+        model.sync_index().unwrap();
     }
 }

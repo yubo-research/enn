@@ -61,6 +61,12 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    fn sync_index(&self) -> PyResult<()> {
+        self.inner
+            .sync_index()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, exclude_nearest=false, observation_noise=false))]
     fn posterior<'py>(

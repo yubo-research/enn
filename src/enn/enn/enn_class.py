@@ -90,6 +90,9 @@ class EpistemicNearestNeighbors:
         x, y, yvar = self._validate_inputs(x, y, yvar)
         self._rust_model.add(x, y, yvar)
 
+    def sync_index(self) -> None:
+        self._rust_model.sync_index()
+
     @property
     def train_x(self) -> np.ndarray:
         return np.asarray(self._rust_model.train_x, dtype=float)
