@@ -106,6 +106,18 @@ def test_pareto_front_2d_maximize_with_idx_subset():
     assert set(idx.tolist()) == {0, 1}
 
 
+def test_pareto_front_2d_maximize_invalid_idx_negative():
+    a, b = np.array([1.0, 0.5, 0.2]), np.array([0.5, 1.0, 0.2])
+    with pytest.raises(ValueError, match="negative"):
+        pareto_front_2d_maximize(a, b, idx=np.array([-1], dtype=int))
+
+
+def test_pareto_front_2d_maximize_invalid_idx_out_of_bounds():
+    a, b = np.array([1.0, 0.5, 0.2]), np.array([0.5, 1.0, 0.2])
+    with pytest.raises(ValueError, match="out of bounds"):
+        pareto_front_2d_maximize(a, b, idx=np.array([99], dtype=int))
+
+
 @pytest.mark.parametrize(
     "y_input,expected_center,check_scale",
     [

@@ -26,9 +26,36 @@ pub fn pareto_front_2d_maximize_py<'py>(
     b: PyReadonlyArray1<f64>,
     idx: Option<PyReadonlyArray1<i64>>,
 ) -> PyResult<Bound<'py, PyArray1<usize>>> {
+    use pyo3::exceptions::PyValueError;
+
     let a_arr = a.as_array();
     let b_arr = b.as_array();
-    let idx_vec: Option<Vec<usize>> = idx.map(|i| i.as_array().iter().map(|&x| x as usize).collect());
+    if a_arr.len() != b_arr.len() {
+        return Err(PyValueError::new_err(format!(
+            "a and b must have same length, got {} and {}",
+            a_arr.len(),
+            b_arr.len()
+        )));
+    }
+    let n = a_arr.len();
+    let idx_vec: Option<Vec<usize>> = match idx {
+        Some(i) => {
+            let mut out = Vec::with_capacity(i.as_array().len());
+            for &x in i.as_array().iter() {
+                let u = usize::try_from(x).map_err(|_| {
+                    PyValueError::new_err(format!("idx entry {x} is negative"))
+                })?;
+                if u >= n {
+                    return Err(PyValueError::new_err(format!(
+                        "idx entry {x} is out of bounds for length {n}"
+                    )));
+                }
+                out.push(u);
+            }
+            Some(out)
+        }
+        None => None,
+    };
 
     let result = py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, idx_vec.as_deref()));
 
