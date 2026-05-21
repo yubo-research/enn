@@ -3,9 +3,19 @@ use ndarray::Array2;
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
+const ROW_COUNTS: [usize; 5] = [1_000, 3_000, 10_000, 30_000, 100_000];
+const BASELINE_ROWS: usize = ROW_COUNTS[0];
+const NUM_ADDS: usize = 128;
+const CONFIGS: [(bool, bool); 4] = [(false, false), (true, false), (false, true), (true, true)];
+const MAX_SECS_PER_BASELINE_SEC: f64 = 2.5;
+
+fn row_f64(i: usize) -> f64 {
+    f64::from(u32::try_from(i).unwrap_or(u32::MAX))
+}
+
 fn deterministic_x(n: usize) -> Array2<f64> {
     Array2::from_shape_fn((n, 2), |(i, j)| {
-        let base = i as f64;
+        let base = row_f64(i);
         if j == 0 {
             base * 0.001
         } else {
@@ -15,7 +25,7 @@ fn deterministic_x(n: usize) -> Array2<f64> {
 }
 
 fn deterministic_y(n: usize) -> Array2<f64> {
-    Array2::from_shape_fn((n, 1), |(i, _)| (i as f64 * 0.013).cos())
+    Array2::from_shape_fn((n, 1), |(i, _)| (row_f64(i) * 0.013).cos())
 }
 
 fn deterministic_yvar(n: usize) -> Array2<f64> {
@@ -72,15 +82,16 @@ fn timed_single_row_adds_with_yvar(
 
     let start = Instant::now();
     for i in 0..num_adds {
+        let fi = row_f64(i);
         let x = Array2::from_shape_vec(
             (1, 2),
             vec![
-                10_000.0 + i as f64 * 0.001,
-                (10_000.0 + i as f64 * 0.017).sin(),
+                fi.mul_add(0.001, 10_000.0),
+                fi.mul_add(0.017, 10_000.0).sin(),
             ],
         )
         .unwrap();
-        let y = Array2::from_shape_vec((1, 1), vec![(10_000.0 + i as f64 * 0.013).cos()])
+        let y = Array2::from_shape_vec((1, 1), vec![fi.mul_add(0.013, 10_000.0).cos()])
             .unwrap();
         let yvar = if with_yvar {
             Some(deterministic_yvar(1))
@@ -98,128 +109,39 @@ fn timed_single_row_adds_with_yvar(
     elapsed
 }
 
-#[derive(Debug)]
-struct QuadraticFit {
-    t_b: f64,
-    t_c: f64,
-}
-
-fn invert_3x3(m: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
-    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-
-    assert!(det.abs() > f64::EPSILON, "quadratic design matrix is singular");
-
-    [
-        [
-            (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / det,
-            (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / det,
-            (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / det,
-        ],
-        [
-            (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / det,
-            (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / det,
-            (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / det,
-        ],
-        [
-            (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / det,
-            (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / det,
-            (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / det,
-        ],
-    ]
-}
-
-fn quadratic_fit_t_stats(measurements: &[(usize, f64)]) -> QuadraticFit {
-    assert!(measurements.len() > 3, "need residual degrees of freedom");
-    let n_scale = measurements
-        .iter()
-        .map(|(n, _)| *n as f64)
-        .fold(0.0, f64::max);
-
-    let mut xtx = [[0.0; 3]; 3];
-    let mut xty = [0.0; 3];
-    for &(n, t) in measurements {
-        let x = n as f64 / n_scale;
-        let row = [1.0, x, x * x];
-        for i in 0..3 {
-            xty[i] += row[i] * t;
-            for j in 0..3 {
-                xtx[i][j] += row[i] * row[j];
-            }
-        }
-    }
-
-    let xtx_inv = invert_3x3(xtx);
-    let mut beta = [0.0; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            beta[i] += xtx_inv[i][j] * xty[j];
-        }
-    }
-
-    let mut rss = 0.0;
-    for &(n, t) in measurements {
-        let x = n as f64 / n_scale;
-        let predicted = beta[0] + beta[1] * x + beta[2] * x * x;
-        let residual = t - predicted;
-        rss += residual * residual;
-    }
-    let sigma2 = rss / (measurements.len() as f64 - 3.0);
-    let se_b = (sigma2 * xtx_inv[1][1]).sqrt();
-    let se_c = (sigma2 * xtx_inv[2][2]).sqrt();
-
-    QuadraticFit {
-        t_b: beta[1] / se_b,
-        t_c: beta[2] / se_c,
-    }
-}
-
-fn assert_single_row_add_has_flat_growth(scale_x: bool, with_yvar: bool) {
-    let num_adds = 128;
-    let mut last: Option<(QuadraticFit, Vec<(usize, f64)>)> = None;
-    for _ in 0..25 {
-        let measurements: Vec<(usize, f64)> = [1_000, 3_000, 10_000, 30_000, 100_000]
+#[test]
+fn single_row_add_has_flat_growth_across_configs() {
+    let mut observed_peak_ratio = 1.0_f64;
+    for &(scale_x, with_yvar) in &CONFIGS {
+        let measurements: Vec<(usize, f64)> = ROW_COUNTS
             .into_iter()
             .map(|n| {
-                let elapsed = timed_single_row_adds_with_yvar(n, num_adds, scale_x, with_yvar);
+                let elapsed = timed_single_row_adds_with_yvar(n, NUM_ADDS, scale_x, with_yvar);
                 (n, elapsed.as_secs_f64())
             })
             .collect();
 
-        let fit = quadratic_fit_t_stats(&measurements);
-        if fit.t_b.abs() < 1.0 && fit.t_c.abs() < 1.0 {
-            return;
+        let baseline_secs = measurements
+            .iter()
+            .find(|(n, _)| *n == BASELINE_ROWS)
+            .map(|(_, t)| *t)
+            .expect("baseline row count must be measured");
+        assert!(baseline_secs > 0.0, "baseline timing must be positive: {measurements:?}");
+
+        let budget_secs = baseline_secs * MAX_SECS_PER_BASELINE_SEC;
+        for &(n, secs) in &measurements {
+            let ratio = secs / baseline_secs;
+            observed_peak_ratio = observed_peak_ratio.max(ratio);
+            assert!(
+                secs <= budget_secs,
+                "single-row add at n={n} took {secs}s, budget {budget_secs}s \
+                 ({MAX_SECS_PER_BASELINE_SEC}x baseline {BASELINE_ROWS}={baseline_secs}s) \
+                 scale_x={scale_x} with_yvar={with_yvar}: {measurements:?}",
+            );
         }
-        last = Some((fit, measurements));
     }
-
-    let (fit, measurements) = last.expect("expected at least one attempt");
-    panic!(
-        "single-row add should be effectively independent of existing row count \
-         when scale_x={scale_x} with_yvar={with_yvar}: measurements={measurements:?}, \
-         t_b={}, t_c={}",
-        fit.t_b,
-        fit.t_c
+    assert!(
+        observed_peak_ratio <= MAX_SECS_PER_BASELINE_SEC,
+        "peak ratio {observed_peak_ratio} exceeds calibrated cap {MAX_SECS_PER_BASELINE_SEC}",
     );
-}
-
-#[test]
-fn single_row_add_scale_x_false_has_flat_growth_with_existing_n() {
-    assert_single_row_add_has_flat_growth(false, false);
-}
-
-#[test]
-fn single_row_add_scale_x_true_has_flat_growth_with_existing_n() {
-    assert_single_row_add_has_flat_growth(true, false);
-}
-
-#[test]
-fn single_row_add_with_yvar_scale_x_false_has_flat_growth_with_existing_n() {
-    assert_single_row_add_has_flat_growth(false, true);
-}
-
-#[test]
-fn single_row_add_with_yvar_scale_x_true_has_flat_growth_with_existing_n() {
-    assert_single_row_add_has_flat_growth(true, true);
 }

@@ -41,7 +41,6 @@ fn kiss_fullrepo_static_name_registry() {
         "IncrementalIncumbentTracker",
         "invalidate_cache",
         "is_empty",
-        "iter_indices",
         "len",
         "new",
         "maybe_cap_selection_candidates",

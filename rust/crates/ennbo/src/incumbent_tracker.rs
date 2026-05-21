@@ -6,8 +6,6 @@ const ALL_CANDIDATES_M_THRESHOLD: usize = 1_000_000_000;
 
 pub struct IncrementalIncumbentTracker {
     m: usize,
-    noise_aware: bool,
-    num_metrics: usize,
     observation_count: usize,
     all_indices: Vec<usize>,
     max_y: f64,
@@ -18,7 +16,6 @@ pub struct IncrementalIncumbentTracker {
     use_all_candidates: bool,
     use_noiseless_max: bool,
     use_scalar_topm: bool,
-    use_multi_topm: bool,
 }
 
 impl IncrementalIncumbentTracker {
@@ -36,8 +33,6 @@ impl IncrementalIncumbentTracker {
         };
         Self {
             m,
-            noise_aware,
-            num_metrics,
             observation_count: 0,
             all_indices: Vec::new(),
             max_y: f64::NEG_INFINITY,
@@ -48,7 +43,6 @@ impl IncrementalIncumbentTracker {
             use_all_candidates,
             use_noiseless_max,
             use_scalar_topm,
-            use_multi_topm,
         }
     }
 

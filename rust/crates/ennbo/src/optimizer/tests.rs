@@ -181,7 +181,7 @@ fn observation_store_cache_and_edges() {
 
     assert_eq!(store.x_at(0), &x1);
     assert_eq!(store.y_at(0), &y1);
-    let idxs: Vec<usize> = store.iter_indices().collect();
+    let idxs: Vec<usize> = (0..store.len()).collect();
     assert_eq!(idxs, vec![0]);
 
     let x2 = array![0.0, 0.0, 0.0];

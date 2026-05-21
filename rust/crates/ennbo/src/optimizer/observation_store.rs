@@ -88,8 +88,4 @@ impl ObservationStore {
     pub(crate) fn y_at(&self, idx: usize) -> &Array1<f64> {
         &self.y_obs[idx]
     }
-
-    pub(crate) fn iter_indices(&self) -> impl Iterator<Item = usize> {
-        0..self.x_obs.len()
-    }
 }
