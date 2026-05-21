@@ -118,6 +118,27 @@ def test_pareto_front_2d_maximize_invalid_idx_out_of_bounds():
         pareto_front_2d_maximize(a, b, idx=np.array([99], dtype=int))
 
 
+def test_pareto_front_2d_maximize_rejects_nan_in_objectives():
+    a = np.array([1.0, np.nan, 0.5])
+    b = np.array([0.5, 1.0, 1.0])
+    with pytest.raises(ValueError, match="finite"):
+        pareto_front_2d_maximize(a, b)
+
+
+def test_pareto_front_2d_maximize_rejects_nan_in_objectives_with_idx():
+    a = np.array([1.0, np.nan, 0.5, 0.9])
+    b = np.array([0.5, 1.0, 0.2, 0.4])
+    with pytest.raises(ValueError, match="finite"):
+        pareto_front_2d_maximize(a, b, idx=np.array([0, 1, 3], dtype=int))
+
+
+def test_pareto_front_2d_maximize_ignores_nan_outside_idx_subset():
+    a = np.array([1.0, np.nan, 0.5])
+    b = np.array([0.5, 1.0, 1.0])
+    idx = pareto_front_2d_maximize(a, b, idx=np.array([0, 2], dtype=int))
+    assert set(idx.tolist()) == {0, 2}
+
+
 @pytest.mark.parametrize(
     "y_input,expected_center,check_scale",
     [

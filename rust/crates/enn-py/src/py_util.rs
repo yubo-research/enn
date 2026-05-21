@@ -57,9 +57,20 @@ pub fn pareto_front_2d_maximize_py<'py>(
         None => None,
     };
 
+    let check_indices: Vec<usize> = idx_vec.clone().unwrap_or_else(|| (0..n).collect());
+    for &i in &check_indices {
+        if !a_arr[i].is_finite() || !b_arr[i].is_finite() {
+            return Err(PyValueError::new_err("a and b must be finite"));
+        }
+    }
+
     let result = py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, idx_vec.as_deref()));
 
-    let front = ndarray::Array1::from_vec(result);
+    let front = match result {
+        Ok(v) => v,
+        Err(e) => return Err(PyValueError::new_err(e.to_string())),
+    };
+    let front = ndarray::Array1::from_vec(front);
     Ok(front.into_pyarray_bound(py))
 }
 

@@ -54,10 +54,20 @@ def pareto_front_2d_maximize(
     if a.shape != b.shape or a.ndim != 1:
         raise ValueError((a.shape, b.shape))
     if idx is None:
+        if not np.all(np.isfinite(a)) or not np.all(np.isfinite(b)):
+            raise ValueError("a and b must be finite")
         return np.asarray(_rust_pareto_front_2d_maximize(a, b), dtype=int)
     idx_arr = np.asarray(idx, dtype=int)
     if idx_arr.ndim != 1:
         raise ValueError(idx_arr.shape)
+    n = a.size
+    for i in idx_arr:
+        if i < 0:
+            raise ValueError(f"idx entry {i} is negative")
+        if i >= n:
+            raise ValueError(f"idx entry {i} is out of bounds for length {n}")
+        if not np.isfinite(a[i]) or not np.isfinite(b[i]):
+            raise ValueError("a and b must be finite")
     return np.asarray(_rust_pareto_front_2d_maximize(a, b, idx_arr), dtype=int)
 
 
