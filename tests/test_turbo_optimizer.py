@@ -397,9 +397,7 @@ def test_turbo_enn_tr_values_do_not_require_full_history_denoising():
         bounds=bounds,
         config=turbo_enn_config(
             enn=ENNSurrogateConfig(k=3),
-            candidates=CandidateGenConfig(
-                num_candidates=lambda *, num_dim, num_arms: 16
-            ),
+            candidates=CandidateGenConfig(num_candidates=16),
             num_init=1,
             acq_type=AcqType.PARETO,
         ),
@@ -447,9 +445,7 @@ def test_optimizer_morbo_multi_objective():
                 multi_objective=MultiObjectiveConfig(num_metrics=num_metrics)
             ),
             num_init=1,
-            candidates=CandidateGenConfig(
-                num_candidates=lambda *, num_dim, num_arms: 2
-            ),
+            candidates=CandidateGenConfig(num_candidates=2),
             acq_type=AcqType.THOMPSON,
         ),
         rng=rng,

@@ -2,8 +2,10 @@
 
 use crate::candidates::CandidateRV;
 use crate::index::IndexDriver;
+use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
 use crate::surrogate::ENNSurrogateConfig;
 use crate::trust_region::TRLengthConfig;
+use crate::trust_region_config::TrustRegionConfig;
 
 /// Optimizer configuration.
 #[derive(Debug, Clone)]
@@ -11,7 +13,7 @@ pub struct OptimizerConfig {
     /// Surrogate configuration.
     pub surrogate: SurrogateConfig,
     /// Trust region configuration.
-    pub trust_region: TRLengthConfig,
+    pub trust_region: TrustRegionConfig,
     /// Candidate generation configuration.
     pub candidates: CandidateConfig,
     /// Acquisition function configuration.
@@ -26,7 +28,7 @@ impl Default for OptimizerConfig {
     fn default() -> Self {
         Self {
             surrogate: SurrogateConfig::ENN(ENNSurrogateConfig::default()),
-            trust_region: TRLengthConfig::default(),
+            trust_region: TrustRegionConfig::default(),
             candidates: CandidateConfig::default(),
             acquisition: AcquisitionConfig::default(),
             trailing_obs: None,
@@ -59,6 +61,8 @@ pub struct CandidateConfig {
     pub min_candidates: usize,
     /// Maximum number of candidates (None = no cap). Matches Python default_num_candidates cap.
     pub max_candidates: Option<usize>,
+    /// Optional per-arm multiplier: pool is at least num_arms * this value.
+    pub num_candidates_per_arm: Option<usize>,
     /// Random variable type for candidates.
     pub candidate_rv: CandidateRV,
 }
@@ -69,6 +73,7 @@ impl Default for CandidateConfig {
             num_candidates_factor: 1000.0,
             min_candidates: 100,
             max_candidates: None,
+            num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
         }
     }
@@ -80,9 +85,14 @@ impl CandidateConfig {
         let base = (self.num_candidates_factor * num_dim as f64) as usize;
         let adjusted = base.max(self.min_candidates);
         let with_arms = adjusted.max(num_arms * 10); // At least 10x the number of arms
+        let with_per_arm = if let Some(m) = self.num_candidates_per_arm {
+            with_arms.max(num_arms * m)
+        } else {
+            with_arms
+        };
         match self.max_candidates {
-            Some(cap) => with_arms.min(cap),
-            None => with_arms,
+            Some(cap) => with_per_arm.min(cap),
+            None => with_per_arm,
         }
     }
 }
@@ -96,6 +106,7 @@ pub struct ConfigOverrides {
     pub num_candidates_factor: Option<f64>,
     pub min_candidates: Option<usize>,
     pub max_candidates: Option<usize>,
+    pub num_candidates_per_arm: Option<usize>,
     pub length_init: Option<f64>,
     pub length_min: Option<f64>,
     pub length_max: Option<f64>,
@@ -105,6 +116,10 @@ pub struct ConfigOverrides {
     pub num_fit_candidates: Option<usize>,
     pub scale_x: Option<bool>,
     pub noise_aware: Option<bool>,
+    pub trust_region_kind: Option<String>,
+    pub num_metrics: Option<usize>,
+    pub alpha: Option<f64>,
+    pub rescalarize: Option<String>,
 }
 
 fn apply_enn_surrogate_fields(
@@ -151,11 +166,51 @@ impl ConfigOverrides {
         if let Some(cap) = self.max_candidates {
             config.candidates.max_candidates = Some(cap);
         }
-        if self.length_init.is_some() || self.length_min.is_some() || self.length_max.is_some() {
-            config.trust_region = TRLengthConfig {
-                length_init: self.length_init.unwrap_or(config.trust_region.length_init),
-                length_min: self.length_min.unwrap_or(config.trust_region.length_min),
-                length_max: self.length_max.unwrap_or(config.trust_region.length_max),
+        if let Some(m) = self.num_candidates_per_arm {
+            config.candidates.num_candidates_per_arm = Some(m);
+        }
+        if let Some(kind) = &self.trust_region_kind {
+            if kind == "morbo" {
+                let num_metrics = self.num_metrics.unwrap_or(2);
+                let alpha = self.alpha.unwrap_or(0.05);
+                let length = TRLengthConfig {
+                    length_init: self.length_init.unwrap_or(0.8),
+                    length_min: self.length_min.unwrap_or(0.5f64.powi(7)),
+                    length_max: self.length_max.unwrap_or(1.6),
+                };
+                let rescalarize = self
+                    .rescalarize
+                    .as_deref()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(Rescalarize::OnPropose);
+                config.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
+                    num_metrics,
+                    alpha,
+                    length,
+                    rescalarize,
+                    noise_aware: self.noise_aware.unwrap_or(false),
+                });
+            }
+        } else if self.length_init.is_some() || self.length_min.is_some() || self.length_max.is_some() {
+            let TRLengthConfig {
+                length_init,
+                length_min,
+                length_max,
+            } = match &config.trust_region {
+                TrustRegionConfig::Turbo(cfg) => *cfg,
+                TrustRegionConfig::Morbo(m) => m.length,
+            };
+            let updated = TRLengthConfig {
+                length_init: self.length_init.unwrap_or(length_init),
+                length_min: self.length_min.unwrap_or(length_min),
+                length_max: self.length_max.unwrap_or(length_max),
+            };
+            config.trust_region = match config.trust_region {
+                TrustRegionConfig::Turbo(_) => TrustRegionConfig::Turbo(updated),
+                TrustRegionConfig::Morbo(mut m) => {
+                    m.length = updated;
+                    TrustRegionConfig::Morbo(m)
+                }
             };
         }
         if self.index_driver.is_some()
@@ -219,11 +274,12 @@ pub fn turbo_enn_config() -> OptimizerConfig {
             num_fit_samples: 10,
             ..Default::default()
         }),
-        trust_region: TRLengthConfig::default(),
+        trust_region: TrustRegionConfig::default(),
         candidates: CandidateConfig {
             num_candidates_factor: 1000.0,
             min_candidates: 100,
             max_candidates: None,
+            num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
         },
         acquisition: AcquisitionConfig::UCB { beta: 2.0 },
@@ -236,11 +292,12 @@ pub fn turbo_enn_config() -> OptimizerConfig {
 pub fn turbo_zero_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::None,
-        trust_region: TRLengthConfig::default(),
+        trust_region: TrustRegionConfig::default(),
         candidates: CandidateConfig {
             num_candidates_factor: 1000.0,
             min_candidates: 100,
             max_candidates: None,
+            num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
         },
         acquisition: AcquisitionConfig::Random,
@@ -253,11 +310,12 @@ pub fn turbo_zero_config() -> OptimizerConfig {
 pub fn lhd_only_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::None,
-        trust_region: TRLengthConfig::default(), // Minimal TR
+        trust_region: TrustRegionConfig::default(),
         candidates: CandidateConfig {
             num_candidates_factor: 1.0,
             min_candidates: 1,
             max_candidates: None,
+            num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
         },
         acquisition: AcquisitionConfig::Random,
@@ -295,6 +353,7 @@ mod tests {
             num_candidates_factor: 100.0,
             min_candidates: 100,
             max_candidates: Some(5000),
+            num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
         };
         assert_eq!(config.num_candidates(60, 1), 5000);
@@ -380,5 +439,47 @@ mod tests {
             panic!("expected ENN surrogate");
         };
         assert!(enn.scale_x);
+    }
+
+    #[test]
+    fn morbo_config_override_rejects_num_metrics_one() {
+        use crate::morbo_trust_region::MorboTrustRegion;
+        use crate::trust_region_config::TrustRegionConfig;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let overrides = ConfigOverrides {
+            trust_region_kind: Some("morbo".to_string()),
+            num_metrics: Some(1),
+            ..Default::default()
+        };
+        let applied = overrides.apply_to(turbo_enn_config());
+        let TrustRegionConfig::Morbo(settings) = applied.trust_region else {
+            panic!("expected Morbo trust region");
+        };
+        let mut rng = StdRng::seed_from_u64(8);
+        let result = MorboTrustRegion::new(2, settings, &mut rng);
+        assert!(
+            result.is_err(),
+            "PyO3/override path must reject num_metrics=1 like Python Morbo config"
+        );
+    }
+
+    #[test]
+    fn morbo_config_missing_rescalarize_defaults_on_propose() {
+        let overrides = ConfigOverrides {
+            trust_region_kind: Some("morbo".to_string()),
+            num_metrics: Some(2),
+            ..Default::default()
+        };
+        let applied = overrides.apply_to(turbo_enn_config());
+        let TrustRegionConfig::Morbo(settings) = applied.trust_region else {
+            panic!("expected Morbo trust region");
+        };
+        assert_eq!(
+            settings.rescalarize,
+            Rescalarize::OnPropose,
+            "missing rescalarize should match Python MorboTRConfig default ON_PROPOSE"
+        );
     }
 }

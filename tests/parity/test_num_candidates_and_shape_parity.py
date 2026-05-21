@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(not RUST_AVAILABLE, reason="Rust not available")
 
 
 def test_const_num_candidates_uses_rust_when_constant():
-    """const_num_candidates(n) maps to Rust min=max override."""
+    """Fixed num_candidates maps to Rust min=max override."""
     config = turbo_zero_config(num_candidates=500, num_init=4)
     assert is_rust_supported_config(config)
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)

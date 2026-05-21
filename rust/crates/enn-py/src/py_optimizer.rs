@@ -34,6 +34,7 @@ fn apply_scalar_overrides(
     overrides.num_candidates_factor = optional_f64(dict, "num_candidates_factor")?;
     overrides.min_candidates = optional_usize(dict, "min_candidates")?;
     overrides.max_candidates = optional_usize(dict, "max_candidates")?;
+    overrides.num_candidates_per_arm = optional_usize(dict, "num_candidates_per_arm")?;
     overrides.length_init = optional_f64(dict, "length_init")?;
     overrides.length_min = optional_f64(dict, "length_min")?;
     overrides.length_max = optional_f64(dict, "length_max")?;
@@ -96,6 +97,15 @@ pub fn parse_config_overrides_from_dict(
                 )))
             }
         });
+    }
+    if let Some(v) = dict.get_item("trust_region")? {
+        let s: String = v.extract()?;
+        overrides.trust_region_kind = Some(s);
+    }
+    overrides.num_metrics = optional_usize(dict, "num_metrics")?;
+    overrides.alpha = optional_f64(dict, "alpha")?;
+    if let Some(v) = dict.get_item("rescalarize")? {
+        overrides.rescalarize = Some(v.extract()?);
     }
     apply_scalar_overrides(dict, &mut overrides)?;
     Ok(overrides)
@@ -165,7 +175,7 @@ impl PyOptimizer {
 
     /// Current trust-region length.
     fn tr_length(&self) -> f64 {
-        self.inner.trust_region().length()
+        self.inner.tr_length()
     }
 
     /// Get observations x in unit space (if any).

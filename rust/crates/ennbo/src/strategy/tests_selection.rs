@@ -248,10 +248,10 @@ fn select_with_functions_direct_smoke() {
     opt.tell(&xf.view(), &yf.view(), &mut rng).unwrap();
     let sur = opt.surrogate().expect("enn surrogate");
 
-    let out_ts = select_with_thompson(sur, &x_cand.view(), 2, &mut rng).unwrap();
+    let out_ts = select_with_thompson(&opt, sur, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_ts.nrows(), 2);
 
-    let out_ucb = select_with_ucb(sur, &x_cand.view(), 2, 1.0, &mut rng).unwrap();
+    let out_ucb = select_with_ucb(&opt, sur, &x_cand.view(), 2, 1.0, &mut rng).unwrap();
     assert_eq!(out_ucb.nrows(), 2);
 
     let out_pf = select_with_pareto(sur, &x_cand.view(), 2, &mut rng).unwrap();

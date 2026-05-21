@@ -2,6 +2,7 @@
 
 mod incumbent;
 mod observation_store;
+mod tr_state;
 
 use ndarray::{Array1, Array2, ArrayView2};
 use rand::RngCore;
@@ -14,7 +15,7 @@ use crate::incumbent_tracker::{
 };
 use crate::strategy::Strategy;
 use crate::surrogate::{BoxedSurrogate, ENNSurrogate, Surrogate};
-use crate::trust_region::TurboTrustRegion;
+use tr_state::TrustRegionState;
 
 use observation_store::ObservationStore;
 
@@ -32,7 +33,7 @@ pub struct Optimizer {
     bounds: Array2<f64>,
     num_dim: usize,
     config: OptimizerConfig,
-    tr_state: TurboTrustRegion,
+    tr_state: TrustRegionState,
     surrogate: Option<BoxedSurrogate>,
     strategy: Strategy,
     obs_store: ObservationStore,
@@ -72,8 +73,8 @@ impl Optimizer {
             });
         }
 
-        // Initialize trust region
-        let tr_state = TurboTrustRegion::new(num_dim, config.trust_region);
+        let tr_state = TrustRegionState::from_config(num_dim, &config.trust_region, rng)
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
 
         // Initialize surrogate (None means no surrogate; NoSurrogate was wasteful/unclear)
         let surrogate: Option<BoxedSurrogate> = match &config.surrogate {
@@ -99,12 +100,18 @@ impl Optimizer {
         let sobol_seed_base = u64::from_le_bytes(seed_bytes) % (1u64 << 31);
         let trailing_obs = config.trailing_obs;
 
+        let num_metrics = tr_state.num_metrics();
         let tracker_m = match &config.surrogate {
             SurrogateConfig::ENN(enn_config) => tracker_m_from_enn_k(enn_config.k),
             SurrogateConfig::None => tracker_m_no_surrogate(),
         };
+        let noise_aware = config.noise_aware
+            || tr_state
+                .morbo()
+                .map(|m| m.noise_aware())
+                .unwrap_or(false);
         let incumbent_tracker =
-            IncrementalIncumbentTracker::new(tracker_m, config.noise_aware, 1);
+            IncrementalIncumbentTracker::new(tracker_m, noise_aware, num_metrics);
 
         Ok(Self {
             bounds,
@@ -181,14 +188,19 @@ impl Optimizer {
         &self.config
     }
 
-    /// Get trust region.
-    pub fn trust_region(&self) -> &TurboTrustRegion {
+    /// Get trust region state.
+    pub fn trust_region(&self) -> &TrustRegionState {
         &self.tr_state
     }
 
-    /// Get mutable trust region.
-    pub fn trust_region_mut(&mut self) -> &mut TurboTrustRegion {
+    /// Get mutable trust region state.
+    pub fn trust_region_mut(&mut self) -> &mut TrustRegionState {
         &mut self.tr_state
+    }
+
+    /// Trust region length (TuRBO or Morbo inner).
+    pub fn tr_length(&self) -> f64 {
+        self.tr_state.length()
     }
 
     /// Get surrogate.
@@ -345,3 +357,5 @@ impl Optimizer {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_morbo_incumbent;

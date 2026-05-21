@@ -7,19 +7,20 @@ from .acq_type import AcqType
 from .candidate_gen_config import CandidateGenConfig
 from .candidate_rv import CandidateRV
 from .init_config import InitConfig
-from .num_candidates_fn import NumCandidatesFn, const_num_candidates
 from .optimizer_config import ObservationHistoryConfig, OptimizerConfig
 
 
 def _make_candidate_gen_config(
     candidate_rv: CandidateRV,
-    num_candidates: NumCandidatesFn | int | None,
+    num_candidates: int | None,
+    *,
+    num_candidates_per_arm: int | None = None,
 ) -> CandidateGenConfig:
-    if num_candidates is None:
-        return CandidateGenConfig(candidate_rv=candidate_rv)
-    if isinstance(num_candidates, int):
-        num_candidates = const_num_candidates(num_candidates)
-    return CandidateGenConfig(candidate_rv=candidate_rv, num_candidates=num_candidates)
+    return CandidateGenConfig(
+        candidate_rv=candidate_rv,
+        num_candidates=num_candidates,
+        num_candidates_per_arm=num_candidates_per_arm,
+    )
 
 
 def _acq_configs(

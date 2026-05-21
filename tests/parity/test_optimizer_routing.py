@@ -11,7 +11,6 @@ from enn.turbo.config import (
     ENNSurrogateConfig,
     MorboTRConfig,
     MultiObjectiveConfig,
-    const_num_candidates,
     lhd_only_config,
 )
 from enn.turbo.fallback_registry import FALLBACK_REGISTRY, fallback_reason
@@ -56,7 +55,7 @@ def test_turbo_enn_acq_types_route_to_rust(acq_type):
 
 def test_const_num_candidates_routes_to_rust():
     config = turbo_enn_config(
-        candidates=CandidateGenConfig(num_candidates=const_num_candidates(256)),
+        candidates=CandidateGenConfig(num_candidates=256),
         enn=ENNSurrogateConfig(k=4, fit=ENNFitConfig(num_fit_samples=10)),
         acq_type=AcqType.UCB,
     )
@@ -79,17 +78,19 @@ def test_turbo_one_falls_back_with_registry_reason():
     assert not isinstance(opt, RustOptimizer)
 
 
-def test_morbo_falls_back_with_registry_reason():
+def test_morbo_routes_to_rust():
     config = turbo_enn_config(
         enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=10)),
         trust_region=MorboTRConfig(multi_objective=MultiObjectiveConfig(num_metrics=2)),
     )
-    assert fallback_reason(config) == "morbo_tr"
-    assert not is_rust_supported_config(config)
+    assert fallback_reason(config) is None
+    assert is_rust_supported_config(config)
+    opt = create_optimizer(bounds=BOUNDS, config=config, rng=np.random.default_rng(6))
+    assert isinstance(opt, RustOptimizer)
 
 
-def test_fallback_registry_has_three_entries():
-    assert len(FALLBACK_REGISTRY) == 3
+def test_fallback_registry_has_one_entry():
+    assert len(FALLBACK_REGISTRY) == 1
 
 
 def test_supported_enn_create_does_not_call_python_optimizer(monkeypatch):

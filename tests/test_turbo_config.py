@@ -10,7 +10,6 @@ from enn.turbo.config import (
     ENNFitConfig,
     ENNSurrogateConfig,
     GPSurrogateConfig,
-    HnROptimizerConfig,
     HybridInit,
     InitConfig,
     LHDOnlyInit,
@@ -153,19 +152,18 @@ def test_no_tr_config():
 def test_candidate_gen_config_defaults():
     cfg = CandidateGenConfig()
     assert cfg.candidate_rv == CandidateRV.SOBOL
-    assert callable(cfg.num_candidates)
-    assert cfg.num_candidates(num_dim=1, num_arms=1) == 100
-    assert cfg.num_candidates(num_dim=100, num_arms=1) == 5000
+    assert cfg.num_candidates is None
+    assert cfg.resolve_num_candidates(num_dim=1, num_arms=1) == 100
+    assert cfg.resolve_num_candidates(num_dim=100, num_arms=1) == 5000
 
 
 def test_candidate_gen_config_uniform():
     cfg = CandidateGenConfig(
         candidate_rv=CandidateRV.UNIFORM,
-        num_candidates=lambda *, num_dim, num_arms: 100,
+        num_candidates=100,
     )
     assert cfg.candidate_rv == CandidateRV.UNIFORM
-    assert callable(cfg.num_candidates)
-    assert cfg.num_candidates(num_dim=3, num_arms=7) == 100
+    assert cfg.resolve_num_candidates(num_dim=3, num_arms=7) == 100
 
 
 def test_candidate_gen_config_invalid_rv():
@@ -175,12 +173,12 @@ def test_candidate_gen_config_invalid_rv():
 
 def test_candidate_gen_config_invalid_num_candidates():
     with pytest.raises(ValueError, match="num_candidates must be > 0"):
-        CandidateGenConfig(num_candidates=lambda *, num_dim, num_arms: 0)
+        CandidateGenConfig(num_candidates=0)
 
 
 def test_candidate_gen_config_num_candidates_per_arms():
-    cfg = CandidateGenConfig(num_candidates=lambda *, num_dim, num_arms: 100 * num_arms)
-    assert cfg.num_candidates(num_dim=3, num_arms=7) == 700
+    cfg = CandidateGenConfig(num_candidates_per_arm=100)
+    assert cfg.resolve_num_candidates(num_dim=3, num_arms=7) == 700
 
 
 def test_init_config_defaults():
@@ -288,11 +286,6 @@ def test_nds_optimizer_config():
     assert cfg is not None
 
 
-def test_hnr_optimizer_config():
-    cfg = HnROptimizerConfig()
-    assert cfg is not None
-
-
 def test_optimizer_config_defaults():
     cfg = OptimizerConfig()
     assert isinstance(cfg.trust_region, TurboTRConfig)
@@ -347,55 +340,6 @@ def test_optimizer_config_pareto_requires_nds():
             acquisition=ParetoAcquisitionConfig(),
             acq_optimizer=RAASPOptimizerConfig(),
         )
-
-
-def test_optimizer_config_hnr_incompatible_with_pareto():
-    with pytest.raises(
-        ValueError, match="ParetoAcquisitionConfig requires NDSOptimizerConfig"
-    ):
-        OptimizerConfig(
-            acquisition=ParetoAcquisitionConfig(),
-            acq_optimizer=HnROptimizerConfig(),
-        )
-
-
-def test_optimizer_config_gp_draw_hnr_nyi():
-    with pytest.raises(NotImplementedError, match="not yet implemented"):
-        OptimizerConfig(
-            surrogate=GPSurrogateConfig(),
-            acquisition=DrawAcquisitionConfig(),
-            acq_optimizer=HnROptimizerConfig(),
-        )
-
-
-def test_optimizer_config_enn_ucb_hnr_valid():
-    cfg = OptimizerConfig(
-        surrogate=ENNSurrogateConfig(fit=ENNFitConfig(num_fit_samples=50)),
-        acquisition=UCBAcquisitionConfig(),
-        acq_optimizer=HnROptimizerConfig(),
-    )
-    assert isinstance(cfg.acq_optimizer, HnROptimizerConfig)
-    assert isinstance(cfg.acquisition, UCBAcquisitionConfig)
-
-
-def test_optimizer_config_enn_draw_hnr_valid():
-    cfg = OptimizerConfig(
-        surrogate=ENNSurrogateConfig(fit=ENNFitConfig(num_fit_samples=50)),
-        acquisition=DrawAcquisitionConfig(),
-        acq_optimizer=HnROptimizerConfig(),
-    )
-    assert isinstance(cfg.acq_optimizer, HnROptimizerConfig)
-    assert isinstance(cfg.acquisition, DrawAcquisitionConfig)
-
-
-def test_optimizer_config_gp_ucb_hnr_valid():
-    cfg = OptimizerConfig(
-        surrogate=GPSurrogateConfig(),
-        acquisition=UCBAcquisitionConfig(),
-        acq_optimizer=HnROptimizerConfig(),
-    )
-    assert isinstance(cfg.acq_optimizer, HnROptimizerConfig)
-    assert isinstance(cfg.acquisition, UCBAcquisitionConfig)
 
 
 def test_turbo_one_config_factory():
@@ -475,11 +419,11 @@ def test_lhd_only_config_factory():
 def test_optimizer_config_properties():
     cfg = turbo_enn_config(
         enn=ENNSurrogateConfig(k=15),
-        candidates=CandidateGenConfig(num_candidates=lambda *, num_dim, num_arms: 200),
+        candidates=CandidateGenConfig(num_candidates=200),
         num_init=10,
     )
     assert cfg.surrogate.k == 15
-    assert cfg.num_candidates(num_dim=3, num_arms=7) == 200
+    assert cfg.candidates.resolve_num_candidates(num_dim=3, num_arms=7) == 200
     assert cfg.init.num_init == 10
 
 

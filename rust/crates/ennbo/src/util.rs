@@ -4,8 +4,30 @@
 
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use ndarray_linalg::Norm;
+use rand::Rng;
 
 use crate::error::ENNError;
+
+/// Index of maximum value, choosing uniformly among ties (matches Python `argmax_random_tie`).
+pub fn argmax_random_tie(values: &[f64], rng: &mut dyn rand::RngCore) -> usize {
+    if values.is_empty() {
+        return 0;
+    }
+    let max_val = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let ties: Vec<usize> = values
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| **v >= max_val)
+        .map(|(i, _)| i)
+        .collect();
+    if ties.is_empty() {
+        return rng.gen_range(0..values.len());
+    }
+    if ties.len() == 1 {
+        return ties[0];
+    }
+    ties[rng.gen_range(0..ties.len())]
+}
 
 /// Standardize y values by computing center and scale.
 ///

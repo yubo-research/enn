@@ -63,7 +63,7 @@ fn test_strategy_turbo_path_updates_trust_region() {
     let x = optimizer.ask(2, &mut rng).unwrap();
     let y = array![[1.0], [1.1]];
     optimizer.tell(&x.view(), &y.view(), &mut rng).unwrap();
-    assert!(optimizer.trust_region().length() > 0.0);
+    assert!(optimizer.tr_length() > 0.0);
 }
 
 #[test]

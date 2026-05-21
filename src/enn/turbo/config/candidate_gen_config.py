@@ -1,29 +1,36 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .candidate_rv import CandidateRV
-from .num_candidates_fn import NumCandidatesFn, default_num_candidates
 from .raasp_driver import RAASPDriver
 
 
 @dataclass(frozen=True)
 class CandidateGenConfig:
     candidate_rv: CandidateRV = CandidateRV.SOBOL
-    num_candidates: NumCandidatesFn = field(
-        default_factory=lambda: default_num_candidates
-    )
+    num_candidates: int | None = None
+    num_candidates_per_arm: int | None = None
     raasp_driver: RAASPDriver = RAASPDriver.ORIG
+
+    def resolve_num_candidates(self, *, num_dim: int, num_arms: int) -> int:
+        base = (
+            self.num_candidates
+            if self.num_candidates is not None
+            else min(5000, 100 * int(num_dim))
+        )
+        if self.num_candidates_per_arm is not None:
+            base = max(base, self.num_candidates_per_arm * int(num_arms))
+        return int(base)
 
     def __post_init__(self) -> None:
         if not isinstance(self.candidate_rv, CandidateRV):
             raise ValueError(
                 f"candidate_rv must be a CandidateRV enum, got {self.candidate_rv!r}"
             )
-        if not callable(self.num_candidates):
+        if self.num_candidates is not None and self.num_candidates <= 0:
+            raise ValueError(f"num_candidates must be > 0, got {self.num_candidates}")
+        if self.num_candidates_per_arm is not None and self.num_candidates_per_arm <= 0:
             raise ValueError(
-                f"num_candidates must be callable, got {type(self.num_candidates)!r}"
+                f"num_candidates_per_arm must be > 0, got {self.num_candidates_per_arm}"
             )
-        test_n = int(self.num_candidates(num_dim=1, num_arms=1))
-        if test_n <= 0:
-            raise ValueError(f"num_candidates must be > 0, got {test_n}")

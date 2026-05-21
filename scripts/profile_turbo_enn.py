@@ -13,7 +13,6 @@ from enn.turbo.config.acq_type import AcqType
 from enn.turbo.config.candidate_gen_config import CandidateGenConfig
 from enn.turbo.config.enn_surrogate_config import ENNFitConfig, ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config
-from enn.turbo.config.num_candidates_fn import const_num_candidates
 from enn.turbo.config.trust_region import TurboTRConfig
 
 
@@ -47,7 +46,7 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
         ),
     )
     candidates = (
-        CandidateGenConfig(num_candidates=const_num_candidates(cfg.num_candidates))
+        CandidateGenConfig(num_candidates=cfg.num_candidates)
         if cfg.num_candidates is not None
         else None
     )

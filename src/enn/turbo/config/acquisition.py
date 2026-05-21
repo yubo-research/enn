@@ -1,5 +1,4 @@
 from .draw_acquisition_config import DrawAcquisitionConfig
-from .hnr_optimizer_config import HnROptimizerConfig
 from .nds_optimizer_config import NDSOptimizerConfig
 from .pareto_acquisition_config import ParetoAcquisitionConfig
 from .raasp_optimizer_config import RAASPOptimizerConfig
@@ -12,12 +11,11 @@ AcquisitionConfig = (
     | ParetoAcquisitionConfig
     | RandomAcquisitionConfig
 )
-AcqOptimizerConfig = RAASPOptimizerConfig | HnROptimizerConfig | NDSOptimizerConfig
+AcqOptimizerConfig = RAASPOptimizerConfig | NDSOptimizerConfig
 __all__ = [
     "AcqOptimizerConfig",
     "AcquisitionConfig",
     "DrawAcquisitionConfig",
-    "HnROptimizerConfig",
     "NDSOptimizerConfig",
     "ParetoAcquisitionConfig",
     "RAASPOptimizerConfig",

@@ -110,6 +110,68 @@ impl TurboTrustRegion {
         self.length
     }
 
+    /// Observation count at last trust-region update.
+    pub fn prev_num_obs(&self) -> usize {
+        self.prev_num_obs
+    }
+
+    /// Morbo: set incumbent scalar before an update step.
+    pub fn set_best_value(&mut self, value: f64) {
+        self.best_value = value;
+    }
+
+    /// Morbo: update using zero-padded history and a scalar incumbent value (Python parity).
+    pub fn update_scalar_incumbent(
+        &mut self,
+        num_obs: usize,
+        y_incumbent_value: f64,
+    ) -> Result<(), TrustRegionError> {
+        let y_all = Array1::zeros(num_obs);
+        if num_obs == 0 || num_obs == self.prev_num_obs {
+            return Ok(());
+        }
+        if num_obs < self.prev_num_obs {
+            return Err(TrustRegionError::InvalidState(format!(
+                "num_obs went backwards: {} < {}",
+                num_obs, self.prev_num_obs
+            )));
+        }
+        if !self.best_value.is_finite() {
+            self.best_value = y_incumbent_value;
+            self.prev_num_obs = num_obs;
+            return Ok(());
+        }
+        let prev_slice = y_all.slice(s![..self.prev_num_obs]);
+        let prev_len = prev_slice.len();
+        let scale = if prev_len >= 2 {
+            let min_val = prev_slice.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+            let max_val = prev_slice.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            (max_val - min_val).max(1e-6)
+        } else {
+            0.0
+        };
+        let improved = y_incumbent_value > self.best_value + 1e-3 * scale;
+        if improved {
+            self.success_counter += 1;
+            self.failure_counter = 0;
+        } else {
+            self.failure_counter += 1;
+            self.success_counter = 0;
+        }
+        let success_tol = self.success_tolerance;
+        let failure_tol = self.failure_tolerance.unwrap_or(4);
+        if self.success_counter >= success_tol {
+            self.length = (self.length * 2.0).min(self.config.length_max);
+            self.success_counter = 0;
+        } else if self.failure_counter >= failure_tol {
+            self.length *= 0.5;
+            self.failure_counter = 0;
+        }
+        self.best_value = self.best_value.max(y_incumbent_value);
+        self.prev_num_obs = num_obs;
+        Ok(())
+    }
+
     /// Check if restart is needed (length below minimum).
     pub fn needs_restart(&self) -> bool {
         self.length < self.config.length_min

@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 from enn.turbo.python_fallback.components.acquisition import (
-    HnRAcqOptimizer,
     ParetoAcqOptimizer,
     RandomAcqOptimizer,
     ThompsonAcqOptimizer,
@@ -202,32 +201,6 @@ def test_pareto_acq_optimizer_select():
     surrogate = ENNSurrogate(config)
     x, y = _make_test_data()
     surrogate.fit(x, y, None, num_steps=0, rng=rng)
-    x_cand = _make_candidates()
-    selected = optimizer.select(x_cand, 2, surrogate, rng)
-    assert selected.shape == (2, 2)
-
-
-def test_hnr_acq_optimizer_init():
-    base = UCBAcqOptimizer(beta=1.0)
-    optimizer = HnRAcqOptimizer(base, num_iterations=10)
-    assert optimizer._num_iterations == 10
-
-
-@pytest.mark.parametrize(
-    "base_cls,surrogate_fn",
-    [
-        (UCBAcqOptimizer, _fit_gp_surrogate),
-        (ThompsonAcqOptimizer, _fit_no_surrogate),
-    ],
-)
-def test_hnr_acq_optimizer_select(base_cls, surrogate_fn):
-    if base_cls == UCBAcqOptimizer:
-        base = base_cls(beta=1.0)
-    else:
-        base = base_cls()
-    optimizer = HnRAcqOptimizer(base, num_iterations=5)
-    rng = np.random.default_rng(42)
-    surrogate = surrogate_fn(rng)
     x_cand = _make_candidates()
     selected = optimizer.select(x_cand, 2, surrogate, rng)
     assert selected.shape == (2, 2)

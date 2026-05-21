@@ -11,7 +11,7 @@ from .config.acquisition import (
 from .config.candidate_gen_config import CandidateGenConfig
 from .config.candidate_rv import CandidateRV
 from .config.init_strategies import LHDOnlyInit
-from .config.num_candidates_fn import default_num_candidates
+from .config.morbo_tr_config import MorboTRConfig
 from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .config.trust_region import NoTRConfig, TurboTRConfig
@@ -47,32 +47,6 @@ def _acquisition_to_override(config: OptimizerConfig) -> dict[str, Any]:
     return {}
 
 
-def _constant_num_candidates_value(config: OptimizerConfig) -> int | None:
-    candidates = getattr(config, "candidates", None)
-    if not isinstance(candidates, CandidateGenConfig):
-        return None
-    fn = getattr(candidates, "num_candidates", None)
-    if not callable(fn) or fn is default_num_candidates:
-        return None
-    n_lo = int(fn(num_dim=2, num_arms=1))
-    n_hi = int(fn(num_dim=10, num_arms=1))
-    if n_lo != n_hi:
-        return None
-    return n_lo
-
-
-def _can_use_rust_num_candidates(config: OptimizerConfig) -> bool:
-    if _constant_num_candidates_value(config) is not None:
-        return True
-    candidates = getattr(config, "candidates", None)
-    if not isinstance(candidates, CandidateGenConfig):
-        return True
-    fn = getattr(candidates, "num_candidates", None)
-    if not callable(fn):
-        return True
-    return fn is default_num_candidates
-
-
 def _candidate_rv_override(config: OptimizerConfig) -> dict[str, Any]:
     rv = getattr(config, "candidate_rv", None)
     if rv is CandidateRV.SOBOL:
@@ -88,20 +62,18 @@ def _candidate_count_override(config: OptimizerConfig) -> dict[str, Any]:
     candidates = getattr(config, "candidates", None)
     if not isinstance(candidates, CandidateGenConfig):
         return {}
-    fn = getattr(candidates, "num_candidates", None)
-    if fn is default_num_candidates:
-        return {
-            "num_candidates_factor": _DEFAULT_NUM_CANDIDATES_FACTOR,
-            "max_candidates": _DEFAULT_MAX_CANDIDATES,
-        }
-    n_const = _constant_num_candidates_value(config)
-    if n_const is None:
-        return {}
-    return {
-        "num_candidates_factor": 1.0,
-        "min_candidates": n_const,
-        "max_candidates": n_const,
-    }
+    out: dict[str, Any] = {}
+    if candidates.num_candidates is None and candidates.num_candidates_per_arm is None:
+        out["num_candidates_factor"] = _DEFAULT_NUM_CANDIDATES_FACTOR
+        out["max_candidates"] = _DEFAULT_MAX_CANDIDATES
+    elif candidates.num_candidates is not None:
+        n = int(candidates.num_candidates)
+        out["num_candidates_factor"] = 1.0
+        out["min_candidates"] = n
+        out["max_candidates"] = n
+    if candidates.num_candidates_per_arm is not None:
+        out["num_candidates_per_arm"] = int(candidates.num_candidates_per_arm)
+    return out
 
 
 def _candidates_to_override(config: OptimizerConfig) -> dict[str, Any]:
@@ -133,6 +105,18 @@ def _get_tr_params(tr: TurboTRConfig) -> tuple[float, float, float]:
 def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
     out: dict[str, Any] = {}
     tr = getattr(config, "trust_region", None)
+    if isinstance(tr, MorboTRConfig):
+        out["trust_region"] = "morbo"
+        out["num_metrics"] = int(tr.num_metrics)
+        out["alpha"] = float(tr.alpha)
+        li, lm, lx = _get_tr_params(tr)
+        out["length_init"] = li
+        out["length_min"] = lm
+        out["length_max"] = lx
+        out["rescalarize"] = tr.rescalarize.value
+        if tr.noise_aware:
+            out["noise_aware"] = True
+        return out
     if not isinstance(tr, TurboTRConfig):
         return out
     li, lm, lx = _get_tr_params(tr)
@@ -172,8 +156,6 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
 
 def is_rust_supported_config(config: OptimizerConfig) -> bool:
     if requires_python_optimizer_fallback(config):
-        return False
-    if not _can_use_rust_num_candidates(config):
         return False
     if isinstance(config.surrogate, ENNSurrogateConfig):
         return True

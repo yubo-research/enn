@@ -16,6 +16,7 @@ pub mod hypervolume;
 pub mod incumbent_tracker;
 pub mod index;
 pub mod model;
+pub mod morbo_trust_region;
 pub mod optimizer;
 pub mod optimizer_factory;
 pub mod params;
@@ -25,6 +26,7 @@ pub mod strategy;
 pub mod surrogate;
 pub mod traits;
 pub mod trust_region;
+pub mod trust_region_config;
 pub mod util;
 
 #[cfg(test)]
@@ -54,5 +56,7 @@ pub use stats::WeightedStats;
 pub use strategy::Strategy;
 pub use surrogate::{ENNSurrogate, ENNSurrogateConfig, Surrogate, SurrogatePrediction};
 pub use traits::PosteriorComputation;
+pub use morbo_trust_region::{MorboTRSettings, MorboTrustRegion, Rescalarize};
 pub use trust_region::{NoTrustRegion, TRLengthConfig, TrustRegionError, TurboTrustRegion};
-pub use util::{calculate_sobol_indices, pareto_front_2d_maximize, standardize_y};
+pub use trust_region_config::TrustRegionConfig;
+pub use util::{argmax_random_tie, calculate_sobol_indices, pareto_front_2d_maximize, standardize_y};

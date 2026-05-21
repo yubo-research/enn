@@ -6,12 +6,11 @@ from typing import Any
 def validate_optimizer_config(cfg: Any) -> None:
     from .acquisition import (
         DrawAcquisitionConfig,
-        HnROptimizerConfig,
         NDSOptimizerConfig,
         ParetoAcquisitionConfig,
         UCBAcquisitionConfig,
     )
-    from .surrogate import GPSurrogateConfig, NoSurrogateConfig
+    from .surrogate import NoSurrogateConfig
 
     if type(cfg.init.init_strategy).__name__ == "LHDOnlyInit":
         if not isinstance(cfg.surrogate, NoSurrogateConfig):
@@ -32,14 +31,3 @@ def validate_optimizer_config(cfg: Any) -> None:
     if isinstance(cfg.acquisition, ParetoAcquisitionConfig):
         if not isinstance(cfg.acq_optimizer, NDSOptimizerConfig):
             raise ValueError("ParetoAcquisitionConfig requires NDSOptimizerConfig")
-    if isinstance(cfg.acq_optimizer, HnROptimizerConfig):
-        if isinstance(cfg.acquisition, ParetoAcquisitionConfig):
-            raise ValueError(
-                "HnROptimizerConfig is not compatible with ParetoAcquisitionConfig"
-            )
-        if isinstance(cfg.surrogate, GPSurrogateConfig) and isinstance(
-            cfg.acquisition, DrawAcquisitionConfig
-        ):
-            raise NotImplementedError(
-                "GP surrogate with DrawAcquisitionConfig and HnROptimizerConfig is not yet implemented"
-            )
