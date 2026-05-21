@@ -101,6 +101,8 @@ def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
         out["length_min"] = lm
     if lx != 1.6:
         out["length_max"] = lx
+    if tr.noise_aware:
+        out["noise_aware"] = True
     return out
 
 

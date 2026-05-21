@@ -262,6 +262,33 @@ def test_find_x_center_uses_top_k_union_for_multiobjective():
     assert seen["shape"] == (5, 2)
 
 
+def test_update_incumbent_uses_tracker_not_surrogate_candidate_api():
+    from enn.turbo.components.enn_surrogate import ENNSurrogate
+
+    assert not hasattr(ENNSurrogate, "get_incumbent_candidate_indices")
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(0)
+    opt = _make_optimizer(
+        bounds=bounds,
+        config=turbo_enn_config(enn=ENNSurrogateConfig(k=3)),
+        rng=rng,
+    )
+    ask_calls: list[bool] = []
+    real_ask = opt._incumbent_tracker.ask
+
+    def _spy_ask():
+        ask_calls.append(True)
+        return real_ask()
+
+    opt._incumbent_tracker.ask = _spy_ask  # type: ignore[method-assign]
+    x = rng.uniform(0.0, 1.0, size=(4, 2))
+    y = np.array([0.1, 0.5, 0.2, 0.9], dtype=float)
+    opt.tell(x, y.reshape(-1, 1))
+    assert ask_calls
+    assert opt._incumbent_tracker.observation_count() == len(opt._y_obs)
+    assert opt._incumbent_idx is not None
+
+
 def test_optimizer_with_trailing_obs():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)

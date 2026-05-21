@@ -321,6 +321,7 @@ fn tell_turbo(
     if tr.needs_restart() {
         tr.restart();
         optimizer.increment_restart_generation();
+        optimizer.reset_incumbent_tracker();
     }
 
     Ok(())

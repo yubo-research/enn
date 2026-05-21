@@ -100,28 +100,6 @@ class ENNSurrogate:
             )
         return SurrogateResult(model=self._enn, lengthscales=None)
 
-    def get_incumbent_candidate_indices(self, y_obs: np.ndarray) -> np.ndarray:
-        y_array = np.asarray(y_obs, dtype=float)
-        k = self._config.k
-        if k is None:
-            num_fit_candidates = (
-                self._config.num_fit_candidates
-                if self._config.num_fit_candidates is not None
-                else 100
-            )
-            k = min(len(y_array), max(10, 2 * num_fit_candidates))
-        if y_array.ndim == 2 and y_array.shape[1] > 1:
-            num_top = min(k, len(y_array))
-            union_indices: set[int] = set()
-            for m in range(y_array.shape[1]):
-                top_m = np.argpartition(-y_array[:, m], num_top - 1)[:num_top]
-                union_indices.update(top_m.tolist())
-            return np.array(sorted(union_indices), dtype=int)
-        else:
-            y_flat = y_array[:, 0] if y_array.ndim == 2 else y_array
-            num_top = min(k, len(y_flat))
-            return np.argpartition(-y_flat, num_top - 1)[:num_top]
-
     def predict(self, x: np.ndarray) -> PosteriorResult:
         if self._enn is None or self._params is None:
             raise RuntimeError("ENNSurrogate.predict requires a fitted model")

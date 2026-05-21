@@ -43,9 +43,6 @@ class NoSurrogate:
             return PosteriorResult(mu=self._y_obs.copy(), sigma=None)
         raise RuntimeError("NoSurrogate.predict only works for training points")
 
-    def get_incumbent_candidate_indices(self, y_obs: np.ndarray) -> np.ndarray:
-        return np.arange(len(y_obs), dtype=int)
-
     def sample(self, x: np.ndarray, num_samples: int, rng: Generator) -> np.ndarray:
         n = len(x)
         num_metrics = self._y_obs.shape[1] if hasattr(self, "_y_obs") else 1

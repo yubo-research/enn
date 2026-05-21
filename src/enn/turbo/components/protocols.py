@@ -31,7 +31,6 @@ class Surrogate(Protocol):
         tr_state: Any,
         rng: Generator,
     ) -> np.ndarray | None: ...
-    def get_incumbent_candidate_indices(self, y_obs: np.ndarray) -> np.ndarray: ...
 
 
 class AcquisitionOptimizer(Protocol):

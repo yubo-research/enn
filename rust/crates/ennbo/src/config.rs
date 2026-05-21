@@ -18,6 +18,8 @@ pub struct OptimizerConfig {
     pub acquisition: AcquisitionConfig,
     /// Trailing observations limit (None = keep all).
     pub trailing_obs: Option<usize>,
+    /// Use surrogate posterior mean for incumbent selection among candidates.
+    pub noise_aware: bool,
 }
 
 impl Default for OptimizerConfig {
@@ -28,6 +30,7 @@ impl Default for OptimizerConfig {
             candidates: CandidateConfig::default(),
             acquisition: AcquisitionConfig::default(),
             trailing_obs: None,
+            noise_aware: false,
         }
     }
 }
@@ -100,6 +103,29 @@ pub struct ConfigOverrides {
     pub trailing_obs: Option<usize>,
     pub num_fit_samples: Option<usize>,
     pub num_fit_candidates: Option<usize>,
+    pub noise_aware: Option<bool>,
+}
+
+fn apply_enn_surrogate_fields(
+    config: &mut OptimizerConfig,
+    index_driver: Option<IndexDriver>,
+    num_fit_samples: Option<usize>,
+    num_fit_candidates: Option<usize>,
+) {
+    let SurrogateConfig::ENN(enn_cfg) = &config.surrogate else {
+        return;
+    };
+    let mut enn = enn_cfg.clone();
+    if let Some(driver) = index_driver {
+        enn.index_driver = driver;
+    }
+    if let Some(nfs) = num_fit_samples {
+        enn.num_fit_samples = nfs;
+    }
+    if let Some(nfc) = num_fit_candidates {
+        enn.num_fit_candidates = nfc;
+    }
+    config.surrogate = SurrogateConfig::ENN(enn);
 }
 
 impl ConfigOverrides {
@@ -127,29 +153,22 @@ impl ConfigOverrides {
                 length_max: self.length_max.unwrap_or(config.trust_region.length_max),
             };
         }
-        if let Some(driver) = self.index_driver {
-            if let SurrogateConfig::ENN(enn_cfg) = &config.surrogate {
-                let mut enn = enn_cfg.clone();
-                enn.index_driver = driver;
-                config.surrogate = SurrogateConfig::ENN(enn);
-            }
+        if self.index_driver.is_some()
+            || self.num_fit_samples.is_some()
+            || self.num_fit_candidates.is_some()
+        {
+            apply_enn_surrogate_fields(
+                &mut config,
+                self.index_driver,
+                self.num_fit_samples,
+                self.num_fit_candidates,
+            );
         }
         if let Some(t) = self.trailing_obs {
             config.trailing_obs = Some(t);
         }
-        if let Some(nfs) = self.num_fit_samples {
-            if let SurrogateConfig::ENN(enn_cfg) = &config.surrogate {
-                let mut enn = enn_cfg.clone();
-                enn.num_fit_samples = nfs;
-                config.surrogate = SurrogateConfig::ENN(enn);
-            }
-        }
-        if let Some(nfc) = self.num_fit_candidates {
-            if let SurrogateConfig::ENN(enn_cfg) = &config.surrogate {
-                let mut enn = enn_cfg.clone();
-                enn.num_fit_candidates = nfc;
-                config.surrogate = SurrogateConfig::ENN(enn);
-            }
+        if let Some(na) = self.noise_aware {
+            config.noise_aware = na;
         }
         config
     }
@@ -202,6 +221,7 @@ pub fn turbo_enn_config() -> OptimizerConfig {
         },
         acquisition: AcquisitionConfig::UCB { beta: 2.0 },
         trailing_obs: None,
+        noise_aware: false,
     }
 }
 
@@ -218,6 +238,7 @@ pub fn turbo_zero_config() -> OptimizerConfig {
         },
         acquisition: AcquisitionConfig::Random,
         trailing_obs: None,
+        noise_aware: false,
     }
 }
 
@@ -234,6 +255,7 @@ pub fn lhd_only_config() -> OptimizerConfig {
         },
         acquisition: AcquisitionConfig::Random,
         trailing_obs: None,
+        noise_aware: false,
     }
 }
 

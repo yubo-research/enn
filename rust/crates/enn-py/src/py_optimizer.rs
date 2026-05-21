@@ -85,6 +85,9 @@ pub fn parse_config_overrides_from_dict(
     if let Some(v) = dict.get_item("num_fit_candidates")? {
         overrides.num_fit_candidates = Some(v.extract::<usize>()?);
     }
+    if let Some(v) = dict.get_item("noise_aware")? {
+        overrides.noise_aware = Some(v.extract::<bool>()?);
+    }
     Ok(overrides)
 }
 

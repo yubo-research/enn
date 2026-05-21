@@ -1,4 +1,5 @@
-use super::{ObservationStore, Optimizer, Telemetry};
+use super::observation_store::ObservationStore;
+use super::{Optimizer, Telemetry};
 use crate::config::{lhd_only_config, turbo_zero_config, ConfigOverrides};
 use crate::error::ENNError;
 use crate::optimizer_factory::{
@@ -193,4 +194,28 @@ fn observation_store_cache_and_edges() {
     store.replace(vec![array![1.0]], vec![array![2.0]]);
     assert_eq!(store.len(), 1);
     assert!(store.x_obs_array().unwrap()[[0, 0]] - 1.0 < 1e-12);
+}
+
+#[test]
+fn test_noise_aware_config_and_incumbent_after_tell() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(55);
+    let overrides = ConfigOverrides {
+        noise_aware: Some(true),
+        ..Default::default()
+    };
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+    assert!(opt.config().noise_aware);
+
+    let x = array![
+        [0.2, 0.3],
+        [0.4, 0.5],
+        [0.6, 0.7],
+        [0.8, 0.9],
+    ];
+    let y = array![[0.0], [1.0], [2.0], [0.5]];
+    opt.tell(&x.view(), &y.view(), &mut rng).unwrap();
+    assert!(opt.incumbent_x_unit().is_some());
+    assert_eq!(opt.incumbent_tracker.observation_count(), 4);
 }

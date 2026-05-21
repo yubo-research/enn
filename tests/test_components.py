@@ -158,28 +158,6 @@ def test_enn_surrogate_predict():
     assert posterior.mu.shape == (4, 1)
 
 
-def test_no_surrogate_get_incumbent_candidate_indices():
-    surrogate = NoSurrogate()
-    y_obs = np.array([0.1, 0.3, -0.2], dtype=float)
-    indices = surrogate.get_incumbent_candidate_indices(y_obs)
-    assert np.array_equal(indices, np.array([0, 1, 2], dtype=int))
-
-
-def test_gp_surrogate_get_incumbent_candidate_indices():
-    surrogate = GPSurrogate()
-    y_obs = np.array([0.2, -0.1, 0.4], dtype=float)
-    indices = surrogate.get_incumbent_candidate_indices(y_obs)
-    assert np.array_equal(indices, np.array([0, 1, 2], dtype=int))
-
-
-def test_enn_surrogate_get_incumbent_candidate_indices_top_k():
-    config = ENNSurrogateConfig(k=2)
-    surrogate = ENNSurrogate(config)
-    y_obs = np.array([0.1, 0.9, 0.3, 0.8], dtype=float)
-    indices = surrogate.get_incumbent_candidate_indices(y_obs)
-    assert np.array_equal(np.sort(indices), np.array([1, 3], dtype=int))
-
-
 @pytest.mark.parametrize(
     "optimizer_cls,surrogate_fn",
     [

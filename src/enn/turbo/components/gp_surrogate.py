@@ -116,9 +116,6 @@ class GPSurrogate:
         sigma = y_std.reshape(1, -1) * sigma_std_2d
         return PosteriorResult(mu=mu, sigma=sigma)
 
-    def get_incumbent_candidate_indices(self, y_obs: np.ndarray) -> np.ndarray:
-        return np.arange(len(y_obs), dtype=int)
-
     def sample(self, x: np.ndarray, num_samples: int, rng: Generator) -> np.ndarray:
         import gpytorch
         import torch

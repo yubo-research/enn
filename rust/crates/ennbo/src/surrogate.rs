@@ -36,8 +36,6 @@ pub trait Surrogate: Send + Sync {
     ) -> Result<Array3<f64>, ENNError>;
 
     fn lengthscales(&self) -> Option<Array1<f64>>;
-
-    fn get_incumbent_indices(&self, y_obs: &ArrayView2<f64>) -> Vec<usize>;
 }
 
 pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
@@ -252,43 +250,6 @@ impl Surrogate for ENNSurrogate {
     fn lengthscales(&self) -> Option<Array1<f64>> {
         None
     }
-
-    fn get_incumbent_indices(&self, y_obs: &ArrayView2<f64>) -> Vec<usize> {
-        let k = self.config.k as usize;
-        let n = y_obs.nrows();
-
-        if y_obs.ncols() > 1 {
-            let num_top = k.min(n);
-            let mut union_indices: std::collections::HashSet<usize> =
-                std::collections::HashSet::new();
-
-            for m in 0..y_obs.ncols() {
-                let col: Vec<f64> = y_obs.column(m).to_vec();
-                let mut indexed: Vec<(usize, f64)> = col.into_iter().enumerate().collect();
-                indexed.sort_by(|a, b| b.1.total_cmp(&a.1));
-
-                for item in indexed.iter().take(num_top) {
-                    union_indices.insert(item.0);
-                }
-            }
-
-            let mut result: Vec<usize> = union_indices.into_iter().collect();
-            result.sort();
-            result
-        } else {
-            let y_flat: Vec<f64> = if y_obs.ndim() == 2 {
-                y_obs.column(0).to_vec()
-            } else {
-                y_obs.iter().copied().collect()
-            };
-
-            let num_top = k.min(y_flat.len());
-            let mut indexed: Vec<(usize, f64)> = y_flat.into_iter().enumerate().collect();
-            indexed.sort_by(|a, b| b.1.total_cmp(&a.1));
-
-            indexed.iter().take(num_top).map(|(i, _)| *i).collect()
-        }
-    }
 }
 
 #[cfg(test)]
@@ -363,39 +324,6 @@ mod tests {
             (v_inc - v_full).abs() < 1e-9,
             "train_yvar row0 incremental={v_inc} full_refit={v_full} (prefix yvar must refresh)"
         );
-    }
-
-    #[test]
-    fn test_get_incumbent_indices_single() {
-        let config = ENNSurrogateConfig {
-            k: 2,
-            ..Default::default()
-        };
-        let surrogate = ENNSurrogate::new(config);
-
-        let y = array![[0.0], [3.0], [1.0], [2.0]];
-        let indices = surrogate.get_incumbent_indices(&y.view());
-
-        // Should return top 2 indices by value
-        assert_eq!(indices.len(), 2);
-        assert!(indices.contains(&1)); // 3.0
-    }
-
-    #[test]
-    fn test_get_incumbent_indices_multi() {
-        let config = ENNSurrogateConfig {
-            k: 3,
-            ..Default::default()
-        };
-        let surrogate = ENNSurrogate::new(config);
-
-        // Multi-objective
-        let y = array![[0.0, 3.0], [3.0, 0.0], [1.0, 1.0], [2.0, 2.0]];
-        let indices = surrogate.get_incumbent_indices(&y.view());
-
-        // Should return union of top-k per objective
-        assert!(indices.len() >= 2);
-        assert!(indices.contains(&0) || indices.contains(&1)); // top of each objective
     }
 
     #[test]
