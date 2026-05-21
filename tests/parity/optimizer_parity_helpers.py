@@ -62,14 +62,3 @@ def get_rust_optimizer(bounds, config, seed: int):
     rng = np.random.default_rng(seed)
     assert is_rust_supported_config(config)
     return create_optimizer(bounds=bounds, config=config, rng=rng)
-
-
-def get_python_optimizer(bounds, config, seed: int):
-    """Create optimizer using Python backend (bypass Rust routing)."""
-    from unittest.mock import patch
-
-    import enn.turbo.rust_optimizer as ro
-
-    rng = np.random.default_rng(seed)
-    with patch.object(ro, "is_rust_supported_config", return_value=False):
-        return create_optimizer(bounds=bounds, config=config, rng=rng)

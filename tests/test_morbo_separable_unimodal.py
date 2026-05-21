@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from enn import create_optimizer
-from enn.turbo import turbo_utils
+from enn.turbo.python_fallback import turbo_utils
 from enn.turbo.config import (
     AcqType,
     CandidateGenConfig,

@@ -6,7 +6,7 @@ import pytest
 import turbo_utils_selection_helpers as selection_helpers
 from scipy.stats import qmc
 
-from enn.turbo.turbo_utils import (
+from enn.turbo.python_fallback.turbo_utils import (
     argmax_random_tie,
     from_unit,
     generate_raasp_candidates,
@@ -426,7 +426,7 @@ def test_generate_raasp_candidates_uniform_respects_num_pert():
 
 
 def test_gp_thompson_sample_returns_valid_indices():
-    from enn.turbo.turbo_gp_fit import fit_gp
+    from enn.turbo.python_fallback.turbo_gp_fit import fit_gp
 
     num_obs, num_dim = 10, 2
     rng = np.random.default_rng(42)

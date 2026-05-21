@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from enn.turbo.components.incumbent_tracker import (
+from enn.turbo.python_fallback.components.incumbent_tracker import (
     IncrementalIncumbentTracker,
     _NoiselessMax,
     _ScalarTopM,
@@ -136,7 +136,7 @@ def test_noiseless_max_helpers_directly():
 
 def test_build_incumbent_tracker_from_config():
     from enn.turbo.config import TurboTRConfig
-    from enn.turbo.turbo_trust_region import TurboTrustRegion
+    from enn.turbo.python_fallback.turbo_trust_region import TurboTrustRegion
 
     surrogate = ENNSurrogateConfig(k=4)
     tr_state = TurboTrustRegion(

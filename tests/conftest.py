@@ -15,7 +15,7 @@ def sphere_objective(x):
 
 
 def make_from_unit_fn(bounds):
-    from enn.turbo.turbo_utils import from_unit
+    from enn.turbo.python_fallback.turbo_utils import from_unit
 
     def from_unit_fn(x):
         return from_unit(x, bounds)
@@ -24,7 +24,7 @@ def make_from_unit_fn(bounds):
 
 
 def make_select_sobol_fn(bounds, rng):
-    from enn.turbo.turbo_utils import from_unit
+    from enn.turbo.python_fallback.turbo_utils import from_unit
 
     def select_sobol_fn(x, n):
         idx = rng.choice(x.shape[0], size=n, replace=False)

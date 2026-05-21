@@ -19,7 +19,7 @@ class LHDOnlyInit(InitStrategy):
         rng: Generator,
         num_init: int | None,
     ) -> Any:
-        from ...strategies.lhd_only_strategy import LHDOnlyStrategy
+        from ...python_fallback.strategies.lhd_only_strategy import LHDOnlyStrategy
 
         del num_init
         return LHDOnlyStrategy.create(bounds=bounds, rng=rng)

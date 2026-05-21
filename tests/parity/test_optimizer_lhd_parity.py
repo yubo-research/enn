@@ -40,28 +40,3 @@ def test_optimizer_lhd_ask_tell_state():
     assert_rust_optimizer_tr_obs_after_cycles(
         bounds, config, opt_seed=37, cycle_rng_seed=37, obj_fn=_obj
     )
-
-
-def test_optimizer_lhd_vs_python_convergence_tolerance():
-    """Rust vs Python LHD_ONLY: both reach similar best-y (tolerance)."""
-    from .optimizer_parity_helpers import (
-        get_python_optimizer,
-        get_rust_optimizer,
-        run_ask_tell_cycle,
-    )
-
-    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    config = lhd_only_config(num_init=6)
-    seed = 41
-    rust_opt = get_rust_optimizer(bounds, config, seed)
-    py_opt = get_python_optimizer(bounds, config, seed)
-    rng = np.random.default_rng(seed)
-    _, _, rust_best = run_ask_tell_cycle(
-        rust_opt, rng, num_arms=3, obj_fn=_obj, num_cycles=5
-    )
-    rng2 = np.random.default_rng(seed)
-    _, _, py_best = run_ask_tell_cycle(
-        py_opt, rng2, num_arms=3, obj_fn=_obj, num_cycles=5
-    )
-    abs(rust_best - py_best)
-    assert abs(rust_best - py_best) <= 0.1

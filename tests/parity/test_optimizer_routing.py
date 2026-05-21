@@ -93,7 +93,7 @@ def test_fallback_registry_has_three_entries():
 
 
 def test_supported_enn_create_does_not_call_python_optimizer(monkeypatch):
-    import enn.turbo.optimizer as py_optimizer
+    import enn.turbo.python_fallback.optimizer as py_optimizer
 
     def _fail(**_kwargs):
         raise AssertionError(

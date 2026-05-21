@@ -146,7 +146,9 @@ def create_optimizer(
 ) -> Any:
     """Create optimizer, using Rust backend when possible."""
     if not is_rust_supported_config(config):
-        from .optimizer import create_optimizer as create_python_optimizer
+        from .python_fallback.optimizer import (
+            create_optimizer as create_python_optimizer,
+        )
 
         return create_python_optimizer(bounds=bounds, config=config, rng=rng)
 

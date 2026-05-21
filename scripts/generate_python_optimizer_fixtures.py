@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import numpy as np
 
@@ -16,10 +15,10 @@ from enn.turbo.config import (  # noqa: E402
     ENNFitConfig,
     ENNSurrogateConfig,
     TurboTRConfig,
+    lhd_only_config,
     turbo_enn_config,
     turbo_zero_config,
 )
-import enn.turbo.rust_optimizer as ro  # noqa: E402
 
 
 def _sphere(x: np.ndarray) -> np.ndarray:
@@ -28,8 +27,7 @@ def _sphere(x: np.ndarray) -> np.ndarray:
 
 def _capture(bounds, config, seed: int, num_cycles: int, num_arms: int) -> dict:
     rng = np.random.default_rng(seed)
-    with patch.object(ro, "is_rust_supported_config", return_value=False):
-        opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
     steps = []
     for _ in range(num_cycles):
         x = opt.ask(num_arms=num_arms)
@@ -117,6 +115,13 @@ def _noise_aware(seed: int) -> dict:
     return _capture(bounds, config, seed, num_cycles=4, num_arms=num_arms)
 
 
+def _lhd(seed: int) -> dict:
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    num_arms = 3
+    config = lhd_only_config(num_init=num_arms)
+    return _capture(bounds, config, seed, num_cycles=4, num_arms=num_arms)
+
+
 def main() -> None:
     out_dir = ROOT / "tests" / "fixtures" / "python_optimizer"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -127,6 +132,7 @@ def main() -> None:
         ("turbo_zero_seed", _zero),
         ("turbo_enn_trailing_obs_seed", _trailing_obs),
         ("turbo_enn_noise_aware_seed", _noise_aware),
+        ("lhd_only_seed", _lhd),
     ]
     for prefix, fn in specs:
         for seed in (0, 1, 2):

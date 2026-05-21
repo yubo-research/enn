@@ -19,6 +19,8 @@ class HybridInit(InitStrategy):
         rng: Generator,
         num_init: int | None,
     ) -> Any:
-        from ...strategies.turbo_hybrid_strategy import TurboHybridStrategy
+        from ...python_fallback.strategies.turbo_hybrid_strategy import (
+            TurboHybridStrategy,
+        )
 
         return TurboHybridStrategy.create(bounds=bounds, rng=rng, num_init=num_init)

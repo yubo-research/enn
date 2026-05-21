@@ -85,7 +85,7 @@ def test__rust_module_exports_optimizer_when_available():
 
 
 def test_rust_optimizer_factory_rust_and_python_paths(monkeypatch):
-    import enn.turbo.optimizer as py_opt
+    import enn.turbo.python_fallback.optimizer as py_opt
     import enn.turbo.rust_optimizer as ro
     from enn.turbo.config import (
         AcqType,

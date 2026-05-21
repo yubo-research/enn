@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from enn.turbo.components import PosteriorResult
+from enn.turbo.python_fallback.components.posterior_result import PosteriorResult
 from enn.turbo.config import (
     ENNFitConfig,
     ENNSurrogateConfig,
@@ -23,11 +23,10 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not RUST_AVAILABLE, reason="Rust not available")
 
 
-def test_python_noise_aware_prefers_mu_over_observed_y():
-    from unittest.mock import patch
-
-    import enn.turbo.rust_optimizer as ro
-    from enn import create_optimizer
+def test_fallback_noise_aware_prefers_mu_over_observed_y():
+    from enn.turbo.python_fallback.optimizer import (
+        create_optimizer as create_fallback_optimizer,
+    )
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
@@ -36,8 +35,7 @@ def test_python_noise_aware_prefers_mu_over_observed_y():
         trust_region=TurboTRConfig(noise_aware=True),
         num_init=2,
     )
-    with patch.object(ro, "is_rust_supported_config", return_value=False):
-        opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = create_fallback_optimizer(bounds=bounds, config=config, rng=rng)
     x = np.array([[0.2, 0.3], [0.4, 0.5], [0.6, 0.7], [0.8, 0.9]], dtype=float)
     y = np.array([[0.9], [1.0], [2.0], [0.5]], dtype=float)
 

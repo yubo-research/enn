@@ -41,6 +41,7 @@ fn util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_util::pareto_front_2d_maximize_py, m)?)?;
     m.add_function(wrap_pyfunction!(py_util::calculate_sobol_indices_py, m)?)?;
     m.add_function(wrap_pyfunction!(py_util::sobol_sequence_py, m)?)?;
+    m.add_function(wrap_pyfunction!(py_util::arms_from_pareto_fronts_py, m)?)?;
     Ok(())
 }
 

@@ -5,9 +5,10 @@ import numpy as np
 import pytest
 
 from enn import create_optimizer
-from enn.turbo.components import NoSurrogate, SurrogateResult
+from enn.turbo.python_fallback.components.no_surrogate import NoSurrogate
+from enn.turbo.python_fallback.components.surrogate_result import SurrogateResult
 from enn.turbo.config import CandidateRV
-from enn.turbo.optimizer import Optimizer
+from enn.turbo.python_fallback.optimizer import Optimizer
 from enn.turbo.optimizer_config import turbo_enn_config, turbo_zero_config
 
 

@@ -70,88 +70,42 @@ def _run_pareto_record_tr_lengths(opt, rng, num_arms: int, num_cycles: int):
     return lengths
 
 
-def test_optimizer_tr_length_trajectory_parity():
-    """Rust vs Python: tr_length trajectories similar over same ask/tell sequence.
-
-    Both use scale from all observations before the current batch.
-    Use tolerance for minor divergence (e.g. incumbent tie-breaking).
-    """
-    from .optimizer_parity_helpers import (
-        get_python_optimizer,
-        get_rust_optimizer,
-    )
+def test_optimizer_tr_length_trajectory_contract():
+    """Rust TuRBO-ENN: tr_length stays in valid range over ask/tell cycles."""
+    from .optimizer_parity_helpers import get_rust_optimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    num_init = 8
     num_arms = 4
     config = turbo_enn_config(
         acq_type=AcqType.UCB,
         enn=ENNSurrogateConfig(k=4, fit=ENNFitConfig(num_fit_samples=10)),
-        num_init=num_init,
+        num_init=8,
     )
-    seed = 31
-    num_cycles = 8
-
-    rust_opt = get_rust_optimizer(bounds, config, seed)
-    py_opt = get_python_optimizer(bounds, config, seed)
-    rng_rust = np.random.default_rng(seed)
-    rng_py = np.random.default_rng(seed)
-
-    rust_lengths = _run_and_record_tr_lengths(rust_opt, rng_rust, num_arms, num_cycles)
-    py_lengths = _run_and_record_tr_lengths(py_opt, rng_py, num_arms, num_cycles)
-
-    assert len(rust_lengths) == num_cycles
-    assert len(py_lengths) == num_cycles
-
-    for i in range(num_cycles):
-        assert 0.0 < rust_lengths[i] <= 2.0
-        assert 0.0 < py_lengths[i] <= 2.0
-    from .parity_convergence import TR_LENGTH_MEAN_DIFF_TOL
-
-    mean_diff = np.mean(np.abs(np.array(rust_lengths) - np.array(py_lengths)))
-    assert mean_diff < TR_LENGTH_MEAN_DIFF_TOL
+    rust_opt = get_rust_optimizer(bounds, config, seed=31)
+    rng = np.random.default_rng(31)
+    rust_lengths = _run_and_record_tr_lengths(rust_opt, rng, num_arms, num_cycles=8)
+    assert len(rust_lengths) == 8
+    for length in rust_lengths:
+        assert 0.0 < length <= 2.0
 
 
-def test_optimizer_pareto_tr_length_parity():
-    """Rust vs Python Pareto: tr_length trajectories similar over same ask/tell sequence.
-
-    Uses multi-objective y; TR update uses first column (parity with UCB test).
-    """
-    from .optimizer_parity_helpers import (
-        get_python_optimizer,
-        get_rust_optimizer,
-    )
+def test_optimizer_pareto_tr_length_contract():
+    """Rust Pareto TuRBO-ENN: tr_length stays in valid range over ask/tell cycles."""
+    from .optimizer_parity_helpers import get_rust_optimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    num_init = 6
     num_arms = 3
     config = turbo_enn_config(
         acq_type=AcqType.PARETO,
         enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=10)),
-        num_init=num_init,
+        num_init=6,
     )
-    seed = 47
-    num_cycles = 6
-
-    rust_opt = get_rust_optimizer(bounds, config, seed)
-    py_opt = get_python_optimizer(bounds, config, seed)
-    rng_rust = np.random.default_rng(seed)
-    rng_py = np.random.default_rng(seed)
-
-    rust_lengths = _run_pareto_record_tr_lengths(
-        rust_opt, rng_rust, num_arms, num_cycles
-    )
-    py_lengths = _run_pareto_record_tr_lengths(py_opt, rng_py, num_arms, num_cycles)
-
-    assert len(rust_lengths) == num_cycles
-    assert len(py_lengths) == num_cycles
-    for i in range(num_cycles):
-        assert 0.0 < rust_lengths[i] <= 2.0
-        assert 0.0 < py_lengths[i] <= 2.0
-    from .parity_convergence import TR_LENGTH_MEAN_DIFF_TOL
-
-    mean_diff = np.mean(np.abs(np.array(rust_lengths) - np.array(py_lengths)))
-    assert mean_diff < TR_LENGTH_MEAN_DIFF_TOL
+    rust_opt = get_rust_optimizer(bounds, config, seed=47)
+    rng = np.random.default_rng(47)
+    rust_lengths = _run_pareto_record_tr_lengths(rust_opt, rng, num_arms, num_cycles=6)
+    assert len(rust_lengths) == 6
+    for length in rust_lengths:
+        assert 0.0 < length <= 2.0
 
 
 def test_acquisition_ucb_produces_valid_candidates():

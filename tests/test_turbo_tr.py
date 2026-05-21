@@ -10,8 +10,8 @@ from enn.turbo.config.morbo_tr_config import (
     RescalePolicyConfig,
 )
 from enn.turbo.config.turbo_tr_config import TRLengthConfig, TurboTRConfig
-from enn.turbo.morbo_trust_region import MorboTrustRegion
-from enn.turbo.turbo_trust_region import TurboTrustRegion
+from enn.turbo.python_fallback.morbo_trust_region import MorboTrustRegion
+from enn.turbo.python_fallback.turbo_trust_region import TurboTrustRegion
 
 
 def test_trust_region_state_update_and_restart_and_bounds():

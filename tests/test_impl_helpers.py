@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from enn.turbo.components.builder import build_trust_region
-from enn.turbo.components.incumbent_selector import ScalarIncumbentSelector
+from enn.turbo.python_fallback.components.builder import build_trust_region
+from enn.turbo.python_fallback.components.incumbent_selector import (
+    ScalarIncumbentSelector,
+)
 from enn.turbo.config import (
     MorboTRConfig,
     MultiObjectiveConfig,
@@ -110,7 +112,7 @@ def test_get_x_center_fallback_single_objective():
 
 
 def test_get_x_center_fallback_with_tr_state():
-    from enn.turbo.turbo_trust_region import TurboTrustRegion
+    from enn.turbo.python_fallback.turbo_trust_region import TurboTrustRegion
 
     rng = np.random.default_rng(42)
     config = TurboTRConfig(
@@ -137,7 +139,7 @@ def test_handle_restart_clear_always():
 
 
 def test_handle_restart_check_multi_objective_single():
-    from enn.turbo.turbo_trust_region import TurboTrustRegion
+    from enn.turbo.python_fallback.turbo_trust_region import TurboTrustRegion
 
     config = TurboTRConfig(
         length=TRLengthConfig(length_init=0.8, length_min=0.5**7, length_max=1.6)
@@ -157,7 +159,7 @@ def test_handle_restart_check_multi_objective_single():
 def test_handle_restart_check_multi_objective_multi():
     from enn.turbo.config import Rescalarize
     from enn.turbo.config.morbo_tr_config import RescalePolicyConfig
-    from enn.turbo.morbo_trust_region import MorboTrustRegion
+    from enn.turbo.python_fallback.morbo_trust_region import MorboTrustRegion
 
     rng = np.random.default_rng(42)
     config = MorboTRConfig(

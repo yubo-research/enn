@@ -26,6 +26,7 @@ standardize_y = _ext.util.standardize_y
 pareto_front_2d_maximize = _ext.util.pareto_front_2d_maximize
 calculate_sobol_indices = _ext.util.calculate_sobol_indices
 sobol_sequence = _ext.util.sobol_sequence
+arms_from_pareto_fronts = _ext.util.arms_from_pareto_fronts
 EpistemicNearestNeighbors = _ext.model.EpistemicNearestNeighbors
 ENNParams = _ext.model.ENNParams
 enn_fit = _ext.fit.enn_fit
@@ -43,6 +44,7 @@ __all__ = [
     "pareto_front_2d_maximize",
     "calculate_sobol_indices",
     "sobol_sequence",
+    "arms_from_pareto_fronts",
     "EpistemicNearestNeighbors",
     "ENNParams",
     "enn_fit",

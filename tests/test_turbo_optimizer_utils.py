@@ -3,13 +3,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from enn.turbo.turbo_optimizer_utils import (
+from enn.turbo.python_fallback.turbo_optimizer_utils import (
     reset_timing,
     sobol_seed_for_state,
     trim_trailing_observations,
     validate_tell_inputs,
 )
-from enn.turbo.turbo_utils import (
+from enn.turbo.python_fallback.turbo_utils import (
     get_gp_posterior_suppress_warning,
     torch_seed_context,
 )
@@ -170,7 +170,7 @@ def test_torch_seed_context(seed1, seed2, should_match):
 def test_get_gp_posterior_suppress_warning_basic():
     import torch
 
-    from enn.turbo.turbo_gp_fit import fit_gp
+    from enn.turbo.python_fallback.turbo_gp_fit import fit_gp
 
     x = [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]]
     y = [1.0, 2.0, 3.0, 4.0]

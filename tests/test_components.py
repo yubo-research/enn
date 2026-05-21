@@ -3,19 +3,26 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from enn.turbo.components.acquisition import (
+from enn.turbo.python_fallback.components.acquisition import (
     HnRAcqOptimizer,
     ParetoAcqOptimizer,
     RandomAcqOptimizer,
     ThompsonAcqOptimizer,
     UCBAcqOptimizer,
 )
-from enn.turbo.components.builder import build_acquisition_optimizer, build_surrogate
-from enn.turbo.components.protocols import (
+from enn.turbo.python_fallback.components.builder import (
+    build_acquisition_optimizer,
+    build_surrogate,
+)
+from enn.turbo.python_fallback.components.protocols import (
     PosteriorResult,
     SurrogateResult,
 )
-from enn.turbo.components.surrogates import ENNSurrogate, GPSurrogate, NoSurrogate
+from enn.turbo.python_fallback.components.surrogates import (
+    ENNSurrogate,
+    GPSurrogate,
+    NoSurrogate,
+)
 from enn.turbo.config import (
     ENNSurrogateConfig,
     NoTRConfig,
@@ -23,7 +30,7 @@ from enn.turbo.config import (
     turbo_one_config,
     turbo_zero_config,
 )
-from enn.turbo.optimizer import Optimizer, create_optimizer
+from enn.turbo.python_fallback.optimizer import Optimizer, create_optimizer
 
 
 def _make_test_data(n: int = 4, d: int = 2):
@@ -272,7 +279,7 @@ def test_acquisition_optimizer_protocol_compliance():
 
 
 def test_trust_region_protocol_from_config_build():
-    from enn.turbo.components.builder import build_trust_region
+    from enn.turbo.python_fallback.components.builder import build_trust_region
 
     tr_config = NoTRConfig()
     rng = np.random.default_rng(42)
@@ -305,12 +312,16 @@ def test_optimizer_init():
 
 
 def test_optimizer_init_via_factory():
+    from enn import create_optimizer
+
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     config = turbo_zero_config(num_init=4)
     rng = np.random.default_rng(42)
     opt = create_optimizer(bounds=bounds, config=config, rng=rng)
     assert opt is not None
-    assert isinstance(opt, Optimizer)
+    init = opt.init_progress
+    assert init is not None
+    assert init == (0, 4)
 
 
 def test_optimizer_fallback_during_init():

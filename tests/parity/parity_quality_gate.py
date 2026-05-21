@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -13,26 +14,13 @@ from enn.turbo.config import (
     turbo_enn_config,
 )
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.optimizer_quality_common import run_best_y  # noqa: E402
+
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
-
-
-def _sphere(x: np.ndarray) -> np.ndarray:
-    return (-np.sum((x - 0.5) ** 2, axis=1)).reshape(-1, 1)
-
-
-def _run_rust_best_y(bounds, config, seed: int, budget: int, num_arms: int) -> float:
-    rng = np.random.default_rng(seed)
-    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
-    evals = 0
-    best = -np.inf
-    while evals < budget:
-        n = min(num_arms, budget - evals)
-        x = opt.ask(num_arms=n)
-        y = _sphere(x)
-        opt.tell(x, y)
-        evals += n
-        best = max(best, float(np.max(y)))
-    return best
 
 
 def assert_ci_quality_gate() -> None:
@@ -53,7 +41,14 @@ def assert_ci_quality_gate() -> None:
             enn=ENNSurrogateConfig(k=10, fit=ENNFitConfig(num_fit_samples=10)),
             num_init=min(10, 2 * dim),
         )
-        rust_best = _run_rust_best_y(bounds, config, seed, budget=budget, num_arms=2)
+        rust_best = run_best_y(
+            bounds,
+            config,
+            seed,
+            budget=budget,
+            num_arms=2,
+            create_optimizer=create_optimizer,
+        )
         if rust_best < py_best - tol:
             failures.append((dim, seed, py_best, rust_best))
     if failures:

@@ -19,10 +19,18 @@ from enn.turbo.config import (
     turbo_one_config,
     turbo_zero_config,
 )
-from enn.turbo.optimizer import create_optimizer
+from enn.turbo.python_fallback.optimizer import (
+    create_optimizer as create_fallback_optimizer,
+)
 
 
-def _make_optimizer(*, bounds, config, rng):
+def _make_fallback_optimizer(*, bounds, config, rng):
+    return create_fallback_optimizer(bounds=bounds, config=config, rng=rng)
+
+
+def _make_rust_optimizer(*, bounds, config, rng):
+    from enn import create_optimizer
+
     return create_optimizer(bounds=bounds, config=config, rng=rng)
 
 
@@ -30,7 +38,7 @@ def test_turbo_fallback_called_during_init_with_observations():
     bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
     config = turbo_zero_config(num_init=10)
-    opt = _make_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = _make_rust_optimizer(bounds=bounds, config=config, rng=rng)
     x1 = opt.ask(num_arms=2)
     y1 = conftest.sphere_objective(x1)
     opt.tell(x1, y1)
@@ -106,7 +114,7 @@ def test_optimizer_uniform_candidates_never_calls_sobol():
 
 def test_optimizer_accepts_base_config_as_turbo_zero():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    opt = _make_optimizer(
+    opt = _make_rust_optimizer(
         bounds=bounds,
         config=OptimizerConfig(),
         rng=np.random.default_rng(0),
@@ -137,7 +145,7 @@ def test_turbo_one_pareto_ask_tell_runs():
 
 def test_turbo_one_with_y_var_uses_noisy_gp():
     from enn import create_optimizer
-    from enn.turbo.turbo_gp_noisy import TurboGPNoisy
+    from enn.turbo.python_fallback.turbo_gp_noisy import TurboGPNoisy
 
     bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
@@ -162,7 +170,7 @@ def test_turbo_enn_uses_enn_and_is_reasonable():
 def test_turbo_enn_with_k_none_fits_hyperparameters():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
-    opt = _make_optimizer(bounds=bounds, config=turbo_enn_config(), rng=rng)
+    opt = _make_rust_optimizer(bounds=bounds, config=turbo_enn_config(), rng=rng)
     x0 = opt.ask(num_arms=4)
     assert x0.shape == (4, 2) and np.all(x0 >= 0.0) and np.all(x0 <= 1.0)
     opt.tell(x0, -np.sum(x0**2, axis=1))
@@ -174,7 +182,7 @@ def test_turbo_enn_config_scale_x_flag_runs():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     from enn.turbo.optimizer_config import ENNSurrogateConfig
 
-    opt = _make_optimizer(
+    opt = _make_rust_optimizer(
         bounds=bounds,
         config=turbo_enn_config(enn=ENNSurrogateConfig(scale_x=True)),
         rng=np.random.default_rng(0),
@@ -185,12 +193,12 @@ def test_turbo_enn_config_scale_x_flag_runs():
 
 
 def test_find_x_center_uses_top_k_for_mu_single_objective():
-    from enn.turbo.components import PosteriorResult
+    from enn.turbo.python_fallback.components.posterior_result import PosteriorResult
     from enn.turbo.optimizer_config import ENNSurrogateConfig, TurboTRConfig
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    opt = _make_optimizer(
+    opt = _make_fallback_optimizer(
         bounds=bounds,
         config=turbo_enn_config(
             enn=ENNSurrogateConfig(k=3),
@@ -218,12 +226,12 @@ def test_find_x_center_uses_top_k_for_mu_single_objective():
 
 
 def test_find_x_center_uses_top_k_union_for_multiobjective():
-    from enn.turbo.components import PosteriorResult
+    from enn.turbo.python_fallback.components.posterior_result import PosteriorResult
     from enn.turbo.optimizer_config import ENNSurrogateConfig, MorboTRConfig
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    opt = _make_optimizer(
+    opt = _make_fallback_optimizer(
         bounds=bounds,
         config=turbo_enn_config(
             enn=ENNSurrogateConfig(k=3),
@@ -263,12 +271,12 @@ def test_find_x_center_uses_top_k_union_for_multiobjective():
 
 
 def test_update_incumbent_uses_tracker_not_surrogate_candidate_api():
-    from enn.turbo.components.enn_surrogate import ENNSurrogate
+    from enn.turbo.python_fallback.components.enn_surrogate import ENNSurrogate
 
     assert not hasattr(ENNSurrogate, "get_incumbent_candidate_indices")
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    opt = _make_optimizer(
+    opt = _make_fallback_optimizer(
         bounds=bounds,
         config=turbo_enn_config(enn=ENNSurrogateConfig(k=3)),
         rng=rng,
@@ -292,26 +300,28 @@ def test_update_incumbent_uses_tracker_not_surrogate_candidate_api():
 def test_optimizer_with_trailing_obs():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
-    for cfg in [
-        turbo_one_config(trailing_obs=5),
-        turbo_enn_config(trailing_obs=5),
-    ]:
-        opt = _make_optimizer(bounds=bounds, config=cfg, rng=rng)
+    cases = [
+        (turbo_one_config(trailing_obs=5), _make_fallback_optimizer),
+        (turbo_enn_config(trailing_obs=5), _make_rust_optimizer),
+    ]
+    for cfg, make in cases:
+        opt = make(bounds=bounds, config=cfg, rng=rng)
         for _ in range(10):
             x = opt.ask(num_arms=2)
             opt.tell(x, -np.sum(x**2, axis=1))
-        assert len(opt._x_obs) == 5 and len(opt._y_obs) == 5
+        assert opt._x_obs.view().shape[0] == 5 and opt._y_obs.view().shape[0] == 5
         assert opt.ask(num_arms=2).shape == (2, 2)
 
 
 def test_trailing_obs_includes_incumbent():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(123)
-    for cfg in [
-        turbo_one_config(trailing_obs=5),
-        turbo_enn_config(trailing_obs=5),
-    ]:
-        opt = _make_optimizer(bounds=bounds, config=cfg, rng=rng)
+    cases = [
+        (turbo_one_config(trailing_obs=5), _make_fallback_optimizer),
+        (turbo_enn_config(trailing_obs=5), _make_rust_optimizer),
+    ]
+    for cfg, make in cases:
+        opt = make(bounds=bounds, config=cfg, rng=rng)
         for i in range(15):
             x = opt.ask(num_arms=2)
             y = (
@@ -326,7 +336,7 @@ def test_trailing_obs_includes_incumbent():
 
 def test_optimizer_tell_without_yvar():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    opt = _make_optimizer(
+    opt = _make_rust_optimizer(
         bounds=bounds, config=turbo_enn_config(), rng=np.random.default_rng(42)
     )
     for _ in range(2):
@@ -338,7 +348,7 @@ def test_optimizer_tell_without_yvar():
 
 def test_optimizer_yvar_policy_enforced():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    opt = _make_optimizer(
+    opt = _make_fallback_optimizer(
         bounds=bounds, config=turbo_one_config(), rng=np.random.default_rng(0)
     )
     x0 = opt.ask(num_arms=2)
@@ -347,7 +357,7 @@ def test_optimizer_yvar_policy_enforced():
     x1 = opt.ask(num_arms=2)
     with pytest.raises(ValueError, match="y_var must be provided"):
         opt.tell(x1, -np.sum(x1**2, axis=1))
-    opt2 = _make_optimizer(
+    opt2 = _make_fallback_optimizer(
         bounds=bounds, config=turbo_one_config(), rng=np.random.default_rng(0)
     )
     x0 = opt2.ask(num_arms=2)
@@ -359,7 +369,7 @@ def test_optimizer_yvar_policy_enforced():
 
 def test_turbo_one_trust_region_update_is_noise_robust_to_spikes():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    opt = _make_optimizer(
+    opt = _make_fallback_optimizer(
         bounds=bounds,
         config=turbo_one_config(
             num_init=1,
@@ -383,7 +393,7 @@ def test_turbo_enn_tr_values_do_not_require_full_history_denoising():
         ENNSurrogateConfig,
     )
 
-    opt = _make_optimizer(
+    opt = _make_fallback_optimizer(
         bounds=bounds,
         config=turbo_enn_config(
             enn=ENNSurrogateConfig(k=3),
@@ -408,7 +418,7 @@ def test_turbo_enn_tr_values_do_not_require_full_history_denoising():
 
 def test_optimizer_no_trust_region_bounds_are_full_box():
     bounds = np.array([[-2.0, 2.0], [-1.0, 1.0], [0.0, 3.0]], dtype=float)
-    opt = _make_optimizer(
+    opt = _make_fallback_optimizer(
         bounds=bounds,
         config=turbo_zero_config(
             trust_region=NoTRConfig(), num_init=1, num_candidates=16
@@ -426,7 +436,7 @@ def test_optimizer_morbo_multi_objective():
     num_dim, num_metrics = 2, 2
     bounds = np.array([[0.0, 1.0]] * num_dim, dtype=float)
     rng = np.random.default_rng(42)
-    opt = _make_optimizer(
+    opt = _make_fallback_optimizer(
         bounds=bounds,
         config=turbo_enn_config(
             enn=ENNSurrogateConfig(

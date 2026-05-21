@@ -5,6 +5,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from enn._rust import (
+    arms_from_pareto_fronts as _rust_arms_from_pareto_fronts,
+)
+from enn._rust import (
     calculate_sobol_indices as _rust_calculate_sobol_indices,
 )
 from enn._rust import (
@@ -83,34 +86,20 @@ def arms_from_pareto_fronts(
     num_arms: int,
     rng: Generator | Any,
 ) -> np.ndarray:
-    if x_cand.ndim != 2:
-        raise ValueError(x_cand.shape)
-    if mu.shape != se.shape or mu.ndim != 1:
-        raise ValueError((mu.shape, se.shape))
-    if mu.size != x_cand.shape[0]:
-        raise ValueError((mu.size, x_cand.shape[0]))
+    x_array = np.asarray(x_cand, dtype=np.float64)
+    mu_array = np.asarray(mu, dtype=np.float64)
+    se_array = np.asarray(se, dtype=np.float64)
+    if x_array.ndim != 2:
+        raise ValueError(x_array.shape)
+    if mu_array.shape != se_array.shape or mu_array.ndim != 1:
+        raise ValueError((mu_array.shape, se_array.shape))
+    if mu_array.size != x_array.shape[0]:
+        raise ValueError((mu_array.size, x_array.shape[0]))
     num_arms = int(num_arms)
     if num_arms <= 0:
         raise ValueError(num_arms)
-    if not np.all(np.isfinite(mu)) or not np.all(np.isfinite(se)):
+    if not np.all(np.isfinite(mu_array)) or not np.all(np.isfinite(se_array)):
         raise ValueError("mu and se must be finite")
-    i_keep: list[int] = []
-    remaining = np.arange(mu.size, dtype=int)
-    while remaining.size > 0 and len(i_keep) < num_arms:
-        front_indices = pareto_front_2d_maximize(mu, se, remaining)
-        if front_indices.size == 0:
-            raise RuntimeError("pareto front extraction failed")
-        front_indices = front_indices[np.argsort(-mu[front_indices])]
-        if len(i_keep) + int(front_indices.size) <= num_arms:
-            i_keep.extend(front_indices.tolist())
-            is_front = np.zeros(mu.size, dtype=bool)
-            is_front[front_indices] = True
-            remaining = remaining[~is_front[remaining]]
-            continue
-        remaining_arms = num_arms - len(i_keep)
-        i_keep.extend(
-            rng.choice(front_indices, size=remaining_arms, replace=False).tolist()
-        )
-        break
-    i_keep = np.array(i_keep)
-    return x_cand[i_keep[np.argsort(-mu[i_keep])]]
+    seed = int(rng.integers(0, 2**63 - 1))
+    result = _rust_arms_from_pareto_fronts(x_array, mu_array, se_array, num_arms, seed)
+    return np.asarray(result, dtype=x_array.dtype)

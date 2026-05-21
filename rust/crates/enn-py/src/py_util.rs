@@ -1,7 +1,7 @@
 //! Utility functions Python bindings.
 
 use ndarray::Array1;
-use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -72,4 +72,52 @@ pub fn sobol_sequence_py<'py>(
         }
     }
     Ok(out.into_dyn().into_pyarray_bound(py))
+}
+
+/// Python wrapper for arms_from_pareto_fronts (returns selected candidate rows).
+#[pyfunction(name = "arms_from_pareto_fronts")]
+#[pyo3(signature = (x_cand, mu, se, num_arms, seed))]
+pub fn arms_from_pareto_fronts_py<'py>(
+    py: Python<'py>,
+    x_cand: PyReadonlyArray2<f64>,
+    mu: PyReadonlyArray1<f64>,
+    se: PyReadonlyArray1<f64>,
+    num_arms: usize,
+    seed: u64,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    use pyo3::exceptions::PyValueError;
+
+    let x_arr = x_cand.as_array();
+    let mu_arr = mu.as_array();
+    let se_arr = se.as_array();
+    if x_arr.nrows() != mu_arr.len() || mu_arr.len() != se_arr.len() {
+        return Err(PyValueError::new_err(format!(
+            "shape mismatch: x_cand rows {}, mu {}, se {}",
+            x_arr.nrows(),
+            mu_arr.len(),
+            se_arr.len()
+        )));
+    }
+
+    let indices = py.allow_threads(|| {
+        ennbo::util::arms_from_pareto_fronts(
+            &x_arr.view(),
+            &mu_arr.view(),
+            &se_arr.view(),
+            num_arms,
+            seed,
+        )
+    });
+    if indices.is_empty() {
+        let empty = ndarray::Array2::<f64>::zeros((0, x_arr.ncols()));
+        return Ok(empty.into_pyarray_bound(py));
+    }
+    let ncols = x_arr.ncols();
+    let mut out = ndarray::Array2::<f64>::zeros((indices.len(), ncols));
+    for (row_idx, &i) in indices.iter().enumerate() {
+        for (col_idx, val) in x_arr.row(i).iter().enumerate() {
+            out[[row_idx, col_idx]] = *val;
+        }
+    }
+    Ok(out.into_pyarray_bound(py))
 }

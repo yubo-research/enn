@@ -47,32 +47,3 @@ def test_optimizer_zero_ask_tell_state():
     _, _, best = run_ask_tell_cycle(opt, rng, num_arms=2, obj_fn=_obj, num_cycles=3)
     assert opt.tr_obs_count == 8
     assert best >= -1.0
-
-
-def test_optimizer_zero_vs_python_convergence_tolerance():
-    """Rust vs Python TuRBO-ZERO: both reach similar best-y (tolerance)."""
-    from .optimizer_parity_helpers import (
-        get_python_optimizer,
-        get_rust_optimizer,
-        run_ask_tell_cycle,
-    )
-
-    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    num_init = 6
-    config = turbo_zero_config(num_init=num_init)
-    seed = 29
-    num_arms = num_init
-    rust_opt = get_rust_optimizer(bounds, config, seed)
-    py_opt = get_python_optimizer(bounds, config, seed)
-    rng = np.random.default_rng(seed)
-    _, _, rust_best = run_ask_tell_cycle(
-        rust_opt, rng, num_arms=num_arms, obj_fn=_obj, num_cycles=6
-    )
-    rng2 = np.random.default_rng(seed)
-    _, _, py_best = run_ask_tell_cycle(
-        py_opt, rng2, num_arms=num_arms, obj_fn=_obj, num_cycles=6
-    )
-    abs(rust_best - py_best)
-    from .parity_convergence import assert_sphere_best_y_parity
-
-    assert_sphere_best_y_parity(rust_best, py_best)

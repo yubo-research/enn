@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from enn.turbo.config.morbo_tr_config import MorboTRConfig, MultiObjectiveConfig
-from enn.turbo.morbo_trust_region import MorboTrustRegion
+from enn.turbo.python_fallback.morbo_trust_region import MorboTrustRegion
 
 
 def test_morbo_resample_weights():
@@ -36,9 +36,7 @@ def test_morbo_inner_trust_region_applies_updates_after_restart_without_interven
     tr.restart(rng)
     assert tr._tr._failure_tolerance is not None
 
-    y_obs2 = np.array(
-        [[0.5, 0.5], [0.6, 0.4], [0.4, 0.6], [0.55, 0.45]], dtype=float
-    )
+    y_obs2 = np.array([[0.5, 0.5], [0.6, 0.4], [0.4, 0.6], [0.55, 0.45]], dtype=float)
     tr.update(y_obs2, tr.get_incumbent_value(y_obs2, rng))
     assert tr._tr.prev_num_obs == num_arms
 

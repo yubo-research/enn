@@ -10,7 +10,7 @@ from enn.turbo.config import (
     turbo_one_config,
     turbo_zero_config,
 )
-from enn.turbo.turbo_utils import to_unit
+from enn.turbo.python_fallback.turbo_utils import to_unit
 
 
 @pytest.mark.parametrize(

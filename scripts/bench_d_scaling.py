@@ -7,7 +7,7 @@ from scipy.stats import qmc
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
 from enn.enn.enn_params import ENNParams
-from enn.turbo.turbo_utils import (
+from enn.turbo.python_fallback.turbo_utils import (
     generate_raasp_candidates,
     generate_raasp_candidates_uniform,
 )

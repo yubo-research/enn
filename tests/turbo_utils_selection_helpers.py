@@ -8,7 +8,7 @@ import numpy as np
 from numpy.random import Generator
 
 if TYPE_CHECKING:
-    from enn.turbo.turbo_gp import TurboGP
+    from enn.turbo.python_fallback.turbo_gp import TurboGP
 
 
 def select_uniform(
@@ -40,8 +40,8 @@ def select_gp_thompson(
     from_unit_fn: Callable[[np.ndarray], np.ndarray],
     model: TurboGP | None = None,
 ) -> tuple[np.ndarray, tuple[float, float], TurboGP | None]:
-    from enn.turbo.turbo_gp_fit import fit_gp
-    from enn.turbo.turbo_utils import gp_thompson_sample
+    from enn.turbo.python_fallback.turbo_gp_fit import fit_gp
+    from enn.turbo.python_fallback.turbo_utils import gp_thompson_sample
 
     gp_y_mean, gp_y_std = gp_y_stats
     if len(x_obs_list) == 0:
