@@ -18,14 +18,14 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not RUST_AVAILABLE, reason="Rust not available")
 
 
-def test_const_num_candidates_falls_back_to_python():
-    """const_num_candidates(n) cannot map to Rust factor model; must use Python backend."""
+def test_const_num_candidates_uses_rust_when_constant():
+    """const_num_candidates(n) maps to Rust min=max override."""
     config = turbo_zero_config(num_candidates=500, num_init=4)
-    assert not is_rust_supported_config(config)
+    assert is_rust_supported_config(config)
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
     opt = create_optimizer(bounds=bounds, config=config, rng=rng)
-    assert not isinstance(opt, RustOptimizer)
+    assert isinstance(opt, RustOptimizer)
 
 
 def test_default_num_candidates_uses_rust_when_available():

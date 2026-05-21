@@ -8,6 +8,7 @@ import numpy as np
 
 from enn import create_optimizer, turbo_enn_config, turbo_one_config, turbo_zero_config
 from enn.turbo.config import ENNSurrogateConfig, lhd_only_config
+from enn.turbo.rust_optimizer import RustOptimizer
 
 
 class TestCreateOptimizerContract:
@@ -66,6 +67,13 @@ class TestCreateOptimizerContract:
 
 class TestCreateOptimizerContractRustBacked:
     """Contract tests for create_optimizer when Rust backend is used (ENN, ZERO, LHD)."""
+
+    def test_default_turbo_enn_uses_rust_backend(self):
+        bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+        opt = create_optimizer(
+            bounds=bounds, config=turbo_enn_config(), rng=np.random.default_rng(42)
+        )
+        assert isinstance(opt, RustOptimizer)
 
     def test_turbo_enn_contract(self):
         """TuRBO-ENN config returns optimizer with correct ask shape and bounds."""

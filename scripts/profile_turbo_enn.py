@@ -33,11 +33,14 @@ def _make_bounds(num_dim: int) -> np.ndarray:
 
 
 def _make_optimizer(cfg: ProfileConfig) -> object:
+    from unittest.mock import patch
+
+    import enn.turbo.rust_optimizer as ro
+
     rng = np.random.default_rng(cfg.seed)
     bounds = _make_bounds(cfg.num_dim)
-    # k=None routes to Python optimizer (profile script uses _x_obs, _surrogate, _find_x_center)
     enn_cfg = ENNSurrogateConfig(
-        k=None,
+        k=10,
         fit=ENNFitConfig(
             num_fit_samples=cfg.num_fit_samples,
             num_fit_candidates=cfg.num_fit_candidates,
@@ -55,7 +58,8 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
         num_init=1,
         candidates=candidates,
     )
-    return create_optimizer(bounds=bounds, config=opt_config, rng=rng)
+    with patch.object(ro, "is_rust_supported_config", return_value=False):
+        return create_optimizer(bounds=bounds, config=opt_config, rng=rng)
 
 
 def _seed_observations(

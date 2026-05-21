@@ -15,9 +15,18 @@ from .config.num_candidates_fn import default_num_candidates
 from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .config.trust_region import NoTRConfig, TurboTRConfig
+from .fallback_registry import requires_python_optimizer_fallback
 
+DEFAULT_ENN_K = 10
 _DEFAULT_NUM_CANDIDATES_FACTOR = 100.0
 _DEFAULT_MAX_CANDIDATES = 5000
+
+
+def resolve_enn_k(config: OptimizerConfig) -> int:
+    surrogate = config.surrogate
+    if not isinstance(surrogate, ENNSurrogateConfig):
+        raise TypeError(f"expected ENNSurrogateConfig, got {type(surrogate)!r}")
+    return DEFAULT_ENN_K if surrogate.k is None else int(surrogate.k)
 
 
 def _acquisition_to_override(config: OptimizerConfig) -> dict[str, Any]:
@@ -38,35 +47,67 @@ def _acquisition_to_override(config: OptimizerConfig) -> dict[str, Any]:
     return {}
 
 
+def _constant_num_candidates_value(config: OptimizerConfig) -> int | None:
+    candidates = getattr(config, "candidates", None)
+    if not isinstance(candidates, CandidateGenConfig):
+        return None
+    fn = getattr(candidates, "num_candidates", None)
+    if not callable(fn) or fn is default_num_candidates:
+        return None
+    n_lo = int(fn(num_dim=2, num_arms=1))
+    n_hi = int(fn(num_dim=10, num_arms=1))
+    if n_lo != n_hi:
+        return None
+    return n_lo
+
+
 def _can_use_rust_num_candidates(config: OptimizerConfig) -> bool:
+    if _constant_num_candidates_value(config) is not None:
+        return True
     candidates = getattr(config, "candidates", None)
     if not isinstance(candidates, CandidateGenConfig):
         return True
     fn = getattr(candidates, "num_candidates", None)
     if not callable(fn):
         return True
+    return fn is default_num_candidates
+
+
+def _candidate_rv_override(config: OptimizerConfig) -> dict[str, Any]:
+    rv = getattr(config, "candidate_rv", None)
+    if rv is CandidateRV.SOBOL:
+        return {"candidate_rv": "sobol"}
+    if rv is CandidateRV.UNIFORM:
+        return {"candidate_rv": "uniform"}
+    if rv is CandidateRV.RAASP:
+        return {"candidate_rv": "raasp"}
+    return {}
+
+
+def _candidate_count_override(config: OptimizerConfig) -> dict[str, Any]:
+    candidates = getattr(config, "candidates", None)
+    if not isinstance(candidates, CandidateGenConfig):
+        return {}
+    fn = getattr(candidates, "num_candidates", None)
     if fn is default_num_candidates:
-        return True
-    if fn(num_dim=2, num_arms=1) == fn(num_dim=10, num_arms=1):
-        return False
-    return False
+        return {
+            "num_candidates_factor": _DEFAULT_NUM_CANDIDATES_FACTOR,
+            "max_candidates": _DEFAULT_MAX_CANDIDATES,
+        }
+    n_const = _constant_num_candidates_value(config)
+    if n_const is None:
+        return {}
+    return {
+        "num_candidates_factor": 1.0,
+        "min_candidates": n_const,
+        "max_candidates": n_const,
+    }
 
 
 def _candidates_to_override(config: OptimizerConfig) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    rv = getattr(config, "candidate_rv", None)
-    if rv is CandidateRV.SOBOL:
-        out["candidate_rv"] = "sobol"
-    elif rv is CandidateRV.UNIFORM:
-        out["candidate_rv"] = "uniform"
-    elif rv is CandidateRV.RAASP:
-        out["candidate_rv"] = "raasp"
-    candidates = getattr(config, "candidates", None)
-    if isinstance(candidates, CandidateGenConfig):
-        fn = getattr(candidates, "num_candidates", None)
-        if fn is default_num_candidates:
-            out["num_candidates_factor"] = _DEFAULT_NUM_CANDIDATES_FACTOR
-            out["max_candidates"] = _DEFAULT_MAX_CANDIDATES
+    out.update(_candidate_rv_override(config))
+    out.update(_candidate_count_override(config))
     return out
 
 
@@ -121,6 +162,8 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
             overrides["num_fit_samples"] = int(surrogate.num_fit_samples)
         if surrogate.num_fit_candidates is not None:
             overrides["num_fit_candidates"] = int(surrogate.num_fit_candidates)
+        if surrogate.scale_x:
+            overrides["scale_x"] = True
     trailing_obs = getattr(config, "trailing_obs", None)
     if trailing_obs is not None:
         overrides["trailing_obs"] = int(trailing_obs)
@@ -128,10 +171,12 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
 
 
 def is_rust_supported_config(config: OptimizerConfig) -> bool:
+    if requires_python_optimizer_fallback(config):
+        return False
     if not _can_use_rust_num_candidates(config):
         return False
     if isinstance(config.surrogate, ENNSurrogateConfig):
-        return config.surrogate.k is not None
+        return True
     if isinstance(config.surrogate, NoSurrogateConfig):
         return True
     return False

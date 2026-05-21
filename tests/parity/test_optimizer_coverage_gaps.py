@@ -106,8 +106,10 @@ def test_optimizer_tr_length_trajectory_parity():
     for i in range(num_cycles):
         assert 0.0 < rust_lengths[i] <= 2.0
         assert 0.0 < py_lengths[i] <= 2.0
+    from .parity_convergence import TR_LENGTH_MEAN_DIFF_TOL
+
     mean_diff = np.mean(np.abs(np.array(rust_lengths) - np.array(py_lengths)))
-    assert mean_diff < 0.5
+    assert mean_diff < TR_LENGTH_MEAN_DIFF_TOL
 
 
 def test_optimizer_pareto_tr_length_parity():
@@ -146,8 +148,10 @@ def test_optimizer_pareto_tr_length_parity():
     for i in range(num_cycles):
         assert 0.0 < rust_lengths[i] <= 2.0
         assert 0.0 < py_lengths[i] <= 2.0
+    from .parity_convergence import TR_LENGTH_MEAN_DIFF_TOL
+
     mean_diff = np.mean(np.abs(np.array(rust_lengths) - np.array(py_lengths)))
-    assert mean_diff < 0.5
+    assert mean_diff < TR_LENGTH_MEAN_DIFF_TOL
 
 
 def test_acquisition_ucb_produces_valid_candidates():

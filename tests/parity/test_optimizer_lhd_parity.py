@@ -63,5 +63,5 @@ def test_optimizer_lhd_vs_python_convergence_tolerance():
     _, _, py_best = run_ask_tell_cycle(
         py_opt, rng2, num_arms=3, obj_fn=_obj, num_cycles=5
     )
-    diff = abs(rust_best - py_best)
-    assert diff < 0.5
+    abs(rust_best - py_best)
+    assert abs(rust_best - py_best) <= 0.1

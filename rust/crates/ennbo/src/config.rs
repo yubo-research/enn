@@ -103,6 +103,7 @@ pub struct ConfigOverrides {
     pub trailing_obs: Option<usize>,
     pub num_fit_samples: Option<usize>,
     pub num_fit_candidates: Option<usize>,
+    pub scale_x: Option<bool>,
     pub noise_aware: Option<bool>,
 }
 
@@ -111,6 +112,7 @@ fn apply_enn_surrogate_fields(
     index_driver: Option<IndexDriver>,
     num_fit_samples: Option<usize>,
     num_fit_candidates: Option<usize>,
+    scale_x: Option<bool>,
 ) {
     let SurrogateConfig::ENN(enn_cfg) = &config.surrogate else {
         return;
@@ -124,6 +126,9 @@ fn apply_enn_surrogate_fields(
     }
     if let Some(nfc) = num_fit_candidates {
         enn.num_fit_candidates = nfc;
+    }
+    if let Some(sx) = scale_x {
+        enn.scale_x = sx;
     }
     config.surrogate = SurrogateConfig::ENN(enn);
 }
@@ -156,12 +161,14 @@ impl ConfigOverrides {
         if self.index_driver.is_some()
             || self.num_fit_samples.is_some()
             || self.num_fit_candidates.is_some()
+            || self.scale_x.is_some()
         {
             apply_enn_surrogate_fields(
                 &mut config,
                 self.index_driver,
                 self.num_fit_samples,
                 self.num_fit_candidates,
+                self.scale_x,
             );
         }
         if let Some(t) = self.trailing_obs {
@@ -342,6 +349,7 @@ mod tests {
             index_driver: Some(IndexDriver::HNSW),
             num_fit_samples: Some(123),
             num_fit_candidates: Some(456),
+            scale_x: Some(true),
             ..Default::default()
         };
 
@@ -355,8 +363,22 @@ mod tests {
             assert_eq!(enn.index_driver, IndexDriver::HNSW);
             assert_eq!(enn.num_fit_samples, 123);
             assert_eq!(enn.num_fit_candidates, 456);
+            assert!(enn.scale_x);
         } else {
             panic!("expected ENN surrogate");
         }
+    }
+
+    #[test]
+    fn test_config_overrides_scale_x_apply() {
+        let overrides = ConfigOverrides {
+            scale_x: Some(true),
+            ..Default::default()
+        };
+        let applied = overrides.apply_to(turbo_enn_config());
+        let SurrogateConfig::ENN(enn) = applied.surrogate else {
+            panic!("expected ENN surrogate");
+        };
+        assert!(enn.scale_x);
     }
 }

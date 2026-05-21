@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import statistics
+import sys
 import time
-from typing import Sequence
+from pathlib import Path
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -71,7 +74,49 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-asks", type=int, default=3)
     parser.add_argument("--timed-asks", type=int, default=20)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--compare-baseline",
+        type=str,
+        default=None,
+        help="JSON baseline with p95 ratio limits",
+    )
+    parser.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="Exit non-zero when measured p95 exceeds baseline limits",
+    )
     return parser
+
+
+def _p95_ms(values: list[float]) -> float:
+    return float(np.percentile([1000.0 * v for v in values], 95))
+
+
+def _check_baseline(
+    baseline_path: Path,
+    *,
+    ask_p95_ms: float,
+    fail_on_regression: bool,
+) -> None:
+    with open(baseline_path) as f:
+        baseline: dict[str, Any] = json.load(f)
+    limits = baseline.get("ci_ask_limits", [])
+    failures: list[str] = []
+    for entry in limits:
+        max_ratio = float(entry.get("max_p95_ratio", 1.25))
+        max_abs = entry.get("max_abs_p95_ms")
+        ref = float(entry.get("reference_p95_ms", ask_p95_ms))
+        ratio = ask_p95_ms / ref if ref > 0 else 1.0
+        if max_abs is not None and ask_p95_ms <= float(max_abs):
+            continue
+        if ratio > max_ratio:
+            failures.append(
+                f"ask_p95_ms={ask_p95_ms:.3f} ratio={ratio:.3f} > {max_ratio}"
+            )
+    if failures and fail_on_regression:
+        raise SystemExit("speed regression: " + "; ".join(failures))
+    for msg in failures:
+        print("WARN", msg, file=sys.stderr)
 
 
 def _build_optimizer(
@@ -177,6 +222,13 @@ def run_benchmark(argv: Sequence[str] | None = None) -> None:
     summarize(ask_wall_values, "ask_wall")
     ratio = np.mean(dt_sel_values) / np.mean(ask_wall_values)
     print(f"dt_sel_fraction_of_ask_wall={ratio:.3f}")
+    ask_p95_ms = _p95_ms(ask_wall_values)
+    if args.compare_baseline:
+        _check_baseline(
+            Path(args.compare_baseline),
+            ask_p95_ms=ask_p95_ms,
+            fail_on_regression=args.fail_on_regression,
+        )
 
 
 if __name__ == "__main__":

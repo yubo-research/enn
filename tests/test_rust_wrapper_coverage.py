@@ -116,6 +116,19 @@ def test_rust_optimizer_factory_rust_and_python_paths(monkeypatch):
     assert created["args"][1] == 5
     assert created["args"][2] == 3
 
+    from enn.turbo.rust_optimizer_helpers import DEFAULT_ENN_K
+
+    cfg_default_k = turbo_enn_config(
+        acq_type=AcqType.PARETO,
+        enn=ENNSurrogateConfig(k=None),
+        num_init=3,
+    )
+    out_default = ro.create_optimizer(
+        bounds=bounds, config=cfg_default_k, rng=np.random.default_rng(1)
+    )
+    assert isinstance(out_default, ro.RustOptimizer)
+    assert created["args"][1] == DEFAULT_ENN_K
+
     sentinel = object()
     monkeypatch.setattr(py_opt, "create_optimizer", lambda **kwargs: sentinel)
     cfg_py = turbo_one_config(num_init=2)

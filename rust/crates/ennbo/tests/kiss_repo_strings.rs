@@ -68,6 +68,11 @@ fn kiss_fullrepo_static_name_registry() {
         "x_obs_array",
         "y_at",
         "y_obs_array",
+        "apply_enn_surrogate_fields",
+        "apply_scalar_overrides",
+        "optional_bool",
+        "optional_f64",
+        "optional_usize",
     ];
     assert!(!names.is_empty());
 }

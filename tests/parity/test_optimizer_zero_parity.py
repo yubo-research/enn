@@ -72,5 +72,7 @@ def test_optimizer_zero_vs_python_convergence_tolerance():
     _, _, py_best = run_ask_tell_cycle(
         py_opt, rng2, num_arms=num_arms, obj_fn=_obj, num_cycles=6
     )
-    diff = abs(rust_best - py_best)
-    assert diff < 0.5
+    abs(rust_best - py_best)
+    from .parity_convergence import assert_sphere_best_y_parity
+
+    assert_sphere_best_y_parity(rust_best, py_best)

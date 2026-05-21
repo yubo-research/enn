@@ -5,11 +5,11 @@ ENN estimates a function's value and associated epistemic uncertainty using a K-
 
 ## Contents
 - ENN surrogate, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) [1]
-- TuRBO-ENN optimizer via [`create_optimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/optimizer.py) with config factories
-	- `turbo_one_config()` - TuRBO [2], matching the reference implementation.
-	- `turbo_enn_config()` - Uses ENN instead of GP.
-	- `turbo_zero_config()` - No surrogate
-	- `lhd_only_config()` - LHD design on every `ask()`. Good for a baseline and for testing.
+- TuRBO optimizer via [`create_optimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/rust_optimizer.py) with config factories
+	- `turbo_enn_config()` - TuRBO-ENN (Rust-backed by default)
+	- `turbo_zero_config()` - TuRBO-zero (Rust-backed)
+	- `lhd_only_config()` - LHD design on every `ask()` (Rust-backed)
+	- `turbo_one_config()` - TuRBO with GP surrogate (Python fallback until GP is ported)
 The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow TuRBO:
   - Generate candidates with RAASP [3] sampling.
   - Select a candidate with Thompson sampling (TuRBO-one), UCB (TuRBO-ENN), or randomly (TURBO-zero).
