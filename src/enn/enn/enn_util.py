@@ -55,28 +55,10 @@ def pareto_front_2d_maximize(
         raise ValueError((a.shape, b.shape))
     if idx is None:
         return np.asarray(_rust_pareto_front_2d_maximize(a, b), dtype=int)
-    idx = np.asarray(idx, dtype=int)
-    if idx.ndim != 1:
-        raise ValueError(idx.shape)
-    if np.array_equal(idx, np.arange(a.size, dtype=int)):
-        return np.asarray(_rust_pareto_front_2d_maximize(a, b), dtype=int)
-    order = np.lexsort((-b[idx], -a[idx]))
-    sorted_idx = idx[order]
-    keep: list[int] = []
-    best_b = -float("inf")
-    last_a = float("nan")
-    last_b = float("nan")
-    for i in sorted_idx.tolist():
-        bi = float(b[i])
-        ai = float(a[i])
-        if bi > best_b:
-            keep.append(i)
-            best_b = bi
-            last_a = ai
-            last_b = bi
-        elif bi == best_b and ai == last_a and bi == last_b:
-            keep.append(i)
-    return np.asarray(keep, dtype=int)
+    idx_arr = np.asarray(idx, dtype=int)
+    if idx_arr.ndim != 1:
+        raise ValueError(idx_arr.shape)
+    return np.asarray(_rust_pareto_front_2d_maximize(a, b, idx_arr), dtype=int)
 
 
 def arms_from_pareto_fronts(

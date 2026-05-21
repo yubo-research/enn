@@ -99,6 +99,13 @@ def test_pareto_front_2d_maximize_basic():
     assert set(idx.tolist()) == {0, 1}
 
 
+def test_pareto_front_2d_maximize_with_idx_subset():
+    a = np.array([1.0, 0.5, 0.2, 0.9])
+    b = np.array([0.5, 1.0, 0.2, 0.4])
+    idx = pareto_front_2d_maximize(a, b, idx=np.array([0, 1, 3], dtype=int))
+    assert set(idx.tolist()) == {0, 1}
+
+
 @pytest.mark.parametrize(
     "y_input,expected_center,check_scale",
     [

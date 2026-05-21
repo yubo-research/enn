@@ -19,16 +19,18 @@ pub fn standardize_y_py<'py>(py: Python<'py>, y: PyReadonlyArray1<f64>) -> PyRes
 
 /// Python wrapper for pareto_front_2d_maximize
 #[pyfunction(name = "pareto_front_2d_maximize")]
+#[pyo3(signature = (a, b, idx=None))]
 pub fn pareto_front_2d_maximize_py<'py>(
     py: Python<'py>,
     a: PyReadonlyArray1<f64>,
     b: PyReadonlyArray1<f64>,
+    idx: Option<PyReadonlyArray1<i64>>,
 ) -> PyResult<Bound<'py, PyArray1<usize>>> {
     let a_arr = a.as_array();
     let b_arr = b.as_array();
+    let idx_vec: Option<Vec<usize>> = idx.map(|i| i.as_array().iter().map(|&x| x as usize).collect());
 
-    // Release GIL for computation
-    let result = py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, None));
+    let result = py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, idx_vec.as_deref()));
 
     let front = ndarray::Array1::from_vec(result);
     Ok(front.into_pyarray_bound(py))
