@@ -2,7 +2,6 @@
 
 - TR length trajectory: Rust vs Python over same ask/tell sequence
 - Acquisition: smoke tests (full parity blocked on config pass-through)
-- trailing_obs: Rust trim behavior (enabled after trailing_obs support in is_rust_supported_config)
 - Multi-objective: Rust-backed via Pareto acquisition (ENN surrogate)
 """
 

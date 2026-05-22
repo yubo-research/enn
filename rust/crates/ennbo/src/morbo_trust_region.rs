@@ -90,6 +90,14 @@ impl MorboTrustRegion {
         &self.weights
     }
 
+    pub fn y_min(&self) -> Option<&Array1<f64>> {
+        self.y_min.as_ref()
+    }
+
+    pub fn y_max(&self) -> Option<&Array1<f64>> {
+        self.y_max.as_ref()
+    }
+
     pub fn rescalarize(&self) -> Rescalarize {
         self.rescalarize
     }

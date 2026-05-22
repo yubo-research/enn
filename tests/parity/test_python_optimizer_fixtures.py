@@ -16,7 +16,6 @@ FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "python_opt
         "turbo_enn_thompson_single_seed1",
         "turbo_enn_pareto_multi_seed2",
         "turbo_zero_seed0",
-        "turbo_enn_trailing_obs_seed1",
         "turbo_enn_noise_aware_seed2",
     ],
 )

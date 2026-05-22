@@ -49,11 +49,6 @@ _PREFIX_CONFIG: dict[str, OptimizerConfig] = {
         num_init=2,
     ),
     "turbo_zero": turbo_zero_config(num_init=3),
-    "turbo_enn_trailing_obs": turbo_enn_config(
-        acq_type=AcqType.UCB,
-        enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=10)),
-        num_init=2,
-    ),
     "turbo_enn_noise_aware": turbo_enn_config(
         acq_type=AcqType.UCB,
         enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=8)),

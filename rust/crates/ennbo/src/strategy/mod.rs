@@ -268,7 +268,6 @@ fn ask_turbo(
     optimizer.trust_region_mut().set_num_arms(num_arms);
 
     if optimizer.trust_region().is_morbo() {
-        morbo_sync_ranges_from_obs(optimizer)?;
         let num_obs = optimizer.obs_count();
         if num_obs > 0 {
             optimizer

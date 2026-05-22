@@ -295,3 +295,5 @@ mod tests;
 mod tests_incremental;
 #[cfg(test)]
 mod tests_morbo_incumbent;
+#[cfg(test)]
+mod tests_morbo_noise_aware_incumbent;

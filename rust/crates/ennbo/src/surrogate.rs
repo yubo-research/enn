@@ -5,7 +5,6 @@ use rand::RngCore;
 use rand::SeedableRng;
 
 use crate::error::ENNError;
-use crate::fit::enn_fit;
 use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
@@ -258,18 +257,6 @@ impl Surrogate for ENNSurrogate {
             self.config.index_driver,
         )?;
 
-        let params = enn_fit(
-            &model,
-            self.config.k,
-            self.config.num_fit_candidates,
-            self.config.num_fit_samples,
-            &mut local_rng,
-            self.params.as_ref(),
-            self.config.infer_aleatoric_variance,
-        )?;
-
-        self.model = Some(model);
-        self.params = Some(params);
         let num_metrics = y.ncols();
         let mut fitter = ENNFitter::new(
             self.config.k,
@@ -277,10 +264,16 @@ impl Surrogate for ENNSurrogate {
             self.config.infer_aleatoric_variance,
             num_metrics,
         );
-        fitter.reset_y_stats(y);
+        fitter.reset_y_stats(&model.train_y());
         if let Some(p) = self.params {
             fitter.set_params(p);
         }
+        if let Some(p) = fitter.maybe_fit(&model, &mut local_rng, Some(1.0))? {
+            self.params = Some(p);
+        } else if let Some(p) = fitter.params() {
+            self.params = Some(*p);
+        }
+        self.model = Some(model);
         self.fitter = Some(fitter);
 
         Ok(())

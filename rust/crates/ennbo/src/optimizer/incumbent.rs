@@ -84,7 +84,7 @@ impl Optimizer {
             let best_idx = candidate_indices[best_pos];
             self.incumbent_idx = Some(best_idx);
             self.incumbent_x_unit = Some(self.obs_store.x_at(best_idx).clone());
-            self.incumbent_y_scalar = Some(self.obs_store.y_at(best_idx).clone());
+            self.incumbent_y_scalar = Some(y_rows.row(best_pos).to_owned());
             return Ok(());
         }
 

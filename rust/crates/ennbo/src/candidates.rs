@@ -125,6 +125,20 @@ pub fn generate_uniform<R: Rng + ?Sized>(
     Ok(candidates)
 }
 
+fn raasp_dim_from_cdf(cdf: &Array1<f64>, r: f64, num_dim: usize) -> usize {
+    let mut lo = 0usize;
+    let mut hi = num_dim.saturating_sub(1);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if r <= cdf[mid] {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    lo
+}
+
 /// Generate RAASP candidates.
 fn generate_raasp<R: Rng + ?Sized>(
     x_center: &ArrayView1<f64>,
@@ -164,13 +178,7 @@ fn generate_raasp<R: Rng + ?Sized>(
         }
         for _ in 0..num_pert {
             let r: f64 = rng.gen();
-            let mut dim_to_perturb = num_dim - 1;
-            for (j, &cval) in cdf.iter().enumerate() {
-                if r <= cval {
-                    dim_to_perturb = j;
-                    break;
-                }
-            }
+            let dim_to_perturb = raasp_dim_from_cdf(&cdf, r, num_dim);
             let dist = Uniform::new(lower[dim_to_perturb], upper[dim_to_perturb]);
             candidates[[i, dim_to_perturb]] = rng.sample(dist);
         }
@@ -478,6 +486,31 @@ mod tests {
         let s = engine.sample(&mut rng).unwrap();
         assert_eq!(s.len(), 5);
         assert!(s.iter().all(|v| *v >= 0.0 && *v < 1.0));
+    }
+
+    #[test]
+    fn raasp_golden_fixed_seed() {
+        let x_center = array![0.25, 0.75, 0.5];
+        let lower = array![0.0, 0.0, 0.0];
+        let upper = array![1.0, 1.0, 1.0];
+        let ls = array![1.0, 2.0, 3.0];
+        let run = || {
+            generate_raasp(
+                &x_center.view(),
+                Some(&ls.view()),
+                &lower,
+                &upper,
+                3,
+                &mut StdRng::seed_from_u64(4242),
+                2,
+            )
+            .unwrap()
+        };
+        let out = run();
+        let out2 = run();
+        assert_eq!(out.shape(), &[3, 3]);
+        assert!(out.iter().zip(out2.iter()).all(|(a, b)| (a - b).abs() < 1e-15));
+        assert!(out.iter().all(|&v| (0.0..=1.0).contains(&v)));
     }
 
     #[test]

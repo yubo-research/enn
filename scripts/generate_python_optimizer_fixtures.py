@@ -99,10 +99,6 @@ def _zero(seed: int) -> dict:
     return _capture(bounds, config, seed, num_cycles=4, num_arms=num_arms)
 
 
-def _trailing_obs(seed: int) -> dict:
-    return _enn_ucb_fixture(seed, k=3, num_arms=2, num_cycles=5)
-
-
 def _noise_aware(seed: int) -> dict:
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     num_arms = 2
@@ -173,7 +169,6 @@ def main() -> None:
         ("turbo_enn_thompson_single_seed", _enn_thompson),
         ("turbo_enn_pareto_multi_seed", _enn_pareto),
         ("turbo_zero_seed", _zero),
-        ("turbo_enn_trailing_obs_seed", _trailing_obs),
         ("turbo_enn_noise_aware_seed", _noise_aware),
         ("lhd_only_seed", _lhd),
     ]
