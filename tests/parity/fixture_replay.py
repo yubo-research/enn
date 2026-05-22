@@ -8,19 +8,13 @@ from typing import Any
 import numpy as np
 
 from enn import create_optimizer
-from enn.turbo.config import (
-    AcqType,
-    CandidateGenConfig,
-    ENNFitConfig,
-    ENNSurrogateConfig,
-    MorboTRConfig,
-    MultiObjectiveConfig,
-    TurboTRConfig,
-    lhd_only_config,
-    turbo_enn_config,
-    turbo_zero_config,
-)
 from enn.turbo.config.optimizer_config import OptimizerConfig
+
+from .optimizer_fixture_catalog import (
+    EXPECTED_OPTIMIZER_FIXTURE_NAMES,
+    FIXTURE_OBJECTIVES,
+    PREFIX_CONFIG,
+)
 
 PYTHON_OPTIMIZER_FIXTURES_DIR = (
     Path(__file__).resolve().parent.parent / "fixtures" / "python_optimizer"
@@ -32,50 +26,11 @@ EXACT_ATOL = 1e-14
 TR_RTOL = 1e-9
 TR_ATOL = 1e-9
 
-_PREFIX_CONFIG: dict[str, OptimizerConfig] = {
-    "turbo_enn_ucb_single": turbo_enn_config(
-        acq_type=AcqType.UCB,
-        enn=ENNSurrogateConfig(k=4, fit=ENNFitConfig(num_fit_samples=10)),
-        num_init=3,
-    ),
-    "turbo_enn_thompson_single": turbo_enn_config(
-        acq_type=AcqType.THOMPSON,
-        enn=ENNSurrogateConfig(k=4, fit=ENNFitConfig(num_fit_samples=10)),
-        num_init=3,
-    ),
-    "turbo_enn_pareto_multi": turbo_enn_config(
-        acq_type=AcqType.PARETO,
-        enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=10)),
-        num_init=2,
-    ),
-    "turbo_zero": turbo_zero_config(num_init=3),
-    "turbo_enn_noise_aware": turbo_enn_config(
-        acq_type=AcqType.UCB,
-        enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=8)),
-        trust_region=TurboTRConfig(noise_aware=True),
-        num_init=2,
-    ),
-    "lhd_only": lhd_only_config(num_init=3),
-    "morbo_enn_separable_unimodal": turbo_enn_config(
-        acq_type=AcqType.THOMPSON,
-        enn=ENNSurrogateConfig(
-            k=4,
-            fit=ENNFitConfig(num_fit_samples=4, num_fit_candidates=8),
-        ),
-        trust_region=MorboTRConfig(
-            multi_objective=MultiObjectiveConfig(num_metrics=2),
-            noise_aware=True,
-        ),
-        num_init=8,
-        candidates=CandidateGenConfig(num_candidates=64),
-    ),
-}
-
 
 def _config_for_fixture(name: str) -> OptimizerConfig:
     prefix = fixture_name_prefix(name)
     try:
-        return _PREFIX_CONFIG[prefix]
+        return PREFIX_CONFIG[prefix]
     except KeyError as exc:
         raise ValueError(f"unknown fixture name {name!r}") from exc
 
@@ -89,11 +44,34 @@ def _fixture_dir_for_name(name: str) -> Path:
 
 def load_fixture(name: str) -> dict[str, Any]:
     path = _fixture_dir_for_name(name) / f"{name}.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"missing optimizer replay fixture: {path}")
     with open(path) as f:
         return json.load(f)
 
 
+def assert_fixture_json_invariants(data: dict[str, Any]) -> None:
+    bounds = np.array(data["bounds"], dtype=float)
+    objective_fn = FIXTURE_OBJECTIVES[str(data["objective"])]
+    prev_tr_obs = 0
+    for step in data["steps"]:
+        x = np.array(step["ask"], dtype=float)
+        y = np.array(step["tell_y"], dtype=float)
+        assert x.shape[1] == bounds.shape[0]
+        assert y.shape[0] == x.shape[0]
+        assert np.all(np.isfinite(x))
+        assert np.all(np.isfinite(y))
+        assert np.all(x >= bounds[:, 0] - 1e-9)
+        assert np.all(x <= bounds[:, 1] + 1e-9)
+        np.testing.assert_allclose(objective_fn(x), y, rtol=EXACT_RTOL, atol=EXACT_ATOL)
+        assert 0.0 < step["tr_length"] <= 2.5
+        tr_obs = int(step["tr_obs_count"])
+        assert tr_obs >= prev_tr_obs
+        prev_tr_obs = tr_obs
+
+
 def assert_fixture_contracts(data: dict[str, Any], config: OptimizerConfig) -> None:
+    assert_fixture_json_invariants(data)
     bounds = np.array(data["bounds"], dtype=float)
     rng = np.random.default_rng(int(data["seed"]))
     opt = create_optimizer(bounds=bounds, config=config, rng=rng)
@@ -119,15 +97,23 @@ def assert_fixture_contracts(data: dict[str, Any], config: OptimizerConfig) -> N
 
 
 def list_python_optimizer_fixture_names() -> list[str]:
-    return sorted(p.stem for p in PYTHON_OPTIMIZER_FIXTURES_DIR.glob("*.json"))
+    return [
+        name
+        for name in EXPECTED_OPTIMIZER_FIXTURE_NAMES
+        if not fixture_name_prefix(name).startswith("morbo_")
+    ]
 
 
 def list_morbo_fixture_names() -> list[str]:
-    return sorted(p.stem for p in MORBO_FIXTURES_DIR.glob("*.json"))
+    return [
+        name
+        for name in EXPECTED_OPTIMIZER_FIXTURE_NAMES
+        if fixture_name_prefix(name).startswith("morbo_")
+    ]
 
 
 def list_fixture_names() -> list[str]:
-    return list_python_optimizer_fixture_names() + list_morbo_fixture_names()
+    return list(EXPECTED_OPTIMIZER_FIXTURE_NAMES)
 
 
 def fixture_name_prefix(name: str) -> str:

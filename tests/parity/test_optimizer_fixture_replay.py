@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from .fixture_replay import list_fixture_names
+from .optimizer_fixture_catalog import EXPECTED_OPTIMIZER_FIXTURE_NAMES
 
 try:
     from enn._rust import Optimizer  # noqa: F401
@@ -14,7 +14,7 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not RUST_AVAILABLE, reason="Rust not available")
 
 
-@pytest.mark.parametrize("name", list_fixture_names())
+@pytest.mark.parametrize("name", EXPECTED_OPTIMIZER_FIXTURE_NAMES)
 def test_rust_optimizer_replays_fixture_contracts(name: str):
     from .fixture_replay import (
         _config_for_fixture,
