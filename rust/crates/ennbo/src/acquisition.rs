@@ -383,25 +383,23 @@ impl ParetoAcquisition {
         mu: &ArrayView1<f64>,
         sigma: &ArrayView1<f64>,
         num_arms: usize,
-        _rng: &mut R,
+        rng: &mut R,
     ) -> AcquisitionResult {
-        // Simplified: just return top indices
         let n = mu.len();
         if n == 0 {
             return Err(AcquisitionError::NoCandidates);
         }
 
         let num_arms = num_arms.min(n);
-
-        // Score = mu + sigma (simple acquisition)
-        let mut indices: Vec<usize> = (0..n).collect();
-        indices.sort_by(|&a, &b| {
-            let score_a = mu[a] + sigma[a];
-            let score_b = mu[b] + sigma[b];
-            score_b.total_cmp(&score_a)
-        });
-
-        Ok(indices.into_iter().take(num_arms).collect())
+        let dummy_x = ndarray::Array2::<f64>::zeros((n, 1));
+        let seed = rng.r#gen::<u64>();
+        Ok(crate::util::arms_from_pareto_fronts(
+            &dummy_x.view(),
+            mu,
+            sigma,
+            num_arms,
+            seed,
+        ))
     }
 }
 
@@ -479,7 +477,7 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(42);
         let selected = pareto.select(&mu.view(), &se.view(), 1, &mut rng).unwrap();
 
-        assert_eq!(selected, vec![1]);
+        assert_eq!(selected, vec![2]);
     }
 
     #[test]

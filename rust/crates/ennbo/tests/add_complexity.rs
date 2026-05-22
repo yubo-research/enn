@@ -8,6 +8,7 @@ const BASELINE_ROWS: usize = ROW_COUNTS[0];
 const NUM_ADDS: usize = 128;
 const CONFIGS: [(bool, bool); 4] = [(false, false), (true, false), (false, true), (true, true)];
 const MAX_SECS_PER_BASELINE_SEC: f64 = 2.5;
+const TIMING_REPEATS: usize = 5;
 
 fn row_f64(i: usize) -> f64 {
     f64::from(u32::try_from(i).unwrap_or(u32::MAX))
@@ -109,16 +110,27 @@ fn timed_single_row_adds_with_yvar(
     elapsed
 }
 
+fn best_of_repeats_secs(
+    starting_rows: usize,
+    num_adds: usize,
+    scale_x: bool,
+    with_yvar: bool,
+) -> f64 {
+    (0..TIMING_REPEATS)
+        .map(|_| {
+            timed_single_row_adds_with_yvar(starting_rows, num_adds, scale_x, with_yvar).as_secs_f64()
+        })
+        .min_by(|a, b| a.partial_cmp(b).expect("timing samples must be ordered"))
+        .expect("at least one timing repeat")
+}
+
 #[test]
 fn single_row_add_has_flat_growth_across_configs() {
     let mut observed_peak_ratio = 1.0_f64;
     for &(scale_x, with_yvar) in &CONFIGS {
         let measurements: Vec<(usize, f64)> = ROW_COUNTS
             .into_iter()
-            .map(|n| {
-                let elapsed = timed_single_row_adds_with_yvar(n, NUM_ADDS, scale_x, with_yvar);
-                (n, elapsed.as_secs_f64())
-            })
+            .map(|n| (n, best_of_repeats_secs(n, NUM_ADDS, scale_x, with_yvar)))
             .collect();
 
         let baseline_secs = measurements

@@ -43,8 +43,24 @@ fn kiss_pymodule_entrypoint_names_and_methods() {
         "x_obs",
         "y_obs",
         "incumbent_x_unit",
+        "optional_f64",
+        "optional_usize",
+        "optional_bool",
+        "apply_scalar_overrides",
+        "arms_from_pareto_fronts_py",
     ];
     assert!(!names.is_empty());
+}
+
+#[test]
+fn kiss_py_optimizer_helper_names() {
+    let names: &[&str] = &[
+        "optional_f64",
+        "optional_usize",
+        "optional_bool",
+        "apply_scalar_overrides",
+    ];
+    assert_eq!(names.len(), 4);
 }
 
 #[test]

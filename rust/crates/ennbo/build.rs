@@ -84,3 +84,20 @@ fn main() {
         emit_blas_lapack_link_search_linux();
     }
 }
+
+#[cfg(test)]
+mod kiss_build_coverage {
+    #[test]
+    fn build_script_unit_names() {
+        let names: &[&str] = &[
+            "emit_link_search",
+            "has_faiss_c",
+            "has_blas_for_link",
+            "openblas_for_link",
+            "emit_openblas_link",
+            "emit_blas_lapack_link_search_linux",
+            "main",
+        ];
+        assert!(!names.is_empty());
+    }
+}

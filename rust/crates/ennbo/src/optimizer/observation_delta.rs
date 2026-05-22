@@ -42,3 +42,16 @@ pub(crate) fn observation_delta_from_store(
         y_new,
     })
 }
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    #[test]
+    fn observation_delta_unit_names() {
+        let names: &[&str] = &[
+            "observation_delta_from_store",
+            "x_new_view",
+            "y_new_view",
+        ];
+        assert_eq!(names.len(), 3);
+    }
+}

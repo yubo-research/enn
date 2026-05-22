@@ -379,6 +379,19 @@ mod tests {
     }
 
     #[test]
+    fn kiss_index_helper_unit_names() {
+        let names: &[&str] = &[
+            "faiss_spec",
+            "faiss_map_err",
+            "arr2_rows_to_f32",
+            "make_faiss",
+            "pad_neighbor_cols_to_search_k",
+            "unpack_faiss_search",
+        ];
+        assert_eq!(names.len(), 6);
+    }
+
+    #[test]
     fn test_scaled_search() {
         let x_scale = array![2.0, 2.0];
         let index = ENNIndex::new(

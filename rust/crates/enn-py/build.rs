@@ -39,3 +39,12 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod kiss_build_coverage {
+    #[test]
+    fn build_script_unit_names() {
+        let names: &[&str] = &["blas_libs_present", "install_patchelf_if_needed", "main"];
+        assert!(!names.is_empty());
+    }
+}

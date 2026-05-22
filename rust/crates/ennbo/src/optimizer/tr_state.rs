@@ -165,8 +165,14 @@ impl TrustRegionState {
                         y_all.ncols()
                     )));
                 }
+                if y_incumbent.len() != 1 {
+                    return Err(ENNError::InvalidParameter(format!(
+                        "Turbo TR expects 1 incumbent scalar, got {}",
+                        y_incumbent.len()
+                    )));
+                }
                 let y_1d = y_all.column(0).to_owned();
-                t.update(&y_1d.view(), num_obs)
+                t.update_with_incumbent(&y_1d.view(), num_obs, y_incumbent[0])
                     .map_err(|e| ENNError::InvalidParameter(e.to_string()))
             }
             TrustRegionState::Morbo(m) => m
@@ -182,6 +188,8 @@ mod tests {
     use super::*;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+
+    use ndarray::array;
 
     use crate::trust_region_config::TrustRegionConfig;
     use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
@@ -221,6 +229,36 @@ mod tests {
         let w2 = tr.morbo_mut().expect("morbo").weights().to_owned();
         assert!(!approx::relative_eq!(w0, w1, epsilon = 1e-12));
         assert!(!approx::relative_eq!(w1, w2, epsilon = 1e-12));
+    }
+
+    #[test]
+    fn turbo_noise_aware_tell_update_expands_on_incumbent_not_batch_max() {
+        use ndarray::Array2;
+
+        let config = TRLengthConfig::default();
+        let mut tr = TrustRegionState::Turbo(TurboTrustRegion::new(2, config));
+        tr.set_num_arms(1);
+
+        let y0 = Array2::from_shape_vec((1, 1), vec![1.0]).unwrap();
+        let inc0 = array![1.0];
+        tr.tell_update(&y0.view(), &inc0.view(), 1).unwrap();
+        let len_before = tr.length();
+
+        for (i, inc_val) in [2.0_f64, 3.0, 4.0].into_iter().enumerate() {
+            let n = i + 2;
+            let mut vals = vec![1.0];
+            vals.extend(std::iter::repeat_n(0.5, n - 1));
+            let y_mat = Array2::from_shape_vec((n, 1), vals).unwrap();
+            let inc = array![inc_val];
+            tr.tell_update(&y_mat.view(), &inc.view(), n).unwrap();
+        }
+
+        assert!(
+            tr.length() > len_before,
+            "trust region length should expand after three incumbent improvements \
+             (incumbent 2→3→4 with flat observed batch max 1.0); \
+             batch-only update treats each tell as failure"
+        );
     }
 
     #[test]

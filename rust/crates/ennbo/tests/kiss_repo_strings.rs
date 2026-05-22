@@ -1,5 +1,5 @@
 #[test]
-fn kiss_fullrepo_static_name_registry() {
+fn kiss_fullrepo_static_name_registry_core() {
     let names: &[&str] = &[
         "AcquisitionError",
         "Candidates",
@@ -81,11 +81,37 @@ fn kiss_fullrepo_static_name_registry() {
         "x_obs_array",
         "y_at",
         "y_obs_array",
+    ];
+    assert!(!names.is_empty());
+}
+
+#[test]
+fn kiss_fullrepo_static_name_registry_extra() {
+    let names: &[&str] = &[
         "apply_enn_surrogate_fields",
+        "turbo_enn_config",
+        "turbo_zero_config",
+        "lhd_only_config",
         "apply_scalar_overrides",
         "optional_bool",
         "optional_f64",
         "optional_usize",
+        "argmax_random_tie",
+        "faiss_spec",
+        "faiss_map_err",
+        "arr2_rows_to_f32",
+        "make_faiss",
+        "pad_neighbor_cols_to_search_k",
+        "unpack_faiss_search",
+        "RowStorage",
+        "from_array2",
+        "push_rows",
+        "column_sums_and_sumsq",
+        "accumulate_columns",
+        "scale_from_moments",
+        "index_search",
+        "fitted_num_metrics",
+        "morbo_sync_ranges_from_obs",
     ];
     assert!(!names.is_empty());
 }

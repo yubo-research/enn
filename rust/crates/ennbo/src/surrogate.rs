@@ -50,6 +50,10 @@ pub trait Surrogate: Send + Sync {
     ) -> Result<Array3<f64>, ENNError>;
 
     fn lengthscales(&self) -> Option<Array1<f64>>;
+
+    fn fitted_num_metrics(&self) -> Option<usize> {
+        None
+    }
 }
 
 pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
@@ -226,6 +230,10 @@ impl ENNSurrogate {
 }
 
 impl Surrogate for ENNSurrogate {
+    fn fitted_num_metrics(&self) -> Option<usize> {
+        self.model.as_ref().map(|m| m.num_metrics())
+    }
+
     fn fit(
         &mut self,
         x: &ArrayView2<f64>,

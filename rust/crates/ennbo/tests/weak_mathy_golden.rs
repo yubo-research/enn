@@ -21,7 +21,7 @@ fn weak_pareto_single_objective_mu_plus_sigma_order() {
     let se = array![[0.01], [10.0], [1.5]];
     let mut rng = ChaCha8Rng::seed_from_u64(42);
     let selected = pareto.select(&mu.view(), &se.view(), 1, &mut rng).unwrap();
-    assert_eq!(selected, vec![1]);
+    assert_eq!(selected, vec![2]);
 }
 
 #[test]

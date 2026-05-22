@@ -169,6 +169,21 @@ fn ask_init_hybrid(
     ask_init(state, optimizer, num_arms, rng)
 }
 
+fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError> {
+    if !optimizer.trust_region().is_morbo() {
+        return Ok(());
+    }
+    let Some(y_all) = optimizer.y_obs() else {
+        return Ok(());
+    };
+    if y_all.nrows() == 0 {
+        return Ok(());
+    }
+    optimizer
+        .trust_region_mut()
+        .morbo_update_ranges_only(&y_all.view())
+}
+
 /// Common tell logic: add observations, fit surrogate, update incumbent.
 fn tell_common(
     optimizer: &mut Optimizer,
@@ -179,14 +194,27 @@ fn tell_common(
 ) -> Result<(), ENNError> {
     let delta = optimizer.add_observations(x, y)?;
 
+    let refit_all = optimizer
+        .surrogate()
+        .and_then(|s| s.fitted_num_metrics())
+        .is_some_and(|nm| nm != y.ncols());
+    let obs_snapshot = if refit_all {
+        (optimizer.x_obs(), optimizer.y_obs())
+    } else {
+        (None, None)
+    };
     if let Some(surrogate) = optimizer.surrogate_mut() {
         let start = std::time::Instant::now();
-        surrogate.fit_append(
-            &delta.x_new_view(),
-            &delta.y_new_view(),
-            None,
-            rng,
-        )?;
+        if let (Some(x_all), Some(y_all)) = obs_snapshot {
+            surrogate.fit(&x_all.view(), &y_all.view(), None, rng)?;
+        } else {
+            surrogate.fit_append(
+                &delta.x_new_view(),
+                &delta.y_new_view(),
+                None,
+                rng,
+            )?;
+        }
         if let Some(tel) = telemetry {
             tel.dt_fit = start.elapsed().as_secs_f64();
         }
@@ -240,6 +268,7 @@ fn ask_turbo(
     optimizer.trust_region_mut().set_num_arms(num_arms);
 
     if optimizer.trust_region().is_morbo() {
+        morbo_sync_ranges_from_obs(optimizer)?;
         let num_obs = optimizer.obs_count();
         if num_obs > 0 {
             optimizer
@@ -359,6 +388,7 @@ fn tell_turbo(
         optimizer.trust_region_mut().restart(Some(rng));
         optimizer.increment_restart_generation();
         optimizer.reset_incumbent_tracker();
+        morbo_sync_ranges_from_obs(optimizer)?;
     }
 
     Ok(())

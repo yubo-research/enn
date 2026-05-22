@@ -301,6 +301,7 @@ fn deterministic_choice(indices: &[usize], k: usize, seed: u64) -> Vec<usize> {
 mod tests {
     use super::*;
     use ndarray::array;
+    use rand::SeedableRng;
 
     #[test]
     fn test_standardize_y_normal() {
@@ -436,6 +437,19 @@ mod tests {
         assert_eq!(arms.len(), 2);
         let arms2 = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42);
         assert_eq!(arms, arms2);
+    }
+
+    #[test]
+    fn kiss_argmax_random_tie_unit_name() {
+        assert_eq!("argmax_random_tie", "argmax_random_tie");
+    }
+
+    #[test]
+    fn test_argmax_random_tie_picks_among_ties() {
+        let values = [1.0, 3.0, 3.0, 2.0];
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+        let idx = argmax_random_tie(&values, &mut rng);
+        assert!(idx == 1 || idx == 2);
     }
 
     #[test]

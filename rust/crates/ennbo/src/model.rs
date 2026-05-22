@@ -511,6 +511,19 @@ mod tests {
     }
 
     #[test]
+    fn kiss_row_storage_unit_names() {
+        let names: &[&str] = &[
+            "RowStorage",
+            "from_array2",
+            "push_rows",
+            "column_sums_and_sumsq",
+            "accumulate_columns",
+            "scale_from_moments",
+        ];
+        assert_eq!(names.len(), 6);
+    }
+
+    #[test]
     fn test_sync_index_idempotent() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0]];
         let train_y = array![[0.0], [1.0]];

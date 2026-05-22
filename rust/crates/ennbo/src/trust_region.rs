@@ -266,6 +266,71 @@ impl TurboTrustRegion {
         Ok(())
     }
 
+    /// Update trust region using observed history for scale and incumbent scalar for improvement.
+    ///
+    /// Matches Python `TurboTrustRegion.update(y_obs, y_incumbent)`.
+    pub fn update_with_incumbent(
+        &mut self,
+        y_all: &ArrayView1<f64>,
+        num_obs: usize,
+        y_incumbent_value: f64,
+    ) -> Result<(), TrustRegionError> {
+        let n = y_all.len();
+        if n == 0 || n == self.prev_num_obs {
+            return Ok(());
+        }
+        if n < self.prev_num_obs {
+            return Err(TrustRegionError::InvalidState(format!(
+                "num_obs went backwards: {} < {}",
+                n, self.prev_num_obs
+            )));
+        }
+        if num_obs != n {
+            return Err(TrustRegionError::InvalidParameter(format!(
+                "num_obs {} must equal y_all.len() {}",
+                num_obs, n
+            )));
+        }
+
+        if !self.best_value.is_finite() {
+            self.best_value = y_incumbent_value;
+            self.prev_num_obs = n;
+            return Ok(());
+        }
+
+        let prev_slice = y_all.slice(s![..self.prev_num_obs]);
+        let prev_len = prev_slice.len();
+        let scale = if prev_len >= 2 {
+            let min_val = prev_slice.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+            let max_val = prev_slice.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            (max_val - min_val).max(1e-6)
+        } else {
+            0.0
+        };
+
+        let improved = y_incumbent_value > self.best_value + 1e-3 * scale;
+        if improved {
+            self.success_counter += 1;
+            self.failure_counter = 0;
+        } else {
+            self.failure_counter += 1;
+            self.success_counter = 0;
+        }
+
+        let success_tol = self.success_tolerance;
+        let failure_tol = self.failure_tolerance.unwrap_or(4);
+        if self.success_counter >= success_tol {
+            self.length = (self.length * 2.0).min(self.config.length_max);
+            self.success_counter = 0;
+        } else if self.failure_counter >= failure_tol {
+            self.length *= 0.5;
+            self.failure_counter = 0;
+        }
+        self.best_value = self.best_value.max(y_incumbent_value);
+        self.prev_num_obs = n;
+        Ok(())
+    }
+
     /// Compute trust region bounds in 1D.
     ///
     /// Returns (lower_bounds, upper_bounds) for each dimension.

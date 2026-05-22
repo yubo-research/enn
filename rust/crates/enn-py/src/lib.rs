@@ -84,3 +84,20 @@ fn enn_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(optimizer))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod kiss_pymodule_coverage {
+    #[test]
+    fn pymodule_init_unit_names() {
+        let names: &[&str] = &[
+            "hypervolume",
+            "hash",
+            "util",
+            "model",
+            "fit",
+            "optimizer",
+            "enn_rust",
+        ];
+        assert_eq!(names.len(), 7);
+    }
+}

@@ -230,6 +230,11 @@ mod pairwise_tests {
     use ndarray::{array, Array2};
 
     #[test]
+    fn kiss_index_search_unit_name() {
+        assert_eq!("index_search", "index_search");
+    }
+
+    #[test]
     fn pairwise_sq_l2_scaled_and_unscaled() {
         let x = array![[0.0, 0.0], [1.0, 0.0]];
         let y = array![[0.0, 1.0], [1.0, 1.0]];

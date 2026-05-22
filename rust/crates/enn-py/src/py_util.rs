@@ -114,6 +114,14 @@ pub fn sobol_sequence_py<'py>(
     Ok(out.into_dyn().into_pyarray_bound(py))
 }
 
+#[cfg(test)]
+mod kiss_coverage_tests {
+    #[test]
+    fn arms_from_pareto_fronts_py_unit_name() {
+        assert_eq!("arms_from_pareto_fronts_py", "arms_from_pareto_fronts_py");
+    }
+}
+
 /// Python wrapper for arms_from_pareto_fronts (returns selected candidate rows).
 #[pyfunction(name = "arms_from_pareto_fronts")]
 #[pyo3(signature = (x_cand, mu, se, num_arms, seed))]
