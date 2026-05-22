@@ -3,9 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from enn import create_optimizer, turbo_one_config
 from enn.turbo.python_fallback.components.acquisition import (
-    ParetoAcqOptimizer,
-    RandomAcqOptimizer,
     ThompsonAcqOptimizer,
     UCBAcqOptimizer,
 )
@@ -17,19 +16,9 @@ from enn.turbo.python_fallback.components.protocols import (
     PosteriorResult,
     SurrogateResult,
 )
-from enn.turbo.python_fallback.components.surrogates import (
-    ENNSurrogate,
-    GPSurrogate,
-    NoSurrogate,
-)
-from enn.turbo.config import (
-    ENNSurrogateConfig,
-    NoTRConfig,
-    turbo_enn_config,
-    turbo_one_config,
-    turbo_zero_config,
-)
-from enn.turbo.python_fallback.optimizer import Optimizer, create_optimizer
+from enn.turbo.python_fallback.components.surrogates import GPSurrogate
+from enn.turbo.config import turbo_enn_config, turbo_zero_config
+from enn.turbo.python_fallback.optimizer import Optimizer
 
 
 def _make_test_data(n: int = 4, d: int = 2):
@@ -49,23 +38,10 @@ def _fit_gp_surrogate(rng):
     return surrogate
 
 
-def _fit_no_surrogate(rng, n: int = 2):
-    surrogate = NoSurrogate()
-    x, y = _make_test_data(n=n)
-    surrogate.fit(x, y, None, num_steps=0, rng=rng)
-    return surrogate
-
-
 def test_surrogate_result():
     result = SurrogateResult(model="test_model", lengthscales=np.array([1.0, 2.0]))
     assert result.model == "test_model"
     assert np.allclose(result.lengthscales, [1.0, 2.0])
-
-
-def test_surrogate_result_defaults():
-    result = SurrogateResult(model=None)
-    assert result.model is None
-    assert result.lengthscales is None
 
 
 def test_posterior_result():
@@ -76,54 +52,7 @@ def test_posterior_result():
     assert np.allclose(result.sigma, sigma)
 
 
-def test_posterior_result_no_sigma():
-    mu = np.array([[1.0], [2.0]])
-    result = PosteriorResult(mu=mu)
-    assert np.allclose(result.mu, mu)
-    assert result.sigma is None
-
-
-def test_no_surrogate_fit():
-    surrogate = NoSurrogate()
-    x, y = _make_test_data(n=2)
-    result = surrogate.fit(x, y, None, num_steps=0, rng=np.random.default_rng(0))
-    assert result.model is None
-    assert result.lengthscales is None
-
-
-def test_no_surrogate_predict():
-    rng = np.random.default_rng(0)
-    surrogate = _fit_no_surrogate(rng)
-    x, _ = _make_test_data(n=2)
-    posterior = surrogate.predict(x)
-    assert posterior.mu.shape == (2, 1)
-    assert posterior.sigma is None
-
-
-def test_no_surrogate_sample():
-    rng = np.random.default_rng(42)
-    surrogate = _fit_no_surrogate(rng)
-    x, _ = _make_test_data(n=2)
-    samples = surrogate.sample(x, 3, rng)
-    assert samples.shape == (3, 2, 1)
-
-
-def test_gp_surrogate_init():
-    surrogate = GPSurrogate()
-    assert surrogate._model is None
-
-
-def test_gp_surrogate_fit():
-    surrogate = GPSurrogate()
-    x, y = _make_test_data()
-    rng = np.random.default_rng(42)
-    result = surrogate.fit(x, y, None, num_steps=10, rng=rng)
-    assert result.model is not None
-    assert result.lengthscales is not None
-    assert result.lengthscales.shape == (2,)
-
-
-def test_gp_surrogate_predict():
+def test_gp_surrogate_fit_and_predict():
     rng = np.random.default_rng(42)
     surrogate = _fit_gp_surrogate(rng)
     x, _ = _make_test_data()
@@ -132,169 +61,31 @@ def test_gp_surrogate_predict():
     assert posterior.sigma.shape == (4, 1)
 
 
-def test_gp_surrogate_predict_not_fitted_raises():
-    surrogate = GPSurrogate()
-    x = np.array([[0.5, 0.5]])
-    with pytest.raises(RuntimeError, match="fitted"):
-        surrogate.predict(x)
-
-
-def test_enn_surrogate_init():
-    config = ENNSurrogateConfig(k=5)
-    surrogate = ENNSurrogate(config)
-    assert surrogate._config.k == 5
-
-
-def test_enn_surrogate_fit():
-    config = ENNSurrogateConfig(k=3)
-    surrogate = ENNSurrogate(config)
-    x, y = _make_test_data()
-    rng = np.random.default_rng(42)
-    result = surrogate.fit(x, y, None, num_steps=0, rng=rng)
-    assert result.model is not None
-
-
-def test_enn_surrogate_predict():
-    config = ENNSurrogateConfig(k=3)
-    surrogate = ENNSurrogate(config)
-    x, y = _make_test_data()
-    rng = np.random.default_rng(42)
-    surrogate.fit(x, y, None, num_steps=0, rng=rng)
-    posterior = surrogate.predict(x)
-    assert posterior.mu.shape == (4, 1)
-
-
-@pytest.mark.parametrize(
-    "optimizer_cls,surrogate_fn",
-    [
-        (RandomAcqOptimizer, _fit_no_surrogate),
-        (ThompsonAcqOptimizer, _fit_no_surrogate),
-    ],
-)
-def test_acquisition_optimizer_select_with_no_surrogate(optimizer_cls, surrogate_fn):
-    optimizer = optimizer_cls()
-    x_cand = _make_candidates()
-    rng = np.random.default_rng(42)
-    surrogate = surrogate_fn(rng)
-    selected = optimizer.select(x_cand, 2, surrogate, rng)
-    assert selected.shape == (2, 2)
-
-
-def test_ucb_acq_optimizer_init():
-    optimizer = UCBAcqOptimizer(beta=2.0)
-    assert optimizer._beta == 2.0
-
-
 def test_ucb_acq_optimizer_select():
     optimizer = UCBAcqOptimizer(beta=1.0)
     rng = np.random.default_rng(42)
     surrogate = _fit_gp_surrogate(rng)
-    x_cand = _make_candidates()
-    selected = optimizer.select(x_cand, 2, surrogate, rng)
+    selected = optimizer.select(_make_candidates(), 2, surrogate, rng)
     assert selected.shape == (2, 2)
 
 
-def test_pareto_acq_optimizer_select():
-    optimizer = ParetoAcqOptimizer()
-    rng = np.random.default_rng(42)
-    config = ENNSurrogateConfig(k=3)
-    surrogate = ENNSurrogate(config)
-    x, y = _make_test_data()
-    surrogate.fit(x, y, None, num_steps=0, rng=rng)
-    x_cand = _make_candidates()
-    selected = optimizer.select(x_cand, 2, surrogate, rng)
-    assert selected.shape == (2, 2)
+def test_build_surrogate_gp_only():
+    surrogate = build_surrogate(turbo_one_config())
+    assert isinstance(surrogate, GPSurrogate)
 
 
 @pytest.mark.parametrize(
-    "config_fn,expected_cls",
-    [
-        (turbo_one_config, GPSurrogate),
-        (turbo_zero_config, NoSurrogate),
-        (turbo_enn_config, ENNSurrogate),
-    ],
+    "config_fn",
+    [turbo_enn_config, turbo_zero_config],
 )
-def test_build_surrogate(config_fn, expected_cls):
-    config = config_fn()
-    surrogate = build_surrogate(config)
-    assert isinstance(surrogate, expected_cls)
+def test_build_surrogate_rejects_rust_configs(config_fn):
+    with pytest.raises(ValueError, match="Rust optimizer"):
+        build_surrogate(config_fn())
 
 
-@pytest.mark.parametrize(
-    "config_fn,expected_cls",
-    [
-        (turbo_zero_config, RandomAcqOptimizer),
-        (turbo_one_config, ThompsonAcqOptimizer),
-        (turbo_enn_config, ParetoAcqOptimizer),
-    ],
-)
-def test_build_acquisition_optimizer(config_fn, expected_cls):
-    config = config_fn()
-    optimizer = build_acquisition_optimizer(config)
-    assert isinstance(optimizer, expected_cls)
-
-
-def test_surrogate_protocol_compliance():
-    for cls in [NoSurrogate, GPSurrogate]:
-        assert hasattr(cls, "fit")
-        assert hasattr(cls, "predict")
-        assert hasattr(cls, "sample")
-
-
-def test_acquisition_optimizer_protocol_compliance():
-    for cls in [
-        RandomAcqOptimizer,
-        ThompsonAcqOptimizer,
-        UCBAcqOptimizer,
-        ParetoAcqOptimizer,
-    ]:
-        assert hasattr(cls, "select")
-
-
-def test_trust_region_protocol_from_config_build():
-    from enn.turbo.python_fallback.components.builder import build_trust_region
-
-    tr_config = NoTRConfig()
-    rng = np.random.default_rng(42)
-    tr = build_trust_region(tr_config, num_dim=3, rng=rng)
-    assert hasattr(tr, "length")
-    assert hasattr(tr, "compute_bounds_1d")
-    assert hasattr(tr, "update")
-    assert hasattr(tr, "needs_restart")
-    assert hasattr(tr, "restart")
-
-
-def test_optimizer_init():
-    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    config = turbo_zero_config(num_init=4)
-    rng = np.random.default_rng(42)
-    surrogate = NoSurrogate()
-    acq_optimizer = RandomAcqOptimizer()
-    opt = Optimizer(
-        bounds=bounds,
-        config=config,
-        rng=rng,
-        surrogate=surrogate,
-        acquisition_optimizer=acq_optimizer,
-    )
-    assert opt is not None
-    assert opt._num_dim == 2
-    init = opt.init_progress
-    assert init is not None
-    assert init == (0, 4)
-
-
-def test_optimizer_init_via_factory():
-    from enn import create_optimizer
-
-    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    config = turbo_zero_config(num_init=4)
-    rng = np.random.default_rng(42)
-    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
-    assert opt is not None
-    init = opt.init_progress
-    assert init is not None
-    assert init == (0, 4)
+def test_build_acquisition_optimizer_turbo_one():
+    optimizer = build_acquisition_optimizer(turbo_one_config())
+    assert isinstance(optimizer, ThompsonAcqOptimizer)
 
 
 def test_optimizer_fallback_during_init():
@@ -311,3 +102,17 @@ def test_optimizer_fallback_during_init():
     assert init is not None
     init_idx, num_init = init
     assert init_idx < num_init
+
+
+def test_optimizer_direct_gp_constructor():
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(42)
+    config = turbo_one_config(num_init=3)
+    opt = Optimizer(
+        bounds=bounds,
+        config=config,
+        rng=rng,
+        surrogate=GPSurrogate(),
+        acquisition_optimizer=ThompsonAcqOptimizer(),
+    )
+    assert opt.init_progress == (0, 3)

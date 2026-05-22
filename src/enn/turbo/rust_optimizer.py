@@ -90,6 +90,7 @@ class RustOptimizer:
             dt_gen=t.dt_gen,
             dt_sel=t.dt_sel,
             dt_tell=t.dt_tell,
+            num_candidates=int(t.num_candidates),
         )
 
     @property

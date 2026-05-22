@@ -32,10 +32,6 @@ def _make_bounds(num_dim: int) -> np.ndarray:
 
 
 def _make_optimizer(cfg: ProfileConfig) -> object:
-    from unittest.mock import patch
-
-    import enn.turbo.rust_optimizer as ro
-
     rng = np.random.default_rng(cfg.seed)
     bounds = _make_bounds(cfg.num_dim)
     enn_cfg = ENNSurrogateConfig(
@@ -57,8 +53,7 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
         num_init=1,
         candidates=candidates,
     )
-    with patch.object(ro, "is_rust_supported_config", return_value=False):
-        return create_optimizer(bounds=bounds, config=opt_config, rng=rng)
+    return create_optimizer(bounds=bounds, config=opt_config, rng=rng)
 
 
 def _seed_observations(
@@ -89,6 +84,9 @@ def _time_ask(opt: object, num_arms: int, repeats: int = 3) -> float:
 
 
 def _time_find_center(opt: object, rng: np.random.Generator) -> float:
+    if not hasattr(opt, "_surrogate"):
+        _ = opt.ask(num_arms=1)
+        return 0.0
     x_obs = opt._x_obs.view()
     y_obs = opt._y_obs.view()
     _ = opt._surrogate.fit(x_obs, y_obs, None, num_steps=0, rng=rng)
@@ -98,6 +96,10 @@ def _time_find_center(opt: object, rng: np.random.Generator) -> float:
 
 
 def _time_fit(opt: object, rng: np.random.Generator) -> float:
+    if not hasattr(opt, "_surrogate"):
+        t0 = time.perf_counter()
+        _ = opt.ask(num_arms=1)
+        return time.perf_counter() - t0
     x_obs = opt._x_obs.view()
     y_obs = opt._y_obs.view()
     t0 = time.perf_counter()

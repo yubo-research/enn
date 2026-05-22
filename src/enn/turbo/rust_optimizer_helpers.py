@@ -70,7 +70,11 @@ def _candidate_count_override(config: OptimizerConfig) -> dict[str, Any]:
         n = int(candidates.num_candidates)
         out["num_candidates_factor"] = 1.0
         out["min_candidates"] = n
-        out["max_candidates"] = n
+        if candidates.num_candidates_per_arm is None:
+            out["max_candidates"] = n
+    elif candidates.num_candidates_per_arm is not None:
+        out["num_candidates_factor"] = _DEFAULT_NUM_CANDIDATES_FACTOR
+        out["max_candidates"] = _DEFAULT_MAX_CANDIDATES
     if candidates.num_candidates_per_arm is not None:
         out["num_candidates_per_arm"] = int(candidates.num_candidates_per_arm)
     return out

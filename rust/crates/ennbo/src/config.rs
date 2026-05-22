@@ -81,19 +81,35 @@ impl Default for CandidateConfig {
 
 impl CandidateConfig {
     /// Compute number of candidates based on dimension and arms.
+    ///
+    /// Matches Python `CandidateGenConfig.resolve_num_candidates`: default base
+    /// `min(max_candidates, factor * dim)` when set, optional `max(fixed, per_arm * arms)`,
+    /// no `num_arms` multiplier. `max_candidates` caps the formula base only when
+    /// `num_candidates_per_arm` is set; otherwise exact-fixed mode uses min=max as pool size.
     pub fn num_candidates(&self, num_dim: usize, num_arms: usize) -> usize {
-        let base = (self.num_candidates_factor * num_dim as f64) as usize;
-        let adjusted = base.max(self.min_candidates);
-        let with_arms = adjusted.max(num_arms * 10); // At least 10x the number of arms
-        let with_per_arm = if let Some(m) = self.num_candidates_per_arm {
-            with_arms.max(num_arms * m)
+        let is_exact_fixed = self.num_candidates_factor == 1.0
+            && self.max_candidates == Some(self.min_candidates)
+            && self.num_candidates_per_arm.is_none();
+
+        let mut base = if is_exact_fixed {
+            self.min_candidates
         } else {
-            with_arms
+            let raw = (self.num_candidates_factor * num_dim as f64) as usize;
+            let formula = match self.max_candidates {
+                Some(cap) if self.num_candidates_per_arm.is_some() => raw.min(cap),
+                Some(cap) if (self.num_candidates_factor - 100.0).abs() < f64::EPSILON => {
+                    raw.min(cap)
+                }
+                _ => raw,
+            };
+            formula.max(self.min_candidates)
         };
-        match self.max_candidates {
-            Some(cap) => with_per_arm.min(cap),
-            None => with_per_arm,
+
+        if let Some(m) = self.num_candidates_per_arm {
+            base = base.max(num_arms * m);
         }
+
+        base
     }
 }
 
@@ -386,8 +402,7 @@ mod tests {
         let config = lhd_only_config();
         assert!(matches!(config.surrogate, SurrogateConfig::None));
         let n = config.candidates.num_candidates(10, 1);
-        // With factor=1.0, min=1, but num_arms*10=10 minimum applies
-        assert_eq!(n, 10); // 10 * 1 arms = 10
+        assert_eq!(n, 10);
     }
 
     #[test]
@@ -463,6 +478,49 @@ mod tests {
             result.is_err(),
             "PyO3/override path must reject num_metrics=1 like Python Morbo config"
         );
+    }
+
+    #[test]
+    fn candidate_config_num_candidates_per_arm_scales_with_arms() {
+        let cfg = CandidateConfig {
+            num_candidates_factor: 1.0,
+            min_candidates: 10,
+            max_candidates: None,
+            num_candidates_per_arm: Some(25),
+            candidate_rv: CandidateRV::Uniform,
+        };
+        assert_eq!(cfg.num_candidates(2, 3), 75);
+        assert_eq!(cfg.num_candidates(2, 8), 200);
+    }
+
+    #[test]
+    fn config_overrides_apply_num_candidates_per_arm_to_pool() {
+        let overrides = ConfigOverrides {
+            num_candidates_factor: Some(1.0),
+            min_candidates: Some(10),
+            num_candidates_per_arm: Some(40),
+            ..Default::default()
+        };
+        let applied = overrides.apply_to(turbo_zero_config());
+        assert_eq!(applied.candidates.num_candidates(2, 3), 120);
+        assert_eq!(applied.candidates.num_candidates(2, 8), 320);
+    }
+
+    #[test]
+    fn config_overrides_apply_enn_num_fit_fields() {
+        let overrides = ConfigOverrides {
+            num_fit_samples: Some(7),
+            num_fit_candidates: Some(11),
+            scale_x: Some(true),
+            ..Default::default()
+        };
+        let applied = overrides.apply_to(turbo_enn_config());
+        let SurrogateConfig::ENN(enn) = applied.surrogate else {
+            panic!("expected ENN surrogate");
+        };
+        assert_eq!(enn.num_fit_samples, 7);
+        assert_eq!(enn.num_fit_candidates, 11);
+        assert!(enn.scale_x);
     }
 
     #[test]

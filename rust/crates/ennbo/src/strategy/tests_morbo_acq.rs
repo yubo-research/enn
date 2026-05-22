@@ -1,7 +1,8 @@
 //! Regression tests for Morbo acquisition / incumbent RNG contracts.
 
 use super::{select_with_thompson, select_with_ucb};
-use crate::config::turbo_enn_config;
+use crate::config::{turbo_enn_config, AcquisitionConfig, InitStrategy};
+use approx::relative_eq;
 use crate::error::ENNError;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
 use crate::optimizer::Optimizer;
@@ -131,4 +132,154 @@ fn morbo_ucb_equal_scores_should_vary_with_rng() {
         unique.len() > 1,
         "Morbo UCB should shuffle equal scores with rng (match Python permutation+argpartition)"
     );
+}
+
+#[test]
+fn morbo_pareto_ask_after_multiobjective_tell() {
+    let bounds = array![[-1.0, 1.0], [-1.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(14);
+    let mut cfg = turbo_enn_config();
+    cfg.acquisition = AcquisitionConfig::Pareto;
+    cfg.candidates.min_candidates = 32;
+    cfg.candidates.num_candidates_factor = 1.0;
+    cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
+        num_metrics: 2,
+        alpha: 0.05,
+        length: TRLengthConfig::default(),
+        rescalarize: Rescalarize::OnRestart,
+        noise_aware: false,
+    });
+    let mut opt = Optimizer::new_with_strategy(
+        bounds,
+        cfg,
+        Strategy::hybrid(InitStrategy::LHD, 8),
+        &mut rng,
+    )
+    .unwrap();
+    let y_fit = array![
+        [1.0, 0.5],
+        [0.8, 0.9],
+        [0.2, 0.3],
+        [0.4, 0.7],
+        [0.6, 0.2],
+        [0.3, 0.8],
+        [0.7, 0.4],
+        [0.5, 0.6],
+    ];
+    for i in 0..4 {
+        let x = opt.ask(2, &mut rng).unwrap();
+        let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
+        opt.tell(&x.view(), &y, &mut rng).unwrap();
+    }
+    let x_arms = opt.ask(2, &mut rng).unwrap();
+    assert_eq!(x_arms.nrows(), 2);
+    assert!(opt.trust_region().is_morbo());
+}
+
+#[test]
+fn morbo_on_restart_rescalarize_via_ask_turbo() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(302);
+    let mut cfg = turbo_enn_config();
+    cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
+        num_metrics: 2,
+        alpha: 0.05,
+        length: TRLengthConfig::default(),
+        rescalarize: Rescalarize::OnRestart,
+        noise_aware: false,
+    });
+    let mut opt = Optimizer::new_with_strategy(
+        bounds,
+        cfg,
+        Strategy::hybrid(InitStrategy::LHD, 8),
+        &mut rng,
+    )
+    .unwrap();
+    let y_fit = array![
+        [1.0, 0.5],
+        [0.8, 0.9],
+        [0.2, 0.3],
+        [0.4, 0.7],
+        [0.6, 0.2],
+        [0.3, 0.8],
+        [0.7, 0.4],
+        [0.5, 0.6],
+    ];
+    for i in 0..4 {
+        let x = opt.ask(2, &mut rng).unwrap();
+        let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
+        opt.tell(&x.view(), &y, &mut rng).unwrap();
+    }
+    let w0 = opt
+        .trust_region()
+        .morbo()
+        .expect("morbo tr")
+        .weights()
+        .to_owned();
+    let _ = opt.ask(2, &mut rng).unwrap();
+    let w1 = opt
+        .trust_region()
+        .morbo()
+        .expect("morbo tr")
+        .weights()
+        .to_owned();
+    assert!(relative_eq!(w0, w1, epsilon = 1e-12));
+    opt.trust_region_mut().restart(Some(&mut rng));
+    let w2 = opt
+        .trust_region()
+        .morbo()
+        .expect("morbo tr")
+        .weights()
+        .to_owned();
+    assert!(!relative_eq!(w1, w2, epsilon = 1e-12));
+}
+
+#[test]
+fn morbo_on_propose_rescalarize_via_ask_turbo() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(301);
+    let mut cfg = turbo_enn_config();
+    cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
+        num_metrics: 2,
+        alpha: 0.05,
+        length: TRLengthConfig::default(),
+        rescalarize: Rescalarize::OnPropose,
+        noise_aware: false,
+    });
+    let mut opt = Optimizer::new_with_strategy(
+        bounds,
+        cfg,
+        Strategy::hybrid(InitStrategy::LHD, 8),
+        &mut rng,
+    )
+    .unwrap();
+    let y_fit = array![
+        [1.0, 0.5],
+        [0.8, 0.9],
+        [0.2, 0.3],
+        [0.4, 0.7],
+        [0.6, 0.2],
+        [0.3, 0.8],
+        [0.7, 0.4],
+        [0.5, 0.6],
+    ];
+    for i in 0..4 {
+        let x = opt.ask(2, &mut rng).unwrap();
+        let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
+        opt.tell(&x.view(), &y, &mut rng).unwrap();
+    }
+    let w0 = opt
+        .trust_region()
+        .morbo()
+        .expect("morbo tr")
+        .weights()
+        .to_owned();
+    let _ = opt.ask(2, &mut rng).unwrap();
+    let w1 = opt
+        .trust_region()
+        .morbo()
+        .expect("morbo tr")
+        .weights()
+        .to_owned();
+    assert!(!relative_eq!(w0, w1, epsilon = 1e-12));
 }

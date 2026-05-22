@@ -38,6 +38,21 @@ def test_default_num_candidates_uses_rust_when_available():
     assert isinstance(opt, RustOptimizer)
 
 
+def test_default_num_candidates_telemetry_matches_python_resolve():
+    num_arms = 8
+    config = turbo_zero_config(num_init=4)
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    opt = create_optimizer(bounds=bounds, config=config, rng=np.random.default_rng(44))
+    assert isinstance(opt, RustOptimizer)
+    expected = config.candidates.resolve_num_candidates(num_dim=2, num_arms=num_arms)
+    while opt.init_progress is not None:
+        x = opt.ask(num_arms=num_arms)
+        y = -np.sum((x - 0.5) ** 2, axis=1).reshape(-1, 1)
+        opt.tell(x, y)
+    opt.ask(num_arms=num_arms)
+    assert opt.telemetry().num_candidates == expected
+
+
 def test_rust_optimizer_tell_raises_on_mismatched_xy_rows():
     """RustOptimizer.tell raises ValueError when x and y have mismatched row counts."""
     config = turbo_zero_config(num_init=4)

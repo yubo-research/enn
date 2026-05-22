@@ -35,8 +35,15 @@ def test_init_strategies_build_runtime_strategies():
     rng = np.random.default_rng(0)
     hybrid = HybridInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
     assert isinstance(hybrid, TurboHybridStrategy)
-    lhd_only = LHDOnlyInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
-    assert isinstance(lhd_only, LHDOnlyStrategy)
+    lhd = LHDOnlyStrategy.create(bounds=bounds, rng=rng)
+    assert isinstance(lhd, LHDOnlyStrategy)
+
+
+def test_lhd_only_init_marker_not_python_runtime():
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    rng = np.random.default_rng(0)
+    with pytest.raises(RuntimeError, match="Rust-routing config marker"):
+        LHDOnlyInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
 
 
 def test_validate_optimizer_config_lhd_only_requires_no_surrogate_direct_call():
@@ -88,20 +95,21 @@ def test_turbo_hybrid_fallback_executes_when_init_points_exhausted_mid_batch():
 
 
 def test_optimizer_direct_constructor_builds_strategy_by_default():
-    from enn.turbo.python_fallback.components.no_surrogate import NoSurrogate
-    from enn.turbo.python_fallback.components.random_acq_optimizer import (
-        RandomAcqOptimizer,
+    from enn.turbo.config import turbo_one_config
+    from enn.turbo.python_fallback.components.surrogates import GPSurrogate
+    from enn.turbo.python_fallback.components.thompson_acq_optimizer import (
+        ThompsonAcqOptimizer,
     )
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    cfg = turbo_zero_config(num_init=3)
+    cfg = turbo_one_config(num_init=3)
     opt = Optimizer(
         bounds=bounds,
         config=cfg,
         rng=rng,
-        surrogate=NoSurrogate(),
-        acquisition_optimizer=RandomAcqOptimizer(),
+        surrogate=GPSurrogate(),
+        acquisition_optimizer=ThompsonAcqOptimizer(),
     )
     init = opt.init_progress
     assert init is not None

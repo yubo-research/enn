@@ -15,13 +15,9 @@ from enn.turbo.config import (
     turbo_enn_config,
 )
 
-
-def _separable_unimodal_objective(x: np.ndarray) -> np.ndarray:
-    x1 = x[:, 0]
-    x2 = x[:, 1]
-    y1 = 500_000.0 - 8.0 * (x1 - 120.0) ** 2
-    y2 = 12.5 - 110.0 * (x2 - 0.91) ** 2
-    return np.stack([y1, y2], axis=1)
+from tests.morbo_objectives import (
+    separable_unimodal_objective as _separable_unimodal_objective,
+)
 
 
 def test_morbo_finds_joint_near_optimum_on_separable_unimodal_problem():
@@ -34,23 +30,25 @@ def test_morbo_finds_joint_near_optimum_on_separable_unimodal_problem():
         ),
         trust_region=MorboTRConfig(
             multi_objective=MultiObjectiveConfig(num_metrics=2),
-            noise_aware=True,
         ),
         num_init=8,
         candidates=CandidateGenConfig(num_candidates=64),
         acq_type=AcqType.THOMPSON,
     )
     opt = create_optimizer(bounds=bounds, config=config, rng=rng)
-    num_rounds = 35
     num_arms = 4
+    while opt.init_progress is not None:
+        x = opt.ask(num_arms=num_arms)
+        y = _separable_unimodal_objective(x)
+        opt.tell(x, y)
     best_y = np.array([-np.inf, -np.inf], dtype=float)
-    for _ in range(num_rounds):
+    rounds = 0
+    while rounds < 35:
         x = opt.ask(num_arms=num_arms)
         y = _separable_unimodal_objective(x)
         opt.tell(x, y)
         best_y = np.maximum(best_y, y.max(axis=0))
-
+        rounds += 1
     assert np.all(np.isfinite(best_y))
     assert float(best_y[0]) >= 499_000.0
     assert float(best_y[1]) >= 11.0
-    assert bool((best_y[0] >= 499_000.0) and (best_y[1] >= 11.0))

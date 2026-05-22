@@ -26,6 +26,7 @@ pub struct Telemetry {
     pub dt_gen: f64,
     pub dt_sel: f64,
     pub dt_tell: f64,
+    pub num_candidates: usize,
 }
 
 /// Optimizer state machine.

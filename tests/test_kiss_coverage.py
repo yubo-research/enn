@@ -205,15 +205,9 @@ def test_acquisition_optimizer_protocol():
 
 
 def test_surrogate_lengthscales():
-    from enn.turbo.python_fallback.components.enn_surrogate import ENNSurrogate
     from enn.turbo.python_fallback.components.gp_surrogate import GPSurrogate
-    from enn.turbo.python_fallback.components.no_surrogate import NoSurrogate
-    from enn.turbo.config import ENNSurrogateConfig
 
-    # enn_surrogate, gp_surrogate, no_surrogate all expose lengthscales
-    assert ENNSurrogate(ENNSurrogateConfig()).lengthscales is None
     assert GPSurrogate().lengthscales is None
-    assert NoSurrogate().lengthscales is None
 
 
 def test_incumbent_selector_protocol():
@@ -231,6 +225,31 @@ def test_thompson_acq_optimizer_class():
 
     t = ThompsonAcqOptimizer()
     assert hasattr(t, "select")
+
+
+def test_pareto_and_random_acq_optimizer_select():
+    from enn.turbo.python_fallback.components.pareto_acq_optimizer import (
+        ParetoAcqOptimizer,
+    )
+    from enn.turbo.python_fallback.components.random_acq_optimizer import (
+        RandomAcqOptimizer,
+    )
+
+    rng = np.random.default_rng(0)
+    surrogate = _fit_gp_surrogate_for_kiss(rng)
+    x_cand = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]], dtype=float)
+    assert ParetoAcqOptimizer().select(x_cand, 2, surrogate, rng).shape == (2, 2)
+    assert RandomAcqOptimizer().select(x_cand, 2, surrogate, rng).shape == (2, 2)
+
+
+def _fit_gp_surrogate_for_kiss(rng):
+    from enn.turbo.python_fallback.components.gp_surrogate import GPSurrogate
+
+    surrogate = GPSurrogate()
+    x = np.array([[0.2, 0.3], [0.5, 0.5], [0.7, 0.8]], dtype=float)
+    y = np.array([0.5, 0.7, 0.3], dtype=float)
+    surrogate.fit(x, y, None, num_steps=5, rng=rng)
+    return surrogate
 
 
 # ---------------------------------------------------------------------------

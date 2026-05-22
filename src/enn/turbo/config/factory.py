@@ -61,6 +61,7 @@ def turbo_one_config(
 def turbo_zero_config(
     *,
     num_candidates: int | None = None,
+    num_candidates_per_arm: int | None = None,
     num_init: int | None = None,
     trailing_obs: int | None = None,
     trust_region: tr.TrustRegionConfig | None = None,
@@ -68,7 +69,11 @@ def turbo_zero_config(
 ) -> OptimizerConfig:
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
-        candidates=_make_candidate_gen_config(candidate_rv, num_candidates),
+        candidates=_make_candidate_gen_config(
+            candidate_rv,
+            num_candidates,
+            num_candidates_per_arm=num_candidates_per_arm,
+        ),
         init=InitConfig(num_init=num_init),
         surrogate=sur.NoSurrogateConfig(),
         acquisition=acq.RandomAcquisitionConfig(),

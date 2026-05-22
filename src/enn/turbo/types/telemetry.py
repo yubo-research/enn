@@ -9,3 +9,4 @@ class Telemetry:
     dt_sel: float
     dt_gen: float = 0.0
     dt_tell: float = 0.0
+    num_candidates: int = 0

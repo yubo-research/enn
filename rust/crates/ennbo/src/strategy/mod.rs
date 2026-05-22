@@ -194,6 +194,25 @@ fn tell_common(
         }
     }
 
+    if optimizer.trust_region().is_morbo() {
+        let num_obs = y_all.nrows();
+        if num_obs > 0 {
+            let num_metrics = optimizer.trust_region().num_metrics();
+            let mut y_inc = ndarray::Array1::from_elem(num_metrics, f64::NEG_INFINITY);
+            for m in 0..num_metrics {
+                for r in 0..num_obs {
+                    let v = y_all[[r, m]];
+                    if v > y_inc[m] {
+                        y_inc[m] = v;
+                    }
+                }
+            }
+            optimizer
+                .trust_region_mut()
+                .tell_update(&y_all.view(), &y_inc.view(), num_obs)?;
+        }
+    }
+
     optimizer.update_incumbent(rng)?;
     optimizer.trim_trailing_obs()?;
 
@@ -222,6 +241,19 @@ fn ask_turbo(
     optimizer.trust_region_mut().resample_on_propose(rng);
     optimizer.trust_region_mut().set_num_arms(num_arms);
 
+    if optimizer.trust_region().is_morbo() {
+        let y_all = optimizer.y_obs().map(|y| y.to_owned());
+        let y_inc = optimizer.incumbent_y_scalar().map(|y| y.to_owned());
+        if let (Some(y_all), Some(y_inc)) = (y_all, y_inc) {
+            let num_obs = y_all.nrows();
+            if num_obs > 0 {
+                optimizer
+                    .trust_region_mut()
+                    .tell_update(&y_all.view(), &y_inc.view(), num_obs)?;
+            }
+        }
+    }
+
     // Fetch incumbent center and lengthscales once (B5: was duplicated)
     let default_center = Array1::from_elem(optimizer.num_dim(), 0.5);
     let x_center = optimizer
@@ -239,6 +271,7 @@ fn ask_turbo(
     let num_dim = optimizer.num_dim();
     let config = optimizer.config().candidates.clone();
     let num_candidates = config.num_candidates(num_dim, num_arms);
+    telemetry.num_candidates = num_candidates;
 
     let x_cand_unit = generate_candidates(
         || (lower_1d.clone(), upper_1d.clone()),

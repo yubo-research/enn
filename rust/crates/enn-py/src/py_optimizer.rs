@@ -165,6 +165,7 @@ impl PyOptimizer {
             dt_gen: t.dt_gen,
             dt_sel: t.dt_sel,
             dt_tell: t.dt_tell,
+            num_candidates: t.num_candidates,
         }
     }
 
@@ -222,6 +223,8 @@ pub struct PyTelemetry {
     pub dt_sel: f64,
     #[pyo3(get)]
     pub dt_tell: f64,
+    #[pyo3(get)]
+    pub num_candidates: usize,
 }
 
 /// Create TuRBO-ENN optimizer

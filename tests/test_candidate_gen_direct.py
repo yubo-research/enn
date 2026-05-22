@@ -29,3 +29,18 @@ def test_const_num_candidates():
     assert cfg.resolve_num_candidates(num_dim=3, num_arms=7) == 123
     with pytest.raises(ValueError, match="num_candidates must be > 0"):
         CandidateGenConfig(num_candidates=0)
+
+
+def test_num_candidates_per_arm_only():
+    cfg = CandidateGenConfig(num_candidates_per_arm=50)
+    assert cfg.resolve_num_candidates(num_dim=3, num_arms=4) == 300
+
+
+def test_fixed_and_per_arm_uses_max():
+    cfg = CandidateGenConfig(num_candidates=100, num_candidates_per_arm=50)
+    assert cfg.resolve_num_candidates(num_dim=3, num_arms=4) == 200
+
+
+def test_candidate_gen_config_rejects_callable_num_candidates():
+    with pytest.raises(TypeError):
+        CandidateGenConfig(num_candidates=const_num_candidates(5))  # type: ignore[arg-type]

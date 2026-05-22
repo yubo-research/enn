@@ -164,4 +164,44 @@ mod tests {
         assert_eq!(tr.num_metrics(), 2);
         tr.resample_on_propose(&mut rng);
     }
+
+    #[test]
+    fn morbo_on_propose_rescalarize_changes_weights_each_propose() {
+        let mut rng = StdRng::seed_from_u64(11);
+        let cfg = TrustRegionConfig::Morbo(MorboTRSettings {
+            num_metrics: 2,
+            alpha: 0.05,
+            length: TRLengthConfig::default(),
+            rescalarize: Rescalarize::OnPropose,
+            noise_aware: false,
+        });
+        let mut tr = TrustRegionState::from_config(2, &cfg, &mut rng).unwrap();
+        let w0 = tr.morbo_mut().expect("morbo").weights().to_owned();
+        tr.resample_on_propose(&mut rng);
+        let w1 = tr.morbo_mut().expect("morbo").weights().to_owned();
+        tr.resample_on_propose(&mut rng);
+        let w2 = tr.morbo_mut().expect("morbo").weights().to_owned();
+        assert!(!approx::relative_eq!(w0, w1, epsilon = 1e-12));
+        assert!(!approx::relative_eq!(w1, w2, epsilon = 1e-12));
+    }
+
+    #[test]
+    fn morbo_on_restart_rescalarize_unchanged_until_restart() {
+        let mut rng = StdRng::seed_from_u64(12);
+        let cfg = TrustRegionConfig::Morbo(MorboTRSettings {
+            num_metrics: 2,
+            alpha: 0.05,
+            length: TRLengthConfig::default(),
+            rescalarize: Rescalarize::OnRestart,
+            noise_aware: false,
+        });
+        let mut tr = TrustRegionState::from_config(2, &cfg, &mut rng).unwrap();
+        let w0 = tr.morbo_mut().expect("morbo").weights().to_owned();
+        tr.resample_on_propose(&mut rng);
+        let w1 = tr.morbo_mut().expect("morbo").weights().to_owned();
+        assert!(approx::relative_eq!(w0, w1, epsilon = 1e-12));
+        tr.restart(Some(&mut rng));
+        let w2 = tr.morbo_mut().expect("morbo").weights().to_owned();
+        assert!(!approx::relative_eq!(w1, w2, epsilon = 1e-12));
+    }
 }

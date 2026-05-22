@@ -13,7 +13,9 @@ class _FakeInner:
         self._tr_length = 0.33
 
     def telemetry(self):
-        return types.SimpleNamespace(dt_fit=1.0, dt_gen=2.0, dt_sel=3.0, dt_tell=4.0)
+        return types.SimpleNamespace(
+            dt_fit=1.0, dt_gen=2.0, dt_sel=3.0, dt_tell=4.0, num_candidates=64
+        )
 
     def init_progress(self):
         return (1, 4)
@@ -62,7 +64,19 @@ def test_rust_optimizer_wrapper_methods():
     assert opt.tr_length == 0.33
     assert opt.init_progress == (1, 4)
     tele = opt.telemetry()
-    assert (tele.dt_fit, tele.dt_gen, tele.dt_sel, tele.dt_tell) == (1.0, 2.0, 3.0, 4.0)
+    assert (
+        tele.dt_fit,
+        tele.dt_gen,
+        tele.dt_sel,
+        tele.dt_tell,
+        tele.num_candidates,
+    ) == (
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        64,
+    )
 
     y = np.array([1.0, 2.0, 3.0], dtype=float)
     y_out = opt.tell(x, y)

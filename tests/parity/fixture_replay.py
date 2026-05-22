@@ -10,8 +10,11 @@ import numpy as np
 from enn import create_optimizer
 from enn.turbo.config import (
     AcqType,
+    CandidateGenConfig,
     ENNFitConfig,
     ENNSurrogateConfig,
+    MorboTRConfig,
+    MultiObjectiveConfig,
     TurboTRConfig,
     lhd_only_config,
     turbo_enn_config,
@@ -19,7 +22,10 @@ from enn.turbo.config import (
 )
 from enn.turbo.config.optimizer_config import OptimizerConfig
 
-FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "python_optimizer"
+PYTHON_OPTIMIZER_FIXTURES_DIR = (
+    Path(__file__).resolve().parent.parent / "fixtures" / "python_optimizer"
+)
+MORBO_FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "morbo"
 
 EXACT_RTOL = 1e-14
 EXACT_ATOL = 1e-14
@@ -56,6 +62,19 @@ _PREFIX_CONFIG: dict[str, OptimizerConfig] = {
         num_init=2,
     ),
     "lhd_only": lhd_only_config(num_init=3),
+    "morbo_enn_separable_unimodal": turbo_enn_config(
+        acq_type=AcqType.THOMPSON,
+        enn=ENNSurrogateConfig(
+            k=4,
+            fit=ENNFitConfig(num_fit_samples=4, num_fit_candidates=8),
+        ),
+        trust_region=MorboTRConfig(
+            multi_objective=MultiObjectiveConfig(num_metrics=2),
+            noise_aware=True,
+        ),
+        num_init=8,
+        candidates=CandidateGenConfig(num_candidates=64),
+    ),
 }
 
 
@@ -67,8 +86,15 @@ def _config_for_fixture(name: str) -> OptimizerConfig:
         raise ValueError(f"unknown fixture name {name!r}") from exc
 
 
+def _fixture_dir_for_name(name: str) -> Path:
+    prefix = fixture_name_prefix(name)
+    if prefix.startswith("morbo_"):
+        return MORBO_FIXTURES_DIR
+    return PYTHON_OPTIMIZER_FIXTURES_DIR
+
+
 def load_fixture(name: str) -> dict[str, Any]:
-    path = FIXTURES_DIR / f"{name}.json"
+    path = _fixture_dir_for_name(name) / f"{name}.json"
     with open(path) as f:
         return json.load(f)
 
@@ -98,8 +124,16 @@ def assert_fixture_contracts(data: dict[str, Any], config: OptimizerConfig) -> N
         )
 
 
+def list_python_optimizer_fixture_names() -> list[str]:
+    return sorted(p.stem for p in PYTHON_OPTIMIZER_FIXTURES_DIR.glob("*.json"))
+
+
+def list_morbo_fixture_names() -> list[str]:
+    return sorted(p.stem for p in MORBO_FIXTURES_DIR.glob("*.json"))
+
+
 def list_fixture_names() -> list[str]:
-    return sorted(p.stem for p in FIXTURES_DIR.glob("*.json"))
+    return list_python_optimizer_fixture_names() + list_morbo_fixture_names()
 
 
 def fixture_name_prefix(name: str) -> str:

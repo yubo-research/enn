@@ -19,7 +19,8 @@ class LHDOnlyInit(InitStrategy):
         rng: Generator,
         num_init: int | None,
     ) -> Any:
-        from ...python_fallback.strategies.lhd_only_strategy import LHDOnlyStrategy
-
-        del num_init
-        return LHDOnlyStrategy.create(bounds=bounds, rng=rng)
+        del bounds, rng, num_init
+        raise RuntimeError(
+            "LHDOnlyInit is a Rust-routing config marker for lhd_only_config; "
+            "use create_optimizer, not python_fallback runtime strategies"
+        )

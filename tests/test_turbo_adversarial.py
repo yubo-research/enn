@@ -79,6 +79,10 @@ class _NoSurrogateWithLengthscales(NoSurrogate):
         super().__init__()
         self._lengthscales = np.asarray(lengthscales, dtype=float)
 
+    @property
+    def lengthscales(self) -> np.ndarray:
+        return self._lengthscales
+
     def fit(
         self,
         x_obs: np.ndarray,

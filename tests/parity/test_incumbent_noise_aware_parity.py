@@ -6,12 +6,7 @@ import numpy as np
 import pytest
 
 from enn.turbo.python_fallback.components.posterior_result import PosteriorResult
-from enn.turbo.config import (
-    ENNFitConfig,
-    ENNSurrogateConfig,
-    TurboTRConfig,
-    turbo_enn_config,
-)
+from enn.turbo.config import TurboTRConfig, turbo_one_config
 
 try:
     from enn._rust import Optimizer  # noqa: F401
@@ -30,8 +25,7 @@ def test_fallback_noise_aware_prefers_mu_over_observed_y():
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    config = turbo_enn_config(
-        enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=5)),
+    config = turbo_one_config(
         trust_region=TurboTRConfig(noise_aware=True),
         num_init=2,
     )
@@ -59,6 +53,7 @@ def test_fallback_noise_aware_prefers_mu_over_observed_y():
 
 
 def test_rust_noise_aware_sets_incumbent_after_tell():
+    from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig, turbo_enn_config
     from .optimizer_parity_helpers import get_rust_optimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
