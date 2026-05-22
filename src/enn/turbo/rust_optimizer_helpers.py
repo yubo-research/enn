@@ -152,9 +152,6 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
             overrides["num_fit_candidates"] = int(surrogate.num_fit_candidates)
         if surrogate.scale_x:
             overrides["scale_x"] = True
-    trailing_obs = getattr(config, "trailing_obs", None)
-    if trailing_obs is not None:
-        overrides["trailing_obs"] = int(trailing_obs)
     return overrides if overrides else None
 
 

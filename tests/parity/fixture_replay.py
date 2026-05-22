@@ -53,7 +53,6 @@ _PREFIX_CONFIG: dict[str, OptimizerConfig] = {
         acq_type=AcqType.UCB,
         enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=10)),
         num_init=2,
-        trailing_obs=12,
     ),
     "turbo_enn_noise_aware": turbo_enn_config(
         acq_type=AcqType.UCB,

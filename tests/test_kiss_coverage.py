@@ -100,11 +100,11 @@ def test_enn_surrogate_config_properties():
     assert cfg.num_fit_candidates == 30
 
 
-def test_observation_history_config_trailing_obs():
+def test_observation_history_config_empty():
     from enn.turbo.config.observation_history_config import ObservationHistoryConfig
 
-    cfg = ObservationHistoryConfig(trailing_obs=100)
-    assert cfg.trailing_obs == 100
+    cfg = ObservationHistoryConfig()
+    assert cfg == ObservationHistoryConfig()
 
 
 def test_trust_region_config_protocol():
@@ -137,10 +137,9 @@ def test_optimizer_config_properties():
     mo = MultiObjectiveConfig(num_metrics=3, alpha=0.05)
     cfg2 = OptimizerConfig(trust_region=MorboTRConfig(multi_objective=mo))
     assert cfg2.num_metrics == 3
-    # candidate_rv / raasp_driver / trailing_obs
+    # candidate_rv / raasp_driver
     assert cfg.candidate_rv is not None
     assert cfg.raasp_driver is not None
-    assert cfg.trailing_obs is None
 
 
 # ---------------------------------------------------------------------------

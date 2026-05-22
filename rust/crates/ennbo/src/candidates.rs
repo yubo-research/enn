@@ -138,45 +138,41 @@ fn generate_raasp<R: Rng + ?Sized>(
     let num_dim = x_center.len();
     let num_pert = num_pert.max(1);
 
-    let lengthscales = lengthscales
-        .map(|ls| ls.to_owned())
-        .unwrap_or_else(|| Array1::ones(num_dim));
-
-    // Normalize lengthscales
-    let ls_sum: f64 = lengthscales.iter().sum();
-    let probs: Array1<f64> = if ls_sum > 0.0 {
-        lengthscales.mapv(|v| v / ls_sum)
-    } else {
-        Array1::from_elem(num_dim, 1.0 / num_dim as f64)
+    let probs: Array1<f64> = match lengthscales {
+        Some(ls) => {
+            let ls_sum: f64 = ls.sum();
+            if ls_sum > 0.0 {
+                ls.mapv(|v| v / ls_sum)
+            } else {
+                Array1::from_elem(num_dim, 1.0 / num_dim as f64)
+            }
+        }
+        None => Array1::from_elem(num_dim, 1.0 / num_dim as f64),
     };
 
+    let mut cdf = Array1::zeros(num_dim);
+    let mut c = 0.0;
+    for j in 0..num_dim {
+        c += probs[j];
+        cdf[j] = c;
+    }
+
     let mut candidates = Array2::zeros((num_candidates, num_dim));
-
     for i in 0..num_candidates {
-        // Start from center
-        let mut candidate: Vec<f64> = x_center.iter().copied().collect();
-
-        // Perturb num_pert dimensions
+        for j in 0..num_dim {
+            candidates[[i, j]] = x_center[j];
+        }
         for _ in 0..num_pert {
-            // Select dimension by probability
             let r: f64 = rng.gen();
-            let mut cumsum = 0.0;
-            let mut dim_to_perturb = 0;
-            for (j, &p) in probs.iter().enumerate() {
-                cumsum += p;
-                if r <= cumsum {
+            let mut dim_to_perturb = num_dim - 1;
+            for (j, &cval) in cdf.iter().enumerate() {
+                if r <= cval {
                     dim_to_perturb = j;
                     break;
                 }
             }
-
-            // Perturb selected dimension within bounds
             let dist = Uniform::new(lower[dim_to_perturb], upper[dim_to_perturb]);
-            candidate[dim_to_perturb] = rng.sample(dist);
-        }
-
-        for j in 0..num_dim {
-            candidates[[i, j]] = candidate[j];
+            candidates[[i, dim_to_perturb]] = rng.sample(dist);
         }
     }
 

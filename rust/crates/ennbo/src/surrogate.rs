@@ -6,6 +6,7 @@ use rand::SeedableRng;
 
 use crate::error::ENNError;
 use crate::fit::enn_fit;
+use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::ENNParams;
@@ -25,6 +26,19 @@ pub trait Surrogate: Send + Sync {
         yvar: Option<&ArrayView2<f64>>,
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError>;
+
+    fn fit_append(
+        &mut self,
+        x_new: &ArrayView2<f64>,
+        y_new: &ArrayView2<f64>,
+        yvar_new: Option<&ArrayView2<f64>>,
+        rng: &mut dyn RngCore,
+    ) -> Result<(), ENNError> {
+        let _ = (x_new, y_new, yvar_new, rng);
+        Err(ENNError::InvalidParameter(
+            "fit_append not supported for this surrogate".to_string(),
+        ))
+    }
 
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError>;
 
@@ -67,6 +81,7 @@ pub struct ENNSurrogate {
     config: ENNSurrogateConfig,
     model: Option<EpistemicNearestNeighbors>,
     params: Option<ENNParams>,
+    fitter: Option<ENNFitter>,
 }
 
 impl ENNSurrogate {
@@ -75,6 +90,7 @@ impl ENNSurrogate {
             config,
             model: None,
             params: None,
+            fitter: None,
         }
     }
 
@@ -138,19 +154,74 @@ impl ENNSurrogate {
         let yvar_add = yvar.map(|v| v.slice(s![n_old.., ..]));
 
         model.add(&x_add, &y_add, yvar_add.as_ref())?;
-
-        let params = enn_fit(
-            model,
-            self.config.k,
-            self.config.num_fit_candidates,
-            self.config.num_fit_samples,
-            rng,
-            self.params.as_ref(),
-            self.config.infer_aleatoric_variance,
-        )?;
-
-        self.params = Some(params);
+        if let Some(fitter) = self.fitter.as_mut() {
+            fitter.update_y(&y_add);
+        }
+        self.run_fitter(rng)?;
         Ok(true)
+    }
+
+    fn run_fitter(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
+        let model = self
+            .model
+            .as_ref()
+            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
+        let num_metrics = model.train_y().ncols();
+        if self.fitter.is_none() {
+            let mut fitter = ENNFitter::new(
+                self.config.k,
+                self.config.num_fit_samples,
+                self.config.infer_aleatoric_variance,
+                num_metrics,
+            );
+            fitter.reset_y_stats(&model.train_y());
+            if let Some(p) = self.params {
+                fitter.set_params(p);
+            }
+            self.fitter = Some(fitter);
+        }
+        let fitter = self.fitter.as_mut().expect("fitter");
+        if let Some(p) = fitter.maybe_fit(model, rng, None)? {
+            self.params = Some(p);
+        }
+        Ok(())
+    }
+
+    fn fit_append_internal(
+        &mut self,
+        x_new: &ArrayView2<f64>,
+        y_new: &ArrayView2<f64>,
+        yvar_new: Option<&ArrayView2<f64>>,
+        rng: &mut rand::rngs::StdRng,
+    ) -> Result<(), ENNError> {
+        if self.model.is_some() {
+            let model = self.model.as_mut().expect("model");
+            model.add(x_new, y_new, yvar_new)?;
+            if let Some(fitter) = self.fitter.as_mut() {
+                fitter.update_y(y_new);
+            }
+            self.run_fitter(rng)?;
+            return Ok(());
+        }
+        let model = EpistemicNearestNeighbors::new(
+            x_new.to_owned(),
+            y_new.to_owned(),
+            yvar_new.map(|v| v.to_owned()),
+            self.config.scale_x,
+            self.config.index_driver,
+        )?;
+        let num_metrics = y_new.ncols();
+        let mut fitter = ENNFitter::new(
+            self.config.k,
+            self.config.num_fit_samples,
+            self.config.infer_aleatoric_variance,
+            num_metrics,
+        );
+        fitter.reset_y_stats(y_new);
+        self.model = Some(model);
+        self.fitter = Some(fitter);
+        self.run_fitter(rng)?;
+        Ok(())
     }
 }
 
@@ -191,8 +262,33 @@ impl Surrogate for ENNSurrogate {
 
         self.model = Some(model);
         self.params = Some(params);
+        let num_metrics = y.ncols();
+        let mut fitter = ENNFitter::new(
+            self.config.k,
+            self.config.num_fit_samples,
+            self.config.infer_aleatoric_variance,
+            num_metrics,
+        );
+        fitter.reset_y_stats(y);
+        if let Some(p) = self.params {
+            fitter.set_params(p);
+        }
+        self.fitter = Some(fitter);
 
         Ok(())
+    }
+
+    fn fit_append(
+        &mut self,
+        x_new: &ArrayView2<f64>,
+        y_new: &ArrayView2<f64>,
+        yvar_new: Option<&ArrayView2<f64>>,
+        rng: &mut dyn RngCore,
+    ) -> Result<(), ENNError> {
+        let mut seed_bytes = [0u8; 32];
+        rng.fill_bytes(&mut seed_bytes);
+        let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
+        self.fit_append_internal(x_new, y_new, yvar_new, &mut local_rng)
     }
 
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {

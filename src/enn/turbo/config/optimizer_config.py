@@ -61,7 +61,3 @@ class OptimizerConfig:
     @property
     def num_candidates(self):
         return self.candidates.num_candidates
-
-    @property
-    def trailing_obs(self) -> int | None:
-        return self.observation_history.trailing_obs

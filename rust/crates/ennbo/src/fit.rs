@@ -1,7 +1,7 @@
 //! Parameter fitting for ENN models via subsample log-likelihood.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
-use rand::seq::SliceRandom;
+use rand::seq::index::sample;
 use rand::Rng;
 
 use crate::error::ENNError;
@@ -119,14 +119,10 @@ pub fn subsample_loglik<R: Rng>(
 
     let p_actual = p.min(n);
 
-    // Sample indices
     let indices: Vec<usize> = if p_actual == n {
         (0..n).collect()
     } else {
-        let mut idx: Vec<usize> = (0..n).collect();
-        idx.shuffle(rng);
-        idx.truncate(p_actual);
-        idx
+        sample(rng, n, p_actual).into_iter().collect()
     };
 
     // Select subsampled data
@@ -230,35 +226,24 @@ pub fn enn_fit<R: Rng>(
     let log_min = -3.0;
     let log_max = 3.0;
 
-    // Generate candidate epistemic variance scales
-    let epi_var_scale_log_values: Vec<f64> = (0..num_fit_candidates)
-        .map(|_| rng.gen_range(log_min..=log_max))
-        .collect();
-    let epi_var_scale_values: Vec<f64> = epi_var_scale_log_values
-        .iter()
-        .map(|&v| 10f64.powf(v))
+    let epi_var_scale_values: Vec<f64> = (0..num_fit_candidates)
+        .map(|_| 10f64.powf(rng.gen_range(log_min..=log_max)))
         .collect();
 
-    // Generate candidate aleatoric variance scales
     let ale_homoscedastic_values: Vec<f64> = if infer_aleatoric_variance_scale {
         (0..num_fit_candidates)
-            .map(|_| {
-                let log_val = rng.gen_range(log_min..=log_max);
-                10f64.powf(log_val)
-            })
+            .map(|_| 10f64.powf(rng.gen_range(log_min..=log_max)))
             .collect()
     } else {
         vec![0.0; num_fit_candidates]
     };
 
-    // Build parameter candidates
     let mut paramss: Vec<ENNParams> = epi_var_scale_values
         .iter()
         .zip(ale_homoscedastic_values.iter())
         .filter_map(|(&epi_val, &ale_val)| ENNParams::new(k, epi_val, ale_val).ok())
         .collect();
 
-    // Add warm-start parameters if provided
     if let Some(warm) = params_warm_start {
         let warm_params = ENNParams::new(
             k,
@@ -269,20 +254,18 @@ pub fn enn_fit<R: Rng>(
                 0.0
             },
         )
-        .map_err(|e| ENNError::InvalidParameter(format!("Invalid warm-start params: {}", e)))?;
+        .map_err(|e| ENNError::InvalidParameter(format!("Invalid warm-start params: {e}")))?;
         paramss.push(warm_params);
     }
 
     if paramss.is_empty() {
         return ENNParams::new(k, 1.0, 0.0).map_err(|e| {
-            ENNError::InvalidParameter(format!("Failed to create default params: {}", e))
+            ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
         });
     }
 
-    // Compute y_std for standardization
     let y_std = train_y.std_axis(Axis(0), 0.0);
 
-    // Compute log-likelihoods
     let logliks = subsample_loglik(
         model,
         &train_x,
@@ -297,7 +280,6 @@ pub fn enn_fit<R: Rng>(
         return Ok(paramss[0]);
     }
 
-    // Find best parameters
     let best_idx = logliks
         .iter()
         .enumerate()

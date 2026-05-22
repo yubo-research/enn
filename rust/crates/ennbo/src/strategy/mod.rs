@@ -169,7 +169,7 @@ fn ask_init_hybrid(
     ask_init(state, optimizer, num_arms, rng)
 }
 
-/// Common tell logic: add observations, fit surrogate, update incumbent, trim.
+/// Common tell logic: add observations, fit surrogate, update incumbent.
 fn tell_common(
     optimizer: &mut Optimizer,
     x: &ArrayView2<f64>,
@@ -177,44 +177,42 @@ fn tell_common(
     telemetry: Option<&mut Telemetry>,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
-    optimizer.add_observations(x, y)?;
-
-    let x_all = optimizer
-        .x_obs()
-        .ok_or_else(|| ENNError::InvalidParameter("Missing x observations".to_string()))?;
-    let y_all = optimizer
-        .y_obs()
-        .ok_or_else(|| ENNError::InvalidParameter("Missing y observations".to_string()))?;
+    let delta = optimizer.add_observations(x, y)?;
 
     if let Some(surrogate) = optimizer.surrogate_mut() {
         let start = std::time::Instant::now();
-        surrogate.fit(&x_all.view(), &y_all.view(), None, rng)?;
+        surrogate.fit_append(
+            &delta.x_new_view(),
+            &delta.y_new_view(),
+            None,
+            rng,
+        )?;
         if let Some(tel) = telemetry {
             tel.dt_fit = start.elapsed().as_secs_f64();
         }
     }
 
-    if optimizer.trust_region().is_morbo() {
-        let num_obs = y_all.nrows();
-        if num_obs > 0 {
-            let num_metrics = optimizer.trust_region().num_metrics();
-            let mut y_inc = ndarray::Array1::from_elem(num_metrics, f64::NEG_INFINITY);
-            for m in 0..num_metrics {
-                for r in 0..num_obs {
-                    let v = y_all[[r, m]];
-                    if v > y_inc[m] {
-                        y_inc[m] = v;
-                    }
-                }
-            }
-            optimizer
-                .trust_region_mut()
-                .tell_update(&y_all.view(), &y_inc.view(), num_obs)?;
-        }
+    if optimizer.trust_region().is_morbo() && delta.new_n > delta.old_n {
+        optimizer
+            .trust_region_mut()
+            .morbo_update_ranges_only(&delta.y_new_view())?;
     }
 
     optimizer.update_incumbent(rng)?;
-    optimizer.trim_trailing_obs()?;
+
+    if optimizer.trust_region().is_morbo() {
+        let num_obs = delta.new_n;
+        if num_obs > 0 {
+            let y_inc = optimizer
+                .incumbent_y_scalar()
+                .ok_or_else(|| ENNError::InvalidParameter("Missing incumbent y".to_string()))?
+                .to_owned();
+            optimizer.trust_region_mut().morbo_update_incumbent_only(
+                &y_inc.view(),
+                num_obs,
+            )?;
+        }
+    }
 
     Ok(())
 }
@@ -242,15 +240,11 @@ fn ask_turbo(
     optimizer.trust_region_mut().set_num_arms(num_arms);
 
     if optimizer.trust_region().is_morbo() {
-        let y_all = optimizer.y_obs().map(|y| y.to_owned());
-        let y_inc = optimizer.incumbent_y_scalar().map(|y| y.to_owned());
-        if let (Some(y_all), Some(y_inc)) = (y_all, y_inc) {
-            let num_obs = y_all.nrows();
-            if num_obs > 0 {
-                optimizer
-                    .trust_region_mut()
-                    .tell_update(&y_all.view(), &y_inc.view(), num_obs)?;
-            }
+        let num_obs = optimizer.obs_count();
+        if num_obs > 0 {
+            optimizer
+                .trust_region_mut()
+                .morbo_rescalarize_incumbent(num_obs)?;
         }
     }
 
@@ -356,9 +350,11 @@ fn tell_turbo(
         .ok_or_else(|| ENNError::InvalidParameter("Missing incumbent y".to_string()))?
         .to_owned();
     optimizer.trust_region_mut().set_num_arms(x.nrows());
-    optimizer
-        .trust_region_mut()
-        .tell_update(&y_all.view(), &y_incumbent.view(), num_obs)?;
+    if !optimizer.trust_region().is_morbo() {
+        optimizer
+            .trust_region_mut()
+            .tell_update(&y_all.view(), &y_incumbent.view(), num_obs)?;
+    }
     if optimizer.trust_region().needs_restart() {
         optimizer.trust_region_mut().restart(Some(rng));
         optimizer.increment_restart_generation();

@@ -88,6 +88,7 @@ pub struct EpistemicNearestNeighbors {
     x_sum: Array1<f64>,
     x_sumsq: Array1<f64>,
     index_stale: Mutex<bool>,
+    index_synced_obs: Mutex<usize>,
 }
 
 impl EpistemicNearestNeighbors {
@@ -168,30 +169,58 @@ impl EpistemicNearestNeighbors {
             x_sum,
             x_sumsq,
             index_stale: Mutex::new(false),
+            index_synced_obs: Mutex::new(num_obs),
         })
     }
 
     pub(crate) fn ensure_index_sync(&self) -> Result<(), ENNError> {
-        let mut stale = self
-            .index_stale
-            .lock()
-            .expect("index_stale mutex poisoned");
-        if !*stale {
+        if self.scale_x {
+            let mut stale = self
+                .index_stale
+                .lock()
+                .expect("index_stale mutex poisoned");
+            if !*stale {
+                return Ok(());
+            }
+            let train_x_scaled =
+                (&self.train_x_rows.view() / &self.x_scale.view().insert_axis(Axis(0))).to_owned();
+            self.index
+                .rebuild_from_scaled(train_x_scaled, self.x_scale.clone())?;
+            *stale = false;
+            *self
+                .index_synced_obs
+                .lock()
+                .expect("index_synced_obs mutex poisoned") = self.num_obs;
             return Ok(());
         }
-        let train_x_scaled = if self.scale_x {
-            (&self.train_x_rows.view() / &self.x_scale.view().insert_axis(Axis(0))).to_owned()
-        } else {
-            self.train_x_rows.view().to_owned()
-        };
-        self.index
-            .rebuild_from_scaled(train_x_scaled, self.x_scale.clone())?;
-        *stale = false;
+        let mut synced = self
+            .index_synced_obs
+            .lock()
+            .expect("index_synced_obs mutex poisoned");
+        if *synced >= self.num_obs {
+            return Ok(());
+        }
+        let train_view = self.train_x_rows.view();
+        let pending = train_view.slice(ndarray::s![*synced.., ..]);
+        if pending.nrows() > 0 {
+            self.index
+                .add(&pending)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        }
+        *synced = self.num_obs;
         Ok(())
     }
 
     pub fn sync_index(&self) -> Result<(), ENNError> {
         self.ensure_index_sync()
+    }
+
+    /// Whether the FAISS index is marked stale (full rebuild required on next sync).
+    pub fn is_index_stale(&self) -> bool {
+        *self
+            .index_stale
+            .lock()
+            .expect("index_stale mutex poisoned")
     }
 
     /// Add new observations to the model.
@@ -255,11 +284,11 @@ impl EpistemicNearestNeighbors {
             if self.scale_x {
                 accumulate_columns(&mut self.x_sum, &mut self.x_sumsq, x.view());
                 self.x_scale = scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
+                *self
+                    .index_stale
+                    .lock()
+                    .expect("index_stale mutex poisoned") = true;
             }
-            *self
-                .index_stale
-                .lock()
-                .expect("index_stale mutex poisoned") = true;
 
             self.num_obs = self.train_x_rows.nrows();
         }

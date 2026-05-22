@@ -38,7 +38,6 @@ fn apply_scalar_overrides(
     overrides.length_init = optional_f64(dict, "length_init")?;
     overrides.length_min = optional_f64(dict, "length_min")?;
     overrides.length_max = optional_f64(dict, "length_max")?;
-    overrides.trailing_obs = optional_usize(dict, "trailing_obs")?;
     overrides.num_fit_samples = optional_usize(dict, "num_fit_samples")?;
     overrides.num_fit_candidates = optional_usize(dict, "num_fit_candidates")?;
     overrides.noise_aware = optional_bool(dict, "noise_aware")?;

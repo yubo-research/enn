@@ -292,28 +292,28 @@ def test_update_incumbent_uses_tracker_not_surrogate_candidate_api():
     assert opt._incumbent_idx is not None
 
 
-def test_optimizer_with_trailing_obs():
+def test_optimizer_keeps_all_observations():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(42)
     cases = [
-        (turbo_one_config(trailing_obs=5), _make_fallback_optimizer),
-        (turbo_enn_config(trailing_obs=5), _make_rust_optimizer),
+        (turbo_one_config(), _make_fallback_optimizer),
+        (turbo_enn_config(), _make_rust_optimizer),
     ]
     for cfg, make in cases:
         opt = make(bounds=bounds, config=cfg, rng=rng)
         for _ in range(10):
             x = opt.ask(num_arms=2)
             opt.tell(x, -np.sum(x**2, axis=1))
-        assert opt._x_obs.view().shape[0] == 5 and opt._y_obs.view().shape[0] == 5
+        assert opt._x_obs.view().shape[0] == 20 and opt._y_obs.view().shape[0] == 20
         assert opt.ask(num_arms=2).shape == (2, 2)
 
 
-def test_trailing_obs_includes_incumbent():
+def test_incumbent_preserved_across_many_tells():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(123)
     cases = [
-        (turbo_one_config(trailing_obs=5), _make_fallback_optimizer),
-        (turbo_enn_config(trailing_obs=5), _make_rust_optimizer),
+        (turbo_one_config(), _make_fallback_optimizer),
+        (turbo_enn_config(), _make_rust_optimizer),
     ]
     for cfg, make in cases:
         opt = make(bounds=bounds, config=cfg, rng=rng)
@@ -325,7 +325,7 @@ def test_trailing_obs_includes_incumbent():
                 else np.array([5.0 - i * 0.1, 4.0 - i * 0.1])
             )
             opt.tell(x, y)
-        assert opt.tr_obs_count <= 5
+        assert opt.tr_obs_count == 30
         assert opt.ask(num_arms=2).shape == (2, 2)
 
 

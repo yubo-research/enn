@@ -143,7 +143,7 @@ impl ENNIndex {
         Ok(())
     }
 
-    pub fn add(&mut self, x: &ArrayView2<f64>) -> Result<(), IndexError> {
+    pub fn add(&self, x: &ArrayView2<f64>) -> Result<(), IndexError> {
         if x.ncols() != self.num_dim {
             return Err(IndexError::InvalidShape {
                 expected: self.num_dim,
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_index_add() {
-        let mut index = index_unit(array![[0.0, 0.0]], IndexDriver::Exact);
+        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Exact);
 
         let new_point = array![[1.0, 1.0]];
         index.add(&new_point.view()).unwrap();

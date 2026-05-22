@@ -113,6 +113,44 @@ impl TrustRegionState {
         }
     }
 
+    pub fn morbo_update_ranges_only(&mut self, y_new: &ArrayView2<f64>) -> Result<(), ENNError> {
+        match self {
+            TrustRegionState::Morbo(m) => {
+                m.as_mut().update_ranges_incremental(y_new);
+                Ok(())
+            }
+            _ => Err(ENNError::InvalidParameter(
+                "morbo_update_ranges_only requires Morbo".to_string(),
+            )),
+        }
+    }
+
+    pub fn morbo_update_incumbent_only(
+        &mut self,
+        y_incumbent: &ArrayView1<f64>,
+        num_obs: usize,
+    ) -> Result<(), ENNError> {
+        match self {
+            TrustRegionState::Morbo(m) => m
+                .as_mut()
+                .update_incumbent_only(y_incumbent, num_obs)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string())),
+            _ => Err(ENNError::InvalidParameter(
+                "morbo_update_incumbent_only requires Morbo".to_string(),
+            )),
+        }
+    }
+
+    pub fn morbo_rescalarize_incumbent(&mut self, num_obs: usize) -> Result<(), ENNError> {
+        match self {
+            TrustRegionState::Morbo(m) => m
+                .as_mut()
+                .rescalarize_incumbent_under_weights(num_obs)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string())),
+            _ => Ok(()),
+        }
+    }
+
     pub fn tell_update(
         &mut self,
         y_all: &ArrayView2<f64>,

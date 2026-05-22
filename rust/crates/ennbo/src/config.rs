@@ -18,8 +18,6 @@ pub struct OptimizerConfig {
     pub candidates: CandidateConfig,
     /// Acquisition function configuration.
     pub acquisition: AcquisitionConfig,
-    /// Trailing observations limit (None = keep all).
-    pub trailing_obs: Option<usize>,
     /// Use surrogate posterior mean for incumbent selection among candidates.
     pub noise_aware: bool,
 }
@@ -31,7 +29,6 @@ impl Default for OptimizerConfig {
             trust_region: TrustRegionConfig::default(),
             candidates: CandidateConfig::default(),
             acquisition: AcquisitionConfig::default(),
-            trailing_obs: None,
             noise_aware: false,
         }
     }
@@ -127,7 +124,6 @@ pub struct ConfigOverrides {
     pub length_min: Option<f64>,
     pub length_max: Option<f64>,
     pub index_driver: Option<IndexDriver>,
-    pub trailing_obs: Option<usize>,
     pub num_fit_samples: Option<usize>,
     pub num_fit_candidates: Option<usize>,
     pub scale_x: Option<bool>,
@@ -242,9 +238,6 @@ impl ConfigOverrides {
                 self.scale_x,
             );
         }
-        if let Some(t) = self.trailing_obs {
-            config.trailing_obs = Some(t);
-        }
         if let Some(na) = self.noise_aware {
             config.noise_aware = na;
         }
@@ -299,7 +292,6 @@ pub fn turbo_enn_config() -> OptimizerConfig {
             candidate_rv: CandidateRV::Uniform,
         },
         acquisition: AcquisitionConfig::UCB { beta: 2.0 },
-        trailing_obs: None,
         noise_aware: false,
     }
 }
@@ -317,7 +309,6 @@ pub fn turbo_zero_config() -> OptimizerConfig {
             candidate_rv: CandidateRV::Uniform,
         },
         acquisition: AcquisitionConfig::Random,
-        trailing_obs: None,
         noise_aware: false,
     }
 }
@@ -335,7 +326,6 @@ pub fn lhd_only_config() -> OptimizerConfig {
             candidate_rv: CandidateRV::Uniform,
         },
         acquisition: AcquisitionConfig::Random,
-        trailing_obs: None,
         noise_aware: false,
     }
 }
@@ -419,7 +409,6 @@ mod tests {
         let overrides = ConfigOverrides {
             acquisition: Some(AcquisitionConfig::Thompson),
             candidate_rv: Some(CandidateRV::Sobol),
-            trailing_obs: Some(20),
             index_driver: Some(IndexDriver::HNSW),
             num_fit_samples: Some(123),
             num_fit_candidates: Some(456),
@@ -432,7 +421,6 @@ mod tests {
 
         assert!(matches!(applied.acquisition, AcquisitionConfig::Thompson));
         assert_eq!(applied.candidates.candidate_rv, CandidateRV::Sobol);
-        assert_eq!(applied.trailing_obs, Some(20));
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
             assert_eq!(enn.index_driver, IndexDriver::HNSW);
             assert_eq!(enn.num_fit_samples, 123);

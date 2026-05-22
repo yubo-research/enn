@@ -40,11 +40,9 @@ def test_turbo_enn_affine_invariance_under_dynamic_y_range() -> None:
     assert np.allclose(lengths_a, lengths_b)
 
 
-def test_trailing_obs_preserves_unique_best_and_is_deterministic_under_ties() -> None:
+def test_optimizer_preserves_unique_best_and_is_deterministic_under_ties() -> None:
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    config = turbo_zero_config(
-        trailing_obs=5, num_init=2, candidate_rv=CandidateRV.UNIFORM
-    )
+    config = turbo_zero_config(num_init=2, candidate_rv=CandidateRV.UNIFORM)
     num_steps = 30
 
     def run(y_fn) -> list[tuple[np.ndarray, np.ndarray]]:

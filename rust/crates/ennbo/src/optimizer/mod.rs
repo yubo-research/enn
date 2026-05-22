@@ -1,8 +1,11 @@
 //! Optimizer state machine for ask/tell pattern.
 
 mod incumbent;
+mod observation_delta;
 mod observation_store;
 mod tr_state;
+
+pub use observation_delta::ObservationDelta;
 
 use ndarray::{Array1, Array2, ArrayView2};
 use rand::RngCore;
@@ -38,7 +41,6 @@ pub struct Optimizer {
     surrogate: Option<BoxedSurrogate>,
     strategy: Strategy,
     obs_store: ObservationStore,
-    trailing_obs: Option<usize>,
     incumbent_idx: Option<usize>,
     incumbent_x_unit: Option<Array1<f64>>,
     incumbent_y_scalar: Option<Array1<f64>>,
@@ -99,8 +101,6 @@ impl Optimizer {
         let mut seed_bytes = [0u8; 8];
         rng.fill_bytes(&mut seed_bytes);
         let sobol_seed_base = u64::from_le_bytes(seed_bytes) % (1u64 << 31);
-        let trailing_obs = config.trailing_obs;
-
         let num_metrics = tr_state.num_metrics();
         let tracker_m = match &config.surrogate {
             SurrogateConfig::ENN(enn_config) => tracker_m_from_enn_k(enn_config.k),
@@ -122,7 +122,6 @@ impl Optimizer {
             surrogate,
             strategy,
             obs_store: ObservationStore::new(),
-            trailing_obs,
             incumbent_idx: None,
             incumbent_x_unit: None,
             incumbent_y_scalar: None,
@@ -232,87 +231,21 @@ impl Optimizer {
         &mut self,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
-    ) -> Result<(), ENNError> {
+    ) -> Result<ObservationDelta, ENNError> {
         if x.nrows() != y.nrows() {
             return Err(ENNError::InvalidShape {
                 expected: vec![x.nrows(), y.ncols()],
                 got: vec![y.nrows(), y.ncols()],
             });
         }
-        let start = self.obs_store.len();
+        let old_n = self.obs_store.len();
         for i in 0..x.nrows() {
             let x_row: Array1<f64> = x.row(i).to_owned();
             let y_row: Array1<f64> = y.row(i).to_owned();
-            self.incumbent_tracker.tell(start + i, &y_row);
+            self.incumbent_tracker.tell(old_n + i, &y_row);
             self.obs_store.push(x_row, y_row);
         }
-        Ok(())
-    }
-
-    /// Trim observations to trailing_obs limit, preserving incumbent + recent.
-    /// Must be called after update_incumbent so incumbent_idx is current.
-    pub fn trim_trailing_obs(&mut self) -> Result<(), ENNError> {
-        let Some(limit) = self.trailing_obs else {
-            return Ok(());
-        };
-        let n = self.obs_store.len();
-        if n <= limit {
-            return Ok(());
-        }
-
-        let start = n.saturating_sub(limit);
-        let recent: std::collections::HashSet<usize> = (start..n).collect();
-
-        let mut keep: std::collections::HashSet<usize> = recent;
-        if let Some(idx) = self.incumbent_idx {
-            keep.insert(idx);
-        }
-
-        let keep = if keep.len() > limit {
-            let mut k: std::collections::HashSet<usize> =
-                self.incumbent_idx.iter().copied().collect();
-            let mut remaining = limit.saturating_sub(k.len());
-            for i in (0..n).rev() {
-                if remaining == 0 {
-                    break;
-                }
-                if !k.contains(&i) {
-                    k.insert(i);
-                    remaining -= 1;
-                }
-            }
-            k
-        } else {
-            keep
-        };
-
-        let mut indices: Vec<usize> = keep.into_iter().collect();
-        indices.sort_unstable();
-
-        let new_x: Vec<Array1<f64>> = indices
-            .iter()
-            .map(|&i| self.obs_store.x_at(i).clone())
-            .collect();
-        let new_y: Vec<Array1<f64>> = indices
-            .iter()
-            .map(|&i| self.obs_store.y_at(i).clone())
-            .collect();
-
-        self.obs_store.replace(new_x, new_y);
-        if let Some(y_obs) = self.obs_store.y_obs_array() {
-            self.incumbent_tracker.rebuild(&y_obs.view());
-        }
-
-        let new_incumbent_idx = self
-            .incumbent_idx
-            .and_then(|old_idx| indices.iter().position(|&i| i == old_idx));
-        self.incumbent_idx = new_incumbent_idx;
-        if let Some(idx) = self.incumbent_idx {
-            self.incumbent_x_unit = Some(self.obs_store.x_at(idx).clone());
-            self.incumbent_y_scalar = Some(self.obs_store.y_at(idx).clone());
-        }
-
-        Ok(())
+        observation_delta::observation_delta_from_store(&self.obs_store, old_n)
     }
 
     /// Get incumbent x in unit space.
@@ -358,5 +291,7 @@ impl Optimizer {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_incremental;
 #[cfg(test)]
 mod tests_morbo_incumbent;

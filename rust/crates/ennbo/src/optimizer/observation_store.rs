@@ -75,6 +75,7 @@ impl ObservationStore {
         result
     }
 
+    #[allow(dead_code)]
     pub(crate) fn replace(&mut self, new_x: Vec<Array1<f64>>, new_y: Vec<Array1<f64>>) {
         self.invalidate_cache();
         self.x_obs = new_x;
@@ -87,5 +88,26 @@ impl ObservationStore {
 
     pub(crate) fn y_at(&self, idx: usize) -> &Array1<f64> {
         &self.y_obs[idx]
+    }
+
+    pub(crate) fn rows_as_array2(&self, start: usize, end: usize) -> Option<(Array2<f64>, Array2<f64>)> {
+        if start >= end || end > self.x_obs.len() {
+            return None;
+        }
+        let n = end - start;
+        let d = self.x_obs[start].len();
+        let m = self.y_obs[start].len();
+        let mut x = Array2::zeros((n, d));
+        let mut y = Array2::zeros((n, m));
+        for i in start..end {
+            let r = i - start;
+            for j in 0..d {
+                x[[r, j]] = self.x_obs[i][j];
+            }
+            for j in 0..m {
+                y[[r, j]] = self.y_obs[i][j];
+            }
+        }
+        Some((x, y))
     }
 }

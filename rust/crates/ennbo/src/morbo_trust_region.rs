@@ -147,6 +147,137 @@ impl MorboTrustRegion {
         )
     }
 
+    pub fn update_ranges_incremental(&mut self, y_new: &ArrayView2<f64>) {
+        if y_new.nrows() == 0 {
+            return;
+        }
+        if self.y_min.is_none() || self.y_max.is_none() {
+            let mut y_min = Array1::from_elem(self.num_metrics, f64::INFINITY);
+            let mut y_max = Array1::from_elem(self.num_metrics, f64::NEG_INFINITY);
+            for row in 0..y_new.nrows() {
+                for m in 0..self.num_metrics {
+                    let v = y_new[[row, m]];
+                    if v < y_min[m] {
+                        y_min[m] = v;
+                    }
+                    if v > y_max[m] {
+                        y_max[m] = v;
+                    }
+                }
+            }
+            self.y_min = Some(y_min);
+            self.y_max = Some(y_max);
+            return;
+        }
+        let y_min = self.y_min.as_mut().expect("y_min");
+        let y_max = self.y_max.as_mut().expect("y_max");
+        for row in 0..y_new.nrows() {
+            for m in 0..self.num_metrics {
+                let v = y_new[[row, m]];
+                if v < y_min[m] {
+                    y_min[m] = v;
+                }
+                if v > y_max[m] {
+                    y_max[m] = v;
+                }
+            }
+        }
+    }
+
+    pub fn update_incumbent_only(
+        &mut self,
+        y_incumbent: &ArrayView1<f64>,
+        num_obs: usize,
+    ) -> Result<(), TrustRegionError> {
+        if y_incumbent.len() != self.num_metrics {
+            return Err(TrustRegionError::InvalidParameter(format!(
+                "y_incumbent len {} != num_metrics {}",
+                y_incumbent.len(),
+                self.num_metrics
+            )));
+        }
+        if num_obs == 0 {
+            self.y_min = None;
+            self.y_max = None;
+            self.incumbent_y_raw = None;
+            self.inner.restart();
+            return Ok(());
+        }
+        let (y_min, y_max) = self
+            .y_min
+            .as_ref()
+            .zip(self.y_max.as_ref())
+            .ok_or_else(|| {
+                TrustRegionError::InvalidState(
+                    "update_incumbent_only before ranges initialized".to_string(),
+                )
+            })?;
+        if self.incumbent_y_raw.is_none() {
+            self.incumbent_y_raw = Some(y_incumbent.to_owned());
+            let score = scalarize_with_ranges(
+                &y_incumbent.view().insert_axis(ndarray::Axis(0)),
+                &y_min.view(),
+                &y_max.view(),
+                &self.weights.view(),
+                self.alpha,
+                self.num_metrics,
+                true,
+            )?[0];
+            self.inner
+                .update_scalar_incumbent(num_obs, score)
+                .map_err(|e| TrustRegionError::InvalidState(e.to_string()))?;
+            return Ok(());
+        }
+        let incumbent = self.incumbent_y_raw.as_ref().expect("incumbent");
+        let stacked = ndarray::stack(
+            ndarray::Axis(0),
+            &[incumbent.view(), y_incumbent.view()],
+        )
+        .map_err(|e| TrustRegionError::InvalidState(e.to_string()))?;
+        let scores = scalarize_with_ranges(
+            &stacked.view(),
+            &y_min.view(),
+            &y_max.view(),
+            &self.weights.view(),
+            self.alpha,
+            self.num_metrics,
+            true,
+        )?;
+        let old_score = scores[0];
+        let new_score = scores[1];
+        self.inner.set_best_value(old_score);
+        self.inner
+            .update_scalar_incumbent(num_obs, new_score)
+            .map_err(|e| TrustRegionError::InvalidState(e.to_string()))?;
+        if new_score > old_score {
+            self.incumbent_y_raw = Some(y_incumbent.to_owned());
+        }
+        Ok(())
+    }
+
+    pub fn rescalarize_incumbent_under_weights(&mut self, num_obs: usize) -> Result<(), TrustRegionError> {
+        let Some(ref y_inc) = self.incumbent_y_raw else {
+            return Ok(());
+        };
+        let (Some(y_min), Some(y_max)) = (self.y_min.as_ref(), self.y_max.as_ref()) else {
+            return Ok(());
+        };
+        let (y_min, y_max) = (y_min, y_max);
+        let score = scalarize_with_ranges(
+            &y_inc.view().insert_axis(ndarray::Axis(0)),
+            &y_min.view(),
+            &y_max.view(),
+            &self.weights.view(),
+            self.alpha,
+            self.num_metrics,
+            true,
+        )?[0];
+        self.inner.set_best_value(score);
+        self.inner
+            .update_scalar_incumbent(num_obs, score)
+            .map_err(|e| TrustRegionError::InvalidState(e.to_string()))
+    }
+
     pub fn update(
         &mut self,
         y_obs: &ArrayView2<f64>,

@@ -56,15 +56,18 @@ def _capture(bounds, config, seed: int, num_cycles: int, num_arms: int) -> dict:
     }
 
 
-def _enn_ucb(seed: int) -> dict:
+def _enn_ucb_fixture(seed: int, k: int, num_arms: int, num_cycles: int) -> dict:
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    num_arms = 3
     config = turbo_enn_config(
         acq_type=AcqType.UCB,
-        enn=ENNSurrogateConfig(k=4, fit=ENNFitConfig(num_fit_samples=10)),
+        enn=ENNSurrogateConfig(k=k, fit=ENNFitConfig(num_fit_samples=10)),
         num_init=num_arms,
     )
-    return _capture(bounds, config, seed, num_cycles=4, num_arms=num_arms)
+    return _capture(bounds, config, seed, num_cycles=num_cycles, num_arms=num_arms)
+
+
+def _enn_ucb(seed: int) -> dict:
+    return _enn_ucb_fixture(seed, k=4, num_arms=3, num_cycles=4)
 
 
 def _enn_thompson(seed: int) -> dict:
@@ -97,15 +100,7 @@ def _zero(seed: int) -> dict:
 
 
 def _trailing_obs(seed: int) -> dict:
-    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    num_arms = 2
-    config = turbo_enn_config(
-        acq_type=AcqType.UCB,
-        enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=10)),
-        num_init=num_arms,
-        trailing_obs=12,
-    )
-    return _capture(bounds, config, seed, num_cycles=5, num_arms=num_arms)
+    return _enn_ucb_fixture(seed, k=3, num_arms=2, num_cycles=5)
 
 
 def _noise_aware(seed: int) -> dict:

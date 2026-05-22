@@ -11,6 +11,7 @@ pub mod config;
 pub mod draw;
 pub mod error;
 pub mod fit;
+pub mod fitter;
 pub mod hash;
 pub mod hypervolume;
 pub mod incumbent_tracker;
@@ -43,12 +44,13 @@ pub use config::{
 pub use draw::{Candidates, ConditionalPosteriorDrawInternals, DrawInternals, NeighborData};
 pub use error::{ENNError, EPS_VAR};
 pub use fit::{enn_fit, subsample_loglik};
+pub use fitter::{fit_probability, num_random_fit_candidates, ENNFitter};
 pub use hash::{normal_hash_batch_multi_seed, normal_hash_batch_multi_seed_fast};
 pub use hypervolume::hypervolume_2d_max;
 pub use incumbent_tracker::IncrementalIncumbentTracker;
 pub use index::{ENNIndex, IndexDriver, IndexError};
 pub use model::EpistemicNearestNeighbors;
-pub use optimizer::{Optimizer, Telemetry};
+pub use optimizer::{ObservationDelta, Optimizer, Telemetry};
 pub use optimizer_factory::{create_optimizer_enn, create_optimizer_lhd, create_optimizer_zero};
 pub use params::{ENNNormal, ENNParams, ParamsError, PosteriorFlags};
 pub use posterior::{

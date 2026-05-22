@@ -203,12 +203,12 @@ def test_multi_objective_y_obs_shape():
     assert y_obs.shape[1] == 2, "_ObsView should reflect multi-objective y cols"
 
 
-def test_trailing_obs_trim_behavior():
-    """Rust optimizer with trailing_obs: observations trimmed to limit."""
+def test_rust_optimizer_keeps_all_observations():
+    """Rust optimizer retains full observation history (no trailing window)."""
     from .optimizer_parity_helpers import get_rust_optimizer
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    config = turbo_zero_config(num_init=4, trailing_obs=10)
+    config = turbo_zero_config(num_init=4)
     np.random.default_rng(7)
     opt = get_rust_optimizer(bounds, config, seed=7)
 
@@ -217,4 +217,4 @@ def test_trailing_obs_trim_behavior():
         y = _obj(x).reshape(-1, 1)
         opt.tell(x, y)
 
-    assert opt.tr_obs_count <= 10
+    assert opt.tr_obs_count == 25
