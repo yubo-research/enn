@@ -496,6 +496,16 @@ mod tests {
     }
 
     #[test]
+    fn test_non_domin_sort_2d_three_fronts_golden() {
+        let pareto = ParetoAcquisition::new();
+        let objectives = array![[3.0, 1.0], [2.0, 2.0], [1.0, 3.0], [0.5, 0.5]];
+        let fronts = pareto.non_domin_sort(&objectives.view());
+        assert_eq!(fronts.len(), 2);
+        assert_eq!(fronts[0], vec![0, 1, 2]);
+        assert_eq!(fronts[1], vec![3]);
+    }
+
+    #[test]
     fn test_non_domin_sort_2d_with_ties() {
         let pareto = ParetoAcquisition::new();
         // Points 0 and 1 are identical and both should be on first front.

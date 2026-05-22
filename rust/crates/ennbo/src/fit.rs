@@ -444,6 +444,50 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_single_loglik_gaussian_term_golden() {
+        let y_scaled = array![[1.0]];
+        let mu_i = array![[0.0]];
+        let se_i = array![[1.0]];
+        let ll = compute_single_loglik(&y_scaled.view(), &mu_i.view(), &se_i.view());
+        let expected = -0.5 * ((2.0 * std::f64::consts::PI).ln() + 1.0);
+        assert!((ll - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_subsample_loglik_custom_y_std_seed_11() {
+        let model = create_test_model();
+        let x = array![[0.5, 0.5], [0.2, 0.8]];
+        let y = array![[1.0], [1.2]];
+        let params = ENNParams::new(2, 1.0, 0.1).unwrap();
+        let y_std = array![2.0];
+        let mut rng = StdRng::seed_from_u64(11);
+        let paramss = vec![params];
+        let logliks = subsample_loglik(
+            &model,
+            &x.view(),
+            &y.view(),
+            &paramss,
+            2,
+            &mut rng,
+            Some(&y_std.view()),
+        )
+        .unwrap();
+        assert_eq!(logliks.len(), 1);
+        assert!(logliks[0].is_finite());
+        let again = subsample_loglik(
+            &model,
+            &x.view(),
+            &y.view(),
+            &paramss,
+            2,
+            &mut StdRng::seed_from_u64(11),
+            Some(&y_std.view()),
+        )
+        .unwrap();
+        assert!((logliks[0] - again[0]).abs() < 1e-12);
+    }
+
+    #[test]
     fn test_compute_single_loglik_nonfinite_and_nonpositive_se() {
         let y = array![[1.0]];
         let mu_bad = array![[f64::NAN]];

@@ -51,7 +51,9 @@ pub use model::EpistemicNearestNeighbors;
 pub use optimizer::{Optimizer, Telemetry};
 pub use optimizer_factory::{create_optimizer_enn, create_optimizer_lhd, create_optimizer_zero};
 pub use params::{ENNNormal, ENNParams, ParamsError, PosteriorFlags};
-pub use posterior::{compute_posterior_internals, WeightedPosteriorData};
+pub use posterior::{
+    compute_conditional_posterior_internals, compute_posterior_internals, WeightedPosteriorData,
+};
 pub use stats::WeightedStats;
 pub use strategy::Strategy;
 pub use surrogate::{ENNSurrogate, ENNSurrogateConfig, Surrogate, SurrogatePrediction};

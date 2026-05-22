@@ -261,4 +261,15 @@ mod pairwise_tests {
         let d = pairwise_sq_l2(&x.view(), &y.view(), false, &scale.view());
         assert_eq!(d[[0, 0]], 5.0);
     }
+
+    #[test]
+    fn pairwise_sq_l2_scaled_differs_from_unscaled() {
+        let x = array![[0.0, 0.0]];
+        let y = array![[2.0, 0.0]];
+        let scale = array![2.0, 1.0];
+        let d0 = pairwise_sq_l2(&x.view(), &y.view(), false, &scale.view());
+        let d1 = pairwise_sq_l2(&x.view(), &y.view(), true, &scale.view());
+        assert!((d0[[0, 0]] - 4.0).abs() < 1e-12);
+        assert!((d1[[0, 0]] - 1.0).abs() < 1e-12);
+    }
 }

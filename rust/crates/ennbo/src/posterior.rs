@@ -677,6 +677,8 @@ mod tests {
 
         let draws = result.unwrap();
         assert_eq!(draws.shape(), &[2, 1, 1]);
+        let one = draw_from_internals(&model, &internals, &[7i64]).unwrap();
+        assert!((one[[0, 0, 0]] - 0.223_806_179_572_216_43).abs() < 1e-12);
     }
 
     #[test]

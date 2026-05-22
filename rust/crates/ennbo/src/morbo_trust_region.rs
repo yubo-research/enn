@@ -319,8 +319,24 @@ mod tests {
             true,
         )
         .unwrap();
-        assert!(scores[0].is_finite());
-        assert!(scores[1].is_finite());
+        assert!((scores[0] - 0.025).abs() < 1e-12);
+        assert!((scores[1] - 0.208_333_333_333_333_34).abs() < 1e-12);
+    }
+
+    #[test]
+    fn morbo_dirichlet_weights_sum_to_one_seed_2026() {
+        let settings = MorboTRSettings {
+            num_metrics: 3,
+            alpha: 0.05,
+            length: TRLengthConfig::default(),
+            rescalarize: Rescalarize::OnRestart,
+            noise_aware: false,
+        };
+        let mut rng = StdRng::seed_from_u64(2026);
+        let tr = MorboTrustRegion::new(2, settings, &mut rng).unwrap();
+        let s: f64 = tr.weights().iter().sum();
+        assert!((s - 1.0).abs() < 1e-12);
+        assert!(tr.weights().iter().all(|&x| x > 0.0));
     }
 
     #[test]
