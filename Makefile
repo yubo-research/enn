@@ -1,9 +1,16 @@
 .PHONY: all install clean test rust-test python-test lint wheels wheelsl \
 	pypi-build pypi-publish pypi-auth-check
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+MATURIN_AUDITWHEEL := --auditwheel skip
+else
+MATURIN_AUDITWHEEL :=
+endif
+
 # Default: build a release extension for the local platform.
 all:
-	maturin build --release
+	maturin build --release $(MATURIN_AUDITWHEEL)
 
 # Install the mixed Python/Rust package in editable mode.
 install:
@@ -36,7 +43,7 @@ wheelsl: wheels
 
 # --- PyPI (ennbo): token in MATURIN_PYPI_TOKEN, or credentials in ~/.pypirc ---
 pypi-build:
-	maturin build --release
+	maturin build --release $(MATURIN_AUDITWHEEL)
 
 # Note: `maturin publish` builds again before upload (same as a clean "build then publish").
 pypi-publish:

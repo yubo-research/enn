@@ -39,6 +39,7 @@ with-deps = [
 ]
 dev = [
     "pytest>=8.0",
+    "pytest-testmon>=2.0",
     "ruff>=0.4",
     "nbmake>=1.5",
     "nds>=0.4.3",
@@ -72,6 +73,7 @@ exclude = [
 ]
 
 [tool.pytest.ini_options]
+addopts = "--testmon"
 pythonpath = ["src", "."]
 testpaths = ["tests"]
 filterwarnings = [
