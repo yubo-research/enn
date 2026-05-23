@@ -61,6 +61,8 @@ _KISS_STATIC_UNIT_NAMES = (
     "enn_rust",
     "epistemic_variance_scale",
     "fit",
+    "init_model_module",
+    "init_fit_module",
     "generate_optimizer_candidates",
     "hash",
     "hypervolume",

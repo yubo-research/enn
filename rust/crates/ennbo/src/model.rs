@@ -511,16 +511,20 @@ mod tests {
     }
 
     #[test]
-    fn kiss_row_storage_unit_names() {
-        let names: &[&str] = &[
-            "RowStorage",
-            "from_array2",
-            "push_rows",
-            "column_sums_and_sumsq",
-            "accumulate_columns",
-            "scale_from_moments",
-        ];
-        assert_eq!(names.len(), 6);
+    fn kiss_row_storage_and_scale_helpers() {
+        let rows = array![[1.0, 2.0], [3.0, 4.0]];
+        let mut storage = RowStorage::from_array2(rows.clone());
+        assert_eq!(storage.nrows(), 2);
+        storage
+            .push_rows(&array![[5.0, 6.0]].view())
+            .unwrap();
+        assert_eq!(storage.nrows(), 3);
+        let (sum, sumsq) = column_sums_and_sumsq(rows.view());
+        let mut sum2 = sum.clone();
+        let mut sumsq2 = sumsq.clone();
+        accumulate_columns(&mut sum2, &mut sumsq2, array![[0.0, 0.0]].view());
+        let scale = scale_from_moments(2, 2, &sum, &sumsq, 1e-9);
+        assert_eq!(scale.len(), 2);
     }
 
     #[test]

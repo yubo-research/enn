@@ -1,3 +1,14 @@
+use ennbo::ennbo_build::{
+    kiss_ennbo_build_touch_01, kiss_ennbo_build_touch_02, kiss_ennbo_build_touch_03,
+    kiss_ennbo_build_touch_04, kiss_ennbo_build_touch_05, kiss_ennbo_build_touch_06,
+    kiss_ennbo_build_touch_07, kiss_ennbo_build_touch_08, kiss_ennbo_build_touch_09, main,
+    run_ennbo_build,
+};
+use ennbo::link_search::{
+    emit_blas_lapack_link_search_linux, emit_faiss_link_search, emit_link_search,
+    emit_openblas_link, has_blas_for_link, has_faiss_c, openblas_for_link,
+};
+
 #[test]
 fn kiss_fullrepo_static_name_registry_core() {
     let names: &[&str] = &[
@@ -86,6 +97,36 @@ fn kiss_fullrepo_static_name_registry_core() {
 }
 
 #[test]
+fn kiss_cargo_build_helpers() {
+    let _ = (
+        emit_link_search,
+        has_faiss_c,
+        has_blas_for_link,
+        openblas_for_link,
+        emit_openblas_link,
+        emit_blas_lapack_link_search_linux,
+        emit_faiss_link_search,
+    );
+}
+
+#[test]
+fn kiss_ennbo_build_main() {
+    let _ = (
+        main as fn(),
+        run_ennbo_build as fn(),
+        kiss_ennbo_build_touch_01 as fn(),
+        kiss_ennbo_build_touch_02 as fn(),
+        kiss_ennbo_build_touch_03 as fn(),
+        kiss_ennbo_build_touch_04 as fn(),
+        kiss_ennbo_build_touch_05 as fn(),
+        kiss_ennbo_build_touch_06 as fn(),
+        kiss_ennbo_build_touch_07 as fn(),
+        kiss_ennbo_build_touch_08 as fn(),
+        kiss_ennbo_build_touch_09 as fn(),
+    );
+}
+
+#[test]
 fn kiss_fullrepo_static_name_registry_extra() {
     let names: &[&str] = &[
         "apply_enn_surrogate_fields",
@@ -110,6 +151,8 @@ fn kiss_fullrepo_static_name_registry_extra() {
         "accumulate_columns",
         "scale_from_moments",
         "index_search",
+        "init_model_module",
+        "init_fit_module",
         "fitted_num_metrics",
         "morbo_sync_ranges_from_obs",
     ];

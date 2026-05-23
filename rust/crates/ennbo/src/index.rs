@@ -380,15 +380,24 @@ mod tests {
 
     #[test]
     fn kiss_index_helper_unit_names() {
-        let names: &[&str] = &[
-            "faiss_spec",
-            "faiss_map_err",
-            "arr2_rows_to_f32",
-            "make_faiss",
-            "pad_neighbor_cols_to_search_k",
-            "unpack_faiss_search",
-        ];
-        assert_eq!(names.len(), 6);
+        assert_eq!(faiss_spec(IndexDriver::Exact), "Flat");
+        assert_eq!(faiss_spec(IndexDriver::HNSW), "HNSW32");
+        let _ = faiss_map_err as fn(FaissError) -> IndexError;
+        let rows = array![[1.0, 2.0], [3.0, 4.0]];
+        let f32 = arr2_rows_to_f32(&rows.view());
+        assert_eq!(f32.len(), 4);
+        let index = make_faiss(2, IndexDriver::Exact, &rows.view()).unwrap();
+        assert_eq!(index.ntotal(), 2);
+        let (d, i) = pad_neighbor_cols_to_search_k(
+            array![[1.0, 2.0]],
+            array![[0i64, 1]],
+            3,
+        );
+        assert_eq!(d.ncols(), 3);
+        assert_eq!(i.ncols(), 3);
+        let (d2, i2) = unpack_faiss_search(1, 2, &[0.5f32, 1.5], &[faiss::Idx::new(0), faiss::Idx::new(1)]);
+        assert_eq!(d2.shape(), &[1, 2]);
+        assert_eq!(i2.shape(), &[1, 2]);
     }
 
     #[test]

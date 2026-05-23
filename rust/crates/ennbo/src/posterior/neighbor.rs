@@ -230,8 +230,21 @@ mod pairwise_tests {
     use ndarray::{array, Array2};
 
     #[test]
-    fn kiss_index_search_unit_name() {
-        assert_eq!("index_search", "index_search");
+    fn index_search_returns_neighbors() {
+        use super::index_search;
+        use crate::index::IndexDriver;
+        use crate::model::EpistemicNearestNeighbors;
+        use ndarray::array;
+
+        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        let train_y = array![[0.0], [1.0], [1.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let query = array![[0.0, 0.0]];
+        let (dist2s, idx) = index_search(&model, &query.view(), 2, false).unwrap();
+        assert_eq!(idx[[0, 0]], 0);
+        assert!(dist2s[[0, 0]] < 1e-6);
     }
 
     #[test]

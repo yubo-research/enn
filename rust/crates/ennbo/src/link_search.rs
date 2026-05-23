@@ -1,39 +1,35 @@
 use std::path::{Path, PathBuf};
 
-fn emit_link_search(p: &str) {
+pub fn emit_link_search(p: &str) {
     println!("cargo:rustc-link-search=native={p}");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{p}");
 }
 
-fn has_faiss_c(dir: &Path) -> bool {
+pub fn has_faiss_c(dir: &Path) -> bool {
     dir.join("libfaiss_c.dylib").exists() || dir.join("libfaiss_c.so").exists()
 }
 
-fn has_blas_for_link(dir: &Path) -> bool {
+pub fn has_blas_for_link(dir: &Path) -> bool {
     dir.join("libblas.so").exists()
         || dir.join("libopenblas.so").exists()
         || dir.join("libopenblas.so.0").exists()
 }
 
-fn openblas_for_link(dir: &Path) -> Option<PathBuf> {
+pub fn openblas_for_link(dir: &Path) -> Option<PathBuf> {
     ["libopenblas.so", "libopenblas.so.0"]
         .iter()
         .map(|name| dir.join(name))
         .find(|path| path.exists())
 }
 
-fn emit_openblas_link(dir: &Path) {
+pub fn emit_openblas_link(dir: &Path) {
     if let Some(openblas) = openblas_for_link(dir) {
         println!("cargo:rustc-link-arg={}", openblas.display());
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display());
     }
 }
 
-/// `faiss-sys` (static Linux) links `-lblas -llapack`; ensure the linker sees them
-/// (conda `OpenBLAS` provides `libblas.so`, Debian needs `libblas-dev` / `libopenblas0`).
-fn emit_blas_lapack_link_search_linux() {
-    // Only link-search here: `rustc-link-arg` rpath from a dependency build script
-    // does not apply to the final cdylib (`enn-py` adds rpath via its own `build.rs`).
+pub fn emit_blas_lapack_link_search_linux() {
     if let Ok(prefix) = std::env::var("CONDA_PREFIX") {
         let lib = PathBuf::from(prefix).join("lib");
         if has_blas_for_link(&lib) {
@@ -52,7 +48,7 @@ fn emit_blas_lapack_link_search_linux() {
     }
 }
 
-fn main() {
+pub fn emit_faiss_link_search() {
     println!("cargo:rerun-if-env-changed=FAISS_LIB_DIR");
     println!("cargo:rerun-if-env-changed=CONDA_PREFIX");
     if let Ok(dir) = std::env::var("FAISS_LIB_DIR") {
@@ -86,18 +82,29 @@ fn main() {
 }
 
 #[cfg(test)]
-mod kiss_build_coverage {
+mod tests {
+    use super::*;
+    use std::path::Path;
+
     #[test]
-    fn build_script_unit_names() {
-        let names: &[&str] = &[
-            "emit_link_search",
-            "has_faiss_c",
-            "has_blas_for_link",
-            "openblas_for_link",
-            "emit_openblas_link",
-            "emit_blas_lapack_link_search_linux",
-            "main",
-        ];
-        assert!(!names.is_empty());
+    fn has_faiss_c_empty_dir() {
+        let dir = std::env::temp_dir().join(format!("enn_faiss_check_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!has_faiss_c(Path::new(&dir)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn has_blas_for_link_empty_dir() {
+        let dir = std::env::temp_dir().join(format!("enn_blas_link_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!has_blas_for_link(Path::new(&dir)));
+        assert!(openblas_for_link(Path::new(&dir)).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn emit_faiss_link_search_smoke() {
+        emit_faiss_link_search();
     }
 }

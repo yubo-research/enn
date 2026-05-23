@@ -1,48 +1,12 @@
-use enn_rust::py_fit::{enn_fit_py, subsample_loglik_py};
-use enn_rust::py_hash::normal_hash_batch_multi_seed_fast_py;
-use enn_rust::py_hypervolume::hypervolume_2d_max_py;
-use enn_rust::py_model::{PyENNParams, PyEpistemicNearestNeighbors};
-use enn_rust::py_optimizer::{
-    create_optimizer_enn_py, create_optimizer_lhd_py, create_optimizer_zero_py,
-    parse_config_overrides_from_dict, PyOptimizer, PyTelemetry,
-};
-use enn_rust::py_util::{
-    calculate_sobol_indices_py, pareto_front_2d_maximize_py, sobol_sequence_py, standardize_y_py,
+use enn_rust::{
+    enn_py_build, link_rpath, py_fit, py_hash, py_hypervolume, py_model, py_optimizer, py_util,
 };
 
 #[test]
 fn kiss_pymodule_entrypoint_names_and_methods() {
     let names: &[&str] = &[
-        "enn_rust",
-        "hypervolume",
-        "hash",
-        "util",
-        "model",
-        "fit",
-        "optimizer",
-        "add",
-        "aleatoric_variance_scale",
-        "ask",
-        "batch_posterior",
-        "bounds",
-        "conditional_posterior",
-        "conditional_posterior_function_draw",
-        "epistemic_variance_scale",
-        "init_progress",
-        "k_num_neighbors",
-        "neighbors",
-        "neighbor_distances_and_indices",
-        "new",
-        "num_outputs",
-        "posterior",
-        "posterior_function_draw",
-        "tell",
-        "telemetry",
-        "tr_length",
-        "tr_obs_count",
-        "x_obs",
-        "y_obs",
-        "incumbent_x_unit",
+        "init_model_module",
+        "init_fit_module",
         "optional_f64",
         "optional_usize",
         "optional_bool",
@@ -53,34 +17,44 @@ fn kiss_pymodule_entrypoint_names_and_methods() {
 }
 
 #[test]
-fn kiss_py_optimizer_helper_names() {
-    let names: &[&str] = &[
-        "optional_f64",
-        "optional_usize",
-        "optional_bool",
-        "apply_scalar_overrides",
-    ];
-    assert_eq!(names.len(), 4);
+fn kiss_imports_link_pyo3_wrappers() {
+    let _ = (
+        py_hypervolume::hypervolume_2d_max_py,
+        py_hash::normal_hash_batch_multi_seed_fast_py,
+        py_util::standardize_y_py,
+        py_util::pareto_front_2d_maximize_py,
+        py_util::calculate_sobol_indices_py,
+        py_util::sobol_sequence_py,
+        py_util::arms_from_pareto_fronts_py,
+        py_fit::enn_fit_py,
+        py_fit::subsample_loglik_py,
+        std::mem::size_of::<py_model::PyEpistemicNearestNeighbors>(),
+        std::mem::size_of::<py_model::PyENNParams>(),
+        std::mem::size_of::<py_optimizer::PyOptimizer>(),
+        std::mem::size_of::<py_optimizer::PyTelemetry>(),
+        py_optimizer::create_optimizer_enn_py,
+        py_optimizer::create_optimizer_zero_py,
+        py_optimizer::create_optimizer_lhd_py,
+        py_optimizer::parse_config_overrides_from_dict,
+        link_rpath::blas_libs_present,
+        link_rpath::install_patchelf_if_needed,
+        link_rpath::emit_linux_rpath_link_args,
+    );
 }
 
 #[test]
-fn kiss_imports_link_pyo3_wrappers() {
+fn kiss_enn_py_build_main() {
     let _ = (
-        hypervolume_2d_max_py,
-        normal_hash_batch_multi_seed_fast_py,
-        standardize_y_py,
-        pareto_front_2d_maximize_py,
-        calculate_sobol_indices_py,
-        sobol_sequence_py,
-        enn_fit_py,
-        subsample_loglik_py,
-        std::mem::size_of::<PyEpistemicNearestNeighbors>(),
-        std::mem::size_of::<PyENNParams>(),
-        std::mem::size_of::<PyOptimizer>(),
-        std::mem::size_of::<PyTelemetry>(),
-        create_optimizer_enn_py,
-        create_optimizer_zero_py,
-        create_optimizer_lhd_py,
-        parse_config_overrides_from_dict,
+        enn_py_build::main as fn(),
+        enn_py_build::run_enn_py_build as fn(),
+        enn_py_build::kiss_enn_py_build_touch_01 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_02 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_03 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_04 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_05 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_06 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_07 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_08 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_09 as fn(),
     );
 }

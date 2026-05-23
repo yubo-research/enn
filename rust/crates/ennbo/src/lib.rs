@@ -5,6 +5,12 @@
 
 #![allow(clippy::pedantic, clippy::nursery, clippy::cargo)]
 
+pub mod ennbo_build {
+    include!("ennbo_build_api.inc.rs");
+    use super::link_search;
+    define_ennbo_build_api!(link_search);
+}
+pub mod link_search;
 pub mod acquisition;
 pub mod candidates;
 pub mod config;

@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn blas_libs_present(dir: &Path) -> bool {
+pub fn blas_libs_present(dir: &Path) -> bool {
     ["libblas.so", "libopenblas.so", "libopenblas.so.0"]
         .iter()
         .any(|name| dir.join(name).exists())
 }
 
-fn install_patchelf_if_needed() {
+pub fn install_patchelf_if_needed() {
     let script =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../ennbo/cmake/install_patchelf_root.sh");
     let status = Command::new("bash")
@@ -20,7 +20,7 @@ fn install_patchelf_if_needed() {
     );
 }
 
-fn main() {
+pub fn emit_linux_rpath_link_args() {
     println!("cargo:rerun-if-env-changed=CONDA_PREFIX");
     if !cfg!(target_os = "linux") {
         return;
@@ -41,10 +41,20 @@ fn main() {
 }
 
 #[cfg(test)]
-mod kiss_build_coverage {
+mod tests {
+    use super::*;
+    use std::path::Path;
+
     #[test]
-    fn build_script_unit_names() {
-        let names: &[&str] = &["blas_libs_present", "install_patchelf_if_needed", "main"];
-        assert!(!names.is_empty());
+    fn blas_libs_present_empty_dir() {
+        let dir = std::env::temp_dir().join(format!("enn_blas_check_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!blas_libs_present(Path::new(&dir)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn emit_linux_rpath_link_args_smoke() {
+        emit_linux_rpath_link_args();
     }
 }

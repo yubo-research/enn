@@ -9,6 +9,7 @@ keywords.workspace = true
 categories.workspace = true
 description = "Epistemic Nearest Neighbor Bayesian Optimization"
 readme = "README.md"
+build = "src/ennbo_build.rs"
 
 [dependencies]
 faiss = { version = "0.13.0" }

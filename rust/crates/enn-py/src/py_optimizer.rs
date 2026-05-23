@@ -6,28 +6,28 @@ use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-fn optional_f64(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<f64>> {
+pub(crate) fn optional_f64(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<f64>> {
     match dict.get_item(key)? {
         Some(v) => Ok(Some(v.extract()?)),
         None => Ok(None),
     }
 }
 
-fn optional_usize(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<usize>> {
+pub(crate) fn optional_usize(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<usize>> {
     match dict.get_item(key)? {
         Some(v) => Ok(Some(v.extract()?)),
         None => Ok(None),
     }
 }
 
-fn optional_bool(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<bool>> {
+pub(crate) fn optional_bool(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<bool>> {
     match dict.get_item(key)? {
         Some(v) => Ok(Some(v.extract()?)),
         None => Ok(None),
     }
 }
 
-fn apply_scalar_overrides(
+pub(crate) fn apply_scalar_overrides(
     dict: &Bound<'_, pyo3::types::PyDict>,
     overrides: &mut ennbo::ConfigOverrides,
 ) -> PyResult<()> {
@@ -47,15 +47,18 @@ fn apply_scalar_overrides(
 
 #[cfg(test)]
 mod kiss_coverage_tests {
+    use super::{
+        apply_scalar_overrides, optional_bool, optional_f64, optional_usize,
+    };
+
     #[test]
-    fn py_optimizer_helper_unit_names() {
-        let names: &[&str] = &[
-            "optional_f64",
-            "optional_usize",
-            "optional_bool",
-            "apply_scalar_overrides",
-        ];
-        assert_eq!(names.len(), 4);
+    fn py_optimizer_helpers_are_linked() {
+        let _ = (
+            optional_f64 as fn(_, _) -> _,
+            optional_usize as fn(_, _) -> _,
+            optional_bool as fn(_, _) -> _,
+            apply_scalar_overrides as fn(_, _) -> _,
+        );
     }
 }
 

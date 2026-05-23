@@ -45,13 +45,20 @@ pub(crate) fn observation_delta_from_store(
 
 #[cfg(test)]
 mod kiss_coverage_tests {
+    use super::*;
+    use crate::optimizer::observation_store::ObservationStore;
+    use ndarray::array;
+
     #[test]
-    fn observation_delta_unit_names() {
-        let names: &[&str] = &[
-            "observation_delta_from_store",
-            "x_new_view",
-            "y_new_view",
-        ];
-        assert_eq!(names.len(), 3);
+    fn observation_delta_from_store_appends() {
+        let mut store = ObservationStore::new();
+        store.push(array![0.0, 0.0], array![1.0]);
+        let old_n = store.len();
+        store.push(array![1.0, 0.0], array![2.0]);
+        let delta = observation_delta_from_store(&store, old_n).unwrap();
+        assert_eq!(delta.old_n, 1);
+        assert_eq!(delta.new_n, 2);
+        assert_eq!(delta.x_new.nrows(), 1);
+        assert_eq!(delta.y_new.nrows(), 1);
     }
 }
