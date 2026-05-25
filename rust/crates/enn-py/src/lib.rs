@@ -17,6 +17,7 @@ pub mod enn_py_build {
 }
 pub mod link_rpath;
 pub mod py_fit;
+pub mod py_fitter;
 pub mod py_hash;
 pub mod py_hypervolume;
 pub mod py_model;
@@ -64,7 +65,7 @@ pub(crate) fn init_model_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[pymodule]
 #[pyo3(name = "fit")]
 pub(crate) fn init_fit_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(py_fit::enn_fit_py, m)?)?;
+    m.add_class::<py_fitter::PyENNStatefulFitter>()?;
     m.add_function(wrap_pyfunction!(py_fit::subsample_loglik_py, m)?)?;
     Ok(())
 }

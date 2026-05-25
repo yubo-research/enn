@@ -49,8 +49,8 @@ pub use config::{
 };
 pub use draw::{Candidates, ConditionalPosteriorDrawInternals, DrawInternals, NeighborData};
 pub use error::{ENNError, EPS_VAR};
-pub use fit::{enn_fit, subsample_loglik};
-pub use fitter::{fit_probability, num_random_fit_candidates, ENNFitter};
+pub use fit::subsample_loglik;
+pub use fitter::ENNFitter;
 pub use hash::{normal_hash_batch_multi_seed, normal_hash_batch_multi_seed_fast};
 pub use hypervolume::hypervolume_2d_max;
 pub use incumbent_tracker::IncrementalIncumbentTracker;

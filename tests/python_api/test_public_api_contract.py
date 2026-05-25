@@ -26,11 +26,10 @@ class TestPublicAPIExports:
         assert "train_y" in params
         assert "train_yvar" in params
 
-    def test_enn_fit_function(self):
-        """enn_fit is a callable function."""
-        from enn import enn_fit
+    def test_enn_stateful_fitter_class(self):
+        from enn import ENNStatefulFitter
 
-        assert callable(enn_fit)
+        assert ENNStatefulFitter is not None
 
     def test_create_optimizer_function(self):
         """create_optimizer is a callable function."""

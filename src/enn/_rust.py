@@ -29,7 +29,7 @@ sobol_sequence = _ext.util.sobol_sequence
 arms_from_pareto_fronts = _ext.util.arms_from_pareto_fronts
 EpistemicNearestNeighbors = _ext.model.EpistemicNearestNeighbors
 ENNParams = _ext.model.ENNParams
-enn_fit = _ext.fit.enn_fit
+ENNStatefulFitter = _ext.fit.ENNStatefulFitter
 subsample_loglik = _ext.fit.subsample_loglik
 Optimizer = _ext.optimizer.Optimizer
 create_optimizer_enn = _ext.optimizer.create_optimizer_enn
@@ -47,7 +47,7 @@ __all__ = [
     "arms_from_pareto_fronts",
     "EpistemicNearestNeighbors",
     "ENNParams",
-    "enn_fit",
+    "ENNStatefulFitter",
     "subsample_loglik",
     "Optimizer",
     "create_optimizer_enn",

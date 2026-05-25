@@ -3,7 +3,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use crate::config::turbo_enn_config;
-use crate::fitter::{fit_probability, num_random_fit_candidates, ENNFitter};
+use crate::fitter::ENNFitter;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
 use crate::optimizer::{ObservationDelta, Optimizer};
 use crate::index::IndexDriver;
@@ -43,24 +43,17 @@ fn scale_x_true_index_stale_after_add() {
 }
 
 #[test]
-fn fit_policy_probability_and_candidate_count() {
-    assert!((fit_probability(50) - 1.0).abs() < 1e-12);
-    assert!((fit_probability(200) - 0.5).abs() < 1e-12);
-    assert_eq!(num_random_fit_candidates(200), 1);
-    assert_eq!(num_random_fit_candidates(50), 2);
-}
-
-#[test]
-fn enn_fitter_first_fit_always_runs() {
+fn enn_fitter_ask_always_fits_with_enough_obs() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
     let model =
         EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
-    let mut fitter = ENNFitter::new(2, 3, true, 1);
+    let mut fitter = ENNFitter::new(2, true);
     fitter.reset_y_stats(&model.train_y());
     let mut rng = StdRng::seed_from_u64(99);
-    let p = fitter.maybe_fit(&model, &mut rng, None).unwrap();
-    assert!(p.is_some());
+    let p = fitter.ask(&model, 4, 3, None, &mut rng).unwrap();
+    assert_eq!(p.k_num_neighbors, 2);
+    assert!(p.epistemic_variance_scale > 0.0);
 }
 
 #[test]

@@ -1,4 +1,4 @@
-//! Stateful ENN hyperparameter fitting with incremental statistics and fit policy.
+//! Stateful ENN hyperparameter fitting with incremental statistics.
 
 use ndarray::{Array1, ArrayView2, Axis};
 use rand::Rng;
@@ -8,28 +8,9 @@ use crate::fit::subsample_loglik;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::ENNParams;
 
-/// Fit probability `p = min(1, 100/N)` for `N` training observations.
-#[must_use]
-pub fn fit_probability(n: usize) -> f64 {
-    if n == 0 {
-        return 1.0;
-    }
-    (100.0 / n as f64).min(1.0)
-}
-
-/// Random candidate count `max(1, int(100/N + 0.5))` (warm-start is added separately).
-#[must_use]
-pub fn num_random_fit_candidates(n: usize) -> usize {
-    if n == 0 {
-        return 1;
-    }
-    (((100.0 / n as f64) + 0.5).floor() as usize).max(1)
-}
-
-/// Stateful ENN fitter: running `y` moments, warm-start params, and fit policy.
+/// Stateful ENN fitter: running `y` moments and warm-start params.
 pub struct ENNFitter {
     k: i32,
-    num_fit_samples: usize,
     infer_aleatoric_variance: bool,
     params: Option<ENNParams>,
     y_sum: Array1<f64>,
@@ -39,21 +20,15 @@ pub struct ENNFitter {
 }
 
 impl ENNFitter {
-    pub fn new(
-        k: i32,
-        num_fit_samples: usize,
-        infer_aleatoric_variance: bool,
-        num_metrics: usize,
-    ) -> Self {
+    pub fn new(k: i32, infer_aleatoric_variance: bool) -> Self {
         Self {
             k,
-            num_fit_samples,
             infer_aleatoric_variance,
             params: None,
-            y_sum: Array1::zeros(num_metrics),
-            y_sumsq: Array1::zeros(num_metrics),
+            y_sum: Array1::zeros(0),
+            y_sumsq: Array1::zeros(0),
             y_count: 0,
-            num_metrics,
+            num_metrics: 0,
         }
     }
 
@@ -91,7 +66,55 @@ impl ENNFitter {
         }
     }
 
-    fn y_std(&self) -> Array1<f64> {
+    pub fn tell(
+        &mut self,
+        x: &ArrayView2<f64>,
+        y: &ArrayView2<f64>,
+        yvar: Option<&ArrayView2<f64>>,
+    ) -> Result<(), ENNError> {
+        if x.iter().any(|v| !v.is_finite()) {
+            return Err(ENNError::InvalidParameter(
+                "x must contain only finite values".to_string(),
+            ));
+        }
+        if y.iter().any(|v| !v.is_finite()) {
+            return Err(ENNError::InvalidParameter(
+                "y must contain only finite values".to_string(),
+            ));
+        }
+        if x.nrows() != y.nrows() {
+            return Err(ENNError::InvalidParameter(format!(
+                "x and y must have same number of rows: {} vs {}",
+                x.nrows(),
+                y.nrows()
+            )));
+        }
+        if let Some(yv) = yvar {
+            if yv.iter().any(|v| !v.is_finite()) {
+                return Err(ENNError::InvalidParameter(
+                    "yvar must contain only finite values".to_string(),
+                ));
+            }
+            if yv.nrows() != y.nrows() {
+                return Err(ENNError::InvalidParameter(format!(
+                    "yvar and y must have same number of rows: {} vs {}",
+                    yv.nrows(),
+                    y.nrows()
+                )));
+            }
+            if yv.ncols() != y.ncols() {
+                return Err(ENNError::InvalidParameter(format!(
+                    "yvar and y must have same number of columns: {} vs {}",
+                    yv.ncols(),
+                    y.ncols()
+                )));
+            }
+        }
+        self.update_y(y);
+        Ok(())
+    }
+
+    pub fn y_std(&self) -> Array1<f64> {
         if self.y_count == 0 {
             return Array1::ones(self.num_metrics.max(1));
         }
@@ -105,11 +128,14 @@ impl ENNFitter {
         std.mapv(|v| if v.is_finite() && v > 0.0 { v } else { 1.0 })
     }
 
-    pub(crate) fn build_param_candidates<R: Rng>(
+    pub(crate) fn build_random_param_candidates<R: Rng>(
         &self,
         num_random: usize,
         rng: &mut R,
     ) -> Result<Vec<ENNParams>, ENNError> {
+        if num_random == 0 {
+            return Ok(vec![]);
+        }
         let log_min = -3.0;
         let log_max = 3.0;
         let epi: Vec<f64> = (0..num_random)
@@ -122,12 +148,45 @@ impl ENNFitter {
         } else {
             vec![0.0; num_random]
         };
-        let mut paramss: Vec<ENNParams> = epi
+        let paramss: Vec<ENNParams> = epi
             .iter()
             .zip(ale.iter())
             .filter_map(|(&e, &a)| ENNParams::new(self.k, e, a).ok())
             .collect();
-        if let Some(warm) = self.params.as_ref() {
+        if paramss.is_empty() {
+            return ENNParams::new(self.k, 1.0, 0.0)
+                .map(|p| vec![p])
+                .map_err(|e| {
+                    ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
+                });
+        }
+        Ok(paramss)
+    }
+
+    pub fn ask<R: Rng>(
+        &mut self,
+        model: &EpistemicNearestNeighbors,
+        num_fit_candidates: usize,
+        num_fit_samples: usize,
+        params_warm_start: Option<&ENNParams>,
+        rng: &mut R,
+    ) -> Result<ENNParams, ENNError> {
+        if model.num_obs() < 2 {
+            let best = ENNParams::new(self.k, 1.0, 0.0).map_err(|e| {
+                ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
+            })?;
+            self.params = Some(best);
+            return Ok(best);
+        }
+        if self.y_count == 0 {
+            return Err(ENNError::InvalidParameter(
+                "tell must be called before ask to initialize incremental y statistics"
+                    .to_string(),
+            ));
+        }
+        let mut paramss = self.build_random_param_candidates(num_fit_candidates, rng)?;
+        let warm = params_warm_start.or(self.params.as_ref());
+        if let Some(warm) = warm {
             let warm_params = ENNParams::new(
                 self.k,
                 warm.epistemic_variance_scale,
@@ -137,35 +196,11 @@ impl ENNFitter {
                     0.0
                 },
             )
-            .map_err(|e| ENNError::InvalidParameter(format!("Invalid warm-start params: {e}")))?;
+            .map_err(|e| {
+                ENNError::InvalidParameter(format!("Invalid warm-start params: {e}"))
+            })?;
             paramss.push(warm_params);
         }
-        if paramss.is_empty() {
-            return ENNParams::new(self.k, 1.0, 0.0)
-                .map(|p| vec![p])
-                .map_err(|e| ENNError::InvalidParameter(format!("Failed to create default params: {e}")));
-        }
-        Ok(paramss)
-    }
-
-    /// Fit with policy gate. `fit_prob_override` of `1.0` forces a fit (used by `enn_fit`).
-    pub fn maybe_fit<R: Rng>(
-        &mut self,
-        model: &EpistemicNearestNeighbors,
-        rng: &mut R,
-        fit_prob_override: Option<f64>,
-    ) -> Result<Option<ENNParams>, ENNError> {
-        let n = model.num_obs();
-        if n == 0 {
-            return Ok(None);
-        }
-        let p = fit_prob_override.unwrap_or_else(|| fit_probability(n));
-        let has_params = self.params.is_some();
-        if has_params && rng.gen::<f64>() > p {
-            return Ok(None);
-        }
-        let num_random = num_random_fit_candidates(n);
-        let paramss = self.build_param_candidates(num_random, rng)?;
         let train_x = model.train_x();
         let train_y = model.train_y();
         let y_std = self.y_std();
@@ -174,7 +209,7 @@ impl ENNFitter {
             &train_x,
             &train_y,
             &paramss,
-            self.num_fit_samples,
+            num_fit_samples,
             rng,
             Some(&y_std.view()),
         )?;
@@ -186,6 +221,128 @@ impl ENNFitter {
             .unwrap_or(0);
         let best = paramss[best_idx];
         self.params = Some(best);
-        Ok(Some(best))
+        Ok(best)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::index::IndexDriver;
+    use ndarray::{array, s};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    #[test]
+    fn tell_rejects_non_finite_y() {
+        let mut fitter = ENNFitter::new(2, true);
+        let x = array![[0.0, 0.0]];
+        let y = array![[f64::NAN]];
+        assert!(fitter.tell(&x.view(), &y.view(), None).is_err());
+    }
+
+    #[test]
+    fn tell_rejects_non_finite_x() {
+        let mut fitter = ENNFitter::new(2, true);
+        let x = array![[f64::NAN, 0.0]];
+        let y = array![[0.0]];
+        assert!(fitter.tell(&x.view(), &y.view(), None).is_err());
+    }
+
+    #[test]
+    fn tell_rejects_shape_mismatch_and_bad_yvar() {
+        let mut fitter = ENNFitter::new(2, true);
+        let x = array![[0.0, 0.0], [1.0, 0.0]];
+        let y = array![[0.0]];
+        assert!(fitter.tell(&x.view(), &y.view(), None).is_err());
+        let yvar = array![[0.1, 0.2]];
+        assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar.view())).is_err());
+        let yvar_bad = array![[f64::INFINITY]];
+        assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_bad.view())).is_err());
+    }
+
+    #[test]
+    fn ask_uses_explicit_warm_start() {
+        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+        let train_y = array![[0.0], [1.0], [1.0], [2.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y.clone(), None, false, IndexDriver::Exact)
+                .unwrap();
+        let mut fitter = ENNFitter::new(2, true);
+        fitter.tell(&train_x.view(), &train_y.view(), None).unwrap();
+        let warm = ENNParams::new(2, 2.5, 0.3).unwrap();
+        let mut rng = StdRng::seed_from_u64(7);
+        let p = fitter
+            .ask(&model, 0, 2, Some(&warm), &mut rng)
+            .unwrap();
+        assert_eq!(p.k_num_neighbors, 2);
+        assert!((p.epistemic_variance_scale - 2.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn ask_warm_start_zeros_aleatoric_when_not_inferred() {
+        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+        let train_y = array![[0.0], [1.0], [1.0], [2.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let mut fitter = ENNFitter::new(2, false);
+        fitter.reset_y_stats(&model.train_y());
+        let warm = ENNParams::new(2, 2.5, 9.9).unwrap();
+        let mut rng = StdRng::seed_from_u64(8);
+        let p = fitter
+            .ask(&model, 2, 2, Some(&warm), &mut rng)
+            .unwrap();
+        assert_eq!(p.aleatoric_variance_scale, 0.0);
+    }
+
+    #[test]
+    fn ask_returns_defaults_when_num_obs_lt_2() {
+        let train_x = array![[0.0, 0.0]];
+        let train_y = array![[0.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let mut fitter = ENNFitter::new(3, true);
+        let mut rng = StdRng::seed_from_u64(1);
+        let p = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
+        assert_eq!(p.k_num_neighbors, 3);
+        assert!((p.epistemic_variance_scale - 1.0).abs() < 1e-12);
+        assert!((p.aleatoric_variance_scale - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn incremental_y_std_matches_batch_std() {
+        let train_x = array![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [0.5, 0.5]
+        ];
+        let train_y = array![[0.0], [1.0], [1.0], [2.0], [1.5]];
+        let _model = EpistemicNearestNeighbors::new(
+            train_x.clone(),
+            train_y.clone(),
+            None,
+            false,
+            IndexDriver::Exact,
+        )
+        .unwrap();
+        let mut fitter = ENNFitter::new(2, true);
+        for (i, row) in train_y.axis_iter(Axis(0)).enumerate() {
+            let y_row = row.insert_axis(Axis(0));
+            let x_row = train_x.slice(s![i..i + 1, ..]);
+            fitter.tell(&x_row, &y_row, None).unwrap();
+        }
+        let batch_std = train_y.std_axis(Axis(0), 0.0);
+        let inc_std = fitter.y_std();
+        for (a, b) in inc_std.iter().zip(batch_std.iter()) {
+            if *b > 1e-10 {
+                assert!((a - b).abs() < 1e-10, "incremental std {a} vs batch std {b}");
+            } else {
+                assert!((*a - 1.0).abs() < 1e-10, "zero-variance metric should clamp to 1.0");
+            }
+        }
     }
 }
