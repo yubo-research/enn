@@ -5,7 +5,7 @@ import time
 import numpy as np
 import pytest
 
-from enn import EpistemicNearestNeighbors, enn_fit
+from enn import ENNStatefulFitter, EpistemicNearestNeighbors
 from enn.enn.enn_params import PosteriorFlags
 
 
@@ -20,12 +20,12 @@ def make_enn_demo_data(num_samples: int, k: int, noise: float, m: int = 1):
     yvar = (noise**2) * np.ones_like(y)
     model = EpistemicNearestNeighbors(x[:, None], y[:, None], yvar[:, None])
     rng = np.random.default_rng(0)
-    params = enn_fit(
+    fitter = ENNStatefulFitter(k=k, rng=rng)
+    fitter.tell(model.train_x, model.train_y, model.train_yvar)
+    params = fitter.ask(
         model,
-        k=k,
         num_fit_candidates=100,
         num_fit_samples=min(10, num_samples),
-        rng=rng,
     )
     return x, y, model, params
 

@@ -57,18 +57,21 @@ def mk_enn(
         return None, None
     fitted_params: ENNParams | None = None
     if fit is not None and fit.num_fit_samples is not None and rng is not None:
-        from enn.enn.enn_fit import enn_fit
+        from enn.enn.enn_fitter import ENNStatefulFitter
 
-        fitted_params = enn_fit(
-            enn_model,
+        fitter = ENNStatefulFitter(
             k=k,
+            rng=rng,
+            infer_aleatoric_variance_scale=fit.infer_aleatoric_variance_scale,
+        )
+        fitter.tell(x_obs_array, y, yvar)
+        fitted_params = fitter.ask(
+            enn_model,
             num_fit_candidates=(
                 fit.num_fit_candidates if fit.num_fit_candidates is not None else 30
             ),
             num_fit_samples=fit.num_fit_samples,
-            rng=rng,
             params_warm_start=params_warm_start,
-            infer_aleatoric_variance_scale=fit.infer_aleatoric_variance_scale,
         )
     else:
         fitted_params = ENNParams(

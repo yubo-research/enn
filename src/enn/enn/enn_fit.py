@@ -4,8 +4,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from enn._rust import ENNParams as RustENNParams
-from enn._rust import enn_fit as _rust_enn_fit
 from enn._rust import subsample_loglik as _rust_subsample_loglik
 
 if TYPE_CHECKING:
@@ -56,48 +54,4 @@ def subsample_loglik(
         P,
         seed,
         y_std_arr,
-    )
-
-
-def enn_fit(
-    model: EpistemicNearestNeighbors,
-    *,
-    k: int,
-    num_fit_candidates: int,
-    num_fit_samples: int = 10,
-    rng: Generator,
-    params_warm_start: ENNParams | None = None,
-    infer_aleatoric_variance_scale: bool = True,
-) -> ENNParams:
-    """Fit ENN parameters using Rust backend."""
-    from .enn_class import EpistemicNearestNeighbors as PyENN
-    from .enn_params import ENNParams as PyENNParams
-
-    if not isinstance(model, PyENN):
-        raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
-
-    seed = int(rng.integers(0, 2**63 - 1))
-
-    rust_warm_start = None
-    if params_warm_start is not None:
-        rust_warm_start = RustENNParams(
-            params_warm_start.k_num_neighbors,
-            params_warm_start.epistemic_variance_scale,
-            params_warm_start.aleatoric_variance_scale,
-        )
-
-    rust_result = _rust_enn_fit(
-        model.rust_backend,
-        k,
-        num_fit_candidates,
-        num_fit_samples,
-        seed,
-        rust_warm_start,
-        infer_aleatoric_variance_scale,
-    )
-
-    return PyENNParams(
-        k_num_neighbors=rust_result.k_num_neighbors,
-        epistemic_variance_scale=rust_result.epistemic_variance_scale,
-        aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
     )

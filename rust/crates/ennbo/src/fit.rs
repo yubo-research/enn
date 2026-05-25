@@ -198,101 +198,10 @@ pub fn subsample_loglik<R: Rng>(
     Ok(logliks)
 }
 
-/// Fit ENN parameters by maximizing subsample log-likelihood.
-///
-/// # Arguments
-/// * `model` - The ENN model
-/// * `k` - Number of neighbors
-/// * `num_fit_candidates` - Number of candidate parameter sets to try
-/// * `num_fit_samples` - Number of subsamples for log-likelihood computation
-/// * `rng` - Random number generator
-/// * `params_warm_start` - Optional warm-start parameters
-/// * `infer_aleatoric_variance_scale` - Whether to infer aleatoric variance
-///
-/// # Returns
-/// Best ENNParams found
-pub fn enn_fit<R: Rng>(
-    model: &EpistemicNearestNeighbors,
-    k: i32,
-    num_fit_candidates: usize,
-    num_fit_samples: usize,
-    rng: &mut R,
-    params_warm_start: Option<&ENNParams>,
-    infer_aleatoric_variance_scale: bool,
-) -> Result<ENNParams, ENNError> {
-    let train_x = model.train_x();
-    let train_y = model.train_y();
-
-    let log_min = -3.0;
-    let log_max = 3.0;
-
-    let epi_var_scale_values: Vec<f64> = (0..num_fit_candidates)
-        .map(|_| 10f64.powf(rng.gen_range(log_min..=log_max)))
-        .collect();
-
-    let ale_homoscedastic_values: Vec<f64> = if infer_aleatoric_variance_scale {
-        (0..num_fit_candidates)
-            .map(|_| 10f64.powf(rng.gen_range(log_min..=log_max)))
-            .collect()
-    } else {
-        vec![0.0; num_fit_candidates]
-    };
-
-    let mut paramss: Vec<ENNParams> = epi_var_scale_values
-        .iter()
-        .zip(ale_homoscedastic_values.iter())
-        .filter_map(|(&epi_val, &ale_val)| ENNParams::new(k, epi_val, ale_val).ok())
-        .collect();
-
-    if let Some(warm) = params_warm_start {
-        let warm_params = ENNParams::new(
-            k,
-            warm.epistemic_variance_scale,
-            if infer_aleatoric_variance_scale {
-                warm.aleatoric_variance_scale
-            } else {
-                0.0
-            },
-        )
-        .map_err(|e| ENNError::InvalidParameter(format!("Invalid warm-start params: {e}")))?;
-        paramss.push(warm_params);
-    }
-
-    if paramss.is_empty() {
-        return ENNParams::new(k, 1.0, 0.0).map_err(|e| {
-            ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
-        });
-    }
-
-    let y_std = train_y.std_axis(Axis(0), 0.0);
-
-    let logliks = subsample_loglik(
-        model,
-        &train_x,
-        &train_y,
-        &paramss,
-        num_fit_samples,
-        rng,
-        Some(&y_std.view()),
-    )?;
-
-    if logliks.is_empty() {
-        return Ok(paramss[0]);
-    }
-
-    let best_idx = logliks
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.total_cmp(b))
-        .map(|(idx, _)| idx)
-        .unwrap_or(0);
-
-    Ok(paramss[best_idx])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fitter::ENNFitter;
     use crate::index::IndexDriver;
     use crate::test_helpers::test_epistemic_model_exact_unit_square as create_test_model;
     use ndarray::array;
@@ -336,11 +245,13 @@ mod tests {
     }
 
     #[test]
-    fn test_enn_fit_basic() {
+    fn test_enn_fitter_ask_basic() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
+        let mut fitter = ENNFitter::new(2, true);
+        fitter.reset_y_stats(&model.train_y());
 
-        let result = enn_fit(&model, 2, 5, 3, &mut rng, None, true).unwrap();
+        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -348,27 +259,30 @@ mod tests {
     }
 
     #[test]
-    fn test_enn_fit_with_warm_start() {
+    fn test_enn_fitter_ask_with_warm_start() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
+        let mut fitter = ENNFitter::new(2, true);
+        fitter.reset_y_stats(&model.train_y());
 
         let warm_start = ENNParams::new(2, 1.5, 0.2).unwrap();
 
-        let result = enn_fit(&model, 2, 5, 3, &mut rng, Some(&warm_start), true).unwrap();
+        let result = fitter
+            .ask(&model, 5, 3, Some(&warm_start), &mut rng)
+            .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
     }
 
     #[test]
-    fn test_enn_fit_disable_aleatoric() {
+    fn test_enn_fitter_ask_disable_aleatoric() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
+        let mut fitter = ENNFitter::new(2, false);
+        fitter.reset_y_stats(&model.train_y());
 
-        let result = enn_fit(
-            &model, 2, 5, 3, &mut rng, None, false, // disable aleatoric inference
-        )
-        .unwrap();
+        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -376,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enn_fit_multioutput() {
+    fn test_enn_fitter_ask_multioutput() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5]];
         let train_y = array![[0.0, 1.0], [1.0, 2.0], [1.0, 0.0], [2.0, 1.0], [1.0, 1.5]];
         let model =
@@ -384,8 +298,10 @@ mod tests {
                 .unwrap();
 
         let mut rng = StdRng::seed_from_u64(42);
+        let mut fitter = ENNFitter::new(2, true);
+        fitter.reset_y_stats(&model.train_y());
 
-        let result = enn_fit(&model, 2, 5, 3, &mut rng, None, true).unwrap();
+        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);

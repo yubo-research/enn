@@ -6,38 +6,7 @@ use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use crate::py_model::{PyENNParams, PyEpistemicNearestNeighbors};
-
-/// Python wrapper for enn_fit
-#[allow(clippy::too_many_arguments)]
-#[pyfunction(name = "enn_fit")]
-#[pyo3(signature = (model, k, num_fit_candidates, num_fit_samples, seed, params_warm_start=None, infer_aleatoric_variance_scale=true))]
-pub fn enn_fit_py(
-    model: &PyEpistemicNearestNeighbors,
-    k: i32,
-    num_fit_candidates: usize,
-    num_fit_samples: usize,
-    seed: u64,
-    params_warm_start: Option<PyENNParams>,
-    infer_aleatoric_variance_scale: bool,
-) -> PyResult<PyENNParams> {
-    let mut rng = StdRng::seed_from_u64(seed);
-
-    let warm_start = params_warm_start.as_ref().map(|p| p.inner);
-
-    let result = ennbo::enn_fit(
-        &model.inner,
-        k,
-        num_fit_candidates,
-        num_fit_samples,
-        &mut rng,
-        warm_start.as_ref(),
-        infer_aleatoric_variance_scale,
-    )
-    .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-    Ok(PyENNParams { inner: result })
-}
+use crate::py_model::PyEpistemicNearestNeighbors;
 
 /// Python wrapper for subsample_loglik
 #[allow(clippy::too_many_arguments)]

@@ -1,5 +1,6 @@
 use enn_rust::{
-    enn_py_build, link_rpath, py_fit, py_hash, py_hypervolume, py_model, py_optimizer, py_util,
+    enn_py_build, link_rpath, py_fit, py_fitter, py_hash, py_hypervolume, py_model, py_optimizer,
+    py_util,
 };
 
 #[test]
@@ -26,8 +27,8 @@ fn kiss_imports_link_pyo3_wrappers() {
         py_util::calculate_sobol_indices_py,
         py_util::sobol_sequence_py,
         py_util::arms_from_pareto_fronts_py,
-        py_fit::enn_fit_py,
         py_fit::subsample_loglik_py,
+        std::mem::size_of::<py_fitter::PyENNStatefulFitter>(),
         std::mem::size_of::<py_model::PyEpistemicNearestNeighbors>(),
         std::mem::size_of::<py_model::PyENNParams>(),
         std::mem::size_of::<py_optimizer::PyOptimizer>(),

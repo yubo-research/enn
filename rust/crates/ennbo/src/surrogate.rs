@@ -158,7 +158,7 @@ impl ENNSurrogate {
 
         model.add(&x_add, &y_add, yvar_add.as_ref())?;
         if let Some(fitter) = self.fitter.as_mut() {
-            fitter.update_y(&y_add);
+            fitter.tell(&x_add, &y_add, yvar_add.as_ref())?;
         }
         self.run_fitter(rng)?;
         Ok(true)
@@ -169,24 +169,27 @@ impl ENNSurrogate {
             .model
             .as_ref()
             .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
-        let num_metrics = model.train_y().ncols();
         if self.fitter.is_none() {
-            let mut fitter = ENNFitter::new(
-                self.config.k,
-                self.config.num_fit_samples,
-                self.config.infer_aleatoric_variance,
-                num_metrics,
-            );
-            fitter.reset_y_stats(&model.train_y());
+            let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
+            fitter.tell(
+                &model.train_x(),
+                &model.train_y(),
+                model.train_yvar().as_ref(),
+            )?;
             if let Some(p) = self.params {
                 fitter.set_params(p);
             }
             self.fitter = Some(fitter);
         }
         let fitter = self.fitter.as_mut().expect("fitter");
-        if let Some(p) = fitter.maybe_fit(model, rng, None)? {
-            self.params = Some(p);
-        }
+        let p = fitter.ask(
+            model,
+            self.config.num_fit_candidates,
+            self.config.num_fit_samples,
+            self.params.as_ref(),
+            rng,
+        )?;
+        self.params = Some(p);
         Ok(())
     }
 
@@ -201,11 +204,13 @@ impl ENNSurrogate {
             let model = self.model.as_mut().expect("model");
             model.add(x_new, y_new, yvar_new)?;
             if let Some(fitter) = self.fitter.as_mut() {
-                fitter.update_y(y_new);
+                fitter.tell(x_new, y_new, yvar_new)?;
             }
             self.run_fitter(rng)?;
             return Ok(());
         }
+        let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
+        fitter.tell(x_new, y_new, yvar_new)?;
         let model = EpistemicNearestNeighbors::new(
             x_new.to_owned(),
             y_new.to_owned(),
@@ -213,14 +218,6 @@ impl ENNSurrogate {
             self.config.scale_x,
             self.config.index_driver,
         )?;
-        let num_metrics = y_new.ncols();
-        let mut fitter = ENNFitter::new(
-            self.config.k,
-            self.config.num_fit_samples,
-            self.config.infer_aleatoric_variance,
-            num_metrics,
-        );
-        fitter.reset_y_stats(y_new);
         self.model = Some(model);
         self.fitter = Some(fitter);
         self.run_fitter(rng)?;
@@ -257,22 +254,19 @@ impl Surrogate for ENNSurrogate {
             self.config.index_driver,
         )?;
 
-        let num_metrics = y.ncols();
-        let mut fitter = ENNFitter::new(
-            self.config.k,
-            self.config.num_fit_samples,
-            self.config.infer_aleatoric_variance,
-            num_metrics,
-        );
-        fitter.reset_y_stats(&model.train_y());
+        let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
+        fitter.tell(x, y, yvar)?;
         if let Some(p) = self.params {
             fitter.set_params(p);
         }
-        if let Some(p) = fitter.maybe_fit(&model, &mut local_rng, Some(1.0))? {
-            self.params = Some(p);
-        } else if let Some(p) = fitter.params() {
-            self.params = Some(*p);
-        }
+        let p = fitter.ask(
+            &model,
+            self.config.num_fit_candidates,
+            self.config.num_fit_samples,
+            self.params.as_ref(),
+            &mut local_rng,
+        )?;
+        self.params = Some(p);
         self.model = Some(model);
         self.fitter = Some(fitter);
 
@@ -420,6 +414,29 @@ mod tests {
         assert!(
             (v_inc - v_full).abs() < 1e-9,
             "train_yvar row0 incremental={v_inc} full_refit={v_full} (prefix yvar must refresh)"
+        );
+    }
+
+    #[test]
+    fn regression_incremental_fit_rejects_nan_y_on_append() {
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 4,
+            num_fit_samples: 2,
+            ..Default::default()
+        };
+        let x0 = array![[0.0, 0.0], [1.0, 0.0]];
+        let y0 = array![[0.0], [1.0]];
+        let x1 = array![[0.0, 0.0], [1.0, 0.0], [0.5, 0.5]];
+        let y1 = array![[0.0], [1.0], [f64::NAN]];
+
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(42);
+        sur.fit(&x0.view(), &y0.view(), None, &mut rng).unwrap();
+        let result = sur.fit(&x1.view(), &y1.view(), None, &mut rng);
+        assert!(
+            result.is_err(),
+            "non-finite y on incremental append must be rejected (use tell)"
         );
     }
 
