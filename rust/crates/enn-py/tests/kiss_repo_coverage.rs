@@ -2,6 +2,7 @@ use enn_rust::{
     enn_py_build, link_rpath, py_fit, py_fitter, py_hash, py_hypervolume, py_model, py_optimizer,
     py_util,
 };
+use ennbo::link_search::emit_blas_lapack_link_search_linux;
 
 #[test]
 fn kiss_pymodule_entrypoint_names_and_methods() {
@@ -40,6 +41,7 @@ fn kiss_imports_link_pyo3_wrappers() {
         link_rpath::blas_libs_present,
         link_rpath::install_patchelf_if_needed,
         link_rpath::emit_linux_rpath_link_args,
+        ennbo::link_search::emit_blas_lapack_link_search_linux,
     );
 }
 
@@ -57,5 +59,6 @@ fn kiss_enn_py_build_main() {
         enn_py_build::kiss_enn_py_build_touch_07 as fn(),
         enn_py_build::kiss_enn_py_build_touch_08 as fn(),
         enn_py_build::kiss_enn_py_build_touch_09 as fn(),
+        enn_py_build::kiss_enn_py_build_touch_10 as fn(),
     );
 }
