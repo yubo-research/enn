@@ -29,6 +29,52 @@ fn pairwise_sq_l2(
     d2.mapv(|v| v.max(0.0))
 }
 
+fn row_sq_l2(
+    x: ArrayView1<f64>,
+    y: ArrayView1<f64>,
+    scale_x: bool,
+    x_scale: ArrayView1<f64>,
+) -> f64 {
+    let mut acc = 0.0;
+    if scale_x {
+        for i in 0..x.len() {
+            let sc = x_scale[i];
+            let d = x[i] / sc - y[i] / sc;
+            acc += d * d;
+        }
+    } else {
+        for (&xi, &yi) in x.iter().zip(y.iter()) {
+            let d = xi - yi;
+            acc += d * d;
+        }
+    }
+    acc.max(0.0)
+}
+
+fn dist2s_for_neighbor_indices(
+    model: &EpistemicNearestNeighbors,
+    x: &ArrayView2<f64>,
+    idx: &Array2<i64>,
+) -> Array2<f64> {
+    let train_x = model.train_x();
+    let n_query = idx.nrows();
+    let k = idx.ncols();
+    let mut out = Array2::zeros((n_query, k));
+    for i in 0..n_query {
+        let x_row = x.row(i);
+        for j in 0..k {
+            let ni = idx[[i, j]];
+            if ni < 0 {
+                out[[i, j]] = f64::INFINITY;
+            } else {
+                let t_row = train_x.row(ni as usize);
+                out[[i, j]] = row_sq_l2(x_row, t_row, model.scale_x, model.x_scale.view());
+            }
+        }
+    }
+    out
+}
+
 fn index_search(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -36,7 +82,9 @@ fn index_search(
     exclude_nearest: bool,
 ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
     model.ensure_index_sync()?;
-    Ok(model.index().search(x, search_k, exclude_nearest)?)
+    let (_, idx) = model.index().search(x, search_k, exclude_nearest)?;
+    let dist2s = dist2s_for_neighbor_indices(model, x, &idx);
+    Ok((dist2s, idx))
 }
 
 pub(crate) fn get_neighbor_data(
@@ -278,6 +326,36 @@ mod pairwise_tests {
         let scale = array![1.0, 1.0];
         let d = pairwise_sq_l2(&x.view(), &y.view(), false, &scale.view());
         assert_eq!(d[[0, 0]], 5.0);
+    }
+
+    #[test]
+    fn dist2s_for_neighbor_indices_matches_pairwise_block() {
+        use super::dist2s_for_neighbor_indices;
+        use crate::index::IndexDriver;
+        use crate::model::EpistemicNearestNeighbors;
+
+        let train_x = array![[0.0], [1.0], [2.0]];
+        let train_y = array![[0.0], [1.0], [2.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let query = array![[0.5]];
+        let idx = array![[0i64, 1]];
+        let dist2s = dist2s_for_neighbor_indices(&model, &query.view(), &idx);
+        let block = pairwise_sq_l2(&query.view(), &train_x.view(), false, &array![1.0].view());
+        assert!((dist2s[[0, 0]] - block[[0, 0]]).abs() < 1e-12);
+        assert!((dist2s[[0, 1]] - block[[0, 1]]).abs() < 1e-12);
+    }
+
+    #[test]
+    fn row_sq_l2_scaled_matches_pairwise() {
+        use super::row_sq_l2;
+
+        let x = array![2.0, 0.0];
+        let y = array![0.0, 0.0];
+        let scale = array![2.0, 1.0];
+        let d = row_sq_l2(x.view(), y.view(), true, scale.view());
+        assert!((d - 1.0).abs() < 1e-12);
     }
 
     #[test]
