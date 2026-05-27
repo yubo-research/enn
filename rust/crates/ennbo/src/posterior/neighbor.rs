@@ -4,6 +4,7 @@ use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
 
 use crate::draw::NeighborData;
 use crate::error::ENNError;
+use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 
@@ -82,9 +83,50 @@ fn index_search(
     exclude_nearest: bool,
 ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
     model.ensure_index_sync()?;
-    let (_, idx) = model.index().search(x, search_k, exclude_nearest)?;
-    let dist2s = dist2s_for_neighbor_indices(model, x, &idx);
-    Ok((dist2s, idx))
+    if model.index().driver() == IndexDriver::Exact {
+        let train_x = model.train_x();
+        let n_query = x.nrows();
+        let n_train = train_x.nrows();
+        let search_k = search_k as usize;
+        let k = search_k.min(n_train);
+        let mut dist2s = Array2::from_elem((n_query, search_k), f64::INFINITY);
+        let mut idx = Array2::from_elem((n_query, search_k), -1i64);
+        for i in 0..n_query {
+            let x_row = x.row(i);
+            let mut pairs: Vec<(f64, i64)> = (0..n_train)
+                .map(|j| {
+                    (
+                        row_sq_l2(x_row, train_x.row(j), model.scale_x, model.x_scale.view()),
+                        j as i64,
+                    )
+                })
+                .collect();
+            pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            for j in 0..k {
+                dist2s[[i, j]] = pairs[j].0;
+                idx[[i, j]] = pairs[j].1;
+            }
+        }
+        if exclude_nearest {
+            let nc = dist2s.ncols();
+            if nc <= 1 {
+                dist2s = Array2::zeros((n_query, nc.saturating_sub(1)));
+                idx = Array2::zeros((n_query, nc.saturating_sub(1)));
+            } else {
+                dist2s = dist2s
+                    .slice_axis(Axis(1), ndarray::Slice::from(1..))
+                    .to_owned();
+                idx = idx
+                    .slice_axis(Axis(1), ndarray::Slice::from(1..))
+                    .to_owned();
+            }
+        }
+        Ok((dist2s, idx))
+    } else {
+        let (_, idx) = model.index().search(x, search_k, exclude_nearest)?;
+        let dist2s = dist2s_for_neighbor_indices(model, x, &idx);
+        Ok((dist2s, idx))
+    }
 }
 
 pub(crate) fn get_neighbor_data(
@@ -293,6 +335,50 @@ mod pairwise_tests {
         let (dist2s, idx) = index_search(&model, &query.view(), 2, false).unwrap();
         assert_eq!(idx[[0, 0]], 0);
         assert!(dist2s[[0, 0]] < 1e-6);
+    }
+
+    #[test]
+    fn index_search_exclude_nearest_drops_self() {
+        use super::index_search;
+        use crate::index::IndexDriver;
+        use crate::model::EpistemicNearestNeighbors;
+        use ndarray::array;
+
+        let train_x = array![[0.0], [1.0], [2.0]];
+        let train_y = array![[0.0], [1.0], [2.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let query = array![[1.0]];
+        let (dist2s, idx) = index_search(&model, &query.view(), 2, true).unwrap();
+        assert_eq!(idx.ncols(), 1);
+        assert_ne!(idx[[0, 0]], 1);
+        assert!(dist2s[[0, 0]] > 0.0);
+    }
+
+    #[test]
+    fn index_search_batch_matches_single_on_train_ties() {
+        use super::index_search;
+        use crate::index::IndexDriver;
+        use crate::model::EpistemicNearestNeighbors;
+        use ndarray::Array2;
+
+        let train_x = Array2::from_shape_fn((20, 1), |(i, _)| {
+            (i as f64 - 9.5) / 3.0 + 0.01 * (i as f64)
+        });
+        let train_y = Array2::from_shape_fn((20, 1), |(i, _)| {
+            ((i as f64 + 1.0) * 0.37 - 2.1) * 100.0
+        });
+        let model =
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let (dist2_batch, idx_batch) = index_search(&model, &train_x.view(), 10, false).unwrap();
+        for i in 0..train_x.nrows() {
+            let row = train_x.slice(ndarray::s![i..i + 1, ..]);
+            let (dist2_one, idx_one) = index_search(&model, &row, 10, false).unwrap();
+            assert_eq!(idx_batch.row(i).to_vec(), idx_one.row(0).to_vec());
+            assert_eq!(dist2_batch.row(i).to_vec(), dist2_one.row(0).to_vec());
+        }
     }
 
     #[test]

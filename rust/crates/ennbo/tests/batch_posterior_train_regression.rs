@@ -35,7 +35,10 @@ fn batch_posterior_on_train_row_matches_single_query_posterior() {
     let train_x = ndarray::Array2::from_shape_fn((20, 1), |(i, _)| {
         (i as f64 - 9.5) / 3.0 + 0.01 * (i as f64)
     });
-    let train_y = train_x.sum_axis(ndarray::Axis(1)).insert_axis(ndarray::Axis(1));
+    let train_y = ndarray::Array2::from_shape_fn((20, 1), |(i, _)| {
+        let z = (i as f64 + 1.0) * 0.37 - 2.1;
+        z * 100.0
+    });
     let model = EpistemicNearestNeighbors::new(
         train_x.clone(),
         train_y,
@@ -50,7 +53,7 @@ fn batch_posterior_on_train_row_matches_single_query_posterior() {
         aleatoric_variance_scale: 0.0,
     };
     let flags = PosteriorFlags {
-        exclude_nearest: true,
+        exclude_nearest: false,
         observation_noise: false,
     };
     let batch = model
