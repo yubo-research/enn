@@ -129,6 +129,12 @@ fn compute_batch_with_shared_neighbors(
             let internals = compute_weighted_posterior(model, data_with_params, None)?;
             assign_posterior_results(&internals, mu_all, se_all, i);
         }
+    } else {
+        let batch_size = x.nrows();
+        let internals = empty_posterior_internals(model, batch_size);
+        for i in 0..paramss.len() {
+            assign_posterior_results(&internals, mu_all, se_all, i);
+        }
     }
     Ok(())
 }
