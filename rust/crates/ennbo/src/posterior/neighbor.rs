@@ -75,6 +75,30 @@ pub(crate) fn dist2s_for_neighbor_indices(
     out
 }
 
+fn topk_indices_from_row_dists(
+    row: &[f64],
+    k: usize,
+    tie_break_neighbors: bool,
+) -> Vec<usize> {
+    let n_train = row.len();
+    let mut best: Vec<usize> = (0..n_train).collect();
+    best.select_nth_unstable_by(k - 1, |&a, &b| row[a].total_cmp(&row[b]));
+    best.truncate(k);
+    let d_cut = row[best[k - 1]];
+    let n_le = row
+        .iter()
+        .filter(|d| d.total_cmp(&d_cut) != std::cmp::Ordering::Greater)
+        .count();
+    if tie_break_neighbors && n_le > k {
+        best.clear();
+        best.extend(0..n_train);
+        best.select_nth_unstable_by(k - 1, |&a, &b| row[a].total_cmp(&row[b]).then(a.cmp(&b)));
+        best.truncate(k);
+    }
+    best.sort_by(|&a, &b| row[a].total_cmp(&row[b]).then(a.cmp(&b)));
+    best
+}
+
 pub(crate) fn exact_f64_batch_topk(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -90,60 +114,62 @@ pub(crate) fn exact_f64_batch_topk(
     let mut dist2s = Array2::from_elem((n_query, search_k), f64::INFINITY);
     let mut idx = Array2::from_elem((n_query, search_k), -1i64);
     if k > 0 {
-        let d2_matrix = pairwise_sq_l2(x, &train_x.view(), model.scale_x, &model.x_scale.view());
-        let mut best = Vec::with_capacity(n_train);
-        for i in 0..n_query {
-            let row = d2_matrix.row(i);
-            best.clear();
-            best.extend(0..n_train);
-            best.select_nth_unstable_by(k - 1, |&a, &b| row[a].total_cmp(&row[b]));
-            if !tie_break_neighbors {
-                best.truncate(k);
-                best.sort_by(|&a, &b| row[a].total_cmp(&row[b]));
-            } else {
-                best.truncate(k);
-                best.sort_by(|&a, &b| row[a].total_cmp(&row[b]));
-                let d_cut = row[best[k - 1]];
-                let mut n_le = 0usize;
-                for j in 0..n_train {
-                    if row[j].total_cmp(&d_cut) != std::cmp::Ordering::Greater {
-                        n_le += 1;
-                    }
-                }
-                let needs_idx_order = best.windows(2).any(|w| row[w[0]] == row[w[1]]);
-                if n_le > k {
-                    best.clear();
-                    best.extend(0..n_train);
-                    best.select_nth_unstable_by(k - 1, |&a, &b| {
-                        row[a].total_cmp(&row[b]).then(a.cmp(&b))
-                    });
-                    best.truncate(k);
-                    best.sort_by(|&a, &b| row[a].total_cmp(&row[b]).then(a.cmp(&b)));
-                } else if needs_idx_order {
-                    best.sort_by(|&a, &b| row[a].total_cmp(&row[b]).then(a.cmp(&b)));
+        if !tie_break_neighbors {
+            let (_, idx_faiss) = model.index().search(x, search_k as i32, false)?;
+            let dist2s_faiss = dist2s_for_neighbor_indices(model, x, &idx_faiss);
+            for i in 0..n_query {
+                let mut pairs: Vec<(f64, i64)> = dist2s_faiss
+                    .row(i)
+                    .iter()
+                    .zip(idx_faiss.row(i).iter())
+                    .filter_map(|(&d, &t)| (t >= 0).then_some((d, t)))
+                    .collect();
+                pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
+                pairs.truncate(k);
+                for (j, &(d, t)) in pairs.iter().enumerate() {
+                    dist2s[[i, j]] = d;
+                    idx[[i, j]] = t;
                 }
             }
-            for (j, &t) in best.iter().enumerate() {
-                dist2s[[i, j]] = row[t];
-                idx[[i, j]] = t as i64;
-            }
-        }
-    }
-    if exclude_nearest {
-        let nc = dist2s.ncols();
-        if nc <= 1 {
-            dist2s = Array2::zeros((n_query, nc.saturating_sub(1)));
-            idx = Array2::zeros((n_query, nc.saturating_sub(1)));
         } else {
-            dist2s = dist2s
-                .slice_axis(Axis(1), ndarray::Slice::from(1..))
-                .to_owned();
-            idx = idx
-                .slice_axis(Axis(1), ndarray::Slice::from(1..))
-                .to_owned();
+            let d2_matrix =
+                pairwise_sq_l2(x, &train_x.view(), model.scale_x, &model.x_scale.view());
+            for i in 0..n_query {
+                let best = topk_indices_from_row_dists(d2_matrix.row(i).as_slice().unwrap(), k, true);
+                for (j, &t) in best.iter().enumerate() {
+                    dist2s[[i, j]] = d2_matrix[[i, t]];
+                    idx[[i, j]] = t as i64;
+                }
+            }
         }
     }
-    Ok((dist2s, idx))
+    Ok(apply_exclude_nearest(dist2s, idx, exclude_nearest))
+}
+
+fn apply_exclude_nearest(
+    dist2s: Array2<f64>,
+    idx: Array2<i64>,
+    exclude_nearest: bool,
+) -> (Array2<f64>, Array2<i64>) {
+    if !exclude_nearest {
+        return (dist2s, idx);
+    }
+    let n_query = dist2s.nrows();
+    let nc = dist2s.ncols();
+    if nc <= 1 {
+        (
+            Array2::zeros((n_query, nc.saturating_sub(1))),
+            Array2::zeros((n_query, nc.saturating_sub(1))),
+        )
+    } else {
+        (
+            dist2s
+                .slice_axis(Axis(1), ndarray::Slice::from(1..))
+                .to_owned(),
+            idx.slice_axis(Axis(1), ndarray::Slice::from(1..))
+                .to_owned(),
+        )
+    }
 }
 
 pub(crate) fn get_neighbor_data(
@@ -340,7 +366,9 @@ pub(crate) fn get_conditional_neighbor_data(
 
 #[cfg(test)]
 mod pairwise_tests {
-    use super::{exact_f64_batch_topk, pairwise_sq_l2};
+    use super::{
+        apply_exclude_nearest, exact_f64_batch_topk, pairwise_sq_l2, topk_indices_from_row_dists,
+    };
     use crate::index::IndexDriver;
     use crate::model::EpistemicNearestNeighbors;
     use ndarray::{array, Array2};
@@ -378,12 +406,73 @@ mod pairwise_tests {
         let model =
             EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
                 .unwrap();
+        let k = 10usize;
+        let d2_matrix =
+            pairwise_sq_l2(&train_x.view(), &train_x.view(), false, &model.x_scale.view());
         let (dist2_on, idx_on) =
-            exact_f64_batch_topk(&model, &train_x.view(), 10, false, true).unwrap();
+            exact_f64_batch_topk(&model, &train_x.view(), k as i32, false, true).unwrap();
         let (dist2_off, idx_off) =
-            exact_f64_batch_topk(&model, &train_x.view(), 10, false, false).unwrap();
-        assert_eq!(idx_on, idx_off);
-        assert_eq!(dist2_on, dist2_off);
+            exact_f64_batch_topk(&model, &train_x.view(), k as i32, false, false).unwrap();
+        for i in 0..train_x.nrows() {
+            let row_vec = d2_matrix.row(i).to_owned();
+            let row = row_vec.as_slice().unwrap();
+            let ref_on: Vec<i64> = topk_indices_from_row_dists(row, k, true)
+                .into_iter()
+                .map(|t| t as i64)
+                .collect();
+            let ref_off: Vec<i64> = topk_indices_from_row_dists(row, k, false)
+                .into_iter()
+                .map(|t| t as i64)
+                .collect();
+            assert_eq!(idx_on.row(i).to_vec(), ref_on);
+            assert_eq!(ref_on, ref_off);
+        }
+    }
+
+    #[test]
+    fn exact_f64_batch_topk_exclude_nearest_strips_self() {
+        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        let train_y = array![[0.0], [1.0], [1.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let query = array![[0.0, 0.0]];
+        let (dist2s, idx) = exact_f64_batch_topk(&model, &query.view(), 2, true, true).unwrap();
+        assert_eq!(dist2s.shape(), [1, 1]);
+        assert_eq!(idx.shape(), [1, 1]);
+        assert!(dist2s[[0, 0]] > 0.0);
+        assert_eq!(idx[[0, 0]], 1);
+    }
+
+    #[test]
+    fn apply_exclude_nearest_slices_or_zeros() {
+        let dist2s = array![[0.0, 1.0], [2.0, 3.0]];
+        let idx = array![[0i64, 1], [1, 0]];
+        let (d, i) = apply_exclude_nearest(dist2s, idx, true);
+        assert_eq!(d.shape(), [2, 1]);
+        assert_eq!(i[[0, 0]], 1);
+        let (d0, i0) = apply_exclude_nearest(
+            Array2::from_elem((1, 1), 0.0),
+            Array2::from_elem((1, 1), 0i64),
+            true,
+        );
+        assert_eq!(d0.shape(), [1, 0]);
+        assert_eq!(i0.shape(), [1, 0]);
+        let (d2, i2) = apply_exclude_nearest(dist2s, idx, false);
+        assert_eq!(d2, dist2s);
+        assert_eq!(i2, idx);
+    }
+
+    #[test]
+    fn exact_f64_batch_topk_exclude_nearest_k_one_yields_empty() {
+        let train_x = array![[0.0]];
+        let train_y = array![[0.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let (dist2s, idx) = exact_f64_batch_topk(&model, &train_x.view(), 1, true, false).unwrap();
+        assert_eq!(dist2s.shape(), [1, 0]);
+        assert_eq!(idx.shape(), [1, 0]);
     }
 
     #[test]
