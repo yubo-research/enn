@@ -73,7 +73,9 @@ exclude = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--testmon"
+# Omit --testmon here so `pytest -sv tests` (malvin gates, CI) always runs the full suite.
+# Rust/native edits are invisible to testmon; use `pytest --testmon` for incremental local runs.
+addopts = ""
 pythonpath = ["src", "."]
 testpaths = ["tests"]
 filterwarnings = [

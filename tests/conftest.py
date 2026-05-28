@@ -7,6 +7,40 @@ src_path = Path(__file__).parent.parent / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
+_ROOT = Path(__file__).parent.parent
+_NATIVE_FP_CACHE = _ROOT / ".pytest_cache" / "enn_native_extension_fingerprint"
+_TESTMON_DB = (
+    _ROOT / ".testmondata",
+    _ROOT / ".testmondata-shm",
+    _ROOT / ".testmondata-wal",
+)
+
+
+def _testmon_invalidation_key() -> str:
+    import enn.enn_rust as native
+
+    native_path = Path(native.__file__)
+    native_stat = native_path.stat()
+    return f"{native_path}:{native_stat.st_mtime_ns}:{native_stat.st_size}"
+
+
+def _wipe_testmon_data() -> None:
+    for db_path in _TESTMON_DB:
+        if db_path.exists():
+            db_path.unlink()
+
+
+def pytest_configure(config) -> None:
+    if not config.pluginmanager.hasplugin("testmon") or config.getoption("no-testmon"):
+        return
+    fingerprint = _testmon_invalidation_key()
+    previous = _NATIVE_FP_CACHE.read_text() if _NATIVE_FP_CACHE.exists() else None
+    if previous == fingerprint:
+        return
+    _wipe_testmon_data()
+    _NATIVE_FP_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _NATIVE_FP_CACHE.write_text(fingerprint)
+
 
 def sphere_objective(x):
     import numpy as np
