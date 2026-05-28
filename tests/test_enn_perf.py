@@ -6,6 +6,10 @@ import numpy as np
 import pytest
 
 from enn import ENNStatefulFitter, EpistemicNearestNeighbors
+from enn.enn.enn_class_support import (
+    enn_index_neighbor_distances_and_indices,
+    enn_neighbor_distances_and_indices,
+)
 from enn.enn.enn_params import PosteriorFlags
 
 
@@ -48,3 +52,73 @@ def test_enn_demo_performance():
     elapsed = time.time() - t0
     print(f"\nTime taken: {elapsed:.3f} seconds")
     assert elapsed < 0.3, f"Expected < 0.3s, got {elapsed:.3f}s"
+
+
+def _median_seconds(fn, *, reps: int = 12) -> float:
+    samples = []
+    for _ in range(reps):
+        t0 = time.perf_counter()
+        fn()
+        samples.append(time.perf_counter() - t0)
+    return float(np.median(samples))
+
+
+def _neighbor_lookup_ratio(n: int, *, d: int = 1, k: int = 10, seed: int = 42) -> float:
+    """Wall-clock ratio: index_search (f64 exact) vs FAISS-only neighbor lookup."""
+    rng = np.random.default_rng(seed)
+    train_x = rng.standard_normal((n, d))
+    train_y = rng.normal(0.0, 100.0, size=(n, d))
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+    rust = model.rust_backend
+
+    def index_search_neighbors() -> None:
+        enn_index_neighbor_distances_and_indices(
+            rust,
+            train_x,
+            search_k=k,
+            exclude_nearest=False,
+        )
+
+    def faiss_batch_neighbors() -> None:
+        enn_neighbor_distances_and_indices(
+            rust,
+            train_x,
+            search_k=k,
+            exclude_nearest=False,
+        )
+
+    for _ in range(3):
+        index_search_neighbors()
+        faiss_batch_neighbors()
+
+    t_index = _median_seconds(index_search_neighbors)
+    t_faiss = _median_seconds(faiss_batch_neighbors)
+    return t_index / max(t_faiss, 1e-12)
+
+
+@pytest.mark.parametrize(
+    ("n", "max_ratio"),
+    [
+        (20, 2.5),  # user-reported scenario (n=20, k=10)
+        (500, 3.0),  # n_query=n_train; batched f64 matrix should track FAISS
+    ],
+)
+def test_index_search_neighbor_lookup_not_much_slower_than_faiss_only(
+    n: int, max_ratio: float
+):
+    """index_search (f64 exact) must not regress far beyond FAISS-only lookup."""
+    ratio = _neighbor_lookup_ratio(n)
+    assert ratio <= max_ratio, (
+        f"index_search must be <= {max_ratio}x FAISS-only at n={n}, "
+        f"got {ratio:.2f}x (slowdown bad)"
+    )
+
+
+def test_index_search_slowdown_does_not_blow_up_with_n():
+    """Ratio should stay bounded as n_query=n_train grows."""
+    ratio_small = _neighbor_lookup_ratio(100, seed=7)
+    ratio_large = _neighbor_lookup_ratio(1000, seed=7)
+    assert ratio_large <= max(ratio_small * 1.5, 3.0), (
+        f"expected bounded slowdown ratio: n=100 -> {ratio_small:.2f}x, "
+        f"n=1000 -> {ratio_large:.2f}x"
+    )

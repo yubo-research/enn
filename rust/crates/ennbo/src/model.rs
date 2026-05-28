@@ -414,6 +414,16 @@ impl EpistemicNearestNeighbors {
         Ok(self.index.search(x, search_k, exclude_nearest)?)
     }
 
+    /// Neighbor lookup via `index_search` (f64 exact ranking for Exact driver).
+    pub fn index_neighbor_distances_and_indices(
+        &self,
+        x: &ArrayView2<f64>,
+        search_k: i32,
+        exclude_nearest: bool,
+    ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
+        crate::posterior::index_search(self, x, search_k, exclude_nearest)
+    }
+
     pub(crate) fn num_obs(&self) -> usize {
         self.num_obs
     }

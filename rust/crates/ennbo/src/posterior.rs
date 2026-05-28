@@ -9,6 +9,7 @@ use self::draw_compute::draw_from_internals;
 use self::neighbor::{get_conditional_neighbor_data, get_neighbor_data};
 use crate::draw::DrawInternals;
 use crate::error::{ENNError, EPS_VAR};
+use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::stats::WeightedStats;
@@ -101,6 +102,22 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
             compute_conditional_posterior_internals(self, x, x_whatif, y_whatif, params, flags)?;
         let draws = draw_from_internals(self, &internals, function_seeds)?;
         Ok((draws, internals.idx))
+    }
+}
+
+pub(crate) fn index_search(
+    model: &EpistemicNearestNeighbors,
+    x: &ArrayView2<f64>,
+    search_k: i32,
+    exclude_nearest: bool,
+) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
+    model.ensure_index_sync()?;
+    if model.index().driver() == IndexDriver::Exact {
+        neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest)
+    } else {
+        let (_, idx) = model.index().search(x, search_k, exclude_nearest)?;
+        let dist2s = neighbor::dist2s_for_neighbor_indices(model, x, &idx);
+        Ok((dist2s, idx))
     }
 }
 
@@ -1134,29 +1151,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_get_conditional_neighbor_data_empty_batch() {
-        // Direct test for get_conditional_neighbor_data with empty batch
-        let model = create_test_model();
-        let params = ENNParams::new(2, 1.0, 0.1).unwrap();
-        let flags = PosteriorFlags::new();
-
-        let empty_x: Array2<f64> = Array2::zeros((0, 2));
-        let x_whatif = array![[0.5, 0.5]];
-        let y_whatif = array![[1.5]];
-
-        let result = get_conditional_neighbor_data(
-            &model,
-            &empty_x.view(),
-            &x_whatif.view(),
-            &y_whatif.view(),
-            &params,
-            &flags,
-        );
-        assert!(
-            result.is_ok(),
-            "get_conditional_neighbor_data with empty batch should not panic"
-        );
-        assert!(result.unwrap().is_none());
-    }
 }

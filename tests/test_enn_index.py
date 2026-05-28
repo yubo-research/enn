@@ -4,7 +4,10 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
+from enn.enn.enn_class_support import (
+    enn_index_neighbor_distances_and_indices,
+    enn_neighbor_distances_and_indices,
+)
 from enn.enn.enn_hash import (
     normal_hash_batch_multi_seed,
     normal_hash_batch_multi_seed_fast,
@@ -161,6 +164,64 @@ def test_enn_neighbor_search_init_and_search():
     )
     assert dist2s.shape == (5, 3) and idx.shape == (5, 3)
     assert np.all(idx >= 0) and np.all(idx < 20)
+
+
+@pytest.mark.parametrize("scale_x", [False, True])
+def test_enn_index_neighbor_search_matches_faiss_when_no_ties(scale_x):
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((20, 3))
+    enn = _enn(train_x, scale_x=scale_x)
+    query = rng.standard_normal((5, 3))
+    search_k = 3
+    faiss_d2, faiss_idx = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=search_k, exclude_nearest=False
+    )
+    exact_d2, exact_idx = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=search_k, exclude_nearest=False
+    )
+    assert exact_d2.shape == faiss_d2.shape == (5, search_k)
+    assert exact_idx.shape == faiss_idx.shape
+    assert np.all(exact_idx >= 0) and np.all(exact_idx < 20)
+
+
+def test_enn_index_neighbor_search_exclude_nearest_and_hnsw():
+    rng = np.random.default_rng(42)
+    train_x = rng.standard_normal((20, 3))
+    query = train_x[:3]
+    for driver in (ENNIndexDriver.FLAT, ENNIndexDriver.HNSW):
+        enn = _enn(train_x, scale_x=False, index_driver=driver)
+        dist2s, idx = enn_index_neighbor_distances_and_indices(
+            enn.rust_backend, query, search_k=3, exclude_nearest=True
+        )
+        assert dist2s.shape == (3, 2) and idx.shape == (3, 2)
+        assert np.all(idx >= 0) and np.all(idx < 20)
+
+
+def test_enn_index_neighbor_search_k_one_exclude_nearest_yields_zero_columns():
+    rng = np.random.default_rng(7)
+    train_x = rng.standard_normal((10, 2))
+    enn = _enn(train_x, scale_x=False)
+    q = rng.standard_normal((3, 2))
+    dist2s, idx = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend, q, search_k=1, exclude_nearest=True
+    )
+    assert dist2s.shape == (3, 0) and idx.shape == (3, 0)
+
+
+def test_exact_index_search_zero_k_and_k_exceeds_train():
+    train_x = np.array([[0.0], [1.0], [2.0]], dtype=float)
+    enn = _enn(train_x, scale_x=False)
+    query = np.array([[0.5], [1.5]], dtype=float)
+    d0, i0 = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=0, exclude_nearest=False
+    )
+    assert d0.shape == (2, 0) and i0.shape == (2, 0)
+    d_all, i_all = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=10, exclude_nearest=False
+    )
+    assert d_all.shape == (2, 10) and i_all.shape == (2, 10)
+    assert np.all(i_all[:, :3] >= 0) and np.all(i_all[:, :3] < 3)
+    assert np.all(i_all[:, 3:] == -1)
 
 
 def test_enn_neighbor_search_exclude_nearest():

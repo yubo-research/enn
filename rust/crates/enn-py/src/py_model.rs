@@ -284,6 +284,25 @@ impl PyEpistemicNearestNeighbors {
         ))
     }
 
+    #[allow(clippy::type_complexity)]
+    #[pyo3(signature = (x, search_k, exclude_nearest=false))]
+    fn index_neighbor_distances_and_indices<'py>(
+        &self,
+        py: Python<'py>,
+        x: PyReadonlyArray2<f64>,
+        search_k: i32,
+        exclude_nearest: bool,
+    ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArrayDyn<i64>>)> {
+        let (dist2s, idx) = self
+            .inner
+            .index_neighbor_distances_and_indices(&x.as_array(), search_k, exclude_nearest)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok((
+            dist2s.into_dyn().into_pyarray_bound(py),
+            idx.into_dyn().into_pyarray_bound(py),
+        ))
+    }
+
     fn __len__(&self) -> usize {
         self.inner.len()
     }

@@ -271,7 +271,10 @@ def test_enn_class_add():
 
 
 def test_enn_neighbor_distances_add_and_search():
-    from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
+    from enn.enn.enn_class_support import (
+        enn_index_neighbor_distances_and_indices,
+        enn_neighbor_distances_and_indices,
+    )
 
     enn = _enn_model()
     enn.add(np.array([[0.5, 0.6]], dtype=float), np.array([[3.0]], dtype=float))
@@ -282,6 +285,14 @@ def test_enn_neighbor_distances_add_and_search():
         exclude_nearest=False,
     )
     assert nn.shape[1] == 3
+    idx_d2, idx_nn = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend,
+        np.array([[0.5, 0.6]], dtype=float),
+        search_k=3,
+        exclude_nearest=False,
+    )
+    assert idx_d2.shape == idx_nn.shape
+    assert idx_d2.shape[1] == 3
 
 
 # ---------------------------------------------------------------------------
