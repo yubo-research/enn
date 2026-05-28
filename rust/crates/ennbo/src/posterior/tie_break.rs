@@ -4,6 +4,20 @@ use crate::model::EpistemicNearestNeighbors;
 
 use super::neighbor_dist::row_dist2s_for_query;
 
+pub(crate) fn faiss_pool_might_need_escalation(
+    sorted_pairs: &[(f64, i64)],
+    k: usize,
+    tie_break_neighbors: bool,
+) -> bool {
+    if !tie_break_neighbors || k == 0 || sorted_pairs.len() < k {
+        return false;
+    }
+    if sorted_pairs.len() > k && sorted_pairs[k - 1].0 == sorted_pairs[k].0 {
+        return true;
+    }
+    faiss_pool_needs_tie_resolution(sorted_pairs, k)
+}
+
 pub(crate) fn faiss_pool_needs_tie_resolution(sorted_pairs: &[(f64, i64)], k: usize) -> bool {
     if k < 2 || sorted_pairs.len() < k {
         return false;
@@ -16,9 +30,9 @@ pub(crate) fn faiss_pool_needs_full_row_scan_from_row(row: &[f64], k: usize) -> 
     if k == 0 || row.len() <= k {
         return false;
     }
-    let mut best: Vec<usize> = (0..row.len()).collect();
-    best.select_nth_unstable_by(k - 1, |&a, &b| row[a].total_cmp(&row[b]));
-    let d_cut = row[best[k - 1]];
+    let mut nth: Vec<f64> = row.to_vec();
+    nth.select_nth_unstable_by(k - 1, |a, b| a.total_cmp(b));
+    let d_cut = nth[k - 1];
     row.iter()
         .filter(|d| d.total_cmp(&d_cut) != std::cmp::Ordering::Greater)
         .count()
@@ -30,23 +44,58 @@ pub(crate) fn topk_indices_from_row_dists(
     k: usize,
     tie_break_neighbors: bool,
 ) -> Vec<usize> {
+    topk_indices_from_row_dists_with_scratch(row, k, tie_break_neighbors, &mut Vec::new())
+}
+
+pub(crate) fn topk_indices_from_row_dists_with_scratch(
+    row: &[f64],
+    k: usize,
+    tie_break_neighbors: bool,
+    scratch: &mut Vec<usize>,
+) -> Vec<usize> {
+    topk_indices_from_row_dists_with_buffers(row, k, tie_break_neighbors, scratch, &mut Vec::new())
+}
+
+pub(crate) fn topk_indices_from_row_dists_with_buffers(
+    row: &[f64],
+    k: usize,
+    tie_break_neighbors: bool,
+    scratch: &mut Vec<usize>,
+    float_buf: &mut Vec<f64>,
+) -> Vec<usize> {
     let n_train = row.len();
-    let mut best: Vec<usize> = (0..n_train).collect();
-    best.select_nth_unstable_by(k - 1, |&a, &b| row[a].total_cmp(&row[b]));
-    best.truncate(k);
-    let d_cut = row[best[k - 1]];
-    let n_le = row
-        .iter()
-        .filter(|d| d.total_cmp(&d_cut) != std::cmp::Ordering::Greater)
-        .count();
-    if tie_break_neighbors && n_le > k {
-        best.clear();
-        best.extend(0..n_train);
-        best.select_nth_unstable_by(k - 1, |&a, &b| row[a].total_cmp(&row[b]).then(a.cmp(&b)));
-        best.truncate(k);
+    if k == 0 {
+        return Vec::new();
     }
-    best.sort_by(|&a, &b| row[a].total_cmp(&row[b]).then(a.cmp(&b)));
-    best
+    if !tie_break_neighbors {
+        scratch.clear();
+        scratch.extend(0..n_train);
+        scratch.select_nth_unstable_by(k - 1, |&a, &b| row[a].total_cmp(&row[b]));
+        scratch.truncate(k);
+        scratch.sort_by(|&a, &b| row[a].total_cmp(&row[b]));
+        return scratch.clone();
+    }
+    float_buf.clear();
+    float_buf.extend_from_slice(row);
+    float_buf.select_nth_unstable_by(k - 1, |a, b| a.total_cmp(b));
+    let d_cut = float_buf[k - 1];
+    scratch.clear();
+    scratch.reserve(n_train);
+    for (i, &d) in row.iter().enumerate() {
+        if d.total_cmp(&d_cut) != std::cmp::Ordering::Greater {
+            scratch.push(i);
+        }
+    }
+    if scratch.len() <= k {
+        scratch.sort_by(|&a, &b| row[a].total_cmp(&row[b]).then(a.cmp(&b)));
+        return scratch.clone();
+    }
+    scratch.select_nth_unstable_by(k - 1, |&a, &b| {
+        row[a].total_cmp(&row[b]).then(a.cmp(&b))
+    });
+    scratch.truncate(k);
+    scratch.sort_by(|&a, &b| row[a].total_cmp(&row[b]).then(a.cmp(&b)));
+    scratch.clone()
 }
 
 fn apply_index_tie_break_at_cutoff(pairs: &mut [(f64, i64)], k: usize) {
@@ -58,33 +107,69 @@ fn apply_index_tie_break_at_cutoff(pairs: &mut [(f64, i64)], k: usize) {
     pairs[tie_start..k].sort_by_key(|p| p.1);
 }
 
+fn row_dists_for_check<'a>(
+    model: &EpistemicNearestNeighbors,
+    x_row: ArrayView1<f64>,
+    precomputed_row_dists: Option<&'a [f64]>,
+    cache: &'a mut Option<Vec<f64>>,
+) -> &'a [f64] {
+    if let Some(d) = precomputed_row_dists {
+        return d;
+    }
+    if cache.is_none() {
+        *cache = Some(row_dist2s_for_query(model, x_row));
+    }
+    cache.as_deref().expect("row dist cache")
+}
+
+fn resolve_pool_tie_break_at_cutoff(pairs: &mut Vec<(f64, i64)>, k: usize) {
+    if faiss_pool_needs_tie_resolution(pairs, k) {
+        apply_index_tie_break_at_cutoff(pairs, k);
+        pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    }
+}
+
 pub(crate) fn finalize_faiss_pool_topk(
     model: &EpistemicNearestNeighbors,
     x_row: ArrayView1<f64>,
     pairs: &mut Vec<(f64, i64)>,
     k: usize,
     tie_break_neighbors: bool,
+    precomputed_row_dists: Option<&[f64]>,
 ) -> bool {
     if !tie_break_neighbors {
         pairs.truncate(k);
         return false;
     }
+    let mut row_dists_cache = None;
     if pairs.len() > k && pairs[k - 1].0 == pairs[k].0 {
-        let row_dists = row_dist2s_for_query(model, x_row);
-        if faiss_pool_needs_full_row_scan_from_row(&row_dists, k) {
+        let row_dists = row_dists_for_check(
+            model,
+            x_row,
+            precomputed_row_dists,
+            &mut row_dists_cache,
+        );
+        if faiss_pool_needs_full_row_scan_from_row(row_dists, k) {
             return true;
         }
+        pairs.truncate(k);
+        resolve_pool_tie_break_at_cutoff(pairs, k);
+        return false;
     }
     if pairs.len() > k {
         pairs.truncate(k);
     }
     if faiss_pool_needs_tie_resolution(pairs, k) {
-        let row_dists = row_dist2s_for_query(model, x_row);
-        if faiss_pool_needs_full_row_scan_from_row(&row_dists, k) {
+        let row_dists = row_dists_for_check(
+            model,
+            x_row,
+            precomputed_row_dists,
+            &mut row_dists_cache,
+        );
+        if faiss_pool_needs_full_row_scan_from_row(row_dists, k) {
             return true;
         }
-        apply_index_tie_break_at_cutoff(pairs, k);
-        pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        resolve_pool_tie_break_at_cutoff(pairs, k);
     }
     false
 }
@@ -92,14 +177,25 @@ pub(crate) fn finalize_faiss_pool_topk(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_index_tie_break_at_cutoff, faiss_pool_needs_full_row_scan_from_row,
-        faiss_pool_needs_tie_resolution, finalize_faiss_pool_topk, topk_indices_from_row_dists,
+        apply_index_tie_break_at_cutoff, faiss_pool_might_need_escalation,
+        faiss_pool_needs_full_row_scan_from_row, faiss_pool_needs_tie_resolution,
+        finalize_faiss_pool_topk, resolve_pool_tie_break_at_cutoff, row_dists_for_check,
+        topk_indices_from_row_dists, topk_indices_from_row_dists_with_buffers,
     };
     use crate::index::IndexDriver;
     use crate::model::EpistemicNearestNeighbors;
     use ndarray::array;
 
     use super::super::neighbor_dist::row_dist2s_for_query;
+
+    #[test]
+    fn faiss_pool_might_need_escalation_detects_boundary_tie() {
+        let tied = vec![(1.0, 0i64), (2.0, 1), (2.0, 2), (3.0, 3)];
+        assert!(faiss_pool_might_need_escalation(&tied, 3, true));
+        assert!(!faiss_pool_might_need_escalation(&tied, 3, false));
+        let distinct = vec![(1.0, 0i64), (2.0, 1), (3.0, 2)];
+        assert!(!faiss_pool_might_need_escalation(&distinct, 3, true));
+    }
 
     #[test]
     fn faiss_pool_needs_tie_resolution_detects_cutoff_band() {
@@ -116,6 +212,42 @@ mod tests {
         assert!(faiss_pool_needs_full_row_scan_from_row(&row, 2));
         let row2 = vec![0.0, 0.0, 1.0, 2.0];
         assert!(!faiss_pool_needs_full_row_scan_from_row(&row2, 2));
+    }
+
+    #[test]
+    fn topk_indices_from_row_dists_with_buffers_n_le_gt_k() {
+        let row: Vec<f64> = (0..30).map(|i| ((i as f64 - 15.0).abs()).powi(2)).collect();
+        let mut scratch = Vec::new();
+        let mut float_buf = Vec::new();
+        let best = topk_indices_from_row_dists_with_buffers(&row, 5, true, &mut scratch, &mut float_buf);
+        assert_eq!(best.len(), 5);
+        assert!(best.contains(&15));
+    }
+
+    #[test]
+    fn row_dists_for_check_uses_precomputed_without_copy() {
+        let train_x = array![[0.0], [1.0], [2.0]];
+        let train_y = array![[0.0], [1.0], [2.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let precomputed = vec![0.0, 1.0, 4.0];
+        let mut cache = None;
+        let out = row_dists_for_check(
+            &model,
+            array![0.0].view(),
+            Some(&precomputed),
+            &mut cache,
+        );
+        assert_eq!(out, &[0.0, 1.0, 4.0]);
+        assert!(cache.is_none());
+    }
+
+    #[test]
+    fn resolve_pool_tie_break_at_cutoff_orders_cutoff_band() {
+        let mut pairs = vec![(0.0, 2i64), (0.0, 0), (0.0, 1), (1.0, 3)];
+        resolve_pool_tie_break_at_cutoff(&mut pairs, 3);
+        assert_eq!(pairs.iter().take(3).map(|p| p.1).collect::<Vec<_>>(), vec![0, 1, 2]);
     }
 
     #[test]
@@ -154,7 +286,8 @@ mod tests {
             query.row(0),
             &mut escalate,
             2,
-            true
+            true,
+            None,
         ));
 
         let train_x2 = array![[0.0], [0.0], [1.0], [2.0]];
@@ -168,7 +301,8 @@ mod tests {
             query.row(0),
             &mut resolve,
             2,
-            true
+            true,
+            None,
         ));
         assert_eq!(
             resolve.iter().take(2).map(|p| p.1).collect::<Vec<_>>(),

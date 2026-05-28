@@ -8,7 +8,10 @@ use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 
 use super::neighbor_dist::{row_dist2s_for_query, row_sq_l2};
-use super::tie_break::{finalize_faiss_pool_topk, topk_indices_from_row_dists};
+use super::tie_break::{
+    faiss_pool_might_need_escalation, finalize_faiss_pool_topk,
+    topk_indices_from_row_dists, topk_indices_from_row_dists_with_buffers,
+};
 
 fn pairwise_sq_l2(
     x: &ArrayView2<f64>,
@@ -56,6 +59,31 @@ pub(crate) fn dist2s_for_neighbor_indices(
     out
 }
 
+fn faiss_pairs_from_row(
+    dist2s_faiss: &Array2<f64>,
+    idx_faiss: &Array2<i64>,
+    row: usize,
+) -> Vec<(f64, i64)> {
+    let mut pairs: Vec<(f64, i64)> = dist2s_faiss
+        .row(row)
+        .iter()
+        .zip(idx_faiss.row(row).iter())
+        .filter_map(|(&d, &t)| (t >= 0).then_some((d, t)))
+        .collect();
+    pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    pairs
+}
+
+fn batched_row_dists_threshold(n_query: usize) -> usize {
+    (n_query / 4).max(2)
+}
+
+pub(crate) fn use_matrix_topk_batch(n_query: usize, escalate_count: usize, tie_break_neighbors: bool) -> bool {
+    tie_break_neighbors
+        && n_query >= 256
+        && escalate_count >= batched_row_dists_threshold(n_query)
+}
+
 pub(crate) fn exact_f64_batch_topk(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -81,21 +109,75 @@ pub(crate) fn exact_f64_batch_topk(
     } else {
         search_k
     };
+
+    let use_matrix_topk = if tie_break_neighbors && n_query >= 256 {
+        let sample_n = 32.min(n_query);
+        let sample = x.slice(ndarray::s![..sample_n, ..]);
+        let (dist2s_sample, idx_sample) =
+            model.index().search(&sample, faiss_search_k as i32, false)?;
+        let sample_escalate = (0..sample_n)
+            .map(|i| {
+                let pairs = faiss_pairs_from_row(&dist2s_sample, &idx_sample, i);
+                faiss_pool_might_need_escalation(&pairs, k, true)
+            })
+            .filter(|&b| b)
+            .count();
+        let projected_escalate = sample_escalate * n_query / sample_n.max(1);
+        use_matrix_topk_batch(n_query, projected_escalate, true)
+    } else {
+        false
+    };
+
+    if use_matrix_topk {
+        let dist_mat = pairwise_sq_l2(
+            x,
+            &model.train_x().view(),
+            model.scale_x,
+            &model.x_scale.view(),
+        );
+        let mut topk_scratch = Vec::with_capacity(n_train);
+        let mut float_buf = Vec::with_capacity(n_train);
+        for i in 0..n_query {
+            let row = dist_mat.row(i);
+            let row_slice = row.as_slice().expect("contiguous row");
+            let best = topk_indices_from_row_dists_with_buffers(
+                row_slice,
+                k,
+                true,
+                &mut topk_scratch,
+                &mut float_buf,
+            );
+            for (j, &t) in best.iter().enumerate() {
+                dist2s[[i, j]] = row_slice[t];
+                idx[[i, j]] = t as i64;
+            }
+        }
+        return Ok(apply_exclude_nearest(dist2s, idx, exclude_nearest));
+    }
+
     let (_, idx_faiss) = model.index().search(x, faiss_search_k as i32, false)?;
     let dist2s_faiss = dist2s_for_neighbor_indices(model, x, &idx_faiss);
+
+    let mut all_pairs = Vec::with_capacity(n_query);
     for i in 0..n_query {
-        let mut pairs: Vec<(f64, i64)> = dist2s_faiss
-            .row(i)
-            .iter()
-            .zip(idx_faiss.row(i).iter())
-            .filter_map(|(&d, &t)| (t >= 0).then_some((d, t)))
-            .collect();
-        pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        if finalize_faiss_pool_topk(model, x.row(i), &mut pairs, k, tie_break_neighbors) {
-            let row_dists = row_dist2s_for_query(model, x.row(i));
-            let best = topk_indices_from_row_dists(&row_dists, k, true);
+        let pairs = faiss_pairs_from_row(&dist2s_faiss, &idx_faiss, i);
+        all_pairs.push(pairs);
+    }
+
+    for i in 0..n_query {
+        let mut pairs = std::mem::take(&mut all_pairs[i]);
+        if finalize_faiss_pool_topk(
+            model,
+            x.row(i),
+            &mut pairs,
+            k,
+            tie_break_neighbors,
+            None,
+        ) {
+            let row_dists_vec = row_dist2s_for_query(model, x.row(i));
+            let best = topk_indices_from_row_dists(&row_dists_vec, k, true);
             for (j, &t) in best.iter().enumerate() {
-                dist2s[[i, j]] = row_dists[t];
+                dist2s[[i, j]] = row_dists_vec[t];
                 idx[[i, j]] = t as i64;
             }
             continue;
@@ -333,9 +415,49 @@ mod tests {
         get_conditional_neighbor_data, pairwise_sq_l2,
     };
     use super::super::neighbor_dist::row_sq_l2;
+    use super::use_matrix_topk_batch;
     use crate::index::IndexDriver;
     use crate::model::EpistemicNearestNeighbors;
     use ndarray::{array, Array2};
+
+    #[test]
+    fn faiss_pairs_from_row_and_threshold_helpers() {
+        let dist2s = array![[0.0, 1.0], [2.0, 3.0]];
+        let idx = array![[0i64, 1], [1, 0]];
+        let pairs = faiss_pairs_from_row(&dist2s, &idx, 0);
+        assert_eq!(pairs, vec![(0.0, 0), (1.0, 1)]);
+        assert_eq!(batched_row_dists_threshold(1024), 256);
+        assert_eq!(batched_row_dists_threshold(8), 2);
+    }
+
+    #[test]
+    fn use_matrix_topk_batch_gates_on_n_and_escalation() {
+        assert!(!use_matrix_topk_batch(100, 50, true));
+        assert!(!use_matrix_topk_batch(1024, 100, true));
+        assert!(use_matrix_topk_batch(1024, 300, true));
+        assert!(!use_matrix_topk_batch(1024, 300, false));
+    }
+
+    #[test]
+    fn exact_f64_batch_topk_matrix_path_on_lattice_self_search() {
+        let n = 320usize;
+        let d = 3usize;
+        let k = 8usize;
+        let mut train_x = Array2::zeros((n, d));
+        train_x.column_mut(0).assign(&ndarray::Array1::from(
+            (0..n).map(|i| i as f64 / (n as f64 - 1.0)).collect::<Vec<_>>(),
+        ));
+        let train_y = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);
+        let model =
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let (dist2s, idx) =
+            exact_f64_batch_topk(&model, &train_x.view(), k as i32, false, true).unwrap();
+        assert_eq!(dist2s.nrows(), n);
+        assert_eq!(idx.ncols(), k);
+        assert!(dist2s.iter().all(|v| v.is_finite()));
+        assert!(idx.iter().all(|&v| v >= 0));
+    }
 
     #[test]
     fn exact_f64_batch_topk_batch_matches_single_on_train_ties() {
