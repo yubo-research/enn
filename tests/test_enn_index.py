@@ -166,6 +166,29 @@ def test_enn_neighbor_search_init_and_search():
     assert np.all(idx >= 0) and np.all(idx < 20)
 
 
+def test_enn_index_neighbor_tie_break_flag():
+    train_x = np.array([[0.0], [0.0], [1.0], [2.0]])
+    np.array([[0.0], [1.0], [2.0], [3.0]])
+    enn = _enn(train_x, scale_x=False)
+    query = np.array([[0.0]])
+    _, idx_on = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend,
+        query,
+        search_k=2,
+        exclude_nearest=False,
+        tie_break_neighbors=True,
+    )
+    _, idx_off = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend,
+        query,
+        search_k=2,
+        exclude_nearest=False,
+        tie_break_neighbors=False,
+    )
+    assert idx_on[0].tolist() == [0, 1]
+    assert idx_off[0].tolist() in ([0, 1], [1, 0])
+
+
 @pytest.mark.parametrize("scale_x", [False, True])
 def test_enn_index_neighbor_search_matches_faiss_when_no_ties(scale_x):
     rng = np.random.default_rng(42)

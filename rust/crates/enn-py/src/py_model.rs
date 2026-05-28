@@ -11,10 +11,22 @@ pub(crate) type PosteriorPyOut<'py> = (
     Option<Vec<Vec<usize>>>,
 );
 
+fn py_posterior_flags(
+    model: &PyEpistemicNearestNeighbors,
+    exclude_nearest: bool,
+    observation_noise: bool,
+) -> ennbo::PosteriorFlags {
+    ennbo::PosteriorFlags::new()
+        .with_exclude_nearest(exclude_nearest)
+        .with_observation_noise(observation_noise)
+        .with_tie_break_neighbors(model.tie_break_neighbors.get())
+}
+
 /// Python wrapper for EpistemicNearestNeighbors
 #[pyclass(name = "EpistemicNearestNeighbors")]
 pub struct PyEpistemicNearestNeighbors {
     pub(crate) inner: ennbo::EpistemicNearestNeighbors,
+    tie_break_neighbors: std::cell::Cell<bool>,
 }
 
 #[pymethods]
@@ -45,7 +57,19 @@ impl PyEpistemicNearestNeighbors {
             driver,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self { inner: model })
+        Ok(Self {
+            inner: model,
+            tie_break_neighbors: std::cell::Cell::new(true),
+        })
+    }
+
+    #[pyo3(signature = (enabled=true))]
+    fn set_tie_break_neighbors(&self, enabled: bool) {
+        self.tie_break_neighbors.set(enabled);
+    }
+
+    fn tie_break_neighbors(&self) -> bool {
+        self.tie_break_neighbors.get()
     }
 
     #[pyo3(signature = (x, y, yvar=None))]
@@ -85,9 +109,7 @@ impl PyEpistemicNearestNeighbors {
             aleatoric_variance_scale,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let flags = ennbo::PosteriorFlags::new()
-            .with_exclude_nearest(exclude_nearest)
-            .with_observation_noise(observation_noise);
+        let flags = py_posterior_flags(self, exclude_nearest, observation_noise);
         let out = self
             .inner
             .posterior(&x.as_array(), &params, &flags)
@@ -128,9 +150,7 @@ impl PyEpistemicNearestNeighbors {
             paramss.push(params);
         }
 
-        let flags = ennbo::PosteriorFlags::new()
-            .with_exclude_nearest(exclude_nearest)
-            .with_observation_noise(observation_noise);
+        let flags = py_posterior_flags(self, exclude_nearest, observation_noise);
 
         let out = self
             .inner
@@ -159,9 +179,7 @@ impl PyEpistemicNearestNeighbors {
             aleatoric_variance_scale,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let flags = ennbo::PosteriorFlags::new()
-            .with_exclude_nearest(exclude_nearest)
-            .with_observation_noise(observation_noise);
+        let flags = py_posterior_flags(self, exclude_nearest, observation_noise);
         let (draws, idx) = self
             .inner
             .posterior_function_draw(&x.as_array(), &params, &function_seeds, &flags)
@@ -190,9 +208,7 @@ impl PyEpistemicNearestNeighbors {
             aleatoric_variance_scale,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let flags = ennbo::PosteriorFlags::new()
-            .with_exclude_nearest(exclude_nearest)
-            .with_observation_noise(observation_noise);
+        let flags = py_posterior_flags(self, exclude_nearest, observation_noise);
         let out = self
             .inner
             .conditional_posterior(
@@ -232,9 +248,7 @@ impl PyEpistemicNearestNeighbors {
             aleatoric_variance_scale,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let flags = ennbo::PosteriorFlags::new()
-            .with_exclude_nearest(exclude_nearest)
-            .with_observation_noise(observation_noise);
+        let flags = py_posterior_flags(self, exclude_nearest, observation_noise);
         let (draws, idx) = self
             .inner
             .conditional_posterior_function_draw(
@@ -285,17 +299,23 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[allow(clippy::type_complexity)]
-    #[pyo3(signature = (x, search_k, exclude_nearest=false))]
+    #[pyo3(signature = (x, search_k, exclude_nearest=false, tie_break_neighbors=true))]
     fn index_neighbor_distances_and_indices<'py>(
         &self,
         py: Python<'py>,
         x: PyReadonlyArray2<f64>,
         search_k: i32,
         exclude_nearest: bool,
+        tie_break_neighbors: bool,
     ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArrayDyn<i64>>)> {
         let (dist2s, idx) = self
             .inner
-            .index_neighbor_distances_and_indices(&x.as_array(), search_k, exclude_nearest)
+            .index_neighbor_distances_and_indices(
+                &x.as_array(),
+                search_k,
+                exclude_nearest,
+                tie_break_neighbors,
+            )
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
             dist2s.into_dyn().into_pyarray_bound(py),

@@ -17,11 +17,13 @@ def enn_index_neighbor_distances_and_indices(
     *,
     search_k: int,
     exclude_nearest: bool,
+    tie_break_neighbors: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     dist2s, idx = rust_model.index_neighbor_distances_and_indices(
         np.asarray(x, dtype=float),
         int(search_k),
         bool(exclude_nearest),
+        bool(tie_break_neighbors),
     )
     return np.asarray(dist2s, dtype=float), np.asarray(idx, dtype=int)
 

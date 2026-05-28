@@ -55,6 +55,7 @@ fn batch_posterior_on_train_row_matches_single_query_posterior() {
     let flags = PosteriorFlags {
         exclude_nearest: false,
         observation_noise: false,
+        tie_break_neighbors: true,
     };
     let batch = model
         .batch_posterior(&train_x.view(), &[params], &flags)

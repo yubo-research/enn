@@ -10,7 +10,7 @@ from enn.enn.enn_class_support import (
     enn_index_neighbor_distances_and_indices,
     enn_neighbor_distances_and_indices,
 )
-from enn.enn.enn_params import PosteriorFlags
+from enn.enn.enn_params import ENNParams, PosteriorFlags
 
 
 def make_enn_demo_data(num_samples: int, k: int, noise: float, m: int = 1):
@@ -111,6 +111,38 @@ def test_index_search_neighbor_lookup_not_much_slower_than_faiss_only(
     assert ratio <= max_ratio, (
         f"index_search must be <= {max_ratio}x FAISS-only at n={n}, "
         f"got {ratio:.2f}x (slowdown bad)"
+    )
+
+
+def _posterior_self_search_median_seconds(
+    *, tie_break_neighbors: bool, reps: int = 8
+) -> float:
+    rng = np.random.default_rng(0)
+    n, d, m = 1024, 10, 5
+    x = rng.standard_normal((n, d))
+    y = rng.normal(0.0, 100.0, size=(n, m))
+    model = EpistemicNearestNeighbors(x, y)
+    params = ENNParams(
+        k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
+    flags = PosteriorFlags(tie_break_neighbors=tie_break_neighbors)
+
+    def run() -> None:
+        model.posterior(x, params=params, flags=flags)
+
+    for _ in range(3):
+        run()
+    return _median_seconds(run, reps=reps)
+
+
+def test_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
+    """posterior(train_x) tie-break-on must track tie-break-off at n=1024."""
+    t_off = _posterior_self_search_median_seconds(tie_break_neighbors=False)
+    t_on = _posterior_self_search_median_seconds(tie_break_neighbors=True)
+    ratio = t_on / max(t_off, 1e-12)
+    assert ratio <= 1.15, (
+        f"tie-break posterior must be <= 1.15x no-tie-break at n=1024, "
+        f"got {ratio:.2f}x (t_on={t_on:.4f}s t_off={t_off:.4f}s)"
     )
 
 

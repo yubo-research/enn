@@ -80,14 +80,21 @@ class TestPosteriorFlagsContract:
         flags = PosteriorFlags()
         assert flags.exclude_nearest is False
         assert flags.observation_noise is False
+        assert flags.tie_break_neighbors is True
 
     def test_explicit_values(self):
-        flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
+        flags = PosteriorFlags(
+            exclude_nearest=True,
+            observation_noise=True,
+            tie_break_neighbors=False,
+        )
         assert flags.exclude_nearest is True
         assert flags.observation_noise is True
+        assert flags.tie_break_neighbors is False
 
     def test_signature_contract(self):
         sig = inspect.signature(PosteriorFlags)
         params = list(sig.parameters.keys())
         assert "exclude_nearest" in params
         assert "observation_noise" in params
+        assert "tie_break_neighbors" in params

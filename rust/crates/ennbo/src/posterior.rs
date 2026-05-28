@@ -110,10 +110,11 @@ pub(crate) fn index_search(
     x: &ArrayView2<f64>,
     search_k: i32,
     exclude_nearest: bool,
+    tie_break_neighbors: bool,
 ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
     model.ensure_index_sync()?;
     if model.index().driver() == IndexDriver::Exact {
-        neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest)
+        neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest, tie_break_neighbors)
     } else {
         let (_, idx) = model.index().search(x, search_k, exclude_nearest)?;
         let dist2s = neighbor::dist2s_for_neighbor_indices(model, x, &idx);
@@ -129,7 +130,8 @@ fn compute_batch_with_shared_neighbors(
     mu_all: &mut Array3<f64>,
     se_all: &mut Array3<f64>,
 ) -> Result<(), ENNError> {
-    let neighbor_data = get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest)?;
+    let neighbor_data =
+        get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest, flags.tie_break_neighbors)?;
 
     if let Some(data) = neighbor_data {
         let wp_data = WeightedPosteriorData {
@@ -370,7 +372,8 @@ pub fn compute_posterior_internals(
         return Ok(empty_posterior_internals(model, batch_size));
     }
 
-    let neighbor_data = get_neighbor_data(model, x, params, flags.exclude_nearest)?;
+    let neighbor_data =
+        get_neighbor_data(model, x, params, flags.exclude_nearest, flags.tie_break_neighbors)?;
 
     if let Some(data) = neighbor_data {
         let wp_data = WeightedPosteriorData {
@@ -644,7 +647,7 @@ mod tests {
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let query = array![[0.5, 0.5]];
 
-        let result = get_neighbor_data(&model, &query.view(), &params, false);
+        let result = get_neighbor_data(&model, &query.view(), &params, false, true);
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
     }
@@ -710,7 +713,7 @@ mod tests {
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let query = array![[0.5, 0.5]];
 
-        let neighbor_data = get_neighbor_data(&model, &query.view(), &params, false)
+        let neighbor_data = get_neighbor_data(&model, &query.view(), &params, false, true)
             .unwrap()
             .unwrap();
 
@@ -733,7 +736,7 @@ mod tests {
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let query = array![[0.5, 0.5]];
 
-        let result = get_neighbor_data(&model, &query.view(), &params, true);
+        let result = get_neighbor_data(&model, &query.view(), &params, true, true);
         assert!(result.is_ok());
     }
 

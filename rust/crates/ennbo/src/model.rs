@@ -420,8 +420,9 @@ impl EpistemicNearestNeighbors {
         x: &ArrayView2<f64>,
         search_k: i32,
         exclude_nearest: bool,
+        tie_break_neighbors: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-        crate::posterior::index_search(self, x, search_k, exclude_nearest)
+        crate::posterior::index_search(self, x, search_k, exclude_nearest, tie_break_neighbors)
     }
 
     pub(crate) fn num_obs(&self) -> usize {
