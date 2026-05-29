@@ -9,8 +9,8 @@ use crate::params::{ENNParams, PosteriorFlags};
 
 use super::neighbor_dist::{row_dist2s_for_query, row_sq_l2};
 use super::tie_break::{
-    faiss_pool_might_need_escalation, finalize_faiss_pool_topk,
-    topk_indices_from_row_dists, topk_indices_from_row_dists_with_buffers,
+    finalize_faiss_pool_topk, topk_indices_from_row_dists,
+    topk_indices_from_row_dists_with_buffers,
 };
 
 fn pairwise_sq_l2(
@@ -74,14 +74,17 @@ fn faiss_pairs_from_row(
     pairs
 }
 
+#[allow(dead_code)]
 fn batched_row_dists_threshold(n_query: usize) -> usize {
     (n_query / 4).max(2)
 }
 
+#[allow(dead_code)]
 pub(crate) fn use_matrix_topk_batch(n_query: usize, escalate_count: usize, tie_break_neighbors: bool) -> bool {
-    tie_break_neighbors
-        && n_query >= 256
-        && escalate_count >= batched_row_dists_threshold(n_query)
+    // Full n×n distance matrix is slower than FAISS batch + in-pool tie resolution
+    // on tie-heavy self-search (see KPop exp log 20260529).
+    let _ = (n_query, escalate_count, tie_break_neighbors);
+    false
 }
 
 pub(crate) fn exact_f64_batch_topk(
@@ -110,23 +113,7 @@ pub(crate) fn exact_f64_batch_topk(
         search_k
     };
 
-    let use_matrix_topk = if tie_break_neighbors && n_query >= 256 {
-        let sample_n = 32.min(n_query);
-        let sample = x.slice(ndarray::s![..sample_n, ..]);
-        let (dist2s_sample, idx_sample) =
-            model.index().search(&sample, faiss_search_k as i32, false)?;
-        let sample_escalate = (0..sample_n)
-            .map(|i| {
-                let pairs = faiss_pairs_from_row(&dist2s_sample, &idx_sample, i);
-                faiss_pool_might_need_escalation(&pairs, k, true)
-            })
-            .filter(|&b| b)
-            .count();
-        let projected_escalate = sample_escalate * n_query / sample_n.max(1);
-        use_matrix_topk_batch(n_query, projected_escalate, true)
-    } else {
-        false
-    };
+    let use_matrix_topk = false;
 
     if use_matrix_topk {
         let dist_mat = pairwise_sq_l2(
@@ -155,17 +142,16 @@ pub(crate) fn exact_f64_batch_topk(
         return Ok(apply_exclude_nearest(dist2s, idx, exclude_nearest));
     }
 
-    let (_, idx_faiss) = model.index().search(x, faiss_search_k as i32, false)?;
-    let dist2s_faiss = dist2s_for_neighbor_indices(model, x, &idx_faiss);
+    let (dist2s_search, idx_faiss) = model.index().search(x, faiss_search_k as i32, false)?;
+    let dist2s_faiss = if tie_break_neighbors {
+        dist2s_for_neighbor_indices(model, x, &idx_faiss)
+    } else {
+        dist2s_search
+    };
 
-    let mut all_pairs = Vec::with_capacity(n_query);
+    let mut tie_scratch = (Vec::<(f64, i64)>::new(), Vec::<(f64, i64)>::new());
     for i in 0..n_query {
-        let pairs = faiss_pairs_from_row(&dist2s_faiss, &idx_faiss, i);
-        all_pairs.push(pairs);
-    }
-
-    for i in 0..n_query {
-        let mut pairs = std::mem::take(&mut all_pairs[i]);
+        let mut pairs = faiss_pairs_from_row(&dist2s_faiss, &idx_faiss, i);
         if finalize_faiss_pool_topk(
             model,
             x.row(i),
@@ -173,6 +159,8 @@ pub(crate) fn exact_f64_batch_topk(
             k,
             tie_break_neighbors,
             None,
+            faiss_search_k,
+            &mut tie_scratch,
         ) {
             let row_dists_vec = row_dist2s_for_query(model, x.row(i));
             let best = topk_indices_from_row_dists(&row_dists_vec, k, true);
@@ -412,10 +400,10 @@ pub(crate) fn get_conditional_neighbor_data(
 mod tests {
     use super::{
         apply_exclude_nearest, dist2s_for_neighbor_indices, exact_f64_batch_topk,
-        get_conditional_neighbor_data, pairwise_sq_l2,
+        faiss_pairs_from_row, get_conditional_neighbor_data, pairwise_sq_l2,
     };
     use super::super::neighbor_dist::row_sq_l2;
-    use super::use_matrix_topk_batch;
+    use super::{batched_row_dists_threshold, use_matrix_topk_batch};
     use crate::index::IndexDriver;
     use crate::model::EpistemicNearestNeighbors;
     use ndarray::{array, Array2};
@@ -431,11 +419,47 @@ mod tests {
     }
 
     #[test]
-    fn use_matrix_topk_batch_gates_on_n_and_escalation() {
-        assert!(!use_matrix_topk_batch(100, 50, true));
-        assert!(!use_matrix_topk_batch(1024, 100, true));
-        assert!(use_matrix_topk_batch(1024, 300, true));
+    fn use_matrix_topk_batch_disabled_for_perf() {
+        assert!(!use_matrix_topk_batch(1024, 1024, true));
         assert!(!use_matrix_topk_batch(1024, 300, false));
+    }
+
+    #[test]
+    fn exact_f64_batch_topk_lattice_self_search_escalation_count() {
+        let n = 1024usize;
+        let d = 3usize;
+        let k = 8usize;
+        let mut train_x = Array2::zeros((n, d));
+        train_x.column_mut(0).assign(&ndarray::Array1::from(
+            (0..n)
+                .map(|i| i as f64 / (n as f64 - 1.0))
+                .collect::<Vec<_>>(),
+        ));
+        let train_y = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);
+        let model =
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let (dist2s, idx) =
+            exact_f64_batch_topk(&model, &train_x.view(), k as i32, false, true).unwrap();
+        assert_eq!(dist2s.nrows(), n);
+        assert_eq!(idx.ncols(), k);
+        // Brute top-k with index tie-break for a few spot rows
+        for i in [0usize, 16, 500, 1023] {
+            let x_row = train_x.row(i);
+            let mut ref_pairs: Vec<(f64, i64)> = (0..n)
+                .map(|j| {
+                    (
+                        row_sq_l2(x_row, train_x.row(j), false, model.x_scale.view()),
+                        j as i64,
+                    )
+                })
+                .collect();
+            ref_pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            ref_pairs.truncate(k);
+            let got: Vec<i64> = idx.row(i).iter().copied().collect();
+            let want: Vec<i64> = ref_pairs.iter().map(|&(_, j)| j).collect();
+            assert_eq!(got, want, "row {i}");
+        }
     }
 
     #[test]

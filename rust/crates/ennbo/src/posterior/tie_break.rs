@@ -129,6 +129,43 @@ fn resolve_pool_tie_break_at_cutoff(pairs: &mut Vec<(f64, i64)>, k: usize) {
     }
 }
 
+/// When the FAISS pool has a tie at the k-th cutoff, pick top-k using only pool
+/// members at or below `d_cut` if the pool is not saturated at that distance.
+fn try_resolve_boundary_tie_in_pool(
+    pairs: &mut Vec<(f64, i64)>,
+    k: usize,
+    _faiss_pool_size: usize,
+    below: &mut Vec<(f64, i64)>,
+    at_cut: &mut Vec<(f64, i64)>,
+) -> bool {
+    if k == 0
+        || pairs.len() <= k
+        || pairs[k - 1].0.total_cmp(&pairs[k].0) != std::cmp::Ordering::Equal
+    {
+        return false;
+    }
+    let d_cut = pairs[k - 1].0;
+    below.clear();
+    at_cut.clear();
+    for &p in pairs.iter() {
+        match p.0.total_cmp(&d_cut) {
+            std::cmp::Ordering::Less => below.push(p),
+            std::cmp::Ordering::Equal => at_cut.push(p),
+            std::cmp::Ordering::Greater => {}
+        }
+    }
+    if below.len() + at_cut.len() <= k {
+        return false;
+    }
+    at_cut.sort_by_key(|p| p.1);
+    let need = k.saturating_sub(below.len());
+    below.extend(at_cut.iter().copied().take(need));
+    below.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    pairs.clear();
+    pairs.extend_from_slice(below);
+    true
+}
+
 pub(crate) fn finalize_faiss_pool_topk(
     model: &EpistemicNearestNeighbors,
     x_row: ArrayView1<f64>,
@@ -136,13 +173,24 @@ pub(crate) fn finalize_faiss_pool_topk(
     k: usize,
     tie_break_neighbors: bool,
     precomputed_row_dists: Option<&[f64]>,
+    faiss_pool_size: usize,
+    tie_scratch: &mut (Vec<(f64, i64)>, Vec<(f64, i64)>),
 ) -> bool {
     if !tie_break_neighbors {
         pairs.truncate(k);
         return false;
     }
     let mut row_dists_cache = None;
-    if pairs.len() > k && pairs[k - 1].0 == pairs[k].0 {
+    if pairs.len() > k && pairs[k - 1].0.total_cmp(&pairs[k].0) == std::cmp::Ordering::Equal {
+        if try_resolve_boundary_tie_in_pool(
+            pairs,
+            k,
+            faiss_pool_size,
+            &mut tie_scratch.0,
+            &mut tie_scratch.1,
+        ) {
+            return false;
+        }
         let row_dists = row_dists_for_check(
             model,
             x_row,
@@ -181,6 +229,7 @@ mod tests {
         faiss_pool_needs_full_row_scan_from_row, faiss_pool_needs_tie_resolution,
         finalize_faiss_pool_topk, resolve_pool_tie_break_at_cutoff, row_dists_for_check,
         topk_indices_from_row_dists, topk_indices_from_row_dists_with_buffers,
+        try_resolve_boundary_tie_in_pool,
     };
     use crate::index::IndexDriver;
     use crate::model::EpistemicNearestNeighbors;
@@ -281,14 +330,22 @@ mod tests {
                 .unwrap();
         let query = array![[0.0]];
         let mut escalate = vec![(0.0, 0i64), (0.0, 1), (0.0, 2), (1.0, 3)];
-        assert!(finalize_faiss_pool_topk(
+        let pool_len = escalate.len();
+        let mut scratch = (Vec::new(), Vec::new());
+        assert!(!finalize_faiss_pool_topk(
             &model,
             query.row(0),
             &mut escalate,
             2,
             true,
             None,
+            pool_len,
+            &mut scratch,
         ));
+        assert_eq!(
+            escalate.iter().map(|p| p.1).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
 
         let train_x2 = array![[0.0], [0.0], [1.0], [2.0]];
         let train_y2 = array![[0.0], [1.0], [2.0], [3.0]];
@@ -296,6 +353,8 @@ mod tests {
             EpistemicNearestNeighbors::new(train_x2, train_y2, None, false, IndexDriver::Exact)
                 .unwrap();
         let mut resolve = vec![(0.0, 1i64), (0.0, 0), (1.0, 2), (4.0, 3)];
+        let pool_len = resolve.len();
+        let mut scratch = (Vec::new(), Vec::new());
         assert!(!finalize_faiss_pool_topk(
             &model2,
             query.row(0),
@@ -303,11 +362,32 @@ mod tests {
             2,
             true,
             None,
+            pool_len,
+            &mut scratch,
         ));
         assert_eq!(
             resolve.iter().take(2).map(|p| p.1).collect::<Vec<_>>(),
             vec![0, 1]
         );
+    }
+
+    #[test]
+    fn try_resolve_boundary_tie_in_pool_picks_lowest_indices() {
+        let mut pairs = vec![
+            (0.0, 2i64),
+            (1.0, 0),
+            (1.0, 1),
+            (1.0, 3),
+            (1.0, 4),
+            (2.0, 5),
+        ];
+        let mut below = Vec::new();
+        let mut at_cut = Vec::new();
+        assert!(try_resolve_boundary_tie_in_pool(
+            &mut pairs, 3, 6, &mut below, &mut at_cut
+        ));
+        assert_eq!(pairs.len(), 3);
+        assert_eq!(pairs.iter().map(|p| p.1).collect::<Vec<_>>(), vec![2, 0, 1]);
     }
 
     #[test]
