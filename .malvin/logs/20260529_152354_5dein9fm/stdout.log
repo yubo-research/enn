@@ -1,0 +1,200 @@
+20260529.112354.255 [malvin.........] Command: malvin invent Fix Rust clippy errors in tie_break.rs: dead_code faiss_pool_might_need_escalation, ptr_arg, type_complexity, too_many_arguments, and unnecessary unwrap in surrogate.rs
+20260529.112354.256 [malvin.........] Memory: 15.5 GiB, CPUs: 24
+20260529.112354.256 [prompt.........] Fix Rust clippy errors in tie_break.rs: dead_code faiss_pool_might_need_escalation, ptr_arg, type_complexity, too_many_arguments, and unnecessary unwrap in surrogate.rs
+20260529.112354.256 [malvin.........] Logs: ./.malvin/logs/20260529_152354_5dein9fm
+20260529.112357.720 [>ideas.........] [ideas...]
+20260529.112405.506 [<ideas.........]    The user wants me to apply MBC2, a methodology involving boundary exploration through extreme assumption testing, negations,
+20260529.112406.592 [<ideas.........]    and asymptotic scaling.
+20260529.112407.530 [<ideas.........] Reading project memory, then inspecting the Rust files and clippy issues so we can explore boundary ideas in the same formal
+20260529.112407.559 [<ideas.........] system.
+20260529.112407.633 [<ideas.........]    Read ./.cursor_memory/memory.md · 73ms
+20260529.112407.808 [<ideas.........]    Search · matches
+20260529.112407.872 [<ideas.........]    Search · matches
+20260529.112410.070 [<ideas.........]    Read ./rust/crates/ennbo/src/posterior/tie_break.rs · 234ms
+20260529.112411.496 [<ideas.........]    Search · 21 matches
+20260529.112411.515 [<ideas.........]    Read ./rust/crates/ennbo/src/surrogate.rs · 1.4s
+20260529.112413.024 [<ideas.........]    I need to understand the Clippy errors and their locations in the codebase.
+20260529.112413.859 [<ideas.........]    ```
+20260529.112414.347 [<ideas.........] Checking clippy output and call sites to map the formal system we're working in.
+20260529.112415.070 [<ideas.........]    Search · 13 matches
+20260529.112421.372 [<ideas.........]    Run cargo clippy --all-targets -...e_break|surrogate" | head -80 · 4.8s · ✗ exit 101 · --> crates/ennbo/src/posterior/tie_break.rs:7:15
+20260529.112422.854 [<ideas.........]    Let me retrieve additional Clippy output for `surrogate.rs` and examine the neighbor.
+20260529.112423.699 [<ideas.........]    Read ./rust/crates/ennbo/src/posterior/neighbor.rs:131-180 · 2 KB · 927ms
+20260529.112428.945 [<ideas.........]    Run cargo clippy --all-targets -...&1 | rg "surrogate|tie_break" · 4.3s · ✗ exit 101 · --> crates/ennbo/src/posterior/tie_break.rs:7:15
+20260529.112432.131 [<ideas.........]    Search · 11 matches
+20260529.112435.957 [<ideas.........]    Run cargo clippy --all-targets -... 2>&1 | rg -A5 "surrogate.rs" · 4.3s · ✗ exit 101 · --> crates/ennbo/src/surrogate.rs:204:25
+20260529.112437.766 [<ideas.........]    The user seeks three structurally distinct approaches to resolve the clippy errors, similar to MBC2-style boundary
+20260529.112441.030 [<ideas.........]    exploration, avoiding minor parameter adjustments.
+20260529.112441.254 [<ideas.........]    The core assumptions identified are: FAISS neighbor pool tie-breaking involves a sequence of small pure functions;
+20260529.112441.334 [<ideas.........]    `faiss_pool_might_need_escalation` is a test-only predicate unused in production; `finalize_faiss_pool_topk` accepts
+20260529.112441.536 [<ideas.........]    numerous loosely typed parameters; functions unnecessarily use `&mut Vec` instead of slices; and surrogate fit paths employ
+20260529.112444.573 [<ideas.........]    `is_some()` with `expect()` rather than `if let`.
+20260529.112444.896 [<ideas.........]    Core assumptions to push/negate:
+20260529.112444.929 [<ideas.........]    - Assumption: dead_code function should either be wired in OR deleted/ #[cfg(test)] / allow
+20260529.112444.947 [<ideas.........]    - Extreme: make escalation a first-class phase in neighbor.rs hot path (pre-check before finalize)
+20260529.112445.199 [<ideas.........]    - Negation: delete the function entirely and inline its logic only where needed OR move to test-only module
+20260529.112445.292 [<ideas.........]    - Pathological: function exists only for documentation/spec - test-only via `#[cfg(test)]` visibility
+20260529.112447.036 [<ideas.........]    Assumption: tie-break state is passed as loose parameters and tuple scratch
+20260529.112447.231 [<ideas.........]    Extreme approaches involve bundling tie-breaking logic into a structured context (FaissPoolTieBreakCtx) or inverting control
+20260529.112447.368 [<ideas.........]    so neighbor.rs manages a shared workspace for accumulating state across queries, amortizing costs and reducing per-call
+20260529.112447.386 [<ideas.........]    arguments.
+20260529.112447.558 [<ideas.........]    Structural alternatives include negating the current approach by having finalize return an enum of next actions through a
+20260529.112448.429 [<ideas.........]    zero-argument callback pattern, eliminating the need for boolean flags and mutable pairs.
+20260529.112448.551 [<ideas.........]    Additionally, the surrogate's handling of Option<Model> can be refactored to avoid is_some()/expect() branching by using
+20260529.112449.443 [<ideas.........]    more explicit control flow patterns.
+20260529.112449.541 [<ideas.........]    State machine enums eliminate Option branching by representing valid states explicitly, such as `SurrogateState { Unfitted,
+20260529.112449.591 [<ideas.........]    Fitting(Fitter), Ready { model, params, fitter } }`.  
+20260529.112449.728 [<ideas.........]    Splitting `fit_append_internal` into two distinct functions removes shared Option paths, enabling clearer control flow.  
+20260529.112450.054 [<ideas.........]    Using an `enum FitPhase` enforces legal state transitions at compile time, preventing invalid configurations.  
+20260529.112450.264 [<ideas.........]    Wiring `faiss_pool_might_need_escalation` as a gate in `neighbor.rs` would conditionally invoke `finalize_faiss_pool_topk`,
+20260529.112451.400 [<ideas.........]    avoiding unnecessary calls.
+20260529.112451.535 [<ideas.........]    The escalation predicate controls the main flow by gating entry into the full finalize step, making it a structural upstream
+20260529.112451.719 [<ideas.........]    discriminator rather than an orphaned helper. This approach avoids unnecessary work by skipping the finalize call when
+20260529.112454.606 [malvin.........] 20260529.112454 Debugging, sandbox: 166 MiB RSS, 4 procs
+20260529.112454.588 [<ideas.........]    escalation isn't needed, offering a clean alternative to deleting or suppressing the function.
+20260529.112454.728 [<ideas.........]    Idea 2: Collapse the 8 parameters of `finalize_faiss_pool_topk` into a `NeighborTieBreakSession` struct managed by
+20260529.112454.954 [<ideas.........]    neighbor.rs during batch processing. This struct holds references to the model, query row, scratch buffers, k value, and
+20260529.112455.257 [<ideas.........]    flags, while providing methods like `try_fast_path` and `finalize_or_escalate`. This change eliminates the issues of pointer
+20260529.112455.454 [<ideas.........]    arguments, excessive type complexity, and too many arguments by consolidating them into a single session object, shifting
+20260529.112457.518 [<ideas.........]    from functional decomposition to a session-based approach owned by the neighbor search loop.
+20260529.112457.845 [<ideas.........]    Idea 3: Replace ENNSurrogate's Option triple with an explicit `enum SurrogateFitState` to eliminate `unwrap`/`expect` paths,
+20260529.112458.288 [<ideas.........]    restricting `fit_append_internal` to the `Fitted` variant. Alternatively, split `ENNSurrogate` into distinct
+20260529.112458.550 [<ideas.........]    types`UnfittedENNSurrogate` and `FittedENNSurrogate`where `fit_append` is only defined on `Fitted`, removing shared Option
+20260529.112500.262 [<ideas.........]    paths and avoiding `unwrap`/`expect` through type safety.
+20260529.112501.115 [<ideas.........]    Or: **Channel-based fit** simplifies `fit_append_internal` by using `self.ensure_fitted_mut()?` to extract `&mut
+20260529.112501.284 [<ideas.........]    SurrogateCore`, eliminating duplicate `expect` sites and reducing error-prone unwrapping.
+20260529.112501.475 [<ideas.........]    The clippy error at line 204 stems from unnecessary `unwrap` in `if self.model.is_some() { let model =
+20260529.112501.646 [<ideas.........]    self.model.as_mut().expect("model");`  the fix is `if let Some(model) = self.model.as_mut()`, which aligns with MBC2s
+20260529.112501.687 [<ideas.........]    principle of discarding such minor tweaks.
+20260529.112501.864 [<ideas.........]    For structural divergence in surrogate design:
+20260529.112502.071 [<ideas.........]    - **Typestate surrogate** separates `ENNSurrogate<Unfitted>` from `ENNSurrogate<Fitted>`, enforcing fit state at compile
+20260529.112502.707 [<ideas.........]    time and removing shared `Option` paths.
+20260529.112502.776 [<ideas.........]    Extracting the `FitBackend` trait object from the `Surrogate` shell and merging the model, fitter, and params into a single
+20260529.112502.912 [<ideas.........]    `FitBundle` struct reduces redundancy by consolidating multiple `Option` checks into one, eliminating redundant `expect`
+20260529.112503.130 [<ideas.........]    calls and simplifying control flow. This approach enforces compile-time state management and removes shared `Option` paths.
+20260529.112503.332 [<ideas.........]    Tie-breaking arguments can be changed from `Vec` to slice, which is a minor adjustment that improves ergonomics without
+20260529.112506.015 [<ideas.........]    altering structure.
+20260529.112506.228 [<ideas.........]    The distant version proposes making tie-break algorithms generic over a `TieBreakBuffer` trait that operates on slices, with
+20260529.112506.493 [<ideas.........]    `Vec` as one implementation, though this may be overly framework-oriented.
+20260529.112506.568 [<ideas.........]    A better approach for tie-breaking involves using a single mutating pipeline object `PoolTieBreak<'a>` that internally
+20260529.112506.705 [<ideas.........]    manages `&mut [(f64,i64)]` without exposing `Vec` in function signatures.
+20260529.112506.763 [<ideas.........]    For the extreme negation of the `dead_code` function:
+20260529.112506.949 [<ideas.........]    Deleting `faiss_pool_might_need_escalation` and integrating its test assertions into `finalize_faiss_pool_topk` would make
+20260529.112507.146 [<ideas.........]    the predicate private inline logic within finalize, rather than a separate exported function. This is the opposite of wiring
+20260529.112508.993 [<ideas.........]    it in.
+20260529.112509.156 [<ideas.........]    So we have two structural extremes for the `dead_code` function: either centralize it as an upstream gate in `neighbor.rs`
+20260529.112509.356 [<ideas.........]    by evaluating `faiss_pool_might_need_escalation` before mutation, or fully integrate it by deleting the function and folding
+20260529.112509.573 [<ideas.........]    its logic into `finalize_faiss_pool_topk`. Both approaches avoid simple suppression like `#[allow(dead_code)]`.
+20260529.112509.596 [<ideas.........]    Three MBC2 ideas emerge:
+20260529.112509.795 [<ideas.........]    1. In `neighbor.rs`, divide the per-query loop into three phases: (1) build pairs, (2) evaluate
+20260529.112509.937 [<ideas.........]    `faiss_pool_might_need_escalation` on sorted pairs before mutation, (3) only invoke `finalize_faiss_pool_topk` if the
+20260529.112510.192 [<ideas.........]    escalation predicate returns true; otherwise, perform a cheap truncate and return.
+20260529.112510.246 [<ideas.........]    2. Refactor `finalize_faiss_pool_topk` to accept a single session object `NeighborTieBreakSession` instead of eight
+20260529.112510.386 [<ideas.........]    parameters, consolidating state and reducing argument complexity.
+20260529.112511.120 [<ideas.........]    3. Replace `Option`
+20260529.112511.301 [<ideas.........]    This inverts the typical workflow by making the escalation check the top-level scheduler instead of always entering
+20260529.112511.450 [<ideas.........]    finalize. A `FaissPoolFinalizeCtx<'a>` struct holds model, query row, k, tie-break neighbors, precomputed distances, pool
+20260529.112511.685 [<ideas.........]    size, and scratch buffers. It exposes a `finalize` method that takes mutable pairs and returns `Done` or `NeedFullRowScan`,
+20260529.112513.300 [<ideas.........]    with all helpers operating on `&mut self` or `&mut [(f64,i64)]`.
+20260529.112513.435 [<ideas.........]    `neighbor.rs` now allocates one context per batch or query, replacing eight function arguments with a single session object
+20260529.112513.468 [<ideas.........]    to simplify control flow and reduce complexity.  
+20260529.112513.684 [<ideas.........]    The three `Option` fields in `ENNSurrogate` are replaced with a single `Option<FittedState>` containing `model`, `params`,
+20260529.112516.702 [<ideas.........]    and `fitter`, eliminating illegal state combinations through structural typing.
+20260529.112517.032 [<ideas.........]    Alternative approach: Use a typestate pattern where `ENNSurrogate<Fitted>` is returned from `fit()`, but this involves a
+20260529.112517.051 [<ideas.........]    larger API change.
+20260529.112517.236 [<ideas.........]    An alternative for `fit_append_internal` is to split it into two methods within separate `impl` blocks, gated by a private
+20260529.112517.377 [<ideas.........]    trait `HasModel` thats only implemented when a model existseliminating runtime branching.
+20260529.112517.652 [<ideas.........]    For the surrogate, consider using an `enum SurrogateStorage { Empty, Partial { fitter }, Ready { model, params, fitter } }`
+20260529.112520.168 [<ideas.........]    to accurately represent the fit lifecycle, where `fit_append_internal` creates the fitter before the model.
+20260529.112520.188 [<ideas.........] # MBC2: Three boundary explorations for the clippy fix prompt
+20260529.112520.196 [<ideas.........] The formal system here is unchanged: FAISS approximate neighbor pools, deterministic distance-then-index tie-breaking,
+20260529.112520.227 [<ideas.........] optional escalation to a full training-row scan, and `ENNSurrogate` incremental fitting over `EpistemicNearestNeighbors`.
+20260529.112520.867 [<ideas.........] The clippy failures are symptoms of how that system is *organized*, not invitations to add `#[allow(...)]` or one-line
+20260529.112521.406 [<ideas.........] signature tweaks. Below are three structurally distant resolutions that stay inside those rules.
+20260529.112521.425 [<ideas.........] ---
+20260529.112521.472 [<ideas.........] ## Core assumptions (shared)
+20260529.112521.759 [<ideas.........] | Assumption | Extreme limit | Negation | Pathological edge |
+20260529.112521.905 [<ideas.........] |---|---|---|---|
+20260529.112522.668 [<ideas.........] | Tie-break is a flat library of stateless functions | Every decision is a separate exported predicate | One monolithic
+20260529.112523.042 [<ideas.........] mutating pass owns all branches | `k=0`, `n_train=k`, all distances equal, pool saturated at cutoff |
+20260529.112523.620 [<ideas.........] | `faiss_pool_might_need_escalation` is an independent probe | Probe runs on every query before any pool mutation | Probe
+20260529.112524.064 [<ideas.........] does not exist; logic lives only inside finalize | Probe true but finalize cheaply resolves without row scan |
+20260529.112525.043 [<ideas.........] | `finalize_faiss_pool_topk` receives all context as loose parameters | Eight or more parameters per call | Zero free
+20260529.112525.063 [<ideas.........] parameters; caller holds a session object | Batch of 10⁵ queries re-allocating scratch every iteration |
+20260529.112525.663 [<ideas.........] | `ENNSurrogate` fittedness is three independent `Option`s | Each field checked separately with `expect` | Fitted state is a
+20260529.112526.005 [<ideas.........] single indivisible bundle | `model` set, `fitter` missing after partial failure |
+20260529.112526.755 [<ideas.........] | Helpers take `&mut Vec` because pairs grow/shrink | Every signature uses growable buffers | Every signature uses `&mut
+20260529.112527.148 [<ideas.........] [(f64, i64)]` only | In-place sort on empty or length-1 slice |
+20260529.112527.193 [<ideas.........] ---
+20260529.112527.497 [<ideas.........] ## Idea 1: Make escalation the scheduler, not an orphan predicate
+20260529.112528.088 [<ideas.........] **Structural move:** Invert control in `neighbor.rs` so `faiss_pool_might_need_escalation` becomes the *first* branch in the
+20260529.112528.573 [<ideas.........] per-query loop, not dead code tested in isolation while production always enters `finalize_faiss_pool_topk`.
+20260529.112529.030 [<ideas.........] **Assumption pushed:** The escalation probe is cheap enough to run unconditionally before any pool mutation. At the extreme,
+20260529.112529.677 [<ideas.........] every query pays one read-only scan of sorted `(distance, index)` pairs; queries with distinct cutoffs never touch
+20260529.112529.934 [<ideas.........] `try_resolve_boundary_tie_in_pool`, row-distance caches, or cutoff-band sorts.
+20260529.112530.615 [<ideas.........] **Negation explored:** Finalize remains the only entry point, but the probe is *inlined privately* inside it (opposite pole:
+20260529.112531.055 [<ideas.........] delete the public function entirely). Idea 1 takes the opposite negation: elevate the probe to production control flow.
+20260529.112531.539 [<ideas.........] **Pathological cases:** When `tie_break_neighbors` is false, the probe short-circuits to false and the loop becomes
+20260529.112532.075 [<ideas.........] truncate-only. When the pool has a boundary tie but `below + at_cut ≤ k`, the probe may return true while finalize still
+20260529.112532.700 [<ideas.........] resolves without row scan—so the scheduler must treat “might need escalation” as “enter finalize,” not “skip straight to
+20260529.112532.720 [<ideas.........] full row scan.”
+20260529.112532.950 [<ideas.........] **What changes structurally (not a parameter tweak):**
+20260529.112533.550 [<ideas.........] - `neighbor.rs` gains an explicit three-phase loop: build sorted pairs → read-only escalation check → either cheap truncate
+20260529.112533.799 [<ideas.........] or full finalize/scan path.
+20260529.112534.273 [<ideas.........] - `dead_code` disappears because the function becomes part of the hot path semantics, not a test-only export.
+20260529.112534.870 [<ideas.........] - `ptr_arg` and `too_many_arguments` on finalize may remain for the expensive branch only, shrinking how often that
+20260529.112534.967 [<ideas.........] signature is exercised.
+20260529.112534.997 [<ideas.........] ---
+20260529.112535.365 [<ideas.........] ## Idea 2: Replace the function soup with a `FaissPoolTieBreakSession`
+20260529.112536.044 [<ideas.........] **Structural move:** Introduce one batch-scoped session struct (e.g. `FaissPoolTieBreakSession<'a>`) that owns everything
+20260529.112536.725 [<ideas.........] `finalize_faiss_pool_topk` currently receives as separate arguments: references to the model and query row, `k`, flags,
+20260529.112536.875 [<ideas.........] optional precomputed row distances, pool size, and reusable scratch (`below`, `at_cut`, row-distance cache).
+20260529.112537.543 [<ideas.........] **Assumption pushed:** Tie-breaking is not a set of free functions but a *phase* with persistent scratch across queries in
+20260529.112538.175 [<ideas.........] the same batch. At the asymptotic limit (many query rows, fixed training set), scratch vectors are allocated once per batch
+20260529.112538.684 [<ideas.........] and cleared per row instead of passing `&mut (Vec, Vec)` through an eight-argument call site.
+20260529.112539.416 [<ideas.........] **Negation explored:** No session object at all—finalize stays a single function but returns an enum (`ResolvedInPool` |
+20260529.112540.144 [<ideas.........] `NeedFullRowScan`) and mutates only `pairs: &mut [(f64, i64)]`. Idea 2 negates the “every call carries full context” pattern
+20260529.112540.506 [<ideas.........] in the opposite direction: context lives in the session, not the call.
+20260529.112541.216 [<ideas.........] **Pathological cases:** A session reused across rows must reset caches so row *i*’s lazily computed distances never leak
+20260529.112541.906 [<ideas.........] into row *i+1*. The session’s internal API uses `&mut [(f64, i64)]` for in-place cutoff-band operations
+20260529.112542.211 [<ideas.........] (`resolve_pool_tie_break_at_cutoff`, `apply_index_tie_break_at_cutoff`), which directly addresses `ptr_arg` without merely
+20260529.112542.302 [<ideas.........] renaming parameters.
+20260529.112542.347 [<ideas.........] **What changes structurally:**
+20260529.112542.872 [<ideas.........] - `too_many_arguments` and `type_complexity` (the scratch tuple) collapse into fields on the session; the public call
+20260529.112543.103 [<ideas.........] becomes `session.finalize_or_escalate(pairs) -> bool`.
+20260529.112544.223 [<ideas.........] - `neighbor.rs` constructs one session before the query loop and reuses it, which is a different shape from today’s `(Vec,
+20260529.112544.710 [<ideas.........] Vec)` tuple allocated beside the loop.
+20260529.112544.730 [<ideas.........] - Helper functions become private methods or module-private fns taking `&mut Session` plus `&mut [(f64, i64)]`, not eight
+20260529.112544.750 [<ideas.........] parallel parameters.
+20260529.112544.768 [<ideas.........] ---
+20260529.112544.948 [<ideas.........] ## Idea 3: Collapse `ENNSurrogate`’s three `Option`s into one `FittedState` (or typestate)
+20260529.112545.383 [<ideas.........] **Structural move:** Replace `model: Option<_>`, `params: Option<_>`, and `fitter: Option<_>` with a single `fitted:
+20260529.112545.788 [<ideas.........] Option<FittedState>` where `FittedState { model, params, fitter }` is the only representable post-fit configuration.
+20260529.112546.335 [<ideas.........] Refactor `run_fitter`, `fit_append_internal`, and `fit` so each branches once on `self.fitted.as_mut()` instead of chaining
+20260529.112546.626 [<ideas.........] `is_some()` with `expect("model")`.
+20260529.112547.258 [<ideas.........] **Assumption pushed:** Fittedness is an atomic unit; you never have a model without the fitter state machine that maintains
+20260529.112547.754 [<ideas.........] params. At the extreme, invalid partial states are unrepresentable, so clippy’s `unnecessary unwrap` pattern cannot recur at
+20260529.112547.794 [<ideas.........] every layer.
+20260529.112548.508 [<ideas.........] **Negation explored (more distant pole):** Typestate split—`ENNSurrogate` before fit vs `FittedENNSurrogate` after `fit`
+20260529.112549.135 [<ideas.........] returns—so `fit_append` exists only on the fitted type and the cold-start path in `fit_append_internal` (model absent,
+20260529.112549.769 [<ideas.........] create model + fitter together) becomes a constructor on the unfitted type. No runtime `Option` check remains in append
+20260529.112549.787 [<ideas.........] logic.
+20260529.112550.191 [<ideas.........] **Pathological cases:** Incremental `fit` that rejects prefix mismatch must drop the entire `FittedState` and rebuild, not
+20260529.112550.834 [<ideas.........] clear fields independently. `run_fitter` when `fitter` is absent but `model` exists (today possible transiently in
+20260529.112551.426 [<ideas.........] `fit_append_internal`’s cold path) must be re-expressed as “create `FittedState` in one assignment” rather than three
+20260529.112551.484 [<ideas.........] separate `self.* = Some(...)`.
+20260529.112551.526 [<ideas.........] **What changes structurally:**
+20260529.112552.148 [<ideas.........] - The clippy fix is not `if let Some(model) = self.model.as_mut()` (that would be a small local variation); it is
+20260529.112552.679 [<ideas.........] eliminating the redundant proof obligation by having one match arm bind `model`, `fitter`, and `params` together.
+20260529.112553.179 [<ideas.........] - `fit_append_internal`’s two paths (“already have model” vs “cold start”) become either two methods on different state
+20260529.112553.752 [<ideas.........] representations or two explicit transitions on `fitted: Option<FittedState>`, which reads differently from the current
+20260529.112553.887 [<ideas.........] nested `Option` lattice.
+20260529.112553.905 [<ideas.........] ---
+20260529.112553.933 [<ideas.........] ## tl;dr
+20260529.112554.370 [<ideas.........] 1. **Escalation scheduler:** Wire `faiss_pool_might_need_escalation` into `neighbor.rs` as the read-only gate before
+20260529.112554.603 [<ideas.........] finalize runs, so dead code becomes production control flow instead of a test-only export.
+20260529.112555.110 [malvin.........] 20260529.112555 Debugging, sandbox: 174 MiB RSS, 4 procs
+20260529.112555.081 [<ideas.........] 2. **Session object:** Replace the eight-argument `finalize_faiss_pool_topk` and scratch tuple with a reusable
+20260529.112555.454 [<ideas.........] `FaissPoolTieBreakSession` that holds context and buffers and operates on `&mut [(f64, i64)]` slices.
+20260529.112555.878 [<ideas.........] 3. **Atomic fitted state:** Merge `ENNSurrogate`’s three `Option` fields into one `FittedState` (or a typestate split), so
+20260529.112556.533 [<ideas.........] `fit_append_internal` never uses `is_some()` plus `expect` to recover a model that was just checked.

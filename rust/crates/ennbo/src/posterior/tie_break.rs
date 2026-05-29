@@ -4,6 +4,15 @@ use crate::model::EpistemicNearestNeighbors;
 
 use super::neighbor_dist::row_dist2s_for_query;
 
+pub(crate) type PoolTieScratch = (Vec<(f64, i64)>, Vec<(f64, i64)>);
+
+pub(crate) struct FaissPoolFinalizeCtx<'a> {
+    pub precomputed_row_dists: Option<&'a [f64]>,
+    pub faiss_pool_size: usize,
+    pub tie_scratch: &'a mut PoolTieScratch,
+}
+
+#[cfg(test)]
 pub(crate) fn faiss_pool_might_need_escalation(
     sorted_pairs: &[(f64, i64)],
     k: usize,
@@ -122,7 +131,7 @@ fn row_dists_for_check<'a>(
     cache.as_deref().expect("row dist cache")
 }
 
-fn resolve_pool_tie_break_at_cutoff(pairs: &mut Vec<(f64, i64)>, k: usize) {
+fn resolve_pool_tie_break_at_cutoff(pairs: &mut [(f64, i64)], k: usize) {
     if faiss_pool_needs_tie_resolution(pairs, k) {
         apply_index_tie_break_at_cutoff(pairs, k);
         pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
@@ -172,9 +181,7 @@ pub(crate) fn finalize_faiss_pool_topk(
     pairs: &mut Vec<(f64, i64)>,
     k: usize,
     tie_break_neighbors: bool,
-    precomputed_row_dists: Option<&[f64]>,
-    faiss_pool_size: usize,
-    tie_scratch: &mut (Vec<(f64, i64)>, Vec<(f64, i64)>),
+    ctx: &mut FaissPoolFinalizeCtx<'_>,
 ) -> bool {
     if !tie_break_neighbors {
         pairs.truncate(k);
@@ -185,16 +192,16 @@ pub(crate) fn finalize_faiss_pool_topk(
         if try_resolve_boundary_tie_in_pool(
             pairs,
             k,
-            faiss_pool_size,
-            &mut tie_scratch.0,
-            &mut tie_scratch.1,
+            ctx.faiss_pool_size,
+            &mut ctx.tie_scratch.0,
+            &mut ctx.tie_scratch.1,
         ) {
             return false;
         }
         let row_dists = row_dists_for_check(
             model,
             x_row,
-            precomputed_row_dists,
+            ctx.precomputed_row_dists,
             &mut row_dists_cache,
         );
         if faiss_pool_needs_full_row_scan_from_row(row_dists, k) {
@@ -211,7 +218,7 @@ pub(crate) fn finalize_faiss_pool_topk(
         let row_dists = row_dists_for_check(
             model,
             x_row,
-            precomputed_row_dists,
+            ctx.precomputed_row_dists,
             &mut row_dists_cache,
         );
         if faiss_pool_needs_full_row_scan_from_row(row_dists, k) {
@@ -228,6 +235,7 @@ mod tests {
         apply_index_tie_break_at_cutoff, faiss_pool_might_need_escalation,
         faiss_pool_needs_full_row_scan_from_row, faiss_pool_needs_tie_resolution,
         finalize_faiss_pool_topk, resolve_pool_tie_break_at_cutoff, row_dists_for_check,
+        FaissPoolFinalizeCtx, PoolTieScratch,
         topk_indices_from_row_dists, topk_indices_from_row_dists_with_buffers,
         try_resolve_boundary_tie_in_pool,
     };
@@ -331,16 +339,19 @@ mod tests {
         let query = array![[0.0]];
         let mut escalate = vec![(0.0, 0i64), (0.0, 1), (0.0, 2), (1.0, 3)];
         let pool_len = escalate.len();
-        let mut scratch = (Vec::new(), Vec::new());
+        let mut scratch: PoolTieScratch = (Vec::new(), Vec::new());
+        let mut ctx = FaissPoolFinalizeCtx {
+            precomputed_row_dists: None,
+            faiss_pool_size: pool_len,
+            tie_scratch: &mut scratch,
+        };
         assert!(!finalize_faiss_pool_topk(
             &model,
             query.row(0),
             &mut escalate,
             2,
             true,
-            None,
-            pool_len,
-            &mut scratch,
+            &mut ctx,
         ));
         assert_eq!(
             escalate.iter().map(|p| p.1).collect::<Vec<_>>(),
@@ -354,16 +365,19 @@ mod tests {
                 .unwrap();
         let mut resolve = vec![(0.0, 1i64), (0.0, 0), (1.0, 2), (4.0, 3)];
         let pool_len = resolve.len();
-        let mut scratch = (Vec::new(), Vec::new());
+        let mut scratch: PoolTieScratch = (Vec::new(), Vec::new());
+        let mut ctx = FaissPoolFinalizeCtx {
+            precomputed_row_dists: None,
+            faiss_pool_size: pool_len,
+            tie_scratch: &mut scratch,
+        };
         assert!(!finalize_faiss_pool_topk(
             &model2,
             query.row(0),
             &mut resolve,
             2,
             true,
-            None,
-            pool_len,
-            &mut scratch,
+            &mut ctx,
         ));
         assert_eq!(
             resolve.iter().take(2).map(|p| p.1).collect::<Vec<_>>(),

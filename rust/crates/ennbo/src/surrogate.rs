@@ -200,8 +200,7 @@ impl ENNSurrogate {
         yvar_new: Option<&ArrayView2<f64>>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
-        if self.model.is_some() {
-            let model = self.model.as_mut().expect("model");
+        if let Some(model) = &mut self.model {
             model.add(x_new, y_new, yvar_new)?;
             if let Some(fitter) = self.fitter.as_mut() {
                 fitter.tell(x_new, y_new, yvar_new)?;

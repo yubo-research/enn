@@ -9,7 +9,7 @@ use crate::params::{ENNParams, PosteriorFlags};
 
 use super::neighbor_dist::{row_dist2s_for_query, row_sq_l2};
 use super::tie_break::{
-    finalize_faiss_pool_topk, topk_indices_from_row_dists,
+    finalize_faiss_pool_topk, topk_indices_from_row_dists, FaissPoolFinalizeCtx, PoolTieScratch,
     topk_indices_from_row_dists_with_buffers,
 };
 
@@ -149,18 +149,21 @@ pub(crate) fn exact_f64_batch_topk(
         dist2s_search
     };
 
-    let mut tie_scratch = (Vec::<(f64, i64)>::new(), Vec::<(f64, i64)>::new());
+    let mut tie_scratch: PoolTieScratch = (Vec::new(), Vec::new());
     for i in 0..n_query {
         let mut pairs = faiss_pairs_from_row(&dist2s_faiss, &idx_faiss, i);
+        let mut ctx = FaissPoolFinalizeCtx {
+            precomputed_row_dists: None,
+            faiss_pool_size: faiss_search_k,
+            tie_scratch: &mut tie_scratch,
+        };
         if finalize_faiss_pool_topk(
             model,
             x.row(i),
             &mut pairs,
             k,
             tie_break_neighbors,
-            None,
-            faiss_search_k,
-            &mut tie_scratch,
+            &mut ctx,
         ) {
             let row_dists_vec = row_dist2s_for_query(model, x.row(i));
             let best = topk_indices_from_row_dists(&row_dists_vec, k, true);
