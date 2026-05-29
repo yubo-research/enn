@@ -1,6 +1,6 @@
 //! ENN parameter and configuration data structures.
 
-use ndarray::ArrayD;
+use ndarray::{Array2, ArrayD};
 use thiserror::Error;
 
 /// Errors that can occur when creating ENN parameters.
@@ -153,13 +153,13 @@ pub struct ENNNormal {
     pub mu: ArrayD<f64>,
     /// Predictive standard errors.
     pub se: ArrayD<f64>,
-    /// Optional neighbor indices.
-    pub idx: Option<Vec<Vec<usize>>>,
+    /// Optional neighbor indices, shape `(n_query, k)`.
+    pub idx: Option<Array2<i64>>,
 }
 
 impl ENNNormal {
     /// Create a new ENNNormal instance.
-    pub fn new(mu: ArrayD<f64>, se: ArrayD<f64>, idx: Option<Vec<Vec<usize>>>) -> Self {
+    pub fn new(mu: ArrayD<f64>, se: ArrayD<f64>, idx: Option<Array2<i64>>) -> Self {
         Self { mu, se, idx }
     }
 
@@ -256,7 +256,7 @@ mod tests {
     fn test_enn_normal_with_idx() {
         let mu = array![[1.0], [2.0]].into_dyn();
         let se = array![[0.1], [0.2]].into_dyn();
-        let idx = Some(vec![vec![0, 1], vec![1, 2]]);
+        let idx = Some(array![[0, 1], [1, 2]]);
         let normal = ENNNormal::new(mu, se, idx.clone());
 
         assert_eq!(normal.idx, idx);

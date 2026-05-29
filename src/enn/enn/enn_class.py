@@ -80,6 +80,7 @@ class EpistemicNearestNeighbors:
             scale_x=scale_x,
             index_driver=idx_driver,
         )
+        self._tie_break_neighbors: bool = True
 
     def add(
         self,
@@ -158,7 +159,9 @@ class EpistemicNearestNeighbors:
         from .enn_normal import ENNNormal
 
         flags = _posterior_flags_coerced(flags)
-        self._rust_model.set_tie_break_neighbors(flags.tie_break_neighbors)
+        if self._tie_break_neighbors != flags.tie_break_neighbors:
+            self._rust_model.set_tie_break_neighbors(flags.tie_break_neighbors)
+            self._tie_break_neighbors = flags.tie_break_neighbors
 
         mu, se, idx = self._rust_model.posterior(
             x,
@@ -168,7 +171,7 @@ class EpistemicNearestNeighbors:
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
-        idx_arr = np.array(idx, dtype=int) if idx else None
+        idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
         return ENNNormal(mu, se, idx=idx_arr)
 
     def conditional_posterior(

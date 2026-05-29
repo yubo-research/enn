@@ -1,6 +1,7 @@
 //! Posterior computation for ENN model.
 
 mod draw_compute;
+mod light;
 mod neighbor;
 mod neighbor_dist;
 mod tie_break;
@@ -8,6 +9,7 @@ mod tie_break;
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 
 use self::draw_compute::draw_from_internals;
+use self::light::{compute_posterior_light, idx_nested_to_array2};
 use self::neighbor::{get_conditional_neighbor_data, get_neighbor_data};
 use crate::draw::DrawInternals;
 use crate::error::{ENNError, EPS_VAR};
@@ -24,12 +26,17 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        let internals = compute_posterior_internals(self, x, params, flags)?;
-        Ok(ENNNormal::new(
-            internals.mu.into_dyn(),
-            internals.se.into_dyn(),
-            Some(internals.idx),
-        ))
+        let (mu, se, idx) = if !flags.observation_noise && self.train_yvar().is_none() {
+            compute_posterior_light(self, x, params, flags)?
+        } else {
+            let internals = compute_posterior_internals(self, x, params, flags)?;
+            (
+                internals.mu,
+                internals.se,
+                idx_nested_to_array2(&internals.idx),
+            )
+        };
+        Ok(ENNNormal::new(mu.into_dyn(), se.into_dyn(), Some(idx)))
     }
 
     fn batch_posterior(
@@ -87,7 +94,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         Ok(ENNNormal::new(
             internals.mu.into_dyn(),
             internals.se.into_dyn(),
-            Some(internals.idx),
+            Some(idx_nested_to_array2(&internals.idx)),
         ))
     }
 
@@ -1132,10 +1139,8 @@ mod tests {
 
     #[test]
     fn test_compute_weighted_posterior_empty_idx() {
-        // Direct test for compute_weighted_posterior with empty idx
         let model = create_test_model();
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
-
         let empty_dist2s: Array2<f64> = Array2::zeros((0, 2));
         let empty_y_neighbors: Array2<f64> = Array2::zeros((0, 1));
         let empty_idx: Vec<Vec<usize>> = vec![];
@@ -1155,5 +1160,4 @@ mod tests {
             "compute_weighted_posterior with empty idx should not panic"
         );
     }
-
 }

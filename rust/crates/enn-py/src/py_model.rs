@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 pub(crate) type PosteriorPyOut<'py> = (
     Bound<'py, PyArrayDyn<f64>>,
     Bound<'py, PyArrayDyn<f64>>,
-    Option<Vec<Vec<usize>>>,
+    Option<Bound<'py, PyArrayDyn<i64>>>,
 );
 
 fn py_posterior_flags(
@@ -117,7 +117,7 @@ impl PyEpistemicNearestNeighbors {
         Ok((
             out.mu.into_pyarray_bound(py),
             out.se.into_pyarray_bound(py),
-            out.idx,
+            out.idx.map(|idx| idx.into_dyn().into_pyarray_bound(py)),
         ))
     }
 
@@ -222,7 +222,7 @@ impl PyEpistemicNearestNeighbors {
         Ok((
             out.mu.into_pyarray_bound(py),
             out.se.into_pyarray_bound(py),
-            out.idx,
+            out.idx.map(|idx| idx.into_dyn().into_pyarray_bound(py)),
         ))
     }
 
