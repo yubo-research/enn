@@ -146,6 +146,39 @@ def test_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
     )
 
 
+def _lattice_posterior_self_search_median_seconds(
+    *, tie_break_neighbors: bool, reps: int = 8
+) -> float:
+    """1D grid tiled to d=10; tie-heavy self-search (regression from PR #29)."""
+    n, d = 1024, 10
+    x = np.linspace(0.0, 1.0, n)[:, None]
+    x = np.tile(x, (1, d))
+    y = np.sin(8.0 * np.pi * x[:, 0:1])
+    model = EpistemicNearestNeighbors(x, y)
+    params = ENNParams(
+        k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
+    flags = PosteriorFlags(tie_break_neighbors=tie_break_neighbors)
+
+    def run() -> None:
+        model.posterior(x, params=params, flags=flags)
+
+    for _ in range(3):
+        run()
+    return _median_seconds(run, reps=reps)
+
+
+def test_lattice_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
+    """lattice posterior(x_train) tie-break-on must track tie-break-off at n=1024."""
+    t_off = _lattice_posterior_self_search_median_seconds(tie_break_neighbors=False)
+    t_on = _lattice_posterior_self_search_median_seconds(tie_break_neighbors=True)
+    ratio = t_on / max(t_off, 1e-12)
+    assert ratio <= 1.15, (
+        f"lattice tie-break posterior must be <= 1.15x no-tie-break at n=1024, "
+        f"got {ratio:.2f}x (t_on={t_on:.4f}s t_off={t_off:.4f}s)"
+    )
+
+
 def test_index_search_slowdown_does_not_blow_up_with_n():
     """Ratio should stay bounded as n_query=n_train grows."""
     ratio_small = _neighbor_lookup_ratio(100, seed=7)
