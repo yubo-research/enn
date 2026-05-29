@@ -1,0 +1,35 @@
+20260527.120206.606 [malvin.........] Running `kiss check`
+20260527.120206.621 [malvin.........] Finished `kiss check`
+exit code: 0
+[stdout]
+Analyzed: 294 files, 2202 code_units, 9230 statements, 293 graph_nodes, 630 graph_edges
+NO VIOLATIONS
+
+[stderr]
+kiss: 11ms
+
+20260527.120206.621 [malvin.........] Running `ruff check .`
+20260527.120206.636 [malvin.........] Finished `ruff check .`
+exit code: 0
+[stdout]
+All checks passed!
+
+[stderr]
+
+20260527.120206.636 [malvin.........] Running `pytest -sv tests`
+20260527.120210.372 [malvin.........] Finished `pytest -sv tests`
+exit code: 0
+[stdout]
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /home/dsweet/micromamba/envs/yubo/bin/python3.12
+cachedir: .pytest_cache
+testmon: changed files: 0, unchanged files: 171, environment: default
+rootdir: /home/dsweet/Projects/enn
+configfile: pyproject.toml
+plugins: anyio-4.13.0, slipcover-1.0.18, typeguard-4.5.1, jaxtyping-0.2.19, cov-7.1.0, testmon-2.2.0, nbmake-1.5.5
+collecting ... collected 0 items
+
+============================ no tests ran in 0.05s =============================
+
+[stderr]
+

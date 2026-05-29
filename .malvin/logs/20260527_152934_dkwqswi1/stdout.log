@@ -1,0 +1,61 @@
+20260527.112947.733 Exploring the project's BLAS/linking setup so the three ideas stay within the same formal system but push its boundaries.
+20260527.113048.236 [malvin.........] 20260527.113048 Reasoning, sandbox: 152 MiB RSS, 3 procs
+20260527.113051.783 **Formal system (shared rules):** `enn_rust.so` is a Linux cdylib built via maturin; BLAS/CBLAS is satisfied through dynamic
+20260527.113052.476 linking and build-time probes (`blas_libs_present`, `has_blas_for_link`, OpenBLAS path injection); conda often ships
+20260527.113052.795 **split** `libblas` / `libcblas`; pytest fails at **import** with `undefined symbol: cblas_dgemm`, not during a numerical
+20260527.113052.827 test assertion.
+20260527.113053.438 Core assumptions being stressed: (1) one coherent BLAS provider at load time, (2) seeing `libblas.so` means CBLAS is
+20260527.113054.139 covered, (3) the failing `.so` is the one you just built, (4) import order is irrelevant once `rpath` is set, (5) the
+20260527.113054.553 missing symbol’s origin matches whichever crate linked BLAS.
+20260527.113054.581 ---
+20260527.113055.091 ### Idea 1 — Split-BLAS “presence trap” (negation of “if BLAS is there, linking is correct”)
+20260527.113055.466 **Assumption pushed:** `blas_libs_present` / `has_blas_for_link` treat existence of `libblas.so` or `libopenblas.so` as
+20260527.113055.780 proof that the **entire** BLAS+CBLAS surface is available from that directory.
+20260527.113056.489 **Extreme / pathological case:** Conda’s layout is intentionally **factored**: Fortran BLAS in `libblas.so`, CBLAS entry
+20260527.113057.431 points (`cblas_dgemm`) only in `libcblas.so`, with no re-export bridge. Build emits `-Wl,-rpath,$CONDA_PREFIX/lib` because
+20260527.113058.023 `libblas.so` exists, so the linker records a successful link against a BLAS **family** while leaving `cblas_dgemm` as a
+20260527.113058.641 deferred undefined symbol that must be satisfied from a **different** SONAME that was never added to `DT_NEEDED` or `rpath`
+20260527.113058.670 scope.
+20260527.113059.033 **Negation:** The environment is not “missing BLAS”; it is **over-specific**—BLAS is present but CBLAS is a separate
+20260527.113059.304 contract the build scripts never probe for (`libcblas.so` is invisible to the detector).
+20260527.113059.807 **Structural distance:** Not “add libcblas to the link line” (parameter tweak), but **invert the detector’s meaning**:
+20260527.113100.247 success when `libblas` exists actively **hides** failure when `libcblas` is split out—worse in minimal conda metapackages
+20260527.113100.491 that install only reference BLAS splits.
+20260527.113100.509 ---
+20260527.113100.878 ### Idea 2 — Two `enn_rust.so` identities under pytest (negation of “one extension artifact per install”)
+20260527.113101.287 **Assumption pushed:** pytest imports the same `enn.enn_rust` binary that `maturin develop` / your last `cargo build`
+20260527.113101.304 produced.
+20260527.113101.875 **Extreme / pathological case:** PYTHONPATH + pytest’s collection graph load **two different paths** to an extension with
+20260527.113102.221 the same module name: e.g. an **auditwheel-repaired** wheel copy (OpenBLAS vendored or `NEEDED` trimmed) and an **editable**
+20260527.113102.799 `target/release/libenn_rust.so` (built against conda’s split BLAS). Testmon, `pythonpath = ["src", "."]`, or a stale install
+20260527.113103.167 in `site-packages` makes pytest’s first successful `import enn` bind to the wheel artifact while your mental model tracks
+20260527.113103.225 the editable build.
+20260527.113103.644 **Asymptotic scaling:** As the test tree grows, more conftest/plugins import `enn` (or submodules that re-import `_rust`)
+20260527.113104.233 from different roots; the dynamic loader’s **first loaded** `enn_rust.so` wins globally, so later imports see symbols
+20260527.113104.840 resolved against the wrong `NEEDED` set—`cblas_dgemm` missing on the copy pytest actually loaded.
+20260527.113105.309 **Negation:** Failure is not “conda BLAS is broken”; it is “**pytest selected the wrong soname**,” and `ImportError` on
+20260527.113105.642 `cblas_dgemm` is a fingerprint of **artifact collision**, not of conda’s libcblas layout alone.
+20260527.113106.006 **Structural distance:** Shifts the boundary from **link flags** to **import topology / duplicate extension identity**—same
+20260527.113106.308 symbol error, entirely different locus (module search path vs `DT_NEEDED`).
+20260527.113106.336 ---
+20260527.113106.687 ### Idea 3 — Global linker namespace saturation before `enn_rust` loads (negation of “rpath isolates BLAS choice”)
+20260527.113107.186 **Assumption pushed:** `-Wl,-rpath,$CONDA_PREFIX/lib` on `enn_rust.so` deterministically loads conda’s `libcblas` for
+20260527.113107.195 `cblas_dgemm`.
+20260527.113107.879 **Extreme / pathological case:** `_rust.py` already touches **torch** (and pytest loads **numpy/scipy/faiss** in other
+20260527.113108.370 tests) before or during extension load. Each dependency brings its own `libblas` / `libopenblas` / `libmkl` with overlapping
+20260527.113108.955 symbol namespaces. On Linux, `RTLD_GLOBAL` effects and **interposable** BLAS mean the dynamic linker may bind `cblas_dgemm`
+20260527.113109.961 against a DSO that exports BLAS Fortran symbols but **not** CBLAS wrappers, while `enn_rust.so` still carries an unresolved
+20260527.113110.729 `cblas_dgemm` from a **statically expected** provider (e.g. transitive `cblas-sys` / Faiss path) that never became a direct
+20260527.113110.808 `NEEDED` edge to `libcblas.so`.
+20260527.113111.405 **Asymptotic scaling:** With `pytest -n auto` or heavy optional deps, the number of pre-loaded BLAS providers → **symbol
+20260527.113111.798 preemption chaos**: not “zero BLAS,” but **N partial BLAS** where `cblas_dgemm` is uniquely absent from the union of
+20260527.113111.910 already-mapped objects.
+20260527.113112.502 **Negation:** rpath does not fail; **global scope wins over local rpath** for symbol resolution order—conda’s split
+20260527.113112.825 `libcblas` is on disk but loses the race to an already-mapped `libopenblas` that does not export `cblas_dgemm` under that
+20260527.113112.921 build.
+20260527.113113.310 **Structural distance:** Treats the bug as **load-order / namespace economics** (who mapped first), not as a single missing
+20260527.113113.785 library at link time—structurally opposite to “fix the rpath string.”
+20260527.113113.802 ---
+20260527.113114.381 These three stay inside the same rules (dynamic ELF linking, conda BLAS splits, maturin/pytest import of `enn_rust.so`) but
+20260527.113114.744 sit at different boundaries: **false-positive detection**, **duplicate extension identity**, and **global symbol
+20260527.113115.121 preemption**—each far from a one-line `rustc-link-lib=cblas` tweak.

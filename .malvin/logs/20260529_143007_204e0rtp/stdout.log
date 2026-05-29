@@ -1,0 +1,51 @@
+20260529.103007.719 [malvin.........] Command: malvin tidy
+20260529.103007.719 [malvin.........] Memory: 15.5 GiB, CPUs: 24
+20260529.103007.719 [prompt.........] Satisfy all constraints.
+20260529.103007.719 [prompt.........] 
+20260529.103007.719 [prompt.........] 
+20260529.103007.719 [prompt.........] Scope Constraints:
+20260529.103007.719 [prompt.........] - Just get quality gates to pass.
+20260529.103007.720 [prompt.........] 
+20260529.103007.720 [prompt.........] General Constraints:
+20260529.103007.720 [prompt.........] - All quality gates (see below) to 
+20260529.103007.720 [prompt.........] pass
+20260529.103007.720 [prompt.........] - No serious bugs in scope
+20260529.103007.720 [prompt.........] - No serious time-complexity 
+20260529.103007.720 [prompt.........] inefficiencies in scope
+20260529.103007.720 [prompt.........] - No serious memory-complexity 
+20260529.103007.720 [prompt.........] inefficiencies in scope
+20260529.103007.720 [prompt.........] - Each unit test tests something 
+20260529.103007.720 [prompt.........] meanignful. Simple tests are fine. 
+20260529.103007.720 [prompt.........] Bogus tests are not.
+20260529.103007.720 [prompt.........] - Any code you write should be 
+20260529.103007.720 [prompt.........] idiomatic. (For example: Don't use 
+20260529.103007.720 [prompt.........] ".inc" files in Rust.)
+20260529.103007.720 [prompt.........] - When you code, stay in scope.
+20260529.103007.720 [prompt.........] 
+20260529.103007.720 [prompt.........] If you write code:
+20260529.103007.720 [prompt.........] - Write real unit tests, even if it 
+20260529.103007.720 [prompt.........] seem like you have to write a lot of 
+20260529.103007.720 [prompt.........] them. Do your best. Don't use tricks 
+20260529.103007.720 [prompt.........] or make superficial unit tests just 
+20260529.103007.720 [prompt.........] to pass coverage gates.
+20260529.103007.721 [prompt.........] 
+20260529.103007.721 [prompt.........] 
+20260529.103007.721 [prompt.........] Quality Gates:
+20260529.103007.721 [prompt.........] 
+20260529.103007.721 [prompt.........] - `kiss check`
+20260529.103007.721 [prompt.........] - `ruff check .`
+20260529.103007.721 [prompt.........] - `pytest -sv tests`
+20260529.103007.721 [prompt.........] 
+20260529.103007.721 [prompt.........] 
+20260529.103007.721 [prompt.........] Latest & up-to-date quality gate run 
+20260529.103007.721 [prompt.........] output is in: 
+20260529.103007.721 [prompt.........] `./.malvin/logs/20260529_143007_204e0r
+20260529.103007.721 [prompt.........] tp/quality_gates.log`.
+20260529.103007.721 [malvin.........] Logs: 
+20260529.103007.721 [malvin.........] ./.malvin/logs/20260529_143007_204e0rt
+20260529.103007.721 [malvin.........] p
+20260529.103007.722 [malvin.........] Running `kiss check`
+20260529.103008.479 [malvin.........] Running `ruff check .`
+20260529.103008.726 [malvin.........] Running `pytest -sv tests`
+20260529.103108.644 [malvin.........] 20260529.103108 Verifying
+20260529.103159.555 [malvin.........] DONE

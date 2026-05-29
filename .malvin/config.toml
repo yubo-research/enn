@@ -1,0 +1,13 @@
+mem_limit_gb = 4
+
+[agent]
+max_acp_retries = 3
+max_hypotheses = 10
+max_loops = 1
+max_loops_code = 3
+model = "auto"
+
+[logs]
+max_age_days = 90
+max_bytes = "2GiB"
+max_runs = 100

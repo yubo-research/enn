@@ -1,0 +1,49 @@
+20260527.115505.235 Exploring the codebase to ground boundary ideas in the actual import failure and notebook setup.
+20260527.115605.551 [malvin.........] 20260527.115605 Reasoning, sandbox: 153 MiB RSS, 3 procs
+20260527.115617.659 The failure sits in a narrow formal system: `examples/demo_enn.ipynb` does `from enn import EpistemicNearestNeighbors,
+20260527.115618.099 enn_fit` and calls `enn_fit(model, k=..., ...)`, while `src/enn/__init__.py` only lazy-exports symbols like
+20260527.115618.784 `EpistemicNearestNeighbors` and `ENNStatefulFitter`, and `src/enn/enn/enn_fit.py` exposes `subsample_loglik` but no
+20260527.115619.156 `enn_fit` callable. The rest of the codebase has already moved hyperparameter fitting to `ENNStatefulFitter` (`tell` then
+20260527.115619.553 `ask`). The usual fix—one more entry in `_LAZY_ATTRS`—is intentionally out of scope here.
+20260527.115620.000 Below are three structurally distant approaches that still aim to keep the notebook runnable (same outputs and narrative
+20260527.115620.305 flow), without treating “add `enn_fit` to `__init__.py`” as the answer.
+20260527.115620.313 ---
+20260527.115620.611 ## Idea 1: Twin `enn` package on `PYTHONPATH` (namespace merge, not edit the canonical package)
+20260527.115621.024 **Core assumption challenged:** There is exactly one `enn` package, and the fix must change `src/enn/__init__.py`.
+20260527.115622.109 - **Extreme:** Treat notebook compatibility as an unbounded surface: a shadow tree `tests/legacy_enn_overlay/enn/` sits
+20260527.115622.486 *ahead* of `src` on `PYTHONPATH`, uses `pkgutil.extend_path` (or equivalent) to merge with the real package, and only
+20260527.115623.097 defines missing legacy names (`enn_fit`, future deprecations) as thin wrappers around `ENNStatefulFitter.tell` / `ask` using
+20260527.115623.508 `model.train_x`, `model.train_y`, `model.train_yvar`.
+20260527.115623.724 - **Negation:** The library never gains `enn_fit`; only the test/notebook execution environment does.
+20260527.115624.189 - **Pathological edge case:** PYTHONPATH order inverts and the overlay *replaces* instead of extending `enn`, breaking
+20260527.115624.690 `EpistemicNearestNeighbors`; the fix becomes “ordering contract + a one-line nbmake assertion that
+20260527.115624.734 `enn.EpistemicNearestNeighbors` is the real class.”
+20260527.115625.280 The notebook file stays verbatim; `test_notebooks.py` already builds `PYTHONPATH`—you extend that list rather than the
+20260527.115625.308 public lazy registry.
+20260527.115625.315 ---
+20260527.115625.620 ## Idea 2: `sitecustomize` meta-path hook that materializes `enn.enn_fit` only under nbmake
+20260527.115625.910 **Core assumption challenged:** Import resolution for `enn` must go through the package’s PEP 562 `__getattr__` /
+20260527.115626.126 `_LAZY_ATTRS` table.
+20260527.115626.688 - **Extreme:** Generalize `tests/_nbmake_sitecustomize/sitecustomize.py` (already on the nbmake `PYTHONPATH`) to install a
+20260527.115627.287 `sys.meta_path` finder or a post-import hook: after `import enn`, attach a synthetic `enn_fit` callable that wraps the
+20260527.115627.692 stateful fitter. Zero edits to `src/enn`; the symbol exists only in subprocesses that load that `sitecustomize`.
+20260527.115628.220 - **Negation:** Installed/user `enn` stays lean; notebook CI carries the compatibility layer.
+20260527.115628.820 - **Pathological edge case:** Someone runs `jupyter notebook examples/demo_enn.ipynb` without the shim and still fails—so
+20260527.115629.181 you either accept “nbmake-only green” or document that interactive runs need the same `PYTHONPATH`/`sitecustomize` as the
+20260527.115629.995 test (pushing the assumption “notebook must work everywhere” to its limit: *works everywhere the test harness configures*).
+20260527.115630.402 Structurally distant from Idea 1: mutation happens at import machinery time, not via a second package tree.
+20260527.115630.420 ---
+20260527.115631.173 ## Idea 3: Execute a transformed notebook—AST rewrite in `run_nbmake`, frozen `.ipynb` on disk
+20260527.115631.638 **Core assumption challenged:** The code that nbmake runs must be byte-for-byte what is committed in the `.ipynb`.
+20260527.115632.745 - **Extreme:** Before `pytest --nbmake`, parse the notebook JSON, walk code cells with `ast`, and rewrite `from enn import
+20260527.115633.525 …, enn_fit` plus `enn_fit(...)` call sites into the `ENNStatefulFitter` tell/ask sequence (or into a single local helper),
+20260527.115634.016 write a temp notebook, run nbmake on that, delete it. The repo artifact remains the old pedagogical API; the execution graph
+20260527.115634.112 is the new API.
+20260527.115634.581 - **Negation:** Do not restore `enn_fit` as a public symbol anywhere in the package.
+20260527.115635.320 - **Pathological edge cases:** Dynamic imports (`getattr(enn, "enn_fit")`), star imports, or `enn_fit` bound to another
+20260527.115635.593 name—the rewriter must be complete or fail loudly; multiple notebooks multiply rule maintenance asymptotically.
+20260527.115636.356 Structurally distant from Ideas 1–2: the fix lives entirely in test orchestration, not in import paths or package layout.
+20260527.115636.384 ---
+20260527.115637.058 These three span different boundaries (parallel package identity, import-system injection, execution vs. artifact) while
+20260527.115637.724 obeying the same rules: notebook still demonstrates ENN fitting end-to-end, and none of them is reachable by only adding one
+20260527.115637.917 line to `_LAZY_ATTRS`.
