@@ -181,9 +181,10 @@ def test_lattice_posterior_self_search_tie_break_not_much_slower_than_no_tie_bre
 
 def test_index_search_slowdown_does_not_blow_up_with_n():
     """Ratio should stay bounded as n_query=n_train grows."""
-    ratio_small = _neighbor_lookup_ratio(100, seed=7)
-    ratio_large = _neighbor_lookup_ratio(1000, seed=7)
+    n_small, n_large = 512, 4096
+    ratio_small = _neighbor_lookup_ratio(n_small, seed=7)
+    ratio_large = _neighbor_lookup_ratio(n_large, seed=7)
     assert ratio_large <= max(ratio_small * 1.5, 3.0), (
-        f"expected bounded slowdown ratio: n=100 -> {ratio_small:.2f}x, "
-        f"n=1000 -> {ratio_large:.2f}x"
+        f"expected bounded slowdown ratio: n={n_small} -> {ratio_small:.2f}x, "
+        f"n={n_large} -> {ratio_large:.2f}x"
     )

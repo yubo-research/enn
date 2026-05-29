@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn exact_f64_batch_topk_lattice_self_search_escalation_count() {
-        let n = 1024usize;
+        let n = 4096usize;
         let d = 3usize;
         let k = 8usize;
         let mut train_x = Array2::zeros((n, d));
@@ -444,7 +444,7 @@ mod tests {
         assert_eq!(dist2s.nrows(), n);
         assert_eq!(idx.ncols(), k);
         // Brute top-k with index tie-break for a few spot rows
-        for i in [0usize, 16, 500, 1023] {
+        for i in [0usize, 16, 500, n - 1] {
             let x_row = train_x.row(i);
             let mut ref_pairs: Vec<(f64, i64)> = (0..n)
                 .map(|j| {
