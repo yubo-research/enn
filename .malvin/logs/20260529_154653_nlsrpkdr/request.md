@@ -1,0 +1,1 @@
+We are still slow relative to rev 9eaa27 when calling posterior. This is irrespective of the value of tie_break. Write a failing test that can detect the slow down.

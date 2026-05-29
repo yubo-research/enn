@@ -1,0 +1,1178 @@
+kiss check: NO VIOLATIONS
+ruff check .: All checks passed!
+cargo clippy: Finished dev profile, no warnings
+make test: 664 passed, 23 skipped, 6 warnings in 99.05s
+
+All quality gates PASS (session 2 retry #1, 2026-05-29).
+20260529.121426.796 [malvin.........] Running `kiss check`
+20260529.121426.817 [malvin.........] Finished `kiss check`
+exit code: 0
+[stdout]
+Analyzed: 296 files, 2283 code_units, 9583 statements, 295 graph_nodes, 634 graph_edges
+NO VIOLATIONS
+
+[stderr]
+kiss: 17ms
+
+20260529.121426.817 [malvin.........] Running `ruff check .`
+20260529.121426.839 [malvin.........] Finished `ruff check .`
+exit code: 0
+[stdout]
+All checks passed!
+
+[stderr]
+
+20260529.121426.839 [malvin.........] Running `cd rust && cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo`
+20260529.121427.351 [malvin.........] Finished `cd rust && cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo`
+exit code: 0
+[stdout]
+
+[stderr]
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.33s
+
+20260529.121427.351 [malvin.........] Running `make test`
+20260529.121619.975 [malvin.........] Finished `make test`
+exit code: 0
+[stdout]
+cd rust && cargo nextest run
+PYTHONPATH=src pytest -sv tests --tb=short
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /home/dsweet/micromamba/envs/yubo/bin/python3.12
+cachedir: .pytest_cache
+rootdir: /home/dsweet/Projects/enn
+configfile: pyproject.toml
+plugins: anyio-4.13.0, slipcover-1.0.18, typeguard-4.5.1, jaxtyping-0.2.19, cov-7.1.0, testmon-2.2.0, nbmake-1.5.5
+collecting ... collected 687 items
+
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_bitwise_parity_simple[0] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_bitwise_parity_simple[42] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_bitwise_parity_simple[123] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_bitwise_parity_simple[999] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_bitwise_parity_simple[2024] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_multiple_seeds[0] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_multiple_seeds[42] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_multiple_seeds[123] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_large_arrays[0] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_fast_hash_large_arrays[42] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_determinism_parity[0] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_determinism_parity[42] PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_duplicate_indices_parity PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashParity::test_statistical_properties_parity PASSED
+tests/parity/helpers/test_hash_parity.py::TestHashSlowVsFastParity::test_slow_vs_fast_comparison SKIPPED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_fixed_cases[y0-ref_point0-0.75] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_fixed_cases[y1-ref_point1-1.0] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_fixed_cases[y2-ref_point2-1.0] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_fixed_cases[y3-ref_point3-0.0] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_fixed_cases[y4-ref_point4-1.0] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_random[0] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_random[42] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_random[123] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_random[999] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_bitwise_parity_random[2024] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_empty_array_parity PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_no_dominating_points_parity PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_parity_with_nans_and_infs[0] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_parity_with_nans_and_infs[42] PASSED
+tests/parity/helpers/test_hypervolume_parity.py::TestHypervolumeParity::test_parity_with_nans_and_infs[123] PASSED
+tests/parity/helpers/test_util_parity.py::TestStandardizeYParity::test_standardize_y_parity[0] PASSED
+tests/parity/helpers/test_util_parity.py::TestStandardizeYParity::test_standardize_y_parity[42] PASSED
+tests/parity/helpers/test_util_parity.py::TestStandardizeYParity::test_standardize_y_parity[123] PASSED
+tests/parity/helpers/test_util_parity.py::TestStandardizeYParity::test_standardize_y_constant_parity PASSED
+tests/parity/helpers/test_util_parity.py::TestStandardizeYParity::test_standardize_y_empty_parity PASSED
+tests/parity/helpers/test_util_parity.py::TestParetoFrontParity::test_pareto_front_parity_random[0] PASSED
+tests/parity/helpers/test_util_parity.py::TestParetoFrontParity::test_pareto_front_parity_random[42] PASSED
+tests/parity/helpers/test_util_parity.py::TestParetoFrontParity::test_pareto_front_parity_random[123] PASSED
+tests/parity/helpers/test_util_parity.py::TestParetoFrontParity::test_pareto_front_parity_random[999] PASSED
+tests/parity/helpers/test_util_parity.py::TestParetoFrontParity::test_pareto_front_known_cases PASSED
+tests/parity/helpers/test_util_parity.py::TestParetoFrontParity::test_pareto_front_empty_parity PASSED
+tests/parity/helpers/test_util_parity.py::TestSobolIndicesParity::test_sobol_indices_parity PASSED
+tests/parity/test_enn_model_parity.py::test_posterior_parity_simple PASSED
+tests/parity/test_enn_model_parity.py::test_add_and_len_contract PASSED
+tests/parity/test_enn_model_parity.py::test_posterior_parity_observation_noise_with_yvar PASSED
+tests/parity/test_enn_model_parity.py::test_exclude_nearest_single_obs_raises PASSED
+tests/parity/test_enn_surrogate_parity.py::test_enn_posterior_rust_vs_python PASSED
+tests/parity/test_golden_fixtures.py::test_golden_optimizer_enn_regression PASSED
+tests/parity/test_incumbent_noise_aware_parity.py::test_fallback_noise_aware_prefers_mu_over_observed_y PASSED
+tests/parity/test_incumbent_noise_aware_parity.py::test_rust_noise_aware_sets_incumbent_after_tell PASSED
+tests/parity/test_morbo_acq_selection_regression.py::test_morbo_thompson_python_breaks_ties_with_rng PASSED
+tests/parity/test_morbo_acq_selection_regression.py::test_morbo_ucb_python_breaks_ties_with_rng PASSED
+tests/parity/test_morbo_num_metrics_validation.py::test_python_morbo_rejects_num_metrics_one PASSED
+tests/parity/test_morbo_pareto_rust.py::test_morbo_pareto_rust_post_init_contracts PASSED
+tests/parity/test_morbo_pareto_rust.py::test_morbo_pareto_rust_improves_both_objectives PASSED
+tests/parity/test_num_candidates_and_shape_parity.py::test_const_num_candidates_uses_rust_when_constant PASSED
+tests/parity/test_num_candidates_and_shape_parity.py::test_default_num_candidates_uses_rust_when_available PASSED
+tests/parity/test_num_candidates_and_shape_parity.py::test_default_num_candidates_telemetry_matches_python_resolve PASSED
+tests/parity/test_num_candidates_and_shape_parity.py::test_rust_optimizer_tell_raises_on_mismatched_xy_rows PASSED
+tests/parity/test_num_candidates_per_arm_rust.py::test_num_candidates_per_arm_rust_optimizer_ask_tell PASSED
+tests/parity/test_num_candidates_per_arm_rust.py::test_rust_overrides_pass_num_candidates_per_arm PASSED
+tests/parity/test_num_candidates_per_arm_rust.py::test_enn_per_arm_only_runtime_matches_python_resolve PASSED
+tests/parity/test_num_candidates_per_arm_rust.py::test_fixed_and_per_arm_rust_runtime_matches_python_resolve PASSED
+tests/parity/test_num_candidates_per_arm_rust.py::test_python_and_rust_pool_formula_agree_for_per_arm PASSED
+tests/parity/test_num_candidates_per_arm_rust.py::test_default_num_candidates_runtime_matches_python_resolve_many_arms PASSED
+tests/parity/test_num_candidates_per_arm_rust.py::test_per_arm_only_high_dim_runtime_matches_python_resolve PASSED
+tests/parity/test_optimizer_coverage_gaps.py::test_optimizer_tr_length_trajectory_contract PASSED
+tests/parity/test_optimizer_coverage_gaps.py::test_optimizer_pareto_tr_length_contract PASSED
+tests/parity/test_optimizer_coverage_gaps.py::test_acquisition_ucb_produces_valid_candidates PASSED
+tests/parity/test_optimizer_coverage_gaps.py::test_acquisition_thompson_config_passthrough PASSED
+tests/parity/test_optimizer_coverage_gaps.py::test_multi_objective_uses_rust PASSED
+tests/parity/test_optimizer_coverage_gaps.py::test_multi_objective_rust_ask_tell PASSED
+tests/parity/test_optimizer_coverage_gaps.py::test_multi_objective_y_obs_shape PASSED
+tests/parity/test_optimizer_coverage_gaps.py::test_rust_optimizer_keeps_all_observations PASSED
+tests/parity/test_optimizer_enn_parity.py::test_optimizer_enn_contract_and_shape PASSED
+tests/parity/test_optimizer_enn_parity.py::test_optimizer_enn_ask_tell_state PASSED
+tests/parity/test_optimizer_enn_parity.py::test_optimizer_enn_convergence_tolerance PASSED
+tests/parity/test_optimizer_fixture_noise_aware_tr.py::test_noise_aware_fixture_tr_length_not_driven_by_worsening_raw_y PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_ucb_single_seed0] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_ucb_single_seed1] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_ucb_single_seed2] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_thompson_single_seed0] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_thompson_single_seed1] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_thompson_single_seed2] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_pareto_multi_seed0] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_pareto_multi_seed1] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_pareto_multi_seed2] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_zero_seed0] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_zero_seed1] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_zero_seed2] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_noise_aware_seed0] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_noise_aware_seed1] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[turbo_enn_noise_aware_seed2] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[lhd_only_seed0] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[lhd_only_seed1] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[lhd_only_seed2] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[morbo_enn_separable_unimodal_seed0] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[morbo_enn_separable_unimodal_seed1] PASSED
+tests/parity/test_optimizer_fixture_replay.py::test_rust_optimizer_replays_fixture_contracts[morbo_enn_separable_unimodal_seed2] PASSED
+tests/parity/test_optimizer_fixture_replay_catalog.py::test_catalog_fixture_names PASSED
+tests/parity/test_optimizer_fixture_replay_catalog.py::test_each_entry_config_paths_and_morbo_routing PASSED
+tests/parity/test_optimizer_lhd_parity.py::test_optimizer_lhd_contract_and_shape PASSED
+tests/parity/test_optimizer_lhd_parity.py::test_optimizer_lhd_ask_tell_state PASSED
+tests/parity/test_optimizer_quality_gate.py::test_optimizer_quality_ci_subset PASSED
+tests/parity/test_optimizer_routing.py::test_default_turbo_enn_routes_to_rust PASSED
+tests/parity/test_optimizer_routing.py::test_turbo_enn_k_none_resolves_default_k PASSED
+tests/parity/test_optimizer_routing.py::test_turbo_enn_acq_types_route_to_rust[AcqType.UCB] PASSED
+tests/parity/test_optimizer_routing.py::test_turbo_enn_acq_types_route_to_rust[AcqType.THOMPSON] PASSED
+tests/parity/test_optimizer_routing.py::test_const_num_candidates_routes_to_rust PASSED
+tests/parity/test_optimizer_routing.py::test_turbo_zero_and_lhd_route_to_rust PASSED
+tests/parity/test_optimizer_routing.py::test_turbo_one_falls_back_with_registry_reason PASSED
+tests/parity/test_optimizer_routing.py::test_morbo_routes_to_rust PASSED
+tests/parity/test_optimizer_routing.py::test_fallback_registry_has_one_entry PASSED
+tests/parity/test_optimizer_routing.py::test_supported_enn_create_does_not_call_python_optimizer PASSED
+tests/parity/test_optimizer_speed_gate.py::test_optimizer_speed_ci_subset setup N=100 D=2 k=10 num_candidates=200 num_arms=1
+seeding observations...
+seed_time_sec=0.002
+timed_asks=5
+dt_sel_ms mean=0.422 median=0.422 p95=0.448 min=0.404 max=0.455
+dt_gen_ms mean=0.440 median=0.439 p95=0.466 min=0.421 max=0.472
+dt_fit_ms mean=0.000 median=0.000 p95=0.000 min=0.000 max=0.000
+ask_wall_ms mean=0.477 median=0.476 p95=0.503 min=0.457 max=0.510
+dt_sel_fraction_of_ask_wall=0.886
+PASSED
+tests/parity/test_optimizer_zero_parity.py::test_optimizer_zero_contract_and_shape PASSED
+tests/parity/test_optimizer_zero_parity.py::test_optimizer_zero_ask_tell_state PASSED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_ucb_single_seed0] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_ucb_single_seed1] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_ucb_single_seed2] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_thompson_single_seed0] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_thompson_single_seed1] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_thompson_single_seed2] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_pareto_multi_seed0] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_pareto_multi_seed1] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_pareto_multi_seed2] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_zero_seed0] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_zero_seed1] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_zero_seed2] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_noise_aware_seed0] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_noise_aware_seed1] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[turbo_enn_noise_aware_seed2] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[lhd_only_seed0] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[lhd_only_seed1] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[lhd_only_seed2] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[morbo_enn_separable_unimodal_seed0] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[morbo_enn_separable_unimodal_seed1] SKIPPED
+tests/parity/test_python_optimizer_fixtures.py::test_optimizer_fixture_invariants[morbo_enn_separable_unimodal_seed2] SKIPPED
+tests/parity/test_raasp_parity.py::test_raasp_optimizer_contract PASSED
+tests/parity/test_raasp_parity.py::test_raasp_rust_candidate_distribution PASSED
+tests/parity/test_rng_contract.py::test_rust_backend_local_determinism PASSED
+tests/parity/test_rust_config_passthrough.py::test_scale_x_true_passed_in_rust_overrides PASSED
+tests/python_api/test_create_optimizer_contract.py::TestCreateOptimizerContract::test_create_optimizer_signature PASSED
+tests/python_api/test_create_optimizer_contract.py::TestCreateOptimizerContract::test_returns_optimizer_with_ask_tell_telemetry PASSED
+tests/python_api/test_create_optimizer_contract.py::TestCreateOptimizerContract::test_ask_returns_candidates PASSED
+tests/python_api/test_create_optimizer_contract.py::TestCreateOptimizerContract::test_telemetry_returns_telemetry_obj PASSED
+tests/python_api/test_create_optimizer_contract.py::TestCreateOptimizerContractRustBacked::test_default_turbo_enn_uses_rust_backend PASSED
+tests/python_api/test_create_optimizer_contract.py::TestCreateOptimizerContractRustBacked::test_turbo_enn_contract PASSED
+tests/python_api/test_create_optimizer_contract.py::TestCreateOptimizerContractRustBacked::test_turbo_zero_contract PASSED
+tests/python_api/test_create_optimizer_contract.py::TestCreateOptimizerContractRustBacked::test_lhd_only_contract PASSED
+tests/python_api/test_enn_fit_contract.py::TestENNStatefulFitterContract::test_init_signature PASSED
+tests/python_api/test_enn_fit_contract.py::TestENNStatefulFitterContract::test_tell_and_ask_signatures PASSED
+tests/python_api/test_enn_fit_contract.py::TestENNStatefulFitterContract::test_ask_returns_en_params PASSED
+tests/python_api/test_enn_normal_contract.py::TestENNNormalContract::test_exists_and_is_class PASSED
+tests/python_api/test_enn_normal_contract.py::TestENNNormalContract::test_has_mu_se_idx_attrs PASSED
+tests/python_api/test_enn_normal_contract.py::TestENNNormalContract::test_idx_optional PASSED
+tests/python_api/test_enn_normal_contract.py::TestENNNormalContract::test_posterior_returns_enn_normal PASSED
+tests/python_api/test_enn_normal_contract.py::TestENNNormalContract::test_sample_method_exists PASSED
+tests/python_api/test_enn_normal_contract.py::TestENNNormalContract::test_sample_signature PASSED
+tests/python_api/test_enn_normal_contract.py::TestENNNormalContract::test_sample_returns_correct_shape PASSED
+tests/python_api/test_helper_functions_contract.py::TestHypervolumeContract::test_function_exists_and_callable PASSED
+tests/python_api/test_helper_functions_contract.py::TestHypervolumeContract::test_signature_contract PASSED
+tests/python_api/test_helper_functions_contract.py::TestHypervolumeContract::test_valid_input_returns_float PASSED
+tests/python_api/test_helper_functions_contract.py::TestHypervolumeContract::test_empty_array_returns_zero PASSED
+tests/python_api/test_helper_functions_contract.py::TestHypervolumeContract::test_no_dominating_points_returns_zero PASSED
+tests/python_api/test_helper_functions_contract.py::TestHypervolumeContract::test_invalid_y_ndim_raises PASSED
+tests/python_api/test_helper_functions_contract.py::TestHypervolumeContract::test_invalid_y_shape_raises PASSED
+tests/python_api/test_helper_functions_contract.py::TestHypervolumeContract::test_invalid_ref_shape_raises PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnHashContract::test_normal_hash_batch_multi_seed_exists PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnHashContract::test_normal_hash_batch_multi_seed_fast_exists PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnHashContract::test_hash_signature_contract PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnHashContract::test_hash_determinism_contract PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnHashContract::test_hash_output_shape_contract PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnHashContract::test_hash_seed_sensitivity_contract PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnHashContract::test_fast_hash_num_metrics_validation PASSED
+tests/python_api/test_helper_functions_contract.py::TestWeightedStatsContract::test_weighted_stats_exists PASSED
+tests/python_api/test_helper_functions_contract.py::TestWeightedStatsContract::test_weighted_stats_fields PASSED
+tests/python_api/test_helper_functions_contract.py::TestWeightedStatsContract::test_weighted_stats_is_frozen PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnUtilContract::test_standardize_y_exists PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnUtilContract::test_standardize_y_returns_tuple PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnUtilContract::test_calculate_sobol_indices_exists PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnUtilContract::test_calculate_sobol_indices_signature PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnUtilContract::test_pareto_front_2d_maximize_exists PASSED
+tests/python_api/test_helper_functions_contract.py::TestEnnUtilContract::test_arms_from_pareto_fronts_exists PASSED
+tests/python_api/test_params_contract.py::TestENNParamsContract::test_exists_and_is_class PASSED
+tests/python_api/test_params_contract.py::TestENNParamsContract::test_signature_contract PASSED
+tests/python_api/test_params_contract.py::TestENNParamsContract::test_valid_params_constructible PASSED
+tests/python_api/test_params_contract.py::TestENNParamsContract::test_invalid_k_raises PASSED
+tests/python_api/test_params_contract.py::TestENNParamsContract::test_invalid_epistemic_raises PASSED
+tests/python_api/test_params_contract.py::TestENNParamsContract::test_invalid_aleatoric_raises PASSED
+tests/python_api/test_params_contract.py::TestENNParamsContract::test_is_frozen PASSED
+tests/python_api/test_params_contract.py::TestPosteriorFlagsContract::test_exists_and_is_class PASSED
+tests/python_api/test_params_contract.py::TestPosteriorFlagsContract::test_default_values PASSED
+tests/python_api/test_params_contract.py::TestPosteriorFlagsContract::test_explicit_values PASSED
+tests/python_api/test_params_contract.py::TestPosteriorFlagsContract::test_signature_contract PASSED
+tests/python_api/test_posterior_contract.py::TestPosteriorContract::test_posterior_exists_and_callable PASSED
+tests/python_api/test_posterior_contract.py::TestPosteriorContract::test_posterior_returns_mu_se PASSED
+tests/python_api/test_posterior_contract.py::TestBatchPosteriorContract::test_batch_posterior_exists_and_callable PASSED
+tests/python_api/test_posterior_contract.py::TestBatchPosteriorContract::test_batch_posterior_signature PASSED
+tests/python_api/test_posterior_contract.py::TestBatchPosteriorContract::test_batch_posterior_returns_envelope_with_mu_se PASSED
+tests/python_api/test_posterior_contract.py::TestBatchPosteriorContract::test_batch_posterior_empty_paramss_raises PASSED
+tests/python_api/test_posterior_contract.py::TestConditionalPosteriorContract::test_conditional_posterior_exists_and_callable PASSED
+tests/python_api/test_posterior_contract.py::TestConditionalPosteriorContract::test_conditional_posterior_signature PASSED
+tests/python_api/test_posterior_contract.py::TestConditionalPosteriorContract::test_conditional_posterior_empty_whatif_matches_posterior PASSED
+tests/python_api/test_posterior_contract.py::TestConditionalPosteriorContract::test_conditional_posterior_with_whatif_returns_mu_se PASSED
+tests/python_api/test_posterior_contract.py::TestPosteriorFunctionDrawContract::test_posterior_function_draw_exists_and_callable PASSED
+tests/python_api/test_posterior_contract.py::TestPosteriorFunctionDrawContract::test_posterior_function_draw_signature PASSED
+tests/python_api/test_posterior_contract.py::TestPosteriorFunctionDrawContract::test_posterior_function_draw_returns_tuple_of_draws_and_idx PASSED
+tests/python_api/test_posterior_contract.py::TestPosteriorFunctionDrawContract::test_conditional_posterior_function_draw_exists_and_callable PASSED
+tests/python_api/test_posterior_contract.py::TestPosteriorFunctionDrawContract::test_conditional_posterior_function_draw_returns_draws_and_idx PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIExports::test_all_lazy_attrs_available PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIExports::test_epistemic_nearest_neighbors_class PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIExports::test_enn_stateful_fitter_class PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIExports::test_create_optimizer_function PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIExports::test_config_classes PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIExports::test_config_factory_functions PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIExports::test_telemetry_class PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIExports::test_enum_types PASSED
+tests/python_api/test_public_api_contract.py::TestPublicAPIImmutability::test_all_list_matches_lazy_attrs PASSED
+tests/test_ackley_core.py::test_ackley_core_1d PASSED
+tests/test_ackley_core.py::test_ackley_core_2d PASSED
+tests/test_appendable_array.py::test_appendable_array_basic PASSED
+tests/test_appendable_array.py::test_appendable_array_invalid_shape PASSED
+tests/test_appendable_array.py::test_appendable_array_view_is_no_copy PASSED
+tests/test_appendable_array.py::test_appendable_array_indexing PASSED
+tests/test_appendable_array.py::test_appendable_array_empty PASSED
+tests/test_benchmark_dt_sel.py::test_make_bounds_shape_and_values PASSED
+tests/test_benchmark_dt_sel.py::test_synthetic_objective_shape_and_dtype PASSED
+tests/test_benchmark_dt_sel.py::test_seed_observations_batches_until_done PASSED
+tests/test_benchmark_dt_sel.py::test_summarize_prints_expected_fields PASSED
+tests/test_benchmark_dt_sel.py::test_main_runs_with_monkeypatched_dependencies PASSED
+tests/test_benchmark_dt_sel.py::test_run_benchmark_rejects_nonpositive_num_obs PASSED
+tests/test_benchmarks.py::test_ackley_1d_input PASSED
+tests/test_benchmarks.py::test_ackley_2d_input PASSED
+tests/test_benchmarks.py::test_ackley_optimum_near_one PASSED
+tests/test_benchmarks.py::test_ackley_deterministic_with_same_rng PASSED
+tests/test_benchmarks.py::test_ackley_bounds PASSED
+tests/test_benchmarks.py::test_double_ackley_shape PASSED
+tests/test_benchmarks.py::test_double_ackley_requires_even_dims PASSED
+tests/test_benchmarks.py::test_double_ackley_deterministic PASSED
+tests/test_candidate_gen_direct.py::test_default_num_candidates PASSED
+tests/test_candidate_gen_direct.py::test_default_num_candidates_fn PASSED
+tests/test_candidate_gen_direct.py::test_const_num_candidates_fn PASSED
+tests/test_candidate_gen_direct.py::test_const_num_candidates PASSED
+tests/test_candidate_gen_direct.py::test_num_candidates_per_arm_only PASSED
+tests/test_candidate_gen_direct.py::test_fixed_and_per_arm_uses_max PASSED
+tests/test_candidate_gen_direct.py::test_candidate_gen_config_rejects_callable_num_candidates PASSED
+tests/test_candidate_gen_stats.py::test_candidate_generation_statistical_properties PASSED
+tests/test_candidate_gen_stats.py::test_fast_candidates_various_inputs PASSED
+tests/test_components.py::test_surrogate_result PASSED
+tests/test_components.py::test_posterior_result PASSED
+tests/test_components.py::test_gp_surrogate_fit_and_predict PASSED
+tests/test_components.py::test_ucb_acq_optimizer_select PASSED
+tests/test_components.py::test_build_surrogate_gp_only PASSED
+tests/test_components.py::test_build_surrogate_rejects_rust_configs[turbo_enn_config] PASSED
+tests/test_components.py::test_build_surrogate_rejects_rust_configs[turbo_zero_config] PASSED
+tests/test_components.py::test_build_acquisition_optimizer_turbo_one PASSED
+tests/test_components.py::test_optimizer_fallback_during_init PASSED
+tests/test_components.py::test_optimizer_direct_gp_constructor PASSED
+tests/test_enn_batch_posterior_train_regression.py::test_posterior_full_train_matches_single_row_user_reported_params PASSED
+tests/test_enn_batch_posterior_train_regression.py::test_batch_posterior_matches_posterior_user_reported_params PASSED
+tests/test_enn_batch_posterior_train_regression.py::test_batch_posterior_matches_posterior_on_train_x PASSED
+tests/test_enn_batch_posterior_train_regression.py::test_batch_posterior_on_train_empty_neighbor_path_matches_posterior PASSED
+tests/test_enn_class_draw_dry_guard.py::test_posterior_function_draw_flags_none_matches_explicit_default PASSED
+tests/test_enn_class_draw_dry_guard.py::test_posterior_function_draw_repeatable PASSED
+tests/test_enn_class_draw_dry_guard.py::test_function_draw_idx_shape_dtype PASSED
+tests/test_enn_class_draw_dry_guard.py::test_conditional_function_draw_empty_whatif_matches_posterior_golden PASSED
+tests/test_enn_class_draw_dry_guard.py::test_function_draw_golden_values_fixed_seed_arrays PASSED
+tests/test_enn_conditional_draw.py::test_conditional_posterior_function_draw_matches_unconditional_when_no_whatifs PASSED
+tests/test_enn_conditional_draw.py::test_conditional_posterior_function_draw_is_deterministic_and_does_not_mutate_index PASSED
+tests/test_enn_conditional_draw.py::test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_nearest PASSED
+tests/test_enn_conditional_draw.py::test_conditional_posterior_function_draw_matches_augmented_model_exactly PASSED
+tests/test_enn_conditional_posterior.py::test_conditional_posterior_matches_posterior_when_no_whatifs PASSED
+tests/test_enn_conditional_posterior.py::test_conditional_posterior_includes_whatif_points_and_does_not_mutate_index PASSED
+tests/test_enn_conditional_posterior.py::test_conditional_posterior_exclude_nearest_drops_whatif_point PASSED
+tests/test_enn_conditional_posterior.py::test_conditional_posterior_matches_augmented_model_exactly PASSED
+tests/test_enn_core.py::test_ennnormal_sample_shape_and_clip PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_posterior_and_var_scale PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_with_no_observations_returns_prior_like_posterior PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior[1] PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior[2] PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior[3] PASSED
+tests/test_enn_core.py::test_batch_posterior_matches_individual_posterior_calls[flags0-k_vals0] PASSED
+tests/test_enn_core.py::test_batch_posterior_matches_individual_posterior_calls[flags1-k_vals1] PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_with_sobol_indices PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_multiple_metrics PASSED
+tests/test_enn_core.py::test_batch_posterior_exclude_nearest_with_k_larger_than_available PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_with_yvar_none PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_constant_y_scale_is_safe PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_init_validates_inputs PASSED
+tests/test_enn_core.py::test_epistemic_nearest_neighbors_init_explicit PASSED
+tests/test_enn_core.py::test_add_updates_y_scale_for_posterior_se PASSED
+tests/test_enn_core.py::test_incremental_add_scale_x_recomputes_x_scale_like_fresh_model PASSED
+tests/test_enn_fit.py::test_subsample_loglik_and_enn_fit_improve_hyperparameters PASSED
+tests/test_enn_fit.py::test_enn_fit_num_fit_samples_sweep_prints_results {
+  "batch": [
+    {
+      "num_fit_samples": 10,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 0.08882943020032084,
+        "aleatoric_variance_scale": 0.0015096688967995335
+      },
+      "subsample_loglik": 406.3054027796261
+    },
+    {
+      "num_fit_samples": 30,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 0.6762979774847652,
+        "aleatoric_variance_scale": 0.001133570246901903
+      },
+      "subsample_loglik": 749.1320959093953
+    },
+    {
+      "num_fit_samples": 100,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 0.7092957516913342,
+        "aleatoric_variance_scale": 0.0061209122989596505
+      },
+      "subsample_loglik": 679.7751971430996
+    },
+    {
+      "num_fit_samples": 300,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 0.4970619367005063,
+        "aleatoric_variance_scale": 0.0012804367610841898
+      },
+      "subsample_loglik": 746.1602724635753
+    },
+    {
+      "num_fit_samples": 1000,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 0.5117273110775675,
+        "aleatoric_variance_scale": 0.0015349850476115393
+      },
+      "subsample_loglik": 745.0132306222873
+    }
+  ],
+  "incremental": [
+    {
+      "num_fit_samples": 10,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 1.0,
+        "aleatoric_variance_scale": 0.0
+      },
+      "subsample_loglik": -9.705601497916952
+    },
+    {
+      "num_fit_samples": 30,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 1.0,
+        "aleatoric_variance_scale": 0.0
+      },
+      "subsample_loglik": -11.826503531494772
+    },
+    {
+      "num_fit_samples": 100,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 1.0,
+        "aleatoric_variance_scale": 0.0
+      },
+      "subsample_loglik": 2.037825955922256
+    },
+    {
+      "num_fit_samples": 300,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 0.613350719433928,
+        "aleatoric_variance_scale": 0.0015222990774885412
+      },
+      "subsample_loglik": 119.31149308508607
+    },
+    {
+      "num_fit_samples": 1000,
+      "params": {
+        "k_num_neighbors": 10,
+        "epistemic_variance_scale": 0.5369324249394052,
+        "aleatoric_variance_scale": 0.0016243060848717386
+      },
+      "subsample_loglik": 745.222610281176
+    }
+  ]
+}
+PASSED
+tests/test_enn_fit.py::test_enn_fit_with_yvar_none PASSED
+tests/test_enn_fit.py::test_enn_fit_with_warm_start PASSED
+tests/test_enn_fit.py::test_enn_fit_supports_multioutput_y PASSED
+tests/test_enn_fit.py::test_enn_fit_can_disable_aleatoric_inference PASSED
+tests/test_enn_fit.py::test_enn_fitter_tell_rejects_non_finite_x PASSED
+tests/test_enn_fit.py::test_enn_fitter_incremental_tell_matches_batch_tell PASSED
+tests/test_enn_fit.py::test_enn_fitter_warm_start_affects_fit PASSED
+tests/test_enn_fit.py::test_enn_fitter_model_tell_sync_produces_finite_params PASSED
+tests/test_enn_fit.py::test_enn_fitter_tell_rejects_non_finite PASSED
+tests/test_enn_fit.py::test_enn_fitter_ask_without_tell_raises PASSED
+tests/test_enn_fit.py::test_enn_fitter_incremental_y_std_matches_model_train_y_std PASSED
+tests/test_enn_fit.py::test_enn_fitter_incremental_y_std_multioutput PASSED
+tests/test_enn_fit.py::test_enn_fitter_tell_rejects_non_finite_yvar PASSED
+tests/test_enn_fit.py::test_enn_fitter_warm_start_is_evaluated_as_candidate PASSED
+tests/test_enn_fit.py::test_enn_fitter_desynced_tell_ask_uses_partial_y_std PASSED
+tests/test_enn_fit.py::test_enn_fitter_ask_returns_defaults_when_num_obs_lt_2 PASSED
+tests/test_enn_index.py::test_add_rejects_wrong_output_width_without_mutating_model[False] PASSED
+tests/test_enn_index.py::test_add_rejects_wrong_output_width_without_mutating_model[True] PASSED
+tests/test_enn_index.py::test_add_first_observations_can_initialize_yvar_on_empty_model[False] PASSED
+tests/test_enn_index.py::test_add_first_observations_can_initialize_yvar_on_empty_model[True] PASSED
+tests/test_enn_index.py::test_zero_row_add_does_not_change_empty_model_yvar_contract[False] PASSED
+tests/test_enn_index.py::test_zero_row_add_does_not_change_empty_model_yvar_contract[True] PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_k_larger_than_n_train_never_emits_invalid_neighbor_index PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_empty_train_sentinel_never_uses_negative_one PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_k_one_exclude_nearest_yields_zero_columns PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_hnsw_valid_indices_and_shapes PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_init_and_search PASSED
+tests/test_enn_index.py::test_enn_index_neighbor_tie_break_flag PASSED
+tests/test_enn_index.py::test_enn_index_neighbor_tie_break_batch_matches_single_on_train PASSED
+tests/test_enn_index.py::test_enn_index_neighbor_tie_break_expands_when_more_than_k_at_cutoff PASSED
+tests/test_enn_index.py::test_enn_posterior_tie_break_self_search_batch PASSED
+tests/test_enn_index.py::test_enn_index_neighbor_search_matches_faiss_when_no_ties[False] PASSED
+tests/test_enn_index.py::test_enn_index_neighbor_search_matches_faiss_when_no_ties[True] PASSED
+tests/test_enn_index.py::test_enn_index_neighbor_search_exclude_nearest_and_hnsw PASSED
+tests/test_enn_index.py::test_enn_index_neighbor_search_k_one_exclude_nearest_yields_zero_columns PASSED
+tests/test_enn_index.py::test_exact_index_search_zero_k_and_k_exceeds_train PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_exclude_nearest PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_with_scaling PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_invalid_inputs[query_shape0-0] PASSED
+tests/test_enn_index.py::test_enn_neighbor_search_invalid_inputs[query_shape1-3] PASSED
+tests/test_enn_index.py::test_normal_hash_batch_multi_seed_shape PASSED
+tests/test_enn_index.py::test_normal_hash_batch_multi_seed_deterministic PASSED
+tests/test_enn_index.py::test_normal_hash_batch_multi_seed_different_seeds PASSED
+tests/test_enn_index.py::test_normal_hash_batch_multi_seed_fast_shape_and_deterministic PASSED
+tests/test_enn_index.py::test_normal_hash_batch_multi_seed_fast_different_seeds PASSED
+tests/test_enn_internals.py::test_draw_internals PASSED
+tests/test_enn_internals.py::test_neighbor_data PASSED
+tests/test_enn_internals.py::test_weighted_stats PASSED
+tests/test_enn_invariance.py::test_epistemic_nearest_neighbors_scale_invariance PASSED
+tests/test_enn_invariance.py::test_epistemic_nearest_neighbors_shift_invariance PASSED
+tests/test_enn_invariance.py::test_epistemic_nearest_neighbors_x_rescaling_is_invariant_when_scale_x_enabled PASSED
+tests/test_enn_neighbors.py::test_neighbors_returns_correct_number_and_ordering PASSED
+tests/test_enn_neighbors.py::test_neighbors_hnsw_index_driver_returns_valid_indices PASSED
+tests/test_enn_neighbors.py::test_neighbors_exclude_nearest PASSED
+tests/test_enn_neighbors.py::test_neighbors_with_empty_observations PASSED
+tests/test_enn_neighbors.py::test_neighbors_k_larger_than_available PASSED
+tests/test_enn_neighbors.py::test_neighbors_k_zero PASSED
+tests/test_enn_neighbors.py::test_neighbors_with_multiple_metrics PASSED
+tests/test_enn_neighbors.py::test_neighbors_accepts_2d_input PASSED
+tests/test_enn_neighbors.py::test_neighbors_exclude_nearest_requires_multiple_observations PASSED
+tests/test_enn_perf.py::test_enn_demo_performance SKIPPED (Timing un...)
+tests/test_enn_perf.py::test_index_search_neighbor_lookup_not_much_slower_than_faiss_only[20-2.5] PASSED
+tests/test_enn_perf.py::test_index_search_neighbor_lookup_not_much_slower_than_faiss_only[500-3.0] PASSED
+tests/test_enn_perf.py::test_posterior_self_search_tie_break_not_much_slower_than_no_tie_break PASSED
+tests/test_enn_perf.py::test_lattice_posterior_self_search_tie_break_not_much_slower_than_no_tie_break PASSED
+tests/test_enn_perf.py::test_index_search_slowdown_does_not_blow_up_with_n PASSED
+tests/test_enn_perf.py::test_posterior_self_search_not_slower_than_9eaa27_baseline[False] PASSED
+tests/test_enn_perf.py::test_posterior_self_search_not_slower_than_9eaa27_baseline[True] PASSED
+tests/test_enn_sample.py::test_posterior_function_sample_basic PASSED
+tests/test_enn_sample.py::test_posterior_function_sample_deterministic PASSED
+tests/test_enn_sample.py::test_posterior_function_sample_batch_basic PASSED
+tests/test_enn_sample.py::test_posterior_function_sample_batch_matches_single_seed PASSED
+tests/test_enn_sample.py::test_posterior_function_sample_batch_with_multiple_metrics PASSED
+tests/test_enn_sample.py::test_posterior_function_sample_batch_empty_k PASSED
+tests/test_enn_sample.py::test_posterior_function_sample_with_observation_noise PASSED
+tests/test_enn_util.py::test_calculate_sobol_indices_with_data[50-3-False-<lambda>] PASSED
+tests/test_enn_util.py::test_calculate_sobol_indices_with_data[50-3-True-<lambda>] PASSED
+tests/test_enn_util.py::test_calculate_sobol_indices_edge_cases[<lambda>-<lambda>0] PASSED
+tests/test_enn_util.py::test_calculate_sobol_indices_edge_cases[<lambda>-<lambda>1] PASSED
+tests/test_enn_util.py::test_calculate_sobol_indices_low_variance_dimension PASSED
+tests/test_enn_util.py::test_calculate_sobol_indices_dtype_preservation PASSED
+tests/test_enn_util.py::test_arms_from_pareto_fronts_selects_fronts_in_order PASSED
+tests/test_enn_util.py::test_pareto_front_2d_maximize_basic PASSED
+tests/test_enn_util.py::test_pareto_front_2d_maximize_with_idx_subset PASSED
+tests/test_enn_util.py::test_pareto_front_2d_maximize_invalid_idx_negative PASSED
+tests/test_enn_util.py::test_pareto_front_2d_maximize_invalid_idx_out_of_bounds PASSED
+tests/test_enn_util.py::test_pareto_front_2d_maximize_rejects_nan_in_objectives PASSED
+tests/test_enn_util.py::test_pareto_front_2d_maximize_rejects_nan_in_objectives_with_idx PASSED
+tests/test_enn_util.py::test_pareto_front_2d_maximize_ignores_nan_outside_idx_subset PASSED
+tests/test_enn_util.py::test_standardize_y[y_input0-3.0-<lambda>] PASSED
+tests/test_enn_util.py::test_standardize_y[y_input1-20.0-<lambda>] PASSED
+tests/test_enn_util.py::test_standardize_y[y_input2-5.0-<lambda>] PASSED
+tests/test_enn_util.py::test_standardize_y[y_input3-42.0-<lambda>] PASSED
+tests/test_fallback_registry.py::test_registry_entries PASSED
+tests/test_fallback_registry.py::test_gpsurrogate_fallback PASSED
+tests/test_fallback_registry.py::test_morbo_routes_to_rust PASSED
+tests/test_fallback_registry.py::test_num_candidates_per_arm_routes_to_rust PASSED
+tests/test_fallback_registry.py::test_default_num_candidates_routes_to_rust PASSED
+tests/test_hypervolume.py::test_hypervolume_2d_max[y0-0.75] PASSED
+tests/test_hypervolume.py::test_hypervolume_2d_max[y1-1.0] PASSED
+tests/test_impl_helpers.py::test_trust_region_config_build_no_tr PASSED
+tests/test_impl_helpers.py::test_trust_region_config_build_turbo_tr PASSED
+tests/test_impl_helpers.py::test_trust_region_config_build_morbo_tr PASSED
+tests/test_impl_helpers.py::test_get_x_center_fallback_empty PASSED
+tests/test_impl_helpers.py::test_get_x_center_fallback_single_objective PASSED
+tests/test_impl_helpers.py::test_get_x_center_fallback_with_tr_state PASSED
+tests/test_impl_helpers.py::test_handle_restart_clear_always PASSED
+tests/test_impl_helpers.py::test_handle_restart_check_multi_objective_single PASSED
+tests/test_impl_helpers.py::test_handle_restart_check_multi_objective_multi PASSED
+tests/test_impl_helpers.py::test_estimate_y_passthrough_1d PASSED
+tests/test_impl_helpers.py::test_estimate_y_passthrough_2d PASSED
+tests/test_incumbent_selector.py::test_scalar_incumbent_selector_noise_oblivious PASSED
+tests/test_incumbent_selector.py::test_scalar_incumbent_selector_noise_aware PASSED
+tests/test_incumbent_selector.py::test_scalar_incumbent_selector_noise_aware_requires_mu PASSED
+tests/test_incumbent_selector.py::test_scalar_incumbent_selector_reset_is_noop PASSED
+tests/test_incumbent_selector.py::test_chebyshev_incumbent_selector_basic PASSED
+tests/test_incumbent_selector.py::test_chebyshev_incumbent_selector_noise_aware PASSED
+tests/test_incumbent_selector.py::test_chebyshev_incumbent_selector_noise_aware_requires_mu PASSED
+tests/test_incumbent_selector.py::test_chebyshev_incumbent_selector_reset_resamples_weights PASSED
+tests/test_incumbent_selector.py::test_chebyshev_incumbent_selector_invalid_num_metrics PASSED
+tests/test_incumbent_selector.py::test_no_incumbent_selector_always_returns_zero PASSED
+tests/test_incumbent_selector.py::test_no_incumbent_selector_reset_is_noop PASSED
+tests/test_incumbent_tracker.py::test_kiss_rust_incumbent_tracker_symbol_registry PASSED
+tests/test_incumbent_tracker.py::test_noiseless_scalar_tracks_all_max_ties_incrementally PASSED
+tests/test_incumbent_tracker.py::test_noisy_scalar_tracks_top_m_incrementally PASSED
+tests/test_incumbent_tracker.py::test_multi_metric_tracks_union_of_top_m_per_metric PASSED
+tests/test_incumbent_tracker.py::test_top_m_ties_prefer_lower_indices_at_boundary PASSED
+tests/test_incumbent_tracker.py::test_ask_empty_returns_empty_int_array PASSED
+tests/test_incumbent_tracker.py::test_tracker_validates_single_observation_shape PASSED
+tests/test_incumbent_tracker.py::test_tracker_reset_and_rebuild PASSED
+tests/test_incumbent_tracker.py::test_ask_does_not_store_full_y_history PASSED
+tests/test_incumbent_tracker.py::test_noise_aware_scalar_top_k_matches_enn_k_semantics PASSED
+tests/test_incumbent_tracker.py::test_non_enn_surrogate_config_uses_all_candidates_m PASSED
+tests/test_incumbent_tracker.py::test_no_surrogate_tracker_returns_all_indices PASSED
+tests/test_incumbent_tracker.py::test_enn_k_from_config_sets_tracker_m PASSED
+tests/test_incumbent_tracker.py::test_scalar_top_m_helpers_directly PASSED
+tests/test_incumbent_tracker.py::test_noiseless_max_helpers_directly PASSED
+tests/test_incumbent_tracker.py::test_build_incumbent_tracker_from_config PASSED
+tests/test_kiss_coverage.py::test_morbo_tr_config_rescalarize PASSED
+tests/test_kiss_coverage.py::test_morbo_tr_config_properties PASSED
+tests/test_kiss_coverage.py::test_turbo_tr_config_properties PASSED
+tests/test_kiss_coverage.py::test_enn_surrogate_config_properties PASSED
+tests/test_kiss_coverage.py::test_observation_history_config_empty PASSED
+tests/test_kiss_coverage.py::test_trust_region_config_protocol PASSED
+tests/test_kiss_coverage.py::test_enn_index_driver_enum PASSED
+tests/test_kiss_coverage.py::test_num_candidates_fn_protocol PASSED
+tests/test_kiss_coverage.py::test_optimizer_config_properties PASSED
+tests/test_kiss_coverage.py::test_morbo_trust_region_properties PASSED
+tests/test_kiss_coverage.py::test_turbo_trust_region_properties PASSED
+tests/test_kiss_coverage.py::test_no_trust_region_num_metrics PASSED
+tests/test_kiss_coverage.py::test_surrogate_protocol_properties PASSED
+tests/test_kiss_coverage.py::test_trust_region_protocol_properties PASSED
+tests/test_kiss_coverage.py::test_acquisition_optimizer_protocol PASSED
+tests/test_kiss_coverage.py::test_surrogate_lengthscales PASSED
+tests/test_kiss_coverage.py::test_incumbent_selector_protocol PASSED
+tests/test_kiss_coverage.py::test_thompson_acq_optimizer_class PASSED
+tests/test_kiss_coverage.py::test_pareto_and_random_acq_optimizer_select PASSED
+tests/test_kiss_coverage.py::test_enn_class_properties PASSED
+tests/test_kiss_coverage.py::test_enn_class_add PASSED
+tests/test_kiss_coverage.py::test_enn_neighbor_distances_add_and_search PASSED
+tests/test_kiss_coverage.py::test_optimizer_properties PASSED
+tests/test_kiss_coverage.py::test_optimizer_init_progress PASSED
+tests/test_kiss_coverage.py::test_lhd_only_strategy PASSED
+tests/test_kiss_coverage.py::test_optimization_strategy_protocol PASSED
+tests/test_kiss_coverage.py::test_turbo_hybrid_strategy PASSED
+tests/test_kiss_coverage.py::test_build_trust_region PASSED
+tests/test_kiss_coverage.py::test_turbo_gp_base PASSED
+tests/test_kiss_coverage.py::test_scalar_incumbent_mixin PASSED
+tests/test_kiss_coverage.py::test_lazy_getattr PASSED
+tests/test_kiss_coverage.py::test_lazy_getattr_missing PASSED
+tests/test_kiss_coverage.py::test_bench_result PASSED
+tests/test_kiss_coverage.py::test_bench_raasp PASSED
+tests/test_kiss_coverage.py::test_bench_raasp_main num_dim=3 repeats=1 seed=0
+num_candidates	seconds
+10		0.0014s
+PASSED
+tests/test_kiss_coverage.py::test_benchmark_d_scaling Benchmarking scaling with D (N=10, num_candidates=20)
+
+Running D=10...
+Running D=20...
+
+ D  ENN_Init (s)  ENN_Search (s)  RAASP_Sobol (s)  RAASP_Uniform (s)
+10      0.000128        0.000065         0.002678           0.001223
+20      0.000096        0.000054         0.003274           0.001195
+
+Empirical scaling (log-log slope vs D):
+  ENN_Init (s)        : -0.41
+  ENN_Search (s)      : -0.27
+  RAASP_Sobol (s)     : 0.29
+  RAASP_Uniform (s)   : -0.03
+PASSED
+tests/test_kiss_coverage.py::test_profile_config PASSED
+tests/test_kiss_coverage.py::test_run_profile ask_time_sec 0.000129 num_obs 10 num_candidates 50 num_fit_samples 5
+PASSED
+tests/test_kiss_coverage.py::test_run_sweep sweep num_obs 5 center_time_sec 0.000000 fit_time_sec 0.000110 ask_time_sec 0.000105 tell_time_sec 0.000113
+sweep num_obs 10 center_time_sec 0.000000 fit_time_sec 0.000136 ask_time_sec 0.000129 tell_time_sec 0.000116
+center_time_sec_scaling model=N intercept=0.000000e+00 slope=0.000000e+00 r2=0.000000
+fit_time_sec_scaling model=N intercept=8.426089e-05 slope=5.168014e-06 r2=1.000000
+ask_time_sec_scaling model=N intercept=7.963297e-05 slope=4.977605e-06 r2=1.000000
+tell_time_sec_scaling model=N intercept=1.094119e-04 slope=6.582122e-07 r2=1.000000
+PASSED
+tests/test_kiss_coverage.py::test_profile_main ask_time_sec 0.000129 num_obs 10 num_candidates 50 num_fit_samples 5
+PASSED
+tests/test_kiss_fullrepo_symbol_registry.py::test_kiss_static_unit_name_registry_for_fullrepo_coverage PASSED
+tests/test_morbo_separable_unimodal.py::test_morbo_finds_joint_near_optimum_on_separable_unimodal_problem PASSED
+tests/test_morbo_tr_direct.py::test_morbo_resample_weights PASSED
+tests/test_morbo_tr_direct.py::test_morbo_inner_trust_region_applies_updates_after_restart_without_intervening_validate_request PASSED
+tests/test_morbo_tr_direct.py::test_morbo_restart_resamples PASSED
+tests/test_morbo_turbo_one.py::test_morbo_turbo_one_two_rounds Iteration 0: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 1: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 2: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 3: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 4: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 5: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 6: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 7: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 8: x_arms shape = (10, 30), y_obs shape = (10, 2)
+Iteration 9: x_arms shape = (10, 30), y_obs shape = (10, 2)
+PASSED
+tests/test_notebooks.py::test_demo_enn_notebook PASSED
+tests/test_notebooks.py::test_demo_turbo_enn_notebook PASSED
+tests/test_notebooks.py::test_demo_morbo_enn_notebook PASSED
+tests/test_optimizer_baseline_scripts_kiss.py::test_optimizer_baseline_generator_symbols PASSED
+tests/test_optimizer_fixtures.py::test_optimizer_fixtures_kiss_symbols_referenced PASSED
+tests/test_optimizer_generate_smoke.py::test_generate_optimizer_candidates_sobol_path PASSED
+tests/test_proposal.py::test_mk_enn_empty_returns_none PASSED
+tests/test_proposal.py::test_mk_enn_builds_model_and_params PASSED
+tests/test_proposal.py::test_mk_enn_with_fit_config_runs_fitter PASSED
+tests/test_protocols.py::test_protocols_are_protocols PASSED
+tests/test_python_fallback_surface.py::test_build_surrogate_accepts_gp_only PASSED
+tests/test_python_fallback_surface.py::test_build_surrogate_rejects_rust_owned_configs PASSED
+tests/test_python_fallback_surface.py::test_production_modules_importable PASSED
+tests/test_raasp_candidates.py::test_generate_tr_candidates_orig_sobol PASSED
+tests/test_raasp_candidates.py::test_generate_tr_candidates_orig_uniform PASSED
+tests/test_raasp_candidates.py::test_generate_tr_candidates_orig_sobol_engine_required PASSED
+tests/test_raasp_candidates.py::test_generate_tr_candidates_fast_sobol PASSED
+tests/test_raasp_candidates.py::test_generate_tr_candidates_fast_uniform PASSED
+tests/test_raasp_candidates.py::test_generate_tr_candidates_dispatcher PASSED
+tests/test_raasp_candidates.py::test_generate_tr_candidates_fast_edge_cases PASSED
+tests/test_rust_optimizer_fit_params.py::test_num_fit_samples_passed_to_rust_overrides PASSED
+tests/test_rust_optimizer_fit_params.py::test_num_fit_candidates_passed_to_rust_overrides PASSED
+tests/test_rust_optimizer_fit_params.py::test_both_fit_params_passed_to_rust_overrides PASSED
+tests/test_rust_optimizer_fit_params.py::test_none_fit_params_not_in_overrides PASSED
+tests/test_rust_optimizer_kiss_tokens.py::test_rust_optimizer_kiss_surface_has_view_and_factory PASSED
+tests/test_rust_wrapper_coverage.py::test_rust_optimizer_wrapper_methods PASSED
+tests/test_rust_wrapper_coverage.py::test__rust_module_exports_optimizer_when_available PASSED
+tests/test_rust_wrapper_coverage.py::test_rust_optimizer_factory_rust_and_python_paths PASSED
+tests/test_rust_wrapper_coverage.py::test_rust_optimizer_factory_no_surrogate_path PASSED
+tests/test_rust_wrapper_coverage.py::test_rust_optimizer_factory_lhd_only_path PASSED
+tests/test_rust_wrapper_coverage.py::test_rust_optimizer_factory_unsupported_surrogate_errors PASSED
+tests/test_sync_index.py::test_sync_index_callable PASSED
+tests/test_sync_index.py::test_sync_index_after_add_matches_fresh_posterior PASSED
+tests/test_sync_index.py::test_sync_index_twice_without_add PASSED
+tests/test_tr_helpers_direct.py::test_get_single_incumbent_index PASSED
+tests/test_tr_helpers_direct.py::test_get_incumbent_index PASSED
+tests/test_tr_helpers_direct.py::test_get_scalar_incumbent_value PASSED
+tests/test_tr_helpers_direct.py::test_scalar_incumbent_mixin PASSED
+tests/test_trust_region.py::test_no_trust_region_init PASSED
+tests/test_trust_region.py::test_no_trust_region_update_does_nothing PASSED
+tests/test_trust_region.py::test_no_trust_region_needs_restart PASSED
+tests/test_trust_region.py::test_no_trust_region_validate_request PASSED
+tests/test_trust_region.py::test_no_trust_region_compute_bounds_1d PASSED
+tests/test_trust_region.py::test_no_trust_region_generate_candidates PASSED
+tests/test_trust_region.py::test_turbo_trust_region_validate_request PASSED
+tests/test_trust_region.py::test_turbo_trust_region_get_incumbent_indices PASSED
+tests/test_trust_region.py::test_morbo_trust_region_validate_request PASSED
+tests/test_trust_region.py::test_morbo_trust_region_get_incumbent_indices PASSED
+tests/test_trust_region.py::test_compute_full_box_bounds_1d PASSED
+tests/test_trust_region.py::test_turbo_trust_region_compute_bounds_1d_with_lengthscales PASSED
+tests/test_trust_region.py::test_turbo_trust_region_expansion_and_contraction PASSED
+tests/test_turbo_adversarial.py::test_turbo_enn_affine_invariance_under_dynamic_y_range PASSED
+tests/test_turbo_adversarial.py::test_optimizer_preserves_unique_best_and_is_deterministic_under_ties PASSED
+tests/test_turbo_adversarial.py::test_candidate_generation_with_extreme_lengthscales_stays_in_bounds PASSED
+tests/test_turbo_adversarial.py::test_candidate_generation_raises_on_nonfinite_lengthscales PASSED
+tests/test_turbo_config.py::test_turbo_tr_config_defaults PASSED
+tests/test_turbo_config.py::test_turbo_tr_config_custom PASSED
+tests/test_turbo_config.py::test_turbo_tr_config_invalid PASSED
+tests/test_turbo_config.py::test_turbo_tr_config_invalid_length_init_exceeds_max PASSED
+tests/test_turbo_config.py::test_turbo_tr_config_invalid_length_min_exceeds_init PASSED
+tests/test_turbo_config.py::test_morbo_tr_config PASSED
+tests/test_turbo_config.py::test_morbo_tr_config_invalid PASSED
+tests/test_turbo_config.py::test_morbo_tr_config_custom_alpha PASSED
+tests/test_turbo_config.py::test_morbo_tr_config_invalid_alpha PASSED
+tests/test_turbo_config.py::test_multi_objective_config_defaults PASSED
+tests/test_turbo_config.py::test_multi_objective_config_custom PASSED
+tests/test_turbo_config.py::test_morbo_tr_config_length_defaults PASSED
+tests/test_turbo_config.py::test_morbo_tr_config_custom_length PASSED
+tests/test_turbo_config.py::test_morbo_tr_config_rescalarize_default PASSED
+tests/test_turbo_config.py::test_morbo_tr_config_rescalarize_custom PASSED
+tests/test_turbo_config.py::test_rescale_policy_config_default PASSED
+tests/test_turbo_config.py::test_rescale_policy_config_custom PASSED
+tests/test_turbo_config.py::test_no_tr_config PASSED
+tests/test_turbo_config.py::test_candidate_gen_config_defaults PASSED
+tests/test_turbo_config.py::test_candidate_gen_config_uniform PASSED
+tests/test_turbo_config.py::test_candidate_gen_config_invalid_rv PASSED
+tests/test_turbo_config.py::test_candidate_gen_config_invalid_num_candidates PASSED
+tests/test_turbo_config.py::test_candidate_gen_config_num_candidates_per_arms PASSED
+tests/test_turbo_config.py::test_init_config_defaults PASSED
+tests/test_turbo_config.py::test_init_config_lhd_only PASSED
+tests/test_turbo_config.py::test_init_config_invalid_strategy PASSED
+tests/test_turbo_config.py::test_init_config_invalid_num_init PASSED
+tests/test_turbo_config.py::test_no_surrogate_config PASSED
+tests/test_turbo_config.py::test_gp_surrogate_config PASSED
+tests/test_turbo_config.py::test_enn_surrogate_config_defaults PASSED
+tests/test_turbo_config.py::test_enn_surrogate_config_with_values PASSED
+tests/test_turbo_config.py::test_enn_fit_config_defaults PASSED
+tests/test_turbo_config.py::test_enn_fit_config_custom PASSED
+tests/test_turbo_config.py::test_enn_fit_config_invalid_num_fit_samples PASSED
+tests/test_turbo_config.py::test_enn_fit_config_invalid_num_fit_candidates PASSED
+tests/test_turbo_config.py::test_enn_surrogate_config_num_fit_candidates_custom PASSED
+tests/test_turbo_config.py::test_ucb_acquisition_config PASSED
+tests/test_turbo_config.py::test_draw_acquisition_config PASSED
+tests/test_turbo_config.py::test_pareto_acquisition_config PASSED
+tests/test_turbo_config.py::test_random_acquisition_config PASSED
+tests/test_turbo_config.py::test_raasp_optimizer_config PASSED
+tests/test_turbo_config.py::test_nds_optimizer_config PASSED
+tests/test_turbo_config.py::test_optimizer_config_defaults PASSED
+tests/test_turbo_config.py::test_optimizer_config_lhd_only_requires_no_surrogate PASSED
+tests/test_turbo_config.py::test_optimizer_config_no_surrogate_rejects_draw PASSED
+tests/test_turbo_config.py::test_optimizer_config_no_surrogate_rejects_ucb PASSED
+tests/test_turbo_config.py::test_optimizer_config_pareto_requires_nds PASSED
+tests/test_turbo_config.py::test_turbo_one_config_factory PASSED
+tests/test_turbo_config.py::test_turbo_one_config_factory_pareto PASSED
+tests/test_turbo_config.py::test_turbo_one_config_factory_ucb PASSED
+tests/test_turbo_config.py::test_turbo_one_config_factory_thompson_explicit PASSED
+tests/test_turbo_config.py::test_turbo_zero_config_factory PASSED
+tests/test_turbo_config.py::test_turbo_enn_config_factory_pareto PASSED
+tests/test_turbo_config.py::test_turbo_enn_config_factory_ucb PASSED
+tests/test_turbo_config.py::test_turbo_enn_config_factory_thompson PASSED
+tests/test_turbo_config.py::test_turbo_enn_config_requires_num_fit_samples_for_non_pareto PASSED
+tests/test_turbo_config.py::test_lhd_only_config_factory PASSED
+tests/test_turbo_config.py::test_optimizer_config_properties PASSED
+tests/test_turbo_config.py::test_optimizer_config_num_metrics PASSED
+tests/test_turbo_gp.py::test_fit_gp_returns_model_with_valid_data PASSED
+tests/test_turbo_gp.py::test_fit_gp_returns_none_with_empty_data_and_returns_model_with_single_obs PASSED
+tests/test_turbo_gp.py::test_fit_gp_with_y_var_list_uses_noisy_model PASSED
+tests/test_turbo_gp.py::test_fit_gp_with_y_var_list_asserts_length PASSED
+tests/test_turbo_gp.py::test_turbo_gp_noisy_accepts_train_y_var PASSED
+tests/test_turbo_gp.py::test_turbo_gp_noisy_forward_and_posterior PASSED
+tests/test_turbo_gp.py::test_turbo_gp_noisy_trains_successfully PASSED
+tests/test_turbo_gp.py::test_turbo_gp_noisy_with_zero_variance PASSED
+tests/test_turbo_gp.py::test_fit_gp_multi_output_can_trigger_non_scalar_backward_error PASSED
+tests/test_turbo_gp.py::test_fit_gp_multi_output_trains_without_scalar_backward_error PASSED
+tests/test_turbo_gp.py::test_gp_surrogate_predict_shapes_multi_output PASSED
+tests/test_turbo_gp.py::test_turbo_gp_init_and_forward PASSED
+tests/test_turbo_gp.py::test_turbo_gp_base_is_subclassed PASSED
+tests/test_turbo_invariance.py::test_turbo_behavior_independent_of_affine_x[TURBO_ZERO] PASSED
+tests/test_turbo_invariance.py::test_turbo_behavior_independent_of_affine_x[TURBO_ONE] PASSED
+tests/test_turbo_invariance.py::test_turbo_behavior_independent_of_affine_x[TURBO_ENN] PASSED
+tests/test_turbo_invariance.py::test_turbo_behavior_independent_of_affine_y[TURBO_ZERO] PASSED
+tests/test_turbo_invariance.py::test_turbo_behavior_independent_of_affine_y[TURBO_ENN] PASSED
+tests/test_turbo_optimizer.py::test_turbo_fallback_called_during_init_with_observations PASSED
+tests/test_turbo_optimizer.py::test_turbo_zero_ask_tell_and_shape PASSED
+tests/test_turbo_optimizer.py::test_optimizer_accepts_list_bounds PASSED
+tests/test_turbo_optimizer.py::test_optimizer_uniform_candidates_never_calls_sobol PASSED
+tests/test_turbo_optimizer.py::test_optimizer_accepts_base_config_as_turbo_zero PASSED
+tests/test_turbo_optimizer.py::test_turbo_one_improves_on_sphere PASSED
+tests/test_turbo_optimizer.py::test_turbo_one_pareto_ask_tell_runs PASSED
+tests/test_turbo_optimizer.py::test_turbo_one_with_y_var_uses_noisy_gp PASSED
+tests/test_turbo_optimizer.py::test_turbo_zero_reasonable_on_sphere PASSED
+tests/test_turbo_optimizer.py::test_turbo_enn_uses_enn_and_is_reasonable PASSED
+tests/test_turbo_optimizer.py::test_turbo_enn_with_k_none_fits_hyperparameters PASSED
+tests/test_turbo_optimizer.py::test_turbo_enn_config_scale_x_flag_runs PASSED
+tests/test_turbo_optimizer.py::test_find_x_center_uses_top_k_for_mu_single_objective PASSED
+tests/test_turbo_optimizer.py::test_find_x_center_uses_top_k_union_for_multiobjective PASSED
+tests/test_turbo_optimizer.py::test_update_incumbent_uses_tracker_not_surrogate_candidate_api PASSED
+tests/test_turbo_optimizer.py::test_optimizer_keeps_all_observations PASSED
+tests/test_turbo_optimizer.py::test_incumbent_preserved_across_many_tells PASSED
+tests/test_turbo_optimizer.py::test_optimizer_tell_without_yvar PASSED
+tests/test_turbo_optimizer.py::test_optimizer_yvar_policy_enforced PASSED
+tests/test_turbo_optimizer.py::test_turbo_one_trust_region_update_is_noise_robust_to_spikes PASSED
+tests/test_turbo_optimizer.py::test_turbo_enn_tr_values_do_not_require_full_history_denoising PASSED
+tests/test_turbo_optimizer.py::test_optimizer_no_trust_region_bounds_are_full_box PASSED
+tests/test_turbo_optimizer.py::test_optimizer_morbo_multi_objective PASSED
+tests/test_turbo_optimizer_utils.py::test_sobol_seed_for_state_deterministic PASSED
+tests/test_turbo_optimizer_utils.py::test_sobol_seed_for_state_changes_with_inputs PASSED
+tests/test_turbo_optimizer_utils.py::test_validate_tell_inputs_valid_2d PASSED
+tests/test_turbo_optimizer_utils.py::test_validate_tell_inputs_valid_1d PASSED
+tests/test_turbo_optimizer_utils.py::test_validate_tell_inputs_invalid_x_shape PASSED
+tests/test_turbo_optimizer_utils.py::test_validate_tell_inputs_mismatched_y PASSED
+tests/test_turbo_optimizer_utils.py::test_validate_tell_inputs_invalid_y_shape PASSED
+tests/test_turbo_optimizer_utils.py::test_telemetry_dataclass PASSED
+tests/test_turbo_optimizer_utils.py::test_torch_seed_context[42-42-True] PASSED
+tests/test_turbo_optimizer_utils.py::test_torch_seed_context[42-43-False] PASSED
+tests/test_turbo_optimizer_utils.py::test_get_gp_posterior_suppress_warning_basic PASSED
+tests/test_turbo_optimizer_utils.py::test_reset_timing PASSED
+tests/test_turbo_strategies.py::test_draw_lhd_shapes_and_bounds PASSED
+tests/test_turbo_strategies.py::test_init_strategies_build_runtime_strategies PASSED
+tests/test_turbo_strategies.py::test_lhd_only_init_marker_not_python_runtime PASSED
+tests/test_turbo_strategies.py::test_validate_optimizer_config_lhd_only_requires_no_surrogate_direct_call PASSED
+tests/test_turbo_strategies.py::test_optimizer_init_progress_and_telemetry_smoke PASSED
+tests/test_turbo_strategies.py::test_turbo_hybrid_fallback_executes_when_init_points_exhausted_mid_batch PASSED
+tests/test_turbo_strategies.py::test_optimizer_direct_constructor_builds_strategy_by_default PASSED
+tests/test_turbo_tr.py::test_trust_region_state_update_and_restart_and_bounds PASSED
+tests/test_turbo_tr.py::test_morbo_chebyshev_trust_region_weights_and_scaling PASSED
+tests/test_turbo_types.py::test_prepare_ask_result PASSED
+tests/test_turbo_types.py::test_tell_inputs PASSED
+tests/test_turbo_types.py::test_obs_lists PASSED
+tests/test_turbo_types.py::test_gp_fit_result PASSED
+tests/test_turbo_types.py::test_gp_data_prep PASSED
+tests/test_turbo_utils_funcs.py::test_latin_hypercube_stratification_and_bounds PASSED
+tests/test_turbo_utils_funcs.py::test_argmax_random_tie_uses_rng_and_is_deterministic PASSED
+tests/test_turbo_utils_funcs.py::test_record_duration_sets_dt PASSED
+tests/test_turbo_utils_funcs.py::test_sobol_perturb_np_shape_and_bounds PASSED
+tests/test_turbo_utils_funcs.py::test_sobol_perturb_np_mask_application PASSED
+tests/test_turbo_utils_funcs.py::test_sobol_perturb_np_deterministic PASSED
+tests/test_turbo_utils_funcs.py::test_raasp_shape_and_bounds PASSED
+tests/test_turbo_utils_funcs.py::test_raasp_at_least_one_dimension_perturbed PASSED
+tests/test_turbo_utils_funcs.py::test_raasp_deterministic PASSED
+tests/test_turbo_utils_funcs.py::test_raasp_probability_scaling PASSED
+tests/test_turbo_utils_funcs.py::test_to_unit_and_from_unit_roundtrip PASSED
+tests/test_turbo_utils_funcs.py::test_to_unit_bounds_validation PASSED
+tests/test_turbo_utils_funcs.py::test_select_uniform_shape_and_uniformity PASSED
+tests/test_turbo_utils_funcs.py::test_select_uniform_validation PASSED
+tests/test_turbo_utils_funcs.py::test_select_gp_thompson_uses_gp_and_returns_correct_shape PASSED
+tests/test_turbo_utils_funcs.py::test_select_gp_thompson_fallback_on_empty_observations PASSED
+tests/test_turbo_utils_funcs.py::test_uniform_perturb_np_shape_and_bounds PASSED
+tests/test_turbo_utils_funcs.py::test_uniform_perturb_np_mask_application PASSED
+tests/test_turbo_utils_funcs.py::test_raasp_uniform_shape_and_bounds PASSED
+tests/test_turbo_utils_funcs.py::test_raasp_uniform_at_least_one_dimension_perturbed PASSED
+tests/test_turbo_utils_funcs.py::test_generate_raasp_candidates_shape_and_bounds PASSED
+tests/test_turbo_utils_funcs.py::test_generate_raasp_candidates_uniform_shape_and_bounds PASSED
+tests/test_turbo_utils_funcs.py::test_generate_raasp_candidates_uniform_respects_num_pert PASSED
+tests/test_turbo_utils_funcs.py::test_gp_thompson_sample_returns_valid_indices PASSED
+tests/test_turbo_utils_funcs.py::test_next_power_of_2 PASSED
+tests/test_weak_mathy_golden.py::test_chebyshev_scalarize_batch_normalized_golden PASSED
+tests/test_weak_mathy_golden.py::test_subsample_loglik_fixed_seed_reproducible PASSED
+
+=============================== warnings summary ===============================
+../../micromamba/envs/yubo/lib/python3.12/site-packages/torch/cuda/__init__.py:63
+  /home/dsweet/micromamba/envs/yubo/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+    import pynvml  # type: ignore[import]
+
+../../micromamba/envs/yubo/lib/python3.12/site-packages/torch/jit/_script.py:1488
+../../micromamba/envs/yubo/lib/python3.12/site-packages/torch/jit/_script.py:1488
+  /home/dsweet/micromamba/envs/yubo/lib/python3.12/site-packages/torch/jit/_script.py:1488: DeprecationWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+tests/parity/test_incumbent_noise_aware_parity.py::test_fallback_noise_aware_prefers_mu_over_observed_y
+  /home/dsweet/Projects/enn/tests/parity/test_incumbent_noise_aware_parity.py:49: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
+    assert float(opt._incumbent_y_scalar[0]) == 10.0
+
+tests/test_candidate_gen_stats.py::test_candidate_generation_statistical_properties
+  /home/dsweet/micromamba/envs/yubo/lib/python3.12/site-packages/scipy/stats/_qmc.py:993: UserWarning: The balance properties of Sobol' points require n to be a power of 2.
+    sample = self._random(n, workers=workers)
+
+tests/test_turbo_optimizer.py::test_turbo_one_improves_on_sphere
+  /home/dsweet/micromamba/envs/yubo/lib/python3.12/site-packages/linear_operator/utils/cholesky.py:40: NumericalWarning: A not p.d., added jitter of 1.0e-08 to the diagonal
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========== 664 passed, 23 skipped, 6 warnings in 105.24s (0:01:45) ============
+
+[stderr]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID be55f1d3-f9b2-459d-ab92-fe7faeff43e3 with nextest profile: default
+    Starting 271 tests across 8 binaries
+        PASS [   0.062s] (  1/271) ennbo config::tests::config_overrides_apply_enn_num_fit_fields
+        PASS [   0.063s] (  2/271) ennbo candidates::tests::raasp_golden_fixed_seed
+        PASS [   0.064s] (  3/271) ennbo acquisition::tests::test_non_domin_sort_2d_three_fronts_golden
+        PASS [   0.071s] (  4/271) ennbo acquisition::tests::test_random_acquisition
+        PASS [   0.083s] (  5/271) ennbo acquisition::tests::test_pareto_multi_objective
+        PASS [   0.087s] (  6/271) ennbo acquisition::tests::test_pareto_single_objective
+        PASS [   0.087s] (  7/271) ennbo candidates::tests::test_raasp_zero_num_pert_and_zero_lengthscales
+        PASS [   0.114s] (  8/271) ennbo acquisition::tests::test_non_domin_sort_2d_with_ties
+        PASS [   0.115s] (  9/271) ennbo acquisition::tests::test_ucb_zero_arms
+        PASS [   0.158s] ( 10/271) ennbo candidates::tests::test_generate_uniform
+        PASS [   0.218s] ( 11/271) ennbo acquisition::tests::test_ucb_empty
+        PASS [   0.236s] ( 12/271) ennbo config::tests::candidate_config_num_candidates_per_arm_scales_with_arms
+        PASS [   0.236s] ( 13/271) ennbo candidates::tests::test_generate_lhd
+        PASS [   0.180s] ( 14/271) ennbo config::tests::morbo_config_missing_rescalarize_defaults_on_propose
+        PASS [   0.184s] ( 15/271) ennbo config::tests::morbo_config_override_rejects_num_metrics_one
+        PASS [   0.250s] ( 16/271) ennbo acquisition::tests::test_pareto_single_objective_uses_predictive_se_bug_md
+        PASS [   0.193s] ( 17/271) ennbo config::tests::kiss_apply_enn_surrogate_fields_unit_name
+        PASS [   0.256s] ( 18/271) ennbo config::tests::config_overrides_apply_num_candidates_per_arm_to_pool
+        PASS [   0.202s] ( 19/271) ennbo acquisition::tests::test_ucb_acquisition
+        PASS [   0.191s] ( 20/271) ennbo config::tests::test_candidate_config_max_candidates_cap
+        PASS [   0.184s] ( 21/271) ennbo config::tests::test_candidate_config_num_candidates
+        PASS [   0.183s] ( 22/271) ennbo config::tests::test_config_overrides_apply_to
+        PASS [   0.274s] ( 23/271) ennbo acquisition::tests::test_thompson_acquisition
+        PASS [   0.282s] ( 24/271) ennbo candidates::tests::test_to_from_unit
+        PASS [   0.204s] ( 25/271) ennbo config::tests::test_config_defaults
+        PASS [   0.192s] ( 26/271) ennbo config::tests::test_config_overrides_scale_x_apply
+        PASS [   0.203s] ( 27/271) ennbo config::tests::test_init_strategy_enum
+        PASS [   0.097s] ( 28/271) ennbo error::tests::test_enn_error_from_shape_error
+        PASS [   0.203s] ( 29/271) ennbo config::tests::test_lhd_only_config
+        PASS [   0.144s] ( 30/271) ennbo config::tests::test_turbo_enn_config
+        PASS [   0.099s] ( 31/271) ennbo error::tests::test_eps_var_constant
+        PASS [   0.135s] ( 32/271) ennbo draw::tests::test_neighbor_data
+        PASS [   0.151s] ( 33/271) ennbo draw::tests::test_conditional_posterior_internals
+        PASS [   0.154s] ( 34/271) ennbo error::tests::test_enn_error_from_index_error
+        PASS [   0.174s] ( 35/271) ennbo config::tests::test_turbo_zero_config
+        PASS [   0.167s] ( 36/271) ennbo draw::tests::test_draw_internals
+        PASS [   0.145s] ( 37/271) ennbo fit::tests::test_compute_single_loglik_nonfinite_and_nonpositive_se
+        PASS [   0.176s] ( 38/271) ennbo draw::tests::test_candidates_with_noise
+        PASS [   0.167s] ( 39/271) ennbo fit::tests::test_compute_single_loglik_gaussian_term_golden
+        PASS [   0.206s] ( 40/271) ennbo draw::tests::test_candidates
+        PASS [   0.194s] ( 41/271) ennbo error::tests::test_enn_error_display
+        PASS [   0.167s] ( 42/271) ennbo fit::tests::test_enn_fitter_ask_disable_aleatoric
+        PASS [   0.196s] ( 43/271) ennbo fit::tests::test_enn_fitter_ask_basic
+        PASS [   0.148s] ( 44/271) ennbo fit::tests::test_subsample_loglik_invalid_p
+        PASS [   0.192s] ( 45/271) ennbo fit::tests::test_subsample_loglik_empty_model
+        PASS [   0.136s] ( 46/271) ennbo fitter::tests::incremental_y_std_matches_batch_std
+        PASS [   0.172s] ( 47/271) ennbo fit::tests::test_validate_subsample_inputs_empty_paramss
+        PASS [   0.268s] ( 48/271) ennbo fit::tests::test_enn_fitter_ask_with_warm_start
+        PASS [   0.228s] ( 49/271) ennbo fit::tests::test_subsample_loglik_basic
+        PASS [   0.188s] ( 50/271) ennbo fitter::tests::ask_returns_defaults_when_num_obs_lt_2
+        PASS [   0.297s] ( 51/271) ennbo fit::tests::test_enn_fitter_ask_multioutput
+        PASS [   0.184s] ( 52/271) ennbo fitter::tests::tell_rejects_non_finite_x
+        PASS [   0.220s] ( 53/271) ennbo fit::tests::test_subsample_loglik_mismatched_xy
+        PASS [   0.193s] ( 54/271) ennbo fitter::tests::ask_warm_start_zeros_aleatoric_when_not_inferred
+        PASS [   0.168s] ( 55/271) ennbo hash::tests::test_box_muller_finite
+        PASS [   0.266s] ( 56/271) ennbo fit::tests::test_subsample_loglik_custom_y_std_seed_11
+        PASS [   0.173s] ( 57/271) ennbo hash::tests::test_hash_determinism
+        PASS [   0.195s] ( 58/271) ennbo fitter::tests::tell_rejects_shape_mismatch_and_bad_yvar
+        PASS [   0.212s] ( 59/271) ennbo fitter::tests::tell_rejects_non_finite_y
+        PASS [   0.140s] ( 60/271) ennbo hash::tests::test_invalid_num_metrics
+        PASS [   0.248s] ( 61/271) ennbo fitter::tests::ask_uses_explicit_warm_start
+        PASS [   0.209s] ( 62/271) ennbo hash::tests::test_hash_seed_sensitivity
+        PASS [   0.133s] ( 63/271) ennbo hash::tests::test_output_shape
+        PASS [   0.152s] ( 64/271) ennbo hash::tests::test_reference_wrapper_matches_fast
+        PASS [   0.132s] ( 65/271) ennbo hypervolume::tests::test_empty_array
+        PASS [   0.148s] ( 66/271) ennbo hash::tests::test_splitmix64_known_value
+        PASS [   0.116s] ( 67/271) ennbo hypervolume::tests::test_simple_hypervolume
+        PASS [   0.121s] ( 68/271) ennbo hypervolume::tests::test_no_dominating_points
+        PASS [   0.137s] ( 69/271) ennbo hypervolume::tests::test_hypervolume_2d_max_1d
+        PASS [   0.137s] ( 70/271) ennbo hypervolume::tests::test_invalid_ref_point
+        PASS [   0.139s] ( 71/271) ennbo hypervolume::tests::test_invalid_column_count
+        PASS [   0.163s] ( 72/271) ennbo hash::tests::test_u64_to_f53_range
+        PASS [   0.140s] ( 73/271) ennbo hypervolume::tests::test_three_points
+        PASS [   0.117s] ( 74/271) ennbo incumbent_tracker::tests::test_top_m_tie_break_lower_index
+        PASS [   0.130s] ( 75/271) ennbo incumbent_tracker::tests::test_noise_aware_top_m
+        PASS [   0.132s] ( 76/271) ennbo incumbent_tracker::tests::test_noiseless_max_ties
+        PASS [   0.152s] ( 77/271) ennbo incumbent_tracker::tests::test_multi_metric_union
+        PASS [   0.164s] ( 78/271) ennbo incumbent_tracker::tests::test_all_candidates_mode
+        PASS [   0.180s] ( 79/271) ennbo hypervolume::tests::test_with_nan_does_not_panic
+        PASS [   0.122s] ( 80/271) ennbo index::tests::kiss_index_helper_unit_names
+        PASS [   0.120s] ( 81/271) ennbo index::tests::test_hnsw_search_regression_all_indices_valid_for_k_equals_n
+        PASS [   0.160s] ( 82/271) ennbo incumbent_tracker::tests::test_tracker_m_from_enn_k_and_rebuild
+        PASS [   0.119s] ( 83/271) ennbo index::tests::test_index_search
+        PASS [   0.144s] ( 84/271) ennbo index::tests::test_index_add
+        PASS [   0.160s] ( 85/271) ennbo index::tests::test_hnsw_search
+        PASS [   0.117s] ( 86/271) ennbo index::tests::test_scaled_search
+        PASS [   0.137s] ( 87/271) ennbo index::tests::test_index_search_exclude_nearest
+        PASS [   0.160s] ( 88/271) ennbo index::tests::test_index_creation
+        PASS [   0.119s] ( 89/271) ennbo link_search::tests::has_blas_for_link_empty_dir
+        PASS [   0.158s] ( 90/271) ennbo index::tests::test_invalid_dimensions
+        PASS [   0.157s] ( 91/271) ennbo index::tests::test_invalid_search_k
+        PASS [   0.144s] ( 92/271) ennbo link_search::tests::emit_faiss_link_search_smoke
+        PASS [   0.139s] ( 93/271) ennbo link_search::tests::has_faiss_c_empty_dir
+        PASS [   0.125s] ( 94/271) ennbo model::tests::test_enn_creation
+        PASS [   0.140s] ( 95/271) ennbo model::tests::kiss_row_storage_and_scale_helpers
+        PASS [   0.136s] ( 96/271) ennbo model::tests::test_enn_add
+        PASS [   0.127s] ( 97/271) ennbo morbo_trust_region::tests::morbo_dirichlet_weights_sum_to_one_seed_2026
+        PASS [   0.143s] ( 98/271) ennbo model::tests::test_sync_index_idempotent
+        PASS [   0.107s] ( 99/271) ennbo morbo_trust_region::tests::morbo_scalarize_degenerate_range
+        PASS [   0.120s] (100/271) ennbo morbo_trust_region::tests::morbo_rejects_num_metrics_one
+        PASS [   0.116s] (101/271) ennbo morbo_trust_region::tests::morbo_update_initial
+        PASS [   0.126s] (102/271) ennbo morbo_trust_region::tests::morbo_zero_metrics_returns_error_not_panic
+        PASS [   0.123s] (103/271) ennbo optimizer::tests::test_add_observations
+        PASS [   0.135s] (104/271) ennbo optimizer::tests::observation_store_cache_and_edges
+        PASS [   0.139s] (105/271) ennbo optimizer::observation_delta::kiss_coverage_tests::observation_delta_from_store_appends
+        PASS [   0.121s] (106/271) ennbo optimizer::tests::test_optimizer_ask
+        PASS [   0.151s] (107/271) ennbo optimizer::tests::test_add_observations_mismatched_rows_returns_error
+        PASS [   0.149s] (108/271) ennbo optimizer::tests::test_add_observations_returns_delta
+        PASS [   0.128s] (109/271) ennbo optimizer::tests::test_optimizer_creation
+        PASS [   0.138s] (110/271) ennbo optimizer::tests::test_tell
+        PASS [   0.160s] (111/271) ennbo optimizer::tests::test_create_optimizer_factories_and_telemetry_defaults
+        PASS [   0.163s] (112/271) ennbo optimizer::tests_incremental::observation_delta_views
+        PASS [   0.212s] (113/271) ennbo optimizer::tests_incremental::enn_fitter_ask_always_fits_with_enough_obs
+        PASS [   0.179s] (114/271) ennbo optimizer::tests_incremental::scale_x_true_index_stale_after_add
+        PASS [   0.220s] (115/271) ennbo optimizer::tests_incremental::enn_surrogate_fit_append_grows_model
+        PASS [   0.263s] (116/271) ennbo optimizer::tests::test_noise_aware_config_and_incumbent_after_tell
+        PASS [   0.197s] (117/271) ennbo optimizer::tr_state::tests::morbo_on_propose_rescalarize_changes_weights_each_propose
+        PASS [   0.238s] (118/271) ennbo optimizer::tests_incremental::scale_x_false_index_not_stale_after_add
+        PASS [   0.197s] (119/271) ennbo optimizer::tr_state::tests::morbo_on_restart_rescalarize_unchanged_until_restart
+        PASS [   0.202s] (120/271) ennbo optimizer::tr_state::tests::trust_region_state_morbo_from_config
+        PASS [   0.248s] (121/271) ennbo optimizer::tests_morbo_incumbent::morbo_incumbent_tie_break_should_vary_with_rng
+        PASS [   0.167s] (122/271) ennbo params::tests::test_enn_params_invalid_aleatoric
+        PASS [   0.183s] (123/271) ennbo params::tests::test_enn_normal
+        PASS [   0.181s] (124/271) ennbo params::tests::test_enn_normal_empty
+        PASS [   0.211s] (125/271) ennbo optimizer::tr_state::tests::turbo_noise_aware_tell_update_expands_on_incumbent_not_batch_max
+        PASS [   0.198s] (126/271) ennbo optimizer_factory::tests::create_optimizer_public_wrappers_smoke
+        PASS [   0.249s] (127/271) ennbo optimizer::tests_morbo_noise_aware_incumbent::morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection
+        PASS [   0.204s] (128/271) ennbo params::tests::test_enn_normal_with_idx
+        PASS [   0.149s] (129/271) ennbo params::tests::test_enn_params_invalid_epistemic
+        PASS [   0.120s] (130/271) ennbo params::tests::test_posterior_flags_default
+        PASS [   0.168s] (131/271) ennbo params::tests::test_posterior_flags_builder
+        PASS [   0.140s] (132/271) ennbo posterior::neighbor::tests::apply_exclude_nearest_slices_or_zeros
+        PASS [   0.195s] (133/271) ennbo params::tests::test_enn_params_invalid_k
+        PASS [   0.134s] (134/271) ennbo posterior::neighbor::tests::exact_f64_batch_topk_exclude_nearest_strips_self
+        PASS [   0.163s] (135/271) ennbo posterior::neighbor::tests::exact_f64_batch_topk_auto_tie_break_expands_when_more_than_k_at_cutoff
+        PASS [   0.223s] (136/271) ennbo params::tests::test_enn_params_valid
+        PASS [   0.164s] (137/271) ennbo posterior::neighbor::tests::exact_f64_batch_topk_exclude_nearest_k_one_yields_empty
+        PASS [   0.185s] (138/271) ennbo posterior::neighbor::tests::dist2s_for_neighbor_indices_matches_pairwise_block
+        PASS [   0.170s] (139/271) ennbo posterior::neighbor::tests::exact_f64_batch_topk_tie_break_on_prefers_lower_index_at_cutoff
+        PASS [   0.211s] (140/271) ennbo posterior::neighbor::tests::exact_f64_batch_topk_batch_matches_single_on_train_ties
+        PASS [   0.208s] (141/271) ennbo posterior::neighbor::tests::faiss_pairs_from_row_and_threshold_helpers
+        PASS [   0.214s] (142/271) ennbo posterior::neighbor::tests::index_search_hnsw_refines_distances
+        PASS [   0.210s] (143/271) ennbo posterior::neighbor::tests::pairwise_sq_l2_empty_y_cols
+        PASS [   0.232s] (144/271) ennbo posterior::neighbor::tests::get_conditional_neighbor_data_empty_batch
+        PASS [   0.191s] (145/271) ennbo posterior::neighbor::tests::pairwise_sq_l2_scaled_and_unscaled
+        PASS [   0.156s] (146/271) ennbo posterior::neighbor_dist::tests::row_sq_l2_scaled_matches_pairwise
+        PASS [   0.192s] (147/271) ennbo posterior::neighbor::tests::pairwise_sq_l2_scaled_differs_from_unscaled
+        PASS [   0.200s] (148/271) ennbo posterior::neighbor::tests::pairwise_sq_l2_single_row_each
+        PASS [   0.172s] (149/271) ennbo posterior::tests::test_assign_posterior_results_direct
+        PASS [   0.167s] (150/271) ennbo posterior::tests::test_batch_posterior_empty_params
+        PASS [   0.190s] (151/271) ennbo posterior::neighbor::tests::use_matrix_topk_batch_disabled_for_perf
+        PASS [   0.325s] (152/271) ennbo posterior::neighbor::tests::exact_f64_batch_topk_matrix_path_on_lattice_self_search
+        PASS [   0.162s] (153/271) ennbo posterior::tests::test_compute_batch_separate_neighbors_direct
+        PASS [   0.150s] (154/271) ennbo posterior::tests::test_compute_batch_with_shared_neighbors_direct
+        PASS [   0.135s] (155/271) ennbo posterior::tests::test_compute_posterior_internals
+        PASS [   0.099s] (156/271) ennbo posterior::tests::test_compute_weighted_posterior
+        PASS [   0.077s] (157/271) ennbo posterior::tests::test_compute_weighted_stats_with_noise
+        PASS [   0.228s] (158/271) ennbo posterior::tests::test_batch_posterior
+        PASS [   0.109s] (159/271) ennbo posterior::tests::test_compute_weighted_posterior_empty_idx
+        PASS [   0.679s] (160/271) ennbo optimizer::tests_incremental::morbo_ask_without_tell_preserves_y_ranges
+        PASS [   0.126s] (161/271) ennbo posterior::tests::test_compute_scale_for_conditional_branches
+        PASS [   0.401s] (162/271) ennbo posterior::neighbor::tests::exact_f64_batch_topk_tie_break_flag_noop_on_generic_data
+        PASS [   0.101s] (163/271) ennbo posterior::tests::test_conditional_posterior_empty_whatif_delegates_to_posterior
+        PASS [   0.112s] (164/271) ennbo posterior::tests::test_conditional_posterior_exclude_nearest
+        PASS [   0.173s] (165/271) ennbo posterior::tests::test_compute_posterior_internals_empty_model
+        PASS [   0.121s] (166/271) ennbo posterior::tests::test_conditional_posterior_nan_in_x_whatif_returns_error_not_panic
+        PASS [   0.164s] (167/271) ennbo posterior::tests::test_compute_weighted_stats_impl
+        PASS [   0.146s] (168/271) ennbo posterior::tests::test_conditional_posterior_function_draw
+        PASS [   0.124s] (169/271) ennbo posterior::tests::test_conditional_posterior_with_whatif
+        PASS [   0.152s] (170/271) ennbo posterior::tests::test_conditional_posterior_scaled_model
+        PASS [   0.131s] (171/271) ennbo posterior::tests::test_conditional_scale_single_row
+        PASS [   0.146s] (172/271) ennbo posterior::tests::test_conditional_posterior_y_whatif_shape_error_reports_y_whatif_shape
+        PASS [   0.112s] (173/271) ennbo posterior::tests::test_empty_posterior_internals
+        PASS [   0.191s] (174/271) ennbo posterior::tests::test_draw_from_internals_k0
+        PASS [   0.151s] (175/271) ennbo posterior::tests::test_get_neighbor_data_exclude_nearest
+        PASS [   0.188s] (176/271) ennbo posterior::tests::test_draw_from_internals_with_neighbors
+        PASS [   0.167s] (177/271) ennbo posterior::tests::test_get_neighbor_data
+        PASS [   0.180s] (178/271) ennbo posterior::tests::test_posterior_function_draw
+        PASS [   0.167s] (179/271) ennbo posterior::tie_break::tests::apply_index_tie_break_at_cutoff_orders_by_index
+        PASS [   0.243s] (180/271) ennbo posterior::tests::test_empty_query_conditional_posterior_no_panic
+        PASS [   0.248s] (181/271) ennbo posterior::tests::test_empty_query_conditional_posterior_with_yvar_no_panic
+        PASS [   0.216s] (182/271) ennbo posterior::tests::test_posterior_computation
+        PASS [   0.185s] (183/271) ennbo posterior::tie_break::tests::faiss_pool_needs_full_row_scan_when_more_than_k_at_cutoff
+        PASS [   0.197s] (184/271) ennbo posterior::tie_break::tests::faiss_pool_might_need_escalation_detects_boundary_tie
+        PASS [   0.268s] (185/271) ennbo posterior::tests::test_empty_query_posterior_with_yvar_no_panic
+        PASS [   0.176s] (186/271) ennbo posterior::tie_break::tests::resolve_pool_tie_break_at_cutoff_orders_cutoff_band
+        PASS [   0.195s] (187/271) ennbo posterior::tie_break::tests::row_dist2s_for_query_matches_train_rows
+        PASS [   0.208s] (188/271) ennbo posterior::tie_break::tests::row_dists_for_check_uses_precomputed_without_copy
+        PASS [   0.221s] (189/271) ennbo posterior::tie_break::tests::finalize_faiss_pool_topk_paths
+        PASS [   0.156s] (190/271) ennbo posterior::tie_break::tests::topk_indices_from_row_dists_with_buffers_n_le_gt_k
+        PASS [   0.168s] (191/271) ennbo posterior::tie_break::tests::try_resolve_boundary_tie_in_pool_picks_lowest_indices
+        PASS [   0.267s] (192/271) ennbo posterior::tie_break::tests::faiss_pool_needs_tie_resolution_detects_cutoff_band
+        PASS [   0.175s] (193/271) ennbo posterior::tie_break::tests::topk_indices_from_row_dists_tie_break_and_plain
+        PASS [   0.167s] (194/271) ennbo stats::tests::test_clone_equality
+        PASS [   0.140s] (195/271) ennbo stats::tests::test_weighted_stats_creation
+        PASS [   0.169s] (196/271) ennbo stats::tests::test_mismatched_lengths
+        PASS [   0.134s] (197/271) ennbo strategy::tests_init::test_select_by_indices
+        PASS [   0.148s] (198/271) ennbo stats::tests::test_weighted_stats_multiple_queries
+        PASS [   0.153s] (199/271) ennbo stats::tests::test_weighted_stats_empty
+        PASS [   0.136s] (200/271) ennbo strategy::tests_init::test_strategy_hybrid_switches_to_turbo
+        PASS [   0.140s] (201/271) ennbo strategy::tests_init::test_strategy_init_ask_tell_progress
+        PASS [   0.147s] (202/271) ennbo strategy::tests_init::test_strategy_init_lhd_path
+        PASS [   0.136s] (203/271) ennbo strategy::tests_init::test_strategy_turbo_path_updates_trust_region
+        PASS [   0.177s] (204/271) ennbo strategy::tests_selection::selection_candidate_cap_and_maybe_cap_branches
+        PASS [   0.203s] (205/271) ennbo strategy::tests_morbo_acq::morbo_ucb_equal_scores_should_vary_with_rng
+        PASS [   0.270s] (206/271) ennbo strategy::tests_morbo_acq::morbo_thompson_tie_break_should_vary_with_rng
+        PASS [   0.250s] (207/271) ennbo strategy::tests_selection::test_hybrid_init_respects_strategy_type_random
+        PASS [   0.235s] (208/271) ennbo strategy::tests_selection::test_private_strategy_helpers_directly
+        PASS [   0.329s] (209/271) ennbo strategy::tests_selection::select_with_functions_direct_smoke
+        PASS [   0.243s] (210/271) ennbo surrogate::tests::test_surrogate_prediction_clone
+        PASS [   0.258s] (211/271) ennbo surrogate::tests::test_enn_surrogate_fit_predict
+        PASS [   0.283s] (212/271) ennbo surrogate::tests::regression_incremental_fit_refreshes_prefix_yvar_to_match_full_refit
+        PASS [   0.296s] (213/271) ennbo strategy::tests_selection::turbo_strategy_state_default_and_tell_common_paths
+        PASS [   0.293s] (214/271) ennbo surrogate::tests::regression_incremental_fit_rejects_nan_y_on_append
+        PASS [   0.178s] (215/271) ennbo trust_region::tests::test_no_trust_region
+        PASS [   0.471s] (216/271) ennbo strategy::tests_init::test_select_arms_acquisition_branches
+        PASS [   0.218s] (217/271) ennbo trust_region::tests::test_trust_region_error_display
+        PASS [   0.167s] (218/271) ennbo trust_region::tests::test_turbo_bounds
+        PASS [   0.121s] (219/271) ennbo trust_region::tests::test_turbo_update_failure
+        PASS [   0.095s] (220/271) ennbo util::tests::test_arms_from_pareto_deterministic_choice
+        PASS [   0.184s] (221/271) ennbo trust_region::tests::test_turbo_trust_region_creation
+        PASS [   0.120s] (222/271) ennbo util::tests::test_argmax_random_tie_picks_among_ties
+        PASS [   0.130s] (223/271) ennbo trust_region::tests::test_turbo_update_success
+        PASS [   0.219s] (224/271) ennbo trust_region::tests::test_turbo_restart
+        PASS [   0.158s] (225/271) ennbo util::tests::test_arms_from_pareto
+        PASS [   0.148s] (226/271) ennbo util::tests::test_arms_from_pareto_front_overflow
+        PASS [   0.150s] (227/271) ennbo util::tests::test_deterministic_choice_edge_cases
+        PASS [   0.084s] (228/271) ennbo util::tests::test_pareto_front_rejects_nan_objectives
+        PASS [   0.552s] (229/271) ennbo strategy::tests_morbo_acq::morbo_pareto_ask_after_multiobjective_tell
+        PASS [   0.119s] (230/271) ennbo util::tests::test_pareto_front_empty
+        PASS [   0.118s] (231/271) ennbo util::tests::test_pareto_front_ignores_nan_outside_idx_subset
+        PASS [   0.227s] (232/271) ennbo util::tests::kiss_argmax_random_tie_unit_name
+        PASS [   0.101s] (233/271) ennbo util::tests::test_standardize_y_empty
+        PASS [   0.136s] (234/271) ennbo util::tests::test_sobol_indices_small_sample
+        PASS [   0.143s] (235/271) ennbo util::tests::test_sobol_indices_shape
+        PASS [   0.149s] (236/271) ennbo util::tests::test_pareto_front_simple
+        PASS [   0.082s] (237/271) ennbo::batch_posterior_train_regression batch_posterior_on_train_matches_posterior_when_no_neighbors
+        PASS [   0.163s] (238/271) ennbo util::tests::test_standardize_y_constant
+        PASS [   0.028s] (239/271) ennbo::kiss_repo_strings kiss_fullrepo_static_name_registry_extra
+        PASS [   0.067s] (240/271) ennbo::kiss_repo_strings kiss_cargo_build_helpers
+        PASS [   0.031s] (241/271) ennbo::test_incumbent_tracker test_incumbent_tracker_integration_paths
+        PASS [   0.047s] (242/271) ennbo::kiss_repo_strings kiss_ennbo_build_main
+        PASS [   0.590s] (243/271) ennbo strategy::tests_selection::test_telemetry_populated_after_operations
+        PASS [   0.135s] (244/271) ennbo util::tests::test_standardize_y_normal
+        PASS [   0.059s] (245/271) ennbo::kiss_repo_strings kiss_fullrepo_static_name_registry_core
+        PASS [   0.117s] (246/271) ennbo::batch_posterior_train_regression batch_posterior_on_train_row_matches_single_query_posterior
+        PASS [   0.049s] (247/271) ennbo-py kiss_pymodule_coverage::pymodule_init_fns_are_linked
+        PASS [   0.044s] (248/271) ennbo-py link_rpath::tests::blas_libs_present_empty_dir
+        PASS [   0.041s] (249/271) ennbo-py py_util::kiss_coverage_tests::arms_from_pareto_fronts_py_unit_name
+        PASS [   0.045s] (250/271) ennbo-py py_optimizer::kiss_coverage_tests::py_optimizer_helpers_are_linked
+        PASS [   0.065s] (251/271) ennbo::weak_mathy_golden weak_conditional_neighbor_merge_includes_whatif
+        PASS [   0.058s] (252/271) ennbo::weak_mathy_golden weak_posterior_function_draw_seed_7_golden
+        PASS [   0.034s] (253/271) ennbo-py::kiss_repo_coverage kiss_enn_py_build_main
+        PASS [   0.066s] (254/271) ennbo::weak_mathy_golden weak_pareto_single_objective_mu_plus_sigma_order
+        PASS [   0.053s] (255/271) ennbo-py link_rpath::tests::emit_linux_rpath_link_args_smoke
+        PASS [   0.022s] (256/271) ennbo-py::kiss_repo_coverage kiss_imports_link_pyo3_wrappers
+        PASS [   0.014s] (257/271) ennbo-py::kiss_repo_coverage kiss_pymodule_entrypoint_names_and_methods
+        PASS [   0.823s] (258/271) ennbo strategy::tests_morbo_acq::morbo_on_restart_rescalarize_via_ask_turbo
+        PASS [   0.838s] (259/271) ennbo strategy::tests_morbo_acq::morbo_on_propose_rescalarize_via_ask_turbo
+        PASS [   2.770s] (260/271) ennbo candidates::tests::test_private_raasp_and_sobol_engine_helpers
+        PASS [   2.782s] (261/271) ennbo candidates::tests::test_sobol_engine
+        PASS [   2.792s] (262/271) ennbo candidates::tests::test_sobol_engine_matches_scipy_reference_points
+        PASS [   2.801s] (263/271) ennbo candidates::tests::test_sobol_engine_validation_and_scramble
+        PASS [   0.320s] (264/271) ennbo::add_complexity single_row_add_flat_growth_scale_x_false_yvar_true
+        PASS [   2.809s] (265/271) ennbo candidates::tests::test_generate_candidates_all_rvs_and_fallback
+        PASS [   2.820s] (266/271) ennbo candidates::tests::test_sobol_high_dimension_path
+        PASS [   1.598s] (267/271) ennbo posterior::neighbor::tests::exact_f64_batch_topk_lattice_self_search_escalation_count
+        PASS [   0.374s] (268/271) ennbo::add_complexity single_row_add_flat_growth_scale_x_false_yvar_false
+        PASS [   0.960s] (269/271) ennbo strategy::tests_selection::test_thompson_sampling_uses_posterior_sample
+        PASS [   0.531s] (270/271) ennbo::add_complexity single_row_add_flat_growth_scale_x_true_yvar_false
+        PASS [   0.822s] (271/271) ennbo::add_complexity single_row_add_flat_growth_scale_x_true_yvar_true
+────────────
+     Summary [   3.317s] 271 tests run: 271 passed, 0 skipped
+

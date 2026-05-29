@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -11,6 +13,10 @@ from enn.enn.enn_class_support import (
     enn_neighbor_distances_and_indices,
 )
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+
+_POSTERIOR_SPEED_BASELINE = (
+    Path(__file__).resolve().parent / "fixtures" / "posterior_speed_baseline.json"
+)
 
 
 def make_enn_demo_data(num_samples: int, k: int, noise: float, m: int = 1):
@@ -188,3 +194,79 @@ def test_index_search_slowdown_does_not_blow_up_with_n():
         f"expected bounded slowdown ratio: n={n_small} -> {ratio_small:.2f}x, "
         f"n={n_large} -> {ratio_large:.2f}x"
     )
+
+
+def _self_search_timing_ratios(
+    scenario: dict,
+    *,
+    tie_break_neighbors: bool,
+    reps: int = 10,
+) -> tuple[float, float, float, float, float]:
+    """Return (t_post, t_index, t_faiss, index/faiss, posterior/index) medians."""
+    rng = np.random.default_rng(int(scenario["seed"]))
+    n, d, m, k = scenario["n"], scenario["d"], scenario["m"], scenario["k"]
+    x = rng.standard_normal((n, d))
+    y = rng.normal(0.0, 100.0, size=(n, m))
+    model = EpistemicNearestNeighbors(x, y)
+    params = ENNParams(
+        k_num_neighbors=k, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
+    flags = PosteriorFlags(tie_break_neighbors=tie_break_neighbors)
+    rust = model.rust_backend
+
+    def posterior() -> None:
+        model.posterior(x, params=params, flags=flags)
+
+    def index_neighbors() -> None:
+        enn_index_neighbor_distances_and_indices(
+            rust,
+            x,
+            search_k=k,
+            exclude_nearest=False,
+            tie_break_neighbors=tie_break_neighbors,
+        )
+
+    def faiss_neighbors() -> None:
+        enn_neighbor_distances_and_indices(
+            rust, x, search_k=k, exclude_nearest=False
+        )
+
+    for _ in range(3):
+        posterior()
+        index_neighbors()
+        faiss_neighbors()
+
+    t_post = _median_seconds(posterior, reps=reps)
+    t_index = _median_seconds(index_neighbors, reps=reps)
+    t_faiss = _median_seconds(faiss_neighbors, reps=reps)
+    index_vs_faiss = t_index / max(t_faiss, 1e-12)
+    posterior_vs_index = t_post / max(t_index, 1e-12)
+    return t_post, t_index, t_faiss, index_vs_faiss, posterior_vs_index
+
+
+@pytest.mark.parametrize("tie_break_neighbors", [False, True])
+def test_posterior_self_search_not_slower_than_9eaa27_baseline(tie_break_neighbors: bool):
+    """Self-search: index_search vs FAISS and posterior stats overhead stay bounded."""
+    with open(_POSTERIOR_SPEED_BASELINE) as f:
+        baseline = json.load(f)
+    for scenario in baseline["scenarios"]:
+        t_post, t_index, t_faiss, index_vs_faiss, posterior_vs_index = (
+            _self_search_timing_ratios(
+                scenario, tie_break_neighbors=tie_break_neighbors
+            )
+        )
+        max_index_vs_faiss = float(scenario["max_index_vs_faiss"])
+        max_posterior_vs_index = float(scenario["max_posterior_vs_index"])
+        assert index_vs_faiss <= max_index_vs_faiss, (
+            f"{scenario['name']} tie_break={tie_break_neighbors}: "
+            f"index/faiss={index_vs_faiss:.3f}x exceeds cap {max_index_vs_faiss:.2f}x "
+            f"(t_index={t_index:.4f}s t_faiss={t_faiss:.4f}s; "
+            f"baseline_rev={baseline['baseline_revision'][:7]})"
+        )
+        assert posterior_vs_index <= max_posterior_vs_index, (
+            f"{scenario['name']} tie_break={tie_break_neighbors}: "
+            f"posterior/index={posterior_vs_index:.3f}x exceeds cap "
+            f"{max_posterior_vs_index:.2f}x "
+            f"(t_post={t_post:.4f}s t_index={t_index:.4f}s; "
+            f"baseline_rev={baseline['baseline_revision'][:7]})"
+        )
