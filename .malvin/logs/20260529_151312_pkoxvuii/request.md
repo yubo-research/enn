@@ -1,1 +1,0 @@
-Please add the standard clippy check to .malvin/checks.

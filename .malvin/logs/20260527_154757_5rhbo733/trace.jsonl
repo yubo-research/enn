@@ -1,1 +1,0 @@
-{"direction":"out","message":{"id":1,"jsonrpc":"2.0","method":"initialize","params":{"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false},"clientInfo":{"name":"malvin","version":"0.1.5"},"protocolVersion":1}},"name":"8kDfM","ts":"20260527.114757.676"}

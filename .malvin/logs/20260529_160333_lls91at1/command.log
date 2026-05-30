@@ -1,2 +1,0 @@
-20260529.120333.976 [malvin.........] Command: malvin invent posterior self-search 1.34x slower than FAISS neighbor lookup at n=512; ideas to fix perf regression or stabilize CI timing test
-20260529.120333.976 [malvin.........] Memory: 15.5 GiB, CPUs: 24

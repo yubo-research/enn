@@ -1,2 +1,0 @@
-20260529.111423.768 [malvin.........] Command: malvin invent What is the standard clippy check line for .malvin/checks in a Rust repo where Cargo.toml lives under rust/? Consider malvin DEFAULT_RUST_CLIPPY and Makefile conventions.
-20260529.111423.768 [malvin.........] Memory: 15.5 GiB, CPUs: 24

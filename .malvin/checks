@@ -1,4 +1,0 @@
-kiss check
-ruff check .
-cd rust && cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo
-make test

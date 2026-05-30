@@ -1,5 +1,0 @@
-20260527.114757.655 [malvin.........] Command: malvin kpop Please get pytest -sv tests/test_turbo_gp.py to run.
-20260527.114757.655 [malvin.........] Memory: 15.5 GiB, CPUs: 24
-20260527.114757.655 [prompt.........] Please get pytest -sv tests/test_turbo_gp.py to run.
-20260527.114757.655 [malvin.........] Logs: ./.malvin/logs/20260527_154757_5rhbo733
-20260527.114757.655 [malvin.........] KPOP_LOG: M4da99 ./.malvin/logs/20260527_154757_5rhbo733/_kpop/exp_log_20260527_154757_5rhbo733.md

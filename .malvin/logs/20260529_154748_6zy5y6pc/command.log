@@ -1,2 +1,0 @@
-20260529.114748.982 [malvin.........] Command: malvin invent failing pytest to detect posterior() slowdown vs git rev 9eaa27 irrespective of tie_break_neighbors; ideas for stable wall-clock regression test in CI
-20260529.114748.982 [malvin.........] Memory: 15.5 GiB, CPUs: 24
