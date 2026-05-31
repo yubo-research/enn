@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -60,13 +61,52 @@ def test_enn_demo_performance():
     assert elapsed < 0.3, f"Expected < 0.3s, got {elapsed:.3f}s"
 
 
-def _median_seconds(fn, *, reps: int = 12) -> float:
+_PERF_WARMUP = 8
+_PERF_REPS = 15
+
+
+def _median_seconds(fn, *, reps: int = _PERF_REPS) -> float:
     samples = []
     for _ in range(reps):
         t0 = time.perf_counter()
         fn()
         samples.append(time.perf_counter() - t0)
     return float(np.median(samples))
+
+
+def _median_paired_ratio(
+    fn_num: Callable[[], None],
+    fn_den: Callable[[], None],
+    *,
+    warmup: int = _PERF_WARMUP,
+    reps: int = _PERF_REPS,
+) -> float:
+    """Median of per-rep num/den ratios with interleaved warmup and alternating order."""
+    for i in range(warmup):
+        if i % 2 == 0:
+            fn_den()
+            fn_num()
+        else:
+            fn_num()
+            fn_den()
+    ratios: list[float] = []
+    for i in range(reps):
+        if i % 2 == 0:
+            t0 = time.perf_counter()
+            fn_num()
+            t_num = time.perf_counter() - t0
+            t0 = time.perf_counter()
+            fn_den()
+            t_den = time.perf_counter() - t0
+        else:
+            t0 = time.perf_counter()
+            fn_den()
+            t_den = time.perf_counter() - t0
+            t0 = time.perf_counter()
+            fn_num()
+            t_num = time.perf_counter() - t0
+        ratios.append(t_num / max(t_den, 1e-12))
+    return float(np.median(ratios))
 
 
 def _neighbor_lookup_ratio(n: int, *, d: int = 1, k: int = 10, seed: int = 42) -> float:
@@ -136,7 +176,7 @@ def _posterior_self_search_median_seconds(
     def run() -> None:
         model.posterior(x, params=params, flags=flags)
 
-    for _ in range(3):
+    for _ in range(5):
         run()
     return _median_seconds(run, reps=reps)
 
@@ -169,19 +209,40 @@ def _lattice_posterior_self_search_median_seconds(
     def run() -> None:
         model.posterior(x, params=params, flags=flags)
 
-    for _ in range(3):
+    for _ in range(5):
         run()
     return _median_seconds(run, reps=reps)
 
 
 def test_lattice_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
     """lattice posterior(x_train) tie-break-on must track tie-break-off at n=1024."""
-    t_off = _lattice_posterior_self_search_median_seconds(tie_break_neighbors=False)
-    t_on = _lattice_posterior_self_search_median_seconds(tie_break_neighbors=True)
-    ratio = t_on / max(t_off, 1e-12)
+    n, d = 1024, 10
+    x = np.linspace(0.0, 1.0, n)[:, None]
+    x = np.tile(x, (1, d))
+    y = np.sin(8.0 * np.pi * x[:, 0:1])
+    model = EpistemicNearestNeighbors(x, y)
+    params = ENNParams(
+        k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
+
+    def run_off() -> None:
+        model.posterior(
+            x,
+            params=params,
+            flags=PosteriorFlags(tie_break_neighbors=False),
+        )
+
+    def run_on() -> None:
+        model.posterior(
+            x,
+            params=params,
+            flags=PosteriorFlags(tie_break_neighbors=True),
+        )
+
+    ratio = _median_paired_ratio(run_on, run_off)
     assert ratio <= 1.15, (
         f"lattice tie-break posterior must be <= 1.15x no-tie-break at n=1024, "
-        f"got {ratio:.2f}x (t_on={t_on:.4f}s t_off={t_off:.4f}s)"
+        f"got {ratio:.2f}x"
     )
 
 
@@ -200,7 +261,6 @@ def _self_search_timing_ratios(
     scenario: dict,
     *,
     tie_break_neighbors: bool,
-    reps: int = 10,
 ) -> tuple[float, float, float, float, float]:
     """Return (t_post, t_index, t_faiss, index/faiss, posterior/index) medians."""
     rng = np.random.default_rng(int(scenario["seed"]))
@@ -227,25 +287,25 @@ def _self_search_timing_ratios(
         )
 
     def faiss_neighbors() -> None:
-        enn_neighbor_distances_and_indices(
-            rust, x, search_k=k, exclude_nearest=False
-        )
+        enn_neighbor_distances_and_indices(rust, x, search_k=k, exclude_nearest=False)
 
-    for _ in range(3):
+    for _ in range(_PERF_WARMUP):
         posterior()
         index_neighbors()
         faiss_neighbors()
 
-    t_post = _median_seconds(posterior, reps=reps)
-    t_index = _median_seconds(index_neighbors, reps=reps)
-    t_faiss = _median_seconds(faiss_neighbors, reps=reps)
-    index_vs_faiss = t_index / max(t_faiss, 1e-12)
-    posterior_vs_index = t_post / max(t_index, 1e-12)
+    t_post = _median_seconds(posterior)
+    t_index = _median_seconds(index_neighbors)
+    t_faiss = _median_seconds(faiss_neighbors)
+    index_vs_faiss = _median_paired_ratio(index_neighbors, faiss_neighbors)
+    posterior_vs_index = _median_paired_ratio(posterior, index_neighbors)
     return t_post, t_index, t_faiss, index_vs_faiss, posterior_vs_index
 
 
 @pytest.mark.parametrize("tie_break_neighbors", [False, True])
-def test_posterior_self_search_not_slower_than_9eaa27_baseline(tie_break_neighbors: bool):
+def test_posterior_self_search_not_slower_than_9eaa27_baseline(
+    tie_break_neighbors: bool,
+):
     """Self-search: index_search vs FAISS and posterior stats overhead stay bounded."""
     with open(_POSTERIOR_SPEED_BASELINE) as f:
         baseline = json.load(f)
@@ -255,7 +315,10 @@ def test_posterior_self_search_not_slower_than_9eaa27_baseline(tie_break_neighbo
                 scenario, tie_break_neighbors=tie_break_neighbors
             )
         )
-        max_index_vs_faiss = float(scenario["max_index_vs_faiss"])
+        if tie_break_neighbors and "max_index_vs_faiss_tie_break" in scenario:
+            max_index_vs_faiss = float(scenario["max_index_vs_faiss_tie_break"])
+        else:
+            max_index_vs_faiss = float(scenario["max_index_vs_faiss"])
         max_posterior_vs_index = float(scenario["max_posterior_vs_index"])
         assert index_vs_faiss <= max_index_vs_faiss, (
             f"{scenario['name']} tie_break={tie_break_neighbors}: "

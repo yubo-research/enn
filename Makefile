@@ -25,6 +25,10 @@ test: rust-test python-test
 rust-test:
 	cd rust && cargo nextest run
 
+# Run Rust tests with optional USearch HNSW backend
+rust-test-usearch:
+	cd rust && cargo nextest run -p ennbo --features usearch
+
 # Run Python tests only
 python-test:
 	PYTHONPATH=src pytest -sv tests --tb=short

@@ -11,6 +11,10 @@ description = "Epistemic Nearest Neighbor Bayesian Optimization"
 readme = "README.md"
 build = "src/ennbo_build.rs"
 
+[features]
+default = []
+usearch = ["dep:usearch"]
+
 [dependencies]
 faiss = { version = "0.13.0" }
 ndarray = { workspace = true }
@@ -18,6 +22,7 @@ ndarray-linalg = { workspace = true }
 rand = "0.8"
 sobol = "1.0.2"
 thiserror = { workspace = true }
+usearch = { version = "2.25", optional = true, default-features = false, features = ["numkong"] }
 
 # Modal/Linux images lack a linkable `libfaiss_c`; macOS dev builds use dynamic faiss (static needs OpenMP in cmake).
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -27,3 +32,4 @@ faiss = { version = "0.13.0", features = ["static"] }
 approx = "0.5"
 numpy = "0.22"
 rand_chacha = "0.3"
+tempfile = "3"

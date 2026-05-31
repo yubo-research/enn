@@ -22,6 +22,7 @@ pub mod hash;
 pub mod hypervolume;
 pub mod incumbent_tracker;
 pub mod index;
+pub mod knn;
 pub mod model;
 pub mod morbo_trust_region;
 pub mod optimizer;
