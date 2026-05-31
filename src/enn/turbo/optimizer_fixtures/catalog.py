@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from enn.benchmarks.separable_unimodal import separable_unimodal_objective
 from enn.turbo.config import (
     AcqType,
     CandidateGenConfig,
@@ -26,14 +27,6 @@ MORBO_SEPARABLE_BOUNDS = np.array([[-300.0, 600.0], [0.2, 1.0]], dtype=float)
 
 def sphere_centered_objective(x: np.ndarray) -> np.ndarray:
     return (-np.sum((x - 0.5) ** 2, axis=1)).reshape(-1, 1)
-
-
-def separable_unimodal_objective(x: np.ndarray) -> np.ndarray:
-    x1 = x[:, 0]
-    x2 = x[:, 1]
-    y1 = 500_000.0 - 8.0 * (x1 - 120.0) ** 2
-    y2 = 12.5 - 110.0 * (x2 - 0.91) ** 2
-    return np.stack([y1, y2], axis=1)
 
 
 FIXTURE_OBJECTIVES: dict[str, Callable[[np.ndarray], np.ndarray]] = {

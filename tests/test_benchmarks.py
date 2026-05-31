@@ -70,3 +70,11 @@ def test_double_ackley_deterministic():
     obj2 = DoubleAckley(noise=0.1, rng=rng2)
     x = np.random.default_rng(0).random((5, 6))
     np.testing.assert_array_equal(obj1(x), obj2(x))
+
+
+def test_separable_unimodal_benchmark():
+    from enn.benchmarks.separable_unimodal import separable_unimodal_objective
+
+    y = separable_unimodal_objective(np.array([[120.0, 0.91]]))
+    assert y.shape == (1, 2)
+    assert float(y[0, 0]) >= 499_000.0
