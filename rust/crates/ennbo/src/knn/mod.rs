@@ -127,7 +127,18 @@ impl KnnBackend {
     }
 
     #[cfg(feature = "usearch")]
-    pub(crate) fn checkpoint(&self, path: &Path) -> Result<(), IndexError> {
+    pub(crate) fn checkpoint(&self) -> Result<(), IndexError> {
+        match self {
+            Self::Faiss(_) => Ok(()),
+            Self::USearch(inner) => inner
+                .lock()
+                .expect("knn mutex poisoned")
+                .checkpoint(),
+        }
+    }
+
+    #[cfg(feature = "usearch")]
+    pub(crate) fn save_to(&self, path: &Path) -> Result<(), IndexError> {
         match self {
             Self::Faiss(_) => Ok(()),
             Self::USearch(inner) => inner

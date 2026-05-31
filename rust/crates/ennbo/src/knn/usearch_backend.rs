@@ -11,6 +11,8 @@ pub(crate) struct USearchBackend {
     num_dim: usize,
     index_path: Option<PathBuf>,
     view_only: bool,
+    /// In-memory tail adds since last successful persist to `index_path`.
+    dirty: bool,
 }
 
 fn usearch_options(num_dim: usize) -> IndexOptions {
@@ -68,6 +70,9 @@ impl USearchBackend {
     ) -> Result<Self, IndexError> {
         if let Some(ref path) = index_path {
             if path.exists() {
+                if train_scaled.nrows() == 0 {
+                    return Self::open_view_only(path, num_dim);
+                }
                 return Self::open_mutable(path, num_dim);
             }
         }
@@ -94,6 +99,7 @@ impl USearchBackend {
             num_dim,
             index_path: Some(path.to_path_buf()),
             view_only: true,
+            dirty: false,
         })
     }
 
@@ -106,6 +112,7 @@ impl USearchBackend {
             num_dim,
             index_path: Some(path.to_path_buf()),
             view_only: false,
+            dirty: false,
         })
     }
 
@@ -116,6 +123,7 @@ impl USearchBackend {
             num_dim,
             index_path: None,
             view_only: false,
+            dirty: false,
         })
     }
 
@@ -184,19 +192,22 @@ impl USearchBackend {
         Ok(())
     }
 
+    fn persist_to_disk(&mut self) -> Result<(), IndexError> {
+        if let Err(e) = self.save_if_path() {
+            let _ = self.reload_from_disk_checkpoint();
+            return Err(e);
+        }
+        self.dirty = false;
+        Ok(())
+    }
+
     fn bulk_add_then_save(
         &mut self,
         rows: &ArrayView2<f64>,
         start_key: u64,
     ) -> Result<(), IndexError> {
-        if let Err(e) = (|| {
-            self.bulk_add(rows, start_key)?;
-            self.save_if_path()
-        })() {
-            let _ = self.reload_from_disk_checkpoint();
-            return Err(e);
-        }
-        Ok(())
+        self.bulk_add(rows, start_key)?;
+        self.persist_to_disk()
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -215,7 +226,7 @@ impl USearchBackend {
         if train_scaled.nrows() == 0 {
             if let Some(ref p) = path {
                 if p.exists() {
-                    *self = Self::open_mutable(p, self.num_dim)?;
+                    *self = Self::open_view_only(p, self.num_dim)?;
                     self.index_path = path;
                     return Ok(());
                 }
@@ -234,7 +245,21 @@ impl USearchBackend {
         rows_scaled: &ArrayView2<f64>,
         start_key: u64,
     ) -> Result<(), IndexError> {
-        self.bulk_add_then_save(rows_scaled, start_key)
+        self.bulk_add(rows_scaled, start_key)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Atomically persist in-memory tail adds to `index_path` when dirty.
+    pub(crate) fn checkpoint(&mut self) -> Result<(), IndexError> {
+        if !self.dirty {
+            return Ok(());
+        }
+        self.persist_to_disk()
+    }
+
+    pub(crate) fn is_dirty(&self) -> bool {
+        self.dirty
     }
 
     pub(crate) fn search(
@@ -272,11 +297,15 @@ impl USearchBackend {
         Ok(pad_neighbor_cols_to_search_k(d, idx, search_k))
     }
 
-    pub(crate) fn save_atomic(&self, path: &Path) -> Result<(), IndexError> {
+    pub(crate) fn save_atomic(&mut self, path: &Path) -> Result<(), IndexError> {
         if self.view_only {
             return Ok(());
         }
-        atomic_save(&self.index, path)
+        atomic_save(&self.index, path)?;
+        if self.index_path.as_deref() == Some(path) {
+            self.dirty = false;
+        }
+        Ok(())
     }
 }
 
@@ -367,12 +396,17 @@ mod tests {
     }
 
     #[test]
-    fn usearch_add_rolls_back_memory_when_disk_save_fails() {
+    fn usearch_add_rolls_back_memory_when_checkpoint_fails() {
         let (dir, path) = temp_index_dir();
         let _ = std::fs::remove_file(&path);
         let mut backend =
             USearchBackend::new(2, &array![[0.0, 0.0]].view(), Some(path.clone())).unwrap();
         assert_eq!(backend.len(), 1);
+        backend
+            .add(&array![[1.0, 1.0]].view(), 1)
+            .unwrap();
+        assert_eq!(backend.len(), 2);
+        assert!(backend.is_dirty());
 
         #[cfg(unix)]
         {
@@ -383,12 +417,12 @@ mod tests {
             perms.set_mode(0o555);
             std::fs::set_permissions(dir.path(), perms).expect("chmod read-only");
 
-            let result = backend.add(&array![[1.0, 1.0]].view(), 1);
-            assert!(result.is_err(), "save should fail on read-only directory");
+            let result = backend.checkpoint();
+            assert!(result.is_err(), "checkpoint should fail on read-only directory");
             assert_eq!(
                 backend.len(),
                 1,
-                "in-memory index must roll back when disk save fails"
+                "in-memory index must roll back when checkpoint fails"
             );
 
             let empty = ndarray::Array2::<f64>::zeros((0, 2));
@@ -434,12 +468,15 @@ mod tests {
     }
 
     #[test]
-    fn usearch_add_clears_memory_when_reload_fails() {
+    fn usearch_checkpoint_clears_memory_when_reload_fails() {
         let (dir, path) = temp_index_dir();
         let _ = std::fs::remove_file(&path);
         let mut backend =
             USearchBackend::new(2, &array![[0.0, 0.0]].view(), Some(path.clone())).unwrap();
         assert_eq!(backend.len(), 1);
+        backend
+            .add(&array![[1.0, 1.0]].view(), 1)
+            .unwrap();
         std::fs::write(&path, b"corrupt").expect("corrupt checkpoint");
 
         #[cfg(unix)]
@@ -451,12 +488,12 @@ mod tests {
             perms.set_mode(0o555);
             std::fs::set_permissions(dir.path(), perms).expect("chmod read-only");
 
-            let result = backend.add(&array![[1.0, 1.0]].view(), 1);
-            assert!(result.is_err(), "save should fail on read-only directory");
+            let result = backend.checkpoint();
+            assert!(result.is_err(), "checkpoint should fail on read-only directory");
             assert_ne!(
                 backend.len(),
                 2,
-                "must not retain partial bulk_add when reload fails"
+                "must not retain partial add when reload fails"
             );
 
             let mut restore = std::fs::metadata(dir.path())
@@ -469,17 +506,87 @@ mod tests {
     }
 
     #[test]
-    fn usearch_incremental_add_persists_on_disk() {
+    fn usearch_incremental_add_defers_disk_until_checkpoint() {
         let (_dir, path) = temp_index_dir();
         let _ = std::fs::remove_file(&path);
         let mut backend =
             USearchBackend::new(2, &array![[0.0, 0.0]].view(), Some(path.clone())).unwrap();
+        let size_after_build = std::fs::metadata(&path).expect("checkpoint exists").len();
+
         backend
             .add(&array![[1.0, 1.0]].view(), 1)
             .unwrap();
+        assert_eq!(backend.len(), 2);
+        assert!(backend.is_dirty());
+
         let empty = ndarray::Array2::<f64>::zeros((0, 2));
         let reopened = USearchBackend::new(2, &empty.view(), Some(path.clone())).unwrap();
+        assert_eq!(
+            reopened.len(),
+            1,
+            "incremental add must not persist until checkpoint"
+        );
+        assert_eq!(
+            std::fs::metadata(&path).expect("checkpoint exists").len(),
+            size_after_build,
+            "checkpoint file size must be unchanged before explicit persist"
+        );
+
+        backend.checkpoint().unwrap();
+        assert!(!backend.is_dirty());
+        let reopened = USearchBackend::new(2, &empty.view(), Some(path.clone())).unwrap();
         assert_eq!(reopened.len(), 2);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_cold_open_empty_train_uses_mmap_view() {
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        let train = array![[0.0, 0.0], [1.0, 0.0]];
+        USearchBackend::new(2, &train.view(), Some(path.clone())).unwrap();
+        let empty = ndarray::Array2::<f64>::zeros((0, 2));
+        let reopened = USearchBackend::new(2, &empty.view(), Some(path.clone())).unwrap();
+        assert!(
+            reopened.view_only,
+            "search-first reopen must mmap checkpoint, not full restore"
+        );
+        assert_eq!(reopened.len(), 2);
+        let (d, i) = reopened.search(&array![[0.0, 0.0]].view(), 1, 1).unwrap();
+        assert_eq!(i[[0, 0]], 0);
+        assert!(d[[0, 0]] < 1e-5);
+
+        let mut writable = reopened;
+        writable
+            .add(&array![[1.0, 1.0]].view(), 2)
+            .unwrap();
+        assert!(
+            !writable.view_only,
+            "first tail add must materialize a mutable index"
+        );
+        assert_eq!(writable.len(), 3);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_incremental_add_search_matches_after_checkpoint_reopen() {
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        let mut backend = USearchBackend::new(2, &train.view(), Some(path.clone())).unwrap();
+        backend
+            .add(&array![[1.0, 1.0]].view(), 3)
+            .unwrap();
+
+        let query = array![[0.0, 0.0]];
+        let (d_before, i_before) = backend.search(&query.view(), 2, 2).unwrap();
+
+        backend.checkpoint().unwrap();
+
+        let viewed = USearchBackend::open_view_only(&path, 2).unwrap();
+        let (d_after, i_after) = viewed.search(&query.view(), 2, 2).unwrap();
+        assert_eq!(i_before[[0, 0]], i_after[[0, 0]]);
+        assert!((d_before[[0, 0]] - d_after[[0, 0]]).abs() < 1e-4);
         let _ = std::fs::remove_file(&path);
     }
 }

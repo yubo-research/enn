@@ -13,7 +13,9 @@ fn kiss_usearch_backend_helper_names() {
         "bulk_add",
         "save_if_path",
         "bulk_add_then_save",
+        "persist_to_disk",
         "reload_from_disk_checkpoint",
+        "is_dirty",
         "ensure_mutable",
         "build_in_memory",
         "open_mutable",
@@ -24,6 +26,6 @@ fn kiss_usearch_backend_helper_names() {
 #[cfg(feature = "usearch")]
 #[test]
 fn kiss_knn_backend_usearch_dispatch_names() {
-    let names: &[&str] = &["KnnBackend", "rebuild", "add", "search", "checkpoint", "new", "len"];
+    let names: &[&str] = &["KnnBackend", "rebuild", "add", "search", "checkpoint", "save_to", "new", "len"];
     assert!(!names.is_empty());
 }

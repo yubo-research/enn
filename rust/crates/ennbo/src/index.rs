@@ -96,6 +96,12 @@ impl ENNIndex {
         self.index_path.as_ref()
     }
 
+    /// Persist in-memory tail adds to the configured USearch file (no-op without `index_path`).
+    #[cfg(feature = "usearch")]
+    pub fn checkpoint(&self) -> Result<(), IndexError> {
+        self.inner.checkpoint()
+    }
+
     pub fn rebuild_from_scaled(
         &self,
         train_x_scaled: Array2<f64>,
@@ -330,6 +336,50 @@ mod tests {
         #[test]
         fn test_hnsw_usearch_regression_all_indices_valid() {
             run_hnsw_regression_test(|train_x| index_unit(train_x, IndexDriver::HNSW));
+        }
+
+        #[test]
+        fn test_usearch_file_backed_checkpoint() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("index.usearch");
+            let _ = std::fs::remove_file(&path);
+            let train_x = array![[0.0, 0.0], [1.0, 0.0]];
+            let index = ENNIndex::with_index_path(
+                train_x,
+                2,
+                array![1.0, 1.0],
+                false,
+                IndexDriver::HNSW,
+                path.clone(),
+            )
+            .unwrap();
+            index.add(&array![[0.0, 1.0]].view()).unwrap();
+            assert_eq!(index.len(), 3);
+
+            let empty = Array2::<f64>::zeros((0, 2));
+            let before_ckpt = ENNIndex::with_index_path(
+                empty.clone(),
+                2,
+                array![1.0, 1.0],
+                false,
+                IndexDriver::HNSW,
+                path.clone(),
+            )
+            .unwrap();
+            assert_eq!(before_ckpt.len(), 2, "add must not persist until checkpoint");
+
+            index.checkpoint().unwrap();
+            let after_ckpt = ENNIndex::with_index_path(
+                empty,
+                2,
+                array![1.0, 1.0],
+                false,
+                IndexDriver::HNSW,
+                path.clone(),
+            )
+            .unwrap();
+            assert_eq!(after_ckpt.len(), 3);
+            let _ = std::fs::remove_file(&path);
         }
 
         #[test]

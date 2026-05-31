@@ -17,7 +17,9 @@ fn kiss_usearch_backend_helper_names_in_source() {
         "bulk_add",
         "save_if_path",
         "bulk_add_then_save",
+        "persist_to_disk",
         "reload_from_disk_checkpoint",
+        "is_dirty",
     ] {
         assert!(
             USEARCH_BACKEND_SRC.contains(name),
@@ -38,7 +40,7 @@ fn kiss_faiss_backend_helper_names_in_source() {
 
 #[test]
 fn kiss_knn_mod_dispatch_names_in_source() {
-    for name in ["checkpoint", "KnnBackend", "rebuild", "add", "search"] {
+    for name in ["checkpoint", "save_to", "KnnBackend", "rebuild", "add", "search"] {
         assert!(KNN_MOD_SRC.contains(name), "missing {name} in knn/mod.rs");
     }
 }
