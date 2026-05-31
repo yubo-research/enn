@@ -160,6 +160,8 @@ fn kiss_fullrepo_static_name_registry_extra() {
         "save_atomic",
         "bulk_add",
         "save_if_path",
+        "bulk_add_then_save",
+        "reload_from_disk_checkpoint",
         "ensure_mutable",
         "checkpoint",
         "with_index_path",

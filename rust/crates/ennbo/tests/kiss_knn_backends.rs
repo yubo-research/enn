@@ -16,6 +16,8 @@ fn kiss_usearch_backend_helper_names_in_source() {
         "ensure_mutable",
         "bulk_add",
         "save_if_path",
+        "bulk_add_then_save",
+        "reload_from_disk_checkpoint",
     ] {
         assert!(
             USEARCH_BACKEND_SRC.contains(name),

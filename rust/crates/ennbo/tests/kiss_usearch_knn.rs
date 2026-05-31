@@ -12,6 +12,8 @@ fn kiss_usearch_backend_helper_names() {
         "save_atomic",
         "bulk_add",
         "save_if_path",
+        "bulk_add_then_save",
+        "reload_from_disk_checkpoint",
         "ensure_mutable",
         "build_in_memory",
         "open_mutable",

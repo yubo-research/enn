@@ -72,9 +72,8 @@ impl USearchBackend {
             }
         }
         let mut backend = Self::build_in_memory(num_dim)?;
-        backend.bulk_add(train_scaled, 0)?;
         backend.index_path = index_path;
-        backend.save_if_path()?;
+        backend.bulk_add_then_save(train_scaled, 0)?;
         Ok(backend)
     }
 
@@ -167,6 +166,39 @@ impl USearchBackend {
         }
     }
 
+    /// Restore in-memory state from the on-disk checkpoint after a failed persist.
+    /// Falls back to an empty in-memory index when the checkpoint is missing or unreadable.
+    fn reload_from_disk_checkpoint(&mut self) -> Result<(), IndexError> {
+        let num_dim = self.num_dim;
+        let path = self.index_path.clone();
+        if let Some(ref path) = path {
+            if path.exists() {
+                if let Ok(restored) = Self::open_mutable(path, num_dim) {
+                    *self = restored;
+                    return Ok(());
+                }
+            }
+        }
+        *self = Self::build_in_memory(num_dim)?;
+        self.index_path = path;
+        Ok(())
+    }
+
+    fn bulk_add_then_save(
+        &mut self,
+        rows: &ArrayView2<f64>,
+        start_key: u64,
+    ) -> Result<(), IndexError> {
+        if let Err(e) = (|| {
+            self.bulk_add(rows, start_key)?;
+            self.save_if_path()
+        })() {
+            let _ = self.reload_from_disk_checkpoint();
+            return Err(e);
+        }
+        Ok(())
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.index.size()
     }
@@ -180,10 +212,21 @@ impl USearchBackend {
             .map(|p| p.to_path_buf())
             .or_else(|| self.index_path.clone());
         self.view_only = false;
+        if train_scaled.nrows() == 0 {
+            if let Some(ref p) = path {
+                if p.exists() {
+                    *self = Self::open_mutable(p, self.num_dim)?;
+                    self.index_path = path;
+                    return Ok(());
+                }
+            }
+            *self = Self::build_in_memory(self.num_dim)?;
+            self.index_path = path;
+            return Ok(());
+        }
         *self = Self::build_in_memory(self.num_dim)?;
         self.index_path = path;
-        self.bulk_add(train_scaled, 0)?;
-        self.save_if_path()
+        self.bulk_add_then_save(train_scaled, 0)
     }
 
     pub(crate) fn add(
@@ -191,8 +234,7 @@ impl USearchBackend {
         rows_scaled: &ArrayView2<f64>,
         start_key: u64,
     ) -> Result<(), IndexError> {
-        self.bulk_add(rows_scaled, start_key)?;
-        self.save_if_path()
+        self.bulk_add_then_save(rows_scaled, start_key)
     }
 
     pub(crate) fn search(
@@ -321,6 +363,108 @@ mod tests {
         let (d, i) = viewed.search(&array![[0.0, 0.0]].view(), 2, 2).unwrap();
         assert_eq!(i[[0, 0]], 0);
         assert!(d[[0, 0]] < 1e-5);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_add_rolls_back_memory_when_disk_save_fails() {
+        let (dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        let mut backend =
+            USearchBackend::new(2, &array![[0.0, 0.0]].view(), Some(path.clone())).unwrap();
+        assert_eq!(backend.len(), 1);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(dir.path())
+                .expect("dir metadata")
+                .permissions();
+            perms.set_mode(0o555);
+            std::fs::set_permissions(dir.path(), perms).expect("chmod read-only");
+
+            let result = backend.add(&array![[1.0, 1.0]].view(), 1);
+            assert!(result.is_err(), "save should fail on read-only directory");
+            assert_eq!(
+                backend.len(),
+                1,
+                "in-memory index must roll back when disk save fails"
+            );
+
+            let empty = ndarray::Array2::<f64>::zeros((0, 2));
+            let reopened = USearchBackend::new(2, &empty.view(), Some(path.clone())).unwrap();
+            assert_eq!(
+                reopened.len(),
+                1,
+                "on-disk checkpoint must not include uncommitted add"
+            );
+
+            let mut restore = std::fs::metadata(dir.path())
+                .expect("dir metadata")
+                .permissions();
+            restore.set_mode(0o755);
+            std::fs::set_permissions(dir.path(), restore).expect("restore write permission");
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_empty_rebuild_preserves_disk_checkpoint() {
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        let train = array![[0.0, 0.0], [1.0, 0.0]];
+        let mut backend = USearchBackend::new(2, &train.view(), Some(path.clone())).unwrap();
+        assert_eq!(backend.len(), 2);
+
+        let empty = ndarray::Array2::<f64>::zeros((0, 2));
+        backend.rebuild(&empty.view(), Some(&path)).unwrap();
+        assert_eq!(
+            backend.len(),
+            2,
+            "empty rebuild must reload existing checkpoint, not wipe memory"
+        );
+
+        let reopened = USearchBackend::new(2, &empty.view(), Some(path.clone())).unwrap();
+        assert_eq!(
+            reopened.len(),
+            2,
+            "empty rebuild must not overwrite on-disk checkpoint"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_add_clears_memory_when_reload_fails() {
+        let (dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        let mut backend =
+            USearchBackend::new(2, &array![[0.0, 0.0]].view(), Some(path.clone())).unwrap();
+        assert_eq!(backend.len(), 1);
+        std::fs::write(&path, b"corrupt").expect("corrupt checkpoint");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(dir.path())
+                .expect("dir metadata")
+                .permissions();
+            perms.set_mode(0o555);
+            std::fs::set_permissions(dir.path(), perms).expect("chmod read-only");
+
+            let result = backend.add(&array![[1.0, 1.0]].view(), 1);
+            assert!(result.is_err(), "save should fail on read-only directory");
+            assert_ne!(
+                backend.len(),
+                2,
+                "must not retain partial bulk_add when reload fails"
+            );
+
+            let mut restore = std::fs::metadata(dir.path())
+                .expect("dir metadata")
+                .permissions();
+            restore.set_mode(0o755);
+            std::fs::set_permissions(dir.path(), restore).expect("restore write permission");
+        }
         let _ = std::fs::remove_file(&path);
     }
 
