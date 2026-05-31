@@ -127,15 +127,32 @@ impl USearchBackend {
         })
     }
 
+    /// Materialize a mutable in-memory index from a view-only mmap handle without
+    /// re-reading the checkpoint from disk (`Index::restore`).
+    fn materialize_from_view(view_index: &Index, num_dim: usize) -> Result<Index, IndexError> {
+        let len = view_index.serialized_length();
+        let mut buf = vec![0u8; len];
+        view_index
+            .save_to_buffer(&mut buf)
+            .map_err(usearch_map_err)?;
+        let meta = Index::metadata_from_buffer(&buf).map_err(usearch_map_err)?;
+        validate_metadata(&meta, num_dim)?;
+        Index::restore_from_buffer(&buf).map_err(usearch_map_err)
+    }
+
     fn ensure_mutable(&mut self) -> Result<(), IndexError> {
         if !self.view_only {
             return Ok(());
         }
-        let path = self
+        let num_dim = self.num_dim;
+        let index_path = self
             .index_path
             .clone()
             .ok_or_else(|| IndexError::InvalidParameter("view-only index has no path".to_string()))?;
-        *self = Self::open_mutable(&path, self.num_dim)?;
+        let index = Self::materialize_from_view(&self.index, num_dim)?;
+        self.index = index;
+        self.view_only = false;
+        self.index_path = Some(index_path);
         Ok(())
     }
 
@@ -313,6 +330,8 @@ impl USearchBackend {
 mod tests {
     use super::*;
     use ndarray::array;
+    use std::hint::black_box;
+    use std::time::{Duration, Instant};
 
     /// Unique directory per test so nextest parallel runs do not share index files.
     fn temp_index_dir() -> (tempfile::TempDir, PathBuf) {
@@ -587,6 +606,268 @@ mod tests {
         let (d_after, i_after) = viewed.search(&query.view(), 2, 2).unwrap();
         assert_eq!(i_before[[0, 0]], i_after[[0, 0]]);
         assert!((d_before[[0, 0]] - d_after[[0, 0]]).abs() < 1e-4);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    const COLD_OPEN_DIM: usize = 10;
+    const COLD_OPEN_N_LARGE: usize = 50_000;
+    const COLD_OPEN_N_SMALL: usize = 10_000;
+    /// Conservative vs measured 5.2× at N=50k (prior KPop session).
+    const MIN_RESTORE_VS_MMAP_RATIO: f64 = 2.0;
+    const COLD_OPEN_WARMUP: usize = 3;
+    const COLD_OPEN_REPS: usize = 7;
+    const COLD_OPEN_MAX_ATTEMPTS: usize = 10;
+
+    fn deterministic_train(n: usize, dim: usize) -> ndarray::Array2<f64> {
+        ndarray::Array2::from_shape_fn((n, dim), |(i, j)| {
+            let fi = i as f64;
+            let fj = j as f64;
+            (fi * 0.001 + fj * 0.017).sin()
+        })
+    }
+
+    fn build_golden_checkpoint(path: &Path, n: usize, dim: usize) {
+        let train = deterministic_train(n, dim);
+        let _ = USearchBackend::new(dim, &train.view(), Some(path.to_path_buf()))
+            .unwrap_or_else(|e| panic!("build golden checkpoint n={n} dim={dim}: {e}"));
+    }
+
+    fn time_mmap_cold_open(path: &Path, dim: usize) -> Duration {
+        let empty = ndarray::Array2::<f64>::zeros((0, dim));
+        let start = Instant::now();
+        let backend =
+            USearchBackend::new(dim, &empty.view(), Some(path.to_path_buf())).unwrap();
+        assert!(
+            backend.view_only,
+            "empty-train cold open must use mmap view, not full restore"
+        );
+        black_box(backend.len());
+        start.elapsed()
+    }
+
+    fn time_full_restore_open(path: &Path, dim: usize) -> Duration {
+        let start = Instant::now();
+        let backend = USearchBackend::open_mutable(path, dim).unwrap();
+        assert!(
+            !backend.view_only,
+            "open_mutable must materialize a writable in-memory graph"
+        );
+        black_box(backend.len());
+        start.elapsed()
+    }
+
+    fn time_view_then_disk_restore(path: &Path, dim: usize) -> Duration {
+        let empty = ndarray::Array2::<f64>::zeros((0, dim));
+        let start = Instant::now();
+        let backend =
+            USearchBackend::new(dim, &empty.view(), Some(path.to_path_buf())).unwrap();
+        assert!(backend.view_only);
+        let upgraded = USearchBackend::open_mutable(path, dim).unwrap();
+        black_box(upgraded.len());
+        start.elapsed()
+    }
+
+    fn time_view_then_materialize(path: &Path, dim: usize) -> Duration {
+        let empty = ndarray::Array2::<f64>::zeros((0, dim));
+        let start = Instant::now();
+        let mut backend =
+            USearchBackend::new(dim, &empty.view(), Some(path.to_path_buf())).unwrap();
+        assert!(backend.view_only);
+        let row = ndarray::Array2::zeros((1, dim));
+        backend.add(&row.view(), backend.len() as u64).unwrap();
+        assert!(!backend.view_only);
+        black_box(backend.len());
+        start.elapsed()
+    }
+
+    fn median_disk_restore_vs_materialize_ratio(path: &Path, dim: usize) -> f64 {
+        for i in 0..COLD_OPEN_WARMUP {
+            if i % 2 == 0 {
+                black_box(time_view_then_disk_restore(path, dim));
+                black_box(time_view_then_materialize(path, dim));
+            } else {
+                black_box(time_view_then_materialize(path, dim));
+                black_box(time_view_then_disk_restore(path, dim));
+            }
+        }
+        let mut ratios = Vec::with_capacity(COLD_OPEN_REPS);
+        for i in 0..COLD_OPEN_REPS {
+            let (t_disk, t_mat) = if i % 2 == 0 {
+                let t_disk = time_view_then_disk_restore(path, dim);
+                let t_mat = time_view_then_materialize(path, dim);
+                (t_disk, t_mat)
+            } else {
+                let t_mat = time_view_then_materialize(path, dim);
+                let t_disk = time_view_then_disk_restore(path, dim);
+                (t_disk, t_mat)
+            };
+            let denom = t_mat.as_secs_f64().max(1e-9);
+            ratios.push(t_disk.as_secs_f64() / denom);
+        }
+        let mut sorted = ratios;
+        sorted.sort_by(|a, b| a.partial_cmp(b).expect("timing ratios must be ordered"));
+        sorted[sorted.len() / 2]
+    }
+
+    fn assert_disk_restore_slower_than_materialize(path: &Path, n: usize, dim: usize) {
+        /// After mmap cold open, upgrading via disk `restore` should cost more than
+        /// materializing from the live view handle (regression guard for ensure_mutable).
+        const MIN_DISK_VS_MATERIALIZE_RATIO: f64 = 1.15;
+        let mut last_ratio = 0.0_f64;
+        for attempt in 0..COLD_OPEN_MAX_ATTEMPTS {
+            let ratio = median_disk_restore_vs_materialize_ratio(path, dim);
+            last_ratio = ratio;
+            if ratio >= MIN_DISK_VS_MATERIALIZE_RATIO {
+                eprintln!(
+                    "usearch ensure_mutable speedup n={n} dim={dim}: disk-restore/materialize={ratio:.2}x \
+                     (min {MIN_DISK_VS_MATERIALIZE_RATIO}x, attempt {})",
+                    attempt + 1
+                );
+                return;
+            }
+            assert!(
+                attempt + 1 != COLD_OPEN_MAX_ATTEMPTS,
+                "disk-restore/materialize ratio {ratio:.2}x below min {MIN_DISK_VS_MATERIALIZE_RATIO}x \
+                 at n={n} dim={dim} after {COLD_OPEN_MAX_ATTEMPTS} attempts",
+            );
+        }
+        panic!(
+            "disk-restore/materialize ratio {last_ratio:.2}x below min {MIN_DISK_VS_MATERIALIZE_RATIO}x \
+             at n={n} dim={dim}",
+        );
+    }
+
+    fn median_restore_vs_mmap_ratio(path: &Path, dim: usize) -> f64 {
+        for i in 0..COLD_OPEN_WARMUP {
+            if i % 2 == 0 {
+                black_box(time_full_restore_open(path, dim));
+                black_box(time_mmap_cold_open(path, dim));
+            } else {
+                black_box(time_mmap_cold_open(path, dim));
+                black_box(time_full_restore_open(path, dim));
+            }
+        }
+        let mut ratios = Vec::with_capacity(COLD_OPEN_REPS);
+        for i in 0..COLD_OPEN_REPS {
+            let (t_restore, t_mmap) = if i % 2 == 0 {
+                let t_restore = time_full_restore_open(path, dim);
+                let t_mmap = time_mmap_cold_open(path, dim);
+                (t_restore, t_mmap)
+            } else {
+                let t_mmap = time_mmap_cold_open(path, dim);
+                let t_restore = time_full_restore_open(path, dim);
+                (t_restore, t_mmap)
+            };
+            let denom = t_mmap.as_secs_f64().max(1e-9);
+            ratios.push(t_restore.as_secs_f64() / denom);
+        }
+        let mut sorted = ratios;
+        sorted.sort_by(|a, b| a.partial_cmp(b).expect("timing ratios must be ordered"));
+        sorted[sorted.len() / 2]
+    }
+
+    fn assert_restore_slower_than_mmap(path: &Path, n: usize, dim: usize) {
+        let mut last_ratio = 0.0_f64;
+        for attempt in 0..COLD_OPEN_MAX_ATTEMPTS {
+            let ratio = median_restore_vs_mmap_ratio(path, dim);
+            last_ratio = ratio;
+            if ratio >= MIN_RESTORE_VS_MMAP_RATIO {
+                eprintln!(
+                    "usearch cold-open speedup n={n} dim={dim}: restore/mmap={ratio:.2}x \
+                     (min {MIN_RESTORE_VS_MMAP_RATIO}x, attempt {})",
+                    attempt + 1
+                );
+                return;
+            }
+            assert!(
+                attempt + 1 != COLD_OPEN_MAX_ATTEMPTS,
+                "restore/mmap ratio {ratio:.2}x below min {MIN_RESTORE_VS_MMAP_RATIO}x \
+                 at n={n} dim={dim} after {COLD_OPEN_MAX_ATTEMPTS} attempts",
+            );
+        }
+        panic!(
+            "restore/mmap ratio {last_ratio:.2}x below min {MIN_RESTORE_VS_MMAP_RATIO}x \
+             at n={n} dim={dim}",
+        );
+    }
+
+    #[test]
+    fn usearch_cold_open_mmap_faster_than_full_restore() {
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        build_golden_checkpoint(&path, COLD_OPEN_N_LARGE, COLD_OPEN_DIM);
+        assert_restore_slower_than_mmap(&path, COLD_OPEN_N_LARGE, COLD_OPEN_DIM);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_cold_open_mmap_speedup_metamorphic_across_n() {
+        for n in [COLD_OPEN_N_SMALL, COLD_OPEN_N_LARGE] {
+            let (_dir, path) = temp_index_dir();
+            let _ = std::fs::remove_file(&path);
+            build_golden_checkpoint(&path, n, COLD_OPEN_DIM);
+            assert_restore_slower_than_mmap(&path, n, COLD_OPEN_DIM);
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn usearch_cold_open_mmap_speedup_fuzz() {
+        use rand::RngCore;
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(42);
+        eprintln!("usearch_cold_open_mmap_speedup_fuzz seed={seed}");
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let n = 15_000 + (rng.next_u64() % 10_000) as usize;
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        build_golden_checkpoint(&path, n, COLD_OPEN_DIM);
+        assert_restore_slower_than_mmap(&path, n, COLD_OPEN_DIM);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_ensure_mutable_materialize_faster_than_disk_restore() {
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        build_golden_checkpoint(&path, COLD_OPEN_N_LARGE, COLD_OPEN_DIM);
+        assert_disk_restore_slower_than_materialize(&path, COLD_OPEN_N_LARGE, COLD_OPEN_DIM);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_ensure_mutable_speedup_metamorphic_across_n() {
+        for n in [COLD_OPEN_N_SMALL, COLD_OPEN_N_LARGE] {
+            let (_dir, path) = temp_index_dir();
+            let _ = std::fs::remove_file(&path);
+            build_golden_checkpoint(&path, n, COLD_OPEN_DIM);
+            assert_disk_restore_slower_than_materialize(&path, n, COLD_OPEN_DIM);
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn usearch_ensure_mutable_speedup_fuzz() {
+        use rand::RngCore;
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(42);
+        eprintln!("usearch_ensure_mutable_speedup_fuzz seed={seed}");
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let n = 15_000 + (rng.next_u64() % 10_000) as usize;
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        build_golden_checkpoint(&path, n, COLD_OPEN_DIM);
+        assert_disk_restore_slower_than_materialize(&path, n, COLD_OPEN_DIM);
         let _ = std::fs::remove_file(&path);
     }
 }
