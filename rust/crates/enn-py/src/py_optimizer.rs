@@ -75,6 +75,7 @@ pub fn parse_config_overrides_from_dict(
         overrides.index_driver = Some(match s.to_lowercase().as_str() {
             "exact" | "flat" => IndexDriver::Exact,
             "hnsw" => IndexDriver::HNSW,
+            "hnsw_usearch" | "usearch_hnsw" => IndexDriver::HNSWUSearch,
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {}",

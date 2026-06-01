@@ -33,12 +33,19 @@ impl KnnBackend {
         index_path: Option<std::path::PathBuf>,
     ) -> Result<Self, IndexError> {
         match driver {
-            IndexDriver::Exact => Ok(Self::Faiss(Mutex::new(FaissBackend::new(
-                num_dim,
-                driver,
-                train_scaled,
-            )?))),
-            IndexDriver::HNSW => {
+            IndexDriver::Exact | IndexDriver::HNSW => {
+                if index_path.is_some() {
+                    return Err(IndexError::InvalidParameter(
+                        "index_path requires IndexDriver::HNSWUSearch".to_string(),
+                    ));
+                }
+                Ok(Self::Faiss(Mutex::new(FaissBackend::new(
+                    num_dim,
+                    driver,
+                    train_scaled,
+                )?)))
+            }
+            IndexDriver::HNSWUSearch => {
                 #[cfg(feature = "usearch")]
                 {
                     if let Some(path) = index_path {
@@ -56,12 +63,10 @@ impl KnnBackend {
                 }
                 #[cfg(not(feature = "usearch"))]
                 {
-                    let _ = index_path;
-                    Ok(Self::Faiss(Mutex::new(FaissBackend::new(
-                        num_dim,
-                        driver,
-                        train_scaled,
-                    )?)))
+                    let _ = (num_dim, train_scaled, index_path);
+                    Err(IndexError::InvalidParameter(
+                        "IndexDriver::HNSWUSearch requires the `usearch` feature".to_string(),
+                    ))
                 }
             }
         }
@@ -72,6 +77,20 @@ impl KnnBackend {
             Self::Faiss(inner) => inner.lock().expect("knn mutex poisoned").len(),
             #[cfg(feature = "usearch")]
             Self::USearch(inner) => inner.lock().expect("knn mutex poisoned").len(),
+        }
+    }
+
+    pub(crate) fn memory_usage_bytes(&self) -> usize {
+        match self {
+            Self::Faiss(inner) => inner
+                .lock()
+                .expect("knn mutex poisoned")
+                .memory_usage_bytes(),
+            #[cfg(feature = "usearch")]
+            Self::USearch(inner) => inner
+                .lock()
+                .expect("knn mutex poisoned")
+                .memory_usage_bytes(),
         }
     }
 
@@ -137,16 +156,6 @@ impl KnnBackend {
         }
     }
 
-    #[cfg(feature = "usearch")]
-    pub(crate) fn save_to(&self, path: &Path) -> Result<(), IndexError> {
-        match self {
-            Self::Faiss(_) => Ok(()),
-            Self::USearch(inner) => inner
-                .lock()
-                .expect("knn mutex poisoned")
-                .save_atomic(path),
-        }
-    }
 }
 
 pub(crate) fn arr2_rows_to_f32(a: &ArrayView2<f64>) -> Vec<f32> {
@@ -207,17 +216,36 @@ mod knn_backend_tests {
     }
 
     #[test]
-    fn knn_backend_faiss_hnsw_without_usearch_feature() {
+    fn knn_backend_faiss_hnsw() {
         let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
-        #[cfg(not(feature = "usearch"))]
-        {
-            let backend = KnnBackend::new(2, IndexDriver::HNSW, &train.view(), None).unwrap();
-            assert_eq!(backend.len(), 3);
-        }
-        #[cfg(feature = "usearch")]
-        {
-            let backend = KnnBackend::new(2, IndexDriver::HNSW, &train.view(), None).unwrap();
-            assert_eq!(backend.len(), 3);
+        let backend = KnnBackend::new(2, IndexDriver::HNSW, &train.view(), None).unwrap();
+        assert_eq!(backend.len(), 3);
+    }
+
+    #[cfg(feature = "usearch")]
+    #[test]
+    fn knn_backend_usearch_hnsw() {
+        let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        let backend = KnnBackend::new(2, IndexDriver::HNSWUSearch, &train.view(), None).unwrap();
+        assert_eq!(backend.len(), 3);
+        assert!(matches!(backend, KnnBackend::USearch(_)));
+    }
+
+    #[cfg(feature = "usearch")]
+    #[test]
+    fn knn_backend_hnsw_routes_to_faiss_with_usearch_feature() {
+        let train = array![[0.0, 0.0], [1.0, 0.0]];
+        let backend = KnnBackend::new(2, IndexDriver::HNSW, &train.view(), None).unwrap();
+        assert!(matches!(backend, KnnBackend::Faiss(_)));
+    }
+
+    #[cfg(not(feature = "usearch"))]
+    #[test]
+    fn knn_backend_hnsw_usearch_without_feature_errors() {
+        let train = array![[0.0, 0.0], [1.0, 0.0]];
+        match KnnBackend::new(2, IndexDriver::HNSWUSearch, &train.view(), None) {
+            Err(e) => assert!(e.to_string().contains("usearch")),
+            Ok(_) => panic!("expected HNSWUSearch without usearch feature to error"),
         }
     }
 

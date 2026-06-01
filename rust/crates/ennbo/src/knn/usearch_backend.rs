@@ -231,6 +231,11 @@ impl USearchBackend {
         self.index.size()
     }
 
+    /// Resident RAM used by the in-memory USearch index (library estimate, <10% error).
+    pub(crate) fn memory_usage_bytes(&self) -> usize {
+        self.index.memory_usage()
+    }
+
     pub(crate) fn rebuild(
         &mut self,
         train_scaled: &ArrayView2<f64>,
@@ -275,6 +280,7 @@ impl USearchBackend {
         self.persist_to_disk()
     }
 
+    #[cfg(test)]
     pub(crate) fn is_dirty(&self) -> bool {
         self.dirty
     }
@@ -314,16 +320,6 @@ impl USearchBackend {
         Ok(pad_neighbor_cols_to_search_k(d, idx, search_k))
     }
 
-    pub(crate) fn save_atomic(&mut self, path: &Path) -> Result<(), IndexError> {
-        if self.view_only {
-            return Ok(());
-        }
-        atomic_save(&self.index, path)?;
-        if self.index_path.as_deref() == Some(path) {
-            self.dirty = false;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]

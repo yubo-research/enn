@@ -120,6 +120,8 @@ def test_enn_index_driver_enum():
     from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
     assert ENNIndexDriver.FLAT != ENNIndexDriver.HNSW
+    assert ENNIndexDriver.HNSW != ENNIndexDriver.HNSW_USEARCH
+    assert ENNIndexDriver.FLAT != ENNIndexDriver.HNSW_USEARCH
 
 
 def test_num_candidates_fn_protocol():

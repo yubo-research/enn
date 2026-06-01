@@ -160,9 +160,8 @@ def test_index_search_neighbor_lookup_not_much_slower_than_faiss_only(
     )
 
 
-def _posterior_self_search_median_seconds(
-    *, tie_break_neighbors: bool, reps: int = 8
-) -> float:
+def test_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
+    """posterior(train_x) tie-break-on must track tie-break-off at n=1024."""
     rng = np.random.default_rng(0)
     n, d, m = 1024, 10, 5
     x = rng.standard_normal((n, d))
@@ -171,47 +170,25 @@ def _posterior_self_search_median_seconds(
     params = ENNParams(
         k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
     )
-    flags = PosteriorFlags(tie_break_neighbors=tie_break_neighbors)
 
-    def run() -> None:
-        model.posterior(x, params=params, flags=flags)
+    def run_off() -> None:
+        model.posterior(
+            x,
+            params=params,
+            flags=PosteriorFlags(tie_break_neighbors=False),
+        )
 
-    for _ in range(5):
-        run()
-    return _median_seconds(run, reps=reps)
+    def run_on() -> None:
+        model.posterior(
+            x,
+            params=params,
+            flags=PosteriorFlags(tie_break_neighbors=True),
+        )
 
-
-def test_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
-    """posterior(train_x) tie-break-on must track tie-break-off at n=1024."""
-    t_off = _posterior_self_search_median_seconds(tie_break_neighbors=False)
-    t_on = _posterior_self_search_median_seconds(tie_break_neighbors=True)
-    ratio = t_on / max(t_off, 1e-12)
+    ratio = _median_paired_ratio(run_on, run_off, warmup=12, reps=25)
     assert ratio <= 1.15, (
-        f"tie-break posterior must be <= 1.15x no-tie-break at n=1024, "
-        f"got {ratio:.2f}x (t_on={t_on:.4f}s t_off={t_off:.4f}s)"
+        f"tie-break posterior must be <= 1.15x no-tie-break at n=1024, got {ratio:.2f}x"
     )
-
-
-def _lattice_posterior_self_search_median_seconds(
-    *, tie_break_neighbors: bool, reps: int = 8
-) -> float:
-    """1D grid tiled to d=10; tie-heavy self-search (regression from PR #29)."""
-    n, d = 1024, 10
-    x = np.linspace(0.0, 1.0, n)[:, None]
-    x = np.tile(x, (1, d))
-    y = np.sin(8.0 * np.pi * x[:, 0:1])
-    model = EpistemicNearestNeighbors(x, y)
-    params = ENNParams(
-        k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
-    )
-    flags = PosteriorFlags(tie_break_neighbors=tie_break_neighbors)
-
-    def run() -> None:
-        model.posterior(x, params=params, flags=flags)
-
-    for _ in range(5):
-        run()
-    return _median_seconds(run, reps=reps)
 
 
 def test_lattice_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
@@ -319,7 +296,10 @@ def test_posterior_self_search_not_slower_than_9eaa27_baseline(
             max_index_vs_faiss = float(scenario["max_index_vs_faiss_tie_break"])
         else:
             max_index_vs_faiss = float(scenario["max_index_vs_faiss"])
-        max_posterior_vs_index = float(scenario["max_posterior_vs_index"])
+        if tie_break_neighbors and "max_posterior_vs_index_tie_break" in scenario:
+            max_posterior_vs_index = float(scenario["max_posterior_vs_index_tie_break"])
+        else:
+            max_posterior_vs_index = float(scenario["max_posterior_vs_index"])
         assert index_vs_faiss <= max_index_vs_faiss, (
             f"{scenario['name']} tie_break={tie_break_neighbors}: "
             f"index/faiss={index_vs_faiss:.3f}x exceeds cap {max_index_vs_faiss:.2f}x "

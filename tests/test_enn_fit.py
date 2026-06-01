@@ -11,6 +11,7 @@ def _fit_model(
     params_warm_start=None,
     infer_aleatoric_variance_scale: bool = True,
 ):
+    from enn.enn.enn_fit import ENNIncrementalDelta, enn_fit
     from enn.enn.enn_fitter import ENNStatefulFitter
 
     fitter = ENNStatefulFitter(
@@ -18,12 +19,16 @@ def _fit_model(
         rng=rng,
         infer_aleatoric_variance_scale=infer_aleatoric_variance_scale,
     )
-    fitter.tell(model.train_x, model.train_y, model.train_yvar)
-    return fitter.ask(
+    return enn_fit(
         model,
+        k=k,
         num_fit_candidates=num_fit_candidates,
         num_fit_samples=num_fit_samples,
+        rng=rng,
         params_warm_start=params_warm_start,
+        incremental=ENNIncrementalDelta(
+            fitter, model.train_x, model.train_y, model.train_yvar
+        ),
     )
 
 
@@ -111,6 +116,7 @@ def _run_incremental_fit_sweep(x_train, y_train, y_var_train, sample_sizes):
     import numpy as np
 
     from enn.enn.enn_class import EpistemicNearestNeighbors
+    from enn.enn.enn_fit import ENNIncrementalDelta, enn_fit
     from enn.enn.enn_fitter import ENNStatefulFitter
 
     incremental_model = EpistemicNearestNeighbors(
@@ -128,12 +134,14 @@ def _run_incremental_fit_sweep(x_train, y_train, y_var_train, sample_sizes):
         row_y = y.reshape(1, -1)
         row_yvar = y_var.reshape(1, -1)
         incremental_model.add(row_x, row_y, row_yvar)
-        fitter.tell(row_x, row_y, row_yvar)
-        params_warm_start = fitter.ask(
+        params_warm_start = enn_fit(
             incremental_model,
+            k=10,
             num_fit_candidates=1,
             num_fit_samples=100,
+            rng=np.random.default_rng(4242),
             params_warm_start=params_warm_start,
+            incremental=ENNIncrementalDelta(fitter, row_x, row_y, row_yvar),
         )
         if num_fit_samples in sample_sizes:
             captured.append(

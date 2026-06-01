@@ -43,6 +43,7 @@ impl PyEpistemicNearestNeighbors {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
             "HNSW" | "hnsw" => ennbo::IndexDriver::HNSW,
+            "HNSW_USEARCH" | "hnsw_usearch" | "usearch_hnsw" => ennbo::IndexDriver::HNSWUSearch,
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {index_driver}"
@@ -88,6 +89,12 @@ impl PyEpistemicNearestNeighbors {
     fn sync_index(&self) -> PyResult<()> {
         self.inner
             .sync_index()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn index_memory_bytes(&self) -> PyResult<usize> {
+        self.inner
+            .index_memory_bytes()
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 

@@ -12,10 +12,10 @@ endif
 all:
 	maturin build --release $(MATURIN_AUDITWHEEL)
 
-# Install the mixed Python/Rust package in editable mode.
+# Install the mixed Python/Rust package in editable mode (USearch always on; see pyproject [tool.maturin]).
 install:
 	@echo "Building and installing Python/Rust package (see pyproject [tool.maturin])..."
-	maturin develop --release
+	maturin develop --release --uv
 	@echo "Installation complete!"
 
 # Run all tests (Rust and Python)
@@ -24,10 +24,6 @@ test: rust-test python-test
 # Run Rust tests only
 rust-test:
 	cd rust && cargo nextest run
-
-# Run Rust tests with optional USearch HNSW backend
-rust-test-usearch:
-	cd rust && cargo nextest run -p ennbo --features usearch
 
 # Run Python tests only
 python-test:

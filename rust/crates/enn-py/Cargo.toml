@@ -15,6 +15,10 @@ readme = "../../../README.md"
 name = "enn_rust"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["usearch"]
+usearch = ["ennbo/usearch"]
+
 [build-dependencies]
 ennbo = { path = "../ennbo", version = "0.2" }
 

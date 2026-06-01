@@ -16,7 +16,10 @@ pub enum IndexError {
 pub enum IndexDriver {
     #[default]
     Exact,
+    /// Faiss HNSW32 (in-memory).
     HNSW,
+    /// USearch HNSW (requires `usearch` feature; supports optional file-backed index).
+    HNSWUSearch,
 }
 
 pub struct ENNIndex {
@@ -209,6 +212,11 @@ impl ENNIndex {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Approximate RAM used by the KNN index (not on-disk checkpoint size).
+    pub fn memory_usage_bytes(&self) -> usize {
+        self.inner.memory_usage_bytes()
+    }
 }
 
 #[cfg(test)]
@@ -330,12 +338,12 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
         #[test]
         fn test_hnsw_usearch_search() {
-            run_hnsw_search_tests(|train_x| index_unit(train_x, IndexDriver::HNSW));
+            run_hnsw_search_tests(|train_x| index_unit(train_x, IndexDriver::HNSWUSearch));
         }
 
         #[test]
         fn test_hnsw_usearch_regression_all_indices_valid() {
-            run_hnsw_regression_test(|train_x| index_unit(train_x, IndexDriver::HNSW));
+            run_hnsw_regression_test(|train_x| index_unit(train_x, IndexDriver::HNSWUSearch));
         }
 
         #[test]
@@ -349,7 +357,7 @@ mod tests {
                 2,
                 array![1.0, 1.0],
                 false,
-                IndexDriver::HNSW,
+                IndexDriver::HNSWUSearch,
                 path.clone(),
             )
             .unwrap();
@@ -362,7 +370,7 @@ mod tests {
                 2,
                 array![1.0, 1.0],
                 false,
-                IndexDriver::HNSW,
+                IndexDriver::HNSWUSearch,
                 path.clone(),
             )
             .unwrap();
@@ -374,7 +382,7 @@ mod tests {
                 2,
                 array![1.0, 1.0],
                 false,
-                IndexDriver::HNSW,
+                IndexDriver::HNSWUSearch,
                 path.clone(),
             )
             .unwrap();
@@ -393,7 +401,7 @@ mod tests {
                 2,
                 array![1.0, 1.0],
                 false,
-                IndexDriver::HNSW,
+                IndexDriver::HNSWUSearch,
                 path.clone(),
             )
             .unwrap();
@@ -426,7 +434,7 @@ mod tests {
             let flat =
                 ENNIndex::new(train_x.clone(), dim, x_scale.clone(), false, IndexDriver::Exact)
                     .unwrap();
-            let hnsw = ENNIndex::new(train_x, dim, x_scale, false, IndexDriver::HNSW).unwrap();
+            let hnsw = ENNIndex::new(train_x, dim, x_scale, false, IndexDriver::HNSWUSearch).unwrap();
             let mut total_jaccard = 0.0f64;
             for qrow in query.rows() {
                 let q = qrow.insert_axis(Axis(0));

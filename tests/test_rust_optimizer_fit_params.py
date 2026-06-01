@@ -14,6 +14,7 @@ from enn.turbo.config import (
     ENNSurrogateConfig,
     turbo_enn_config,
 )
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.rust_optimizer import _config_to_rust_overrides
 
 
@@ -63,6 +64,16 @@ def test_both_fit_params_passed_to_rust_overrides():
     assert "num_fit_candidates" in overrides
     assert overrides["num_fit_samples"] == 50
     assert overrides["num_fit_candidates"] == 200
+
+
+def test_rust_optimizer_passes_hnsw_usearch_index_driver():
+    config = turbo_enn_config(
+        enn=ENNSurrogateConfig(index_driver=ENNIndexDriver.HNSW_USEARCH)
+    )
+    overrides = _config_to_rust_overrides(config)
+
+    assert overrides is not None
+    assert overrides["index_driver"] == "hnsw_usearch"
 
 
 def test_none_fit_params_not_in_overrides():

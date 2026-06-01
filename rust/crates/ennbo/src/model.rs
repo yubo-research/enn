@@ -215,6 +215,12 @@ impl EpistemicNearestNeighbors {
         self.ensure_index_sync()
     }
 
+    /// RAM used by the KNN index after the last successful sync (not disk checkpoints).
+    pub fn index_memory_bytes(&self) -> Result<usize, ENNError> {
+        self.ensure_index_sync()?;
+        Ok(self.index.memory_usage_bytes())
+    }
+
     /// Whether the FAISS index is marked stale (full rebuild required on next sync).
     pub fn is_index_stale(&self) -> bool {
         *self

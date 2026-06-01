@@ -16,6 +16,9 @@ fn faiss_spec(driver: IndexDriver) -> &'static str {
     match driver {
         IndexDriver::Exact => "Flat",
         IndexDriver::HNSW => "HNSW32",
+        IndexDriver::HNSWUSearch => {
+            panic!("HNSWUSearch must not be routed to FaissBackend")
+        }
     }
 }
 
@@ -53,6 +56,32 @@ impl FaissBackend {
 
     pub(crate) fn len(&self) -> usize {
         self.inner.ntotal() as usize
+    }
+
+    /// Approximate in-memory footprint of vector storage plus HNSW graph links.
+    pub(crate) fn memory_usage_bytes(&self) -> usize {
+        let n = self.inner.ntotal() as usize;
+        let d = self.inner.d() as usize;
+        if n == 0 {
+            return 0;
+        }
+        let vector_bytes = n
+            .saturating_mul(d)
+            .saturating_mul(std::mem::size_of::<f32>());
+        match self.driver {
+            IndexDriver::Exact => vector_bytes,
+            IndexDriver::HNSW => {
+                const M: usize = 32;
+                let level0_links = n
+                    .saturating_mul(M)
+                    .saturating_mul(2)
+                    .saturating_mul(std::mem::size_of::<i64>());
+                vector_bytes.saturating_add(level0_links)
+            }
+            IndexDriver::HNSWUSearch => {
+                panic!("HNSWUSearch must not be routed to FaissBackend")
+            }
+        }
     }
 
     pub(crate) fn rebuild(&mut self, train_scaled: &ArrayView2<f64>) -> Result<(), IndexError> {

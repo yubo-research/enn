@@ -12,7 +12,7 @@ readme = "README.md"
 build = "src/ennbo_build.rs"
 
 [features]
-default = []
+default = ["usearch"]
 usearch = ["dep:usearch"]
 
 [dependencies]

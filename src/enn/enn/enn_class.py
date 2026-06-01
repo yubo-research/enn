@@ -94,6 +94,9 @@ class EpistemicNearestNeighbors:
     def sync_index(self) -> None:
         self._rust_model.sync_index()
 
+    def index_memory_bytes(self) -> int:
+        return int(self._rust_model.index_memory_bytes())
+
     @property
     def train_x(self) -> np.ndarray:
         return np.asarray(self._rust_model.train_x, dtype=float)
