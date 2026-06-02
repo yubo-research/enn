@@ -1,7 +1,7 @@
 //! ENN model Python bindings.
 
 use ennbo::traits::PosteriorComputation;
-use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray2, ToPyArray};
+use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -353,22 +353,55 @@ impl PyEpistemicNearestNeighbors {
         self.inner.scale_x_enabled()
     }
 
+    fn train_rows_at<'py>(
+        &self,
+        py: Python<'py>,
+        indices: Vec<usize>,
+    ) -> PyResult<(
+        Bound<'py, PyArray2<f64>>,
+        Bound<'py, PyArray2<f64>>,
+        Option<Bound<'py, PyArray2<f64>>>,
+    )> {
+        let (x, y, yvar) = self
+            .inner
+            .train_rows_at(&indices)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok((
+            x.into_pyarray_bound(py),
+            y.into_pyarray_bound(py),
+            yvar.map(|a| a.into_pyarray_bound(py)),
+        ))
+    }
+
     #[getter]
     fn train_x<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        Ok(self.inner.train_x().to_owned().to_pyarray_bound(py))
+        let n = self.inner.len();
+        let (x, _, _) = self
+            .inner
+            .train_rows_at(&(0..n).collect::<Vec<_>>())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(x.into_pyarray_bound(py))
     }
 
     #[getter]
     fn train_y<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        Ok(self.inner.train_y().to_owned().to_pyarray_bound(py))
+        let n = self.inner.len();
+        let (_, y, _) = self
+            .inner
+            .train_rows_at(&(0..n).collect::<Vec<_>>())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(y.into_pyarray_bound(py))
     }
 
     #[getter]
     fn train_yvar<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyArray2<f64>>>> {
+        let n = self.inner.len();
         Ok(self
             .inner
-            .train_yvar()
-            .map(|a| a.to_owned().into_pyarray_bound(py)))
+            .train_rows_at(&(0..n).collect::<Vec<_>>())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .2
+            .map(|a| a.into_pyarray_bound(py)))
     }
 
     #[getter]

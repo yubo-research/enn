@@ -142,6 +142,7 @@ fn morbo_pareto_ask_after_multiobjective_tell() {
     cfg.acquisition = AcquisitionConfig::Pareto;
     cfg.candidates.min_candidates = 32;
     cfg.candidates.num_candidates_factor = 1.0;
+    cfg.candidates.num_candidates_per_arm = Some(32);
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,
@@ -181,6 +182,8 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(302);
     let mut cfg = turbo_enn_config();
+    cfg.candidates.num_candidates_factor = 1.0;
+    cfg.candidates.num_candidates_per_arm = Some(32);
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,
@@ -239,6 +242,8 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(301);
     let mut cfg = turbo_enn_config();
+    cfg.candidates.num_candidates_factor = 1.0;
+    cfg.candidates.num_candidates_per_arm = Some(32);
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,

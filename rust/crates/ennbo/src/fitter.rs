@@ -4,7 +4,6 @@ use ndarray::{Array1, ArrayView2, Axis};
 use rand::Rng;
 
 use crate::error::ENNError;
-use crate::fit::subsample_loglik;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::ENNParams;
 
@@ -201,13 +200,22 @@ impl ENNFitter {
             })?;
             paramss.push(warm_params);
         }
-        let train_x = model.train_x();
-        let train_y = model.train_y();
+        let indices: Vec<usize> = {
+            let n = model.len();
+            let p_actual = num_fit_samples.min(n);
+            if p_actual == n {
+                (0..n).collect()
+            } else {
+                use rand::seq::index::sample;
+                sample(rng, n, p_actual).into_iter().collect()
+            }
+        };
+        let (train_x, train_y, _) = model.train_rows_at(&indices)?;
         let y_std = self.y_std();
-        let logliks = subsample_loglik(
+        let logliks = crate::fit::subsample_loglik(
             model,
-            &train_x,
-            &train_y,
+            &train_x.view(),
+            &train_y.view(),
             &paramss,
             num_fit_samples,
             rng,

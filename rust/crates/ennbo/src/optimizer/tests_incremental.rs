@@ -30,16 +30,15 @@ fn scale_x_false_index_not_stale_after_add() {
 }
 
 #[test]
-fn scale_x_true_index_stale_after_add() {
+fn scale_x_true_add_to_nonempty_errors() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
     let mut model =
         EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Exact).unwrap();
-    model.sync_index().unwrap();
     let x_add = array![[0.5, 0.5]];
     let y_add = array![[0.5]];
-    model.add(&x_add.view(), &y_add.view(), None).unwrap();
-    assert!(model.is_index_stale());
+    let err = model.add(&x_add.view(), &y_add.view(), None);
+    assert!(err.is_err(), "scale_x=true append to non-empty model must error");
 }
 
 #[test]
@@ -85,6 +84,26 @@ fn enn_surrogate_fit_append_grows_model() {
     let y1 = array![[1.5]];
     sur.fit_append(&x1.view(), &y1.view(), None, &mut rng).unwrap();
     assert_eq!(sur.model().unwrap().num_obs(), 3);
+}
+
+#[test]
+fn tell_rejects_changing_num_metrics() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(88);
+    let cfg = turbo_enn_config();
+    let mut opt = Optimizer::new(bounds, cfg, &mut rng).unwrap();
+    let x0 = array![[0.2, 0.3]];
+    let y0 = array![[1.0]];
+    opt.tell(&x0.view(), &y0.view(), &mut rng).unwrap();
+    let x1 = array![[0.4, 0.5], [0.6, 0.7]];
+    let y1 = array![[2.0, 3.0], [4.0, 5.0]];
+    let err = opt.tell(&x1.view(), &y1.view(), &mut rng);
+    assert!(err.is_err());
+    let msg = err.unwrap_err().to_string();
+    assert!(
+        msg.contains("unsupported"),
+        "expected unsupported metrics change error, got: {msg}"
+    );
 }
 
 #[test]

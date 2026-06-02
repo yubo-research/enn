@@ -50,12 +50,12 @@ pub use config::{
 };
 pub use draw::{Candidates, ConditionalPosteriorDrawInternals, DrawInternals, NeighborData};
 pub use error::{ENNError, EPS_VAR};
-pub use fit::subsample_loglik;
 pub use fitter::ENNFitter;
 pub use hash::{normal_hash_batch_multi_seed, normal_hash_batch_multi_seed_fast};
 pub use hypervolume::hypervolume_2d_max;
 pub use incumbent_tracker::IncrementalIncumbentTracker;
 pub use index::{ENNIndex, IndexDriver, IndexError};
+pub use fit::{subsample_loglik, subsample_loglik_model};
 pub use model::EpistemicNearestNeighbors;
 pub use optimizer::{ObservationDelta, Optimizer, Telemetry};
 pub use optimizer_factory::{create_optimizer_enn, create_optimizer_lhd, create_optimizer_zero};

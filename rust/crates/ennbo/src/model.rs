@@ -34,6 +34,18 @@ impl RowStorage {
             .expect("row-major view")
     }
 
+    fn gather_rows(&self, indices: &[usize]) -> Array2<f64> {
+        let mut out = Array2::zeros((indices.len(), self.ncols));
+        for (new_i, &old_i) in indices.iter().enumerate() {
+            out.row_mut(new_i).assign(&self.view().row(old_i));
+        }
+        out
+    }
+
+    fn row_owned(&self, i: usize) -> Array1<f64> {
+        self.view().row(i).to_owned()
+    }
+
     fn push_rows(&mut self, extra: &ArrayView2<f64>) -> Result<(), ENNError> {
         if extra.ncols() != self.ncols {
             return Err(ENNError::InvalidShape {
@@ -192,6 +204,7 @@ impl EpistemicNearestNeighbors {
             driver,
             index_path,
         )?;
+        let index_synced_obs = index.len().min(num_obs);
 
         let train_x_rows = RowStorage::from_array2(train_x);
         let train_y_rows = RowStorage::from_array2(train_y);
@@ -213,7 +226,7 @@ impl EpistemicNearestNeighbors {
             x_sum,
             x_sumsq,
             index_stale: Mutex::new(false),
-            index_synced_obs: Mutex::new(num_obs),
+            index_synced_obs: Mutex::new(index_synced_obs),
         })
     }
 
@@ -241,7 +254,17 @@ impl EpistemicNearestNeighbors {
             .index_synced_obs
             .lock()
             .expect("index_synced_obs mutex poisoned");
-        if *synced >= self.num_obs {
+        if *synced > self.index.len() {
+            *synced = self.index.len();
+        }
+        if self.num_obs > 0 && self.index.len() != self.num_obs {
+            let train_x_scaled = self.train_x_rows.view().to_owned();
+            self.index
+                .rebuild_from_scaled(train_x_scaled, self.x_scale.clone())?;
+            *synced = self.num_obs;
+            return Ok(());
+        }
+        if *synced >= self.num_obs && self.index.len() >= self.num_obs {
             return Ok(());
         }
         let train_view = self.train_x_rows.view();
@@ -278,48 +301,46 @@ impl EpistemicNearestNeighbors {
             .expect("index_stale mutex poisoned")
     }
 
-    /// Add new observations to the model.
+    fn validate_add(
+        &self,
+        x: &ArrayView2<f64>,
+        y: &ArrayView2<f64>,
+        yvar: Option<&ArrayView2<f64>>,
+    ) -> Option<ENNError> {
+        if self.num_obs > 0 && self.scale_x {
+            return Some(ENNError::InvalidParameter(
+                "scale_x must be false when adding to a non-empty model".to_string(),
+            ));
+        }
+        if x.nrows() != y.nrows() || x.ncols() != self.num_dim || y.ncols() != self.num_metrics {
+            return Some(ENNError::InvalidShape {
+                expected: vec![y.nrows(), self.num_metrics],
+                got: vec![x.nrows(), x.ncols()],
+            });
+        }
+        match (yvar, self.train_yvar_rows.is_some()) {
+            (Some(yv), _) if yv.shape() != y.shape() => Some(ENNError::InvalidShape {
+                expected: y.shape().to_vec(),
+                got: yv.shape().to_vec(),
+            }),
+            (Some(_), false) if self.num_obs > 0 => Some(ENNError::InvalidParameter(
+                "yvar provided but model has no existing yvar".to_string(),
+            )),
+            (None, true) => Some(ENNError::InvalidParameter(
+                "yvar must be provided if model has existing yvar".to_string(),
+            )),
+            _ => None,
+        }
+    }
+
     pub fn add(
         &mut self,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        if x.nrows() != y.nrows() {
-            return Err(ENNError::InvalidShape {
-                expected: vec![y.nrows(), x.ncols()],
-                got: vec![x.nrows(), x.ncols()],
-            });
-        }
-        if x.ncols() != self.num_dim {
-            return Err(ENNError::InvalidShape {
-                expected: vec![x.nrows(), self.num_dim],
-                got: vec![x.nrows(), x.ncols()],
-            });
-        }
-        if y.ncols() != self.num_metrics {
-            return Err(ENNError::InvalidShape {
-                expected: vec![y.nrows(), self.num_metrics],
-                got: vec![y.nrows(), y.ncols()],
-            });
-        }
-
-        if let Some(yv) = yvar {
-            if yv.shape() != y.shape() {
-                return Err(ENNError::InvalidShape {
-                    expected: y.shape().to_vec(),
-                    got: yv.shape().to_vec(),
-                });
-            }
-            if self.train_yvar_rows.is_none() && self.num_obs > 0 {
-                return Err(ENNError::InvalidParameter(
-                    "yvar provided but model has no existing yvar".to_string(),
-                ));
-            }
-        } else if self.train_yvar_rows.is_some() {
-            return Err(ENNError::InvalidParameter(
-                "yvar must be provided if model has existing yvar".to_string(),
-            ));
+        if let Some(err) = self.validate_add(x, y, yvar) {
+            return Err(err);
         }
         if x.nrows() > 0 {
             self.train_x_rows.push_rows(x)?;
@@ -354,11 +375,6 @@ impl EpistemicNearestNeighbors {
     /// Get the number of observations.
     pub fn len(&self) -> usize {
         self.num_obs
-    }
-
-    /// Check if model is empty.
-    pub fn is_empty(&self) -> bool {
-        self.num_obs == 0
     }
 
     /// Get number of outputs.
@@ -422,12 +438,33 @@ impl EpistemicNearestNeighbors {
         Ok(result)
     }
 
-    /// Training inputs (read-only).
+    /// Gather training rows by global index.
+    pub fn train_rows_at(
+        &self,
+        indices: &[usize],
+    ) -> Result<(Array2<f64>, Array2<f64>, Option<Array2<f64>>), ENNError> {
+        for &i in indices {
+            if i >= self.num_obs {
+                return Err(ENNError::InvalidParameter(format!(
+                    "train_rows_at index {i} out of range [0, {})",
+                    self.num_obs
+                )));
+            }
+        }
+        let x = self.train_x_rows.gather_rows(indices);
+        let y = self.train_y_rows.gather_rows(indices);
+        let yvar = self
+            .train_yvar_rows
+            .as_ref()
+            .map(|r| r.gather_rows(indices));
+        Ok((x, y, yvar))
+    }
+
+    /// Training inputs (deprecated for large N; use `train_rows_at`).
     pub fn train_x(&self) -> ArrayView2<'_, f64> {
         self.train_x_rows.view()
     }
 
-    /// Training targets (read-only).
     pub fn train_y(&self) -> ArrayView2<'_, f64> {
         self.train_y_rows.view()
     }
@@ -608,5 +645,182 @@ mod tests {
 
         model.sync_index().unwrap();
         model.sync_index().unwrap();
+    }
+
+    #[cfg(feature = "usearch")]
+    #[test]
+    fn stale_smaller_checkpoint_with_full_train_reconciles_before_search() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("index.usearch");
+        let train2 = array![[0.0, 0.0], [1.0, 0.0]];
+        let train_y2 = array![[0.0], [1.0]];
+        EpistemicNearestNeighbors::new_with_index_path(
+            train2,
+            train_y2,
+            None,
+            false,
+            IndexDriver::HNSWUSearch,
+            Some(path.clone()),
+        )
+        .expect("seed checkpoint");
+
+        let train5 = array![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [5.0, 5.0],
+        ];
+        let train_y5 = array![[0.0], [1.0], [2.0], [3.0], [4.0]];
+        let model = EpistemicNearestNeighbors::new_with_index_path(
+            train5.clone(),
+            train_y5,
+            None,
+            false,
+            IndexDriver::HNSWUSearch,
+            Some(path),
+        )
+        .expect("reopen with full train");
+        assert_eq!(model.len(), 5);
+        assert_eq!(model.index.len(), 5);
+
+        let idx = model
+            .neighbors(&array![[4.9, 4.9]].view(), 1, false)
+            .expect("search");
+        assert_eq!(idx[[0, 0]], 4);
+
+        let exact = EpistemicNearestNeighbors::new(
+            train5,
+            array![[0.0], [1.0], [2.0], [3.0], [4.0]],
+            None,
+            false,
+            IndexDriver::Exact,
+        )
+        .expect("exact reference");
+        let exact_idx = exact
+            .neighbors(&array![[4.9, 4.9]].view(), 1, false)
+            .expect("exact search");
+        assert_eq!(idx[[0, 0]], exact_idx[[0, 0]]);
+    }
+
+    #[cfg(feature = "usearch")]
+    #[test]
+    fn view_only_reopen_then_add_neighbors_use_row_ordinals() {
+        use crate::params::{ENNParams, PosteriorFlags};
+        use crate::traits::PosteriorComputation;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("index.usearch");
+        let n_seed = 100usize;
+        let mut train_x =
+            ndarray::Array2::zeros((n_seed, 2));
+        let mut train_y = ndarray::Array2::zeros((n_seed, 1));
+        for i in 0..n_seed {
+            train_x[[i, 0]] = i as f64 * 0.01;
+            train_x[[i, 1]] = (i as f64 * 0.02).sin();
+            train_y[[i, 0]] = i as f64;
+        }
+        EpistemicNearestNeighbors::new_with_index_path(
+            train_x,
+            train_y,
+            None,
+            false,
+            IndexDriver::HNSWUSearch,
+            Some(path.clone()),
+        )
+        .expect("seed checkpoint");
+
+        let empty_x = ndarray::Array2::<f64>::zeros((0, 2));
+        let empty_y = ndarray::Array2::<f64>::zeros((0, 1));
+        let mut model = EpistemicNearestNeighbors::new_with_index_path(
+            empty_x,
+            empty_y,
+            None,
+            false,
+            IndexDriver::HNSWUSearch,
+            Some(path),
+        )
+        .expect("view-only reopen");
+        assert_eq!(model.len(), 0);
+        assert!(model.index.len() >= n_seed);
+
+        model
+            .add(&array![[0.1, 0.2]].view(), &array![[1.0]].view(), None)
+            .unwrap();
+        assert_eq!(model.len(), 1);
+
+        let idx = model
+            .neighbors(&array![[0.1, 0.2]].view(), 1, false)
+            .expect("neighbors");
+        assert_eq!(
+            idx[[0, 0]], 0,
+            "neighbor index must be a row ordinal, not a stale USearch key"
+        );
+
+        let params = ENNParams {
+            k_num_neighbors: 1,
+            epistemic_variance_scale: 1.0,
+            aleatoric_variance_scale: 0.0,
+        };
+        model
+            .posterior(
+                &array![[0.1, 0.2]].view(),
+                &params,
+                &PosteriorFlags::default(),
+            )
+            .expect("posterior must not panic on row gather");
+    }
+
+    #[cfg(feature = "usearch")]
+    #[test]
+    fn reopen_with_wrong_checkpoint_prefix_rebuilds_before_search() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("index.usearch");
+        let train2 = array![[0.0, 0.0], [1.0, 0.0]];
+        let train_y2 = array![[0.0], [1.0]];
+        EpistemicNearestNeighbors::new_with_index_path(
+            train2,
+            train_y2,
+            None,
+            false,
+            IndexDriver::HNSWUSearch,
+            Some(path.clone()),
+        )
+        .expect("seed checkpoint");
+
+        let train2_wrong = array![[9.0, 9.0], [8.0, 8.0]];
+        let train_y_wrong = array![[0.0], [1.0]];
+        let model = EpistemicNearestNeighbors::new_with_index_path(
+            train2_wrong.clone(),
+            train_y_wrong,
+            None,
+            false,
+            IndexDriver::HNSWUSearch,
+            Some(path),
+        )
+        .expect("reopen with mismatched prefix");
+
+        let idx = model
+            .neighbors(&array![[9.05, 9.05]].view(), 1, false)
+            .expect("search");
+        assert_eq!(idx[[0, 0]], 0);
+
+        let exact = EpistemicNearestNeighbors::new(
+            train2_wrong,
+            array![[0.0], [1.0]],
+            None,
+            false,
+            IndexDriver::Exact,
+        )
+        .expect("exact reference");
+        let exact_idx = exact
+            .neighbors(&array![[9.05, 9.05]].view(), 1, false)
+            .expect("exact search");
+        assert_eq!(idx[[0, 0]], exact_idx[[0, 0]]);
     }
 }

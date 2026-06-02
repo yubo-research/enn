@@ -96,6 +96,28 @@ fn compute_single_loglik(
 ///
 /// # Returns
 /// Vector of log-likelihoods, one per parameter set
+/// Subsample log-likelihood using row indices into the model (no full-dataset views).
+pub fn subsample_loglik_model<R: Rng>(
+    model: &EpistemicNearestNeighbors,
+    paramss: &[ENNParams],
+    p: usize,
+    rng: &mut R,
+    y_std: Option<&ArrayView1<f64>>,
+) -> Result<Vec<f64>, ENNError> {
+    let n = model.len();
+    if n == 0 || paramss.is_empty() {
+        return Ok(vec![0.0; paramss.len().max(1)]);
+    }
+    let p_actual = p.min(n);
+    let indices: Vec<usize> = if p_actual == n {
+        (0..n).collect()
+    } else {
+        sample(rng, n, p_actual).into_iter().collect()
+    };
+    let (x, y, _) = model.train_rows_at(&indices)?;
+    subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
+}
+
 pub fn subsample_loglik<R: Rng>(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -222,6 +244,23 @@ mod tests {
 
         assert_eq!(logliks.len(), 1);
         assert!(logliks[0].is_finite());
+    }
+
+    #[test]
+    fn test_subsample_loglik_model_index_path() {
+        let model = create_test_model();
+        let params = ENNParams::new(2, 1.0, 0.1).unwrap();
+        let paramss = vec![params];
+        let mut rng = StdRng::seed_from_u64(99);
+        let via_model = subsample_loglik_model(&model, &paramss, 2, &mut rng, None).unwrap();
+        let mut rng2 = StdRng::seed_from_u64(99);
+        let full_x = model.train_x();
+        let full_y = model.train_y();
+        let via_views =
+            subsample_loglik(&model, &full_x.view(), &full_y.view(), &paramss, 2, &mut rng2, None)
+                .unwrap();
+        assert_eq!(via_model.len(), via_views.len());
+        assert!(via_model[0].is_finite());
     }
 
     #[test]

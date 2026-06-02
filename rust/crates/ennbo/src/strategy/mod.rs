@@ -194,27 +194,22 @@ fn tell_common(
 ) -> Result<(), ENNError> {
     let delta = optimizer.add_observations(x, y)?;
 
-    let refit_all = optimizer
-        .surrogate()
-        .and_then(|s| s.fitted_num_metrics())
-        .is_some_and(|nm| nm != y.ncols());
-    let obs_snapshot = if refit_all {
-        (optimizer.x_obs(), optimizer.y_obs())
-    } else {
-        (None, None)
-    };
+    if let Some(nm) = optimizer.surrogate().and_then(|s| s.fitted_num_metrics()) {
+        if nm != y.ncols() {
+            return Err(ENNError::InvalidParameter(format!(
+                "y has {} metric columns but the fitted model has {nm}; changing output width is unsupported",
+                y.ncols()
+            )));
+        }
+    }
     if let Some(surrogate) = optimizer.surrogate_mut() {
         let start = std::time::Instant::now();
-        if let (Some(x_all), Some(y_all)) = obs_snapshot {
-            surrogate.fit(&x_all.view(), &y_all.view(), None, rng)?;
-        } else {
-            surrogate.fit_append(
-                &delta.x_new_view(),
-                &delta.y_new_view(),
-                None,
-                rng,
-            )?;
-        }
+        surrogate.fit_append(
+            &delta.x_new_view(),
+            &delta.y_new_view(),
+            None,
+            rng,
+        )?;
         if let Some(tel) = telemetry {
             tel.dt_fit = start.elapsed().as_secs_f64();
         }
@@ -306,57 +301,12 @@ fn ask_turbo(
         20,
     )?;
 
-    let capped_candidates = maybe_cap_selection_candidates(
-        &x_cand_unit,
-        optimizer.num_dim(),
-        optimizer.obs_count(),
-        num_arms,
-        rng,
-    );
-
     // Select arms using acquisition function (with timing)
     let start = std::time::Instant::now();
-    let selected = select_arms(optimizer, &capped_candidates.view(), num_arms, rng)?;
+    let selected = select_arms(optimizer, &x_cand_unit.view(), num_arms, rng)?;
     telemetry.dt_sel = start.elapsed().as_secs_f64();
 
     Ok(selected)
-}
-
-fn selection_candidate_cap(num_dim: usize, num_obs: usize, num_arms: usize) -> usize {
-    if let Ok(v) = std::env::var("ENN_DISABLE_SEL_CAP") {
-        if v == "1" || v.eq_ignore_ascii_case("true") {
-            return usize::MAX;
-        }
-    }
-    let min_cap = num_arms.saturating_mul(16).max(256);
-    if num_dim >= 10_000 {
-        return min_cap.max(256);
-    }
-    if num_dim >= 1_000 && num_obs >= 10_000 {
-        return min_cap.max(320);
-    }
-    if num_dim >= 1_000 {
-        return min_cap.max(384);
-    }
-    usize::MAX
-}
-
-fn maybe_cap_selection_candidates(
-    x_cand: &Array2<f64>,
-    num_dim: usize,
-    num_obs: usize,
-    num_arms: usize,
-    rng: &mut dyn RngCore,
-) -> Array2<f64> {
-    let cap = selection_candidate_cap(num_dim, num_obs, num_arms);
-    if x_cand.nrows() <= cap {
-        return x_cand.clone();
-    }
-    let mut indices: Vec<usize> = (0..x_cand.nrows()).collect();
-    use rand::seq::SliceRandom;
-    indices.shuffle(rng);
-    indices.truncate(cap);
-    select_by_indices(&x_cand.view(), &indices)
 }
 
 /// Tell for TuRBO phase.

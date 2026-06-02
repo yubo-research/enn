@@ -37,6 +37,14 @@ def test_add_rejects_wrong_output_width_without_mutating_model(scale_x):
     np.testing.assert_allclose(enn.train_x, train_x)
     np.testing.assert_allclose(enn.train_y, train_y)
 
+    if scale_x:
+        with pytest.raises(ValueError, match="scale_x must be false"):
+            enn.add(
+                np.array([[30.0, 0.0]], dtype=float), np.array([[30.0]], dtype=float)
+            )
+        assert len(enn) == 2
+        return
+
     enn.add(np.array([[30.0, 0.0]], dtype=float), np.array([[30.0]], dtype=float))
     assert len(enn) == 3
     assert enn.train_x.shape[0] == enn.train_y.shape[0]

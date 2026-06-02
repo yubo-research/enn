@@ -121,18 +121,22 @@ impl ENNSurrogate {
             return Ok(false);
         }
 
+        let prefix_indices: Vec<usize> = (0..n_old).collect();
+        let (stored_x, stored_y, stored_yvar) = model.train_rows_at(&prefix_indices)?;
         let prefix_x = x.slice(s![..n_old, ..]);
         let prefix_y = y.slice(s![..n_old, ..]);
-        let same_prefix = prefix_x
-            .iter()
-            .zip(model.train_x().iter())
-            .all(|(a, b)| (a - b).abs() < 1e-12)
+        let same_prefix = prefix_x.shape() == stored_x.shape()
+            && prefix_x
+                .iter()
+                .zip(stored_x.iter())
+                .all(|(a, b)| (a - b).abs() < 1e-12)
+            && prefix_y.shape() == stored_y.shape()
             && prefix_y
                 .iter()
-                .zip(model.train_y().iter())
+                .zip(stored_y.iter())
                 .all(|(a, b)| (a - b).abs() < 1e-12);
 
-        let same_yvar_prefix = match (model.train_yvar(), yvar) {
+        let same_yvar_prefix = match (stored_yvar.as_ref(), yvar) {
             (None, None) => true,
             (Some(_), None) | (None, Some(_)) => false,
             (Some(m_yv), Some(in_yv)) => {
@@ -170,11 +174,15 @@ impl ENNSurrogate {
             .as_ref()
             .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
         if self.fitter.is_none() {
+            let n = model.len();
+            let indices: Vec<usize> = (0..n).collect();
+            let (train_x, train_y, train_yvar) = model.train_rows_at(&indices)?;
             let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
+            let yvar_view = train_yvar.as_ref().map(|v| v.view());
             fitter.tell(
-                &model.train_x(),
-                &model.train_y(),
-                model.train_yvar().as_ref(),
+                &train_x.view(),
+                &train_y.view(),
+                yvar_view.as_ref(),
             )?;
             if let Some(p) = self.params {
                 fitter.set_params(p);

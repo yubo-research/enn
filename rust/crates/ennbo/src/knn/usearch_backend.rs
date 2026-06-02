@@ -73,7 +73,9 @@ impl USearchBackend {
                 if train_scaled.nrows() == 0 {
                     return Self::open_view_only(path, num_dim);
                 }
-                return Self::open_mutable(path, num_dim);
+                let mut backend = Self::open_mutable(path, num_dim)?;
+                Self::reconcile_with_train(&mut backend, train_scaled)?;
+                return Ok(backend);
             }
         }
         let mut backend = Self::build_in_memory(num_dim)?;
@@ -101,6 +103,56 @@ impl USearchBackend {
             view_only: true,
             dirty: false,
         })
+    }
+
+    /// True when keys `0..overlap` in the index match the train prefix (f32 storage).
+    fn overlapping_prefix_matches(
+        &self,
+        train_scaled: &ArrayView2<f64>,
+    ) -> Result<bool, IndexError> {
+        let overlap = train_scaled.nrows().min(self.len());
+        if overlap == 0 {
+            return Ok(true);
+        }
+        let dim = self.num_dim;
+        let mut stored = vec![0f32; dim];
+        for i in 0..overlap {
+            self.index
+                .get(i as u64, &mut stored)
+                .map_err(usearch_map_err)?;
+            let row = train_scaled.row(i);
+            for j in 0..dim {
+                if (f64::from(stored[j]) - row[j]).abs() > 1e-4 {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    /// After `open_mutable`, align vector count and prefix content with in-memory train.
+    fn reconcile_with_train(
+        backend: &mut Self,
+        train_scaled: &ArrayView2<f64>,
+    ) -> Result<(), IndexError> {
+        let n_train = train_scaled.nrows();
+        let n_index = backend.len();
+        if n_train > 0
+            && n_index > 0
+            && !backend.overlapping_prefix_matches(train_scaled)?
+        {
+            let path = backend.index_path.clone();
+            backend.rebuild(train_scaled, path.as_deref())?;
+            return Ok(());
+        }
+        if n_index < n_train {
+            let pending = train_scaled.slice(ndarray::s![n_index.., ..]);
+            backend.add(&pending.view(), n_index as u64)?;
+        } else if n_index > n_train {
+            let path = backend.index_path.clone();
+            backend.rebuild(train_scaled, path.as_deref())?;
+        }
+        Ok(())
     }
 
     fn open_mutable(path: &Path, num_dim: usize) -> Result<Self, IndexError> {
@@ -278,6 +330,14 @@ impl USearchBackend {
             return Ok(());
         }
         self.persist_to_disk()
+    }
+
+    /// Persist the current in-memory index to `path` (for shard sealing).
+    pub(crate) fn seal_to(&mut self, path: &Path) -> Result<(), IndexError> {
+        self.ensure_mutable()?;
+        atomic_save(&self.index, path)?;
+        self.dirty = false;
+        Ok(())
     }
 
     #[cfg(test)]
@@ -551,6 +611,55 @@ mod tests {
         assert!(!backend.is_dirty());
         let reopened = USearchBackend::new(2, &empty.view(), Some(path.clone())).unwrap();
         assert_eq!(reopened.len(), 2);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_reconcile_rebuilds_when_prefix_vectors_differ() {
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        let train2 = array![[0.0, 0.0], [1.0, 0.0]];
+        USearchBackend::new(2, &train2.view(), Some(path.clone())).unwrap();
+
+        let train2_wrong = array![[9.0, 9.0], [8.0, 8.0]];
+        let backend = USearchBackend::new(2, &train2_wrong.view(), Some(path.clone())).unwrap();
+        assert_eq!(backend.len(), 2);
+        let (_, i) = backend
+            .search(&array![[9.05, 9.05]].view(), 1, 1)
+            .unwrap();
+        assert_eq!(i[[0, 0]], 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn usearch_non_empty_train_reconciles_stale_smaller_checkpoint() {
+        let (_dir, path) = temp_index_dir();
+        let _ = std::fs::remove_file(&path);
+        let train2 = array![[0.0, 0.0], [1.0, 0.0]];
+        USearchBackend::new(2, &train2.view(), Some(path.clone())).unwrap();
+        assert_eq!(
+            USearchBackend::open_mutable(&path, 2).unwrap().len(),
+            2,
+            "golden checkpoint must have two vectors"
+        );
+
+        let train5 = array![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [5.0, 5.0],
+        ];
+        let backend = USearchBackend::new(2, &train5.view(), Some(path.clone())).unwrap();
+        assert_eq!(
+            backend.len(),
+            5,
+            "reopen with full train must append missing tail from checkpoint"
+        );
+        let (_, i) = backend
+            .search(&array![[4.9, 4.9]].view(), 1, 1)
+            .unwrap();
+        assert_eq!(i[[0, 0]], 4);
         let _ = std::fs::remove_file(&path);
     }
 

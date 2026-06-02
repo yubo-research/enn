@@ -83,6 +83,143 @@ def test_enn_index_path_requires_hnsw_usearch_driver():
         )
 
 
+def test_enn_index_path_reconciles_stale_smaller_checkpoint(tmp_path):
+    """Full in-memory train + smaller on-disk checkpoint must not skip sync."""
+    index_path = tmp_path / "index.usearch"
+    train2 = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
+    train_y = np.zeros((2, 1), dtype=float)
+    try:
+        EpistemicNearestNeighbors(
+            train2,
+            train_y,
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+    except ValueError as exc:
+        if "usearch" in str(exc).lower():
+            pytest.skip("ennbo built without usearch feature")
+        raise
+
+    train5 = np.array(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [5.0, 5.0],
+        ],
+        dtype=float,
+    )
+    train_y5 = np.arange(5.0, dtype=float).reshape(5, 1)
+    try:
+        model = EpistemicNearestNeighbors(
+            train5,
+            train_y5,
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+    except ValueError as exc:
+        if "usearch" in str(exc).lower():
+            pytest.skip("ennbo built without usearch feature")
+        raise
+
+    assert len(model) == 5
+    query = np.array([[4.9, 4.9]], dtype=float)
+    _, idx = enn_index_neighbor_distances_and_indices(
+        model.rust_backend, query, search_k=1, exclude_nearest=False
+    )
+    assert int(idx[0, 0]) == 4
+
+
+def test_enn_index_path_rebuilds_when_checkpoint_prefix_differs(tmp_path):
+    """Equal-size checkpoint with wrong vectors must not serve stale KNN."""
+    index_path = tmp_path / "index.usearch"
+    train2 = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
+    train_y = np.zeros((2, 1), dtype=float)
+    try:
+        EpistemicNearestNeighbors(
+            train2,
+            train_y,
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+    except ValueError as exc:
+        if "usearch" in str(exc).lower():
+            pytest.skip("ennbo built without usearch feature")
+        raise
+
+    train2_new = np.array([[9.0, 9.0], [8.0, 8.0]], dtype=float)
+    try:
+        model = EpistemicNearestNeighbors(
+            train2_new,
+            train_y,
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+        flat = _enn(train2_new, index_driver=ENNIndexDriver.FLAT)
+    except ValueError as exc:
+        if "usearch" in str(exc).lower():
+            pytest.skip("ennbo built without usearch feature")
+        raise
+
+    query = np.array([[9.05, 9.05]], dtype=float)
+    _, idx = enn_index_neighbor_distances_and_indices(
+        model.rust_backend, query, search_k=1, exclude_nearest=False
+    )
+    _, flat_idx = enn_index_neighbor_distances_and_indices(
+        flat.rust_backend, query, search_k=1, exclude_nearest=False
+    )
+    assert int(idx[0, 0]) == int(flat_idx[0, 0]) == 0
+
+
+def test_enn_view_only_reopen_then_add_posterior_uses_row_ordinals(tmp_path):
+    """Empty train + stale index_path + add must not return USearch keys as row ids."""
+    index_path = tmp_path / "index.usearch"
+    rng = np.random.default_rng(0)
+    n = 100
+    train_x = rng.standard_normal((n, 2))
+    train_y = np.zeros((n, 1), dtype=float)
+    try:
+        EpistemicNearestNeighbors(
+            train_x,
+            train_y,
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+        model = EpistemicNearestNeighbors(
+            np.empty((0, 2)),
+            np.empty((0, 1)),
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+    except ValueError as exc:
+        if "usearch" in str(exc).lower():
+            pytest.skip("ennbo built without usearch feature")
+        raise
+
+    assert len(model) == 0
+    model.add(np.array([[0.1, 0.2]]), np.array([[1.0]]))
+    assert len(model) == 1
+    _, idx = enn_index_neighbor_distances_and_indices(
+        model.rust_backend,
+        np.array([[0.1, 0.2]]),
+        search_k=1,
+        exclude_nearest=False,
+    )
+    assert int(idx[0, 0]) == 0
+
+    from enn.enn.enn_params import ENNParams
+
+    model.posterior(
+        np.array([[0.1, 0.2]]),
+        params=ENNParams(
+            k_num_neighbors=1,
+            epistemic_variance_scale=1.0,
+            aleatoric_variance_scale=0.0,
+        ),
+    )
+
+
 def test_enn_index_path_file_backed_sync_persists(tmp_path):
     index_path = tmp_path / "index.usearch"
     train_x = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)

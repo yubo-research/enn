@@ -1,8 +1,7 @@
 use super::{
-    ask_init, ask_init_hybrid, ask_turbo, maybe_cap_selection_candidates, select_with_pareto,
-    select_with_random, select_with_thompson, select_with_ucb, selection_candidate_cap,
-    tell_common, tell_init, tell_turbo, InitStrategy, InitStrategyState, Strategy,
-    TurboStrategyState,
+    ask_init, ask_init_hybrid, ask_turbo, select_with_pareto, select_with_random,
+    select_with_thompson, select_with_ucb, tell_common, tell_init, tell_turbo, InitStrategy,
+    InitStrategyState, Strategy, TurboStrategyState,
 };
 use crate::config::{turbo_enn_config, turbo_zero_config, AcquisitionConfig};
 use crate::optimizer::{Optimizer, Telemetry};
@@ -206,29 +205,30 @@ fn turbo_strategy_state_default_and_tell_common_paths() {
 }
 
 #[test]
-fn selection_candidate_cap_and_maybe_cap_branches() {
-    let prev = std::env::var("ENN_DISABLE_SEL_CAP").ok();
-    std::env::set_var("ENN_DISABLE_SEL_CAP", "1");
-    assert_eq!(selection_candidate_cap(100, 100, 4), usize::MAX);
-    if let Some(v) = prev {
-        std::env::set_var("ENN_DISABLE_SEL_CAP", v);
-    } else {
-        std::env::remove_var("ENN_DISABLE_SEL_CAP");
-    }
-
-    assert!(selection_candidate_cap(10_000, 1, 4) >= 256);
-    assert!(selection_candidate_cap(1_000, 10_000, 4) >= 320);
-    assert!(selection_candidate_cap(1_000, 100, 4) >= 384);
-
+fn ask_scores_full_configured_candidate_pool() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(201);
-    let rows = 50usize;
-    let x_big = Array2::from_shape_fn((rows, 2), |(i, j)| (i + j) as f64 * 0.01);
-    let capped = maybe_cap_selection_candidates(&x_big, 2, 10, 2, &mut rng);
-    assert!(capped.nrows() <= x_big.nrows());
-
-    let small = array![[0.1, 0.2], [0.3, 0.4]];
-    let uncapped = maybe_cap_selection_candidates(&small, 2, 10, 2, &mut rng);
-    assert_eq!(uncapped, small);
+    let mut config = turbo_enn_config();
+    let num_candidates = 37usize;
+    config.candidates.num_candidates_factor = 1.0;
+    config.candidates.num_candidates_per_arm = Some(num_candidates);
+    let num_arms = 2usize;
+    let expected_pool = config.candidates.num_candidates(2, num_arms);
+    let mut opt =
+        Optimizer::new_with_strategy(bounds, config, Strategy::turbo(), &mut rng).unwrap();
+    let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8]];
+    let yf = array![[0.0], [1.0], [0.5]];
+    opt.tell(&xf.view(), &yf.view(), &mut rng).unwrap();
+    let _ = opt.ask(num_arms, &mut rng).unwrap();
+    assert_eq!(
+        opt.telemetry().num_candidates, expected_pool,
+        "ask must score the full configured RAASP pool (no silent cap)"
+    );
+    assert!(
+        expected_pool >= num_candidates * num_arms,
+        "pool size must honor per-arm setting (got {expected_pool}, want at least {})",
+        num_candidates * num_arms
+    );
 }
 
 #[test]

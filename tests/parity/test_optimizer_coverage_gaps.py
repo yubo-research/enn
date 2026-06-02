@@ -154,7 +154,7 @@ def test_multi_objective_uses_rust():
 
 
 def test_multi_objective_rust_ask_tell():
-    """Pareto config uses Rust backend; ask/tell with single and multi-objective y."""
+    """Pareto config uses Rust backend; ask/tell with consistent y width."""
     from enn import create_optimizer
     from enn.turbo.rust_optimizer import RustOptimizer
 
@@ -172,9 +172,32 @@ def test_multi_objective_rust_ask_tell():
     y = _obj(x).reshape(-1, 1)
     opt.tell(x, y)
     assert x.shape == (2, 2)
-    # Multi-objective y (2 columns)
+    # Changing output width mid-run is unsupported (plan: fixed num_metrics).
     x2 = opt.ask(num_arms=2)
-    y2 = np.column_stack([_obj(x2), -_obj(x2)])  # Two objectives
+    y2 = np.column_stack([_obj(x2), -_obj(x2)])
+    with pytest.raises(ValueError, match="unsupported"):
+        opt.tell(x2, y2)
+
+
+def test_multi_objective_rust_ask_tell_two_metrics_from_start():
+    """Pareto ask/tell when all tells use the same number of objectives."""
+    from enn import create_optimizer
+    from enn.turbo.rust_optimizer import RustOptimizer
+
+    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
+    config = turbo_enn_config(
+        acq_type=AcqType.PARETO,
+        enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=10)),
+        num_init=4,
+    )
+    rng = np.random.default_rng(11)
+    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    assert isinstance(opt, RustOptimizer)
+    x = opt.ask(num_arms=2)
+    y = np.column_stack([_obj(x), -_obj(x)])
+    opt.tell(x, y)
+    x2 = opt.ask(num_arms=2)
+    y2 = np.column_stack([_obj(x2), -_obj(x2)])
     opt.tell(x2, y2)
     assert x2.shape == (2, 2)
     assert y2.shape == (2, 2)
