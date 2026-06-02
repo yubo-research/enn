@@ -149,6 +149,10 @@ def test_format_config_header():
     from ops.stress import format_config_header
 
     assert format_config_header(num_dim=10, num_obs=100) == "num_dim=10 num_obs=100"
+    assert (
+        format_config_header(num_dim=10, num_obs=100, index_path="/tmp/x.usearch")
+        == "num_dim=10 num_obs=100 index_path=/tmp/x.usearch"
+    )
 
 
 def test_stress_row_n_width():
@@ -227,6 +231,46 @@ def test_enn_stress_cli_hnsw_usearch():
         raise AssertionError(result.output)
     lines = result.output.strip().splitlines()
     assert lines[0] == "num_dim=10 num_obs=10"
+    assert len(lines) == 4
+    for line in lines[1:]:
+        assert _STRESS_ROW_RE.fullmatch(line)
+
+
+def test_enn_stress_cli_rejects_index_path_without_hnsw_usearch():
+    from click.testing import CliRunner
+    from ops.stress import cli
+
+    result = CliRunner().invoke(
+        cli,
+        ["enn", "flat", "10", "--index-path", "/tmp/x.usearch"],
+    )
+    assert result.exit_code != 0
+    assert "index_path requires index_type hnsw_usearch" in result.output
+
+
+def test_enn_stress_cli_hnsw_usearch_index_path(tmp_path):
+    from click.testing import CliRunner
+    from ops.stress import cli
+
+    index_path = tmp_path / "stress.usearch"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "enn",
+            "hnsw_usearch",
+            "10",
+            "--index-path",
+            str(index_path),
+        ],
+    )
+    if result.exit_code != 0:
+        combined = f"{result.output}\n{result.exception}".lower()
+        if "usearch" in combined:
+            pytest.skip("ennbo built without usearch feature")
+        raise AssertionError(result.output)
+    lines = result.output.strip().splitlines()
+    assert lines[0] == f"num_dim=10 num_obs=10 index_path={index_path}"
+    assert index_path.exists()
     assert len(lines) == 4
     for line in lines[1:]:
         assert _STRESS_ROW_RE.fullmatch(line)

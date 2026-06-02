@@ -4,6 +4,7 @@ use ennbo::traits::PosteriorComputation;
 use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray2, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use std::path::PathBuf;
 
 pub(crate) type PosteriorPyOut<'py> = (
     Bound<'py, PyArrayDyn<f64>>,
@@ -32,13 +33,14 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact"))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", index_path=None))]
     fn new(
         train_x: PyReadonlyArray2<f64>,
         train_y: PyReadonlyArray2<f64>,
         train_yvar: Option<PyReadonlyArray2<f64>>,
         scale_x: bool,
         index_driver: &str,
+        index_path: Option<&str>,
     ) -> PyResult<Self> {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
@@ -50,12 +52,14 @@ impl PyEpistemicNearestNeighbors {
                 )))
             }
         };
-        let model = ennbo::EpistemicNearestNeighbors::new(
+        let index_path = index_path.map(PathBuf::from);
+        let model = ennbo::EpistemicNearestNeighbors::new_with_index_path(
             train_x.as_array().to_owned(),
             train_y.as_array().to_owned(),
             train_yvar.map(|v| v.as_array().to_owned()),
             scale_x,
             driver,
+            index_path,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -67,19 +68,23 @@ class EpistemicNearestNeighbors:
         *,
         scale_x: bool = False,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
+        index_path: str | os.PathLike[str] | None = None,
     ) -> None:
         train_x, train_y, train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
         )
         self._index_driver = index_driver
         idx_driver = _rust_index_driver_name(index_driver)
-        self._rust_model = _RustENN(
-            train_x,
-            train_y,
-            train_yvar=train_yvar,
-            scale_x=scale_x,
-            index_driver=idx_driver,
-        )
+        rust_kwargs: dict[str, Any] = {
+            "train_x": train_x,
+            "train_y": train_y,
+            "train_yvar": train_yvar,
+            "scale_x": scale_x,
+            "index_driver": idx_driver,
+        }
+        if index_path is not None:
+            rust_kwargs["index_path"] = os.fspath(index_path)
+        self._rust_model = _RustENN(**rust_kwargs)
         self._tie_break_neighbors: bool = True
 
     def add(

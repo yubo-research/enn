@@ -69,3 +69,38 @@ def test_enn_index_driver_neighbor_indices_fuzz(seed: int):
         assert np.all(idx >= 0)
         assert np.all(idx < n_train)
     print(f"index_driver_neighbor_indices_fuzz seed={seed}")
+
+
+def test_enn_index_path_requires_hnsw_usearch_driver():
+    train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
+    train_y = np.zeros((2, 1), dtype=float)
+    with pytest.raises(ValueError, match="index_path requires"):
+        EpistemicNearestNeighbors(
+            train_x,
+            train_y,
+            index_driver=ENNIndexDriver.FLAT,
+            index_path="/tmp/x.usearch",
+        )
+
+
+def test_enn_index_path_file_backed_sync_persists(tmp_path):
+    index_path = tmp_path / "index.usearch"
+    train_x = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
+    train_y = np.zeros((2, 1), dtype=float)
+    try:
+        model = EpistemicNearestNeighbors(
+            train_x,
+            train_y,
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+    except ValueError as exc:
+        if "usearch" in str(exc).lower():
+            pytest.skip("ennbo built without usearch feature")
+        raise
+    size_after_build = index_path.stat().st_size
+    model.add(np.array([[0.0, 1.0]]), np.zeros((1, 1)))
+    assert len(model) == 3
+    assert index_path.stat().st_size == size_after_build
+    model.sync_index()
+    assert index_path.stat().st_size > size_after_build

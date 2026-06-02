@@ -167,6 +167,7 @@ fn kiss_fullrepo_static_name_registry_extra() {
         "checkpoint",
         "memory_usage_bytes",
         "with_index_path",
+        "new_with_index_path",
         "RowStorage",
         "from_array2",
         "push_rows",

@@ -35,6 +35,7 @@ class EnnAddStressConfig:
     heartbeat_seconds: float = 0.0
     query_n: int = STRESS_QUERY_N
     query_seed: int = STRESS_QUERY_SEED
+    index_path: str | None = None
 
 
 def parse_index_driver(name: str) -> ENNIndexDriver:
@@ -110,8 +111,13 @@ def iter_synthetic_observations(
         emitted += n
 
 
-def format_config_header(*, num_dim: int, num_obs: int) -> str:
-    return f"num_dim={num_dim} num_obs={num_obs}"
+def format_config_header(
+    *, num_dim: int, num_obs: int, index_path: str | None = None
+) -> str:
+    header = f"num_dim={num_dim} num_obs={num_obs}"
+    if index_path is not None:
+        header = f"{header} index_path={index_path}"
+    return header
 
 
 def _time_query_s(model: EpistemicNearestNeighbors, x_query: np.ndarray) -> float:
@@ -134,9 +140,15 @@ def run_enn_add_stress(
 
     empty_x = np.empty((0, cfg.num_dim), dtype=float)
     empty_y = np.empty((0, 1), dtype=float)
-    model = EpistemicNearestNeighbors(
-        empty_x, empty_y, scale_x=False, index_driver=index_driver
-    )
+    model_kwargs: dict[str, object] = {
+        "train_x": empty_x,
+        "train_y": empty_y,
+        "scale_x": False,
+        "index_driver": index_driver,
+    }
+    if cfg.index_path is not None:
+        model_kwargs["index_path"] = cfg.index_path
+    model = EpistemicNearestNeighbors(**model_kwargs)
 
     last_heartbeat_t = time.perf_counter()
     for n, (x_row, y_row) in enumerate(
@@ -202,6 +214,12 @@ def cli() -> None:
             show_default=True,
             help="Emit `heartbeat n=<N>` to stderr at most this often (0 disables).",
         ),
+        click.Option(
+            ["--index-path"],
+            type=click.Path(),
+            default=None,
+            help="Optional USearch index file (requires hnsw_usearch). Persists at each checkpoint sync.",
+        ),
     ],
 )
 def enn(
@@ -210,6 +228,7 @@ def enn(
     num_dim: int,
     progress_every: int,
     heartbeat_seconds: float,
+    index_path: str | None,
 ) -> None:
     """Time 1000-point ENN queries at sparse checkpoints while streaming adds."""
     if num_obs < 1:
@@ -220,8 +239,12 @@ def enn(
         raise click.ClickException("progress_every must be >= 0")
     if heartbeat_seconds < 0:
         raise click.ClickException("heartbeat_seconds must be >= 0")
+    if index_path is not None and index_type != "hnsw_usearch":
+        raise click.ClickException("index_path requires index_type hnsw_usearch")
     driver = parse_index_driver(index_type)
-    click.echo(format_config_header(num_dim=num_dim, num_obs=num_obs))
+    click.echo(
+        format_config_header(num_dim=num_dim, num_obs=num_obs, index_path=index_path)
+    )
     n_width = stress_row_n_width(num_obs)
     for n, query_s in run_enn_add_stress(
         index_driver=driver,
@@ -230,6 +253,7 @@ def enn(
             num_dim=num_dim,
             progress_every=progress_every,
             heartbeat_seconds=heartbeat_seconds,
+            index_path=index_path,
         ),
     ):
         click.echo(format_stress_row(n, query_s, n_width=n_width))

@@ -1,6 +1,7 @@
 //! Epistemic Nearest Neighbors model implementation.
 
 use ndarray::{Array1, Array2, ArrayView2, Axis};
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::error::ENNError;
@@ -60,6 +61,36 @@ impl RowStorage {
     }
 }
 
+fn build_enn_index(
+    train_x_scaled: Array2<f64>,
+    num_dim: usize,
+    x_scale: Array1<f64>,
+    scale_x: bool,
+    driver: IndexDriver,
+    index_path: Option<PathBuf>,
+) -> Result<ENNIndex, ENNError> {
+    #[cfg(feature = "usearch")]
+    if let Some(path) = index_path {
+        return ENNIndex::with_index_path(
+            train_x_scaled,
+            num_dim,
+            x_scale,
+            scale_x,
+            driver,
+            path,
+        )
+        .map_err(|e| ENNError::InvalidParameter(e.to_string()));
+    }
+    #[cfg(not(feature = "usearch"))]
+    if index_path.is_some() {
+        return Err(ENNError::InvalidParameter(
+            "index_path requires the `usearch` feature".to_string(),
+        ));
+    }
+    ENNIndex::new(train_x_scaled, num_dim, x_scale, scale_x, driver)
+        .map_err(|e| ENNError::InvalidParameter(e.to_string()))
+}
+
 /// Epistemic Nearest Neighbors model.
 ///
 /// This is the main ENN surrogate model that provides uncertainty-aware
@@ -99,6 +130,18 @@ impl EpistemicNearestNeighbors {
         train_yvar: Option<Array2<f64>>,
         scale_x: bool,
         driver: IndexDriver,
+    ) -> Result<Self, ENNError> {
+        Self::new_with_index_path(train_x, train_y, train_yvar, scale_x, driver, None)
+    }
+
+    /// Create a new ENN model with an optional USearch index file path.
+    pub fn new_with_index_path(
+        train_x: Array2<f64>,
+        train_y: Array2<f64>,
+        train_yvar: Option<Array2<f64>>,
+        scale_x: bool,
+        driver: IndexDriver,
+        index_path: Option<PathBuf>,
     ) -> Result<Self, ENNError> {
         if train_x.nrows() != train_y.nrows() {
             return Err(ENNError::InvalidShape {
@@ -141,12 +184,13 @@ impl EpistemicNearestNeighbors {
             train_x.clone()
         };
 
-        let index = ENNIndex::new(
+        let index = build_enn_index(
             train_x_scaled,
             num_dim,
             x_scale.clone(),
             scale_x,
             driver,
+            index_path,
         )?;
 
         let train_x_rows = RowStorage::from_array2(train_x);
@@ -212,7 +256,12 @@ impl EpistemicNearestNeighbors {
     }
 
     pub fn sync_index(&self) -> Result<(), ENNError> {
-        self.ensure_index_sync()
+        self.ensure_index_sync()?;
+        #[cfg(feature = "usearch")]
+        self.index
+            .checkpoint()
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        Ok(())
     }
 
     /// RAM used by the KNN index after the last successful sync (not disk checkpoints).
