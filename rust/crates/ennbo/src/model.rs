@@ -42,10 +42,6 @@ impl RowStorage {
         out
     }
 
-    fn row_owned(&self, i: usize) -> Array1<f64> {
-        self.view().row(i).to_owned()
-    }
-
     fn push_rows(&mut self, extra: &ArrayView2<f64>) -> Result<(), ENNError> {
         if extra.ncols() != self.ncols {
             return Err(ENNError::InvalidShape {
@@ -257,7 +253,9 @@ impl EpistemicNearestNeighbors {
         if *synced > self.index.len() {
             *synced = self.index.len();
         }
-        if self.num_obs > 0 && self.index.len() != self.num_obs {
+        if self.num_obs > 0
+            && (self.index.len() != self.num_obs || (*synced == 0 && self.index.len() > 0))
+        {
             let train_x_scaled = self.train_x_rows.view().to_owned();
             self.index
                 .rebuild_from_scaled(train_x_scaled, self.x_scale.clone())?;
@@ -703,6 +701,95 @@ mod tests {
             .neighbors(&array![[4.9, 4.9]].view(), 1, false)
             .expect("exact search");
         assert_eq!(idx[[0, 0]], exact_idx[[0, 0]]);
+    }
+
+    #[cfg(feature = "usearch")]
+    #[test]
+    fn view_only_reopen_then_equal_count_add_neighbors_use_row_ordinals() {
+        use crate::params::{ENNParams, PosteriorFlags};
+        use crate::traits::PosteriorComputation;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("index.usearch");
+        let n_seed = 50usize;
+        let mut train_x = ndarray::Array2::zeros((n_seed, 2));
+        let mut train_y = ndarray::Array2::zeros((n_seed, 1));
+        for i in 0..n_seed {
+            train_x[[i, 0]] = i as f64 * 0.01;
+            train_x[[i, 1]] = (i as f64 * 0.02).sin();
+            train_y[[i, 0]] = i as f64;
+        }
+        EpistemicNearestNeighbors::new_with_index_path(
+            train_x,
+            train_y,
+            None,
+            false,
+            IndexDriver::HNSWUSearch,
+            Some(path.clone()),
+        )
+        .expect("seed checkpoint");
+
+        let empty_x = ndarray::Array2::<f64>::zeros((0, 2));
+        let empty_y = ndarray::Array2::<f64>::zeros((0, 1));
+        let mut model = EpistemicNearestNeighbors::new_with_index_path(
+            empty_x,
+            empty_y,
+            None,
+            false,
+            IndexDriver::HNSWUSearch,
+            Some(path),
+        )
+        .expect("view-only reopen");
+        assert_eq!(model.len(), 0);
+        assert!(model.index.len() >= n_seed);
+
+        let mut add_x = ndarray::Array2::zeros((n_seed, 2));
+        let mut add_y = ndarray::Array2::zeros((n_seed, 1));
+        for i in 0..n_seed {
+            add_x[[i, 0]] = 100.0 + i as f64 * 0.01;
+            add_x[[i, 1]] = (i as f64 * 0.02).sin();
+            add_y[[i, 0]] = 100.0 + i as f64;
+        }
+        model
+            .add(&add_x.view(), &add_y.view(), None)
+            .expect("batch add equal to checkpoint size");
+        assert_eq!(model.len(), n_seed);
+        assert_eq!(model.index.len(), n_seed);
+
+        let query = array![[100.1, add_x[[0, 1]]]];
+        let idx = model
+            .neighbors(&query.view(), 1, false)
+            .expect("neighbors");
+
+        let exact = EpistemicNearestNeighbors::new(
+            add_x.clone(),
+            add_y.clone(),
+            None,
+            false,
+            IndexDriver::Exact,
+        )
+        .expect("exact reference");
+        let exact_idx = exact
+            .neighbors(&query.view(), 1, false)
+            .expect("exact search");
+        assert_eq!(
+            idx[[0, 0]], exact_idx[[0, 0]],
+            "equal-count add after view-only reopen must match exact KNN row ordinals"
+        );
+        assert!(
+            (idx[[0, 0]] as usize) < n_seed,
+            "neighbor index must be a row ordinal, not a stale USearch key"
+        );
+
+        let params = ENNParams {
+            k_num_neighbors: 1,
+            epistemic_variance_scale: 1.0,
+            aleatoric_variance_scale: 0.0,
+        };
+        model
+            .posterior(&query.view(), &params, &PosteriorFlags::default())
+            .expect("posterior must not panic on row gather");
     }
 
     #[cfg(feature = "usearch")]

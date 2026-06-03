@@ -332,14 +332,6 @@ impl USearchBackend {
         self.persist_to_disk()
     }
 
-    /// Persist the current in-memory index to `path` (for shard sealing).
-    pub(crate) fn seal_to(&mut self, path: &Path) -> Result<(), IndexError> {
-        self.ensure_mutable()?;
-        atomic_save(&self.index, path)?;
-        self.dirty = false;
-        Ok(())
-    }
-
     #[cfg(test)]
     pub(crate) fn is_dirty(&self) -> bool {
         self.dirty

@@ -172,6 +172,61 @@ def test_enn_index_path_rebuilds_when_checkpoint_prefix_differs(tmp_path):
     assert int(idx[0, 0]) == int(flat_idx[0, 0]) == 0
 
 
+def test_enn_view_only_reopen_then_equal_count_add_posterior_uses_row_ordinals(
+    tmp_path,
+):
+    """View-only reopen + N adds matching checkpoint size must rebuild, not append."""
+    index_path = tmp_path / "index.usearch"
+    rng = np.random.default_rng(0)
+    n = 50
+    train_x = rng.standard_normal((n, 2))
+    train_y = np.zeros((n, 1), dtype=float)
+    try:
+        EpistemicNearestNeighbors(
+            train_x,
+            train_y,
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+        model = EpistemicNearestNeighbors(
+            np.empty((0, 2)),
+            np.empty((0, 1)),
+            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_path=str(index_path),
+        )
+    except ValueError as exc:
+        if "usearch" in str(exc).lower():
+            pytest.skip("ennbo built without usearch feature")
+        raise
+
+    add_x = rng.standard_normal((n, 2)) + 100.0
+    add_y = np.arange(n, dtype=float).reshape(-1, 1) + 100.0
+    model.add(add_x, add_y)
+    assert len(model) == n
+
+    query = add_x[:1]
+    flat = _enn(add_x, index_driver=ENNIndexDriver.FLAT)
+    _, idx = enn_index_neighbor_distances_and_indices(
+        model.rust_backend, query, search_k=1, exclude_nearest=False
+    )
+    _, flat_idx = enn_index_neighbor_distances_and_indices(
+        flat.rust_backend, query, search_k=1, exclude_nearest=False
+    )
+    assert int(idx[0, 0]) == int(flat_idx[0, 0])
+    assert int(idx[0, 0]) < n
+
+    from enn.enn.enn_params import ENNParams
+
+    model.posterior(
+        query,
+        params=ENNParams(
+            k_num_neighbors=1,
+            epistemic_variance_scale=1.0,
+            aleatoric_variance_scale=0.0,
+        ),
+    )
+
+
 def test_enn_view_only_reopen_then_add_posterior_uses_row_ordinals(tmp_path):
     """Empty train + stale index_path + add must not return USearch keys as row ids."""
     index_path = tmp_path / "index.usearch"
