@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 import numpy as np
 import pytest
@@ -86,10 +87,11 @@ def test_run_enn_add_stress_returns_checkpoint_query_times():
             config=EnnAddStressConfig(num_dim=4, seed=0, query_n=10, query_seed=1),
         )
     )
-    assert [n for n, _ in rows] == list(checkpoint_ns(num_obs))
-    for n, query_s in rows:
+    assert [n for n, _, _ in rows] == list(checkpoint_ns(num_obs))
+    for n, query_s, segment_s in rows:
         assert n >= 1
         assert query_s >= 0.0
+        assert segment_s >= 0.0
 
 
 def test_run_enn_add_stress_syncs_at_checkpoints(monkeypatch):
@@ -165,15 +167,39 @@ def test_stress_row_n_width():
 def test_format_stress_row_fixed_width_n():
     from ops.stress import format_stress_row
 
-    row = format_stress_row(10, 1.2345, n_width=6)
-    assert row == "    10 1.234"
-    assert re.fullmatch(r" {4}10 1\.234", row)
+    row = format_stress_row(10, 1.2345, 0.0567, n_width=6)
+    assert row == "    10 1.234 0.057"
+    assert re.fullmatch(r" {4}10 1\.234 0\.057", row)
 
-    row_large = format_stress_row(100_000, 0.5, n_width=6)
-    assert row_large == "100000 0.500"
+    row_large = format_stress_row(100_000, 0.5, 12.3, n_width=6)
+    assert row_large == "100000 0.500 12.300"
 
 
-_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3}")
+def test_run_enn_add_stress_segment_excludes_query(monkeypatch):
+    from ops.stress import EnnAddStressConfig, run_enn_add_stress
+
+    query_delay_s = 0.05
+
+    def _slow_query(model, x_query):
+        time.sleep(query_delay_s)
+        return query_delay_s
+
+    monkeypatch.setattr("ops.stress._time_query_s", _slow_query)
+
+    rows = list(
+        run_enn_add_stress(
+            index_driver=ENNIndexDriver.FLAT,
+            num_obs=3,
+            config=EnnAddStressConfig(num_dim=2, seed=0, query_n=2, query_seed=1),
+        )
+    )
+    assert len(rows) == 2
+    for _n, query_s, segment_s in rows:
+        assert query_s >= query_delay_s - 1e-6
+        assert segment_s < query_delay_s
+
+
+_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+\.\d{3}")
 
 
 def test_enn_stress_cli_does_not_fit(monkeypatch):

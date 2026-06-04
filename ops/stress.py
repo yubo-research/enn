@@ -219,7 +219,7 @@ def run_enn_add_stress(
     index_driver: ENNIndexDriver,
     num_obs: int,
     config: EnnAddStressConfig | None = None,
-) -> Iterator[tuple[int, float]]:
+) -> Iterator[tuple[int, float, float]]:
     if num_obs < 1:
         raise ValueError("num_obs must be >= 1")
     cfg = config if config is not None else EnnAddStressConfig()
@@ -240,6 +240,7 @@ def run_enn_add_stress(
     model = EpistemicNearestNeighbors(**model_kwargs)
 
     last_heartbeat_t = time.perf_counter()
+    last_checkpoint_t = time.perf_counter()
     for n, (x_row, y_row) in enumerate(
         iter_synthetic_observations(num_obs, num_dim=cfg.num_dim, seed=cfg.seed),
         start=1,
@@ -254,8 +255,10 @@ def run_enn_add_stress(
             last_heartbeat_t = time.perf_counter()
         if n in checkpoints:
             model.ensure_index_sync()
+            segment_s = time.perf_counter() - last_checkpoint_t
             query_s = _time_query_s(model, x_query)
-            yield (n, query_s)
+            last_checkpoint_t = time.perf_counter()
+            yield (n, query_s, segment_s)
 
 
 def stress_row_n_width(num_obs: int) -> int:
@@ -265,8 +268,8 @@ def stress_row_n_width(num_obs: int) -> int:
     return len(str(num_obs))
 
 
-def format_stress_row(n: int, query_s: float, *, n_width: int) -> str:
-    return f"{n:>{n_width}} {query_s:.3f}"
+def format_stress_row(n: int, query_s: float, segment_s: float, *, n_width: int) -> str:
+    return f"{n:>{n_width}} {query_s:.3f} {segment_s:.3f}"
 
 
 @click.group()
@@ -339,7 +342,7 @@ def enn(
         format_config_header(num_dim=num_dim, num_obs=num_obs, work_dir=work_dir)
     )
     n_width = stress_row_n_width(num_obs)
-    for n, query_s in run_enn_add_stress(
+    for n, query_s, segment_s in run_enn_add_stress(
         index_driver=driver,
         num_obs=num_obs,
         config=EnnAddStressConfig(
@@ -349,7 +352,7 @@ def enn(
             work_dir=work_dir,
         ),
     ):
-        click.echo(format_stress_row(n, query_s, n_width=n_width))
+        click.echo(format_stress_row(n, query_s, segment_s, n_width=n_width))
 
 
 def main() -> None:
