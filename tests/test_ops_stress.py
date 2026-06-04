@@ -278,11 +278,7 @@ def test_enn_stress_cli_hnsw_disk(tmp_path):
         cli,
         ["enn", "hnsw_disk", "10", "--work-dir", str(work_dir)],
     )
-    if result.exit_code != 0:
-        combined = f"{result.output}\n{result.exception}".lower()
-        if "hnsw_disk" in combined or "invalid" in combined:
-            pytest.skip("ennbo hnsw_disk backend not implemented yet")
-        raise AssertionError(result.output)
+    assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
     assert lines[0] == f"num_dim=10 num_obs=10 work_dir={work_dir}"
     assert len(lines) == 4

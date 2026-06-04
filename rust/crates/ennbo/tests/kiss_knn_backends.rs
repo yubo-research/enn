@@ -1,6 +1,7 @@
 //! Kiss static coverage: test files must reference private helper names from knn backends.
 
 const DISK_HANNOY_SRC: &str = include_str!("../src/backend/disk_hannoy.rs");
+const DISK_OBSERVATION_SRC: &str = include_str!("../src/backend/disk_observation.rs");
 const FAISS_BACKEND_SRC: &str = include_str!("../src/knn/faiss_backend.rs");
 const ROW_STORAGE_SRC: &str = include_str!("../src/backend/row_storage.rs");
 const KNN_MOD_SRC: &str = include_str!("../src/knn/mod.rs");
@@ -58,26 +59,29 @@ fn kiss_disk_hannoy_helper_names_in_source() {
         "DiskHannoyEnnBackend",
         "open_or_create_hannoy",
         "index_row_range",
-        "append_rows",
+        "impl_disk_mmap_observation_api",
         "mark_index_stale",
         "ensure_index_sync",
-        "train_rows_at",
         "row_x",
         "row_y",
         "row_yvar",
         "search",
         "index_memory_bytes",
         "new_empty",
-        "load_indexed_rows",
         "mmap_open_or_create",
         "mmap_append",
         "mmap_row_slice",
-        "mmap_gather",
         "mmap_row_range",
     ] {
         assert!(
             DISK_HANNOY_SRC.contains(name),
             "missing {name} in backend/disk_hannoy.rs"
+        );
+    }
+    for name in ["append_rows", "train_rows_at", "load_indexed_rows", "mmap_gather"] {
+        assert!(
+            DISK_HANNOY_SRC.contains(name) || DISK_OBSERVATION_SRC.contains(name),
+            "missing {name} in disk hannoy/observation sources"
         );
     }
 }

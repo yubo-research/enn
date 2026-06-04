@@ -15,8 +15,10 @@ use hannoy::{distances::Euclidean, Database, Reader, Writer};
 #[cfg(feature = "hannoy")]
 use heed::EnvOpenOptions;
 
-const FORMAT_VERSION: u32 = 1;
-const INDEX_SYNC_CHUNK_ROWS: usize = 8192;
+use crate::backend::disk_observation::{
+    load_indexed_rows, mmap_row_yvar, open_or_append_yvar, set_index_stale,
+    validate_index_backend, write_metadata, INDEX_SYNC_CHUNK_ROWS,
+};
 const DEFAULT_MAP_SIZE: usize = 1 << 40;
 const HANNOY_M: usize = 16;
 const HANNOY_M0: usize = 32;
@@ -56,6 +58,7 @@ impl DiskHannoyEnnBackend {
                 "DiskHannoyEnnBackend requires IndexDriver::HNSWHannoy".to_string(),
             ));
         }
+        validate_index_backend(&work_dir, "hannoy")?;
         fs::create_dir_all(&work_dir).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
         let num_dim = train_x.ncols();
         let num_metrics = train_y.ncols();
@@ -67,21 +70,12 @@ impl DiskHannoyEnnBackend {
             train_x_store.mmap_append(&train_x.view())?;
             train_y_store.mmap_append(&train_y.view())?;
         }
-        let train_yvar_store = if let Some(ref yv) = train_yvar {
-            let yv_path = work_dir.join("train_yvar.bin");
-            let mut store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics)?;
-            if store.nrows == 0 {
-                store.mmap_append(&yv.view())?;
-            }
-            Some(store)
-        } else {
-            None
-        };
+        let train_yvar_store = open_or_append_yvar(&work_dir, num_metrics, train_yvar.as_ref())?;
         let n = train_x_store.nrows;
         let hannoy_dir = work_dir.join("hannoy");
         let (env, db, indexed_rows) = open_or_create_hannoy(&hannoy_dir)?;
         let indexed_rows = load_indexed_rows(&work_dir).unwrap_or(indexed_rows).min(n);
-        write_metadata(&work_dir, n, num_dim, num_metrics, scale_x, indexed_rows)?;
+        write_metadata(&work_dir, n, num_dim, num_metrics, scale_x, indexed_rows, "hannoy")?;
         Ok(Self {
             work_dir,
             train_x: train_x_store,
@@ -134,42 +128,7 @@ impl DiskHannoyEnnBackend {
     }
 
     pub fn mark_index_stale(&self) {
-        *self
-            .index_stale
-            .lock()
-            .expect("index_stale mutex poisoned") = true;
-    }
-
-    pub fn append_rows(
-        &mut self,
-        x: &ArrayView2<f64>,
-        y: &ArrayView2<f64>,
-        yvar: Option<&ArrayView2<f64>>,
-    ) -> Result<(), ENNError> {
-        if x.nrows() == 0 {
-            return Ok(());
-        }
-        let new_n = self.len() + x.nrows();
-        if new_n >= u32::MAX as usize {
-            return Err(ENNError::InvalidParameter(
-                "disk ENN row count exceeds u32::MAX".to_string(),
-            ));
-        }
-        self.train_x.mmap_append(x)?;
-        self.train_y.mmap_append(y)?;
-        if let (Some(store), Some(yv)) = (&mut self.train_yvar, yvar) {
-            store.mmap_append(yv)?;
-        } else if yvar.is_some() && self.train_yvar.is_none() {
-            let yv_path = self.work_dir.join("train_yvar.bin");
-            let mut store = MmapColumnStore::mmap_open_or_create(yv_path, self.num_metrics)?;
-            store.mmap_append(yvar.unwrap())?;
-            self.train_yvar = Some(store);
-        }
-        *self
-            .index_dirty
-            .lock()
-            .expect("index_dirty mutex poisoned") = true;
-        Ok(())
+        set_index_stale(&self.index_stale);
     }
 
     fn index_row_range(&mut self, start: usize, end: usize) -> Result<(), ENNError> {
@@ -222,6 +181,7 @@ impl DiskHannoyEnnBackend {
                 self.num_metrics,
                 self.scale_x,
                 self.indexed_rows,
+                "hannoy",
             )?;
             Ok(())
         }
@@ -249,15 +209,19 @@ impl DiskHannoyEnnBackend {
                     .expect("index_stale mutex poisoned");
                 *stale
             };
-            if !rebuild {
+            if !rebuild && self.indexed_rows >= self.len() {
                 return Ok(());
             }
-            self.indexed_rows = 0;
-            self.index_row_range(0, self.len())?;
-            *self
-                .index_stale
-                .lock()
-                .expect("index_stale mutex poisoned") = false;
+            if rebuild {
+                self.indexed_rows = 0;
+                self.index_row_range(0, self.len())?;
+                *self
+                    .index_stale
+                    .lock()
+                    .expect("index_stale mutex poisoned") = false;
+            } else {
+                self.index_row_range(self.indexed_rows, self.len())?;
+            }
             *self
                 .index_dirty
                 .lock()
@@ -275,28 +239,6 @@ impl DiskHannoyEnnBackend {
         Ok(())
     }
 
-    pub fn train_rows_at(
-        &self,
-        indices: &[usize],
-    ) -> Result<super::TrainRowsAtResult, ENNError> {
-        let n = self.len();
-        for &i in indices {
-            if i >= n {
-                return Err(ENNError::InvalidParameter(format!(
-                    "train_rows_at index {i} out of range [0, {n})"
-                )));
-            }
-        }
-        let x = self.train_x.mmap_gather(indices)?;
-        let y = self.train_y.mmap_gather(indices)?;
-        let yvar = self
-            .train_yvar
-            .as_ref()
-            .map(|s| s.mmap_gather(indices))
-            .transpose()?;
-        Ok((x, y, yvar))
-    }
-
     pub fn row_x(&self, i: usize) -> Result<Array1<f64>, ENNError> {
         Ok(Array1::from(self.train_x.mmap_row_slice(i)?.to_vec()))
     }
@@ -306,10 +248,7 @@ impl DiskHannoyEnnBackend {
     }
 
     pub fn row_yvar(&self, i: usize) -> Result<Option<Array1<f64>>, ENNError> {
-        Ok(self
-            .train_yvar
-            .as_ref()
-            .map(|s| Array1::from(s.mmap_row_slice(i).unwrap().to_vec())))
+        mmap_row_yvar(self.train_yvar.as_ref(), i)
     }
 
     pub fn search(
@@ -417,32 +356,7 @@ fn open_or_create_hannoy(
     Ok((env, db, 0))
 }
 
-fn load_indexed_rows(work_dir: &Path) -> Option<usize> {
-    let meta_path = work_dir.join("metadata.json");
-    let text = fs::read_to_string(meta_path).ok()?;
-    let key = "\"indexed_rows\":";
-    let pos = text.find(key)? + key.len();
-    let tail = text[pos..].trim_start();
-    let end = tail
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(tail.len());
-    tail[..end].parse().ok()
-}
-
-fn write_metadata(
-    work_dir: &Path,
-    num_obs: usize,
-    num_dim: usize,
-    num_metrics: usize,
-    scale_x: bool,
-    indexed_rows: usize,
-) -> Result<(), ENNError> {
-    let meta_path = work_dir.join("metadata.json");
-    let json = format!(
-        "{{\"format_version\":{FORMAT_VERSION},\"num_obs\":{num_obs},\"num_dim\":{num_dim},\"num_metrics\":{num_metrics},\"scale_x\":{scale_x},\"index_backend\":\"hannoy\",\"indexed_rows\":{indexed_rows}}}"
-    );
-    fs::write(meta_path, json).map_err(|e| ENNError::InvalidParameter(e.to_string()))
-}
+crate::impl_disk_mmap_observation_api!(DiskHannoyEnnBackend);
 
 #[cfg(all(test, feature = "hannoy"))]
 mod disk_hannoy_unit_tests {
@@ -492,8 +406,31 @@ mod disk_hannoy_unit_tests {
     #[test]
     fn disk_hannoy_metadata_roundtrip() {
         let dir = TempDir::new().expect("tempdir");
-        write_metadata(dir.path(), 7, 3, 2, true, 5).unwrap();
+        write_metadata(dir.path(), 7, 3, 2, true, 5, "hannoy").unwrap();
         assert_eq!(load_indexed_rows(dir.path()), Some(5));
+    }
+
+    #[test]
+    fn disk_hannoy_scale_x_first_sync_without_mark_stale() {
+        let dir = TempDir::new().expect("tempdir");
+        let mut backend = DiskHannoyEnnBackend::new(
+            dir.path().to_path_buf(),
+            array![[2.0, 4.0], [4.0, 8.0]],
+            array![[0.0], [1.0]],
+            None,
+            true,
+            Array1::from_elem(2, 2.0),
+            IndexDriver::HNSWHannoy,
+        )
+        .unwrap();
+        assert_eq!(load_indexed_rows(dir.path()), Some(0));
+        backend
+            .ensure_index_sync(true, &Array1::from_elem(2, 2.0))
+            .unwrap();
+        assert_eq!(
+            load_indexed_rows(dir.path()),
+            Some(backend.len())
+        );
     }
 
     #[test]

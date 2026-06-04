@@ -24,6 +24,7 @@ pub mod incumbent_tracker;
 pub mod index;
 pub mod knn;
 pub mod backend;
+pub mod disk_hnsw;
 pub mod model;
 pub mod morbo_trust_region;
 pub mod optimizer;
@@ -60,6 +61,7 @@ pub use fit::{subsample_loglik, subsample_loglik_model};
 pub use model::EpistemicNearestNeighbors;
 pub use model::{EnnIndexAccess, EnnRowAccess};
 pub use backend::{EnnBackend, EnnStorage, InMemoryEnnBackend};
+pub use backend::DiskHnswEnnBackend;
 #[cfg(feature = "hannoy")]
 pub use backend::DiskHannoyEnnBackend;
 pub use optimizer::obs_access::ObsAccess;

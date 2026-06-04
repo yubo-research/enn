@@ -22,12 +22,25 @@ def test_enn_index_driver_to_rust_maps_all_three():
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "exact"
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW] == "hnsw"
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW_HANNOY] == "hnsw_hannoy"
+    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW_DISK] == "hnsw_disk"
+
+
+def test_enn_hnsw_disk_in_memory_raises():
+    train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
+    train_y = np.zeros((2, 1), dtype=float)
+    with pytest.raises(ValueError, match="work_dir|ENN_WORK_DIR"):
+        EpistemicNearestNeighbors(
+            train_x,
+            train_y,
+            index_driver=ENNIndexDriver.HNSW_DISK,
+            enn_storage="disk",
+        )
 
 
 def test_enn_hnsw_hannoy_in_memory_raises():
     train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
     train_y = np.zeros((2, 1), dtype=float)
-    with pytest.raises(ValueError, match="disk-only"):
+    with pytest.raises(ValueError, match="disk-only|work_dir|HNSW"):
         EpistemicNearestNeighbors(
             train_x,
             train_y,
@@ -68,11 +81,11 @@ def test_enn_index_driver_neighbor_indices_fuzz(seed: int):
     print(f"index_driver_neighbor_indices_fuzz seed={seed}")
 
 
-def test_enn_work_dir_requires_hnsw_hannoy_driver():
+def test_enn_work_dir_requires_disk_driver():
     train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
     train_y = np.zeros((2, 1), dtype=float)
     with pytest.raises(
-        ValueError, match="Disk storage requires IndexDriver::HNSWHannoy"
+        ValueError, match="Disk storage requires IndexDriver::HNSWHannoy or HNSWDisk"
     ):
         EpistemicNearestNeighbors(
             train_x,
@@ -170,3 +183,48 @@ def test_enn_disk_backend_persists_observation_files(tmp_path):
     model.add(np.array([[0.0, 1.0]]), np.zeros((1, 1)))
     assert len(model) == 3
     assert (work_dir / "train_x.bin").stat().st_size > size_before
+
+
+@pytest.mark.parametrize("driver", [ENNIndexDriver.HNSW_DISK])
+def test_enn_disk_backend_incremental_add_and_search_hnsw_disk(tmp_path, driver):
+    work_dir = tmp_path / "enn_disk_hnsw"
+    rng = np.random.default_rng(42)
+    n, d, init = 60, 4, 50
+    train_x = rng.standard_normal((n, d))
+    train_y = rng.standard_normal((n, 1))
+    model = EpistemicNearestNeighbors(
+        train_x[:init],
+        train_y[:init],
+        index_driver=driver,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+    model.add(train_x[init:], train_y[init:])
+    assert len(model) == n
+    model.ensure_index_sync()
+
+    flat = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
+    for qi in range(10):
+        query = train_x[qi : qi + 1]
+        _, idx = enn_index_neighbor_distances_and_indices(
+            model.rust_backend, query, search_k=1, exclude_nearest=False
+        )
+        _, flat_idx = enn_index_neighbor_distances_and_indices(
+            flat.rust_backend, query, search_k=1, exclude_nearest=False
+        )
+        assert int(idx[0, 0]) == int(flat_idx[0, 0]), f"query row {qi}"
+
+
+@pytest.mark.parametrize("driver", [ENNIndexDriver.HNSW_DISK])
+def test_enn_disk_backend_train_rows_at_matches_memory_hnsw_disk(tmp_path, driver):
+    work_dir = tmp_path / "enn_disk_rows_hnsw"
+    rng = np.random.default_rng(7)
+    n, d = 30, 3
+    train_x = rng.standard_normal((n, d))
+    mem = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
+    disk = _enn(train_x, index_driver=driver, work_dir=str(work_dir))
+    indices = rng.choice(n, size=10, replace=False).tolist()
+    mx, my, _ = mem.train_rows_at(indices)
+    dx, dy, _ = disk.train_rows_at(indices)
+    np.testing.assert_allclose(mx, dx)
+    np.testing.assert_allclose(my, dy)

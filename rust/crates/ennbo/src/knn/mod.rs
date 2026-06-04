@@ -30,6 +30,9 @@ impl KnnBackend {
             IndexDriver::HNSWHannoy => Err(IndexError::InvalidParameter(
                 "IndexDriver::HNSWHannoy is disk-only; use DiskHannoyEnnBackend".to_string(),
             )),
+            IndexDriver::HNSWDisk => Err(IndexError::InvalidParameter(
+                "IndexDriver::HNSWDisk is disk-only; use DiskHnswEnnBackend".to_string(),
+            )),
         }
     }
 

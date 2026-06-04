@@ -77,6 +77,7 @@ pub fn parse_config_overrides_from_dict(
             "exact" | "flat" => IndexDriver::Exact,
             "hnsw" => IndexDriver::HNSW,
             "hnsw_hannoy" => IndexDriver::HNSWHannoy,
+            "hnsw_disk" => IndexDriver::HNSWDisk,
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {}",

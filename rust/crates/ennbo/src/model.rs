@@ -124,11 +124,10 @@ impl EpistemicNearestNeighbors {
                 x_scale.clone(),
                 driver,
             )?,
-            #[cfg(feature = "hannoy")]
             EnnStorage::Disk => {
-                if driver != IndexDriver::HNSWHannoy {
+                if driver != IndexDriver::HNSWHannoy && driver != IndexDriver::HNSWDisk {
                     return Err(ENNError::InvalidParameter(
-                        "Disk storage requires IndexDriver::HNSWHannoy".to_string(),
+                        "Disk storage requires IndexDriver::HNSWHannoy or HNSWDisk".to_string(),
                     ));
                 }
                 let dir = work_dir.or_else(EnnStorage::work_dir_from_env).ok_or_else(|| {
@@ -143,13 +142,8 @@ impl EpistemicNearestNeighbors {
                     train_yvar,
                     scale_x,
                     x_scale.clone(),
+                    driver,
                 )?
-            }
-            #[cfg(not(feature = "hannoy"))]
-            EnnStorage::Disk => {
-                return Err(ENNError::InvalidParameter(
-                    "Disk storage requires the `hannoy` feature".to_string(),
-                ));
             }
         };
 

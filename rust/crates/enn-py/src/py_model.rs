@@ -53,6 +53,7 @@ impl PyEpistemicNearestNeighbors {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
             "HNSW" | "hnsw" => ennbo::IndexDriver::HNSW,
             "HNSW_HANNOY" | "hnsw_hannoy" => ennbo::IndexDriver::HNSWHannoy,
+            "HNSW_DISK" | "hnsw_disk" => ennbo::IndexDriver::HNSWDisk,
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {index_driver}"
