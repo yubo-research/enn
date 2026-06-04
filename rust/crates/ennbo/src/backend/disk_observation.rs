@@ -12,7 +12,6 @@ use crate::knn::MmapColumnStore;
 pub type MmapTrainRowsAt = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
 
 pub const FORMAT_VERSION: u32 = 1;
-pub const INDEX_SYNC_CHUNK_ROWS: usize = 8192;
 pub const MAX_NUM_DIM: usize = 1024;
 pub const MAX_RECORD_STRIDE: usize = 8 * 1024 * 1024;
 
@@ -67,7 +66,7 @@ pub fn open_or_append_yvar(
 ) -> Result<Option<MmapColumnStore>, ENNError> {
     if let Some(yv) = train_yvar {
         let yv_path = work_dir.join("train_yvar.bin");
-        let mut store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics)?;
+        let mut store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics, None)?;
         if store.nrows == 0 {
             store.mmap_append(&yv.view())?;
         }
@@ -98,7 +97,7 @@ pub fn append_yvar_on_add(
         (Some(store), Some(yv)) => store.mmap_append(yv)?,
         (None, Some(yv)) => {
             let yv_path = work_dir.join("train_yvar.bin");
-            let mut store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics)?;
+            let mut store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics, None)?;
             store.mmap_append(yv)?;
             *train_yvar = Some(store);
         }
@@ -223,6 +222,13 @@ pub fn load_indexed_rows(work_dir: &Path) -> Option<usize> {
     parse_json_usize_field(&text, "indexed_rows")
 }
 
+#[allow(dead_code)]
+pub fn load_num_obs(work_dir: &Path) -> Option<usize> {
+    let meta_path = work_dir.join("metadata.json");
+    let text = fs::read_to_string(meta_path).ok()?;
+    parse_json_usize_field(&text, "num_obs")
+}
+
 pub fn load_index_backend(work_dir: &Path) -> Option<String> {
     let meta_path = work_dir.join("metadata.json");
     let text = fs::read_to_string(meta_path).ok()?;
@@ -287,6 +293,7 @@ mod disk_observation_tests {
         let dir = TempDir::new().expect("tempdir");
         write_metadata(dir.path(), 7, 3, 2, true, 5, "hnsw_disk").unwrap();
         assert_eq!(load_indexed_rows(dir.path()), Some(5));
+        assert_eq!(load_num_obs(dir.path()), Some(7));
         assert_eq!(
             load_index_backend(dir.path()).as_deref(),
             Some("hnsw_disk")
@@ -351,8 +358,8 @@ mod disk_observation_tests {
 
         let x_path = dir.path().join("train_x.bin");
         let y_path = dir.path().join("train_y.bin");
-        let mut x_store = MmapColumnStore::mmap_open_or_create(x_path, 2).unwrap();
-        let mut y_store = MmapColumnStore::mmap_open_or_create(y_path, 1).unwrap();
+        let mut x_store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        let mut y_store = MmapColumnStore::mmap_open_or_create(y_path, 1, None).unwrap();
         x_store.mmap_append(&array![[0.0, 0.0]].view()).unwrap();
         y_store.mmap_append(&array![[0.0]].view()).unwrap();
         let (tx, ty, _) =
@@ -367,8 +374,8 @@ mod disk_observation_tests {
         let dir = TempDir::new().expect("tempdir");
         let x_path = dir.path().join("x.bin");
         let y_path = dir.path().join("y.bin");
-        let mut x_store = MmapColumnStore::mmap_open_or_create(x_path, 2).unwrap();
-        let mut y_store = MmapColumnStore::mmap_open_or_create(y_path, 1).unwrap();
+        let mut x_store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        let mut y_store = MmapColumnStore::mmap_open_or_create(y_path, 1, None).unwrap();
         x_store
             .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
             .unwrap();

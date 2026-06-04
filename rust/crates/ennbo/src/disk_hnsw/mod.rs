@@ -1,18 +1,21 @@
 //! In-tree disk HNSW graph (CP-0 spike + mmap persistence).
 
 pub mod access;
+pub mod graph_header;
 pub mod graph_mut;
 pub mod enn_backend;
 pub mod hnsw;
 pub mod node_layout;
 pub mod params;
+pub mod split_graph;
 pub mod store;
 
 pub use enn_backend::DiskHnswEnnBackend;
 pub use hnsw::{assign_level, brute_force_topk, insert, l2_sq, mean_recall_at_k, search, HnswHeader};
 pub use node_layout::NodeLayout;
 pub use params::{ef_search_for_k, EF_CONSTRUCTION, LMAX, M, M0};
-pub use store::{GraphHeader, MmapGraph, RamGraph};
+pub use graph_header::GraphHeader;
+pub use store::{MmapGraph, RamGraph};
 
 #[cfg(test)]
 mod cp0_tests {

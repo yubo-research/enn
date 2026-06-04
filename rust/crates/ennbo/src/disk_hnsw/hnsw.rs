@@ -28,6 +28,7 @@ pub fn assign_level(rng: &mut StdRng) -> u8 {
     (level.min(LMAX - 1)) as u8
 }
 
+#[derive(Clone, Copy)]
 pub struct HnswHeader {
     pub entry_point: u32,
     pub max_level: u8,
@@ -44,7 +45,7 @@ pub fn search_layer<G: GraphAccess>(
 ) -> Vec<(u32, f32)> {
     let mut visited = HashSet::new();
     visited.insert(entry);
-    let entry_dist = l2_sq(query, &graph.vector(entry));
+    let entry_dist = graph.vector_l2_sq(entry, query);
 
     let mut candidates = BinaryHeap::new();
     candidates.push(Reverse((entry_dist.to_bits(), entry)));
@@ -65,7 +66,7 @@ pub fn search_layer<G: GraphAccess>(
                 continue;
             }
             visited.insert(n_id);
-            let dist = l2_sq(query, &graph.vector(n_id));
+            let dist = graph.vector_l2_sq(n_id, query);
             let dist_bits = dist.to_bits();
             if results.len() < ef {
                 results.push((dist_bits, n_id));
@@ -107,14 +108,15 @@ pub(crate) fn shrink_neighbor_list<G: GraphMut>(
     }
     let mut scored: Vec<(u32, f32)> = neighbors
         .iter()
-        .map(|&id| (id, l2_sq(query, &graph.vector(id))))
+        .map(|&id| (id, graph.vector_l2_sq(id, query)))
         .collect();
     scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
     scored.truncate(max);
     *neighbors = scored.into_iter().map(|(id, _)| id).collect();
 }
 
-pub fn insert<G: GraphMut>(
+/// Insert without reverse-edge updates; call `rebuild_reverse_edges` before querying.
+pub fn insert_forward<G: GraphMut>(
     graph: &mut G,
     header: &mut HnswHeader,
     id: u32,
@@ -145,15 +147,6 @@ pub fn insert<G: GraphMut>(
         let m = params::max_neighbors(lc);
         let selected = select_neighbors(candidates, m);
         graph.set_neighbors(id, lc, &selected);
-        for &n_id in &selected {
-            let n_vec = graph.vector(n_id);
-            let mut back = graph.neighbors(n_id, lc);
-            if !back.contains(&id) {
-                back.push(id);
-                shrink_neighbor_list(graph, &mut back, lc, &n_vec);
-                graph.set_neighbors(n_id, lc, &back);
-            }
-        }
         if !selected.is_empty() {
             curr_ep = vec![selected[0]];
         }
@@ -163,6 +156,42 @@ pub fn insert<G: GraphMut>(
         header.max_level = level;
         header.entry_point = id;
     }
+}
+
+/// Add reverse edges for nodes in `[start, end)` after forward-only insertion.
+pub fn rebuild_reverse_edges<G: GraphMut>(
+    graph: &mut G,
+    header: &HnswHeader,
+    start: u32,
+    end: u32,
+) {
+    for id in start..end {
+        let level = graph.node_level(id);
+        let start_lc = level.min(header.max_level);
+        for lc in 0..=start_lc {
+            let forward: Vec<u32> = graph.neighbors(id, lc);
+            for &n_id in &forward {
+                let n_vec = graph.vector(n_id);
+                let mut back = graph.neighbors(n_id, lc);
+                if !back.contains(&id) {
+                    back.push(id);
+                    shrink_neighbor_list(graph, &mut back, lc, &n_vec);
+                    graph.set_neighbors(n_id, lc, &back);
+                }
+            }
+        }
+    }
+}
+
+pub fn insert<G: GraphMut>(
+    graph: &mut G,
+    header: &mut HnswHeader,
+    id: u32,
+    vector: &[f32],
+    rng: &mut StdRng,
+) {
+    insert_forward(graph, header, id, vector, rng);
+    rebuild_reverse_edges(graph, header, id, id + 1);
 }
 
 pub fn search<G: GraphAccess>(
@@ -289,6 +318,37 @@ mod hnsw_algo_tests {
         }
         let bf = brute_force_topk(&[vec![0.0, 0.0], vec![1.0, 0.0]], &[0.1, 0.0], 1);
         assert_eq!(bf[0].0, 0);
+    }
+
+    #[test]
+    fn insert_forward_rebuild_matches_full_insert() {
+        let mut full = crate::disk_hnsw::store::RamGraph::new(2);
+        let mut fwd = crate::disk_hnsw::store::RamGraph::new(2);
+        let mut h_full = HnswHeader {
+            entry_point: 0,
+            max_level: 0,
+            num_dim: 2,
+        };
+        let mut h_fwd = h_full;
+        let mut rng_full = StdRng::seed_from_u64(42);
+        let mut rng_fwd = StdRng::seed_from_u64(42);
+        for i in 0..12u32 {
+            let v = [i as f32 * 0.1, (i % 4) as f32];
+            insert(&mut full, &mut h_full, i, &v, &mut rng_full);
+            insert_forward(&mut fwd, &mut h_fwd, i, &v, &mut rng_fwd);
+            rebuild_reverse_edges(&mut fwd, &h_fwd, i, i + 1);
+        }
+        assert_eq!(h_full.entry_point, h_fwd.entry_point);
+        assert_eq!(h_full.max_level, h_fwd.max_level);
+        for id in 0..12u32 {
+            for lc in 0..=h_full.max_level {
+                assert_eq!(
+                    full.neighbors(id, lc),
+                    fwd.neighbors(id, lc),
+                    "neighbors mismatch id={id} layer={lc}"
+                );
+            }
+        }
     }
 
     #[test]

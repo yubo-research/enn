@@ -92,6 +92,30 @@ impl NodeLayout {
         out
     }
 
+    /// Write one layer's neighbor slots in place without touching vector or other layers.
+    pub fn write_neighbors_layer(&self, buf: &mut [u8], layer: u8, neighbors: &[u32]) {
+        assert_eq!(buf.len(), self.record_stride);
+        let cap = Self::max_neighbors(layer);
+        let off = self.neighbors_offset(layer);
+        for slot in 0..cap {
+            let val = neighbors.get(slot).copied().unwrap_or(EMPTY_NEIGHBOR);
+            let slot_off = off + slot * 4;
+            buf[slot_off..slot_off + 4].copy_from_slice(&val.to_le_bytes());
+        }
+    }
+
+    pub fn l2_sq_from_record(&self, buf: &[u8], query: &[f32]) -> f32 {
+        let v_off = 4;
+        let mut sum = 0.0f32;
+        for (j, &q) in query.iter().enumerate().take(self.num_dim) {
+            let off = v_off + j * 4;
+            let v = f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            let d = v - q;
+            sum += d * d;
+        }
+        sum
+    }
+
     pub fn patch_neighbor(buf: &mut [u8], layout: &NodeLayout, layer: u8, slot: usize, id: u32) {
         let off = layout.neighbors_offset(layer) + slot * 4;
         buf[off..off + 4].copy_from_slice(&id.to_le_bytes());

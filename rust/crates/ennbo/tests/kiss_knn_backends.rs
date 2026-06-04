@@ -58,7 +58,7 @@ fn kiss_disk_hnsw_helper_names_in_source() {
         "write_metadata",
         "DiskHnswEnnBackend",
         "index_row_range",
-        "impl_disk_mmap_observation_api",
+        "disk_obs::load_num_obs",
         "mark_index_stale",
         "ensure_index_sync",
         "row_x",

@@ -10,7 +10,7 @@ fn kiss_disk_hnsw_backend_names_in_source() {
     for name in [
         "DiskHnswEnnBackend",
         "open_or_create_graph",
-        "impl_disk_mmap_observation_api",
+        "disk_obs::load_num_obs",
         "INDEX_BACKEND",
     ] {
         assert!(DISK_HNSW_SRC.contains(name), "missing {name}");

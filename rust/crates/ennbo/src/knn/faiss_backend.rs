@@ -1,10 +1,9 @@
 use faiss::error::Error as FaissError;
 use faiss::index::IndexImpl;
 use faiss::{index_factory, Index, MetricType};
-use memmap2::Mmap;
+use memmap2::MmapMut;
 use ndarray::{Array2, ArrayView2, Axis};
-use std::fs::OpenOptions;
-use std::io::Write;
+use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 
 use super::{arr2_rows_to_f32, pad_neighbor_cols_to_search_k, unpack_batch_search};
@@ -137,15 +136,54 @@ pub(crate) fn make_faiss_for_test(
     FaissBackend::make_index(num_dim, driver, train_scaled)
 }
 
+/// Grow the backing file to the exact row count needed (no pre-allocation tail).
+const MMAP_GROW_ROWS: usize = 0;
+
 pub(crate) struct MmapColumnStore {
+    #[allow(dead_code)]
     pub(crate) path: PathBuf,
     pub(crate) ncols: usize,
     pub(crate) nrows: usize,
-    mmap: Mmap,
+    file: File,
+    mmap: MmapMut,
 }
 
 impl MmapColumnStore {
-    pub(crate) fn mmap_open_or_create(path: PathBuf, ncols: usize) -> Result<Self, ENNError> {
+    fn row_bytes(&self) -> usize {
+        self.ncols * std::mem::size_of::<f64>()
+    }
+
+    fn bytes_for_rows(&self, nrows: usize) -> usize {
+        nrows.saturating_mul(self.row_bytes())
+    }
+
+    fn ensure_capacity(&mut self, need_rows: usize) -> Result<(), ENNError> {
+        let need_bytes = self.bytes_for_rows(need_rows);
+        if need_bytes <= self.mmap.len() {
+            return Ok(());
+        }
+        let grow_rows = (need_rows - self.nrows).max(MMAP_GROW_ROWS);
+        let new_len = self.bytes_for_rows(self.nrows + grow_rows);
+        if !self.mmap.is_empty() {
+            self.mmap
+                .flush()
+                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        }
+        self.file
+            .set_len(new_len as u64)
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        self.mmap = unsafe {
+            MmapMut::map_mut(&self.file)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?
+        };
+        Ok(())
+    }
+
+    pub(crate) fn mmap_open_or_create(
+        path: PathBuf,
+        ncols: usize,
+        known_nrows: Option<usize>,
+    ) -> Result<Self, ENNError> {
         if !path.exists() {
             let file = OpenOptions::new()
                 .create(true)
@@ -164,18 +202,27 @@ impl MmapColumnStore {
             .metadata()
             .map_err(|e| ENNError::InvalidParameter(e.to_string()))?
             .len();
-        let nrows = if ncols > 0 {
-            (len as usize) / (ncols * std::mem::size_of::<f64>())
-        } else {
-            0
-        };
+        let row_bytes = ncols * std::mem::size_of::<f64>();
+        let nrows = known_nrows.unwrap_or_else(|| {
+            if row_bytes > 0 {
+                (len as usize) / row_bytes
+            } else {
+                0
+            }
+        });
+        if known_nrows.is_some() && nrows * row_bytes > len as usize {
+            return Err(ENNError::InvalidParameter(format!(
+                "known_nrows {nrows} exceeds train file bytes {len}"
+            )));
+        }
         let mmap = unsafe {
-            Mmap::map(&file).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
+            MmapMut::map_mut(&file).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
         };
         Ok(Self {
             path,
             ncols,
             nrows,
+            file,
             mmap,
         })
     }
@@ -190,30 +237,18 @@ impl MmapColumnStore {
                 got: vec![rows.nrows(), rows.ncols()],
             });
         }
-        let mut file = OpenOptions::new()
-            .append(true)
-            .open(&self.path)
-            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-        for row in rows.axis_iter(Axis(0)) {
+        let new_nrows = self.nrows + rows.nrows();
+        self.ensure_capacity(new_nrows)?;
+        let row_bytes = self.row_bytes();
+        for (i, row) in rows.axis_iter(Axis(0)).enumerate() {
+            let offset = (self.nrows + i) * row_bytes;
+            let dst = &mut self.mmap[offset..offset + row_bytes];
             let bytes = unsafe {
-                std::slice::from_raw_parts(
-                    row.as_ptr() as *const u8,
-                    self.ncols * std::mem::size_of::<f64>(),
-                )
+                std::slice::from_raw_parts(row.as_ptr() as *const u8, row_bytes)
             };
-            file.write_all(bytes)
-                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+            dst.copy_from_slice(bytes);
         }
-        drop(file);
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&self.path)
-            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-        self.mmap = unsafe {
-            Mmap::map(&file).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
-        };
-        self.nrows += rows.nrows();
+        self.nrows = new_nrows;
         Ok(())
     }
 
@@ -323,13 +358,30 @@ mod faiss_backend_tests {
     }
 
     #[test]
+    fn mmap_column_store_single_row_append_without_remap_churn() {
+        use super::MmapColumnStore;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("col.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(path, 2, None).unwrap();
+        for i in 0..5000 {
+            store
+                .mmap_append(&array![[i as f64, (i + 1) as f64]].view())
+                .unwrap();
+        }
+        assert_eq!(store.nrows, 5000);
+        assert_eq!(store.mmap_row_slice(4999).unwrap()[0], 4999.0);
+    }
+
+    #[test]
     fn mmap_column_store_direct_api() {
         use super::MmapColumnStore;
         use tempfile::TempDir;
 
         let dir = TempDir::new().expect("tempdir");
         let path = dir.path().join("col.bin");
-        let mut store = MmapColumnStore::mmap_open_or_create(path, 2).unwrap();
+        let mut store = MmapColumnStore::mmap_open_or_create(path, 2, None).unwrap();
         store
             .mmap_append(&array![[1.0, 2.0], [3.0, 4.0]].view())
             .unwrap();
