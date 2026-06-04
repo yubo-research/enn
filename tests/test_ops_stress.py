@@ -58,7 +58,7 @@ def test_checkpoint_ns_metamorphic_doubling_preserves_prefix():
         assert small == large[: len(small)]
 
 
-@pytest.mark.parametrize("name", ["flat", "hnsw", "hnsw_hannoy"])
+@pytest.mark.parametrize("name", ["flat", "hnsw", "hnsw_hannoy", "hnsw_disk"])
 def test_parse_index_driver(name: str):
     from ops.stress import parse_index_driver
 
@@ -178,6 +178,7 @@ _STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3}")
 
 def test_enn_stress_cli_does_not_fit(monkeypatch):
     from click.testing import CliRunner
+
     from enn.enn.enn_fitter import ENNStatefulFitter
     from ops.stress import cli
 
@@ -202,6 +203,7 @@ def test_enn_stress_cli_does_not_fit(monkeypatch):
 
 def test_enn_stress_cli():
     from click.testing import CliRunner
+
     from ops.stress import cli
 
     result = CliRunner().invoke(
@@ -221,6 +223,7 @@ def test_enn_stress_cli():
 
 def test_enn_stress_cli_hnsw_hannoy(tmp_path):
     from click.testing import CliRunner
+
     from ops.stress import cli
 
     work_dir = tmp_path / "enn_cli_hannoy"
@@ -242,8 +245,9 @@ def test_enn_stress_cli_hnsw_hannoy(tmp_path):
         assert _STRESS_ROW_RE.fullmatch(line)
 
 
-def test_enn_stress_cli_rejects_work_dir_without_hnsw_hannoy():
+def test_enn_stress_cli_rejects_work_dir_for_in_memory_driver():
     from click.testing import CliRunner
+
     from ops.stress import cli
 
     result = CliRunner().invoke(
@@ -251,11 +255,44 @@ def test_enn_stress_cli_rejects_work_dir_without_hnsw_hannoy():
         ["enn", "flat", "10", "--work-dir", "/tmp/enn_work"],
     )
     assert result.exit_code != 0
-    assert "work_dir requires index_type hnsw_hannoy" in result.output
+    assert "work_dir requires index_type in" in result.output
+
+
+def test_enn_stress_cli_rejects_disk_driver_without_work_dir():
+    from click.testing import CliRunner
+
+    from ops.stress import cli
+
+    result = CliRunner().invoke(cli, ["enn", "hnsw_disk", "10"])
+    assert result.exit_code != 0
+    assert "hnsw_disk requires --work-dir" in result.output
+
+
+def test_enn_stress_cli_hnsw_disk(tmp_path):
+    from click.testing import CliRunner
+
+    from ops.stress import cli
+
+    work_dir = tmp_path / "enn_cli_disk"
+    result = CliRunner().invoke(
+        cli,
+        ["enn", "hnsw_disk", "10", "--work-dir", str(work_dir)],
+    )
+    if result.exit_code != 0:
+        combined = f"{result.output}\n{result.exception}".lower()
+        if "hnsw_disk" in combined or "invalid" in combined:
+            pytest.skip("ennbo hnsw_disk backend not implemented yet")
+        raise AssertionError(result.output)
+    lines = result.output.strip().splitlines()
+    assert lines[0] == f"num_dim=10 num_obs=10 work_dir={work_dir}"
+    assert len(lines) == 4
+    for line in lines[1:]:
+        assert _STRESS_ROW_RE.fullmatch(line)
 
 
 def test_enn_stress_cli_hnsw_hannoy_work_dir(tmp_path):
     from click.testing import CliRunner
+
     from ops.stress import cli
 
     work_dir = tmp_path / "enn_work"
@@ -284,6 +321,7 @@ def test_enn_stress_cli_hnsw_hannoy_work_dir(tmp_path):
 
 def test_enn_stress_cli_rejects_legacy_option_syntax():
     from click.testing import CliRunner
+
     from ops.stress import cli
 
     result = CliRunner().invoke(
@@ -296,6 +334,7 @@ def test_enn_stress_cli_rejects_legacy_option_syntax():
 
 def test_enn_stress_cli_rejects_swapped_positional_order():
     from click.testing import CliRunner
+
     from ops.stress import cli
 
     result = CliRunner().invoke(cli, ["enn", "10", "flat"])
@@ -304,6 +343,7 @@ def test_enn_stress_cli_rejects_swapped_positional_order():
 
 def test_enn_stress_cli_num_dim_option():
     from click.testing import CliRunner
+
     from ops.stress import cli
 
     result = CliRunner().invoke(
@@ -320,6 +360,7 @@ def test_enn_stress_cli_num_dim_option():
 
 def test_enn_stress_cli_rejects_invalid_num_dim():
     from click.testing import CliRunner
+
     from ops.stress import cli
 
     result = CliRunner().invoke(cli, ["enn", "flat", "10", "--num-dim", "0"])

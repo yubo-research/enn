@@ -16,7 +16,8 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "hnsw", "hnsw_hannoy")
+INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "hnsw", "hnsw_hannoy", "hnsw_disk")
+DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"hnsw_hannoy", "hnsw_disk"})
 DEFAULT_NUM_DIM = 10
 STRESS_OBS_BATCH_SIZE = 100
 DEFAULT_HEARTBEAT_SECONDS = 10.0
@@ -65,6 +66,7 @@ def run_disk_rss_stress(
     *,
     num_obs: int,
     work_dir: str,
+    index_driver: ENNIndexDriver = ENNIndexDriver.HNSW_HANNOY,
     num_dim: int = DEFAULT_NUM_DIM,
     seed: int = 0,
 ) -> DiskRssStressResult:
@@ -80,7 +82,7 @@ def run_disk_rss_stress(
         empty_x,
         empty_y,
         scale_x=False,
-        index_driver=ENNIndexDriver.HNSW_HANNOY,
+        index_driver=index_driver,
         work_dir=work_dir,
         enn_storage="disk",
     )
@@ -129,6 +131,7 @@ def parse_index_driver(name: str) -> ENNIndexDriver:
         "flat": ENNIndexDriver.FLAT,
         "hnsw": ENNIndexDriver.HNSW,
         "hnsw_hannoy": ENNIndexDriver.HNSW_HANNOY,
+        "hnsw_disk": ENNIndexDriver.HNSW_DISK,
     }
     if name not in mapping:
         raise ValueError(f"Unknown index type: {name}")
@@ -305,7 +308,7 @@ def cli() -> None:
             ["--work-dir"],
             type=click.Path(file_okay=False, dir_okay=True, path_type=str),
             default=None,
-            help="Optional disk-backed ENN work directory (requires hnsw_hannoy).",
+            help="Disk-backed ENN work directory (requires hnsw_hannoy or hnsw_disk).",
         ),
     ],
 )
@@ -326,8 +329,12 @@ def enn(
         raise click.ClickException("progress_every must be >= 0")
     if heartbeat_seconds < 0:
         raise click.ClickException("heartbeat_seconds must be >= 0")
-    if work_dir is not None and index_type != "hnsw_hannoy":
-        raise click.ClickException("work_dir requires index_type hnsw_hannoy")
+    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
+        raise click.ClickException(
+            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
+        )
+    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
+        raise click.ClickException(f"{index_type} requires --work-dir")
     driver = parse_index_driver(index_type)
     click.echo(
         format_config_header(num_dim=num_dim, num_obs=num_obs, work_dir=work_dir)

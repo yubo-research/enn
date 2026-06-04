@@ -122,6 +122,7 @@ def test_enn_index_driver_enum():
     assert ENNIndexDriver.FLAT != ENNIndexDriver.HNSW
     assert ENNIndexDriver.HNSW != ENNIndexDriver.HNSW_HANNOY
     assert ENNIndexDriver.FLAT != ENNIndexDriver.HNSW_HANNOY
+    assert ENNIndexDriver.HNSW_DISK != ENNIndexDriver.HNSW_HANNOY
 
 
 def test_num_candidates_fn_protocol():
@@ -357,8 +358,8 @@ def test_turbo_hybrid_strategy():
 
 
 def test_build_trust_region():
-    from enn.turbo.python_fallback.components.builder import build_trust_region
     from enn.turbo.config import NoTRConfig, TurboTRConfig
+    from enn.turbo.python_fallback.components.builder import build_trust_region
 
     rng = np.random.default_rng(0)
     tr = build_trust_region(TurboTRConfig(), num_dim=3, rng=rng)
