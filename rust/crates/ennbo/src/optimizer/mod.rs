@@ -1,8 +1,8 @@
 //! Optimizer state machine for ask/tell pattern.
 
 mod incumbent;
+pub mod obs_access;
 mod observation_delta;
-mod observation_store;
 mod tr_state;
 
 pub use observation_delta::ObservationDelta;
@@ -19,8 +19,6 @@ use crate::incumbent_tracker::{
 use crate::strategy::Strategy;
 use crate::surrogate::{BoxedSurrogate, ENNSurrogate, Surrogate};
 use tr_state::TrustRegionState;
-
-use observation_store::ObservationStore;
 
 /// Telemetry for timing.
 #[derive(Debug, Clone, Default)]
@@ -40,7 +38,8 @@ pub struct Optimizer {
     tr_state: TrustRegionState,
     surrogate: Option<BoxedSurrogate>,
     strategy: Strategy,
-    obs_store: ObservationStore,
+    pub(crate) fallback_x: Vec<Array1<f64>>,
+    pub(crate) fallback_y: Vec<Array1<f64>>,
     incumbent_idx: Option<usize>,
     incumbent_x_unit: Option<Array1<f64>>,
     incumbent_y_scalar: Option<Array1<f64>>,
@@ -79,7 +78,6 @@ impl Optimizer {
         let tr_state = TrustRegionState::from_config(num_dim, &config.trust_region, rng)
             .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
 
-        // Initialize surrogate (None means no surrogate; NoSurrogate was wasteful/unclear)
         let surrogate: Option<BoxedSurrogate> = match &config.surrogate {
             SurrogateConfig::ENN(enn_config) => {
                 Some(Box::new(ENNSurrogate::new(enn_config.clone())))
@@ -87,7 +85,6 @@ impl Optimizer {
             SurrogateConfig::None => None,
         };
 
-        // Initialize Sobol engine if needed (scramble for randomized quasi-random)
         let sobol_engine =
             if config.candidates.candidate_rv == crate::candidates::CandidateRV::Sobol {
                 let mut eng = SobolEngine::new(num_dim)?;
@@ -97,7 +94,6 @@ impl Optimizer {
                 None
             };
 
-        // Generate seed from RngCore
         let mut seed_bytes = [0u8; 8];
         rng.fill_bytes(&mut seed_bytes);
         let sobol_seed_base = u64::from_le_bytes(seed_bytes) % (1u64 << 31);
@@ -121,7 +117,8 @@ impl Optimizer {
             tr_state,
             surrogate,
             strategy,
-            obs_store: ObservationStore::new(),
+            fallback_x: Vec::new(),
+            fallback_y: Vec::new(),
             incumbent_idx: None,
             incumbent_x_unit: None,
             incumbent_y_scalar: None,
@@ -137,7 +134,6 @@ impl Optimizer {
     pub fn ask(&mut self, num_arms: usize, rng: &mut dyn RngCore) -> Result<Array2<f64>, ENNError> {
         let start = std::time::Instant::now();
 
-        // Take strategy and telemetry out temporarily to avoid borrow issues
         let strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
         let result = strategy.ask(self, num_arms, &mut telemetry, rng);
@@ -157,7 +153,6 @@ impl Optimizer {
     ) -> Result<(), ENNError> {
         let start = std::time::Instant::now();
 
-        // Take strategy and telemetry out temporarily to avoid borrow issues
         let mut strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
         let result = strategy.tell(self, x, y, &mut telemetry, rng);
@@ -203,6 +198,11 @@ impl Optimizer {
         self.tr_state.length()
     }
 
+    /// Row-level observation access (ENN surrogate or fallback store).
+    pub fn obs_access(&self) -> obs_access::ObsAccess<'_> {
+        obs_access::ObsAccess::new(self)
+    }
+
     /// Get surrogate.
     pub fn surrogate(&self) -> Option<&(dyn Surrogate + Send + Sync)> {
         self.surrogate.as_ref().map(|s| s.as_ref())
@@ -216,14 +216,26 @@ impl Optimizer {
         }
     }
 
-    /// Get observations (uses cache; rebuilds only when invalidated).
+    /// Get observations in unit space (ENN model or fallback store).
     pub fn x_obs(&self) -> Option<Array2<f64>> {
-        self.obs_store.x_obs_array()
+        if let Some(surrogate) = self.surrogate.as_ref() {
+            return surrogate.observations_x().ok().flatten();
+        }
+        if self.fallback_x.is_empty() {
+            return None;
+        }
+        Some(obs_access::build_obs_array2(&self.fallback_x))
     }
 
-    /// Get observation values (uses cache; rebuilds only when invalidated).
+    /// Get observation values (ENN model or fallback store).
     pub fn y_obs(&self) -> Option<Array2<f64>> {
-        self.obs_store.y_obs_array()
+        if let Some(surrogate) = self.surrogate.as_ref() {
+            return surrogate.observations_y().ok().flatten();
+        }
+        if self.fallback_y.is_empty() {
+            return None;
+        }
+        Some(obs_access::build_obs_array2(&self.fallback_y))
     }
 
     /// Add observations (internal).
@@ -238,14 +250,16 @@ impl Optimizer {
                 got: vec![y.nrows(), y.ncols()],
             });
         }
-        let old_n = self.obs_store.len();
+        let old_n = self.obs_count();
         for i in 0..x.nrows() {
-            let x_row: Array1<f64> = x.row(i).to_owned();
             let y_row: Array1<f64> = y.row(i).to_owned();
             self.incumbent_tracker.tell(old_n + i, &y_row);
-            self.obs_store.push(x_row, y_row);
+            if self.surrogate.is_none() {
+                self.fallback_x.push(x.row(i).to_owned());
+                self.fallback_y.push(y_row);
+            }
         }
-        observation_delta::observation_delta_from_store(&self.obs_store, old_n)
+        observation_delta::observation_delta_from_batch(old_n, x, y)
     }
 
     /// Get incumbent x in unit space.
@@ -285,7 +299,10 @@ impl Optimizer {
 
     /// Current number of stored observations.
     pub fn obs_count(&self) -> usize {
-        self.obs_store.len()
+        if let Some(surrogate) = self.surrogate.as_ref() {
+            return surrogate.observation_count().unwrap_or(0);
+        }
+        self.fallback_x.len()
     }
 }
 

@@ -55,7 +55,7 @@ manifest-path = "rust/crates/enn-py/Cargo.toml"
 python-source = "src"
 module-name = "enn.enn_rust"
 profile = "release"
-features = ["usearch"]
+features = ["hannoy"]
 # Linux release builds should repair wheels; macOS wheels are repaired in CI with delocate.
 auditwheel = "repair"
 # Linux builds link Faiss statically by Rust target configuration; macOS builds link
@@ -79,6 +79,9 @@ exclude = [
 addopts = ""
 pythonpath = ["src", "."]
 testpaths = ["tests"]
+markers = [
+    "slow: disk RSS stress tests (100k+ rows; deselect with '-m \"not slow\"')",
+]
 filterwarnings = [
     "ignore::DeprecationWarning:importlib._bootstrap",
 ]

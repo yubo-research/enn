@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from .config.acquisition import (
@@ -152,6 +153,10 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
             overrides["num_fit_candidates"] = int(surrogate.num_fit_candidates)
         if surrogate.scale_x:
             overrides["scale_x"] = True
+        if surrogate.enn_storage is not None:
+            overrides["enn_storage"] = surrogate.enn_storage
+        if surrogate.work_dir is not None:
+            overrides["work_dir"] = os.fspath(surrogate.work_dir)
     return overrides if overrides else None
 
 

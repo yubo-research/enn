@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import resource
+import sys
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 
 import click
 import numpy as np
@@ -13,7 +16,7 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "hnsw", "hnsw_usearch")
+INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "hnsw", "hnsw_hannoy")
 DEFAULT_NUM_DIM = 10
 STRESS_OBS_BATCH_SIZE = 100
 DEFAULT_HEARTBEAT_SECONDS = 10.0
@@ -25,6 +28,89 @@ STRESS_PARAMS = ENNParams(
     epistemic_variance_scale=1.0,
     aleatoric_variance_scale=0.1,
 )
+DISK_STRESS_RSS_BASELINE_MIB = 512
+DISK_STRESS_RSS_PER_SHARD_ROW_BYTES = 64
+DEFAULT_SHARD_MAX_ROWS = 500_000
+
+
+def max_rss_bytes() -> int:
+    """Peak resident set size in bytes (platform-normalized)."""
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "darwin":
+        return int(rss)
+    return int(rss) * 1024
+
+
+def disk_stress_rss_ceiling_bytes(
+    *, num_dim: int, shard_max_rows: int = DEFAULT_SHARD_MAX_ROWS
+) -> int:
+    """Acceptance #3 RSS delta ceiling from plan."""
+    return (
+        DISK_STRESS_RSS_BASELINE_MIB * 1024 * 1024
+        + DISK_STRESS_RSS_PER_SHARD_ROW_BYTES * num_dim * shard_max_rows
+    )
+
+
+@dataclass(frozen=True)
+class DiskRssStressResult:
+    num_obs: int
+    baseline_rss_bytes: int
+    final_rss_bytes: int
+    rss_delta_bytes: int
+    train_x_bytes: int
+    index_memory_bytes: int
+
+
+def run_disk_rss_stress(
+    *,
+    num_obs: int,
+    work_dir: str,
+    num_dim: int = DEFAULT_NUM_DIM,
+    seed: int = 0,
+) -> DiskRssStressResult:
+    """Stream one-row adds to disk ENN; return RSS and on-disk metrics."""
+    if num_obs < 1:
+        raise ValueError("num_obs must be >= 1")
+    baseline_rss = max_rss_bytes()
+    x_query = make_query_points(STRESS_QUERY_N, num_dim=num_dim, seed=STRESS_QUERY_SEED)
+
+    empty_x = np.empty((0, num_dim), dtype=float)
+    empty_y = np.empty((0, 1), dtype=float)
+    model = EpistemicNearestNeighbors(
+        empty_x,
+        empty_y,
+        scale_x=False,
+        index_driver=ENNIndexDriver.HNSW_HANNOY,
+        work_dir=work_dir,
+        enn_storage="disk",
+    )
+    baseline_after_init = max_rss_bytes()
+
+    for x_row, y_row in iter_synthetic_observations(
+        num_obs, num_dim=num_dim, seed=seed, batch_size=1
+    ):
+        model.add(x_row, y_row)
+
+    model.ensure_index_sync()
+    posterior = model.posterior(x_query, params=STRESS_PARAMS)
+    assert np.all(np.isfinite(posterior.mu))
+    assert np.all(np.isfinite(posterior.se))
+
+    final_rss = max_rss_bytes()
+    train_x_path = Path(work_dir) / "train_x.bin"
+    train_x_bytes = train_x_path.stat().st_size if train_x_path.exists() else 0
+    expected_train_x = num_obs * num_dim * 8
+    assert abs(train_x_bytes - expected_train_x) <= num_dim * 8
+    assert len(model) == num_obs
+
+    return DiskRssStressResult(
+        num_obs=num_obs,
+        baseline_rss_bytes=min(baseline_rss, baseline_after_init),
+        final_rss_bytes=final_rss,
+        rss_delta_bytes=final_rss - min(baseline_rss, baseline_after_init),
+        train_x_bytes=train_x_bytes,
+        index_memory_bytes=model.index_memory_bytes(),
+    )
 
 
 @dataclass(frozen=True)
@@ -35,14 +121,14 @@ class EnnAddStressConfig:
     heartbeat_seconds: float = 0.0
     query_n: int = STRESS_QUERY_N
     query_seed: int = STRESS_QUERY_SEED
-    index_path: str | None = None
+    work_dir: str | None = None
 
 
 def parse_index_driver(name: str) -> ENNIndexDriver:
     mapping = {
         "flat": ENNIndexDriver.FLAT,
         "hnsw": ENNIndexDriver.HNSW,
-        "hnsw_usearch": ENNIndexDriver.HNSW_USEARCH,
+        "hnsw_hannoy": ENNIndexDriver.HNSW_HANNOY,
     }
     if name not in mapping:
         raise ValueError(f"Unknown index type: {name}")
@@ -112,11 +198,11 @@ def iter_synthetic_observations(
 
 
 def format_config_header(
-    *, num_dim: int, num_obs: int, index_path: str | None = None
+    *, num_dim: int, num_obs: int, work_dir: str | None = None
 ) -> str:
     header = f"num_dim={num_dim} num_obs={num_obs}"
-    if index_path is not None:
-        header = f"{header} index_path={index_path}"
+    if work_dir is not None:
+        header = f"{header} work_dir={work_dir}"
     return header
 
 
@@ -146,8 +232,9 @@ def run_enn_add_stress(
         "scale_x": False,
         "index_driver": index_driver,
     }
-    if cfg.index_path is not None:
-        model_kwargs["index_path"] = cfg.index_path
+    if cfg.work_dir is not None:
+        model_kwargs["work_dir"] = cfg.work_dir
+        model_kwargs["enn_storage"] = "disk"
     model = EpistemicNearestNeighbors(**model_kwargs)
 
     last_heartbeat_t = time.perf_counter()
@@ -164,7 +251,7 @@ def run_enn_add_stress(
             click.echo(f"heartbeat n={n}", err=True)
             last_heartbeat_t = time.perf_counter()
         if n in checkpoints:
-            model.sync_index()
+            model.ensure_index_sync()
             query_s = _time_query_s(model, x_query)
             yield (n, query_s)
 
@@ -215,10 +302,10 @@ def cli() -> None:
             help="Emit `heartbeat n=<N>` to stderr at most this often (0 disables).",
         ),
         click.Option(
-            ["--index-path"],
-            type=click.Path(),
+            ["--work-dir"],
+            type=click.Path(file_okay=False, dir_okay=True, path_type=str),
             default=None,
-            help="Optional USearch index file (requires hnsw_usearch). Persists at each checkpoint sync.",
+            help="Optional disk-backed ENN work directory (requires hnsw_hannoy).",
         ),
     ],
 )
@@ -228,7 +315,7 @@ def enn(
     num_dim: int,
     progress_every: int,
     heartbeat_seconds: float,
-    index_path: str | None,
+    work_dir: str | None,
 ) -> None:
     """Time 1000-point ENN queries at sparse checkpoints while streaming adds."""
     if num_obs < 1:
@@ -239,11 +326,11 @@ def enn(
         raise click.ClickException("progress_every must be >= 0")
     if heartbeat_seconds < 0:
         raise click.ClickException("heartbeat_seconds must be >= 0")
-    if index_path is not None and index_type != "hnsw_usearch":
-        raise click.ClickException("index_path requires index_type hnsw_usearch")
+    if work_dir is not None and index_type != "hnsw_hannoy":
+        raise click.ClickException("work_dir requires index_type hnsw_hannoy")
     driver = parse_index_driver(index_type)
     click.echo(
-        format_config_header(num_dim=num_dim, num_obs=num_obs, index_path=index_path)
+        format_config_header(num_dim=num_dim, num_obs=num_obs, work_dir=work_dir)
     )
     n_width = stress_row_n_width(num_obs)
     for n, query_s in run_enn_add_stress(
@@ -253,7 +340,7 @@ def enn(
             num_dim=num_dim,
             progress_every=progress_every,
             heartbeat_seconds=heartbeat_seconds,
-            index_path=index_path,
+            work_dir=work_dir,
         ),
     ):
         click.echo(format_stress_row(n, query_s, n_width=n_width))

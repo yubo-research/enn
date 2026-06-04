@@ -114,7 +114,7 @@ pub fn subsample_loglik_model<R: Rng>(
     } else {
         sample(rng, n, p_actual).into_iter().collect()
     };
-    let (x, y, _) = model.train_rows_at(&indices)?;
+    let (x, y, _) = model.rows().train_rows_at(&indices)?;
     subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
 }
 
@@ -254,8 +254,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(99);
         let via_model = subsample_loglik_model(&model, &paramss, 2, &mut rng, None).unwrap();
         let mut rng2 = StdRng::seed_from_u64(99);
-        let full_x = model.train_x();
-        let full_y = model.train_y();
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (full_x, full_y, _) = model.rows().train_rows_at(&all).unwrap();
         let via_views =
             subsample_loglik(&model, &full_x.view(), &full_y.view(), &paramss, 2, &mut rng2, None)
                 .unwrap();
@@ -288,7 +288,9 @@ mod tests {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2, true);
-        fitter.reset_y_stats(&model.train_y());
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
+        fitter.reset_y_stats(&ty.view());
 
         let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
 
@@ -302,7 +304,9 @@ mod tests {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2, true);
-        fitter.reset_y_stats(&model.train_y());
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
+        fitter.reset_y_stats(&ty.view());
 
         let warm_start = ENNParams::new(2, 1.5, 0.2).unwrap();
 
@@ -319,7 +323,9 @@ mod tests {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2, false);
-        fitter.reset_y_stats(&model.train_y());
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
+        fitter.reset_y_stats(&ty.view());
 
         let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
 
@@ -338,7 +344,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2, true);
-        fitter.reset_y_stats(&model.train_y());
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
+        fitter.reset_y_stats(&ty.view());
 
         let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
 

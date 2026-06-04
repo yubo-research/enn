@@ -1,4 +1,3 @@
-use super::observation_store::ObservationStore;
 use super::{Optimizer, Telemetry};
 use crate::config::{lhd_only_config, turbo_zero_config, ConfigOverrides};
 use crate::error::ENNError;
@@ -130,44 +129,19 @@ fn test_create_optimizer_factories_and_telemetry_defaults() {
 }
 
 #[test]
-fn observation_store_cache_and_edges() {
-    let mut store = ObservationStore::new();
-    assert!(store.is_empty());
-    assert_eq!(store.len(), 0);
-    assert!(store.x_obs_array().is_none());
-    assert!(store.y_obs_array().is_none());
-
-    let x1 = array![1.0, 2.0, 3.0];
-    let y1 = array![0.5, 1.5];
-    store.push(x1.clone(), y1.clone());
-    assert_eq!(store.len(), 1);
-    assert!(!store.is_empty());
-
-    let xa1 = store.x_obs_array().unwrap();
-    assert_eq!(xa1.shape(), &[1, 3]);
-    let xa2 = store.x_obs_array().unwrap();
-    assert_eq!(xa1, xa2);
-
-    let ya1 = store.y_obs_array().unwrap();
-    let ya2 = store.y_obs_array().unwrap();
-    assert_eq!(ya1.shape(), &[1, 2]);
-    assert_eq!(ya1, ya2);
-
-    assert_eq!(store.x_at(0), &x1);
-    assert_eq!(store.y_at(0), &y1);
-    let idxs: Vec<usize> = (0..store.len()).collect();
-    assert_eq!(idxs, vec![0]);
-
-    let x2 = array![0.0, 0.0, 0.0];
-    let y2 = array![1.0, 0.0];
-    store.push(x2, y2);
-    let single_row = ObservationStore::build_array2(&[array![9.0, 8.0]]);
-    assert_eq!(single_row.shape(), &[1, 2]);
-    assert_eq!(single_row[[0, 0]], 9.0);
-
-    store.replace(vec![array![1.0]], vec![array![2.0]]);
-    assert_eq!(store.len(), 1);
-    assert!(store.x_obs_array().unwrap()[[0, 0]] - 1.0 < 1e-12);
+fn fallback_observations_without_surrogate() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(99);
+    let mut optimizer = Optimizer::new(bounds, turbo_zero_config(), &mut rng).unwrap();
+    let x1 = array![[1.0, 2.0, 3.0]];
+    let y1 = array![[0.5, 1.5]];
+    optimizer.add_observations(&x1.view(), &y1.view()).unwrap();
+    assert_eq!(optimizer.obs_count(), 1);
+    let xa = optimizer.x_obs().unwrap();
+    assert_eq!(xa.shape(), &[1, 3]);
+    let ya = optimizer.y_obs().unwrap();
+    assert_eq!(ya.shape(), &[1, 2]);
+    assert!((optimizer.obs_access().obs_row_x(0).unwrap()[[0]] - 1.0).abs() < 1e-12);
 }
 
 #[test]

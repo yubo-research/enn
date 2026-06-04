@@ -1,9 +1,12 @@
 //! Surrogate models for optimization.
 
-use ndarray::{s, Array1, Array2, Array3, ArrayView2};
+use ndarray::{Array1, Array2, Array3, ArrayView2};
 use rand::RngCore;
 use rand::SeedableRng;
 
+use std::path::PathBuf;
+
+use crate::backend::EnnStorage;
 use crate::error::ENNError;
 use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
@@ -53,6 +56,32 @@ pub trait Surrogate: Send + Sync {
     fn fitted_num_metrics(&self) -> Option<usize> {
         None
     }
+
+    fn observation_count(&self) -> Option<usize> {
+        None
+    }
+
+    fn observation_row_x(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
+        let _ = idx;
+        Err(ENNError::InvalidParameter(
+            "observation_row_x not supported for this surrogate".to_string(),
+        ))
+    }
+
+    fn observation_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
+        let _ = idx;
+        Err(ENNError::InvalidParameter(
+            "observation_row_y not supported for this surrogate".to_string(),
+        ))
+    }
+
+    fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError> {
+        Ok(None)
+    }
+
+    fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
+        Ok(None)
+    }
 }
 
 pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
@@ -65,6 +94,8 @@ pub struct ENNSurrogateConfig {
     pub num_fit_samples: usize,
     pub infer_aleatoric_variance: bool,
     pub index_driver: IndexDriver,
+    pub storage: EnnStorage,
+    pub work_dir: Option<PathBuf>,
 }
 
 impl Default for ENNSurrogateConfig {
@@ -76,6 +107,8 @@ impl Default for ENNSurrogateConfig {
             num_fit_samples: 10,
             infer_aleatoric_variance: true,
             index_driver: IndexDriver::Exact,
+            storage: EnnStorage::InMemory,
+            work_dir: None,
         }
     }
 }
@@ -105,67 +138,21 @@ impl ENNSurrogate {
         self.params.as_ref()
     }
 
-    fn try_incremental_fit(
-        &mut self,
+    fn construct_model(
+        &self,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
-        rng: &mut rand::rngs::StdRng,
-    ) -> Result<bool, ENNError> {
-        let Some(ref mut model) = self.model else {
-            return Ok(false);
-        };
-        let n_old = model.len();
-        let n_new = x.nrows();
-        if n_new <= n_old {
-            return Ok(false);
-        }
-
-        let prefix_indices: Vec<usize> = (0..n_old).collect();
-        let (stored_x, stored_y, stored_yvar) = model.train_rows_at(&prefix_indices)?;
-        let prefix_x = x.slice(s![..n_old, ..]);
-        let prefix_y = y.slice(s![..n_old, ..]);
-        let same_prefix = prefix_x.shape() == stored_x.shape()
-            && prefix_x
-                .iter()
-                .zip(stored_x.iter())
-                .all(|(a, b)| (a - b).abs() < 1e-12)
-            && prefix_y.shape() == stored_y.shape()
-            && prefix_y
-                .iter()
-                .zip(stored_y.iter())
-                .all(|(a, b)| (a - b).abs() < 1e-12);
-
-        let same_yvar_prefix = match (stored_yvar.as_ref(), yvar) {
-            (None, None) => true,
-            (Some(_), None) | (None, Some(_)) => false,
-            (Some(m_yv), Some(in_yv)) => {
-                if in_yv.nrows() < n_old {
-                    false
-                } else {
-                    let p = in_yv.slice(s![..n_old, ..]);
-                    p.shape() == m_yv.shape()
-                        && p.iter()
-                            .zip(m_yv.iter())
-                            .all(|(a, b)| (a - b).abs() < 1e-12)
-                }
-            }
-        };
-
-        if !same_prefix || !same_yvar_prefix {
-            return Ok(false);
-        }
-
-        let x_add = x.slice(s![n_old.., ..]);
-        let y_add = y.slice(s![n_old.., ..]);
-        let yvar_add = yvar.map(|v| v.slice(s![n_old.., ..]));
-
-        model.add(&x_add, &y_add, yvar_add.as_ref())?;
-        if let Some(fitter) = self.fitter.as_mut() {
-            fitter.tell(&x_add, &y_add, yvar_add.as_ref())?;
-        }
-        self.run_fitter(rng)?;
-        Ok(true)
+    ) -> Result<EpistemicNearestNeighbors, ENNError> {
+        EpistemicNearestNeighbors::new_with_storage(
+            x.to_owned(),
+            y.to_owned(),
+            yvar.map(|v| v.to_owned()),
+            self.config.scale_x,
+            self.config.index_driver,
+            self.config.storage,
+            self.config.work_dir.clone(),
+        )
     }
 
     fn run_fitter(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
@@ -176,7 +163,7 @@ impl ENNSurrogate {
         if self.fitter.is_none() {
             let n = model.len();
             let indices: Vec<usize> = (0..n).collect();
-            let (train_x, train_y, train_yvar) = model.train_rows_at(&indices)?;
+            let (train_x, train_y, train_yvar) = model.rows().train_rows_at(&indices)?;
             let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
             let yvar_view = train_yvar.as_ref().map(|v| v.view());
             fitter.tell(
@@ -218,13 +205,7 @@ impl ENNSurrogate {
         }
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
         fitter.tell(x_new, y_new, yvar_new)?;
-        let model = EpistemicNearestNeighbors::new(
-            x_new.to_owned(),
-            y_new.to_owned(),
-            yvar_new.map(|v| v.to_owned()),
-            self.config.scale_x,
-            self.config.index_driver,
-        )?;
+        let model = self.construct_model(x_new, y_new, yvar_new)?;
         self.model = Some(model);
         self.fitter = Some(fitter);
         self.run_fitter(rng)?;
@@ -235,6 +216,54 @@ impl ENNSurrogate {
 impl Surrogate for ENNSurrogate {
     fn fitted_num_metrics(&self) -> Option<usize> {
         self.model.as_ref().map(|m| m.num_metrics())
+    }
+
+    fn observation_count(&self) -> Option<usize> {
+        self.model.as_ref().map(|m| m.len())
+    }
+
+    fn observation_row_x(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
+        let model = self
+            .model
+            .as_ref()
+            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
+        model.rows().row_x(idx)
+    }
+
+    fn observation_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
+        let model = self
+            .model
+            .as_ref()
+            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
+        model.rows().row_y(idx)
+    }
+
+    fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError> {
+        let model = match self.model.as_ref() {
+            Some(m) => m,
+            None => return Ok(None),
+        };
+        let n = model.len();
+        if n == 0 {
+            return Ok(None);
+        }
+        let indices: Vec<usize> = (0..n).collect();
+        let (_, y, _) = model.rows().train_rows_at(&indices)?;
+        Ok(Some(y))
+    }
+
+    fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
+        let model = match self.model.as_ref() {
+            Some(m) => m,
+            None => return Ok(None),
+        };
+        let n = model.len();
+        if n == 0 {
+            return Ok(None);
+        }
+        let indices: Vec<usize> = (0..n).collect();
+        let (x, _, _) = model.rows().train_rows_at(&indices)?;
+        Ok(Some(x))
     }
 
     fn fit(
@@ -248,18 +277,7 @@ impl Surrogate for ENNSurrogate {
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
 
-        let use_incremental = self.try_incremental_fit(x, y, yvar, &mut local_rng)?;
-        if use_incremental {
-            return Ok(());
-        }
-
-        let model = EpistemicNearestNeighbors::new(
-            x.to_owned(),
-            y.to_owned(),
-            yvar.map(|v| v.to_owned()),
-            self.config.scale_x,
-            self.config.index_driver,
-        )?;
+        let model = self.construct_model(x, y, yvar)?;
 
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
         fitter.tell(x, y, yvar)?;
@@ -409,14 +427,14 @@ mod tests {
         sur_inc
             .fit(&x1.view(), &y1.view(), Some(&yvar1.view()), &mut rng_a)
             .unwrap();
-        let v_inc = sur_inc.model().unwrap().train_yvar().unwrap()[[0, 0]];
+        let v_inc = sur_inc.model().unwrap().rows().row_yvar(0).unwrap().unwrap()[[0]];
 
         let mut rng_b = StdRng::seed_from_u64(11);
         let mut sur_full = ENNSurrogate::new(config);
         sur_full
             .fit(&x1.view(), &y1.view(), Some(&yvar1.view()), &mut rng_b)
             .unwrap();
-        let v_full = sur_full.model().unwrap().train_yvar().unwrap()[[0, 0]];
+        let v_full = sur_full.model().unwrap().rows().row_yvar(0).unwrap().unwrap()[[0]];
 
         assert!(
             (v_inc - v_full).abs() < 1e-9,

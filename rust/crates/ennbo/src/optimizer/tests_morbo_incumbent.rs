@@ -30,7 +30,16 @@ fn morbo_optimizer_with_tied_obs(seed: u64) -> Optimizer {
     morbo.update(&y_fit.view(), &y_inc.view()).unwrap();
     let x = array![[0.2, 0.3], [0.4, 0.5], [0.6, 0.7]];
     let y = array![[1.0, 2.0], [1.0, 2.0], [1.0, 2.0]];
-    opt.add_observations(&x.view(), &y.view()).unwrap();
+    let delta = opt.add_observations(&x.view(), &y.view()).unwrap();
+    let surrogate = opt.surrogate_mut().expect("enn surrogate");
+    surrogate
+        .fit_append(
+            &delta.x_new_view(),
+            &delta.y_new_view(),
+            None,
+            &mut rng,
+        )
+        .unwrap();
     opt
 }
 

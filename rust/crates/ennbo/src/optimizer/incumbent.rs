@@ -11,8 +11,9 @@ impl Optimizer {
         let n_cand = candidate_indices.len();
         let mut x_cand = Array2::zeros((n_cand, self.num_dim));
         for (r, &idx) in candidate_indices.iter().enumerate() {
+            let x_row = self.obs_access().obs_row_x(idx)?;
             for d in 0..self.num_dim {
-                x_cand[[r, d]] = self.obs_store.x_at(idx)[d];
+                x_cand[[r, d]] = x_row[d];
             }
         }
         let pred = surrogate.predict(&x_cand.view())?;
@@ -25,7 +26,7 @@ impl Optimizer {
             }
         }
         self.incumbent_idx = Some(best);
-        self.incumbent_x_unit = Some(self.obs_store.x_at(best).clone());
+        self.incumbent_x_unit = Some(self.obs_access().obs_row_x(best)?);
         self.incumbent_y_scalar = Some(Array1::from_elem(1, best_mu));
         Ok(())
     }
@@ -35,15 +36,15 @@ impl Optimizer {
     }
 
     pub fn update_incumbent(&mut self, rng: &mut dyn RngCore) -> Result<(), ENNError> {
-        if self.obs_store.is_empty() {
+        if self.obs_access().observations_empty() {
             self.incumbent_idx = None;
             self.incumbent_x_unit = None;
             self.incumbent_y_scalar = None;
             return Ok(());
         }
 
-        if self.incumbent_tracker.observation_count() != self.obs_store.len() {
-            if let Some(y_obs) = self.obs_store.y_obs_array() {
+        if self.incumbent_tracker.observation_count() != self.obs_count() {
+            if let Some(y_obs) = self.y_obs() {
                 self.incumbent_tracker.rebuild(&y_obs.view());
             }
         }
@@ -60,7 +61,7 @@ impl Optimizer {
             let n_cand = candidate_indices.len();
             let mut y_rows = Array2::zeros((n_cand, self.tr_state.num_metrics()));
             for (r, &idx) in candidate_indices.iter().enumerate() {
-                let y_row = self.obs_store.y_at(idx);
+                let y_row = self.obs_access().obs_row_y(idx)?;
                 for m in 0..y_rows.ncols() {
                     y_rows[[r, m]] = y_row[m];
                 }
@@ -69,8 +70,9 @@ impl Optimizer {
                 if let Some(surrogate) = self.surrogate.as_ref() {
                     let mut x_cand = Array2::zeros((n_cand, self.num_dim));
                     for (r, &idx) in candidate_indices.iter().enumerate() {
+                        let x_row = self.obs_access().obs_row_x(idx)?;
                         for d in 0..self.num_dim {
-                            x_cand[[r, d]] = self.obs_store.x_at(idx)[d];
+                            x_cand[[r, d]] = x_row[d];
                         }
                     }
                     y_rows = surrogate.predict(&x_cand.view())?.mu;
@@ -83,7 +85,7 @@ impl Optimizer {
             let best_pos = argmax_random_tie(scores.as_slice().unwrap_or(&[]), rng);
             let best_idx = candidate_indices[best_pos];
             self.incumbent_idx = Some(best_idx);
-            self.incumbent_x_unit = Some(self.obs_store.x_at(best_idx).clone());
+            self.incumbent_x_unit = Some(self.obs_access().obs_row_x(best_idx)?);
             self.incumbent_y_scalar = Some(y_rows.row(best_pos).to_owned());
             return Ok(());
         }
@@ -95,13 +97,18 @@ impl Optimizer {
         let best_idx = candidate_indices
             .into_iter()
             .max_by(|&a, &b| {
-                self.obs_store.y_at(a)[0].total_cmp(&self.obs_store.y_at(b)[0])
+                self.obs_access().obs_row_y(a).and_then(|ya| {
+                    self.obs_access()
+                        .obs_row_y(b)
+                        .map(|yb| ya[0].total_cmp(&yb[0]))
+                })
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .ok_or_else(|| ENNError::InvalidParameter("No incumbent candidates".to_string()))?;
 
         self.incumbent_idx = Some(best_idx);
-        self.incumbent_x_unit = Some(self.obs_store.x_at(best_idx).clone());
-        self.incumbent_y_scalar = Some(self.obs_store.y_at(best_idx).clone());
+        self.incumbent_x_unit = Some(self.obs_access().obs_row_x(best_idx)?);
+        self.incumbent_y_scalar = Some(self.obs_access().obs_row_y(best_idx)?);
 
         Ok(())
     }

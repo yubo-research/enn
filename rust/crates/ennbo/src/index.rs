@@ -1,5 +1,4 @@
 use ndarray::{Array1, Array2, ArrayView2, Axis};
-use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::knn::KnnBackend;
@@ -18,9 +17,11 @@ pub enum IndexDriver {
     Exact,
     /// Faiss HNSW32 (in-memory).
     HNSW,
-    /// USearch HNSW (requires `usearch` feature; supports optional file-backed index).
-    HNSWUSearch,
+    /// Hannoy HNSW on disk (requires `hannoy` feature + `EnnStorage::Disk`).
+    HNSWHannoy,
 }
+
+use std::sync::Mutex;
 
 pub struct ENNIndex {
     inner: KnnBackend,
@@ -28,11 +29,7 @@ pub struct ENNIndex {
     x_scale: Mutex<Array1<f64>>,
     scale_x: bool,
     driver: IndexDriver,
-    #[cfg(feature = "usearch")]
-    index_path: Option<PathBuf>,
 }
-
-use std::sync::Mutex;
 
 impl ENNIndex {
     pub fn new(
@@ -42,51 +39,13 @@ impl ENNIndex {
         scale_x: bool,
         driver: IndexDriver,
     ) -> Result<Self, IndexError> {
-        Self::build(train_x_scaled, num_dim, x_scale, scale_x, driver, None)
-    }
-
-    /// Build an HNSW index backed by a USearch file (requires `usearch` feature).
-    #[cfg(feature = "usearch")]
-    pub fn with_index_path(
-        train_x_scaled: Array2<f64>,
-        num_dim: usize,
-        x_scale: Array1<f64>,
-        scale_x: bool,
-        driver: IndexDriver,
-        index_path: PathBuf,
-    ) -> Result<Self, IndexError> {
-        Self::build(
-            train_x_scaled,
-            num_dim,
-            x_scale,
-            scale_x,
-            driver,
-            Some(index_path),
-        )
-    }
-
-    fn build(
-        train_x_scaled: Array2<f64>,
-        num_dim: usize,
-        x_scale: Array1<f64>,
-        scale_x: bool,
-        driver: IndexDriver,
-        index_path: Option<PathBuf>,
-    ) -> Result<Self, IndexError> {
-        let inner = KnnBackend::new(
-            num_dim,
-            driver,
-            &train_x_scaled.view(),
-            index_path.clone(),
-        )?;
+        let inner = KnnBackend::new(num_dim, driver, &train_x_scaled.view())?;
         Ok(Self {
             inner,
             num_dim,
             x_scale: Mutex::new(x_scale),
             scale_x,
             driver,
-            #[cfg(feature = "usearch")]
-            index_path,
         })
     }
 
@@ -94,26 +53,11 @@ impl ENNIndex {
         self.driver
     }
 
-    #[cfg(feature = "usearch")]
-    pub fn index_path(&self) -> Option<&PathBuf> {
-        self.index_path.as_ref()
-    }
-
-    /// Persist in-memory tail adds to the configured USearch file (no-op without `index_path`).
-    #[cfg(feature = "usearch")]
-    pub fn checkpoint(&self) -> Result<(), IndexError> {
-        self.inner.checkpoint()
-    }
-
     pub fn rebuild_from_scaled(
         &self,
         train_x_scaled: Array2<f64>,
         x_scale: Array1<f64>,
     ) -> Result<(), IndexError> {
-        #[cfg(feature = "usearch")]
-        self.inner
-            .rebuild(&train_x_scaled.view(), self.index_path.as_deref())?;
-        #[cfg(not(feature = "usearch"))]
         self.inner.rebuild(&train_x_scaled.view())?;
         *self
             .x_scale
@@ -328,133 +272,6 @@ mod tests {
     #[test]
     fn test_hnsw_search_regression_all_indices_valid_for_k_equals_n() {
         run_hnsw_regression_test(|train_x| index_unit(train_x, IndexDriver::HNSW));
-    }
-
-    #[cfg(feature = "usearch")]
-    mod usearch_tests {
-        use super::*;
-        use crate::knn::usearch_backend::USearchBackend;
-        use rand::SeedableRng;
-        use rand_chacha::ChaCha8Rng;
-        #[test]
-        fn test_hnsw_usearch_search() {
-            run_hnsw_search_tests(|train_x| index_unit(train_x, IndexDriver::HNSWUSearch));
-        }
-
-        #[test]
-        fn test_hnsw_usearch_regression_all_indices_valid() {
-            run_hnsw_regression_test(|train_x| index_unit(train_x, IndexDriver::HNSWUSearch));
-        }
-
-        #[test]
-        fn test_usearch_file_backed_checkpoint() {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("index.usearch");
-            let _ = std::fs::remove_file(&path);
-            let train_x = array![[0.0, 0.0], [1.0, 0.0]];
-            let index = ENNIndex::with_index_path(
-                train_x,
-                2,
-                array![1.0, 1.0],
-                false,
-                IndexDriver::HNSWUSearch,
-                path.clone(),
-            )
-            .unwrap();
-            index.add(&array![[0.0, 1.0]].view()).unwrap();
-            assert_eq!(index.len(), 3);
-
-            let empty = Array2::<f64>::zeros((0, 2));
-            let before_ckpt = ENNIndex::with_index_path(
-                empty.clone(),
-                2,
-                array![1.0, 1.0],
-                false,
-                IndexDriver::HNSWUSearch,
-                path.clone(),
-            )
-            .unwrap();
-            assert_eq!(before_ckpt.len(), 2, "add must not persist until checkpoint");
-
-            index.checkpoint().unwrap();
-            let after_ckpt = ENNIndex::with_index_path(
-                empty,
-                2,
-                array![1.0, 1.0],
-                false,
-                IndexDriver::HNSWUSearch,
-                path.clone(),
-            )
-            .unwrap();
-            assert_eq!(after_ckpt.len(), 3);
-            let _ = std::fs::remove_file(&path);
-        }
-
-        #[test]
-        fn test_usearch_file_backed_cold_open() {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("index.usearch");
-            let _ = std::fs::remove_file(&path);
-            let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
-            let built = ENNIndex::with_index_path(
-                train_x,
-                2,
-                array![1.0, 1.0],
-                false,
-                IndexDriver::HNSWUSearch,
-                path.clone(),
-            )
-            .unwrap();
-            let query = array![[0.0, 0.0]];
-            let (d_built, i_built) = built.search(&query.view(), 2, false).unwrap();
-            let viewed = USearchBackend::open_view_only(&path, 2).unwrap();
-            let (d_view, i_view) = viewed.search(&query.view(), 2, 2).unwrap();
-            assert_eq!(i_view[[0, 0]], i_built[[0, 0]]);
-            assert!((d_view[[0, 0]] - d_built[[0, 0]]).abs() < 1e-4);
-            let _ = std::fs::remove_file(&path);
-        }
-
-        #[test]
-        fn test_usearch_recall_jaccard_vs_flat() {
-            let seed = 42u64;
-            let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            let n = 200usize;
-            let dim = 10usize;
-            let k = 10usize;
-            let train_x = Array2::from_shape_fn((n, dim), |(_, j)| {
-                use rand::Rng;
-                rng.gen::<f64>() * 10.0 + j as f64 * 0.01
-            });
-            let query = Array2::from_shape_fn((5, dim), |(_, _)| {
-                use rand::Rng;
-                rng.gen::<f64>() * 10.0
-            });
-            let dim = train_x.ncols();
-            let x_scale = ndarray::Array1::ones(dim);
-            let flat =
-                ENNIndex::new(train_x.clone(), dim, x_scale.clone(), false, IndexDriver::Exact)
-                    .unwrap();
-            let hnsw = ENNIndex::new(train_x, dim, x_scale, false, IndexDriver::HNSWUSearch).unwrap();
-            let mut total_jaccard = 0.0f64;
-            for qrow in query.rows() {
-                let q = qrow.insert_axis(Axis(0));
-                let (_, idx_flat) = flat.search(&q, k as i32, false).unwrap();
-                let (_, idx_hnsw) = hnsw.search(&q, k as i32, false).unwrap();
-                let set_flat: std::collections::HashSet<i64> =
-                    idx_flat.row(0).iter().copied().collect();
-                let set_hnsw: std::collections::HashSet<i64> =
-                    idx_hnsw.row(0).iter().copied().collect();
-                let inter = set_flat.intersection(&set_hnsw).count() as f64;
-                let union = set_flat.union(&set_hnsw).count() as f64;
-                total_jaccard += inter / union;
-            }
-            let avg_jaccard = total_jaccard / query.nrows() as f64;
-            eprintln!("usearch recall Jaccard vs Flat (seed={seed}): {avg_jaccard:.4}");
-            assert!(
-                avg_jaccard >= 0.99,
-                "USearch HNSW recall Jaccard {avg_jaccard} < 0.99 (seed={seed})"
-            );
-        }
     }
 
     #[test]

@@ -33,7 +33,8 @@ def make_enn_demo_data(num_samples: int, k: int, noise: float, m: int = 1):
     model = EpistemicNearestNeighbors(x[:, None], y[:, None], yvar[:, None])
     rng = np.random.default_rng(0)
     fitter = ENNStatefulFitter(k=k, rng=rng)
-    fitter.tell(model.train_x, model.train_y, model.train_yvar)
+    x_all, y_all, yvar_all = model.train_rows_at(list(range(len(model))))
+    fitter.tell(x_all, y_all, yvar_all)
     params = fitter.ask(
         model,
         num_fit_candidates=100,

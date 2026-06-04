@@ -32,9 +32,9 @@ fn train_rows_at_matches_train_x_y_views() {
         }
         indices.truncate(k);
 
-        let (x_at, y_at, _) = model.train_rows_at(&indices).unwrap();
+        let (x_at, y_at, _) = model.rows().train_rows_at(&indices).unwrap();
         let all: Vec<usize> = (0..n).collect();
-        let (x_all, y_all, _) = model.train_rows_at(&all).unwrap();
+        let (x_all, y_all, _) = model.rows().train_rows_at(&all).unwrap();
         for (r, &idx) in indices.iter().enumerate() {
             assert_eq!(x_at.row(r).to_vec(), x_all.row(idx).to_vec());
             assert_eq!(y_at.row(r).to_vec(), y_all.row(idx).to_vec());
@@ -61,9 +61,9 @@ fn single_index_train_rows_at_matches_full_gather() {
 
     for _ in 0..20 {
         let i = rng.gen_range(0..model.len());
-        let (x_one, y_one, _) = model.train_rows_at(&[i]).unwrap();
+        let (x_one, y_one, _) = model.rows().train_rows_at(&[i]).unwrap();
         let all: Vec<usize> = (0..model.len()).collect();
-        let (x_all, y_all, _) = model.train_rows_at(&all).unwrap();
+        let (x_all, y_all, _) = model.rows().train_rows_at(&all).unwrap();
         assert_eq!(x_one.row(0).to_vec(), x_all.row(i).to_vec());
         assert_eq!(y_one.row(0).to_vec(), y_all.row(i).to_vec());
     }

@@ -5,6 +5,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use std::path::PathBuf;
 
 pub(crate) fn optional_f64(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<f64>> {
     match dict.get_item(key)? {
@@ -75,7 +76,7 @@ pub fn parse_config_overrides_from_dict(
         overrides.index_driver = Some(match s.to_lowercase().as_str() {
             "exact" | "flat" => IndexDriver::Exact,
             "hnsw" => IndexDriver::HNSW,
-            "hnsw_usearch" | "usearch_hnsw" => IndexDriver::HNSWUSearch,
+            "hnsw_hannoy" => IndexDriver::HNSWHannoy,
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {}",
@@ -123,6 +124,22 @@ pub fn parse_config_overrides_from_dict(
     overrides.alpha = optional_f64(dict, "alpha")?;
     if let Some(v) = dict.get_item("rescalarize")? {
         overrides.rescalarize = Some(v.extract()?);
+    }
+    if let Some(v) = dict.get_item("enn_storage")? {
+        let s: String = v.extract()?;
+        overrides.enn_storage = Some(match s.to_lowercase().as_str() {
+            "disk" => ennbo::EnnStorage::Disk,
+            "memory" | "in_memory" | "inmemory" => ennbo::EnnStorage::InMemory,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "Unknown enn_storage: {s}"
+                )))
+            }
+        });
+    }
+    if let Some(v) = dict.get_item("work_dir")? {
+        let s: String = v.extract()?;
+        overrides.work_dir = Some(PathBuf::from(s));
     }
     apply_scalar_overrides(dict, &mut overrides)?;
     Ok(overrides)

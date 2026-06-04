@@ -1,9 +1,7 @@
-//! KNN backends behind [`crate::index::ENNIndex`].
+//! KNN backends behind [`crate::index::ENNIndex`] (Faiss in-memory only).
 
 pub(crate) mod faiss_backend;
-
-#[cfg(feature = "usearch")]
-pub(crate) mod usearch_backend;
+pub(crate) use faiss_backend::MmapColumnStore;
 
 use ndarray::{Array2, ArrayView2};
 use std::sync::Mutex;
@@ -12,17 +10,9 @@ use crate::index::{IndexDriver, IndexError};
 
 pub(crate) use faiss_backend::FaissBackend;
 
-#[cfg(feature = "usearch")]
-pub(crate) use usearch_backend::USearchBackend;
-
-#[cfg(feature = "usearch")]
-use std::path::Path;
-
-/// In-memory or file-backed KNN storage (Faiss and optional USearch HNSW).
+/// In-memory Faiss KNN storage (Exact / HNSW).
 pub(crate) enum KnnBackend {
     Faiss(Mutex<FaissBackend>),
-    #[cfg(feature = "usearch")]
-    USearch(Mutex<USearchBackend>),
 }
 
 impl KnnBackend {
@@ -30,53 +20,22 @@ impl KnnBackend {
         num_dim: usize,
         driver: IndexDriver,
         train_scaled: &ArrayView2<f64>,
-        index_path: Option<std::path::PathBuf>,
     ) -> Result<Self, IndexError> {
         match driver {
-            IndexDriver::Exact | IndexDriver::HNSW => {
-                if index_path.is_some() {
-                    return Err(IndexError::InvalidParameter(
-                        "index_path requires IndexDriver::HNSWUSearch".to_string(),
-                    ));
-                }
-                Ok(Self::Faiss(Mutex::new(FaissBackend::new(
-                    num_dim,
-                    driver,
-                    train_scaled,
-                )?)))
-            }
-            IndexDriver::HNSWUSearch => {
-                #[cfg(feature = "usearch")]
-                {
-                    if let Some(path) = index_path {
-                        return Ok(Self::USearch(Mutex::new(USearchBackend::open_or_build(
-                            num_dim,
-                            train_scaled,
-                            &path,
-                        )?)));
-                    }
-                    return Ok(Self::USearch(Mutex::new(USearchBackend::new(
-                        num_dim,
-                        train_scaled,
-                        None,
-                    )?)));
-                }
-                #[cfg(not(feature = "usearch"))]
-                {
-                    let _ = (num_dim, train_scaled, index_path);
-                    Err(IndexError::InvalidParameter(
-                        "IndexDriver::HNSWUSearch requires the `usearch` feature".to_string(),
-                    ))
-                }
-            }
+            IndexDriver::Exact | IndexDriver::HNSW => Ok(Self::Faiss(Mutex::new(FaissBackend::new(
+                num_dim,
+                driver,
+                train_scaled,
+            )?))),
+            IndexDriver::HNSWHannoy => Err(IndexError::InvalidParameter(
+                "IndexDriver::HNSWHannoy is disk-only; use DiskHannoyEnnBackend".to_string(),
+            )),
         }
     }
 
     pub(crate) fn len(&self) -> usize {
         match self {
             Self::Faiss(inner) => inner.lock().expect("knn mutex poisoned").len(),
-            #[cfg(feature = "usearch")]
-            Self::USearch(inner) => inner.lock().expect("knn mutex poisoned").len(),
         }
     }
 
@@ -86,40 +45,21 @@ impl KnnBackend {
                 .lock()
                 .expect("knn mutex poisoned")
                 .memory_usage_bytes(),
-            #[cfg(feature = "usearch")]
-            Self::USearch(inner) => inner
-                .lock()
-                .expect("knn mutex poisoned")
-                .memory_usage_bytes(),
         }
     }
 
-    pub(crate) fn rebuild(
-        &self,
-        train_scaled: &ArrayView2<f64>,
-        #[cfg(feature = "usearch")] index_path: Option<&Path>,
-    ) -> Result<(), IndexError> {
+    pub(crate) fn rebuild(&self, train_scaled: &ArrayView2<f64>) -> Result<(), IndexError> {
         match self {
             Self::Faiss(inner) => inner
                 .lock()
                 .expect("knn mutex poisoned")
                 .rebuild(train_scaled),
-            #[cfg(feature = "usearch")]
-            Self::USearch(inner) => inner
-                .lock()
-                .expect("knn mutex poisoned")
-                .rebuild(train_scaled, index_path),
         }
     }
 
     pub(crate) fn add(&self, rows_scaled: &ArrayView2<f64>, start_key: u64) -> Result<(), IndexError> {
         match self {
             Self::Faiss(inner) => inner
-                .lock()
-                .expect("knn mutex poisoned")
-                .add(rows_scaled, start_key),
-            #[cfg(feature = "usearch")]
-            Self::USearch(inner) => inner
                 .lock()
                 .expect("knn mutex poisoned")
                 .add(rows_scaled, start_key),
@@ -137,25 +77,8 @@ impl KnnBackend {
                 .lock()
                 .expect("knn mutex poisoned")
                 .search(queries_scaled, k_eff, search_k),
-            #[cfg(feature = "usearch")]
-            Self::USearch(inner) => inner
-                .lock()
-                .expect("knn mutex poisoned")
-                .search(queries_scaled, k_eff, search_k),
         }
     }
-
-    #[cfg(feature = "usearch")]
-    pub(crate) fn checkpoint(&self) -> Result<(), IndexError> {
-        match self {
-            Self::Faiss(_) => Ok(()),
-            Self::USearch(inner) => inner
-                .lock()
-                .expect("knn mutex poisoned")
-                .checkpoint(),
-        }
-    }
-
 }
 
 pub(crate) fn arr2_rows_to_f32(a: &ArrayView2<f64>) -> Vec<f32> {
@@ -192,74 +115,6 @@ pub(crate) fn pad_neighbor_cols_to_search_k(
     )
 }
 
-#[cfg(test)]
-mod knn_backend_tests {
-    use super::*;
-    use ndarray::array;
-    use crate::index::IndexDriver;
-
-    #[test]
-    fn knn_backend_faiss_exact() {
-        let train = array![[0.0, 0.0], [1.0, 1.0]];
-        let backend = KnnBackend::new(2, IndexDriver::Exact, &train.view(), None).unwrap();
-        assert_eq!(backend.len(), 2);
-        backend.add(&array![[2.0, 2.0]].view(), 2).unwrap();
-        assert_eq!(backend.len(), 3);
-        let (_d, i) = backend
-            .search(&array![[0.0, 0.0]].view(), 2, 2)
-            .unwrap();
-        assert_eq!(i[[0, 0]], 0);
-        #[cfg(not(feature = "usearch"))]
-        backend.rebuild(&train.view()).unwrap();
-        #[cfg(feature = "usearch")]
-        backend.rebuild(&train.view(), None).unwrap();
-    }
-
-    #[test]
-    fn knn_backend_faiss_hnsw() {
-        let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
-        let backend = KnnBackend::new(2, IndexDriver::HNSW, &train.view(), None).unwrap();
-        assert_eq!(backend.len(), 3);
-    }
-
-    #[cfg(feature = "usearch")]
-    #[test]
-    fn knn_backend_usearch_hnsw() {
-        let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
-        let backend = KnnBackend::new(2, IndexDriver::HNSWUSearch, &train.view(), None).unwrap();
-        assert_eq!(backend.len(), 3);
-        assert!(matches!(backend, KnnBackend::USearch(_)));
-    }
-
-    #[cfg(feature = "usearch")]
-    #[test]
-    fn knn_backend_hnsw_routes_to_faiss_with_usearch_feature() {
-        let train = array![[0.0, 0.0], [1.0, 0.0]];
-        let backend = KnnBackend::new(2, IndexDriver::HNSW, &train.view(), None).unwrap();
-        assert!(matches!(backend, KnnBackend::Faiss(_)));
-    }
-
-    #[cfg(not(feature = "usearch"))]
-    #[test]
-    fn knn_backend_hnsw_usearch_without_feature_errors() {
-        let train = array![[0.0, 0.0], [1.0, 0.0]];
-        match KnnBackend::new(2, IndexDriver::HNSWUSearch, &train.view(), None) {
-            Err(e) => assert!(e.to_string().contains("usearch")),
-            Ok(_) => panic!("expected HNSWUSearch without usearch feature to error"),
-        }
-    }
-
-    #[test]
-    fn pad_and_unpack_helpers() {
-        let (d, i) = pad_neighbor_cols_to_search_k(array![[1.0]], array![[0i64]], 3);
-        assert_eq!(d.ncols(), 3);
-        assert_eq!(i.ncols(), 3);
-        let (d2, i2) = unpack_batch_search(1, 2, &[0.5, 1.5], &[0, 1]);
-        assert_eq!(d2[[0, 1]], 1.5);
-        assert_eq!(i2[[0, 1]], 1);
-    }
-}
-
 pub(crate) fn unpack_batch_search(
     n_query: usize,
     k: usize,
@@ -276,4 +131,51 @@ pub(crate) fn unpack_batch_search(
         }
     }
     (dist2s, indices)
+}
+
+#[cfg(test)]
+mod knn_backend_tests {
+    use super::*;
+    use crate::index::IndexDriver;
+    use ndarray::array;
+
+    #[test]
+    fn knn_backend_faiss_exact() {
+        let train = array![[0.0, 0.0], [1.0, 1.0]];
+        let backend = KnnBackend::new(2, IndexDriver::Exact, &train.view()).unwrap();
+        assert_eq!(backend.len(), 2);
+        backend.add(&array![[2.0, 2.0]].view(), 2).unwrap();
+        assert_eq!(backend.len(), 3);
+        let (_d, i) = backend
+            .search(&array![[0.0, 0.0]].view(), 2, 2)
+            .unwrap();
+        assert_eq!(i[[0, 0]], 0);
+        backend.rebuild(&train.view()).unwrap();
+    }
+
+    #[test]
+    fn knn_backend_faiss_hnsw() {
+        let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        let backend = KnnBackend::new(2, IndexDriver::HNSW, &train.view()).unwrap();
+        assert_eq!(backend.len(), 3);
+    }
+
+    #[test]
+    fn knn_backend_hnsw_hannoy_driver_errors() {
+        let train = array![[0.0, 0.0], [1.0, 0.0]];
+        match KnnBackend::new(2, IndexDriver::HNSWHannoy, &train.view()) {
+            Err(e) => assert!(e.to_string().contains("disk-only")),
+            Ok(_) => panic!("expected HNSWHannoy on KnnBackend to error"),
+        }
+    }
+
+    #[test]
+    fn pad_and_unpack_helpers() {
+        let (d, i) = pad_neighbor_cols_to_search_k(array![[1.0]], array![[0i64]], 3);
+        assert_eq!(d.ncols(), 3);
+        assert_eq!(i.ncols(), 3);
+        let (d2, i2) = unpack_batch_search(1, 2, &[0.5, 1.5], &[0, 1]);
+        assert_eq!(d2[[0, 1]], 1.5);
+        assert_eq!(i2[[0, 1]], 1);
+    }
 }

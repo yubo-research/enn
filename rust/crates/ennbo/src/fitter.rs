@@ -210,7 +210,7 @@ impl ENNFitter {
                 sample(rng, n, p_actual).into_iter().collect()
             }
         };
-        let (train_x, train_y, _) = model.train_rows_at(&indices)?;
+        let (train_x, train_y, _) = model.rows().train_rows_at(&indices)?;
         let y_std = self.y_std();
         let logliks = crate::fit::subsample_loglik(
             model,
@@ -295,7 +295,9 @@ mod tests {
             EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
                 .unwrap();
         let mut fitter = ENNFitter::new(2, false);
-        fitter.reset_y_stats(&model.train_y());
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
+        fitter.reset_y_stats(&ty.view());
         let warm = ENNParams::new(2, 2.5, 9.9).unwrap();
         let mut rng = StdRng::seed_from_u64(8);
         let p = fitter

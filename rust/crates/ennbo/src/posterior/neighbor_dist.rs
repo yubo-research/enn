@@ -28,10 +28,12 @@ pub(crate) fn row_dist2s_for_query(
     model: &EpistemicNearestNeighbors,
     x_row: ArrayView1<f64>,
 ) -> Vec<f64> {
-    let train_x = model.train_x();
-    let n_train = train_x.nrows();
+    let n_train = model.num_obs();
     (0..n_train)
-        .map(|j| row_sq_l2(x_row, train_x.row(j), model.scale_x, model.x_scale.view()))
+        .map(|j| {
+            let t = model.rows().row_x(j).expect("row_x");
+            row_sq_l2(x_row, t.view(), model.scale_x, model.x_scale.view())
+        })
         .collect()
 }
 

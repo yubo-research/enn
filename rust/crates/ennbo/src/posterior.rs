@@ -26,7 +26,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        let (mu, se, idx) = if !flags.observation_noise && self.train_yvar().is_none() {
+        let (mu, se, idx) = if !flags.observation_noise && !self.has_yvar() {
             compute_posterior_light(self, x, params, flags)?
         } else {
             let internals = compute_posterior_internals(self, x, params, flags)?;
@@ -122,10 +122,10 @@ pub(crate) fn index_search(
     tie_break_neighbors: bool,
 ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
     model.ensure_index_sync()?;
-    if model.index().driver() == IndexDriver::Exact {
+    if model.backend_driver() == IndexDriver::Exact {
         neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest, tie_break_neighbors)
     } else {
-        let (_, idx) = model.index().search(x, search_k, exclude_nearest)?;
+        let (_, idx) = model.backend_search(x, search_k, exclude_nearest)?;
         let dist2s = neighbor::dist2s_for_neighbor_indices(model, x, &idx);
         Ok((dist2s, idx))
     }
@@ -219,7 +219,7 @@ pub fn compute_weighted_posterior(
 
     let yvar_neighbors: Option<Array2<f64>> = if let Some(ov) = data.yvar_neighbors_override {
         Some(ov.clone())
-    } else if let Some(yvar) = model.train_yvar() {
+    } else if model.has_yvar() {
         let n_query = data.dist2s.nrows();
         // Handle empty query case (n_query == 0 or data.idx is empty)
         let k = if data.idx.is_empty() {
@@ -232,7 +232,7 @@ pub fn compute_weighted_posterior(
         for i in 0..n_query {
             for (j, &neighbor_idx) in data.idx[i].iter().enumerate() {
                 if neighbor_idx < n_train {
-                    let yvar_row = yvar.row(neighbor_idx);
+                    let yvar_row = model.rows().row_yvar(neighbor_idx).expect("row_yvar").expect("yvar");
                     for m in 0..model.num_metrics() {
                         yvar_neighbors[[i * k + j, m]] = yvar_row[m];
                     }
@@ -476,7 +476,9 @@ pub fn compute_conditional_posterior_internals(
     let neighbor_data = get_conditional_neighbor_data(model, x, x_whatif, y_whatif, params, flags)?;
 
     if let Some(data) = neighbor_data {
-        let y_scale_cond = compute_scale_for_conditional(&model.train_y().view(), y_whatif);
+        let all_y_indices: Vec<usize> = (0..model.num_obs()).collect();
+        let (_, train_y_all, _) = model.rows().train_rows_at(&all_y_indices)?;
+        let y_scale_cond = compute_scale_for_conditional(&train_y_all.view(), y_whatif);
         let wp_data = WeightedPosteriorData {
             dist2s: &data.dist2s.view(),
             idx: &data.idx,
@@ -1144,7 +1146,6 @@ mod tests {
         let empty_dist2s: Array2<f64> = Array2::zeros((0, 2));
         let empty_y_neighbors: Array2<f64> = Array2::zeros((0, 1));
         let empty_idx: Vec<Vec<usize>> = vec![];
-
         let data = WeightedPosteriorData {
             dist2s: &empty_dist2s.view(),
             idx: &empty_idx,
@@ -1155,9 +1156,6 @@ mod tests {
         };
 
         let result = compute_weighted_posterior(&model, data, None);
-        assert!(
-            result.is_ok(),
-            "compute_weighted_posterior with empty idx should not panic"
-        );
+        assert!(result.is_ok(), "compute_weighted_posterior with empty idx should not panic");
     }
 }

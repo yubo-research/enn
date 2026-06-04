@@ -19,14 +19,13 @@ fn scale_x_false_index_not_stale_after_add() {
     let train_y = array![[0.0], [1.0]];
     let mut model =
         EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
-    model.sync_index().unwrap();
-    assert!(!model.is_index_stale());
+    model.ensure_index_sync().unwrap();
     let x_add = array![[0.5, 0.5]];
     let y_add = array![[0.5]];
     model.add(&x_add.view(), &y_add.view(), None).unwrap();
-    assert!(!model.is_index_stale());
-    model.sync_index().unwrap();
+    model.ensure_index_sync().unwrap();
     assert_eq!(model.num_obs(), 3);
+    assert_eq!(model.index_access().len(), 3);
 }
 
 #[test]
@@ -48,7 +47,9 @@ fn enn_fitter_ask_always_fits_with_enough_obs() {
     let model =
         EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
     let mut fitter = ENNFitter::new(2, true);
-    fitter.reset_y_stats(&model.train_y());
+    let all: Vec<usize> = (0..model.len()).collect();
+    let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
+    fitter.reset_y_stats(&ty.view());
     let mut rng = StdRng::seed_from_u64(99);
     let p = fitter.ask(&model, 4, 3, None, &mut rng).unwrap();
     assert_eq!(p.k_num_neighbors, 2);

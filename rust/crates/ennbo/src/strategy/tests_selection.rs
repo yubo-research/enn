@@ -5,7 +5,7 @@ use super::{
 };
 use crate::config::{turbo_enn_config, turbo_zero_config, AcquisitionConfig};
 use crate::optimizer::{Optimizer, Telemetry};
-use ndarray::{array, Array2};
+use ndarray::array;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 

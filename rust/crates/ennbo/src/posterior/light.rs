@@ -49,7 +49,6 @@ fn fuse_neighbors_to_mu_se(
     let n_query = dist2s.nrows();
     let k = dist2s.ncols();
     let num_metrics = model.num_metrics();
-    let train_y = model.train_y();
     let y_scale = model.y_scale();
     let epistemic_scale = params.epistemic_variance_scale;
     let aleatoric_scale = params.aleatoric_variance_scale;
@@ -79,9 +78,17 @@ fn fuse_neighbors_to_mu_se(
         for m in 0..num_metrics {
             let mut mu_val = 0.0;
             let y_scale_m = y_scale[m];
-            for j in 0..k {
-                let w_norm = w[j] * inv_norm;
-                mu_val += w_norm * train_y[[idx_row[j] as usize, m]];
+            if let Some(train_y_view) = model.train_y_view_opt() {
+                for j in 0..k {
+                    let w_norm = w[j] * inv_norm;
+                    mu_val += w_norm * train_y_view[[idx_row[j] as usize, m]];
+                }
+            } else {
+                for j in 0..k {
+                    let w_norm = w[j] * inv_norm;
+                    let y_row = model.rows().row_y(idx_row[j] as usize).expect("row_y");
+                    mu_val += w_norm * y_row[m];
+                }
             }
             mu[[i, m]] = mu_val;
             se[[i, m]] = se_base * y_scale_m;
@@ -268,8 +275,10 @@ mod tests {
                 .unwrap();
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (tx, _, _) = model.rows().train_rows_at(&all).unwrap();
         let (mu_light, se_light, idx_light) =
-            compute_posterior_light(&model, &model.train_x().view(), &params, &flags).unwrap();
+            compute_posterior_light(&model, &tx.view(), &params, &flags).unwrap();
         let dist2s = array![[0.0, 1.0], [1.0, 0.0], [2.0, 1.0], [1.0, 2.0]];
         let idx = array![[0, 1], [1, 0], [2, 3], [3, 2]];
         let (mu, se, idx_out) =
@@ -293,9 +302,11 @@ mod tests {
                 .unwrap();
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (tx, _, _) = model.rows().train_rows_at(&all).unwrap();
         let (mu, se, idx) = compute_posterior_light(
             &model,
-            &model.train_x().view(),
+            &tx.view(),
             &params,
             &flags,
         )

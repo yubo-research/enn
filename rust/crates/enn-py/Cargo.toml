@@ -16,8 +16,8 @@ name = "enn_rust"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["usearch"]
-usearch = ["ennbo/usearch"]
+default = ["hannoy"]
+hannoy = ["ennbo/hannoy"]
 
 [build-dependencies]
 ennbo = { path = "../ennbo", version = "0.2" }

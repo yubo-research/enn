@@ -58,7 +58,7 @@ def test_checkpoint_ns_metamorphic_doubling_preserves_prefix():
         assert small == large[: len(small)]
 
 
-@pytest.mark.parametrize("name", ["flat", "hnsw", "hnsw_usearch"])
+@pytest.mark.parametrize("name", ["flat", "hnsw", "hnsw_hannoy"])
 def test_parse_index_driver(name: str):
     from ops.stress import parse_index_driver
 
@@ -102,7 +102,7 @@ def test_run_enn_add_stress_syncs_at_checkpoints(monkeypatch):
         return None
 
     monkeypatch.setattr(
-        "ops.stress.EpistemicNearestNeighbors.sync_index",
+        "ops.stress.EpistemicNearestNeighbors.ensure_index_sync",
         _count_sync,
     )
 
@@ -150,8 +150,8 @@ def test_format_config_header():
 
     assert format_config_header(num_dim=10, num_obs=100) == "num_dim=10 num_obs=100"
     assert (
-        format_config_header(num_dim=10, num_obs=100, index_path="/tmp/x.usearch")
-        == "num_dim=10 num_obs=100 index_path=/tmp/x.usearch"
+        format_config_header(num_dim=10, num_obs=100, work_dir="/tmp/enn_work")
+        == "num_dim=10 num_obs=100 work_dir=/tmp/enn_work"
     )
 
 
@@ -219,58 +219,64 @@ def test_enn_stress_cli():
     assert not data_lines[-1].startswith(" ")
 
 
-def test_enn_stress_cli_hnsw_usearch():
+def test_enn_stress_cli_hnsw_hannoy(tmp_path):
     from click.testing import CliRunner
     from ops.stress import cli
 
-    result = CliRunner().invoke(cli, ["enn", "hnsw_usearch", "10"])
+    work_dir = tmp_path / "enn_cli_hannoy"
+    result = CliRunner().invoke(
+        cli,
+        ["enn", "hnsw_hannoy", "10", "--work-dir", str(work_dir)],
+    )
     if result.exit_code != 0:
         combined = f"{result.output}\n{result.exception}".lower()
-        if "usearch" in combined:
-            pytest.skip("ennbo built without usearch feature")
+        if "hannoy" in combined or "disk-only" in combined:
+            pytest.skip(
+                "ennbo built without hannoy feature or hnsw_hannoy needs work_dir"
+            )
         raise AssertionError(result.output)
     lines = result.output.strip().splitlines()
-    assert lines[0] == "num_dim=10 num_obs=10"
+    assert lines[0] == f"num_dim=10 num_obs=10 work_dir={work_dir}"
     assert len(lines) == 4
     for line in lines[1:]:
         assert _STRESS_ROW_RE.fullmatch(line)
 
 
-def test_enn_stress_cli_rejects_index_path_without_hnsw_usearch():
+def test_enn_stress_cli_rejects_work_dir_without_hnsw_hannoy():
     from click.testing import CliRunner
     from ops.stress import cli
 
     result = CliRunner().invoke(
         cli,
-        ["enn", "flat", "10", "--index-path", "/tmp/x.usearch"],
+        ["enn", "flat", "10", "--work-dir", "/tmp/enn_work"],
     )
     assert result.exit_code != 0
-    assert "index_path requires index_type hnsw_usearch" in result.output
+    assert "work_dir requires index_type hnsw_hannoy" in result.output
 
 
-def test_enn_stress_cli_hnsw_usearch_index_path(tmp_path):
+def test_enn_stress_cli_hnsw_hannoy_work_dir(tmp_path):
     from click.testing import CliRunner
     from ops.stress import cli
 
-    index_path = tmp_path / "stress.usearch"
+    work_dir = tmp_path / "enn_work"
     result = CliRunner().invoke(
         cli,
         [
             "enn",
-            "hnsw_usearch",
+            "hnsw_hannoy",
             "10",
-            "--index-path",
-            str(index_path),
+            "--work-dir",
+            str(work_dir),
         ],
     )
     if result.exit_code != 0:
         combined = f"{result.output}\n{result.exception}".lower()
-        if "usearch" in combined:
-            pytest.skip("ennbo built without usearch feature")
+        if "hannoy" in combined:
+            pytest.skip("ennbo built without hannoy feature")
         raise AssertionError(result.output)
     lines = result.output.strip().splitlines()
-    assert lines[0] == f"num_dim=10 num_obs=10 index_path={index_path}"
-    assert index_path.exists()
+    assert lines[0] == f"num_dim=10 num_obs=10 work_dir={work_dir}"
+    assert work_dir.is_dir()
     assert len(lines) == 4
     for line in lines[1:]:
         assert _STRESS_ROW_RE.fullmatch(line)
@@ -423,3 +429,81 @@ def test_checkpoint_ns_fuzz(seed: int):
     assert all(1 <= n <= max_n for n in ns)
     assert ns == tuple(sorted(set(ns)))
     print(f"checkpoint_ns_fuzz seed={seed} max_n={max_n} len={len(ns)}")
+
+
+def test_max_rss_bytes_returns_positive():
+    from ops.stress import max_rss_bytes
+
+    assert max_rss_bytes() > 0
+
+
+def test_disk_stress_rss_ceiling_grows_with_dim_not_n():
+    from ops.stress import DEFAULT_SHARD_MAX_ROWS, disk_stress_rss_ceiling_bytes
+
+    low_dim = disk_stress_rss_ceiling_bytes(
+        num_dim=4, shard_max_rows=DEFAULT_SHARD_MAX_ROWS
+    )
+    high_dim = disk_stress_rss_ceiling_bytes(
+        num_dim=40, shard_max_rows=DEFAULT_SHARD_MAX_ROWS
+    )
+    assert high_dim > low_dim
+
+
+def _run_disk_rss_stress_or_skip(tmp_path, num_obs: int, *, num_dim: int = 10):
+    from ops.stress import run_disk_rss_stress
+
+    work_dir = tmp_path / f"enn_disk_rss_{num_obs}"
+    try:
+        return run_disk_rss_stress(
+            num_obs=num_obs,
+            work_dir=str(work_dir),
+            num_dim=num_dim,
+            seed=0,
+        )
+    except Exception as exc:
+        if "hannoy" in str(exc).lower():
+            pytest.skip("ennbo built without hannoy feature")
+        raise
+
+
+@pytest.mark.slow
+def test_disk_incremental_stress_rss_bounded(tmp_path):
+    from ops.stress import (
+        DEFAULT_SHARD_MAX_ROWS,
+        disk_stress_rss_ceiling_bytes,
+    )
+
+    num_dim = 10
+    num_obs = 100_000
+    result = _run_disk_rss_stress_or_skip(tmp_path, num_obs, num_dim=num_dim)
+
+    ceiling = disk_stress_rss_ceiling_bytes(
+        num_dim=num_dim, shard_max_rows=DEFAULT_SHARD_MAX_ROWS
+    )
+    assert result.rss_delta_bytes < ceiling, (
+        f"RSS delta {result.rss_delta_bytes} >= ceiling {ceiling} "
+        f"(baseline={result.baseline_rss_bytes} final={result.final_rss_bytes})"
+    )
+    assert result.index_memory_bytes > 0
+    print(
+        "disk_rss_stress "
+        f"N={num_obs} delta={result.rss_delta_bytes} "
+        f"ceiling={ceiling} index_mem={result.index_memory_bytes}"
+    )
+
+
+@pytest.mark.slow
+def test_disk_incremental_stress_rss_metamorphic_smaller_n(tmp_path):
+    """Same RSS bound at N=5000 should hold at N=10000 (sublinear tail)."""
+    from ops.stress import DEFAULT_SHARD_MAX_ROWS, disk_stress_rss_ceiling_bytes
+
+    num_dim = 10
+    ceiling = disk_stress_rss_ceiling_bytes(
+        num_dim=num_dim, shard_max_rows=DEFAULT_SHARD_MAX_ROWS
+    )
+    deltas = [
+        _run_disk_rss_stress_or_skip(tmp_path, num_obs, num_dim=num_dim).rss_delta_bytes
+        for num_obs in (5_000, 10_000)
+    ]
+    assert all(delta < ceiling for delta in deltas)
+    print(f"disk_rss_metamorphic deltas={deltas} ceiling={ceiling}")

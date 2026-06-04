@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 
+from tests.conftest import enn_all_train_rows
+
+
 def _fit_model(
     model,
     *,
@@ -27,7 +30,8 @@ def _fit_model(
         rng=rng,
         params_warm_start=params_warm_start,
         incremental=ENNIncrementalDelta(
-            fitter, model.train_x, model.train_y, model.train_yvar
+            fitter,
+            *enn_all_train_rows(model),
         ),
     )
 
@@ -443,11 +447,11 @@ def test_enn_fitter_incremental_y_std_matches_model_train_y_std():
         dtype=float,
     )
     y = np.array([[0.0], [1.0], [1.0], [2.0], [1.5]], dtype=float)
-    model = EpistemicNearestNeighbors(x, y)
+    EpistemicNearestNeighbors(x, y)
     fitter = ENNStatefulFitter(k=2, rng=np.random.default_rng(0))
     for i in range(y.shape[0]):
         fitter.tell(x[i : i + 1], y[i : i + 1])
-        _assert_y_std_matches_batch(fitter.y_std(), model.train_y[: i + 1].std(axis=0))
+        _assert_y_std_matches_batch(fitter.y_std(), y[: i + 1].std(axis=0))
 
 
 def test_enn_fitter_incremental_y_std_multioutput():
@@ -464,11 +468,11 @@ def test_enn_fitter_incremental_y_std_multioutput():
         [[0.0, 1.0], [1.0, 2.0], [1.0, 0.0], [2.0, 1.0], [1.0, 1.5]],
         dtype=float,
     )
-    model = EpistemicNearestNeighbors(x, y)
+    EpistemicNearestNeighbors(x, y)
     fitter = ENNStatefulFitter(k=2, rng=np.random.default_rng(0))
     for i in range(y.shape[0]):
         fitter.tell(x[i : i + 1], y[i : i + 1])
-        _assert_y_std_matches_batch(fitter.y_std(), model.train_y[: i + 1].std(axis=0))
+        _assert_y_std_matches_batch(fitter.y_std(), y[: i + 1].std(axis=0))
 
 
 def test_enn_fitter_tell_rejects_non_finite_yvar():
@@ -534,7 +538,8 @@ def test_enn_fitter_desynced_tell_ask_uses_partial_y_std():
 
     fitter_sync = ENNStatefulFitter(k=2, rng=np.random.default_rng(99))
     fitter_sync.tell(x, y)
-    model_std = model.train_y.std(axis=0)
+    _, y_all, _ = enn_all_train_rows(model)
+    model_std = y_all.std(axis=0)
 
     fitter_desync = ENNStatefulFitter(k=2, rng=np.random.default_rng(99))
     fitter_desync.tell(x[:3], y[:3])
@@ -556,7 +561,8 @@ def test_enn_fitter_ask_returns_defaults_when_num_obs_lt_2():
         np.array([[0.0]]),
     )
     fitter = ENNStatefulFitter(k=7, rng=np.random.default_rng(1))
-    fitter.tell(model.train_x, model.train_y, model.train_yvar)
+    x_all, y_all, yvar_all = enn_all_train_rows(model)
+    fitter.tell(x_all, y_all, yvar_all)
     params = fitter.ask(model, num_fit_candidates=5, num_fit_samples=3)
     assert params.k_num_neighbors == 7
     assert params.epistemic_variance_scale == 1.0

@@ -1,36 +1,24 @@
 //! Kiss static coverage: test files must reference private helper names from knn backends.
 
-const USEARCH_BACKEND_SRC: &str = include_str!("../src/knn/usearch_backend.rs");
+const DISK_HANNOY_SRC: &str = include_str!("../src/backend/disk_hannoy.rs");
 const FAISS_BACKEND_SRC: &str = include_str!("../src/knn/faiss_backend.rs");
+const ROW_STORAGE_SRC: &str = include_str!("../src/backend/row_storage.rs");
 const KNN_MOD_SRC: &str = include_str!("../src/knn/mod.rs");
 
 #[test]
-fn kiss_usearch_backend_helper_names_in_source() {
-    for name in [
-        "usearch_options",
-        "usearch_map_err",
-        "validate_metadata",
-        "atomic_save",
-        "open_mutable",
-        "build_in_memory",
-        "ensure_mutable",
-        "bulk_add",
-        "save_if_path",
-        "bulk_add_then_save",
-        "persist_to_disk",
-        "reload_from_disk_checkpoint",
-        "is_dirty",
-    ] {
-        assert!(
-            USEARCH_BACKEND_SRC.contains(name),
-            "missing {name} in usearch_backend.rs"
-        );
-    }
-}
-
-#[test]
 fn kiss_faiss_backend_helper_names_in_source() {
-    for name in ["faiss_spec", "faiss_map_err", "make_index", "memory_usage_bytes"] {
+    for name in [
+        "faiss_spec",
+        "faiss_map_err",
+        "make_index",
+        "memory_usage_bytes",
+        "MmapColumnStore",
+        "mmap_open_or_create",
+        "mmap_append",
+        "mmap_row_slice",
+        "mmap_gather",
+        "mmap_row_range",
+    ] {
         assert!(
             FAISS_BACKEND_SRC.contains(name),
             "missing {name} in faiss_backend.rs"
@@ -40,7 +28,56 @@ fn kiss_faiss_backend_helper_names_in_source() {
 
 #[test]
 fn kiss_knn_mod_dispatch_names_in_source() {
-    for name in ["checkpoint", "KnnBackend", "rebuild", "add", "search", "memory_usage_bytes"] {
+    for name in ["KnnBackend", "rebuild", "add", "search", "memory_usage_bytes"] {
         assert!(KNN_MOD_SRC.contains(name), "missing {name} in knn/mod.rs");
+    }
+}
+
+#[test]
+fn kiss_row_storage_helper_names_in_source() {
+    for name in [
+        "RowStorage",
+        "from_array2",
+        "push_rows",
+        "gather_rows",
+        "row_vec",
+        "nrows",
+        "view",
+    ] {
+        assert!(
+            ROW_STORAGE_SRC.contains(name),
+            "missing {name} in backend/row_storage.rs"
+        );
+    }
+}
+
+#[test]
+fn kiss_disk_hannoy_helper_names_in_source() {
+    for name in [
+        "write_metadata",
+        "DiskHannoyEnnBackend",
+        "open_or_create_hannoy",
+        "index_row_range",
+        "append_rows",
+        "mark_index_stale",
+        "ensure_index_sync",
+        "train_rows_at",
+        "row_x",
+        "row_y",
+        "row_yvar",
+        "search",
+        "index_memory_bytes",
+        "new_empty",
+        "load_indexed_rows",
+        "mmap_open_or_create",
+        "mmap_append",
+        "mmap_row_slice",
+        "mmap_gather",
+        "mmap_row_range",
+    ] {
+        assert!(
+            DISK_HANNOY_SRC.contains(name),
+            "missing {name} in backend/disk_hannoy.rs"
+        );
     }
 }

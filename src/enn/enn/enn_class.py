@@ -68,7 +68,8 @@ class EpistemicNearestNeighbors:
         *,
         scale_x: bool = False,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
-        index_path: str | os.PathLike[str] | None = None,
+        work_dir: str | os.PathLike[str] | None = None,
+        enn_storage: str | None = None,
     ) -> None:
         train_x, train_y, train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
@@ -82,8 +83,10 @@ class EpistemicNearestNeighbors:
             "scale_x": scale_x,
             "index_driver": idx_driver,
         }
-        if index_path is not None:
-            rust_kwargs["index_path"] = os.fspath(index_path)
+        if work_dir is not None:
+            rust_kwargs["work_dir"] = os.fspath(work_dir)
+        if enn_storage is not None:
+            rust_kwargs["enn_storage"] = enn_storage
         self._rust_model = _RustENN(**rust_kwargs)
         self._tie_break_neighbors: bool = True
 
@@ -96,26 +99,21 @@ class EpistemicNearestNeighbors:
         x, y, yvar = self._validate_inputs(x, y, yvar)
         self._rust_model.add(x, y, yvar)
 
-    def sync_index(self) -> None:
-        self._rust_model.sync_index()
+    def ensure_index_sync(self) -> None:
+        self._rust_model.ensure_index_sync()
+
+    def train_rows_at(
+        self, indices: list[int] | np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+        idx = [int(i) for i in np.asarray(indices, dtype=int).ravel()]
+        x, y, yvar = self._rust_model.train_rows_at(idx)
+        x_arr = np.asarray(x, dtype=float)
+        y_arr = np.asarray(y, dtype=float)
+        yvar_arr = None if yvar is None else np.asarray(yvar, dtype=float)
+        return x_arr, y_arr, yvar_arr
 
     def index_memory_bytes(self) -> int:
         return int(self._rust_model.index_memory_bytes())
-
-    @property
-    def train_x(self) -> np.ndarray:
-        return np.asarray(self._rust_model.train_x, dtype=float)
-
-    @property
-    def train_y(self) -> np.ndarray:
-        return np.asarray(self._rust_model.train_y, dtype=float)
-
-    @property
-    def train_yvar(self) -> np.ndarray | None:
-        tyv = self._rust_model.train_yvar
-        if tyv is None:
-            return None
-        return np.asarray(tyv, dtype=float)
 
     @property
     def num_outputs(self) -> int:
@@ -148,11 +146,15 @@ class EpistemicNearestNeighbors:
 
     @property
     def _train_y(self) -> np.ndarray:
-        return self.train_y
+        n = len(self)
+        _, y, _ = self.train_rows_at(list(range(n)))
+        return y
 
     @property
     def _train_yvar(self) -> np.ndarray | None:
-        return self.train_yvar
+        n = len(self)
+        _, _, yvar = self.train_rows_at(list(range(n)))
+        return yvar
 
     def __len__(self) -> int:
         return len(self._rust_model)

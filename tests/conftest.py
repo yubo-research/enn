@@ -7,6 +7,13 @@ src_path = Path(__file__).parent.parent / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
+
+def enn_all_train_rows(model):
+    """Return (x, y, yvar?) for all rows via index-based gather."""
+    n = len(model)
+    return model.train_rows_at(list(range(n)))
+
+
 _ROOT = Path(__file__).parent.parent
 _NATIVE_FP_CACHE = _ROOT / ".pytest_cache" / "enn_native_extension_fingerprint"
 _TESTMON_DB = (

@@ -120,8 +120,8 @@ def test_enn_index_driver_enum():
     from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
     assert ENNIndexDriver.FLAT != ENNIndexDriver.HNSW
-    assert ENNIndexDriver.HNSW != ENNIndexDriver.HNSW_USEARCH
-    assert ENNIndexDriver.FLAT != ENNIndexDriver.HNSW_USEARCH
+    assert ENNIndexDriver.HNSW != ENNIndexDriver.HNSW_HANNOY
+    assert ENNIndexDriver.FLAT != ENNIndexDriver.HNSW_HANNOY
 
 
 def test_num_candidates_fn_protocol():
@@ -260,9 +260,9 @@ def _fit_gp_surrogate_for_kiss(rng):
 
 def test_enn_class_properties():
     enn = _enn_model()
-    # train_y / train_yvar / num_outputs
-    assert enn.train_y.shape == (2, 1)
-    assert enn.train_yvar is None
+    _, y_at, yvar_at = enn.train_rows_at([0, 1])
+    assert y_at.shape == (2, 1)
+    assert yvar_at is None
     assert enn.num_outputs == 1
 
 

@@ -8,34 +8,31 @@ from enn.enn.enn_class_support import enn_index_neighbor_distances_and_indices
 from enn.turbo.config.enn_index_driver import ENNIndexDriver, ENN_INDEX_DRIVER_TO_RUST
 
 
-def _enn(train_x, *, index_driver=ENNIndexDriver.FLAT):
+def _enn(train_x, *, index_driver=ENNIndexDriver.FLAT, work_dir=None):
     train_y = np.zeros((train_x.shape[0], 1), dtype=float)
-    return EpistemicNearestNeighbors(
-        train_x, train_y, scale_x=False, index_driver=index_driver
-    )
+    kwargs: dict = {"scale_x": False, "index_driver": index_driver}
+    if work_dir is not None:
+        kwargs["work_dir"] = work_dir
+        kwargs["enn_storage"] = "disk"
+    return EpistemicNearestNeighbors(train_x, train_y, **kwargs)
 
 
 def test_enn_index_driver_to_rust_maps_all_three():
     assert set(ENNIndexDriver) == set(ENN_INDEX_DRIVER_TO_RUST.keys())
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "exact"
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW] == "hnsw"
-    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW_USEARCH] == "hnsw_usearch"
+    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW_HANNOY] == "hnsw_hannoy"
 
 
-def test_enn_hnsw_usearch_driver_without_feature_raises():
-    """hnsw_usearch is accepted at the API boundary but fails if usearch is not linked."""
+def test_enn_hnsw_hannoy_in_memory_raises():
     train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
     train_y = np.zeros((2, 1), dtype=float)
-    try:
+    with pytest.raises(ValueError, match="disk-only"):
         EpistemicNearestNeighbors(
             train_x,
             train_y,
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
+            index_driver=ENNIndexDriver.HNSW_HANNOY,
         )
-    except ValueError as exc:
-        assert "usearch" in str(exc).lower()
-    else:
-        pytest.skip("ennbo built with usearch feature")
 
 
 def test_enn_index_driver_flat_hnsw_metamorphic_neighbor_set():
@@ -71,141 +68,45 @@ def test_enn_index_driver_neighbor_indices_fuzz(seed: int):
     print(f"index_driver_neighbor_indices_fuzz seed={seed}")
 
 
-def test_enn_index_path_requires_hnsw_usearch_driver():
+def test_enn_work_dir_requires_hnsw_hannoy_driver():
     train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
     train_y = np.zeros((2, 1), dtype=float)
-    with pytest.raises(ValueError, match="index_path requires"):
+    with pytest.raises(
+        ValueError, match="Disk storage requires IndexDriver::HNSWHannoy"
+    ):
         EpistemicNearestNeighbors(
             train_x,
             train_y,
             index_driver=ENNIndexDriver.FLAT,
-            index_path="/tmp/x.usearch",
+            work_dir="/tmp/enn_work",
+            enn_storage="disk",
         )
 
 
-def test_enn_index_path_reconciles_stale_smaller_checkpoint(tmp_path):
-    """Full in-memory train + smaller on-disk checkpoint must not skip sync."""
-    index_path = tmp_path / "index.usearch"
-    train2 = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
-    train_y = np.zeros((2, 1), dtype=float)
-    try:
-        EpistemicNearestNeighbors(
-            train2,
-            train_y,
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
-        )
-    except ValueError as exc:
-        if "usearch" in str(exc).lower():
-            pytest.skip("ennbo built without usearch feature")
-        raise
-
-    train5 = np.array(
-        [
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [5.0, 5.0],
-        ],
-        dtype=float,
-    )
-    train_y5 = np.arange(5.0, dtype=float).reshape(5, 1)
-    try:
-        model = EpistemicNearestNeighbors(
-            train5,
-            train_y5,
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
-        )
-    except ValueError as exc:
-        if "usearch" in str(exc).lower():
-            pytest.skip("ennbo built without usearch feature")
-        raise
-
-    assert len(model) == 5
-    query = np.array([[4.9, 4.9]], dtype=float)
-    _, idx = enn_index_neighbor_distances_and_indices(
-        model.rust_backend, query, search_k=1, exclude_nearest=False
-    )
-    assert int(idx[0, 0]) == 4
-
-
-def test_enn_index_path_rebuilds_when_checkpoint_prefix_differs(tmp_path):
-    """Equal-size checkpoint with wrong vectors must not serve stale KNN."""
-    index_path = tmp_path / "index.usearch"
-    train2 = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
-    train_y = np.zeros((2, 1), dtype=float)
-    try:
-        EpistemicNearestNeighbors(
-            train2,
-            train_y,
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
-        )
-    except ValueError as exc:
-        if "usearch" in str(exc).lower():
-            pytest.skip("ennbo built without usearch feature")
-        raise
-
-    train2_new = np.array([[9.0, 9.0], [8.0, 8.0]], dtype=float)
-    try:
-        model = EpistemicNearestNeighbors(
-            train2_new,
-            train_y,
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
-        )
-        flat = _enn(train2_new, index_driver=ENNIndexDriver.FLAT)
-    except ValueError as exc:
-        if "usearch" in str(exc).lower():
-            pytest.skip("ennbo built without usearch feature")
-        raise
-
-    query = np.array([[9.05, 9.05]], dtype=float)
-    _, idx = enn_index_neighbor_distances_and_indices(
-        model.rust_backend, query, search_k=1, exclude_nearest=False
-    )
-    _, flat_idx = enn_index_neighbor_distances_and_indices(
-        flat.rust_backend, query, search_k=1, exclude_nearest=False
-    )
-    assert int(idx[0, 0]) == int(flat_idx[0, 0]) == 0
-
-
-def test_enn_view_only_reopen_then_equal_count_add_posterior_uses_row_ordinals(
-    tmp_path,
-):
-    """View-only reopen + N adds matching checkpoint size must rebuild, not append."""
-    index_path = tmp_path / "index.usearch"
+def test_enn_disk_backend_incremental_add_and_search(tmp_path):
+    work_dir = tmp_path / "enn_disk"
     rng = np.random.default_rng(0)
     n = 50
     train_x = rng.standard_normal((n, 2))
-    train_y = np.zeros((n, 1), dtype=float)
+    np.zeros((n, 1), dtype=float)
     try:
-        EpistemicNearestNeighbors(
+        model = _enn(
             train_x,
-            train_y,
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
-        )
-        model = EpistemicNearestNeighbors(
-            np.empty((0, 2)),
-            np.empty((0, 1)),
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
+            index_driver=ENNIndexDriver.HNSW_HANNOY,
+            work_dir=str(work_dir),
         )
     except ValueError as exc:
-        if "usearch" in str(exc).lower():
-            pytest.skip("ennbo built without usearch feature")
+        if "hannoy" in str(exc).lower():
+            pytest.skip("ennbo built without hannoy feature")
         raise
 
-    add_x = rng.standard_normal((n, 2)) + 100.0
-    add_y = np.arange(n, dtype=float).reshape(-1, 1) + 100.0
+    add_x = rng.standard_normal((10, 2)) + 100.0
+    add_y = np.arange(10, dtype=float).reshape(-1, 1) + 100.0
     model.add(add_x, add_y)
-    assert len(model) == n
+    assert len(model) == n + 10
 
     query = add_x[:1]
-    flat = _enn(add_x, index_driver=ENNIndexDriver.FLAT)
+    flat = _enn(np.vstack([train_x, add_x]), index_driver=ENNIndexDriver.FLAT)
     _, idx = enn_index_neighbor_distances_and_indices(
         model.rust_backend, query, search_k=1, exclude_nearest=False
     )
@@ -213,7 +114,6 @@ def test_enn_view_only_reopen_then_equal_count_add_posterior_uses_row_ordinals(
         flat.rust_backend, query, search_k=1, exclude_nearest=False
     )
     assert int(idx[0, 0]) == int(flat_idx[0, 0])
-    assert int(idx[0, 0]) < n
 
     from enn.enn.enn_params import ENNParams
 
@@ -227,72 +127,46 @@ def test_enn_view_only_reopen_then_equal_count_add_posterior_uses_row_ordinals(
     )
 
 
-def test_enn_view_only_reopen_then_add_posterior_uses_row_ordinals(tmp_path):
-    """Empty train + stale index_path + add must not return USearch keys as row ids."""
-    index_path = tmp_path / "index.usearch"
-    rng = np.random.default_rng(0)
-    n = 100
-    train_x = rng.standard_normal((n, 2))
-    train_y = np.zeros((n, 1), dtype=float)
+def test_enn_disk_backend_train_rows_at_matches_memory(tmp_path):
+    work_dir = tmp_path / "enn_disk_rows"
+    rng = np.random.default_rng(7)
+    n, d = 30, 3
+    train_x = rng.standard_normal((n, d))
+    rng.standard_normal((n, 1))
+    mem = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
     try:
-        EpistemicNearestNeighbors(
+        disk = _enn(
             train_x,
-            train_y,
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
-        )
-        model = EpistemicNearestNeighbors(
-            np.empty((0, 2)),
-            np.empty((0, 1)),
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
+            index_driver=ENNIndexDriver.HNSW_HANNOY,
+            work_dir=str(work_dir),
         )
     except ValueError as exc:
-        if "usearch" in str(exc).lower():
-            pytest.skip("ennbo built without usearch feature")
+        if "hannoy" in str(exc).lower():
+            pytest.skip("ennbo built without hannoy feature")
         raise
-
-    assert len(model) == 0
-    model.add(np.array([[0.1, 0.2]]), np.array([[1.0]]))
-    assert len(model) == 1
-    _, idx = enn_index_neighbor_distances_and_indices(
-        model.rust_backend,
-        np.array([[0.1, 0.2]]),
-        search_k=1,
-        exclude_nearest=False,
-    )
-    assert int(idx[0, 0]) == 0
-
-    from enn.enn.enn_params import ENNParams
-
-    model.posterior(
-        np.array([[0.1, 0.2]]),
-        params=ENNParams(
-            k_num_neighbors=1,
-            epistemic_variance_scale=1.0,
-            aleatoric_variance_scale=0.0,
-        ),
-    )
+    indices = rng.choice(n, size=10, replace=False).tolist()
+    mx, my, _ = mem.train_rows_at(indices)
+    dx, dy, _ = disk.train_rows_at(indices)
+    np.testing.assert_allclose(mx, dx)
+    np.testing.assert_allclose(my, dy)
 
 
-def test_enn_index_path_file_backed_sync_persists(tmp_path):
-    index_path = tmp_path / "index.usearch"
+def test_enn_disk_backend_persists_observation_files(tmp_path):
+    work_dir = tmp_path / "persist"
     train_x = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
-    train_y = np.zeros((2, 1), dtype=float)
+    np.zeros((2, 1), dtype=float)
     try:
-        model = EpistemicNearestNeighbors(
+        model = _enn(
             train_x,
-            train_y,
-            index_driver=ENNIndexDriver.HNSW_USEARCH,
-            index_path=str(index_path),
+            index_driver=ENNIndexDriver.HNSW_HANNOY,
+            work_dir=str(work_dir),
         )
     except ValueError as exc:
-        if "usearch" in str(exc).lower():
-            pytest.skip("ennbo built without usearch feature")
+        if "hannoy" in str(exc).lower():
+            pytest.skip("ennbo built without hannoy feature")
         raise
-    size_after_build = index_path.stat().st_size
+    assert (work_dir / "train_x.bin").exists()
+    size_before = (work_dir / "train_x.bin").stat().st_size
     model.add(np.array([[0.0, 1.0]]), np.zeros((1, 1)))
     assert len(model) == 3
-    assert index_path.stat().st_size == size_after_build
-    model.sync_index()
-    assert index_path.stat().st_size > size_after_build
+    assert (work_dir / "train_x.bin").stat().st_size > size_before

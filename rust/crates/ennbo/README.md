@@ -8,13 +8,11 @@ ENN estimates a function's value and epistemic uncertainty using K-Nearest Neigh
 
 - **EpistemicNearestNeighbors** — ENN surrogate with posterior computation
 - **TuRBO-ENN optimizer** — Thompson sampling, UCB, RAASP candidate generation
-- Neighbor search via Faiss (`IndexFlatL2`, `IndexHNSWFlat`-style factory string `HNSW32`)
-- USearch HNSW (`hnsw_usearch` / `IndexDriver::HNSWUSearch`): L2sq metric, file-backed `ENNIndex::with_index_path` (enabled by default)
-
-Build with USearch:
+- Neighbor search via Faiss in-memory (`IndexDriver::Exact`, `IndexDriver::HNSW`)
+- Disk mode: mmap `train_*.bin` + hannoy LMDB HNSW (`IndexDriver::HNSWHannoy`, feature `hannoy`, default)
 
 ```bash
-cargo test -p ennbo
+ENN_WORK_DIR=/tmp/enn_work cargo test -p ennbo --features hannoy
 ```
 
 ## Usage

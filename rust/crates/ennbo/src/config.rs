@@ -3,9 +3,11 @@
 use crate::candidates::CandidateRV;
 use crate::index::IndexDriver;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
+use crate::backend::EnnStorage;
 use crate::surrogate::ENNSurrogateConfig;
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::TrustRegionConfig;
+use std::path::PathBuf;
 
 /// Optimizer configuration.
 #[derive(Debug, Clone)]
@@ -128,6 +130,8 @@ pub struct ConfigOverrides {
     pub num_fit_candidates: Option<usize>,
     pub scale_x: Option<bool>,
     pub noise_aware: Option<bool>,
+    pub enn_storage: Option<EnnStorage>,
+    pub work_dir: Option<PathBuf>,
     pub trust_region_kind: Option<String>,
     pub num_metrics: Option<usize>,
     pub alpha: Option<f64>,
@@ -140,6 +144,8 @@ fn apply_enn_surrogate_fields(
     num_fit_samples: Option<usize>,
     num_fit_candidates: Option<usize>,
     scale_x: Option<bool>,
+    enn_storage: Option<EnnStorage>,
+    work_dir: Option<PathBuf>,
 ) {
     let SurrogateConfig::ENN(enn_cfg) = &config.surrogate else {
         return;
@@ -156,6 +162,12 @@ fn apply_enn_surrogate_fields(
     }
     if let Some(sx) = scale_x {
         enn.scale_x = sx;
+    }
+    if let Some(storage) = enn_storage {
+        enn.storage = storage;
+    }
+    if let Some(dir) = work_dir {
+        enn.work_dir = Some(dir);
     }
     config.surrogate = SurrogateConfig::ENN(enn);
 }
@@ -229,6 +241,8 @@ impl ConfigOverrides {
             || self.num_fit_samples.is_some()
             || self.num_fit_candidates.is_some()
             || self.scale_x.is_some()
+            || self.enn_storage.is_some()
+            || self.work_dir.is_some()
         {
             apply_enn_surrogate_fields(
                 &mut config,
@@ -236,6 +250,8 @@ impl ConfigOverrides {
                 self.num_fit_samples,
                 self.num_fit_candidates,
                 self.scale_x,
+                self.enn_storage,
+                self.work_dir.clone(),
             );
         }
         if let Some(na) = self.noise_aware {
@@ -333,7 +349,9 @@ pub fn lhd_only_config() -> OptimizerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::EnnStorage;
     use crate::candidates::CandidateRV;
+    use std::path::Path;
 
     #[test]
     fn test_candidate_config_num_candidates() {
@@ -509,6 +527,26 @@ mod tests {
         assert_eq!(enn.num_fit_samples, 7);
         assert_eq!(enn.num_fit_candidates, 11);
         assert!(enn.scale_x);
+    }
+
+    #[test]
+    fn config_overrides_apply_enn_storage_and_work_dir() {
+        use crate::index::IndexDriver;
+        use std::path::PathBuf;
+
+        let overrides = ConfigOverrides {
+            index_driver: Some(IndexDriver::HNSWHannoy),
+            enn_storage: Some(EnnStorage::Disk),
+            work_dir: Some(PathBuf::from("/tmp/enn_work")),
+            ..Default::default()
+        };
+        let applied = overrides.apply_to(turbo_enn_config());
+        let SurrogateConfig::ENN(enn) = applied.surrogate else {
+            panic!("expected ENN surrogate");
+        };
+        assert_eq!(enn.index_driver, IndexDriver::HNSWHannoy);
+        assert_eq!(enn.storage, EnnStorage::Disk);
+        assert_eq!(enn.work_dir.as_deref(), Some(Path::new("/tmp/enn_work")));
     }
 
     #[test]

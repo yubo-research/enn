@@ -6,6 +6,8 @@ import pytest
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 
+from tests.conftest import enn_all_train_rows
+
 
 def _params(
     k: int,
@@ -188,7 +190,8 @@ def test_epistemic_nearest_neighbors_with_yvar_none():
     train_y = train_x.sum(axis=1, keepdims=True) + rng.standard_normal((n, 1)) * 0.1
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
     assert len(model) == n
-    assert model.train_yvar is None
+    _, _, yvar = enn_all_train_rows(model)
+    assert yvar is None
     x_test = rng.standard_normal((10, d))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -244,9 +247,10 @@ def test_epistemic_nearest_neighbors_init_explicit():
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
     assert len(model) == n
     assert model.num_outputs == 1
-    assert model.train_x is not None
-    assert model.train_y is not None
-    assert model.train_yvar is not None
+    x_at, y_at, yvar_at = enn_all_train_rows(model)
+    assert x_at is not None
+    assert y_at is not None
+    assert yvar_at is not None
 
 
 def test_add_updates_y_scale_for_posterior_se():

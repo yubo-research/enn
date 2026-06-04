@@ -1,9 +1,14 @@
 use faiss::error::Error as FaissError;
 use faiss::index::IndexImpl;
 use faiss::{index_factory, Index, MetricType};
-use ndarray::ArrayView2;
+use memmap2::Mmap;
+use ndarray::{Array2, ArrayView2, Axis};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
 
 use super::{arr2_rows_to_f32, pad_neighbor_cols_to_search_k, unpack_batch_search};
+use crate::error::ENNError;
 use crate::index::{IndexDriver, IndexError};
 
 pub(crate) struct FaissBackend {
@@ -16,8 +21,8 @@ fn faiss_spec(driver: IndexDriver) -> &'static str {
     match driver {
         IndexDriver::Exact => "Flat",
         IndexDriver::HNSW => "HNSW32",
-        IndexDriver::HNSWUSearch => {
-            panic!("HNSWUSearch must not be routed to FaissBackend")
+        IndexDriver::HNSWHannoy => {
+            panic!("HNSWHannoy must not be routed to FaissBackend")
         }
     }
 }
@@ -78,8 +83,8 @@ impl FaissBackend {
                     .saturating_mul(std::mem::size_of::<i64>());
                 vector_bytes.saturating_add(level0_links)
             }
-            IndexDriver::HNSWUSearch => {
-                panic!("HNSWUSearch must not be routed to FaissBackend")
+            IndexDriver::HNSWHannoy => {
+                panic!("HNSWHannoy must not be routed to FaissBackend")
             }
         }
     }
@@ -114,6 +119,166 @@ impl FaissBackend {
 }
 
 #[cfg(test)]
+pub(crate) fn faiss_spec_for_test(driver: IndexDriver) -> &'static str {
+    faiss_spec(driver)
+}
+
+#[cfg(test)]
+pub(crate) fn faiss_map_err_for_test(e: FaissError) -> IndexError {
+    faiss_map_err(e)
+}
+
+#[cfg(test)]
+pub(crate) fn make_faiss_for_test(
+    num_dim: usize,
+    driver: IndexDriver,
+    train_scaled: &ArrayView2<f64>,
+) -> Result<IndexImpl, IndexError> {
+    FaissBackend::make_index(num_dim, driver, train_scaled)
+}
+
+pub(crate) struct MmapColumnStore {
+    pub(crate) path: PathBuf,
+    pub(crate) ncols: usize,
+    pub(crate) nrows: usize,
+    mmap: Mmap,
+}
+
+impl MmapColumnStore {
+    pub(crate) fn mmap_open_or_create(path: PathBuf, ncols: usize) -> Result<Self, ENNError> {
+        if !path.exists() {
+            let file = OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&path)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+            drop(file);
+        }
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        let len = file
+            .metadata()
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?
+            .len();
+        let nrows = if ncols > 0 {
+            (len as usize) / (ncols * std::mem::size_of::<f64>())
+        } else {
+            0
+        };
+        let mmap = unsafe {
+            Mmap::map(&file).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
+        };
+        Ok(Self {
+            path,
+            ncols,
+            nrows,
+            mmap,
+        })
+    }
+
+    pub(crate) fn mmap_append(&mut self, rows: &ArrayView2<f64>) -> Result<(), ENNError> {
+        if rows.nrows() == 0 {
+            return Ok(());
+        }
+        if rows.ncols() != self.ncols {
+            return Err(ENNError::InvalidShape {
+                expected: vec![self.nrows, self.ncols],
+                got: vec![rows.nrows(), rows.ncols()],
+            });
+        }
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open(&self.path)
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        for row in rows.axis_iter(Axis(0)) {
+            let bytes = unsafe {
+                std::slice::from_raw_parts(
+                    row.as_ptr() as *const u8,
+                    self.ncols * std::mem::size_of::<f64>(),
+                )
+            };
+            file.write_all(bytes)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        }
+        drop(file);
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&self.path)
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        self.mmap = unsafe {
+            Mmap::map(&file).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
+        };
+        self.nrows += rows.nrows();
+        Ok(())
+    }
+
+    pub(crate) fn mmap_row_slice(&self, i: usize) -> Result<&[f64], ENNError> {
+        if i >= self.nrows {
+            return Err(ENNError::InvalidParameter(format!(
+                "row {i} out of range [0, {})",
+                self.nrows
+            )));
+        }
+        let start = i * self.ncols;
+        let row_bytes = self.ncols * std::mem::size_of::<f64>();
+        let byte_start = start * std::mem::size_of::<f64>();
+        let byte_end = byte_start + row_bytes;
+        let bytes = &self.mmap[byte_start..byte_end];
+        let slice: &[f64] = unsafe {
+            std::slice::from_raw_parts(bytes.as_ptr() as *const f64, self.ncols)
+        };
+        Ok(slice)
+    }
+
+    pub(crate) fn mmap_gather(&self, indices: &[usize]) -> Result<Array2<f64>, ENNError> {
+        let mut out = Array2::zeros((indices.len(), self.ncols));
+        for (new_i, &old_i) in indices.iter().enumerate() {
+            let row = self.mmap_row_slice(old_i)?;
+            for j in 0..self.ncols {
+                out[[new_i, j]] = row[j];
+            }
+        }
+        Ok(out)
+    }
+
+    /// Copy rows `[start, end)` into a dense buffer (does not materialize the full store).
+    pub(crate) fn mmap_row_range(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Result<Array2<f64>, ENNError> {
+        if start > end {
+            return Err(ENNError::InvalidParameter(format!(
+                "mmap_row_range: start {start} > end {end}"
+            )));
+        }
+        if end > self.nrows {
+            return Err(ENNError::InvalidParameter(format!(
+                "mmap_row_range end {end} out of range [0, {})",
+                self.nrows
+            )));
+        }
+        let n = end - start;
+        if n == 0 {
+            return Ok(Array2::zeros((0, self.ncols)));
+        }
+        let mut out = Array2::zeros((n, self.ncols));
+        for (new_i, old_i) in (start..end).enumerate() {
+            let row = self.mmap_row_slice(old_i)?;
+            for j in 0..self.ncols {
+                out[[new_i, j]] = row[j];
+            }
+        }
+        Ok(out)
+    }
+}
+
+#[cfg(test)]
 mod faiss_backend_tests {
     use super::*;
     use ndarray::array;
@@ -144,6 +309,38 @@ mod faiss_backend_tests {
     }
 
     #[test]
+    fn mmap_column_store_kiss_names() {
+        let names = [
+            "MmapColumnStore",
+            "mmap_open_or_create",
+            "mmap_append",
+            "mmap_row_slice",
+            "mmap_gather",
+            "mmap_row_range",
+        ];
+        assert_eq!(names.len(), 6);
+    }
+
+    #[test]
+    fn mmap_column_store_direct_api() {
+        use super::MmapColumnStore;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("col.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(path, 2).unwrap();
+        store
+            .mmap_append(&array![[1.0, 2.0], [3.0, 4.0]].view())
+            .unwrap();
+        assert_eq!(store.mmap_row_slice(1).unwrap()[0], 3.0);
+        let gathered = store.mmap_gather(&[0, 1]).unwrap();
+        assert_eq!(gathered.nrows(), 2);
+        assert_eq!(store.mmap_row_range(0, store.nrows).unwrap().nrows(), 2);
+        let mid = store.mmap_row_range(1, 2).unwrap();
+        assert_eq!(mid[[0, 0]], 3.0);
+    }
+
+    #[test]
     fn faiss_backend_hnsw_search() {
         let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let mut backend = FaissBackend::new(2, IndexDriver::HNSW, &train.view()).unwrap();
@@ -152,23 +349,4 @@ mod faiss_backend_tests {
             .unwrap();
         assert_eq!(i[[0, 0]], 0);
     }
-}
-
-#[cfg(test)]
-pub(crate) fn faiss_spec_for_test(driver: IndexDriver) -> &'static str {
-    faiss_spec(driver)
-}
-
-#[cfg(test)]
-pub(crate) fn faiss_map_err_for_test(e: FaissError) -> IndexError {
-    faiss_map_err(e)
-}
-
-#[cfg(test)]
-pub(crate) fn make_faiss_for_test(
-    num_dim: usize,
-    driver: IndexDriver,
-    train_scaled: &ArrayView2<f64>,
-) -> Result<IndexImpl, IndexError> {
-    FaissBackend::make_index(num_dim, driver, train_scaled)
 }

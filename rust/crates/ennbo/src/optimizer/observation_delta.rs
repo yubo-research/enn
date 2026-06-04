@@ -1,6 +1,5 @@
 use ndarray::{Array2, ArrayView2};
 
-use super::observation_store::ObservationStore;
 use crate::error::ENNError;
 
 /// Result of an append-only observation batch.
@@ -22,40 +21,35 @@ impl ObservationDelta {
     }
 }
 
-pub(crate) fn observation_delta_from_store(
-    store: &ObservationStore,
+pub(crate) fn observation_delta_from_batch(
     old_n: usize,
+    x: &ArrayView2<f64>,
+    y: &ArrayView2<f64>,
 ) -> Result<ObservationDelta, ENNError> {
-    let new_n = store.len();
+    let new_n = old_n.saturating_add(x.nrows());
     if new_n <= old_n {
         return Err(ENNError::InvalidParameter(
             "observation delta requires appended rows".to_string(),
         ));
     }
-    let (x_new, y_new) = store
-        .rows_as_array2(old_n, new_n)
-        .ok_or_else(|| ENNError::InvalidParameter("missing appended rows".to_string()))?;
     Ok(ObservationDelta {
         old_n,
         new_n,
-        x_new,
-        y_new,
+        x_new: x.to_owned(),
+        y_new: y.to_owned(),
     })
 }
 
 #[cfg(test)]
 mod kiss_coverage_tests {
     use super::*;
-    use crate::optimizer::observation_store::ObservationStore;
     use ndarray::array;
 
     #[test]
-    fn observation_delta_from_store_appends() {
-        let mut store = ObservationStore::new();
-        store.push(array![0.0, 0.0], array![1.0]);
-        let old_n = store.len();
-        store.push(array![1.0, 0.0], array![2.0]);
-        let delta = observation_delta_from_store(&store, old_n).unwrap();
+    fn observation_delta_from_batch_appends() {
+        let x = array![[1.0, 0.0]];
+        let y = array![[2.0]];
+        let delta = observation_delta_from_batch(1, &x.view(), &y.view()).unwrap();
         assert_eq!(delta.old_n, 1);
         assert_eq!(delta.new_n, 2);
         assert_eq!(delta.x_new.nrows(), 1);

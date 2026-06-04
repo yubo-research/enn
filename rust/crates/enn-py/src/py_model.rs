@@ -12,6 +12,12 @@ pub(crate) type PosteriorPyOut<'py> = (
     Option<Bound<'py, PyArrayDyn<i64>>>,
 );
 
+type TrainRowsAtPyOut<'py> = (
+    Bound<'py, PyArray2<f64>>,
+    Bound<'py, PyArray2<f64>>,
+    Option<Bound<'py, PyArray2<f64>>>,
+);
+
 fn py_posterior_flags(
     model: &PyEpistemicNearestNeighbors,
     exclude_nearest: bool,
@@ -33,33 +39,46 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", index_path=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None))]
     fn new(
         train_x: PyReadonlyArray2<f64>,
         train_y: PyReadonlyArray2<f64>,
         train_yvar: Option<PyReadonlyArray2<f64>>,
         scale_x: bool,
         index_driver: &str,
-        index_path: Option<&str>,
+        work_dir: Option<&str>,
+        enn_storage: Option<&str>,
     ) -> PyResult<Self> {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
             "HNSW" | "hnsw" => ennbo::IndexDriver::HNSW,
-            "HNSW_USEARCH" | "hnsw_usearch" | "usearch_hnsw" => ennbo::IndexDriver::HNSWUSearch,
+            "HNSW_HANNOY" | "hnsw_hannoy" => ennbo::IndexDriver::HNSWHannoy,
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {index_driver}"
                 )))
             }
         };
-        let index_path = index_path.map(PathBuf::from);
-        let model = ennbo::EpistemicNearestNeighbors::new_with_index_path(
+        let storage = match enn_storage {
+            Some("disk" | "Disk") => ennbo::EnnStorage::Disk,
+            Some("memory" | "in_memory" | "InMemory") => ennbo::EnnStorage::InMemory,
+            None if work_dir.is_some() => ennbo::EnnStorage::Disk,
+            None => ennbo::EnnStorage::InMemory,
+            Some(other) => {
+                return Err(PyValueError::new_err(format!(
+                    "Unknown enn_storage: {other}"
+                )))
+            }
+        };
+        let work_dir = work_dir.map(PathBuf::from);
+        let model = ennbo::EpistemicNearestNeighbors::new_with_storage(
             train_x.as_array().to_owned(),
             train_y.as_array().to_owned(),
             train_yvar.map(|v| v.as_array().to_owned()),
             scale_x,
             driver,
-            index_path,
+            storage,
+            work_dir,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self {
@@ -90,15 +109,17 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    fn sync_index(&self) -> PyResult<()> {
+    fn ensure_index_sync(&self) -> PyResult<()> {
         self.inner
-            .sync_index()
+            .index_access()
+            .ensure_sync()
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn index_memory_bytes(&self) -> PyResult<usize> {
         self.inner
-            .index_memory_bytes()
+            .index_access()
+            .memory_bytes()
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -301,6 +322,7 @@ impl PyEpistemicNearestNeighbors {
     ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArrayDyn<i64>>)> {
         let (dist2s, idx) = self
             .inner
+            .index_access()
             .neighbor_distances_and_indices(&x.as_array(), search_k, exclude_nearest)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
@@ -321,6 +343,7 @@ impl PyEpistemicNearestNeighbors {
     ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArrayDyn<i64>>)> {
         let (dist2s, idx) = self
             .inner
+            .index_access()
             .index_neighbor_distances_and_indices(
                 &x.as_array(),
                 search_k,
@@ -350,20 +373,17 @@ impl PyEpistemicNearestNeighbors {
 
     #[getter]
     fn scale_x(&self) -> bool {
-        self.inner.scale_x_enabled()
+        self.inner.is_scale_x()
     }
 
     fn train_rows_at<'py>(
         &self,
         py: Python<'py>,
         indices: Vec<usize>,
-    ) -> PyResult<(
-        Bound<'py, PyArray2<f64>>,
-        Bound<'py, PyArray2<f64>>,
-        Option<Bound<'py, PyArray2<f64>>>,
-    )> {
+    ) -> PyResult<TrainRowsAtPyOut<'py>> {
         let (x, y, yvar) = self
             .inner
+            .rows()
             .train_rows_at(&indices)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
@@ -373,35 +393,22 @@ impl PyEpistemicNearestNeighbors {
         ))
     }
 
-    #[getter]
-    fn train_x<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        let n = self.inner.len();
-        let (x, _, _) = self
+    fn row_x<'py>(&self, py: Python<'py>, i: usize) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let row = self
             .inner
-            .train_rows_at(&(0..n).collect::<Vec<_>>())
+            .rows()
+            .row_x(i)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(x.into_pyarray_bound(py))
+        Ok(row.insert_axis(ndarray::Axis(0)).into_pyarray_bound(py))
     }
 
-    #[getter]
-    fn train_y<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        let n = self.inner.len();
-        let (_, y, _) = self
+    fn row_y<'py>(&self, py: Python<'py>, i: usize) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let row = self
             .inner
-            .train_rows_at(&(0..n).collect::<Vec<_>>())
+            .rows()
+            .row_y(i)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(y.into_pyarray_bound(py))
-    }
-
-    #[getter]
-    fn train_yvar<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyArray2<f64>>>> {
-        let n = self.inner.len();
-        Ok(self
-            .inner
-            .train_rows_at(&(0..n).collect::<Vec<_>>())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?
-            .2
-            .map(|a| a.into_pyarray_bound(py)))
+        Ok(row.insert_axis(ndarray::Axis(0)).into_pyarray_bound(py))
     }
 
     #[getter]

@@ -40,10 +40,47 @@ pub(crate) fn dist2s_for_neighbor_indices(
     x: &ArrayView2<f64>,
     idx: &Array2<i64>,
 ) -> Array2<f64> {
-    let train_x = model.train_x();
     let n_query = idx.nrows();
     let k = idx.ncols();
     let mut out = Array2::zeros((n_query, k));
+    if let Some(train_x) = model.train_x_view_opt() {
+        for i in 0..n_query {
+            let x_row = x.row(i);
+            for j in 0..k {
+                let ni = idx[[i, j]];
+                if ni < 0 {
+                    out[[i, j]] = f64::INFINITY;
+                } else {
+                    let t_row = train_x.row(ni as usize);
+                    out[[i, j]] = row_sq_l2(x_row, t_row, model.scale_x, model.x_scale.view());
+                }
+            }
+        }
+        return out;
+    }
+    let mut unique: Vec<usize> = Vec::new();
+    for i in 0..n_query {
+        for j in 0..k {
+            let ni = idx[[i, j]];
+            if ni >= 0 {
+                let u = ni as usize;
+                if !unique.contains(&u) {
+                    unique.push(u);
+                }
+            }
+        }
+    }
+    unique.sort_unstable();
+    let mut row_map: std::collections::HashMap<usize, Array1<f64>> =
+        std::collections::HashMap::with_capacity(unique.len());
+    if !unique.is_empty() {
+        let (train_x, _, _) = model
+            .rows().train_rows_at(&unique)
+            .expect("train_rows_at for neighbors");
+        for (pos, &u) in unique.iter().enumerate() {
+            row_map.insert(u, train_x.row(pos).to_owned());
+        }
+    }
     for i in 0..n_query {
         let x_row = x.row(i);
         for j in 0..k {
@@ -51,7 +88,10 @@ pub(crate) fn dist2s_for_neighbor_indices(
             if ni < 0 {
                 out[[i, j]] = f64::INFINITY;
             } else {
-                let t_row = train_x.row(ni as usize);
+                let t_row = row_map
+                    .get(&(ni as usize))
+                    .expect("neighbor row")
+                    .view();
                 out[[i, j]] = row_sq_l2(x_row, t_row, model.scale_x, model.x_scale.view());
             }
         }
@@ -95,7 +135,7 @@ pub(crate) fn exact_f64_batch_topk(
     tie_break_neighbors: bool,
 ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
     let n_query = x.nrows();
-    let n_train = model.train_x().nrows();
+    let n_train = model.num_obs();
     let search_k = search_k as usize;
     let k = search_k.min(n_train);
     if k == 0 {
@@ -116,9 +156,11 @@ pub(crate) fn exact_f64_batch_topk(
     let use_matrix_topk = false;
 
     if use_matrix_topk {
+        let all_indices: Vec<usize> = (0..n_train).collect();
+        let (train_x, _, _) = model.rows().train_rows_at(&all_indices).expect("train_rows_at");
         let dist_mat = pairwise_sq_l2(
             x,
-            &model.train_x().view(),
+            &train_x.view(),
             model.scale_x,
             &model.x_scale.view(),
         );
@@ -142,7 +184,7 @@ pub(crate) fn exact_f64_batch_topk(
         return Ok(apply_exclude_nearest(dist2s, idx, exclude_nearest));
     }
 
-    let (dist2s_search, idx_faiss) = model.index().search(x, faiss_search_k as i32, false)?;
+    let (dist2s_search, idx_faiss) = model.backend_search(x, faiss_search_k as i32, false)?;
     let dist2s_faiss = if tie_break_neighbors {
         dist2s_for_neighbor_indices(model, x, &idx_faiss)
     } else {
@@ -263,16 +305,34 @@ pub(crate) fn get_neighbor_data(
     let num_metrics = model.num_metrics();
     let mut y_neighbors = Array2::zeros((n_query * k, num_metrics));
 
-    let train_y = model.train_y();
+
     for (i, idx_row) in idx.iter().enumerate().take(n_query) {
         let base_idx = i * k;
         for (j, &neighbor_idx) in idx_row.iter().enumerate() {
-            let mut target_row = y_neighbors.row_mut(base_idx + j);
-            let source_row = train_y.row(neighbor_idx);
-            target_row.assign(&source_row);
+            let source_row = model.rows().row_y(neighbor_idx).expect("row_y");
+            y_neighbors
+                .row_mut(base_idx + j)
+                .assign(&source_row.view());
         }
     }
     Ok(Some(NeighborData::new(dist2s, idx, y_neighbors, k)))
+}
+
+fn conditional_neighbor_batch_ready(
+    dist2_train: &Array2<f64>,
+    dist2_whatif: &Array2<f64>,
+    batch_size: usize,
+    n_candidates: usize,
+) -> Result<Option<()>, ENNError> {
+    if n_candidates == 0 || batch_size == 0 {
+        return Ok(None);
+    }
+    if dist2_train.iter().any(|v| !v.is_finite()) || dist2_whatif.iter().any(|v| !v.is_finite()) {
+        return Err(ENNError::InvalidParameter(
+            "NaN or Inf in distance computation (check x, x_whatif for invalid values)".to_string(),
+        ));
+    }
+    Ok(Some(()))
 }
 
 pub(crate) fn get_conditional_neighbor_data(
@@ -321,17 +381,9 @@ pub(crate) fn get_conditional_neighbor_data(
     };
 
     let n_candidates = dist2_train.ncols() + dist2_whatif.ncols();
-    if n_candidates == 0 {
-        return Ok(None);
-    }
-
-    if dist2_train.iter().any(|v| !v.is_finite()) || dist2_whatif.iter().any(|v| !v.is_finite()) {
-        return Err(ENNError::InvalidParameter(
-            "NaN or Inf in distance computation (check x, x_whatif for invalid values)".to_string(),
-        ));
-    }
-
-    if batch_size == 0 {
+    if conditional_neighbor_batch_ready(&dist2_train, &dist2_whatif, batch_size, n_candidates)?
+        .is_none()
+    {
         return Ok(None);
     }
 
@@ -379,17 +431,17 @@ pub(crate) fn get_conditional_neighbor_data(
     let num_metrics = model.num_metrics();
     let mut y_neighbors = Array2::zeros((batch_size * k_out, num_metrics));
 
-    let train_y = model.train_y();
     for (i, ids_row) in ids_all.iter().enumerate().take(batch_size) {
         let base_idx = i * k_out;
         for (j, &neighbor_idx) in ids_row.iter().enumerate() {
-            let mut target_row = y_neighbors.row_mut(base_idx + j);
             let source_row = if neighbor_idx < n_train {
-                train_y.row(neighbor_idx)
+                model.rows().row_y(neighbor_idx).expect("row_y")
             } else {
-                y_whatif.row(neighbor_idx - n_train)
+                y_whatif.row(neighbor_idx - n_train).to_owned()
             };
-            target_row.assign(&source_row);
+            y_neighbors
+                .row_mut(base_idx + j)
+                .assign(&source_row.view());
         }
     }
 
