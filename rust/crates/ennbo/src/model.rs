@@ -125,9 +125,9 @@ impl EpistemicNearestNeighbors {
                 driver,
             )?,
             EnnStorage::Disk => {
-                if driver != IndexDriver::HNSWHannoy && driver != IndexDriver::HNSWDisk {
+                if driver != IndexDriver::HNSWDisk {
                     return Err(ENNError::InvalidParameter(
-                        "Disk storage requires IndexDriver::HNSWHannoy or HNSWDisk".to_string(),
+                        "Disk storage requires IndexDriver::HNSWDisk".to_string(),
                     ));
                 }
                 let dir = work_dir.or_else(EnnStorage::work_dir_from_env).ok_or_else(|| {
@@ -487,56 +487,5 @@ mod tests {
         assert!(model.train_x_view_opt().is_some());
         assert!(model.train_y_view_opt().is_some());
         assert_eq!(model.index_access().len(), 2);
-    }
-
-    #[cfg(feature = "hannoy")]
-    #[test]
-    fn disk_backend_train_rows_at_matches_in_memory() {
-        use rand::Rng;
-        use rand_chacha::ChaCha8Rng;
-        use rand_chacha::rand_core::SeedableRng;
-        use tempfile::TempDir;
-
-        let seed = 42u64;
-        println!("disk backend fuzz seed={seed}");
-        let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let n = 200usize;
-        let d = 3usize;
-        let mut train_x = ndarray::Array2::zeros((n, d));
-        let mut train_y = ndarray::Array2::zeros((n, 1));
-        for i in 0..n {
-            for j in 0..d {
-                train_x[[i, j]] = rng.gen::<f64>();
-            }
-            train_y[[i, 0]] = rng.gen::<f64>();
-        }
-        let mem = EpistemicNearestNeighbors::new(
-            train_x.clone(),
-            train_y.clone(),
-            None,
-            false,
-            IndexDriver::Exact,
-        )
-        .unwrap();
-        let dir = TempDir::new().expect("tempdir");
-        let disk = EpistemicNearestNeighbors::new_with_storage(
-            train_x,
-            train_y,
-            None,
-            false,
-            IndexDriver::HNSWHannoy,
-            EnnStorage::Disk,
-            Some(dir.path().to_path_buf()),
-        )
-        .unwrap();
-        let indices: Vec<usize> = (0..n).filter(|_| rng.gen_bool(0.3)).collect();
-        if indices.is_empty() {
-            return;
-        }
-        let (mx, my, _) = mem.rows().train_rows_at(&indices).unwrap();
-        let (dx, dy, _) = disk.rows().train_rows_at(&indices).unwrap();
-        assert_eq!(mx.shape(), dx.shape());
-        assert!((&mx - &dx).mapv(f64::abs).sum() < 1e-10);
-        assert!((&my - &dy).mapv(f64::abs).sum() < 1e-10);
     }
 }

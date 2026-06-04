@@ -10,8 +10,7 @@ ENN estimates a function's value and epistemic uncertainty using K-Nearest Neigh
 - **TuRBO-ENN optimizer** — Thompson sampling, UCB, RAASP candidate generation
 - Neighbor search via Faiss in-memory (`IndexDriver::Exact`, `IndexDriver::HNSW`)
 - Disk mode: mmap `train_*.bin` + optional ANN index under `work_dir`
-  - `IndexDriver::HNSWHannoy` — hannoy LMDB under `hannoy/` (feature `hannoy`)
-  - `IndexDriver::HNSWDisk` — in-tree HNSW graph under `graph/` (default build, no feature gate)
+  - `IndexDriver::HNSWDisk` — in-tree HNSW graph under `graph/`
 
 ### Disk layout (`hnsw_disk`)
 
@@ -29,8 +28,7 @@ work_dir/
 Incremental sync inserts rows `[indexed_rows..num_obs)` into the graph in chunks (8192 rows), updating `indexed_rows` in `metadata.json` after each chunk.
 
 ```bash
-ENN_WORK_DIR=/tmp/enn_work cargo test -p ennbo --features hannoy
-cargo test -p ennbo disk_hnsw   # hnsw_disk path, no hannoy feature required
+ENN_WORK_DIR=/tmp/enn_work cargo test -p ennbo disk_hnsw
 ```
 
 ## Usage

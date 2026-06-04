@@ -27,9 +27,6 @@ impl KnnBackend {
                 driver,
                 train_scaled,
             )?))),
-            IndexDriver::HNSWHannoy => Err(IndexError::InvalidParameter(
-                "IndexDriver::HNSWHannoy is disk-only; use DiskHannoyEnnBackend".to_string(),
-            )),
             IndexDriver::HNSWDisk => Err(IndexError::InvalidParameter(
                 "IndexDriver::HNSWDisk is disk-only; use DiskHnswEnnBackend".to_string(),
             )),
@@ -164,11 +161,11 @@ mod knn_backend_tests {
     }
 
     #[test]
-    fn knn_backend_hnsw_hannoy_driver_errors() {
+    fn knn_backend_hnsw_disk_driver_errors() {
         let train = array![[0.0, 0.0], [1.0, 0.0]];
-        match KnnBackend::new(2, IndexDriver::HNSWHannoy, &train.view()) {
+        match KnnBackend::new(2, IndexDriver::HNSWDisk, &train.view()) {
             Err(e) => assert!(e.to_string().contains("disk-only")),
-            Ok(_) => panic!("expected HNSWHannoy on KnnBackend to error"),
+            Ok(_) => panic!("expected HNSWDisk on KnnBackend to error"),
         }
     }
 

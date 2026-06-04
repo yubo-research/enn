@@ -6,7 +6,6 @@ from enum import Enum, auto
 class ENNIndexDriver(Enum):
     FLAT = auto()
     HNSW = auto()
-    HNSW_HANNOY = auto()
     HNSW_DISK = auto()
 
 
@@ -14,6 +13,5 @@ class ENNIndexDriver(Enum):
 ENN_INDEX_DRIVER_TO_RUST: dict[ENNIndexDriver, str] = {
     ENNIndexDriver.FLAT: "exact",
     ENNIndexDriver.HNSW: "hnsw",
-    ENNIndexDriver.HNSW_HANNOY: "hnsw_hannoy",
     ENNIndexDriver.HNSW_DISK: "hnsw_disk",
 }

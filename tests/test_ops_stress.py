@@ -58,7 +58,7 @@ def test_checkpoint_ns_metamorphic_doubling_preserves_prefix():
         assert small == large[: len(small)]
 
 
-@pytest.mark.parametrize("name", ["flat", "hnsw", "hnsw_hannoy", "hnsw_disk"])
+@pytest.mark.parametrize("name", ["flat", "hnsw", "hnsw_disk"])
 def test_parse_index_driver(name: str):
     from ops.stress import parse_index_driver
 
@@ -221,30 +221,6 @@ def test_enn_stress_cli():
     assert not data_lines[-1].startswith(" ")
 
 
-def test_enn_stress_cli_hnsw_hannoy(tmp_path):
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    work_dir = tmp_path / "enn_cli_hannoy"
-    result = CliRunner().invoke(
-        cli,
-        ["enn", "hnsw_hannoy", "10", "--work-dir", str(work_dir)],
-    )
-    if result.exit_code != 0:
-        combined = f"{result.output}\n{result.exception}".lower()
-        if "hannoy" in combined or "disk-only" in combined:
-            pytest.skip(
-                "ennbo built without hannoy feature or hnsw_hannoy needs work_dir"
-            )
-        raise AssertionError(result.output)
-    lines = result.output.strip().splitlines()
-    assert lines[0] == f"num_dim=10 num_obs=10 work_dir={work_dir}"
-    assert len(lines) == 4
-    for line in lines[1:]:
-        assert _STRESS_ROW_RE.fullmatch(line)
-
-
 def test_enn_stress_cli_rejects_work_dir_for_in_memory_driver():
     from click.testing import CliRunner
 
@@ -281,35 +257,6 @@ def test_enn_stress_cli_hnsw_disk(tmp_path):
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
     assert lines[0] == f"num_dim=10 num_obs=10 work_dir={work_dir}"
-    assert len(lines) == 4
-    for line in lines[1:]:
-        assert _STRESS_ROW_RE.fullmatch(line)
-
-
-def test_enn_stress_cli_hnsw_hannoy_work_dir(tmp_path):
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    work_dir = tmp_path / "enn_work"
-    result = CliRunner().invoke(
-        cli,
-        [
-            "enn",
-            "hnsw_hannoy",
-            "10",
-            "--work-dir",
-            str(work_dir),
-        ],
-    )
-    if result.exit_code != 0:
-        combined = f"{result.output}\n{result.exception}".lower()
-        if "hannoy" in combined:
-            pytest.skip("ennbo built without hannoy feature")
-        raise AssertionError(result.output)
-    lines = result.output.strip().splitlines()
-    assert lines[0] == f"num_dim=10 num_obs=10 work_dir={work_dir}"
-    assert work_dir.is_dir()
     assert len(lines) == 4
     for line in lines[1:]:
         assert _STRESS_ROW_RE.fullmatch(line)
@@ -490,17 +437,12 @@ def _run_disk_rss_stress_or_skip(tmp_path, num_obs: int, *, num_dim: int = 10):
     from ops.stress import run_disk_rss_stress
 
     work_dir = tmp_path / f"enn_disk_rss_{num_obs}"
-    try:
-        return run_disk_rss_stress(
-            num_obs=num_obs,
-            work_dir=str(work_dir),
-            num_dim=num_dim,
-            seed=0,
-        )
-    except Exception as exc:
-        if "hannoy" in str(exc).lower():
-            pytest.skip("ennbo built without hannoy feature")
-        raise
+    return run_disk_rss_stress(
+        num_obs=num_obs,
+        work_dir=str(work_dir),
+        num_dim=num_dim,
+        seed=0,
+    )
 
 
 @pytest.mark.slow

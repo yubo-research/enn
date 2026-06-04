@@ -588,7 +588,7 @@ mod disk_hnsw_unit_tests {
     #[test]
     fn disk_hnsw_rejects_mismatched_index_backend() {
         let dir = TempDir::new().expect("tempdir");
-        disk_obs::write_metadata(dir.path(), 1, 2, 1, false, 0, "hannoy").unwrap();
+        disk_obs::write_metadata(dir.path(), 1, 2, 1, false, 0, "flat").unwrap();
         match DiskHnswEnnBackend::new(
             dir.path().to_path_buf(),
             array![[0.0, 0.0]],

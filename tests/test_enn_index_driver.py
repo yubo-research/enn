@@ -17,11 +17,10 @@ def _enn(train_x, *, index_driver=ENNIndexDriver.FLAT, work_dir=None):
     return EpistemicNearestNeighbors(train_x, train_y, **kwargs)
 
 
-def test_enn_index_driver_to_rust_maps_all_three():
+def test_enn_index_driver_to_rust_maps_all():
     assert set(ENNIndexDriver) == set(ENN_INDEX_DRIVER_TO_RUST.keys())
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "exact"
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW] == "hnsw"
-    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW_HANNOY] == "hnsw_hannoy"
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW_DISK] == "hnsw_disk"
 
 
@@ -34,17 +33,6 @@ def test_enn_hnsw_disk_in_memory_raises():
             train_y,
             index_driver=ENNIndexDriver.HNSW_DISK,
             enn_storage="disk",
-        )
-
-
-def test_enn_hnsw_hannoy_in_memory_raises():
-    train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
-    train_y = np.zeros((2, 1), dtype=float)
-    with pytest.raises(ValueError, match="disk-only|work_dir|HNSW"):
-        EpistemicNearestNeighbors(
-            train_x,
-            train_y,
-            index_driver=ENNIndexDriver.HNSW_HANNOY,
         )
 
 
@@ -84,9 +72,7 @@ def test_enn_index_driver_neighbor_indices_fuzz(seed: int):
 def test_enn_work_dir_requires_disk_driver():
     train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
     train_y = np.zeros((2, 1), dtype=float)
-    with pytest.raises(
-        ValueError, match="Disk storage requires IndexDriver::HNSWHannoy or HNSWDisk"
-    ):
+    with pytest.raises(ValueError, match="Disk storage requires IndexDriver::HNSWDisk"):
         EpistemicNearestNeighbors(
             train_x,
             train_y,
@@ -96,88 +82,15 @@ def test_enn_work_dir_requires_disk_driver():
         )
 
 
-def test_enn_disk_backend_incremental_add_and_search(tmp_path):
-    work_dir = tmp_path / "enn_disk"
-    rng = np.random.default_rng(0)
-    n = 50
-    train_x = rng.standard_normal((n, 2))
-    np.zeros((n, 1), dtype=float)
-    try:
-        model = _enn(
-            train_x,
-            index_driver=ENNIndexDriver.HNSW_HANNOY,
-            work_dir=str(work_dir),
-        )
-    except ValueError as exc:
-        if "hannoy" in str(exc).lower():
-            pytest.skip("ennbo built without hannoy feature")
-        raise
-
-    add_x = rng.standard_normal((10, 2)) + 100.0
-    add_y = np.arange(10, dtype=float).reshape(-1, 1) + 100.0
-    model.add(add_x, add_y)
-    assert len(model) == n + 10
-
-    query = add_x[:1]
-    flat = _enn(np.vstack([train_x, add_x]), index_driver=ENNIndexDriver.FLAT)
-    _, idx = enn_index_neighbor_distances_and_indices(
-        model.rust_backend, query, search_k=1, exclude_nearest=False
-    )
-    _, flat_idx = enn_index_neighbor_distances_and_indices(
-        flat.rust_backend, query, search_k=1, exclude_nearest=False
-    )
-    assert int(idx[0, 0]) == int(flat_idx[0, 0])
-
-    from enn.enn.enn_params import ENNParams
-
-    model.posterior(
-        query,
-        params=ENNParams(
-            k_num_neighbors=1,
-            epistemic_variance_scale=1.0,
-            aleatoric_variance_scale=0.0,
-        ),
-    )
-
-
-def test_enn_disk_backend_train_rows_at_matches_memory(tmp_path):
-    work_dir = tmp_path / "enn_disk_rows"
-    rng = np.random.default_rng(7)
-    n, d = 30, 3
-    train_x = rng.standard_normal((n, d))
-    rng.standard_normal((n, 1))
-    mem = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
-    try:
-        disk = _enn(
-            train_x,
-            index_driver=ENNIndexDriver.HNSW_HANNOY,
-            work_dir=str(work_dir),
-        )
-    except ValueError as exc:
-        if "hannoy" in str(exc).lower():
-            pytest.skip("ennbo built without hannoy feature")
-        raise
-    indices = rng.choice(n, size=10, replace=False).tolist()
-    mx, my, _ = mem.train_rows_at(indices)
-    dx, dy, _ = disk.train_rows_at(indices)
-    np.testing.assert_allclose(mx, dx)
-    np.testing.assert_allclose(my, dy)
-
-
 def test_enn_disk_backend_persists_observation_files(tmp_path):
     work_dir = tmp_path / "persist"
     train_x = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
     np.zeros((2, 1), dtype=float)
-    try:
-        model = _enn(
-            train_x,
-            index_driver=ENNIndexDriver.HNSW_HANNOY,
-            work_dir=str(work_dir),
-        )
-    except ValueError as exc:
-        if "hannoy" in str(exc).lower():
-            pytest.skip("ennbo built without hannoy feature")
-        raise
+    model = _enn(
+        train_x,
+        index_driver=ENNIndexDriver.HNSW_DISK,
+        work_dir=str(work_dir),
+    )
     assert (work_dir / "train_x.bin").exists()
     size_before = (work_dir / "train_x.bin").stat().st_size
     model.add(np.array([[0.0, 1.0]]), np.zeros((1, 1)))

@@ -62,8 +62,6 @@ pub use model::EpistemicNearestNeighbors;
 pub use model::{EnnIndexAccess, EnnRowAccess};
 pub use backend::{EnnBackend, EnnStorage, InMemoryEnnBackend};
 pub use backend::DiskHnswEnnBackend;
-#[cfg(feature = "hannoy")]
-pub use backend::DiskHannoyEnnBackend;
 pub use optimizer::obs_access::ObsAccess;
 pub use optimizer::{ObservationDelta, Optimizer, Telemetry};
 pub use optimizer_factory::{create_optimizer_enn, create_optimizer_lhd, create_optimizer_zero};

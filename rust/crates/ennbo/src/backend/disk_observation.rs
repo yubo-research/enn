@@ -336,7 +336,7 @@ mod disk_observation_tests {
         let dir = TempDir::new().expect("tempdir");
         write_metadata(dir.path(), 0, 2, 1, false, 0, "hnsw_disk").unwrap();
         validate_index_backend(dir.path(), "hnsw_disk").unwrap();
-        let err = validate_index_backend(dir.path(), "hnsw_hannoy").unwrap_err();
+        let err = validate_index_backend(dir.path(), "flat").unwrap_err();
         assert!(err.to_string().contains("index_backend"));
 
         let err_limit = check_append_row_limit(u32::MAX as usize).unwrap_err();

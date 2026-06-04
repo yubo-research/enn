@@ -17,8 +17,6 @@ pub enum IndexDriver {
     Exact,
     /// Faiss HNSW32 (in-memory).
     HNSW,
-    /// Hannoy HNSW on disk (requires `hannoy` feature + `EnnStorage::Disk`).
-    HNSWHannoy,
     /// In-tree HNSW on disk (`EnnStorage::Disk` + `work_dir`).
     HNSWDisk,
 }

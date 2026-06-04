@@ -1,6 +1,6 @@
 //! Kiss static coverage: test files must reference private helper names from knn backends.
 
-const DISK_HANNOY_SRC: &str = include_str!("../src/backend/disk_hannoy.rs");
+const DISK_HNSW_SRC: &str = include_str!("../src/disk_hnsw/enn_backend.rs");
 const DISK_OBSERVATION_SRC: &str = include_str!("../src/backend/disk_observation.rs");
 const FAISS_BACKEND_SRC: &str = include_str!("../src/knn/faiss_backend.rs");
 const ROW_STORAGE_SRC: &str = include_str!("../src/backend/row_storage.rs");
@@ -53,11 +53,10 @@ fn kiss_row_storage_helper_names_in_source() {
 }
 
 #[test]
-fn kiss_disk_hannoy_helper_names_in_source() {
+fn kiss_disk_hnsw_helper_names_in_source() {
     for name in [
         "write_metadata",
-        "DiskHannoyEnnBackend",
-        "open_or_create_hannoy",
+        "DiskHnswEnnBackend",
         "index_row_range",
         "impl_disk_mmap_observation_api",
         "mark_index_stale",
@@ -71,17 +70,16 @@ fn kiss_disk_hannoy_helper_names_in_source() {
         "mmap_open_or_create",
         "mmap_append",
         "mmap_row_slice",
-        "mmap_row_range",
     ] {
         assert!(
-            DISK_HANNOY_SRC.contains(name),
-            "missing {name} in backend/disk_hannoy.rs"
+            DISK_HNSW_SRC.contains(name),
+            "missing {name} in disk_hnsw/enn_backend.rs"
         );
     }
     for name in ["append_rows", "train_rows_at", "load_indexed_rows", "mmap_gather"] {
         assert!(
-            DISK_HANNOY_SRC.contains(name) || DISK_OBSERVATION_SRC.contains(name),
-            "missing {name} in disk hannoy/observation sources"
+            DISK_HNSW_SRC.contains(name) || DISK_OBSERVATION_SRC.contains(name),
+            "missing {name} in disk hnsw/observation sources"
         );
     }
 }

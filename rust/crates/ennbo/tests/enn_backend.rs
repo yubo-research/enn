@@ -1,4 +1,4 @@
-//! Integration tests for EnnBackend dispatch and disk hannoy storage.
+//! Integration tests for EnnBackend dispatch and disk storage.
 
 use ennbo::{EnnStorage, EpistemicNearestNeighbors, IndexDriver};
 use ndarray::array;
@@ -43,7 +43,6 @@ fn new_empty_in_memory_accepts_incremental_add() {
     assert_eq!(model.rows().row_x(0).unwrap()[0], 1.0);
 }
 
-#[cfg(feature = "hannoy")]
 #[test]
 fn disk_backend_roundtrip_and_search() {
     let dir = TempDir::new().expect("tempdir");
@@ -54,7 +53,7 @@ fn disk_backend_roundtrip_and_search() {
         train_y,
         None,
         false,
-        IndexDriver::HNSWHannoy,
+        IndexDriver::HNSWDisk,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
     )
@@ -77,10 +76,9 @@ fn disk_backend_roundtrip_and_search() {
     assert_eq!(idx[[0, 0]], exact[[0, 0]]);
 }
 
-#[cfg(feature = "hannoy")]
 #[test]
-fn kiss_disk_hannoy_static_coverage_names() {
-    let _type_hint: Option<ennbo::DiskHannoyEnnBackend> = None;
+fn kiss_disk_hnsw_static_coverage_names() {
+    let _type_hint: Option<ennbo::DiskHnswEnnBackend> = None;
     let names: &[&str] = &[
         "MmapColumnStore",
         "mmap_open_or_create",
@@ -100,14 +98,13 @@ fn kiss_disk_hannoy_static_coverage_names() {
         "index_memory_bytes",
         "new_empty",
         "indexed_rows",
-        "hannoy_dir",
+        "graph_dir",
     ];
     assert!(!names.is_empty());
 }
 
-#[cfg(feature = "hannoy")]
 #[test]
-fn disk_storage_rejects_non_hannoy_driver() {
+fn disk_storage_rejects_non_disk_driver() {
     let dir = TempDir::new().expect("tempdir");
     match EpistemicNearestNeighbors::new_with_storage(
         array![[0.0, 0.0]],
@@ -119,6 +116,6 @@ fn disk_storage_rejects_non_hannoy_driver() {
         Some(dir.path().to_path_buf()),
     ) {
         Ok(_) => panic!("expected disk + Exact to error"),
-        Err(e) => assert!(e.to_string().contains("HNSWHannoy")),
+        Err(e) => assert!(e.to_string().contains("HNSWDisk")),
     }
 }

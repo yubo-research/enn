@@ -4,12 +4,7 @@ pub(crate) mod disk_observation;
 mod in_memory;
 pub(crate) mod row_storage;
 
-#[cfg(feature = "hannoy")]
-mod disk_hannoy;
-
 pub use in_memory::InMemoryEnnBackend;
-#[cfg(feature = "hannoy")]
-pub use disk_hannoy::DiskHannoyEnnBackend;
 pub use crate::disk_hnsw::DiskHnswEnnBackend;
 
 use ndarray::{Array1, Array2, ArrayView2};
@@ -43,8 +38,6 @@ impl EnnStorage {
 }
 
 pub enum DiskEnnBackend {
-    #[cfg(feature = "hannoy")]
-    Hannoy(DiskHannoyEnnBackend),
     Hnsw(DiskHnswEnnBackend),
 }
 
@@ -62,8 +55,6 @@ fn disk_lock<'a>(
 
 fn disk_driver(d: &DiskEnnBackend) -> IndexDriver {
     match d {
-        #[cfg(feature = "hannoy")]
-        DiskEnnBackend::Hannoy(b) => b.driver(),
         DiskEnnBackend::Hnsw(b) => b.driver(),
     }
 }
@@ -92,16 +83,6 @@ impl EnnBackend {
         driver: IndexDriver,
     ) -> Result<Self, ENNError> {
         let inner = match driver {
-            #[cfg(feature = "hannoy")]
-            IndexDriver::HNSWHannoy => DiskEnnBackend::Hannoy(DiskHannoyEnnBackend::new(
-                work_dir,
-                train_x,
-                train_y,
-                train_yvar,
-                scale_x,
-                x_scale,
-                driver,
-            )?),
             IndexDriver::HNSWDisk => DiskEnnBackend::Hnsw(DiskHnswEnnBackend::new(
                 work_dir,
                 train_x,
@@ -113,7 +94,7 @@ impl EnnBackend {
             )?),
             _ => {
                 return Err(ENNError::InvalidParameter(
-                    "Disk storage requires IndexDriver::HNSWHannoy or HNSWDisk".to_string(),
+                    "Disk storage requires IndexDriver::HNSWDisk".to_string(),
                 ));
             }
         };
@@ -138,18 +119,12 @@ impl EnnBackend {
                     )
                 })?;
                 let inner = match driver {
-                    #[cfg(feature = "hannoy")]
-                    IndexDriver::HNSWHannoy => {
-                        DiskEnnBackend::Hannoy(DiskHannoyEnnBackend::new_empty(
-                            dir, num_dim, num_metrics,
-                        )?)
-                    }
                     IndexDriver::HNSWDisk => DiskEnnBackend::Hnsw(DiskHnswEnnBackend::new_empty(
                         dir, num_dim, num_metrics,
                     )?),
                     _ => {
                         return Err(ENNError::InvalidParameter(
-                            "Disk storage requires IndexDriver::HNSWHannoy or HNSWDisk".to_string(),
+                            "Disk storage requires IndexDriver::HNSWDisk".to_string(),
                         ));
                     }
                 };
@@ -161,11 +136,11 @@ impl EnnBackend {
     pub fn len(&self) -> usize {
         match self {
             Self::InMemory(b) => b.len(),
-            Self::Disk(b) => disk_lock(b).map(|g| match &*g {
-                #[cfg(feature = "hannoy")]
-                DiskEnnBackend::Hannoy(x) => x.len(),
-                DiskEnnBackend::Hnsw(x) => x.len(),
-            }).unwrap_or(0),
+            Self::Disk(b) => disk_lock(b)
+                .map(|g| match &*g {
+                    DiskEnnBackend::Hnsw(x) => x.len(),
+                })
+                .unwrap_or(0),
         }
     }
 
@@ -176,22 +151,22 @@ impl EnnBackend {
     pub fn num_dim(&self) -> usize {
         match self {
             Self::InMemory(b) => b.num_dim(),
-            Self::Disk(b) => disk_lock(b).map(|g| match &*g {
-                #[cfg(feature = "hannoy")]
-                DiskEnnBackend::Hannoy(x) => x.num_dim(),
-                DiskEnnBackend::Hnsw(x) => x.num_dim(),
-            }).unwrap_or(0),
+            Self::Disk(b) => disk_lock(b)
+                .map(|g| match &*g {
+                    DiskEnnBackend::Hnsw(x) => x.num_dim(),
+                })
+                .unwrap_or(0),
         }
     }
 
     pub fn num_metrics(&self) -> usize {
         match self {
             Self::InMemory(b) => b.num_metrics(),
-            Self::Disk(b) => disk_lock(b).map(|g| match &*g {
-                #[cfg(feature = "hannoy")]
-                DiskEnnBackend::Hannoy(x) => x.num_metrics(),
-                DiskEnnBackend::Hnsw(x) => x.num_metrics(),
-            }).unwrap_or(0),
+            Self::Disk(b) => disk_lock(b)
+                .map(|g| match &*g {
+                    DiskEnnBackend::Hnsw(x) => x.num_metrics(),
+                })
+                .unwrap_or(0),
         }
     }
 
@@ -210,8 +185,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 if let Ok(mut g) = disk_lock(b) {
                     match &mut *g {
-                        #[cfg(feature = "hannoy")]
-                        DiskEnnBackend::Hannoy(x) => x.mark_index_stale(),
                         DiskEnnBackend::Hnsw(x) => x.mark_index_stale(),
                     }
                 }
@@ -230,8 +203,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 let mut g = disk_lock(b)?;
                 match &mut *g {
-                    #[cfg(feature = "hannoy")]
-                    DiskEnnBackend::Hannoy(xb) => xb.append_rows(x, y, yvar),
                     DiskEnnBackend::Hnsw(xb) => xb.append_rows(x, y, yvar),
                 }
             }
@@ -248,8 +219,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 let mut g = disk_lock(b)?;
                 match &mut *g {
-                    #[cfg(feature = "hannoy")]
-                    DiskEnnBackend::Hannoy(xb) => xb.ensure_index_sync(scale_x, x_scale),
                     DiskEnnBackend::Hnsw(xb) => xb.ensure_index_sync(scale_x, x_scale),
                 }
             }
@@ -265,8 +234,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 let g = disk_lock(b)?;
                 match &*g {
-                    #[cfg(feature = "hannoy")]
-                    DiskEnnBackend::Hannoy(xb) => xb.train_rows_at(indices),
                     DiskEnnBackend::Hnsw(xb) => xb.train_rows_at(indices),
                 }
             }
@@ -279,8 +246,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 let g = disk_lock(b)?;
                 match &*g {
-                    #[cfg(feature = "hannoy")]
-                    DiskEnnBackend::Hannoy(xb) => xb.row_x(i),
                     DiskEnnBackend::Hnsw(xb) => xb.row_x(i),
                 }
             }
@@ -293,8 +258,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 let g = disk_lock(b)?;
                 match &*g {
-                    #[cfg(feature = "hannoy")]
-                    DiskEnnBackend::Hannoy(xb) => xb.row_y(i),
                     DiskEnnBackend::Hnsw(xb) => xb.row_y(i),
                 }
             }
@@ -307,8 +270,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 let g = disk_lock(b)?;
                 match &*g {
-                    #[cfg(feature = "hannoy")]
-                    DiskEnnBackend::Hannoy(xb) => xb.row_yvar(i),
                     DiskEnnBackend::Hnsw(xb) => xb.row_yvar(i),
                 }
             }
@@ -326,8 +287,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 let g = disk_lock(b)?;
                 match &*g {
-                    #[cfg(feature = "hannoy")]
-                    DiskEnnBackend::Hannoy(xb) => xb.search(x, search_k, exclude_nearest),
                     DiskEnnBackend::Hnsw(xb) => xb.search(x, search_k, exclude_nearest),
                 }
             }
@@ -340,8 +299,6 @@ impl EnnBackend {
             Self::Disk(b) => {
                 let g = disk_lock(b)?;
                 match &*g {
-                    #[cfg(feature = "hannoy")]
-                    DiskEnnBackend::Hannoy(xb) => xb.index_memory_bytes(),
                     DiskEnnBackend::Hnsw(xb) => xb.index_memory_bytes(),
                 }
             }
@@ -351,11 +308,11 @@ impl EnnBackend {
     pub fn index_len(&self) -> usize {
         match self {
             Self::InMemory(b) => b.index_len(),
-            Self::Disk(b) => disk_lock(b).map(|g| match &*g {
-                #[cfg(feature = "hannoy")]
-                DiskEnnBackend::Hannoy(x) => x.len(),
-                DiskEnnBackend::Hnsw(x) => x.len(),
-            }).unwrap_or(0),
+            Self::Disk(b) => disk_lock(b)
+                .map(|g| match &*g {
+                    DiskEnnBackend::Hnsw(x) => x.len(),
+                })
+                .unwrap_or(0),
         }
     }
 
@@ -427,24 +384,6 @@ mod backend_dispatch_tests {
     fn disk_hnsw_new_empty_without_work_dir_errors() {
         let err = EnnBackend::new_empty(2, 1, IndexDriver::HNSWDisk, EnnStorage::Disk, None);
         assert!(err.is_err());
-    }
-
-    #[cfg(feature = "hannoy")]
-    #[test]
-    fn disk_hannoy_enum_dispatch_exercises_mod_rs() {
-        use tempfile::TempDir;
-        let dir = TempDir::new().expect("tempdir");
-        let backend = EnnBackend::new_disk(
-            dir.path().to_path_buf(),
-            array![[0.0, 0.0], [1.0, 0.0]],
-            array![[0.0], [1.0]],
-            None,
-            false,
-            Array1::ones(2),
-            IndexDriver::HNSWHannoy,
-        )
-        .unwrap();
-        assert_eq!(backend.driver(), IndexDriver::HNSWHannoy);
     }
 
     #[test]

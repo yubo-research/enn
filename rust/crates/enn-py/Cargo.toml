@@ -15,10 +15,6 @@ readme = "../../../README.md"
 name = "enn_rust"
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = ["hannoy"]
-hannoy = ["ennbo/hannoy"]
-
 [build-dependencies]
 ennbo = { path = "../ennbo", version = "0.2" }
 

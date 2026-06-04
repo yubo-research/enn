@@ -535,7 +535,7 @@ mod tests {
         use std::path::PathBuf;
 
         let overrides = ConfigOverrides {
-            index_driver: Some(IndexDriver::HNSWHannoy),
+            index_driver: Some(IndexDriver::HNSWDisk),
             enn_storage: Some(EnnStorage::Disk),
             work_dir: Some(PathBuf::from("/tmp/enn_work")),
             ..Default::default()
@@ -544,7 +544,7 @@ mod tests {
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
-        assert_eq!(enn.index_driver, IndexDriver::HNSWHannoy);
+        assert_eq!(enn.index_driver, IndexDriver::HNSWDisk);
         assert_eq!(enn.storage, EnnStorage::Disk);
         assert_eq!(enn.work_dir.as_deref(), Some(Path::new("/tmp/enn_work")));
     }

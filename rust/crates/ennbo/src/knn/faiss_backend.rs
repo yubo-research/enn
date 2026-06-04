@@ -21,9 +21,6 @@ fn faiss_spec(driver: IndexDriver) -> &'static str {
     match driver {
         IndexDriver::Exact => "Flat",
         IndexDriver::HNSW => "HNSW32",
-        IndexDriver::HNSWHannoy => {
-            panic!("HNSWHannoy must not be routed to FaissBackend")
-        }
         IndexDriver::HNSWDisk => {
             panic!("HNSWDisk must not be routed to FaissBackend")
         }
@@ -85,9 +82,6 @@ impl FaissBackend {
                     .saturating_mul(2)
                     .saturating_mul(std::mem::size_of::<i64>());
                 vector_bytes.saturating_add(level0_links)
-            }
-            IndexDriver::HNSWHannoy => {
-                panic!("HNSWHannoy must not be routed to FaissBackend")
             }
             IndexDriver::HNSWDisk => {
                 panic!("HNSWDisk must not be routed to FaissBackend")
@@ -253,6 +247,7 @@ impl MmapColumnStore {
     }
 
     /// Copy rows `[start, end)` into a dense buffer (does not materialize the full store).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn mmap_row_range(
         &self,
         start: usize,

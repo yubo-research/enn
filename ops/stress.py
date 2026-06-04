@@ -16,8 +16,8 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "hnsw", "hnsw_hannoy", "hnsw_disk")
-DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"hnsw_hannoy", "hnsw_disk"})
+INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "hnsw", "hnsw_disk")
+DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"hnsw_disk"})
 DEFAULT_NUM_DIM = 10
 STRESS_OBS_BATCH_SIZE = 100
 DEFAULT_HEARTBEAT_SECONDS = 10.0
@@ -66,7 +66,7 @@ def run_disk_rss_stress(
     *,
     num_obs: int,
     work_dir: str,
-    index_driver: ENNIndexDriver = ENNIndexDriver.HNSW_HANNOY,
+    index_driver: ENNIndexDriver = ENNIndexDriver.HNSW_DISK,
     num_dim: int = DEFAULT_NUM_DIM,
     seed: int = 0,
 ) -> DiskRssStressResult:
@@ -130,7 +130,6 @@ def parse_index_driver(name: str) -> ENNIndexDriver:
     mapping = {
         "flat": ENNIndexDriver.FLAT,
         "hnsw": ENNIndexDriver.HNSW,
-        "hnsw_hannoy": ENNIndexDriver.HNSW_HANNOY,
         "hnsw_disk": ENNIndexDriver.HNSW_DISK,
     }
     if name not in mapping:
@@ -308,7 +307,7 @@ def cli() -> None:
             ["--work-dir"],
             type=click.Path(file_okay=False, dir_okay=True, path_type=str),
             default=None,
-            help="Disk-backed ENN work directory (requires hnsw_hannoy or hnsw_disk).",
+            help="Disk-backed ENN work directory (requires hnsw_disk).",
         ),
     ],
 )

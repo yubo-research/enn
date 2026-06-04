@@ -145,7 +145,6 @@ _KISS_STATIC_UNIT_NAMES = (
     "row_slice",
     "view_all",
     "write_metadata",
-    "DiskHannoyEnnBackend",
     "maybe_rotate_shard",
     "append_rows",
     "EnnBackend",
