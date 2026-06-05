@@ -9,7 +9,7 @@ pub use crate::disk_hnsw::DiskHnswEnnBackend;
 
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::error::ENNError;
 use crate::index::{ENNIndex, IndexDriver};
@@ -42,12 +42,12 @@ pub enum DiskEnnBackend {
 }
 
 pub enum EnnBackend {
-    InMemory(InMemoryEnnBackend),
-    Disk(Mutex<DiskEnnBackend>),
+    InMemory(Box<InMemoryEnnBackend>),
+    Disk(Arc<Mutex<DiskEnnBackend>>),
 }
 
 fn disk_lock<'a>(
-    b: &'a Mutex<DiskEnnBackend>,
+    b: &'a Arc<Mutex<DiskEnnBackend>>,
 ) -> Result<std::sync::MutexGuard<'a, DiskEnnBackend>, ENNError> {
     b.lock()
         .map_err(|_| ENNError::InvalidParameter("disk backend mutex poisoned".to_string()))
@@ -68,9 +68,9 @@ impl EnnBackend {
         x_scale: Array1<f64>,
         driver: IndexDriver,
     ) -> Result<Self, ENNError> {
-        Ok(Self::InMemory(InMemoryEnnBackend::new(
+        Ok(Self::InMemory(Box::new(InMemoryEnnBackend::new(
             train_x, train_y, train_yvar, scale_x, x_scale, driver,
-        )?))
+        )?)))
     }
 
     pub fn new_disk(
@@ -98,7 +98,7 @@ impl EnnBackend {
                 ));
             }
         };
-        Ok(Self::Disk(Mutex::new(inner)))
+        Ok(Self::Disk(Arc::new(Mutex::new(inner))))
     }
 
     pub fn new_empty(
@@ -109,9 +109,9 @@ impl EnnBackend {
         work_dir: Option<PathBuf>,
     ) -> Result<Self, ENNError> {
         match storage {
-            EnnStorage::InMemory => Ok(Self::InMemory(InMemoryEnnBackend::new_empty(
+            EnnStorage::InMemory => Ok(Self::InMemory(Box::new(InMemoryEnnBackend::new_empty(
                 num_dim, num_metrics, driver,
-            )?)),
+            )?))),
             EnnStorage::Disk => {
                 let dir = work_dir.or_else(EnnStorage::work_dir_from_env).ok_or_else(|| {
                     ENNError::InvalidParameter(
@@ -128,7 +128,46 @@ impl EnnBackend {
                         ));
                     }
                 };
-                Ok(Self::Disk(Mutex::new(inner)))
+                Ok(Self::Disk(Arc::new(Mutex::new(inner))))
+            }
+        }
+    }
+
+    pub fn wait_for_flush(&self) -> Result<(), ENNError> {
+        match self {
+            Self::InMemory(_) => Ok(()),
+            Self::Disk(arc) => {
+                let flush_arc = {
+                    let g = disk_lock(arc)?;
+                    match &*g {
+                        DiskEnnBackend::Hnsw(x) => Arc::clone(&x.flush),
+                    }
+                };
+                crate::disk_hnsw::flush::wait_for_background_flush(&flush_arc)
+            }
+        }
+    }
+
+    pub fn schedule_background_flush(&self) -> Result<(), ENNError> {
+        match self {
+            Self::InMemory(_) => Ok(()),
+            Self::Disk(arc) => {
+                let (should, flush_arc) = {
+                    let g = disk_lock(arc)?;
+                    match &*g {
+                        DiskEnnBackend::Hnsw(x) => (
+                            !x.is_index_stale() && x.pending_rows() >= x.pending_flush_threshold(),
+                            Arc::clone(&x.flush),
+                        ),
+                    }
+                };
+                if !should {
+                    return Ok(());
+                }
+                crate::disk_hnsw::flush::try_schedule_background_flush(
+                    &flush_arc,
+                    Arc::clone(arc),
+                )
             }
         }
     }
@@ -225,6 +264,7 @@ impl EnnBackend {
         scale_x: bool,
         x_scale: &Array1<f64>,
     ) -> Result<(), ENNError> {
+        self.wait_for_flush()?;
         match self {
             Self::InMemory(b) => b.ensure_index_sync(scale_x, x_scale),
             Self::Disk(b) => {
@@ -346,6 +386,12 @@ impl EnnBackend {
             Self::InMemory(b) => Some(b.train_y_view()),
             Self::Disk(_) => None,
         }
+    }
+}
+
+impl Drop for EnnBackend {
+    fn drop(&mut self) {
+        let _ = self.wait_for_flush();
     }
 }
 

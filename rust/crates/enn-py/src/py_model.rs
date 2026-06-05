@@ -116,6 +116,12 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    fn schedule_background_flush(&self) -> PyResult<()> {
+        self.inner
+            .schedule_background_flush()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     fn index_memory_bytes(&self) -> PyResult<usize> {
         self.inner
             .index_access()

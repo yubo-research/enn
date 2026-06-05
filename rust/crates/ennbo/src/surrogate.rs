@@ -82,6 +82,21 @@ pub trait Surrogate: Send + Sync {
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
         Ok(None)
     }
+
+    fn schedule_background_flush(&self) -> Result<(), ENNError> {
+        let _ = self;
+        Ok(())
+    }
+
+    fn wait_for_background_flush(&self) -> Result<(), ENNError> {
+        let _ = self;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn enn_model_for_test(&self) -> Option<&EpistemicNearestNeighbors> {
+        None
+    }
 }
 
 pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
@@ -309,6 +324,27 @@ impl Surrogate for ENNSurrogate {
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
         self.fit_append_internal(x_new, y_new, yvar_new, &mut local_rng)
+    }
+
+    fn schedule_background_flush(&self) -> Result<(), ENNError> {
+        if let Some(model) = &self.model {
+            model.backend.schedule_background_flush()
+        } else {
+            Ok(())
+        }
+    }
+
+    fn wait_for_background_flush(&self) -> Result<(), ENNError> {
+        if let Some(model) = &self.model {
+            model.backend.wait_for_flush()
+        } else {
+            Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    fn enn_model_for_test(&self) -> Option<&EpistemicNearestNeighbors> {
+        self.model.as_ref()
     }
 
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {

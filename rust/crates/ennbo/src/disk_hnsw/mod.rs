@@ -1,6 +1,7 @@
 //! In-tree disk HNSW graph (CP-0 spike + mmap persistence).
 
 pub mod access;
+pub mod flush;
 pub mod graph_header;
 pub mod graph_mut;
 pub mod enn_backend;

@@ -2,8 +2,9 @@
 
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-use crate::backend::{EnnBackend, EnnStorage};
+use crate::backend::{DiskEnnBackend, EnnBackend, EnnStorage};
 use crate::error::ENNError;
 use crate::index::IndexDriver;
 
@@ -235,6 +236,7 @@ impl EpistemicNearestNeighbors {
             return Err(err);
         }
         if x.nrows() > 0 {
+            self.backend.wait_for_flush()?;
             self.backend.append_rows(x, y, yvar)?;
             accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y.view());
             let n = self.backend.len();
@@ -250,6 +252,20 @@ impl EpistemicNearestNeighbors {
             self.num_obs = n;
         }
         Ok(())
+    }
+
+    /// Schedule a background index flush when pending rows exceed the disk threshold.
+    pub fn schedule_background_flush(&self) -> Result<(), ENNError> {
+        self.backend.schedule_background_flush()
+    }
+
+    /// Hidden accessor for integration tests needing the disk backend handle.
+    #[doc(hidden)]
+    pub fn disk_backend_arc(&self) -> Option<Arc<Mutex<DiskEnnBackend>>> {
+        match &self.backend {
+            EnnBackend::Disk(arc) => Some(Arc::clone(arc)),
+            _ => None,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -491,5 +507,74 @@ mod tests {
         assert!(model.train_x_view_opt().is_some());
         assert!(model.train_y_view_opt().is_some());
         assert_eq!(model.index_access().len(), 2);
+    }
+
+    #[test]
+    fn model_add_waits_for_inflight_flush() {
+        use crate::backend::{DiskEnnBackend, EnnBackend};
+        use std::sync::{Arc, Mutex};
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().expect("tempdir");
+        let mut model = EpistemicNearestNeighbors::new_empty(
+            2,
+            1,
+            IndexDriver::HNSWDisk,
+            EnnStorage::Disk,
+            Some(dir.path().to_path_buf()),
+        )
+        .unwrap();
+        for i in 0..3 {
+            model
+                .add(
+                    &array![[i as f64, 0.0]].view(),
+                    &array![[i as f64]].view(),
+                    None,
+                )
+                .unwrap();
+        }
+        let (arc, flush_arc) = match &model.backend {
+            EnnBackend::Disk(a) => {
+                let guard = a.lock().expect("disk lock");
+                let DiskEnnBackend::Hnsw(ref b) = *guard;
+                let f = Arc::clone(&b.flush);
+                drop(guard);
+                (Arc::clone(a), f)
+            }
+            _ => panic!("expected disk backend"),
+        };
+        {
+            let guard = arc.lock().expect("disk lock");
+            let DiskEnnBackend::Hnsw(ref b) = *guard;
+            b.flush_test_barrier_hold(true);
+        }
+        crate::disk_hnsw::flush::try_schedule_background_flush(
+            &flush_arc,
+            Arc::clone(&arc),
+        )
+        .unwrap();
+        let model = Arc::new(Mutex::new(model));
+        let add_handle = {
+            let model = Arc::clone(&model);
+            std::thread::spawn(move || {
+                let mut m = model.lock().expect("model lock");
+                m.add(
+                    &array![[9.0, 9.0]].view(),
+                    &array![[9.0]].view(),
+                    None,
+                )
+                .unwrap();
+            })
+        };
+        flush_arc
+            .lock()
+            .expect("flush lock")
+            .barrier
+            .set_hold(false);
+        add_handle.join().expect("add thread");
+        let guard = arc.lock().expect("disk lock");
+        let DiskEnnBackend::Hnsw(ref b) = *guard;
+        assert_eq!(b.len(), 4);
+        assert_eq!(b.indexed_rows(), 3);
     }
 }

@@ -151,6 +151,37 @@ def test_run_enn_add_stress_hnsw_disk_no_checkpoint_sync(monkeypatch, tmp_path):
     assert len(list(checkpoint_ns(num_obs))) > 0
 
 
+def test_run_enn_add_stress_hnsw_disk_schedules_flush_after_add(monkeypatch, tmp_path):
+    from ops.stress import EnnAddStressConfig, run_enn_add_stress
+
+    flush_calls: list[int] = []
+
+    def _count_flush(self):
+        flush_calls.append(1)
+        return None
+
+    monkeypatch.setattr(
+        "ops.stress.EpistemicNearestNeighbors.schedule_background_flush",
+        _count_flush,
+    )
+
+    num_obs = 30
+    list(
+        run_enn_add_stress(
+            index_driver=ENNIndexDriver.HNSW_DISK,
+            num_obs=num_obs,
+            config=EnnAddStressConfig(
+                num_dim=4,
+                seed=0,
+                query_n=5,
+                query_seed=1,
+                work_dir=str(tmp_path),
+            ),
+        )
+    )
+    assert flush_calls == [1] * num_obs
+
+
 def test_run_enn_add_stress_does_not_fit(monkeypatch):
     from enn.enn.enn_fitter import ENNStatefulFitter
 

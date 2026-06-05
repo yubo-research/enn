@@ -92,6 +92,7 @@ def run_disk_rss_stress(
         num_obs, num_dim=num_dim, seed=seed, batch_size=1
     ):
         model.add(x_row, y_row)
+        model.schedule_background_flush()
 
     model.ensure_index_sync()
     posterior = model.posterior(x_query, params=STRESS_PARAMS)
@@ -246,6 +247,8 @@ def run_enn_add_stress(
         start=1,
     ):
         model.add(x_row, y_row)
+        if index_driver == ENNIndexDriver.HNSW_DISK:
+            model.schedule_background_flush()
         if cfg.progress_every and (n % cfg.progress_every == 0):
             click.echo(f"progress n={n}", err=True)
         if cfg.heartbeat_seconds and (

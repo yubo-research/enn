@@ -141,6 +141,11 @@ impl Optimizer {
         self.telemetry = telemetry;
 
         self.telemetry.dt_gen = start.elapsed().as_secs_f64();
+        if result.is_ok() {
+            if let Some(surrogate) = self.surrogate.as_ref() {
+                surrogate.schedule_background_flush()?;
+            }
+        }
         result
     }
 
@@ -152,6 +157,10 @@ impl Optimizer {
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError> {
         let start = std::time::Instant::now();
+
+        if let Some(surrogate) = self.surrogate.as_ref() {
+            surrogate.wait_for_background_flush()?;
+        }
 
         let mut strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);

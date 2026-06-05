@@ -213,7 +213,37 @@ fn disk_hnsw_reopen_searches_pending_without_sync() {
 }
 
 #[test]
-fn disk_hnsw_threshold_flush_on_append() {
+fn disk_hnsw_new_empty_default_threshold_is_1000() {
+    let dir = TempDir::new().expect("tempdir");
+    let backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
+    assert_eq!(backend.pending_flush_threshold(), 1000);
+}
+
+#[test]
+fn disk_hnsw_append_past_threshold_does_not_sync() {
+    let dir = TempDir::new().expect("tempdir");
+    let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+        .unwrap()
+        .with_pending_flush_threshold(3);
+    let nodes_path = dir.path().join("graph/nodes.bin");
+    let size_before = fs::metadata(&nodes_path).map(|m| m.len()).unwrap_or(0);
+    for i in 0..3 {
+        backend
+            .append_rows(
+                &array![[i as f64, 0.0]].view(),
+                &array![[i as f64]].view(),
+                None,
+            )
+            .unwrap();
+    }
+    assert_eq!(backend.len(), 3);
+    assert!(backend.indexed_rows() < backend.len());
+    let size_after = fs::metadata(&nodes_path).map(|m| m.len()).unwrap_or(0);
+    assert_eq!(size_before, size_after);
+}
+
+#[test]
+fn disk_hnsw_defer_sync_when_pending_at_or_above_threshold() {
     let dir = TempDir::new().expect("tempdir");
     let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
         .unwrap()
@@ -227,8 +257,15 @@ fn disk_hnsw_threshold_flush_on_append() {
             )
             .unwrap();
     }
-    assert_eq!(backend.indexed_rows(), 3);
-    assert_eq!(backend.indexed_rows(), backend.len());
+    assert!(backend.defer_index_sync_for_search());
+    let nodes_path = dir.path().join("graph/nodes.bin");
+    let size_before = fs::metadata(&nodes_path).map(|m| m.len()).unwrap_or(0);
+    let (_, idx) = backend
+        .search(&array![[1.0, 0.0]].view(), 1, false)
+        .unwrap();
+    assert_eq!(idx[[0, 0]], 1);
+    let size_after = fs::metadata(&nodes_path).map(|m| m.len()).unwrap_or(0);
+    assert_eq!(size_before, size_after);
 }
 
 #[test]
