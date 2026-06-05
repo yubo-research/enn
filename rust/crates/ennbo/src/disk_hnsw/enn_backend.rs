@@ -9,12 +9,12 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::backend::disk_observation as disk_obs;
 use super::{
-    access::GraphAccess, graph_mut::GraphMut, hnsw,
+    graph_header::GraphHeader,
+    graph_mut::GraphMut,
+    hnsw,
     node_layout::NodeLayout,
     params::ef_search_for_k,
-    split_graph::{PrefixNeighborOverlay, SplitGraphMut},
-    graph_header::GraphHeader,
-    store::{MmapGraph, RamGraph},
+    store::MmapGraph,
     HnswHeader,
 };
 use crate::error::ENNError;
@@ -22,12 +22,7 @@ use crate::index::IndexDriver;
 use crate::knn::MmapColumnStore;
 
 const INDEX_BACKEND: &str = "hnsw_disk";
-
-struct InlineBuildState {
-    ram_tail: RamGraph,
-    rng: StdRng,
-    prefix_overlay: PrefixNeighborOverlay,
-}
+pub const DEFAULT_PENDING_FLUSH_THRESHOLD: usize = 1000;
 
 pub struct DiskHnswEnnBackend {
     work_dir: PathBuf,
@@ -44,7 +39,7 @@ pub struct DiskHnswEnnBackend {
     graph_header: GraphHeader,
     hnsw_header: HnswHeader,
     indexed_rows: usize,
-    inline_build: Option<Box<InlineBuildState>>,
+    pending_flush_threshold: usize,
     index_dirty: Mutex<bool>,
     index_stale: Mutex<bool>,
 }
@@ -115,10 +110,35 @@ impl DiskHnswEnnBackend {
             graph_header,
             hnsw_header,
             indexed_rows,
-            inline_build: None,
+            pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
             index_dirty: Mutex::new(indexed_rows < n),
             index_stale: Mutex::new(false),
         })
+    }
+
+    pub fn with_pending_flush_threshold(mut self, threshold: usize) -> Self {
+        self.pending_flush_threshold = threshold;
+        self
+    }
+
+    pub fn pending_flush_threshold(&self) -> usize {
+        self.pending_flush_threshold
+    }
+
+    pub fn pending_rows(&self) -> usize {
+        self.len().saturating_sub(self.indexed_rows)
+    }
+
+    pub fn is_index_stale(&self) -> bool {
+        *self
+            .index_stale
+            .lock()
+            .expect("index_stale mutex poisoned")
+    }
+
+    /// True when search may skip `ensure_index_sync` (pending tier is searchable).
+    pub fn defer_index_sync_for_search(&self) -> bool {
+        !self.is_index_stale() && self.pending_rows() < self.pending_flush_threshold
     }
 
     pub fn new_empty(work_dir: PathBuf, num_dim: usize, num_metrics: usize) -> Result<Self, ENNError> {
@@ -168,100 +188,6 @@ impl DiskHnswEnnBackend {
         } else {
             out.extend(row.iter().map(|&v| v as f32));
         }
-    }
-
-    fn build_seed(&self, start: usize) -> u64 {
-        std::env::var("ENN_HNSW_DISK_BUILD_SEED")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(start as u64)
-    }
-
-    fn has_inline_build(&self) -> bool {
-        self.inline_build
-            .as_ref()
-            .is_some_and(|b| b.ram_tail.num_nodes() as usize > self.indexed_rows)
-    }
-
-    fn insert_pending_rows(&mut self, start: usize, end: usize) -> Result<(), ENNError> {
-        if start >= end {
-            return Ok(());
-        }
-        let split = self.indexed_rows as u32;
-        let scale_x = self.scale_x;
-        let mut vec_buf = Vec::with_capacity(self.num_dim);
-        if self.inline_build.is_none() {
-            self.inline_build = Some(Box::new(InlineBuildState {
-                ram_tail: RamGraph::new(self.num_dim),
-                rng: StdRng::seed_from_u64(self.build_seed(start)),
-                prefix_overlay: PrefixNeighborOverlay::default(),
-            }));
-        }
-        let build = self.inline_build.as_mut().expect("inline_build");
-        let mut split_g = SplitGraphMut::new(
-            &self.graph,
-            &mut build.ram_tail,
-            split,
-            &mut build.prefix_overlay,
-        );
-        for i in start..end {
-            let row = self.train_x.mmap_row_slice(i)?;
-            vec_buf.clear();
-            if scale_x {
-                vec_buf.extend(
-                    row.iter()
-                        .zip(self.x_scale.iter())
-                        .map(|(&v, &s)| (v / s) as f32),
-                );
-            } else {
-                vec_buf.extend(row.iter().map(|&v| v as f32));
-            }
-            hnsw::insert(
-                &mut split_g,
-                &mut self.hnsw_header,
-                i as u32,
-                &vec_buf,
-                &mut build.rng,
-            );
-        }
-        Ok(())
-    }
-
-    fn flush_ram_tail(&mut self) -> Result<(), ENNError> {
-        let start = self.indexed_rows;
-        let end = self.len();
-        if start >= end {
-            return Ok(());
-        }
-        let build = self
-            .inline_build
-            .as_mut()
-            .ok_or_else(|| ENNError::InvalidParameter("flush_ram_tail without inline build".into()))?;
-        for ((id, layer), neighbors) in build.prefix_overlay.patches().clone() {
-            GraphMut::set_neighbors(&mut self.graph, id, layer, &neighbors);
-        }
-        build.prefix_overlay.clear();
-        self.graph
-            .merge_ram_tail(&build.ram_tail, start, end)
-            .map_err(ENNError::InvalidParameter)?;
-        self.inline_build = None;
-        self.graph_header.entry_point = self.hnsw_header.entry_point;
-        self.graph_header.max_level = self.hnsw_header.max_level;
-        self.graph_header
-            .write_json(&self.graph_dir.join("header.json"))
-            .map_err(ENNError::InvalidParameter)?;
-        self.indexed_rows = end;
-        disk_obs::write_metadata(
-            &self.work_dir,
-            self.len(),
-            self.num_dim,
-            self.num_metrics,
-            self.scale_x,
-            self.indexed_rows,
-            INDEX_BACKEND,
-        )?;
-        self.graph.fsync().map_err(ENNError::InvalidParameter)?;
-        Ok(())
     }
 
     fn index_row_range(&mut self, start: usize, end: usize) -> Result<(), ENNError> {
@@ -325,7 +251,6 @@ impl DiskHnswEnnBackend {
             }
             if rebuild {
                 self.indexed_rows = 0;
-                self.inline_build = None;
                 self.hnsw_header = HnswHeader {
                     entry_point: 0,
                     max_level: 0,
@@ -336,13 +261,8 @@ impl DiskHnswEnnBackend {
                     .index_stale
                     .lock()
                     .expect("index_stale mutex poisoned") = false;
-            } else {
-                self.sync_pending_inserts()?;
-                if self.has_inline_build() {
-                    self.flush_ram_tail()?;
-                } else {
-                    self.index_row_range(self.indexed_rows, self.len())?;
-                }
+            } else if self.indexed_rows < self.len() {
+                self.index_row_range(self.indexed_rows, self.len())?;
             }
             *self
                 .index_dirty
@@ -352,12 +272,7 @@ impl DiskHnswEnnBackend {
         }
         let n = self.len();
         if self.indexed_rows < n {
-            self.sync_pending_inserts()?;
-            if self.has_inline_build() {
-                self.flush_ram_tail()?;
-            } else {
-                self.index_row_range(self.indexed_rows, n)?;
-            }
+            self.index_row_range(self.indexed_rows, n)?;
         }
         *self
             .index_dirty
@@ -384,43 +299,71 @@ impl DiskHnswEnnBackend {
         search_k: i32,
         exclude_nearest: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-        let n = self.indexed_rows;
-        if n == 0 {
+        let total = self.len();
+        if total == 0 {
             return Ok((Array2::zeros((x.nrows(), 0)), Array2::zeros((x.nrows(), 0))));
         }
-        let k_eff = (search_k as usize).min(n);
-        let search_k_usize = if exclude_nearest {
-            ((search_k + 1) as usize).min(n)
+        let indexed = self.indexed_rows;
+        let k_eff = (search_k as usize).min(total);
+        let pool_k = if exclude_nearest {
+            ((search_k + 1) as usize).min(total)
         } else {
             k_eff
         };
-        let ef = ef_search_for_k(search_k_usize);
+        let hnsw_k = (2 * k_eff).min(indexed);
+        let hnsw_ef = ef_search_for_k(hnsw_k.max(1));
+        let pending_k = k_eff;
 
         let mut dist2s = Array2::zeros((x.nrows(), k_eff));
         let mut indices = Array2::zeros((x.nrows(), k_eff));
+        let scale_x = self.scale_x;
+        let x_scale = self.x_scale.view();
+        let train_x = &self.train_x;
 
         for q in 0..x.nrows() {
-            let row = x.slice(ndarray::s![q, ..]);
-            let scaled: Array1<f64> = if self.scale_x {
-                (&row / &self.x_scale.view()).to_owned()
+            let query_row = x.slice(ndarray::s![q, ..]);
+            let query: Vec<f64> = query_row.iter().copied().collect();
+
+            let leg_a: Vec<(u32, f32)> = if indexed > 0 && hnsw_k > 0 {
+                let mut query_f32 = Vec::with_capacity(self.num_dim);
+                self.row_to_f32(&query, &mut query_f32);
+                hnsw::search(
+                    &self.graph,
+                    &self.hnsw_header,
+                    &query_f32,
+                    hnsw_k,
+                    hnsw_ef,
+                    indexed as u32,
+                )
             } else {
-                row.to_owned()
+                Vec::new()
             };
-            let query: Vec<f32> = scaled.iter().map(|&v| v as f32).collect();
-            let mut pairs = hnsw::search(
-                &self.graph,
-                &self.hnsw_header,
+
+            let pending_start = if indexed == 0 { 0 } else { indexed };
+            let leg_b = hnsw::brute_force_topk_mmap(
+                train_x,
+                pending_start,
+                total,
                 &query,
-                search_k_usize,
-                ef,
-                n as u32,
-            );
-            if exclude_nearest && pairs.len() > 1 {
-                pairs.remove(0);
-            }
-            pairs.truncate(k_eff);
-            for (j, (id, dist)) in pairs.into_iter().enumerate() {
-                dist2s[[q, j]] = dist as f64;
+                pending_k,
+                scale_x,
+                x_scale.as_slice().unwrap(),
+            )?;
+
+            let merged = hnsw::merge_topk_candidates(
+                train_x,
+                &query,
+                &leg_a,
+                &leg_b,
+                k_eff,
+                pool_k,
+                exclude_nearest,
+                scale_x,
+                x_scale.as_slice().unwrap(),
+            )?;
+
+            for (j, (id, dist)) in merged.into_iter().enumerate() {
+                dist2s[[q, j]] = dist;
                 indices[[q, j]] = id as i64;
             }
         }
@@ -496,17 +439,14 @@ impl DiskHnswEnnBackend {
             y,
             yvar,
         )?;
-        let _end = self.train_x.nrows;
-        Ok(())
-    }
-
-    fn sync_pending_inserts(&mut self) -> Result<(), ENNError> {
-        let start = self.indexed_rows;
-        let end = self.len();
-        if start >= end {
-            return Ok(());
+        if self.len().saturating_sub(self.indexed_rows) >= self.pending_flush_threshold {
+            self.index_row_range(self.indexed_rows, self.len())?;
+            *self
+                .index_dirty
+                .lock()
+                .expect("index_dirty mutex poisoned") = false;
         }
-        self.insert_pending_rows(start, end)
+        Ok(())
     }
 
     pub fn train_rows_at(
@@ -522,6 +462,7 @@ impl DiskHnswEnnBackend {
         )
     }
 }
+
 
 #[cfg(test)]
 mod disk_hnsw_unit_tests {
@@ -565,44 +506,14 @@ mod disk_hnsw_unit_tests {
                 None,
             )
             .unwrap();
-        let (_, idx_before) = backend
-            .search(&array![[0.9, 0.9]].view(), 1, false)
-            .unwrap();
-        assert!(idx_before[[0, 0]] != 3);
+        let query = array![[1.95, 1.95]];
+        let (_, idx_before) = backend.search(&query.view(), 1, false).unwrap();
+        assert_eq!(idx_before[[0, 0]], 3);
         backend.ensure_index_sync(false, &Array1::ones(2)).unwrap();
-        let (_, idx_after) = backend
-            .search(&array![[0.9, 0.9]].view(), 1, false)
-            .unwrap();
-        assert!(idx_after[[0, 0]] >= 0);
+        let (_, idx_after) = backend.search(&query.view(), 1, false).unwrap();
+        assert_eq!(idx_after[[0, 0]], 3);
     }
 
-    #[test]
-    fn disk_hnsw_search_before_sync_uses_indexed_rows() {
-        let dir = TempDir::new().expect("tempdir");
-        let mut backend = DiskHnswEnnBackend::new(
-            dir.path().to_path_buf(),
-            array![[0.0, 0.0], [1.0, 0.0]],
-            array![[0.0], [1.0]],
-            None,
-            false,
-            Array1::ones(2),
-            IndexDriver::HNSWDisk,
-        )
-        .unwrap();
-        backend.ensure_index_sync(false, &Array1::ones(2)).unwrap();
-        assert_eq!(backend.indexed_rows(), 2);
-        backend
-            .append_rows(
-                &array![[100.0, 100.0]].view(),
-                &array![[2.0]].view(),
-                None,
-            )
-            .unwrap();
-        let (_, idx) = backend
-            .search(&array![[100.0, 100.0]].view(), 1, false)
-            .unwrap();
-        assert_ne!(idx[[0, 0]], 2);
-    }
 
     #[test]
     fn disk_hnsw_reopen_existing_mmap_files() {

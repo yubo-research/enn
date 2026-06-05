@@ -9,6 +9,8 @@ use rand::rngs::StdRng;
 use crate::disk_hnsw::access::GraphAccess;
 use crate::disk_hnsw::graph_mut::GraphMut;
 use crate::disk_hnsw::params::{self, EF_CONSTRUCTION, LMAX, M};
+use crate::error::ENNError;
+use crate::knn::MmapColumnStore;
 
 pub fn l2_sq(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
@@ -230,6 +232,100 @@ pub fn brute_force_topk(vectors: &[Vec<f32>], query: &[f32], k: usize) -> Vec<(u
     scored
 }
 
+/// Brute-force top-k over mmap rows `[start, end)` with on-the-fly scaling.
+pub(crate) fn brute_force_topk_mmap(
+    train_x: &MmapColumnStore,
+    start: usize,
+    end: usize,
+    query: &[f64],
+    k: usize,
+    scale_x: bool,
+    x_scale: &[f64],
+) -> Result<Vec<(u32, f32)>, ENNError> {
+    if k == 0 || start >= end {
+        return Ok(Vec::new());
+    }
+    let mut query_f32 = Vec::with_capacity(query.len());
+    if scale_x {
+        query_f32.extend(
+            query
+                .iter()
+                .zip(x_scale.iter())
+                .map(|(&v, &s)| (v / s) as f32),
+        );
+    } else {
+        query_f32.extend(query.iter().map(|&v| v as f32));
+    }
+    let mut vec_buf = Vec::with_capacity(query.len());
+    let mut scored: Vec<(u32, f32)> = Vec::with_capacity(end - start);
+    for i in start..end {
+        let row = train_x.mmap_row_slice(i)?;
+        vec_buf.clear();
+        if scale_x {
+            vec_buf.extend(
+                row.iter()
+                    .zip(x_scale.iter())
+                    .map(|(&v, &s)| (v / s) as f32),
+            );
+        } else {
+            vec_buf.extend(row.iter().map(|&v| v as f32));
+        }
+        scored.push((i as u32, l2_sq(&query_f32, &vec_buf)));
+    }
+    scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+    scored.truncate(k);
+    Ok(scored)
+}
+
+/// Merge leg-A and leg-B candidates; rerank by f64 squared L2; apply exclude_nearest on merged pool.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn merge_topk_candidates(
+    train_x: &MmapColumnStore,
+    query: &[f64],
+    leg_a: &[(u32, f32)],
+    leg_b: &[(u32, f32)],
+    k_out: usize,
+    pool_k: usize,
+    exclude_nearest: bool,
+    scale_x: bool,
+    x_scale: &[f64],
+) -> Result<Vec<(u32, f64)>, ENNError> {
+    use std::collections::HashMap;
+    let mut seen: HashMap<u32, f64> = HashMap::new();
+    for &(id, _) in leg_a.iter().chain(leg_b.iter()) {
+        use std::collections::hash_map::Entry;
+        if let Entry::Vacant(e) = seen.entry(id) {
+            let row = train_x.mmap_row_slice(id as usize)?;
+            let mut acc = 0.0;
+            if scale_x {
+                for j in 0..query.len() {
+                    let sc = x_scale[j];
+                    let d = query[j] / sc - row[j] / sc;
+                    acc += d * d;
+                }
+            } else {
+                for (&q, &r) in query.iter().zip(row.iter()) {
+                    let d = q - r;
+                    acc += d * d;
+                }
+            }
+            e.insert(acc.max(0.0));
+        }
+    }
+    let mut ranked: Vec<(u32, f64)> = seen.into_iter().collect();
+    ranked.sort_by(|a, b| {
+        a.1.partial_cmp(&b.1)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    if exclude_nearest && ranked.len() > 1 {
+        ranked.remove(0);
+    }
+    ranked.truncate(pool_k.min(ranked.len()));
+    ranked.truncate(k_out);
+    Ok(ranked)
+}
+
 pub fn mean_recall_at_k(
     vectors: &[Vec<f32>],
     queries: &[Vec<f32>],
@@ -349,6 +445,87 @@ mod hnsw_algo_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn brute_force_topk_mmap_scaled_and_empty() {
+        use ndarray::Array2;
+        use tempfile::TempDir;
+        let dir = TempDir::new().expect("tempdir");
+        let rows = Array2::from_shape_vec((2, 2), vec![2.0, 4.0, 4.0, 8.0]).unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        store.mmap_append(&rows.view()).unwrap();
+        assert!(brute_force_topk_mmap(&store, 0, 0, &[0.0, 0.0], 1, false, &[]).unwrap().is_empty());
+        let hits = brute_force_topk_mmap(
+            &store,
+            0,
+            2,
+            &[2.0, 2.0],
+            1,
+            true,
+            &[2.0, 2.0],
+        )
+        .unwrap();
+        assert_eq!(hits[0].0, 0);
+        let unscaled = brute_force_topk_mmap(&store, 0, 2, &[2.0, 4.0], 1, false, &[]).unwrap();
+        assert_eq!(unscaled[0].0, 0);
+    }
+
+    #[test]
+    fn merge_topk_candidates_scaled_rerank() {
+        use ndarray::Array2;
+        use tempfile::TempDir;
+        let dir = TempDir::new().expect("tempdir");
+        let rows = Array2::from_shape_vec((2, 2), vec![2.0, 4.0, 4.0, 8.0]).unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        store.mmap_append(&rows.view()).unwrap();
+        let scale = [2.0, 2.0];
+        let query = [2.0, 2.0];
+        let merged = merge_topk_candidates(
+            &store,
+            &query,
+            &[(0, 0.1)],
+            &[(1, 0.2)],
+            1,
+            1,
+            false,
+            true,
+            &scale,
+        )
+        .unwrap();
+        assert_eq!(merged[0].0, 0);
+    }
+
+    #[test]
+    fn merge_topk_candidates_dedup_and_order() {
+        use ndarray::Array2;
+        use tempfile::TempDir;
+        let dir = TempDir::new().expect("tempdir");
+        let rows = Array2::from_shape_vec(
+            (4, 2),
+            vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 2.0, 2.0],
+        )
+        .unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        store.mmap_append(&rows.view()).unwrap();
+        let query = [0.1, 0.1];
+        let leg_a = vec![(0, 0.01), (1, 1.0)];
+        let leg_b = vec![(2, 0.5), (0, 0.02)];
+        let merged = merge_topk_candidates(
+            &store, &query, &leg_a, &leg_b, 2, 2, false, false, &[],
+        )
+        .unwrap();
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].0, 0);
+        let with_excl = merge_topk_candidates(
+            &store, &query, &leg_a, &leg_b, 1, 2, true, false, &[],
+        )
+        .unwrap();
+        assert_eq!(with_excl.len(), 1);
+        assert_ne!(with_excl[0].0, 0);
     }
 
     #[test]

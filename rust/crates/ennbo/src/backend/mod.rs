@@ -209,6 +209,17 @@ impl EnnBackend {
         }
     }
 
+    pub fn defer_index_sync_for_search(&self) -> bool {
+        match self {
+            Self::InMemory(_) => false,
+            Self::Disk(b) => disk_lock(b)
+                .map(|g| match &*g {
+                    DiskEnnBackend::Hnsw(x) => x.defer_index_sync_for_search(),
+                })
+                .unwrap_or(false),
+        }
+    }
+
     pub fn ensure_index_sync(
         &self,
         scale_x: bool,

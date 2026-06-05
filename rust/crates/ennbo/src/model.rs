@@ -302,7 +302,9 @@ impl EpistemicNearestNeighbors {
         if search_k == 0 {
             return Ok(Array2::zeros((x.nrows(), 0)));
         }
-        self.ensure_index_sync()?;
+        if !self.backend.defer_index_sync_for_search() {
+            self.ensure_index_sync()?;
+        }
         let (_, idx_full) = self.backend.search(x, search_k as i32, exclude_nearest)?;
         let k_out = (k as usize).min(idx_full.ncols());
         let mut result = Array2::zeros((x.nrows(), k_out));
@@ -360,7 +362,9 @@ impl EpistemicNearestNeighbors {
         search_k: i32,
         exclude_nearest: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-        self.ensure_index_sync()?;
+        if !self.backend.defer_index_sync_for_search() {
+            self.ensure_index_sync()?;
+        }
         self.backend.search(x, search_k, exclude_nearest)
     }
 }

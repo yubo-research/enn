@@ -254,7 +254,8 @@ def run_enn_add_stress(
             click.echo(f"heartbeat n={n}", err=True)
             last_heartbeat_t = time.perf_counter()
         if n in checkpoints:
-            model.ensure_index_sync()
+            if index_driver != ENNIndexDriver.HNSW_DISK:
+                model.ensure_index_sync()
             segment_s = time.perf_counter() - last_checkpoint_t
             query_s = _time_query_s(model, x_query)
             last_checkpoint_t = time.perf_counter()

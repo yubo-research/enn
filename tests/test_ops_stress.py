@@ -119,6 +119,38 @@ def test_run_enn_add_stress_syncs_at_checkpoints(monkeypatch):
     assert sync_calls == [1] * len(checkpoint_ns(num_obs))
 
 
+def test_run_enn_add_stress_hnsw_disk_no_checkpoint_sync(monkeypatch, tmp_path):
+    from ops.stress import EnnAddStressConfig, checkpoint_ns, run_enn_add_stress
+
+    sync_calls: list[int] = []
+
+    def _count_sync(self):
+        sync_calls.append(1)
+        return None
+
+    monkeypatch.setattr(
+        "ops.stress.EpistemicNearestNeighbors.ensure_index_sync",
+        _count_sync,
+    )
+
+    num_obs = 30
+    list(
+        run_enn_add_stress(
+            index_driver=ENNIndexDriver.HNSW_DISK,
+            num_obs=num_obs,
+            config=EnnAddStressConfig(
+                num_dim=4,
+                seed=0,
+                query_n=5,
+                query_seed=1,
+                work_dir=str(tmp_path),
+            ),
+        )
+    )
+    assert sync_calls == []
+    assert len(list(checkpoint_ns(num_obs))) > 0
+
+
 def test_run_enn_add_stress_does_not_fit(monkeypatch):
     from enn.enn.enn_fitter import ENNStatefulFitter
 

@@ -121,7 +121,9 @@ pub(crate) fn index_search(
     exclude_nearest: bool,
     tie_break_neighbors: bool,
 ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-    model.ensure_index_sync()?;
+    if !model.backend.defer_index_sync_for_search() {
+        model.ensure_index_sync()?;
+    }
     if model.backend_driver() == IndexDriver::Exact {
         neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest, tie_break_neighbors)
     } else {

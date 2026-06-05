@@ -23,7 +23,9 @@ impl<'a> EnnIndexAccess<'a> {
     }
 
     pub fn memory_bytes(&self) -> Result<usize, ENNError> {
-        self.ensure_sync()?;
+        if !self.model.backend.defer_index_sync_for_search() {
+            self.ensure_sync()?;
+        }
         self.model.backend.index_memory_bytes()
     }
 
@@ -45,7 +47,9 @@ impl<'a> EnnIndexAccess<'a> {
         search_k: i32,
         exclude_nearest: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-        self.ensure_sync()?;
+        if !self.model.backend.defer_index_sync_for_search() {
+            self.ensure_sync()?;
+        }
         self.model.backend.search(x, search_k, exclude_nearest)
     }
 
