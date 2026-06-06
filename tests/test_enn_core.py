@@ -297,14 +297,27 @@ def test_add_updates_y_scale_for_posterior_se():
     np.testing.assert_allclose(post_incremental.se, post_fresh.se, rtol=0.01)
 
 
-def test_incremental_add_scale_x_rejected_on_nonempty_model():
-    """Policy: scale_x=True is only for initial construction; append requires scale_x=False."""
+def test_incremental_add_scale_x_matches_fresh_model():
+    """Regression: incremental add() with scale_x=True must match fresh construction."""
     rng = np.random.default_rng(42)
     d = 3
-    train_x0 = rng.standard_normal((20, d))
-    train_y0 = rng.standard_normal((20, 1))
-    m_inc = EpistemicNearestNeighbors(train_x0, train_y0, scale_x=True)
-    add_x = rng.standard_normal((1, d))
-    add_y = rng.standard_normal((1, 1))
-    with pytest.raises(ValueError, match="scale_x must be false"):
-        m_inc.add(add_x, add_y)
+    x_init = rng.standard_normal((10, d))
+    y_init = rng.standard_normal((10, 1))
+    x_new = rng.standard_normal((5, d))
+    y_new = rng.standard_normal((5, 1))
+
+    model_incremental = EpistemicNearestNeighbors(x_init, y_init, scale_x=True)
+    model_incremental.add(x_new, y_new)
+
+    all_x = np.vstack([x_init, x_new])
+    all_y = np.vstack([y_init, y_new])
+    model_fresh = EpistemicNearestNeighbors(all_x, all_y, scale_x=True)
+
+    params = ENNParams(
+        k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
+    x_test = rng.standard_normal((4, d))
+    post_incremental = model_incremental.posterior(x_test, params=params)
+    post_fresh = model_fresh.posterior(x_test, params=params)
+    np.testing.assert_allclose(post_incremental.mu, post_fresh.mu, rtol=1e-6)
+    np.testing.assert_allclose(post_incremental.se, post_fresh.se, rtol=0.01)

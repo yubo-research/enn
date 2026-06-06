@@ -193,11 +193,6 @@ impl EpistemicNearestNeighbors {
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Option<ENNError> {
-        if self.num_obs > 0 && self.scale_x {
-            return Some(ENNError::InvalidParameter(
-                "scale_x must be false when adding to a non-empty model".to_string(),
-            ));
-        }
         if x.nrows() != y.nrows() || x.ncols() != self.num_dim || y.ncols() != self.num_metrics {
             return Some(ENNError::InvalidShape {
                 expected: vec![y.nrows(), self.num_metrics],

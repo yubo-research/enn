@@ -187,9 +187,11 @@ def test_turbo_enn_config_scale_x_flag_runs():
         config=turbo_enn_config(enn=ENNSurrogateConfig(scale_x=True)),
         rng=np.random.default_rng(0),
     )
-    x0 = opt.ask(num_arms=3)
-    opt.tell(x0, -np.sum(x0**2, axis=1))
-    assert opt.ask(num_arms=3).shape == (3, 2)
+    num_arms = 3
+    for _ in range(2):
+        x = opt.ask(num_arms=num_arms)
+        opt.tell(x, -np.sum(x**2, axis=1))
+    assert opt.ask(num_arms=num_arms).shape == (num_arms, 2)
 
 
 def test_find_x_center_uses_top_k_for_mu_single_objective():

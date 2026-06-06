@@ -29,15 +29,20 @@ fn scale_x_false_index_not_stale_after_add() {
 }
 
 #[test]
-fn scale_x_true_add_to_nonempty_errors() {
+fn scale_x_true_add_to_nonempty_succeeds() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
     let mut model =
         EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Exact).unwrap();
+    model.ensure_index_sync().unwrap();
     let x_add = array![[0.5, 0.5]];
     let y_add = array![[0.5]];
-    let err = model.add(&x_add.view(), &y_add.view(), None);
-    assert!(err.is_err(), "scale_x=true append to non-empty model must error");
+    model
+        .add(&x_add.view(), &y_add.view(), None)
+        .expect("scale_x=true append to non-empty model must succeed");
+    model.ensure_index_sync().unwrap();
+    assert_eq!(model.num_obs(), 3);
+    assert_eq!(model.index_access().len(), 3);
 }
 
 #[test]

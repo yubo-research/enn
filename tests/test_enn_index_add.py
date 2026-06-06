@@ -24,11 +24,18 @@ def test_add_rejects_wrong_output_width_without_mutating_model(scale_x):
     np.testing.assert_allclose(y_at, train_y)
 
     if scale_x:
-        with pytest.raises(ValueError, match="scale_x must be false"):
-            enn.add(
-                np.array([[30.0, 0.0]], dtype=float), np.array([[30.0]], dtype=float)
-            )
-        assert len(enn) == 2
+        enn.add(np.array([[30.0, 0.0]], dtype=float), np.array([[30.0]], dtype=float))
+        assert len(enn) == 3
+        x_at, y_at, _ = enn_all_train_rows(enn)
+        assert x_at.shape[0] == y_at.shape[0]
+
+        params = ENNParams(
+            k_num_neighbors=1,
+            epistemic_variance_scale=1.0,
+            aleatoric_variance_scale=0.1,
+        )
+        out = enn.posterior(np.array([[30.0, 0.0]], dtype=float), params=params)
+        np.testing.assert_allclose(out.mu, [[30.0]])
         return
 
     enn.add(np.array([[30.0, 0.0]], dtype=float), np.array([[30.0]], dtype=float))
