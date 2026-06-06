@@ -11,6 +11,14 @@ pub fn max_neighbors(layer: u8) -> usize {
     if layer == 0 { M0 } else { M }
 }
 
+pub fn ef_construction() -> usize {
+    std::env::var("ENN_HNSW_DISK_EF_CONSTRUCTION")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&v| (16..=512).contains(&v))
+        .unwrap_or(150)
+}
+
 pub fn ef_search_for_k(k: usize) -> usize {
     64.max(2 * k)
 }
@@ -25,5 +33,13 @@ mod params_tests {
         assert_eq!(max_neighbors(3), M);
         assert_eq!(ef_search_for_k(10), 64);
         assert_eq!(ef_search_for_k(100), 200);
+        assert_eq!(ef_construction(), 150);
+    }
+
+    #[test]
+    fn ef_construction_respects_env() {
+        std::env::set_var("ENN_HNSW_DISK_EF_CONSTRUCTION", "180");
+        assert_eq!(ef_construction(), 180);
+        std::env::remove_var("ENN_HNSW_DISK_EF_CONSTRUCTION");
     }
 }

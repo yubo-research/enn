@@ -143,6 +143,16 @@ impl EnnBackend {
                         DiskEnnBackend::Hnsw(x) => Arc::clone(&x.flush),
                     }
                 };
+                let mut st = flush_arc.lock().map_err(|_| {
+                    ENNError::InvalidParameter("flush state mutex poisoned".to_string())
+                })?;
+                if !st.in_progress {
+                    if let Some(err) = st.error.take() {
+                        return Err(err);
+                    }
+                    return Ok(());
+                }
+                drop(st);
                 crate::disk_hnsw::flush::wait_for_background_flush(&flush_arc)
             }
         }
@@ -155,13 +165,28 @@ impl EnnBackend {
                 let (should, flush_arc) = {
                     let g = disk_lock(arc)?;
                     match &*g {
-                        DiskEnnBackend::Hnsw(x) => (
-                            !x.is_index_stale() && x.pending_rows() >= x.pending_flush_threshold(),
-                            Arc::clone(&x.flush),
-                        ),
+                        DiskEnnBackend::Hnsw(x) => {
+                            let pending = x.pending_unindexed_count();
+                            let threshold = x.pending_flush_threshold();
+                            (
+                                !x.append_syncs_at_threshold()
+                                    && !x.is_index_stale()
+                                    && pending >= threshold,
+                                Arc::clone(&x.flush),
+                            )
+                        }
                     }
                 };
                 if !should {
+                    return Ok(());
+                }
+                if flush_arc
+                    .lock()
+                    .map_err(|_| {
+                        ENNError::InvalidParameter("flush state mutex poisoned".to_string())
+                    })?
+                    .in_progress
+                {
                     return Ok(());
                 }
                 crate::disk_hnsw::flush::try_schedule_background_flush(

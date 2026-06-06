@@ -188,7 +188,8 @@ impl MmapGraph {
         if need <= self.mmap.len() {
             return Ok(());
         }
-        let new_len = need.max(self.mmap.len().saturating_add(self.layout.record_stride * 64));
+        let grow_chunk = self.layout.record_stride.saturating_mul(64);
+        let new_len = need.max(self.mmap.len().saturating_add(grow_chunk));
         self.file
             .set_len(new_len as u64)
             .map_err(|e| e.to_string())?;

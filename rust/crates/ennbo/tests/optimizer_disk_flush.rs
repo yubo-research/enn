@@ -93,6 +93,7 @@ fn prime_pending_flush(opt: &mut Optimizer, rng: &mut StdRng) -> Arc<Mutex<DiskE
     let arc = disk_hnsw_backend(opt);
     with_hnsw_mut(&arc, |b| {
         b.set_pending_flush_threshold(3);
+        b.set_defer_append_indexing(true);
         b.ensure_index_sync(false, &Array1::ones(b.num_dim())).unwrap();
     });
     for _ in 0..3 {
@@ -145,6 +146,7 @@ fn optimizer_ask_does_not_block_on_flush() {
     let arc = disk_hnsw_backend(&opt);
     with_hnsw_mut(&arc, |b| {
         b.set_pending_flush_threshold(3);
+        b.set_defer_append_indexing(true);
         b.ensure_index_sync(false, &Array1::ones(b.num_dim())).unwrap();
     });
     let x = opt.ask(3, &mut rng).unwrap();

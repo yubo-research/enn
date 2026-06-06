@@ -112,6 +112,35 @@ pub fn finish_flush_thread(
     }
 }
 
+#[doc(hidden)]
+pub fn run_flush_body(
+    flush: &Arc<Mutex<BackgroundFlushState>>,
+    disk_arc: &Arc<Mutex<DiskEnnBackend>>,
+) -> Result<(), ENNError> {
+    {
+        let st = flush.lock().map_err(|_| {
+            ENNError::InvalidParameter("flush state mutex poisoned".to_string())
+        })?;
+        st.barrier.wait_if_holding();
+    }
+    {
+        let mut st = flush.lock().map_err(|_| {
+            ENNError::InvalidParameter("flush state mutex poisoned".to_string())
+        })?;
+        if st.fail_next {
+            st.fail_next = false;
+            return Err(ENNError::InvalidParameter(
+                "injected background flush failure".to_string(),
+            ));
+        }
+    }
+    let mut guard = disk_arc.lock().map_err(|_| {
+        ENNError::InvalidParameter("disk backend mutex poisoned".to_string())
+    })?;
+    let DiskEnnBackend::Hnsw(ref mut backend) = *guard;
+    backend.flush_pending_index_rows()
+}
+
 pub fn try_schedule_background_flush(
     flush: &Arc<Mutex<BackgroundFlushState>>,
     disk_arc: Arc<Mutex<DiskEnnBackend>>,
@@ -123,33 +152,128 @@ pub fn try_schedule_background_flush(
         return Ok(());
     }
     st.in_progress = true;
+
+    let use_background_thread = st.barrier.is_holding();
+    if use_background_thread {
+        let flush_arc = Arc::clone(flush);
+        let handle = std::thread::spawn(move || {
+            let result = run_flush_body(&flush_arc, &disk_arc);
+            finish_flush_thread(&flush_arc, result);
+        });
+        st.join_handle = Some(handle);
+        return Ok(());
+    }
+
     let flush_arc = Arc::clone(flush);
-    let handle = std::thread::spawn(move || {
-        let result: Result<(), ENNError> = (|| {
-            {
-                let barrier = {
-                    let st = flush_arc.lock().expect("flush state mutex poisoned");
-                    Arc::clone(&st.barrier)
-                };
-                barrier.wait_if_holding();
-            }
-            {
-                let mut st = flush_arc.lock().expect("flush state mutex poisoned");
-                if st.fail_next {
-                    st.fail_next = false;
-                    return Err(ENNError::InvalidParameter(
-                        "injected background flush failure".to_string(),
-                    ));
-                }
-            }
-            let mut guard = disk_arc.lock().map_err(|_| {
-                ENNError::InvalidParameter("disk backend mutex poisoned".to_string())
-            })?;
-            let DiskEnnBackend::Hnsw(ref mut backend) = *guard;
-            backend.flush_pending_index_rows()
-        })();
-        finish_flush_thread(&flush_arc, result);
-    });
-    st.join_handle = Some(handle);
+    drop(st);
+    let result = run_flush_body(&flush_arc, &disk_arc);
+    finish_flush_thread(&flush_arc, result);
     Ok(())
+}
+
+#[cfg(test)]
+mod flush_inline_tests {
+    use super::*;
+    use crate::disk_hnsw::DiskHnswEnnBackend;
+    use ndarray::array;
+    use tempfile::TempDir;
+
+    #[test]
+    fn wait_for_background_flush_waits_for_in_progress_flag() {
+        let st = Arc::new(Mutex::new(BackgroundFlushState::default()));
+        {
+            let mut guard = st.lock().expect("lock");
+            guard.in_progress = true;
+        }
+        let st2 = Arc::clone(&st);
+        let waiter = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            st2.lock().expect("lock").in_progress = false;
+        });
+        wait_for_background_flush(&st).expect("wait");
+        waiter.join().expect("join");
+    }
+
+    #[test]
+    fn try_schedule_runs_inline_when_barrier_open() {
+        let dir = TempDir::new().expect("tempdir");
+        let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+            .expect("backend")
+            .with_pending_flush_threshold(2)
+            .with_defer_append_indexing(true);
+        backend
+            .append_rows(
+                &array![[0.0, 0.0], [1.0, 0.0]].view(),
+                &array![[0.0], [1.0]].view(),
+                None,
+            )
+            .expect("append");
+        let disk_arc = Arc::new(Mutex::new(DiskEnnBackend::Hnsw(backend)));
+        let flush = {
+            let guard = disk_arc.lock().expect("disk lock");
+            let DiskEnnBackend::Hnsw(ref b) = *guard;
+            b.flush_arc()
+        };
+        try_schedule_background_flush(&flush, Arc::clone(&disk_arc)).expect("inline flush");
+        wait_for_background_flush(&flush).expect("wait after inline");
+        let guard = disk_arc.lock().expect("disk lock");
+        let DiskEnnBackend::Hnsw(ref b) = *guard;
+        assert_eq!(b.indexed_rows(), b.len());
+    }
+
+    #[test]
+    fn try_schedule_uses_background_thread_when_barrier_held() {
+        let dir = TempDir::new().expect("tempdir");
+        let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+            .expect("backend")
+            .with_pending_flush_threshold(2)
+            .with_defer_append_indexing(true);
+        backend
+            .append_rows(
+                &array![[0.0, 0.0], [1.0, 0.0]].view(),
+                &array![[0.0], [1.0]].view(),
+                None,
+            )
+            .expect("append");
+        let disk_arc = Arc::new(Mutex::new(DiskEnnBackend::Hnsw(backend)));
+        let flush = {
+            let guard = disk_arc.lock().expect("disk lock");
+            let DiskEnnBackend::Hnsw(ref b) = *guard;
+            b.flush_test_barrier_hold(true);
+            b.flush_arc()
+        };
+        try_schedule_background_flush(&flush, Arc::clone(&disk_arc)).expect("schedule");
+        assert!(flush.lock().expect("flush lock").in_progress);
+        flush.lock().expect("flush lock").barrier.set_hold(false);
+        wait_for_background_flush(&flush).expect("wait");
+        let guard = disk_arc.lock().expect("disk lock");
+        let DiskEnnBackend::Hnsw(ref b) = *guard;
+        assert_eq!(b.indexed_rows(), b.len());
+    }
+
+    #[test]
+    fn try_schedule_inline_propagates_injected_failure() {
+        let dir = TempDir::new().expect("tempdir");
+        let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+            .expect("backend")
+            .with_pending_flush_threshold(2)
+            .with_defer_append_indexing(true);
+        backend
+            .append_rows(
+                &array![[0.0, 0.0], [1.0, 0.0]].view(),
+                &array![[0.0], [1.0]].view(),
+                None,
+            )
+            .expect("append");
+        backend.inject_next_flush_failure();
+        let disk_arc = Arc::new(Mutex::new(DiskEnnBackend::Hnsw(backend)));
+        let flush = {
+            let guard = disk_arc.lock().expect("disk lock");
+            let DiskEnnBackend::Hnsw(ref b) = *guard;
+            b.flush_arc()
+        };
+        try_schedule_background_flush(&flush, Arc::clone(&disk_arc)).expect("schedule");
+        let err = wait_for_background_flush(&flush).expect_err("injected");
+        assert!(err.to_string().contains("injected background flush failure"));
+    }
 }

@@ -8,7 +8,7 @@ use rand::rngs::StdRng;
 
 use crate::disk_hnsw::access::GraphAccess;
 use crate::disk_hnsw::graph_mut::GraphMut;
-use crate::disk_hnsw::params::{self, EF_CONSTRUCTION, LMAX, M};
+use crate::disk_hnsw::params::{self, LMAX, M};
 use crate::error::ENNError;
 use crate::knn::MmapColumnStore;
 
@@ -144,7 +144,7 @@ pub fn insert_forward<G: GraphMut>(
 
     let start_lc = level.min(header.max_level);
     for lc in (0..=start_lc).rev() {
-        let ef = EF_CONSTRUCTION;
+        let ef = params::ef_construction();
         let candidates = search_layer(graph, vector, curr_ep[0], ef, lc, id);
         let m = params::max_neighbors(lc);
         let selected = select_neighbors(candidates, m);

@@ -92,11 +92,6 @@ pub trait Surrogate: Send + Sync {
         let _ = self;
         Ok(())
     }
-
-    #[cfg(test)]
-    fn enn_model_for_test(&self) -> Option<&EpistemicNearestNeighbors> {
-        None
-    }
 }
 
 pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
@@ -340,11 +335,6 @@ impl Surrogate for ENNSurrogate {
         } else {
             Ok(())
         }
-    }
-
-    #[cfg(test)]
-    fn enn_model_for_test(&self) -> Option<&EpistemicNearestNeighbors> {
-        self.model.as_ref()
     }
 
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {

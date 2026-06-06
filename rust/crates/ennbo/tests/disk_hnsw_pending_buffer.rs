@@ -224,7 +224,8 @@ fn disk_hnsw_append_past_threshold_does_not_sync() {
     let dir = TempDir::new().expect("tempdir");
     let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
         .unwrap()
-        .with_pending_flush_threshold(3);
+        .with_pending_flush_threshold(3)
+        .with_defer_append_indexing(true);
     let nodes_path = dir.path().join("graph/nodes.bin");
     let size_before = fs::metadata(&nodes_path).map(|m| m.len()).unwrap_or(0);
     for i in 0..3 {
@@ -247,7 +248,8 @@ fn disk_hnsw_defer_sync_when_pending_at_or_above_threshold() {
     let dir = TempDir::new().expect("tempdir");
     let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
         .unwrap()
-        .with_pending_flush_threshold(3);
+        .with_pending_flush_threshold(3)
+        .with_defer_append_indexing(true);
     for i in 0..3 {
         backend
             .append_rows(
@@ -358,4 +360,105 @@ fn disk_hnsw_scale_x_pending_leg_live_scale() {
     let q: Vec<f32> = query.iter().map(|&v| (v / 2.0) as f32).collect();
     let bf = brute_force_topk(&vecs, &q, 1);
     assert_eq!(idx[[0, 0]] as u32, bf[0].0);
+}
+
+#[test]
+fn disk_hnsw_append_syncs_at_threshold_flag() {
+    let dir = TempDir::new().expect("tempdir");
+    let defer_backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
+    assert!(!defer_backend.append_syncs_at_threshold());
+    let sync_backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+        .unwrap()
+        .with_defer_append_indexing(false);
+    assert!(sync_backend.append_syncs_at_threshold());
+}
+
+#[test]
+fn disk_hnsw_ensure_sync_persists_when_already_indexed() {
+    let dir = TempDir::new().expect("tempdir");
+    let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+        .unwrap()
+        .with_pending_flush_threshold(2)
+        .with_defer_append_indexing(false);
+    backend
+        .append_rows(
+            &array![[0.0, 0.0], [1.0, 0.0]].view(),
+            &array![[0.0], [1.0]].view(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(backend.indexed_rows(), 2);
+    backend.ensure_index_sync(false, &Array1::ones(2)).unwrap();
+    assert!(dir.path().join("graph/header.json").exists());
+}
+
+#[test]
+fn disk_hnsw_search_fast_path_fully_indexed() {
+    let dir = TempDir::new().expect("tempdir");
+    let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+        .unwrap()
+        .with_pending_flush_threshold(2)
+        .with_defer_append_indexing(false);
+    backend
+        .append_rows(
+            &array![[0.0, 0.0], [1.0, 0.0], [2.0, 2.0]].view(),
+            &array![[0.0], [1.0], [2.0]].view(),
+            None,
+        )
+        .unwrap();
+    let (dist2s, idx) = backend
+        .search(&array![[0.1, 0.1]].view(), 1, false)
+        .unwrap();
+    assert_eq!(idx[[0, 0]], 0);
+    assert!(dist2s[[0, 0]] >= 0.0);
+}
+
+#[test]
+fn disk_hnsw_sync_append_indexes_with_scale_x() {
+    let dir = TempDir::new().expect("tempdir");
+    let mut backend = DiskHnswEnnBackend::new(
+        dir.path().to_path_buf(),
+        array![[2.0, 4.0]],
+        array![[0.0]],
+        None,
+        true,
+        Array1::from_elem(2, 2.0),
+        IndexDriver::HNSWDisk,
+    )
+    .unwrap();
+    backend.set_defer_append_indexing(false);
+    backend.set_pending_flush_threshold(2);
+    backend
+        .append_rows(
+            &array![[4.0, 8.0], [6.0, 12.0]].view(),
+            &array![[1.0], [2.0]].view(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(backend.indexed_rows(), 3);
+}
+
+#[test]
+fn disk_hnsw_open_graph_rejects_dim_mismatch() {
+    let dir = TempDir::new().expect("tempdir");
+    let _ = DiskHnswEnnBackend::new(
+        dir.path().to_path_buf(),
+        array![[0.0, 0.0]],
+        array![[0.0]],
+        None,
+        false,
+        Array1::ones(2),
+        IndexDriver::HNSWDisk,
+    )
+    .unwrap();
+    let err = DiskHnswEnnBackend::new(
+        dir.path().to_path_buf(),
+        array![[0.0, 0.0, 0.0]],
+        array![[0.0]],
+        None,
+        false,
+        Array1::ones(3),
+        IndexDriver::HNSWDisk,
+    );
+    assert!(err.is_err());
 }

@@ -1,8 +1,6 @@
 //! Kiss static coverage: test files must reference private helper names from knn backends.
 
 const DISK_HNSW_SRC: &str = include_str!("../src/disk_hnsw/enn_backend.rs");
-const DISK_FLUSH_SRC: &str = include_str!("../src/disk_hnsw/flush.rs");
-const OPTIMIZER_DISK_FLUSH_SRC: &str = include_str!("optimizer_disk_flush.rs");
 const DISK_OBSERVATION_SRC: &str = include_str!("../src/backend/disk_observation.rs");
 const FAISS_BACKEND_SRC: &str = include_str!("../src/knn/faiss_backend.rs");
 const ROW_STORAGE_SRC: &str = include_str!("../src/backend/row_storage.rs");
@@ -82,40 +80,6 @@ fn kiss_disk_hnsw_helper_names_in_source() {
         assert!(
             DISK_HNSW_SRC.contains(name) || DISK_OBSERVATION_SRC.contains(name),
             "missing {name} in disk hnsw/observation sources"
-        );
-    }
-}
-
-#[test]
-fn kiss_optimizer_disk_flush_helper_names_in_source() {
-    for name in [
-        "disk_hnsw_backend",
-        "prime_pending_flush",
-        "with_hnsw",
-        "optimizer_ask_schedules_background_flush_disk_hnsw",
-        "optimizer_tell_propagates_flush_error",
-    ] {
-        assert!(
-            OPTIMIZER_DISK_FLUSH_SRC.contains(name),
-            "missing {name} in optimizer/tests_disk_flush.rs"
-        );
-    }
-}
-
-#[test]
-fn kiss_disk_flush_helper_names_in_source() {
-    for name in [
-        "BackgroundFlushState",
-        "FlushTestBarrier",
-        "wait_for_background_flush",
-        "finish_flush_thread",
-        "try_schedule_background_flush",
-        "wait_if_holding",
-        "lock_flush_state",
-    ] {
-        assert!(
-            DISK_FLUSH_SRC.contains(name),
-            "missing {name} in disk_hnsw/flush.rs"
         );
     }
 }

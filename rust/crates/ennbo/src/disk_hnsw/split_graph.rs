@@ -1,4 +1,4 @@
-//! Composite graph: mmap prefix + RAM tail for inline inserts.
+//! Composite graph: mmap prefix + RAM tail for batch flush inserts.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
