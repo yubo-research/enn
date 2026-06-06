@@ -256,6 +256,17 @@ impl EnnBackend {
         }
     }
 
+    pub fn is_index_stale(&self) -> bool {
+        match self {
+            Self::InMemory(b) => b.is_index_stale(),
+            Self::Disk(b) => disk_lock(b)
+                .map(|g| match &*g {
+                    DiskEnnBackend::Hnsw(x) => x.is_index_stale(),
+                })
+                .unwrap_or(false),
+        }
+    }
+
     pub fn append_rows(
         &mut self,
         x: &ArrayView2<f64>,

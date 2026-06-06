@@ -30,7 +30,7 @@ impl<'a> EnnIndexAccess<'a> {
     }
 
     pub fn is_stale(&self) -> bool {
-        false
+        self.model.backend.is_index_stale()
     }
 
     pub fn len(&self) -> usize {

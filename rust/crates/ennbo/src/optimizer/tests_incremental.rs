@@ -20,9 +20,11 @@ fn scale_x_false_index_not_stale_after_add() {
     let mut model =
         EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
     model.ensure_index_sync().unwrap();
+    assert!(!model.index_access().is_stale());
     let x_add = array![[0.5, 0.5]];
     let y_add = array![[0.5]];
     model.add(&x_add.view(), &y_add.view(), None).unwrap();
+    assert!(!model.index_access().is_stale());
     model.ensure_index_sync().unwrap();
     assert_eq!(model.num_obs(), 3);
     assert_eq!(model.index_access().len(), 3);
@@ -43,6 +45,25 @@ fn scale_x_true_add_to_nonempty_succeeds() {
     model.ensure_index_sync().unwrap();
     assert_eq!(model.num_obs(), 3);
     assert_eq!(model.index_access().len(), 3);
+}
+
+#[test]
+fn scale_x_true_index_stale_after_add() {
+    let train_x = array![[0.0, 0.0], [1.0, 0.0]];
+    let train_y = array![[0.0], [1.0]];
+    let mut model =
+        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Exact).unwrap();
+    model.ensure_index_sync().unwrap();
+    assert!(!model.index_access().is_stale());
+    let x_add = array![[0.5, 0.5]];
+    let y_add = array![[0.5]];
+    model.add(&x_add.view(), &y_add.view(), None).unwrap();
+    assert!(
+        model.index_access().is_stale(),
+        "scale_x append must mark index stale before ensure_sync"
+    );
+    model.ensure_index_sync().unwrap();
+    assert!(!model.index_access().is_stale());
 }
 
 #[test]

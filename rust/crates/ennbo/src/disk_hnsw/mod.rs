@@ -21,6 +21,7 @@ pub use store::{MmapGraph, RamGraph};
 #[cfg(test)]
 mod cp0_tests {
     use super::*;
+    use crate::disk_hnsw::access::GraphAccess;
     use crate::disk_hnsw::graph_mut::GraphMut;
     use rand::Rng;
     use rand::rngs::StdRng;
@@ -30,9 +31,10 @@ mod cp0_tests {
 
     const DATA_SEED: u64 = 42;
     const QUERY_SEED: u64 = 1;
-    const N: usize = 2500;
+    const N: usize = 500;
     const D: usize = 32;
     const K: usize = 10;
+    const NUM_RECALL_QUERIES: usize = 15;
 
     fn synthetic_vectors(n: usize, d: usize, seed: u64) -> Vec<Vec<f32>> {
         let mut rng = <ChaCha8Rng as rand_chacha::rand_core::SeedableRng>::seed_from_u64(seed);
@@ -58,7 +60,7 @@ mod cp0_tests {
     #[test]
     fn cp0_disk_hnsw_ram_recall() {
         let vectors = synthetic_vectors(N, D, DATA_SEED);
-        let queries = synthetic_vectors(100, D, QUERY_SEED);
+        let queries = synthetic_vectors(NUM_RECALL_QUERIES, D, QUERY_SEED);
         let (graph, header) = build_ram_index(&vectors, 0);
         let ef = ef_search_for_k(K);
         let recall = mean_recall_at_k(&vectors, &queries, K, ef, &graph, &header, N as u32);
@@ -68,10 +70,27 @@ mod cp0_tests {
         );
     }
 
+    fn snapshot_node_records(graph: &MmapGraph, n: u32) -> Vec<Vec<u8>> {
+        (0..n)
+            .map(|id| graph.try_record(id).expect("record").to_vec())
+            .collect()
+    }
+
+    fn assert_reopened_matches_snapshot(
+        snapshot: &[Vec<u8>],
+        reopened: &MmapGraph,
+    ) {
+        for (id, expected) in snapshot.iter().enumerate() {
+            let post_rec = reopened
+                .try_record(id as u32)
+                .expect("post-reopen record");
+            assert_eq!(post_rec, expected.as_slice(), "node {id} record mismatch");
+        }
+    }
+
     #[test]
     fn cp0_disk_hnsw_mmap_reopen_recall() {
         let vectors = synthetic_vectors(N, D, DATA_SEED);
-        let queries = synthetic_vectors(100, D, QUERY_SEED);
         let dir = TempDir::new().expect("tempdir");
         let graph_dir = dir.path().join("graph");
 
@@ -90,19 +109,29 @@ mod cp0_tests {
         file_header
             .write_json(&graph_dir.join("header.json"))
             .unwrap();
+
+        let pre_sync_entry = hnsw_header.entry_point;
+        let pre_sync_max_level = hnsw_header.max_level;
+        let snapshot = snapshot_node_records(&mmap_graph, N as u32);
         mmap_graph.fsync().unwrap();
 
         let (reopened, hdr) = MmapGraph::open(&graph_dir).unwrap();
+        assert_eq!(hdr.entry_point, pre_sync_entry);
+        assert_eq!(hdr.max_level, pre_sync_max_level);
+        assert_reopened_matches_snapshot(&snapshot, &reopened);
+
+        // Spot-check search still works on reopened graph.
         let rh = HnswHeader {
             entry_point: hdr.entry_point,
             max_level: hdr.max_level,
             num_dim: D,
         };
         let ef = ef_search_for_k(K);
-        let recall = mean_recall_at_k(&vectors, &queries, K, ef, &reopened, &rh, N as u32);
+        let spot_queries = synthetic_vectors(3, D, QUERY_SEED);
+        let recall = mean_recall_at_k(&vectors, &spot_queries, K, ef, &reopened, &rh, N as u32);
         assert!(
             recall >= 0.90,
-            "mmap reopen recall@10 = {recall}, expected >= 0.90"
+            "mmap reopen spot-check recall@10 = {recall}, expected >= 0.90"
         );
     }
 

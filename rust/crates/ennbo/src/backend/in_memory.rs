@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use crate::error::ENNError;
 use crate::index::{ENNIndex, IndexDriver};
 
+use super::disk_observation as disk_obs;
 use super::row_storage::RowStorage;
 
 pub struct InMemoryEnnBackend {
@@ -124,7 +125,11 @@ impl InMemoryEnnBackend {
     }
 
     pub fn mark_index_stale(&self) {
-        *self.index_stale.lock().expect("index_stale mutex poisoned") = true;
+        disk_obs::set_index_stale(&self.index_stale);
+    }
+
+    pub fn is_index_stale(&self) -> bool {
+        disk_obs::read_index_stale(&self.index_stale)
     }
 
     pub fn ensure_index_sync(

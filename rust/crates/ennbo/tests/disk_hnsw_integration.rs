@@ -70,6 +70,11 @@ fn disk_hnsw_integration_flat_neighbor_match() {
 }
 
 #[test]
-fn disk_hnsw_10k_add_sync_search() {
+fn disk_hnsw_streaming_crosses_flush_threshold() {
+    disk_streaming_helper::run_disk_streaming_crosses_flush_threshold(IndexDriver::HNSWDisk);
+}
+
+#[test]
+fn disk_hnsw_streaming_add_sync_search() {
     disk_streaming_helper::run_disk_streaming_add_sync_search(IndexDriver::HNSWDisk);
 }

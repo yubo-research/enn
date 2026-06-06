@@ -30,6 +30,12 @@ pub fn set_index_stale(index_stale: &Mutex<bool>) {
         .expect("index_stale mutex poisoned") = true;
 }
 
+pub fn read_index_stale(index_stale: &Mutex<bool>) -> bool {
+    *index_stale
+        .lock()
+        .expect("index_stale mutex poisoned")
+}
+
 pub fn mmap_train_rows_at(
     n: usize,
     train_x: &MmapColumnStore,

@@ -70,12 +70,17 @@ fn single_index_train_rows_at_matches_full_gather() {
 }
 
 #[test]
-fn scale_x_true_append_to_nonempty_errors() {
+fn scale_x_true_append_to_nonempty_succeeds() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
     let mut model =
         EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Exact).unwrap();
-    assert!(model
-        .add(&array![[0.5, 0.5]].view(), &array![[0.5]].view(), None)
-        .is_err());
+    model
+        .add(
+            &array![[0.5, 0.5]].view(),
+            &array![[0.5]].view(),
+            None,
+        )
+        .expect("scale_x=true append to nonempty model must succeed");
+    assert_eq!(model.len(), 3);
 }

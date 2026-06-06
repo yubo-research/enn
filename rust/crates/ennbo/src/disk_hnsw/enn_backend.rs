@@ -159,10 +159,7 @@ impl DiskHnswEnnBackend {
     }
 
     pub fn is_index_stale(&self) -> bool {
-        *self
-            .index_stale
-            .lock()
-            .expect("index_stale mutex poisoned")
+        crate::backend::disk_observation::read_index_stale(&self.index_stale)
     }
 
     /// True when search may skip `ensure_index_sync` (pending tier is searchable).
