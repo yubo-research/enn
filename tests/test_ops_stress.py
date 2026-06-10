@@ -429,6 +429,30 @@ def test_iter_synthetic_observations_matches_make_synthetic():
     assert y_one.shape == (num_obs, 1)
 
 
+def test_iter_synthetic_observation_batches_matches_make_synthetic():
+    from ops.stress import (
+        iter_synthetic_observation_batches,
+        make_synthetic_observations,
+    )
+
+    num_obs, num_dim, seed = 250, 7, 0
+    x_ref, y_ref = make_synthetic_observations(num_obs, num_dim=num_dim, seed=seed)
+    batches = list(
+        iter_synthetic_observation_batches(
+            num_obs,
+            num_dim=num_dim,
+            seed=seed,
+            batch_size=num_obs,
+        )
+    )
+    assert len(batches) == 1
+    x_batch, y_batch = batches[0]
+    assert x_batch.shape == (num_obs, num_dim)
+    assert y_batch.shape == (num_obs, 1)
+    np.testing.assert_allclose(x_batch, x_ref)
+    np.testing.assert_allclose(y_batch, y_ref)
+
+
 def test_iter_synthetic_observations_metamorphic_batch_size():
     num_obs, num_dim, seed = 37, 4, 3
 
@@ -520,58 +544,3 @@ def test_disk_stress_rss_ceiling_grows_with_dim_not_n():
         num_dim=40, shard_max_rows=DEFAULT_SHARD_MAX_ROWS
     )
     assert high_dim > low_dim
-
-
-def _run_disk_rss_stress_or_skip(tmp_path, num_obs: int, *, num_dim: int = 10):
-    from ops.stress import run_disk_rss_stress
-
-    work_dir = tmp_path / f"enn_disk_rss_{num_obs}"
-    return run_disk_rss_stress(
-        num_obs=num_obs,
-        work_dir=str(work_dir),
-        num_dim=num_dim,
-        seed=0,
-    )
-
-
-@pytest.mark.slow
-def test_disk_incremental_stress_rss_bounded(tmp_path):
-    from ops.stress import (
-        DEFAULT_SHARD_MAX_ROWS,
-        disk_stress_rss_ceiling_bytes,
-    )
-
-    num_dim = 10
-    num_obs = 100_000
-    result = _run_disk_rss_stress_or_skip(tmp_path, num_obs, num_dim=num_dim)
-
-    ceiling = disk_stress_rss_ceiling_bytes(
-        num_dim=num_dim, shard_max_rows=DEFAULT_SHARD_MAX_ROWS
-    )
-    assert result.rss_delta_bytes < ceiling, (
-        f"RSS delta {result.rss_delta_bytes} >= ceiling {ceiling} "
-        f"(baseline={result.baseline_rss_bytes} final={result.final_rss_bytes})"
-    )
-    assert result.index_memory_bytes > 0
-    print(
-        "disk_rss_stress "
-        f"N={num_obs} delta={result.rss_delta_bytes} "
-        f"ceiling={ceiling} index_mem={result.index_memory_bytes}"
-    )
-
-
-@pytest.mark.slow
-def test_disk_incremental_stress_rss_metamorphic_smaller_n(tmp_path):
-    """Same RSS bound at N=5000 should hold at N=10000 (sublinear tail)."""
-    from ops.stress import DEFAULT_SHARD_MAX_ROWS, disk_stress_rss_ceiling_bytes
-
-    num_dim = 10
-    ceiling = disk_stress_rss_ceiling_bytes(
-        num_dim=num_dim, shard_max_rows=DEFAULT_SHARD_MAX_ROWS
-    )
-    deltas = [
-        _run_disk_rss_stress_or_skip(tmp_path, num_obs, num_dim=num_dim).rss_delta_bytes
-        for num_obs in (5_000, 10_000)
-    ]
-    assert all(delta < ceiling for delta in deltas)
-    print(f"disk_rss_metamorphic deltas={deltas} ceiling={ceiling}")

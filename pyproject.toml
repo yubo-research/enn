@@ -79,7 +79,7 @@ addopts = ""
 pythonpath = ["src", "."]
 testpaths = ["tests"]
 markers = [
-    "slow: disk RSS stress tests (100k+ rows; deselect with '-m \"not slow\"')",
+    "slow: optional long-running stress tests (deselect with '-m \"not slow\"')",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:importlib._bootstrap",

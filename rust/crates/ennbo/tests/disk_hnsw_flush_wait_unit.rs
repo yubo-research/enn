@@ -157,6 +157,25 @@ fn flush_wait_reports_thread_panic() {
 
 #[test]
 fn wait_for_background_flush_concurrent_waiters_block() {
+    let st = Arc::new(Mutex::new(BackgroundFlushState::default()));
+    {
+        let mut guard = st.lock().expect("flush lock");
+        guard.in_progress = true;
+        guard.join_handle = None;
+    }
+    let s1 = Arc::clone(&st);
+    let s2 = Arc::clone(&st);
+    let w1 = std::thread::spawn(move || wait_for_background_flush(&s1));
+    let w2 = std::thread::spawn(move || wait_for_background_flush(&s2));
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    finish_flush_thread(&st, Ok(()));
+    w1.join().expect("waiter 1").unwrap();
+    w2.join().expect("waiter 2").unwrap();
+    assert!(!st.lock().expect("flush lock").in_progress);
+}
+
+#[test]
+fn wait_for_background_flush_concurrent_waiters_join_handle_path() {
     let dir = TempDir::new().expect("tempdir");
     let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
         .unwrap()

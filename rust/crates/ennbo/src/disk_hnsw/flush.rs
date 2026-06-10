@@ -1,7 +1,8 @@
 //! Background index flush coordination for disk HNSW backends.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use crate::backend::DiskEnnBackend;
 use crate::error::ENNError;
@@ -12,6 +13,7 @@ pub struct BackgroundFlushState {
     pub join_handle: Option<JoinHandle<()>>,
     pub error: Option<ENNError>,
     pub barrier: Arc<FlushTestBarrier>,
+    done_cv: Arc<Condvar>,
     fail_next: bool,
 }
 
@@ -22,6 +24,7 @@ impl Default for BackgroundFlushState {
             join_handle: None,
             error: None,
             barrier: Arc::new(FlushTestBarrier::default()),
+            done_cv: Arc::new(Condvar::new()),
             fail_next: false,
         }
     }
@@ -75,25 +78,39 @@ pub fn lock_flush_state(
 pub fn wait_for_background_flush(
     flush: &Arc<Mutex<BackgroundFlushState>>,
 ) -> Result<(), ENNError> {
-    let handle = {
-        let mut st = lock_flush_state(flush)?;
-        st.join_handle.take()
-    };
-    if let Some(h) = handle {
-        h.join().map_err(|_| {
-            ENNError::InvalidParameter("background flush thread panicked".to_string())
-        })?;
-    } else {
-        loop {
-            let st = lock_flush_state(flush)?;
-            if !st.in_progress {
-                break;
-            }
-            drop(st);
-            std::thread::yield_now();
-        }
-    }
     let mut st = lock_flush_state(flush)?;
+    if !st.in_progress {
+        if let Some(err) = st.error.take() {
+            return Err(err);
+        }
+        return Ok(());
+    }
+    if let Some(h) = st.join_handle.take() {
+        drop(st);
+        if h.join().is_err() {
+            finish_flush_thread(
+                flush,
+                Err(ENNError::InvalidParameter(
+                    "background flush thread panicked".to_string(),
+                )),
+            );
+            return Err(ENNError::InvalidParameter(
+                "background flush thread panicked".to_string(),
+            ));
+        }
+        st = lock_flush_state(flush)?;
+        if let Some(err) = st.error.take() {
+            return Err(err);
+        }
+        return Ok(());
+    }
+    let cv = Arc::clone(&st.done_cv);
+    while st.in_progress {
+        st = cv
+            .wait_timeout(st, Duration::from_millis(5))
+            .map_err(|_| ENNError::InvalidParameter("flush state mutex poisoned".to_string()))?
+            .0;
+    }
     if let Some(err) = st.error.take() {
         return Err(err);
     }
@@ -110,6 +127,7 @@ pub fn finish_flush_thread(
         Ok(()) => st.error = None,
         Err(e) => st.error = Some(e),
     }
+    st.done_cv.notify_all();
 }
 
 #[doc(hidden)]
@@ -157,7 +175,14 @@ pub fn try_schedule_background_flush(
     if use_background_thread {
         let flush_arc = Arc::clone(flush);
         let handle = std::thread::spawn(move || {
-            let result = run_flush_body(&flush_arc, &disk_arc);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_flush_body(&flush_arc, &disk_arc)
+            }))
+            .unwrap_or_else(|_| {
+                Err(ENNError::InvalidParameter(
+                    "background flush thread panicked".to_string(),
+                ))
+            });
             finish_flush_thread(&flush_arc, result);
         });
         st.join_handle = Some(handle);

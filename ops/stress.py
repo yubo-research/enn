@@ -53,6 +53,14 @@ def disk_stress_rss_ceiling_bytes(
 
 
 @dataclass(frozen=True)
+class DiskRssStressConfig:
+    num_dim: int = DEFAULT_NUM_DIM
+    seed: int = 0
+    batch_size: int = STRESS_OBS_BATCH_SIZE
+    query_n: int = STRESS_QUERY_N
+
+
+@dataclass(frozen=True)
 class DiskRssStressResult:
     num_obs: int
     baseline_rss_bytes: int
@@ -67,16 +75,22 @@ def run_disk_rss_stress(
     num_obs: int,
     work_dir: str,
     index_driver: ENNIndexDriver = ENNIndexDriver.HNSW_DISK,
-    num_dim: int = DEFAULT_NUM_DIM,
-    seed: int = 0,
+    config: DiskRssStressConfig | None = None,
 ) -> DiskRssStressResult:
-    """Stream one-row adds to disk ENN; return RSS and on-disk metrics."""
+    """Stream batched adds to disk ENN; return RSS and on-disk metrics."""
     if num_obs < 1:
         raise ValueError("num_obs must be >= 1")
+    cfg = config if config is not None else DiskRssStressConfig()
+    if cfg.batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    if cfg.query_n < 1:
+        raise ValueError("query_n must be >= 1")
     baseline_rss = max_rss_bytes()
-    x_query = make_query_points(STRESS_QUERY_N, num_dim=num_dim, seed=STRESS_QUERY_SEED)
+    x_query = make_query_points(
+        cfg.query_n, num_dim=cfg.num_dim, seed=STRESS_QUERY_SEED
+    )
 
-    empty_x = np.empty((0, num_dim), dtype=float)
+    empty_x = np.empty((0, cfg.num_dim), dtype=float)
     empty_y = np.empty((0, 1), dtype=float)
     model = EpistemicNearestNeighbors(
         empty_x,
@@ -88,11 +102,17 @@ def run_disk_rss_stress(
     )
     baseline_after_init = max_rss_bytes()
 
-    for x_row, y_row in iter_synthetic_observations(
-        num_obs, num_dim=num_dim, seed=seed, batch_size=1
+    rows_added = 0
+    for x_batch, y_batch in iter_synthetic_observation_batches(
+        num_obs,
+        num_dim=cfg.num_dim,
+        seed=cfg.seed,
+        batch_size=cfg.batch_size,
     ):
-        model.add(x_row, y_row)
+        model.add(x_batch, y_batch)
+        rows_added += x_batch.shape[0]
         model.schedule_background_flush()
+    assert rows_added == num_obs
 
     model.ensure_index_sync()
     posterior = model.posterior(x_query, params=STRESS_PARAMS)
@@ -102,8 +122,8 @@ def run_disk_rss_stress(
     final_rss = max_rss_bytes()
     train_x_path = Path(work_dir) / "train_x.bin"
     train_x_bytes = train_x_path.stat().st_size if train_x_path.exists() else 0
-    expected_train_x = num_obs * num_dim * 8
-    assert abs(train_x_bytes - expected_train_x) <= num_dim * 8
+    expected_train_x = num_obs * cfg.num_dim * 8
+    assert abs(train_x_bytes - expected_train_x) <= cfg.num_dim * 8
     assert len(model) == num_obs
 
     return DiskRssStressResult(
@@ -197,6 +217,28 @@ def iter_synthetic_observations(
             x_row = rng.standard_normal((1, num_dim))
             y_row = rng.standard_normal((1, 1))
             yield x_row, y_row
+        emitted += n
+
+
+def iter_synthetic_observation_batches(
+    num_obs: int,
+    *,
+    num_dim: int = DEFAULT_NUM_DIM,
+    seed: int = 0,
+    batch_size: int = STRESS_OBS_BATCH_SIZE,
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    """Yield (n, num_dim) x and (n, 1) y batches without holding all num_obs rows."""
+    if num_obs < 1:
+        raise ValueError("num_obs must be >= 1")
+    if batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    rng = np.random.default_rng(seed)
+    emitted = 0
+    while emitted < num_obs:
+        n = min(batch_size, num_obs - emitted)
+        x_batch = rng.standard_normal((n, num_dim))
+        y_batch = rng.standard_normal((n, 1))
+        yield x_batch, y_batch
         emitted += n
 
 

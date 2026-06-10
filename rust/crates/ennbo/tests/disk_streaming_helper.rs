@@ -1,5 +1,6 @@
 //! Shared disk backend streaming smoke test body.
 
+use ennbo::backend::DiskEnnBackend;
 use ennbo::{EnnStorage, EpistemicNearestNeighbors, IndexDriver};
 use ndarray::Array2;
 use rand::Rng;
@@ -9,9 +10,10 @@ use tempfile::TempDir;
 
 const STREAMING_SEED: u64 = 99;
 const STREAMING_D: usize = 4;
-const STREAMING_BATCH: usize = 500;
-/// Cross the default 1000-row flush threshold twice.
-const STREAMING_N: usize = 2001;
+const STREAMING_BATCH: usize = 50;
+const STREAMING_FLUSH_THRESHOLD: usize = 5;
+const STREAMING_CROSS_ROWS: usize = STREAMING_FLUSH_THRESHOLD + 1;
+const STREAMING_N: usize = 120;
 
 fn random_batch(
     rng: &mut ChaCha8Rng,
@@ -29,6 +31,14 @@ fn random_batch(
     (x, y)
 }
 
+fn configure_low_flush_threshold(model: &EpistemicNearestNeighbors, threshold: usize) {
+    let arc = model.disk_backend_arc().expect("disk backend");
+    let mut guard = arc.lock().expect("disk lock");
+    let DiskEnnBackend::Hnsw(backend) = &mut *guard;
+    backend.set_pending_flush_threshold(threshold);
+    backend.set_defer_append_indexing(true);
+}
+
 pub fn run_disk_streaming_crosses_flush_threshold(driver: IndexDriver) {
     let mut rng = ChaCha8Rng::seed_from_u64(STREAMING_SEED);
     let dir = TempDir::new().expect("tempdir");
@@ -40,19 +50,18 @@ pub fn run_disk_streaming_crosses_flush_threshold(driver: IndexDriver) {
         Some(dir.path().to_path_buf()),
     )
     .expect("new_empty disk");
+    configure_low_flush_threshold(&model, STREAMING_FLUSH_THRESHOLD);
 
-    // First threshold crossing: 1001 rows in 500-row batches.
-    let first_phase = 1001usize;
     let mut row = 0usize;
-    while row < first_phase {
-        let end = (row + STREAMING_BATCH).min(first_phase);
+    while row < STREAMING_CROSS_ROWS {
+        let end = (row + STREAMING_BATCH).min(STREAMING_CROSS_ROWS);
         let (x, y) = random_batch(&mut rng, end - row, STREAMING_D);
         model.add(&x.view(), &y.view(), None).expect("add");
         row = end;
     }
-    assert_eq!(model.len(), first_phase);
+    assert_eq!(model.len(), STREAMING_CROSS_ROWS);
     model.index_access().ensure_sync().expect("sync");
-    assert_eq!(model.len(), first_phase);
+    assert_eq!(model.len(), STREAMING_CROSS_ROWS);
 }
 
 pub fn run_disk_streaming_add_sync_search(driver: IndexDriver) {

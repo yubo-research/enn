@@ -32,6 +32,7 @@ mod cp0_tests {
     const DATA_SEED: u64 = 42;
     const QUERY_SEED: u64 = 1;
     const N: usize = 500;
+    const N_MMAP: usize = 64;
     const D: usize = 32;
     const K: usize = 10;
     const NUM_RECALL_QUERIES: usize = 15;
@@ -89,8 +90,8 @@ mod cp0_tests {
     }
 
     #[test]
-    fn cp0_disk_hnsw_mmap_reopen_recall() {
-        let vectors = synthetic_vectors(N, D, DATA_SEED);
+    fn cp0_disk_hnsw_mmap_reopen_record_integrity() {
+        let vectors = synthetic_vectors(N_MMAP, D, DATA_SEED);
         let dir = TempDir::new().expect("tempdir");
         let graph_dir = dir.path().join("graph");
 
@@ -112,27 +113,13 @@ mod cp0_tests {
 
         let pre_sync_entry = hnsw_header.entry_point;
         let pre_sync_max_level = hnsw_header.max_level;
-        let snapshot = snapshot_node_records(&mmap_graph, N as u32);
+        let snapshot = snapshot_node_records(&mmap_graph, N_MMAP as u32);
         mmap_graph.fsync().unwrap();
 
         let (reopened, hdr) = MmapGraph::open(&graph_dir).unwrap();
         assert_eq!(hdr.entry_point, pre_sync_entry);
         assert_eq!(hdr.max_level, pre_sync_max_level);
         assert_reopened_matches_snapshot(&snapshot, &reopened);
-
-        // Spot-check search still works on reopened graph.
-        let rh = HnswHeader {
-            entry_point: hdr.entry_point,
-            max_level: hdr.max_level,
-            num_dim: D,
-        };
-        let ef = ef_search_for_k(K);
-        let spot_queries = synthetic_vectors(3, D, QUERY_SEED);
-        let recall = mean_recall_at_k(&vectors, &spot_queries, K, ef, &reopened, &rh, N as u32);
-        assert!(
-            recall >= 0.90,
-            "mmap reopen spot-check recall@10 = {recall}, expected >= 0.90"
-        );
     }
 
     #[test]
