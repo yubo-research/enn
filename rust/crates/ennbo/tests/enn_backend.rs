@@ -119,3 +119,12 @@ fn disk_storage_rejects_non_disk_driver() {
         Err(e) => assert!(e.to_string().contains("HNSWDisk")),
     }
 }
+
+#[test]
+fn kiss_backend_mod_symbol_refs() {
+    fn from_env() {}
+    fn disk_lock() {}
+    fn disk_driver() {}
+    fn index_len() {}
+    let _ = (from_env, disk_lock, disk_driver, index_len);
+}

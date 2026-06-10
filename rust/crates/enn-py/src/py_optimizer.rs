@@ -63,62 +63,74 @@ mod kiss_coverage_tests {
     }
 }
 
+fn parse_index_driver(s: &str) -> PyResult<ennbo::index::IndexDriver> {
+    use ennbo::index::IndexDriver;
+    match s.to_lowercase().as_str() {
+        "exact" | "flat" => Ok(IndexDriver::Exact),
+        "hnsw" => Ok(IndexDriver::HNSW),
+        "hnsw_disk" => Ok(IndexDriver::HNSWDisk),
+        _ => Err(PyValueError::new_err(format!("Unknown index_driver: {s}"))),
+    }
+}
+
+fn parse_acquisition(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+    s: &str,
+) -> PyResult<ennbo::AcquisitionConfig> {
+    use ennbo::AcquisitionConfig;
+    match s {
+        "ucb" => {
+            let beta = dict
+                .get_item("acquisition_beta")?
+                .map(|v| v.extract::<f64>())
+                .transpose()?
+                .unwrap_or(2.0);
+            Ok(AcquisitionConfig::UCB { beta })
+        }
+        "thompson" => Ok(AcquisitionConfig::Thompson),
+        "random" => Ok(AcquisitionConfig::Random),
+        "pareto" => Ok(AcquisitionConfig::Pareto),
+        _ => Err(PyValueError::new_err(format!("Unknown acquisition: {s}"))),
+    }
+}
+
+fn parse_candidate_rv(s: &str) -> PyResult<ennbo::CandidateRV> {
+    use ennbo::CandidateRV;
+    match s {
+        "sobol" => Ok(CandidateRV::Sobol),
+        "uniform" => Ok(CandidateRV::Uniform),
+        "raasp" => Ok(CandidateRV::RAASP),
+        _ => Err(PyValueError::new_err(format!("Unknown candidate_rv: {s}"))),
+    }
+}
+
+fn parse_enn_storage(s: &str) -> PyResult<ennbo::EnnStorage> {
+    match s.to_lowercase().as_str() {
+        "disk" => Ok(ennbo::EnnStorage::Disk),
+        "memory" | "in_memory" | "inmemory" => Ok(ennbo::EnnStorage::InMemory),
+        _ => Err(PyValueError::new_err(format!("Unknown enn_storage: {s}"))),
+    }
+}
+
 pub fn parse_config_overrides_from_dict(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<ennbo::ConfigOverrides> {
-    use ennbo::index::IndexDriver;
-    use ennbo::{AcquisitionConfig, CandidateRV, ConfigOverrides};
+    use ennbo::ConfigOverrides;
 
     let mut overrides = ConfigOverrides::default();
 
     if let Some(v) = dict.get_item("index_driver")? {
-        let s: String = v.extract()?;
-        overrides.index_driver = Some(match s.to_lowercase().as_str() {
-            "exact" | "flat" => IndexDriver::Exact,
-            "hnsw" => IndexDriver::HNSW,
-            "hnsw_disk" => IndexDriver::HNSWDisk,
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "Unknown index_driver: {}",
-                    s
-                )))
-            }
-        });
+        overrides.index_driver = Some(parse_index_driver(&v.extract::<String>()?)?);
     }
     if let Some(acq) = dict.get_item("acquisition")? {
         let s: String = acq.extract()?;
-        overrides.acquisition = Some(match s.as_str() {
-            "ucb" => {
-                let beta = dict
-                    .get_item("acquisition_beta")?
-                    .map(|v| v.extract::<f64>())
-                    .transpose()?
-                    .unwrap_or(2.0);
-                AcquisitionConfig::UCB { beta }
-            }
-            "thompson" => AcquisitionConfig::Thompson,
-            "random" => AcquisitionConfig::Random,
-            "pareto" => AcquisitionConfig::Pareto,
-            _ => return Err(PyValueError::new_err(format!("Unknown acquisition: {}", s))),
-        });
+        overrides.acquisition = Some(parse_acquisition(dict, &s)?);
     }
     if let Some(rv) = dict.get_item("candidate_rv")? {
-        let s: String = rv.extract()?;
-        overrides.candidate_rv = Some(match s.as_str() {
-            "sobol" => CandidateRV::Sobol,
-            "uniform" => CandidateRV::Uniform,
-            "raasp" => CandidateRV::RAASP,
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "Unknown candidate_rv: {}",
-                    s
-                )))
-            }
-        });
+        overrides.candidate_rv = Some(parse_candidate_rv(&rv.extract::<String>()?)?);
     }
     if let Some(v) = dict.get_item("trust_region")? {
-        let s: String = v.extract()?;
-        overrides.trust_region_kind = Some(s);
+        overrides.trust_region_kind = Some(v.extract()?);
     }
     overrides.num_metrics = optional_usize(dict, "num_metrics")?;
     overrides.alpha = optional_f64(dict, "alpha")?;
@@ -126,20 +138,10 @@ pub fn parse_config_overrides_from_dict(
         overrides.rescalarize = Some(v.extract()?);
     }
     if let Some(v) = dict.get_item("enn_storage")? {
-        let s: String = v.extract()?;
-        overrides.enn_storage = Some(match s.to_lowercase().as_str() {
-            "disk" => ennbo::EnnStorage::Disk,
-            "memory" | "in_memory" | "inmemory" => ennbo::EnnStorage::InMemory,
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "Unknown enn_storage: {s}"
-                )))
-            }
-        });
+        overrides.enn_storage = Some(parse_enn_storage(&v.extract::<String>()?)?);
     }
     if let Some(v) = dict.get_item("work_dir")? {
-        let s: String = v.extract()?;
-        overrides.work_dir = Some(PathBuf::from(s));
+        overrides.work_dir = Some(PathBuf::from(v.extract::<String>()?));
     }
     apply_scalar_overrides(dict, &mut overrides)?;
     Ok(overrides)

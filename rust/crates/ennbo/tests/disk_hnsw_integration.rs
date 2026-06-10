@@ -3,7 +3,7 @@
 mod disk_streaming_helper;
 
 use ennbo::{EnnStorage, EpistemicNearestNeighbors, IndexDriver};
-use ndarray::Array2;
+use ndarray::{array, Array2};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -77,4 +77,48 @@ fn disk_hnsw_streaming_crosses_flush_threshold() {
 #[test]
 fn disk_hnsw_streaming_add_sync_search() {
     disk_streaming_helper::run_disk_streaming_add_sync_search(IndexDriver::HNSWDisk);
+}
+
+#[test]
+fn disk_hnsw_reopen_wrapper_syncs_num_obs_neighbors_and_y_scale() {
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().to_path_buf();
+
+    let model = EpistemicNearestNeighbors::new_with_storage(
+        array![[0.0, 0.0], [1.0, 2.0]],
+        array![[1.0], [5.0]],
+        None,
+        false,
+        IndexDriver::HNSWDisk,
+        EnnStorage::Disk,
+        Some(path.clone()),
+    )
+    .expect("new disk model");
+    model.index_access().ensure_sync().expect("sync");
+    drop(model);
+
+    let reopened = EpistemicNearestNeighbors::new_with_storage(
+        Array2::zeros((0, 2)),
+        Array2::zeros((0, 1)),
+        None,
+        false,
+        IndexDriver::HNSWDisk,
+        EnnStorage::Disk,
+        Some(path),
+    )
+    .expect("reopen disk model");
+
+    assert_eq!(reopened.len(), 2);
+    let y_scale = reopened.y_scale_row();
+    assert!(
+        (y_scale[[0, 0]] - 2.0).abs() < 1e-6,
+        "expected y std 2.0 for [1,5], got {}",
+        y_scale[[0, 0]]
+    );
+
+    let neighbors = reopened
+        .neighbors(&array![[0.0, 0.0]].view(), 1, false)
+        .expect("neighbors");
+    assert_eq!(neighbors.ncols(), 1);
+    assert_eq!(neighbors[[0, 0]], 0);
 }

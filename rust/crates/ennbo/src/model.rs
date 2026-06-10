@@ -148,7 +148,7 @@ impl EpistemicNearestNeighbors {
             }
         };
 
-        Ok(Self {
+        let mut model = Self {
             backend,
             num_obs,
             num_dim,
@@ -160,7 +160,11 @@ impl EpistemicNearestNeighbors {
             y_sumsq,
             x_sum,
             x_sumsq,
-        })
+        };
+        if model.num_obs != model.backend.len() {
+            sync_obs_stats_from_backend(&mut model)?;
+        }
+        Ok(model)
     }
 
     /// Empty model for incremental construction (e.g. TuRBO from zero rows).
@@ -378,6 +382,29 @@ impl EpistemicNearestNeighbors {
         }
         self.backend.search(x, search_k, exclude_nearest)
     }
+}
+
+/// Rebuild observation count and scale moments from persisted backend rows (disk reopen).
+fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<(), ENNError> {
+    let n = model.backend.len();
+    model.num_obs = n;
+    if n == 0 {
+        return Ok(());
+    }
+    let indices: Vec<usize> = (0..n).collect();
+    let (x, y, _) = model.backend.train_rows_at(&indices)?;
+    let (y_sum, y_sumsq) = column_sums_and_sumsq(y.view());
+    model.y_sum = y_sum;
+    model.y_sumsq = y_sumsq;
+    model.y_scale = scale_from_moments(n, model.num_metrics, &model.y_sum, &model.y_sumsq, 0.0);
+    if model.scale_x {
+        let (x_sum, x_sumsq) = column_sums_and_sumsq(x.view());
+        model.x_sum = x_sum;
+        model.x_sumsq = x_sumsq;
+        model.x_scale =
+            scale_from_moments(n, model.num_dim, &model.x_sum, &model.x_sumsq, 1e-12);
+    }
+    Ok(())
 }
 
 fn column_sums_and_sumsq(a: ArrayView2<f64>) -> (Array1<f64>, Array1<f64>) {

@@ -184,6 +184,7 @@ fn kiss_fullrepo_static_name_registry_extra() {
         "EnnStorage",
         "InMemoryEnnBackend",
         "new_with_storage",
+        "sync_obs_stats_from_backend",
         "new_empty",
         "train_rows_at",
         "row_x",

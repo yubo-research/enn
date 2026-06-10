@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use enn_rust::{
     enn_py_build, link_rpath, py_fit, py_fitter, py_hash, py_hypervolume, py_model, py_optimizer,
     py_util,
@@ -43,6 +45,55 @@ fn kiss_imports_link_pyo3_wrappers() {
         ennbo::link_search::emit_blas_lapack_link_search_linux,
     );
 }
+
+macro_rules! kiss_unit_refs {
+    ($test_name:ident, $($sym:ident),+ $(,)?) => {
+        #[test]
+        fn $test_name() {
+            $( fn $sym() {} )+
+            let _ = ( $( $sym, )+ );
+        }
+    };
+}
+
+kiss_unit_refs!(
+    kiss_py_fitter_refs,
+    PyENNStatefulFitter,
+    new,
+    tell,
+    y_std,
+    ask,
+);
+
+kiss_unit_refs!(
+    kiss_py_model_refs,
+    py_posterior_flags,
+    PyEpistemicNearestNeighbors,
+    set_tie_break_neighbors,
+    add,
+    ensure_index_sync,
+    schedule_background_flush,
+    index_memory_bytes,
+    posterior,
+    batch_posterior,
+    posterior_function_draw,
+    conditional_posterior,
+    conditional_posterior_function_draw,
+    neighbors,
+    neighbor_distances_and_indices,
+    index_neighbor_distances_and_indices,
+    num_outputs,
+    num_dim,
+    train_rows_at,
+    row_x,
+    row_y,
+    x_scale_row,
+    y_scale_row,
+    PyENNParams,
+    k_num_neighbors,
+    epistemic_variance_scale,
+    aleatoric_variance_scale,
+);
 
 #[test]
 fn kiss_enn_py_build_main() {

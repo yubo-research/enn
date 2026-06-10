@@ -172,6 +172,60 @@ fn apply_enn_surrogate_fields(
     config.surrogate = SurrogateConfig::ENN(enn);
 }
 
+fn apply_trust_region_overrides(overrides: &ConfigOverrides, config: &mut OptimizerConfig) {
+    if let Some(kind) = &overrides.trust_region_kind {
+        if kind == "morbo" {
+            let num_metrics = overrides.num_metrics.unwrap_or(2);
+            let alpha = overrides.alpha.unwrap_or(0.05);
+            let length = TRLengthConfig {
+                length_init: overrides.length_init.unwrap_or(0.8),
+                length_min: overrides.length_min.unwrap_or(0.5f64.powi(7)),
+                length_max: overrides.length_max.unwrap_or(1.6),
+            };
+            let rescalarize = overrides
+                .rescalarize
+                .as_deref()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(Rescalarize::OnPropose);
+            config.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
+                num_metrics,
+                alpha,
+                length,
+                rescalarize,
+                noise_aware: overrides.noise_aware.unwrap_or(false),
+            });
+        }
+        return;
+    }
+    if overrides.length_init.is_none()
+        && overrides.length_min.is_none()
+        && overrides.length_max.is_none()
+    {
+        return;
+    }
+    let TRLengthConfig {
+        length_init,
+        length_min,
+        length_max,
+    } = match &config.trust_region {
+        TrustRegionConfig::Turbo(cfg) => *cfg,
+        TrustRegionConfig::Morbo(m) => m.length,
+    };
+    let updated = TRLengthConfig {
+        length_init: overrides.length_init.unwrap_or(length_init),
+        length_min: overrides.length_min.unwrap_or(length_min),
+        length_max: overrides.length_max.unwrap_or(length_max),
+    };
+    config.trust_region = match &config.trust_region {
+        TrustRegionConfig::Turbo(_) => TrustRegionConfig::Turbo(updated),
+        TrustRegionConfig::Morbo(m) => {
+            let mut morbo = m.clone();
+            morbo.length = updated;
+            TrustRegionConfig::Morbo(morbo)
+        }
+    };
+}
+
 impl ConfigOverrides {
     /// Apply overrides to an existing config.
     pub fn apply_to(&self, mut config: OptimizerConfig) -> OptimizerConfig {
@@ -193,50 +247,7 @@ impl ConfigOverrides {
         if let Some(m) = self.num_candidates_per_arm {
             config.candidates.num_candidates_per_arm = Some(m);
         }
-        if let Some(kind) = &self.trust_region_kind {
-            if kind == "morbo" {
-                let num_metrics = self.num_metrics.unwrap_or(2);
-                let alpha = self.alpha.unwrap_or(0.05);
-                let length = TRLengthConfig {
-                    length_init: self.length_init.unwrap_or(0.8),
-                    length_min: self.length_min.unwrap_or(0.5f64.powi(7)),
-                    length_max: self.length_max.unwrap_or(1.6),
-                };
-                let rescalarize = self
-                    .rescalarize
-                    .as_deref()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(Rescalarize::OnPropose);
-                config.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
-                    num_metrics,
-                    alpha,
-                    length,
-                    rescalarize,
-                    noise_aware: self.noise_aware.unwrap_or(false),
-                });
-            }
-        } else if self.length_init.is_some() || self.length_min.is_some() || self.length_max.is_some() {
-            let TRLengthConfig {
-                length_init,
-                length_min,
-                length_max,
-            } = match &config.trust_region {
-                TrustRegionConfig::Turbo(cfg) => *cfg,
-                TrustRegionConfig::Morbo(m) => m.length,
-            };
-            let updated = TRLengthConfig {
-                length_init: self.length_init.unwrap_or(length_init),
-                length_min: self.length_min.unwrap_or(length_min),
-                length_max: self.length_max.unwrap_or(length_max),
-            };
-            config.trust_region = match config.trust_region {
-                TrustRegionConfig::Turbo(_) => TrustRegionConfig::Turbo(updated),
-                TrustRegionConfig::Morbo(mut m) => {
-                    m.length = updated;
-                    TrustRegionConfig::Morbo(m)
-                }
-            };
-        }
+        apply_trust_region_overrides(self, &mut config);
         if self.index_driver.is_some()
             || self.num_fit_samples.is_some()
             || self.num_fit_candidates.is_some()
