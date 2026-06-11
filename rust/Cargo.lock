@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "ennbo"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "approx",
  "faiss",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "ennbo-py"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "ennbo",
  "ndarray",
