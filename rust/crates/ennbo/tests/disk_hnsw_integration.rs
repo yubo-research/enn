@@ -80,6 +80,79 @@ fn disk_hnsw_streaming_add_sync_search() {
 }
 
 #[test]
+fn disk_hnsw_reopen_scale_x_neighbors_match_without_explicit_sync() {
+    let seed = 7_u64;
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let n = 15usize;
+    let d = 3usize;
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().to_path_buf();
+
+    let mut x_all = Array2::zeros((n, d));
+    let mut y_all = Array2::zeros((n, 1));
+    for i in 0..n {
+        for j in 0..d {
+            x_all[[i, j]] = rng.gen::<f64>();
+        }
+        y_all[[i, 0]] = rng.gen::<f64>();
+    }
+
+    let model = EpistemicNearestNeighbors::new_with_storage(
+        x_all.clone(),
+        y_all.clone(),
+        None,
+        true,
+        IndexDriver::HNSWDisk,
+        EnnStorage::Disk,
+        Some(path.clone()),
+    )
+    .expect("new disk model");
+    model.index_access().ensure_sync().expect("sync");
+    drop(model);
+
+    let reopened = EpistemicNearestNeighbors::new_with_storage(
+        Array2::zeros((0, d)),
+        Array2::zeros((0, 1)),
+        None,
+        true,
+        IndexDriver::HNSWDisk,
+        EnnStorage::Disk,
+        Some(path.clone()),
+    )
+    .expect("reopen disk model");
+
+    let fresh = EpistemicNearestNeighbors::new_with_storage(
+        x_all,
+        y_all,
+        None,
+        true,
+        IndexDriver::HNSWDisk,
+        EnnStorage::Disk,
+        Some(dir.path().join("fresh")),
+    )
+    .expect("fresh disk model");
+    fresh.index_access().ensure_sync().expect("fresh sync");
+
+    let mut query = Array2::zeros((4, d));
+    for i in 0..4 {
+        for j in 0..d {
+            query[[i, j]] = rng.gen::<f64>();
+        }
+    }
+
+    let fresh_idx = fresh
+        .neighbors(&query.view(), 3, false)
+        .expect("fresh neighbors");
+    let reopen_idx = reopened
+        .neighbors(&query.view(), 3, false)
+        .expect("reopen neighbors");
+    assert_eq!(
+        reopen_idx, fresh_idx,
+        "scale_x disk reopen must match fresh neighbors without explicit ensure_index_sync"
+    );
+}
+
+#[test]
 fn disk_hnsw_reopen_wrapper_syncs_num_obs_neighbors_and_y_scale() {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().to_path_buf();

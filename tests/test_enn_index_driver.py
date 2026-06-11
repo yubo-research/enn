@@ -139,6 +139,54 @@ def test_enn_disk_hnsw_posterior_with_pending_matches_fresh(tmp_path):
     np.testing.assert_allclose(post_inc.se, post_fresh.se, rtol=1e-5)
 
 
+def test_enn_disk_hnsw_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_path):
+    """Disk reopen with scale_x=true must not return wrong posterior before ensure_index_sync."""
+    from enn.enn.enn_params import ENNParams
+
+    rng = np.random.default_rng(7)
+    d = 3
+    work_dir = tmp_path / "enn_disk_scale_x_reopen"
+    x = rng.standard_normal((15, d))
+    y = rng.standard_normal((15, 1))
+
+    model = EpistemicNearestNeighbors(
+        x,
+        y,
+        scale_x=True,
+        index_driver=ENNIndexDriver.HNSW_DISK,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+    model.ensure_index_sync()
+    del model
+
+    reopened = EpistemicNearestNeighbors(
+        np.zeros((0, d)),
+        np.zeros((0, 1)),
+        scale_x=True,
+        index_driver=ENNIndexDriver.HNSW_DISK,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+    fresh = EpistemicNearestNeighbors(
+        x,
+        y,
+        scale_x=True,
+        index_driver=ENNIndexDriver.HNSW_DISK,
+        work_dir=str(tmp_path / "enn_disk_scale_x_reopen_fresh"),
+        enn_storage="disk",
+    )
+    fresh.ensure_index_sync()
+    params = ENNParams(
+        k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
+    x_test = rng.standard_normal((4, d))
+    post_reopen = reopened.posterior(x_test, params=params)
+    post_fresh = fresh.posterior(x_test, params=params)
+    np.testing.assert_allclose(post_reopen.mu, post_fresh.mu, rtol=1e-5)
+    np.testing.assert_allclose(post_reopen.se, post_fresh.se, rtol=1e-5)
+
+
 def test_enn_disk_hnsw_posterior_scale_x_pending_matches_fresh(tmp_path):
     """Phase D: scale_x pending leg uses live scale; posterior matches fresh."""
     from enn.enn.enn_params import ENNParams

@@ -403,6 +403,9 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
         model.x_sumsq = x_sumsq;
         model.x_scale =
             scale_from_moments(n, model.num_dim, &model.x_sum, &model.x_sumsq, 1e-12);
+        // Disk reopen: backend x_scale starts at empty-init ones while the graph may
+        // have been built under a different scale. Force rebuild on first search.
+        model.backend.mark_index_stale();
     }
     Ok(())
 }
