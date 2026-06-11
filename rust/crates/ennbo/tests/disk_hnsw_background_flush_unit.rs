@@ -140,6 +140,45 @@ fn flush_error_surfaces_on_wait() {
 }
 
 #[test]
+fn background_flush_clears_join_handle_when_idle() {
+    let dir = TempDir::new().expect("tempdir");
+    let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+        .unwrap()
+        .with_pending_flush_threshold(3)
+        .with_defer_append_indexing(true);
+    for i in 0..3 {
+        append_row(&mut backend, i as f64);
+    }
+    let arc = hnsw_arc(backend);
+    {
+        let guard = arc.lock().expect("disk lock");
+        let DiskEnnBackend::Hnsw(ref b) = *guard;
+        b.flush_test_barrier_hold(true);
+    }
+    schedule_background_flush(&arc);
+    let flush = flush_arc(&arc);
+    assert!(flush.lock().expect("flush lock").in_progress);
+    flush
+        .lock()
+        .expect("flush lock")
+        .barrier
+        .set_hold(false);
+    for _ in 0..50 {
+        let st = flush.lock().expect("flush lock");
+        if !st.in_progress {
+            assert!(
+                st.join_handle.is_none(),
+                "idle flush state must not retain a stale join handle"
+            );
+            return;
+        }
+        drop(st);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("background flush did not finish within timeout");
+}
+
+#[test]
 fn flush_schedule_coalesces_when_in_progress() {
     let dir = TempDir::new().expect("tempdir");
     let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)

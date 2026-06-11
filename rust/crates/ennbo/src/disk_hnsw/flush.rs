@@ -123,6 +123,7 @@ pub fn finish_flush_thread(
 ) {
     let mut st = flush.lock().expect("flush state mutex poisoned");
     st.in_progress = false;
+    st.join_handle = None;
     match result {
         Ok(()) => st.error = None,
         Err(e) => st.error = Some(e),
