@@ -136,10 +136,13 @@ pub fn run_flush_body(
     disk_arc: &Arc<Mutex<DiskEnnBackend>>,
 ) -> Result<(), ENNError> {
     {
-        let st = flush.lock().map_err(|_| {
-            ENNError::InvalidParameter("flush state mutex poisoned".to_string())
-        })?;
-        st.barrier.wait_if_holding();
+        let barrier = {
+            let st = flush.lock().map_err(|_| {
+                ENNError::InvalidParameter("flush state mutex poisoned".to_string())
+            })?;
+            Arc::clone(&st.barrier)
+        };
+        barrier.wait_if_holding();
     }
     {
         let mut st = flush.lock().map_err(|_| {

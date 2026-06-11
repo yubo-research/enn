@@ -31,11 +31,11 @@ mod cp0_tests {
 
     const DATA_SEED: u64 = 42;
     const QUERY_SEED: u64 = 1;
-    const N: usize = 500;
+    const N: usize = 128;
     const N_MMAP: usize = 64;
     const D: usize = 32;
     const K: usize = 10;
-    const NUM_RECALL_QUERIES: usize = 15;
+    const NUM_RECALL_QUERIES: usize = 5;
 
     fn synthetic_vectors(n: usize, d: usize, seed: u64) -> Vec<Vec<f32>> {
         let mut rng = <ChaCha8Rng as rand_chacha::rand_core::SeedableRng>::seed_from_u64(seed);

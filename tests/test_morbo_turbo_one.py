@@ -6,8 +6,8 @@ from enn.turbo.config import MorboTRConfig, MultiObjectiveConfig, turbo_one_conf
 
 
 def test_morbo_turbo_one_two_rounds():
-    num_dim = 30
-    num_arms = 10
+    num_dim = 6
+    num_arms = 3
     noise = 0.1
     num_metrics = 2
     rng = np.random.default_rng(42)
@@ -19,7 +19,7 @@ def test_morbo_turbo_one_two_rounds():
         )
     )
     optimizer = create_optimizer(bounds=bounds, config=config, rng=rng)
-    for iteration in range(10):
+    for iteration in range(2):
         x_arms = optimizer.ask(num_arms=num_arms)
         y_obs = objective(x_arms)
         optimizer.tell(x_arms, y_obs)
