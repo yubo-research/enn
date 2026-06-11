@@ -80,7 +80,7 @@ pub fn wait_for_background_flush(
 ) -> Result<(), ENNError> {
     let mut st = lock_flush_state(flush)?;
     if !st.in_progress {
-        if let Some(err) = st.error.take() {
+        if let Some(err) = st.error.clone() {
             return Err(err);
         }
         return Ok(());
@@ -99,7 +99,7 @@ pub fn wait_for_background_flush(
             ));
         }
         st = lock_flush_state(flush)?;
-        if let Some(err) = st.error.take() {
+        if let Some(err) = st.error.clone() {
             return Err(err);
         }
         return Ok(());
@@ -111,7 +111,7 @@ pub fn wait_for_background_flush(
             .map_err(|_| ENNError::InvalidParameter("flush state mutex poisoned".to_string()))?
             .0;
     }
-    if let Some(err) = st.error.take() {
+    if let Some(err) = st.error.clone() {
         return Err(err);
     }
     Ok(())

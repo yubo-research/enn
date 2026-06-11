@@ -175,6 +175,57 @@ fn wait_for_background_flush_concurrent_waiters_block() {
 }
 
 #[test]
+fn wait_for_background_flush_concurrent_waiters_both_see_stored_error() {
+    let st = Arc::new(Mutex::new(BackgroundFlushState::default()));
+    st.lock()
+        .expect("lock")
+        .error = Some(ENNError::InvalidParameter("stored flush err".to_string()));
+    let s1 = Arc::clone(&st);
+    let s2 = Arc::clone(&st);
+    let w1 = std::thread::spawn(move || wait_for_background_flush(&s1));
+    let w2 = std::thread::spawn(move || wait_for_background_flush(&s2));
+    let r1 = w1.join().expect("waiter 1");
+    let r2 = w2.join().expect("waiter 2");
+    assert!(
+        r1.is_err(),
+        "waiter 1 should see stored error, got {r1:?}"
+    );
+    assert!(
+        r2.is_err(),
+        "waiter 2 should see stored error, got {r2:?}"
+    );
+}
+
+#[test]
+fn wait_for_background_flush_concurrent_waiters_both_see_flush_failure() {
+    let st = Arc::new(Mutex::new(BackgroundFlushState::default()));
+    {
+        let mut guard = st.lock().expect("flush lock");
+        guard.in_progress = true;
+        guard.join_handle = None;
+    }
+    let s1 = Arc::clone(&st);
+    let s2 = Arc::clone(&st);
+    let w1 = std::thread::spawn(move || wait_for_background_flush(&s1));
+    let w2 = std::thread::spawn(move || wait_for_background_flush(&s2));
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    finish_flush_thread(
+        &st,
+        Err(ENNError::InvalidParameter("stored flush err".to_string())),
+    );
+    let r1 = w1.join().expect("waiter 1");
+    let r2 = w2.join().expect("waiter 2");
+    assert!(
+        r1.is_err(),
+        "waiter 1 should see flush failure, got {r1:?}"
+    );
+    assert!(
+        r2.is_err(),
+        "waiter 2 should see flush failure, got {r2:?}"
+    );
+}
+
+#[test]
 fn wait_for_background_flush_concurrent_waiters_join_handle_path() {
     let dir = TempDir::new().expect("tempdir");
     let mut backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1)

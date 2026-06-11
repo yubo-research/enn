@@ -143,11 +143,11 @@ impl EnnBackend {
                         DiskEnnBackend::Hnsw(x) => Arc::clone(&x.flush),
                     }
                 };
-                let mut st = flush_arc.lock().map_err(|_| {
+                let st = flush_arc.lock().map_err(|_| {
                     ENNError::InvalidParameter("flush state mutex poisoned".to_string())
                 })?;
                 if !st.in_progress {
-                    if let Some(err) = st.error.take() {
+                    if let Some(err) = st.error.clone() {
                         return Err(err);
                     }
                     return Ok(());
