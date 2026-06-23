@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 
-use bpann::distance::{batched_sq_l2_f32, l2_sq_f32};
+use bpann::distance::{batched_sq_l2_f32, l2_sq_f32, row_sq_l2};
 use bpann::index::build::{BpannIndex, DEFAULT_LEAF_CAPACITY};
 use bpann::index::search::{
     self, brute_force_topk, brute_force_topk_mmap, mean_recall_at_k, search_exhaustive_leaves,
     search_greedy_blocks_only, search_with_skip_refinement, TraversalLog,
 };
 use bpann::mmap_store::MmapColumnStore;
+use ndarray::ArrayView1;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -113,6 +114,41 @@ fn mean_recall_at_k_empty() {
     )
     .unwrap();
     assert_eq!(mean_recall_at_k(&vectors, &[], 3, &index), 0.0);
+}
+
+#[test]
+fn brute_force_topk_mmap_scaled_distances_match_row_sq_l2() {
+    let dir = TempDir::new().unwrap();
+    let mut store =
+        MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+    store
+        .mmap_append(
+            &ndarray::Array2::from_shape_fn((2, 2), |(i, j)| match (i, j) {
+                (0, 0) => 4.0,
+                (0, 1) => 8.0,
+                (1, 0) => 0.0,
+                (1, 1) => 0.0,
+                _ => unreachable!(),
+            })
+            .view(),
+        )
+        .unwrap();
+    let query = [2.0, 4.0];
+    let x_scale = [2.0, 4.0];
+    let top = brute_force_topk_mmap(&store, 0, 2, &query, 2, true, &x_scale).unwrap();
+    for (row_id, dist) in top {
+        let row = store.mmap_row_slice(row_id as usize).unwrap();
+        let expected = row_sq_l2(
+            ArrayView1::from(&query),
+            ArrayView1::from(row),
+            true,
+            ArrayView1::from(&x_scale),
+        ) as f32;
+        assert!(
+            (dist - expected).abs() < 1e-5,
+            "row {row_id}: got {dist}, expected {expected}"
+        );
+    }
 }
 
 #[test]

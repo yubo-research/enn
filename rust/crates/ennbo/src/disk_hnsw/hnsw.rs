@@ -568,4 +568,18 @@ mod hnsw_algo_tests {
         shrink_neighbor_list(&graph, &mut nbrs, 0, &[0.5, 0.0]);
         assert_eq!(nbrs.len(), 2);
     }
+
+    #[test]
+    fn kiss_hnsw_header_and_search_fn() {
+        let mut header = HnswHeader {
+            entry_point: 0,
+            max_level: 0,
+            num_dim: 2,
+        };
+        let mut graph = crate::disk_hnsw::store::RamGraph::new(2);
+        let mut rng = StdRng::seed_from_u64(9);
+        insert(&mut graph, &mut header, 0, &[0.0, 0.0], &mut rng);
+        let hits = search(&graph, &header, &[0.0, 0.0], 1, 8, 2);
+        assert!(!hits.is_empty());
+    }
 }

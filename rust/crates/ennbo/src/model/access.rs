@@ -108,3 +108,30 @@ impl EpistemicNearestNeighbors {
         self.index_access().ensure_sync()
     }
 }
+
+#[cfg(test)]
+mod access_tests {
+    use crate::EpistemicNearestNeighbors;
+    use crate::IndexDriver;
+    use ndarray::array;
+
+    #[test]
+    fn neighbor_distance_helpers() {
+        let model = EpistemicNearestNeighbors::new(
+            array![[0.0, 0.0], [1.0, 0.0]],
+            array![[0.0], [1.0]],
+            None,
+            false,
+            IndexDriver::Exact,
+        )
+        .unwrap();
+        let query = array![[0.1, 0.1]];
+        let access = model.index_access();
+        let _ = access
+            .neighbor_distances_and_indices(&query.view(), 1, false)
+            .unwrap();
+        let _ = access
+            .index_neighbor_distances_and_indices(&query.view(), 1, false, true)
+            .unwrap();
+    }
+}

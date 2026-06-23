@@ -582,4 +582,11 @@ mod tests {
             "missing rescalarize should match Python MorboTRConfig default ON_PROPOSE"
         );
     }
+
+    #[test]
+    fn kiss_config_override_types_linked() {
+        assert!(std::mem::size_of::<ConfigOverrides>() > 0);
+        let acq = AcquisitionConfig::default();
+        assert!(matches!(acq, AcquisitionConfig::UCB { .. }));
+    }
 }

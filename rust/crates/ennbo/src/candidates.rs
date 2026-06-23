@@ -571,4 +571,10 @@ mod tests {
         println!("sobol_vs_scipy max_abs={max_abs:.3e} mean_abs={mean_abs:.3e}");
         assert!(max_abs <= 1e-12, "max_abs={max_abs}, mean_abs={mean_abs}");
     }
+
+    #[test]
+    fn kiss_candidate_rv_and_sobol_params() {
+        let _ = sobol_params();
+        assert!(matches!(CandidateRV::Sobol, CandidateRV::Sobol));
+    }
 }

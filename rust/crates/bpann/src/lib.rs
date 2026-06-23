@@ -51,7 +51,7 @@ mod acceptance_tests {
 
     #[test]
     fn test_out_of_scope_doc_lists_deferred_features() {
-        let text = fs::read_to_string("OUT_OF_SCOPE.md").expect("OUT_OF_SCOPE.md");
+        let text = fs::read_to_string(repo_root().join("OUT_OF_SCOPE.md")).expect("OUT_OF_SCOPE.md");
         for phrase in [
             "Semantic views for temporally correlated queries",
             "Farthest-neighbor (dissimilarity) queries",
@@ -312,6 +312,33 @@ mod acceptance_tests {
         )
         .unwrap();
         assert_eq!(b.len(), 2);
+    }
+
+    #[test]
+    fn test_search_pending_scaled_l2_non_uniform_scale() {
+        let dir = TempDir::new().unwrap();
+        let scale = array![2.0, 2.0];
+        let mut b = BpannBackend::new(
+            dir.path().to_path_buf(),
+            array![[0.0, 0.0], [10.0, 10.0]],
+            array![[0.0], [1.0]],
+            None,
+            true,
+            scale.clone(),
+        )
+        .unwrap();
+        b.ensure_index_sync().unwrap();
+        // Pending row 2 is the true nearest for query [0, 4]; row 3 ranks higher only
+        // when brute_force_topk_mmap double-applies x_scale, so k=1 leg_b drops row 2.
+        b.append_rows(
+            &array![[2.0, 4.0], [4.0, 8.0]].view(),
+            &array![[2.0], [3.0]].view(),
+            None,
+        )
+        .unwrap();
+        let query = array![[0.0, 4.0]];
+        let (_, idx) = b.search(&query.view(), 1, false).unwrap();
+        assert_eq!(idx[[0, 0]], 2);
     }
 
     #[test]

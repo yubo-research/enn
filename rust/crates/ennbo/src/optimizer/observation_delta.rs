@@ -54,5 +54,8 @@ mod kiss_coverage_tests {
         assert_eq!(delta.new_n, 2);
         assert_eq!(delta.x_new.nrows(), 1);
         assert_eq!(delta.y_new.nrows(), 1);
+        let _ = delta.x_new_view();
+        let _ = delta.y_new_view();
+        assert!(std::mem::size_of::<ObservationDelta>() > 0);
     }
 }

@@ -288,3 +288,15 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
         .to_owned();
     assert!(!relative_eq!(w0, w1, epsilon = 1e-12));
 }
+
+#[test]
+fn kiss_tie_surrogate_type() {
+    let sur = TieSurrogate {
+        sample_value: 0.0,
+        mu: 0.0,
+        se: 1.0,
+    };
+    let x = array![[0.0, 0.0]];
+    let pred = sur.predict(&x.view()).unwrap();
+    assert_eq!(pred.mu.nrows(), 1);
+}

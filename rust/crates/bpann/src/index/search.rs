@@ -326,7 +326,7 @@ pub fn brute_force_topk_mmap(
         if scale_x {
             for j in 0..query.len() {
                 let sc = x_scale[j] as f32;
-                let d = query[j] as f32 / sc - vec_buf[j] / sc;
+                let d = query[j] as f32 / sc - vec_buf[j];
                 acc += d * d;
             }
         } else {

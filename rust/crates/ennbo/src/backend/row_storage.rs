@@ -69,3 +69,17 @@ impl RowStorage {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod row_storage_tests {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    fn gather_rows_and_row_vec() {
+        let store = RowStorage::from_array2(array![[1.0, 2.0], [3.0, 4.0]]);
+        let gathered = store.gather_rows(&[1, 0]);
+        assert_eq!(gathered[[0, 0]], 3.0);
+        assert_eq!(store.row_vec(0)[1], 2.0);
+    }
+}

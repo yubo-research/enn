@@ -179,4 +179,16 @@ mod split_graph_tests {
         assert_eq!(split.neighbors(0, 0), vec![1]);
         assert_eq!(overlay.patches.get(&(0, 0)).map(Vec::as_slice), Some(&[1][..]));
     }
+
+    #[test]
+    fn kiss_split_graph_in_ram_and_record_mut() {
+        let dir = TempDir::new().expect("tempdir");
+        let graph_dir = dir.path().join("graph");
+        let (mmap, _) = MmapGraph::create(&graph_dir, 2).unwrap();
+        let mut ram = RamGraph::new(2);
+        let mut overlay = PrefixNeighborOverlay::default();
+        let mut split = SplitGraphMut::new(&mmap, &mut ram, 1, &mut overlay);
+        assert!(split.in_ram(1));
+        let _ = split.read_record_mut(1);
+    }
 }

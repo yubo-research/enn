@@ -355,4 +355,14 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn kiss_fitter_update_y_and_random_params() {
+        let mut fitter = ENNFitter::new(2, true);
+        let y = array![[1.0], [2.0]];
+        fitter.update_y(&y.view());
+        let mut rng = StdRng::seed_from_u64(0);
+        let cands = fitter.build_random_param_candidates(3, &mut rng).unwrap();
+        assert_eq!(cands.len(), 3);
+    }
 }

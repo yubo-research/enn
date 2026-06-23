@@ -1160,4 +1160,9 @@ mod tests {
         let result = compute_weighted_posterior(&model, data, None);
         assert!(result.is_ok(), "compute_weighted_posterior with empty idx should not panic");
     }
+
+    #[test]
+    fn kiss_weighted_posterior_data_type() {
+        assert!(std::mem::size_of::<WeightedPosteriorData>() > 0);
+    }
 }

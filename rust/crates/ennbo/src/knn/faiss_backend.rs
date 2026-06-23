@@ -446,4 +446,13 @@ mod faiss_backend_tests {
             .unwrap();
         assert_eq!(i[[0, 0]], 0);
     }
+
+    #[test]
+    fn kiss_faiss_make_index_and_memory() {
+        let train = array![[0.0, 0.0], [1.0, 0.0]];
+        let _index = FaissBackend::make_index(2, IndexDriver::Exact, &train.view()).unwrap();
+        let backend = FaissBackend::new(2, IndexDriver::Exact, &train.view()).unwrap();
+        assert!(backend.memory_usage_bytes() > 0);
+        let _ = faiss_map_err_for_test(faiss::error::Error::IndexDescription);
+    }
 }

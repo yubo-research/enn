@@ -541,4 +541,41 @@ mod backend_dispatch_tests {
     fn kiss_disk_dispatch_covers_helpers() {
         assert!(std::mem::size_of::<DiskEnnBackend>() > 0);
     }
+
+    #[test]
+    fn enn_storage_env_helpers_and_index_len() {
+        let _ = EnnStorage::from_env();
+        let _ = EnnStorage::work_dir_from_env();
+        let backend = EnnBackend::new_in_memory(
+            array![[0.0, 0.0], [1.0, 0.0]],
+            array![[0.0], [1.0]],
+            None,
+            false,
+            Array1::ones(2),
+            IndexDriver::Exact,
+        )
+        .unwrap();
+        assert_eq!(backend.index_len(), backend.len());
+        backend.wait_for_flush().unwrap();
+    }
+
+    #[test]
+    fn disk_lock_and_driver_used() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().expect("tempdir");
+        let backend = EnnBackend::new_disk(
+            dir.path().to_path_buf(),
+            array![[0.0, 0.0], [1.0, 0.0]],
+            array![[0.0], [1.0]],
+            None,
+            false,
+            Array1::ones(2),
+            IndexDriver::HNSWDisk,
+        )
+        .unwrap();
+        if let EnnBackend::Disk(arc) = &backend {
+            let guard = disk_lock(arc).unwrap();
+            assert_eq!(disk_driver(&guard), IndexDriver::HNSWDisk);
+        }
+    }
 }

@@ -502,4 +502,10 @@ mod tests {
         assert_eq!(cloned.se.shape(), &[2, 1]);
         assert_eq!(cloned.mu[[1, 0]], 2.0);
     }
+
+    #[test]
+    fn kiss_surrogate_config_default() {
+        let cfg = ENNSurrogateConfig::default();
+        assert!(cfg.k >= 1);
+    }
 }

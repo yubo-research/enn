@@ -167,3 +167,15 @@ fn test_noise_aware_config_and_incumbent_after_tell() {
     assert!(opt.incumbent_x_unit().is_some());
     assert_eq!(opt.incumbent_tracker.observation_count(), 4);
 }
+
+#[test]
+fn kiss_optimizer_bounds_and_seed_helpers() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(1);
+    let mut opt = Optimizer::new(bounds, turbo_zero_config(), &mut rng).unwrap();
+    assert_eq!(opt.bounds().nrows(), 2);
+    assert_eq!(opt.restart_generation(), 0);
+    let _ = opt.sobol_seed_base();
+    opt.increment_restart_generation();
+    assert_eq!(opt.restart_generation(), 1);
+}

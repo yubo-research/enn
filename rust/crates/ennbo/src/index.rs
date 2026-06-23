@@ -315,4 +315,25 @@ mod tests {
         assert_eq!(indices[[0, 0]], 1);
         assert!(dist2s[[0, 0]] < 0.0001);
     }
+
+    #[test]
+    fn index_driver_rebuild_and_memory() {
+        let train_x = array![[0.0, 0.0], [1.0, 1.0]];
+        let index = ENNIndex::new(
+            train_x,
+            2,
+            array![1.0, 1.0],
+            false,
+            IndexDriver::Exact,
+        )
+        .unwrap();
+        assert_eq!(index.driver(), IndexDriver::Exact);
+        index
+            .rebuild_from_scaled(
+                array![[0.0, 0.0], [1.0, 1.0]],
+                array![1.0, 1.0],
+            )
+            .unwrap();
+        assert!(index.memory_usage_bytes() > 0);
+    }
 }

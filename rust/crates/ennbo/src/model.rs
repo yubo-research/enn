@@ -603,4 +603,22 @@ mod tests {
         assert_eq!(b.len(), 4);
         assert_eq!(b.indexed_rows(), 3);
     }
+
+    #[test]
+    fn kiss_model_accessor_helpers() {
+        let mut model = EpistemicNearestNeighbors::new(
+            array![[0.0, 0.0], [1.0, 0.0]],
+            array![[0.0], [1.0]],
+            None,
+            false,
+            IndexDriver::Exact,
+        )
+        .unwrap();
+        assert!(!model.is_scale_x());
+        let _ = model.x_scale_row();
+        assert!(model.disk_backend_arc().is_none());
+        model
+            .add(&array![[0.5, 0.5]].view(), &array![[0.5]].view(), None)
+            .unwrap();
+    }
 }

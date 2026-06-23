@@ -294,4 +294,21 @@ mod store_tests {
         truncate_nodes(&path, 2, 10).unwrap();
         assert_eq!(std::fs::metadata(&path).unwrap().len(), 20);
     }
+
+    #[test]
+    fn ram_graph_record_api() {
+        let mut graph = RamGraph::new(4);
+        graph.ensure_id(0);
+        assert_eq!(graph.num_nodes(), 1);
+        assert!(graph.try_record(0).is_some());
+        let _ = graph.read_record_mut(0);
+    }
+
+    #[test]
+    fn mmap_graph_set_num_nodes() {
+        let dir = TempDir::new().expect("tempdir");
+        let (mut mmap, _) = MmapGraph::create(&dir.path().join("g"), 2).unwrap();
+        mmap.set_num_nodes(1);
+        assert_eq!(mmap.num_nodes(), 1);
+    }
 }
