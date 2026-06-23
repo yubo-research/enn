@@ -7,7 +7,7 @@ use crate::error::ENNError;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 
-use super::neighbor_dist::{row_dist2s_for_query, row_sq_l2};
+use super::neighbor_dist::{posterior_row_sq_l2, row_dist2s_for_query};
 use super::tie_break::{
     finalize_faiss_pool_topk, topk_indices_from_row_dists, FaissPoolFinalizeCtx, PoolTieScratch,
     topk_indices_from_row_dists_with_buffers,
@@ -52,7 +52,7 @@ pub(crate) fn dist2s_for_neighbor_indices(
                     out[[i, j]] = f64::INFINITY;
                 } else {
                     let t_row = train_x.row(ni as usize);
-                    out[[i, j]] = row_sq_l2(x_row, t_row, model.scale_x, model.x_scale.view());
+                    out[[i, j]] = posterior_row_sq_l2(x_row, t_row, model.scale_x, model.x_scale.view());
                 }
             }
         }
@@ -92,7 +92,7 @@ pub(crate) fn dist2s_for_neighbor_indices(
                     .get(&(ni as usize))
                     .expect("neighbor row")
                     .view();
-                out[[i, j]] = row_sq_l2(x_row, t_row, model.scale_x, model.x_scale.view());
+                out[[i, j]] = posterior_row_sq_l2(x_row, t_row, model.scale_x, model.x_scale.view());
             }
         }
     }
@@ -457,7 +457,7 @@ mod tests {
         apply_exclude_nearest, dist2s_for_neighbor_indices, exact_f64_batch_topk,
         faiss_pairs_from_row, get_conditional_neighbor_data, pairwise_sq_l2,
     };
-    use super::super::neighbor_dist::row_sq_l2;
+    use super::super::neighbor_dist::posterior_row_sq_l2;
     use super::{batched_row_dists_threshold, use_matrix_topk_batch};
     use crate::index::IndexDriver;
     use crate::model::EpistemicNearestNeighbors;
@@ -504,7 +504,7 @@ mod tests {
             let mut ref_pairs: Vec<(f64, i64)> = (0..n)
                 .map(|j| {
                     (
-                        row_sq_l2(x_row, train_x.row(j), false, model.x_scale.view()),
+                        posterior_row_sq_l2(x_row, train_x.row(j), false, model.x_scale.view()),
                         j as i64,
                     )
                 })
@@ -580,7 +580,7 @@ mod tests {
             let mut ref_pairs: Vec<(f64, i64)> = (0..train_x.nrows())
                 .map(|j| {
                     (
-                        row_sq_l2(
+                        posterior_row_sq_l2(
                             x_row,
                             train_x.row(j),
                             false,

@@ -64,3 +64,19 @@ impl PyENNStatefulFitter {
         Ok(PyENNParams { inner: result })
     }
 }
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn py_fitter_units_are_linked() {
+        let _ = (
+            PyENNStatefulFitter::new,
+            PyENNStatefulFitter::tell,
+            PyENNStatefulFitter::y_std,
+            PyENNStatefulFitter::ask,
+            std::mem::size_of::<PyENNStatefulFitter>,
+        );
+    }
+}

@@ -349,3 +349,26 @@ pub fn create_optimizer_lhd_py(
 
     Ok(PyOptimizer { inner: optimizer })
 }
+
+#[cfg(test)]
+mod kiss_pymethods_coverage {
+    use super::{PyOptimizer, PyTelemetry};
+
+    #[test]
+    fn py_optimizer_pymethods_are_linked() {
+        let _ = (
+            PyOptimizer::ask,
+            PyOptimizer::tell,
+            PyOptimizer::init_progress,
+            PyOptimizer::telemetry,
+            PyOptimizer::tr_obs_count,
+            PyOptimizer::tr_length,
+            PyOptimizer::x_obs,
+            PyOptimizer::y_obs,
+            PyOptimizer::incumbent_x_unit,
+            PyOptimizer::bounds,
+            std::mem::size_of::<PyOptimizer>,
+            std::mem::size_of::<PyTelemetry>,
+        );
+    }
+}

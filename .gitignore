@@ -1,4 +1,5 @@
 target/
+ops/
 **/__pycache__/
 **/*.py[cod]
 **/*.rs.bk

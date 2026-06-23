@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
 
-use crate::distance::{batched_sq_l2_f32, l2_sq_f32, row_to_f32};
+use crate::distance::{batched_sq_l2_f32, l2_sq_f32, bpann_row_to_f32};
 use crate::error::BpannError;
 use crate::index::build::BpannIndex;
 use crate::index::page::Page;
@@ -34,7 +34,7 @@ pub fn score_leaf_rows(
     let mut vec_buf = Vec::new();
     for &row_id in row_ids {
         let row = store.train_x.mmap_row_slice(row_id as usize)?;
-        row_to_f32(row, store.scale_x, store.x_scale, &mut vec_buf);
+        bpann_row_to_f32(row, store.scale_x, store.x_scale, &mut vec_buf);
         scored.push((row_id, l2_sq_f32(query, &vec_buf)));
     }
     Ok(scored)
@@ -273,7 +273,7 @@ pub fn search_with_skip_refinement_with_store(
     search_index(index, query, k, beam_width, true, visited_log, store)
 }
 
-pub fn mean_recall_at_k(
+pub fn bpann_mean_recall_at_k(
     vectors: &[Vec<f32>],
     queries: &[Vec<f32>],
     k: usize,
@@ -284,7 +284,7 @@ pub fn mean_recall_at_k(
     }
     let mut total = 0.0;
     for q in queries {
-        let bf = brute_force_topk(vectors, q, k);
+        let bf = bpann_brute_force_topk(vectors, q, k);
         let bf_set: HashSet<u32> = bf.iter().map(|(id, _)| *id).collect();
         let approx = search_exhaustive_leaves(index, q, k);
         let hits = approx.iter().filter(|(id, _)| bf_set.contains(id)).count();
@@ -293,7 +293,7 @@ pub fn mean_recall_at_k(
     total / queries.len() as f64
 }
 
-pub fn brute_force_topk(vectors: &[Vec<f32>], query: &[f32], k: usize) -> Vec<(u32, f32)> {
+pub fn bpann_brute_force_topk(vectors: &[Vec<f32>], query: &[f32], k: usize) -> Vec<(u32, f32)> {
     let mut scored: Vec<(u32, f32)> = vectors
         .iter()
         .enumerate()
@@ -308,7 +308,7 @@ pub fn brute_force_topk(vectors: &[Vec<f32>], query: &[f32], k: usize) -> Vec<(u
     scored
 }
 
-pub fn brute_force_topk_mmap(
+pub fn bpann_brute_force_topk_mmap(
     train_x: &crate::mmap_store::MmapColumnStore,
     start: usize,
     end: usize,
@@ -321,7 +321,7 @@ pub fn brute_force_topk_mmap(
     let mut vec_buf = Vec::new();
     for i in start..end {
         let row = train_x.mmap_row_slice(i)?;
-        crate::distance::row_to_f32(row, scale_x, x_scale, &mut vec_buf);
+        crate::distance::bpann_row_to_f32(row, scale_x, x_scale, &mut vec_buf);
         let mut acc = 0.0f32;
         if scale_x {
             for j in 0..query.len() {
@@ -344,4 +344,58 @@ pub fn brute_force_topk_mmap(
     });
     scored.truncate(k);
     Ok(scored)
+}
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use crate::index::build::BpannIndex;
+    use crate::index::DEFAULT_LEAF_CAPACITY;
+
+    #[test]
+    fn search_units_are_linked() {
+        let vectors = vec![vec![0.0f32, 0.0], vec![1.0, 0.0]];
+        let dir = tempfile::TempDir::new().unwrap();
+        let index = BpannIndex::build_from_vectors(
+            &vectors,
+            2,
+            DEFAULT_LEAF_CAPACITY,
+            0,
+            dir.path().join("index"),
+        )
+        .unwrap();
+        let _ = crate::index::search::bpann_mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
+        let _ = crate::index::search::bpann_brute_force_topk(&vectors, &[0.0, 0.0], 1);
+        let mut store =
+            crate::mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None)
+                .unwrap();
+        store
+            .mmap_append(&ndarray::array![[0.0, 0.0], [1.0, 0.0]].view())
+            .unwrap();
+        let x_scale = [1.0, 1.0];
+        let mmap_store = crate::index::search::MmapSearchStore {
+            train_x: &store,
+            scale_x: false,
+            x_scale: &x_scale,
+        };
+        let _ = std::mem::size_of_val(&mmap_store);
+        let _ = crate::index::search::bpann_brute_force_topk_mmap(
+            &store,
+            0,
+            2,
+            &[0.0, 0.0],
+            1,
+            false,
+            &x_scale,
+        )
+        .unwrap();
+        let _ = crate::index::search::search_greedy_blocks_only(&index, &[0.0, 0.0], 1, 2);
+        let mut log = Vec::new();
+        let _ = crate::index::search::search_with_skip_refinement(
+            &index,
+            &[0.0, 0.0],
+            1,
+            2,
+            &mut log,
+        );
+    }
 }

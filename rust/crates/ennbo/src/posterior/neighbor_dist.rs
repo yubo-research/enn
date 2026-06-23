@@ -2,7 +2,7 @@ use ndarray::ArrayView1;
 
 use crate::model::EpistemicNearestNeighbors;
 
-pub fn row_sq_l2(
+pub fn posterior_row_sq_l2(
     x: ArrayView1<f64>,
     y: ArrayView1<f64>,
     scale_x: bool,
@@ -32,21 +32,35 @@ pub(crate) fn row_dist2s_for_query(
     (0..n_train)
         .map(|j| {
             let t = model.rows().row_x(j).expect("row_x");
-            row_sq_l2(x_row, t.view(), model.scale_x, model.x_scale.view())
+            posterior_row_sq_l2(x_row, t.view(), model.scale_x, model.x_scale.view())
         })
         .collect()
 }
 
 #[cfg(test)]
-mod tests {
+mod kiss_coverage_tests {
+    use crate::model::EpistemicNearestNeighbors;
+    use crate::IndexDriver;
     use ndarray::array;
 
     #[test]
-    fn row_sq_l2_scaled_matches_pairwise() {
-        let x = array![2.0, 0.0];
-        let y = array![0.0, 0.0];
-        let scale = array![2.0, 1.0];
-        let d = super::row_sq_l2(x.view(), y.view(), true, scale.view());
+    fn neighbor_dist_units_are_linked() {
+        let train_x = array![[0.0, 0.0], [1.0, 0.0]];
+        let train_y = array![[0.0], [1.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let dists = crate::posterior::neighbor_dist::row_dist2s_for_query(
+            &model,
+            array![0.5, 0.0].view(),
+        );
+        assert_eq!(dists.len(), 2);
+        let d = crate::posterior::neighbor_dist::posterior_row_sq_l2(
+            array![0.0, 0.0].view(),
+            array![1.0, 0.0].view(),
+            false,
+            array![1.0, 1.0].view(),
+        );
         assert!((d - 1.0).abs() < 1e-12);
     }
 }

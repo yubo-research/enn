@@ -1,18 +1,10 @@
 //! Integration tests exercising bpann modules for kiss coverage and behavior.
 
 use bpann::backend::open_rejects_record_stride;
-use bpann::distance::{batched_sq_l2_f64_rows, row_sq_l2, row_to_f32};
 use bpann::index::kmeans::PartitionTree;
 use bpann::index::page::closest_child;
-use bpann::index::search;
 use bpann::index::{BpannIndex, DEFAULT_LEAF_CAPACITY};
-use bpann::merge::{merge_topk_candidates, merge_topk_precomputed_dist};
 use bpann::mmap_store::MmapColumnStore;
-use bpann::observation::{
-    append_yvar_on_add, check_append_row_limit, load_num_obs, mark_index_dirty,
-    open_or_append_yvar, validate_dim_limits, validate_index_backend, write_indexed_rows,
-    write_metadata, write_num_obs, NumObsCounter, INDEX_BACKEND,
-};
 use bpann::BpannBackend;
 use ndarray::array;
 use std::sync::Mutex;
@@ -21,20 +13,35 @@ use tempfile::TempDir;
 #[test]
 fn observation_helpers_called() {
     let dir = TempDir::new().unwrap();
-    validate_dim_limits(4).unwrap();
-    check_append_row_limit(10).unwrap();
-    write_metadata(dir.path(), 0, 4, 1, false, 0).unwrap();
-    write_num_obs(dir.path(), 0).unwrap();
-    write_indexed_rows(dir.path(), 0).unwrap();
-    let mut counter = NumObsCounter::open(dir.path()).unwrap();
+    bpann::observation::bpann_validate_dim_limits(4).unwrap();
+    bpann::observation::bpann_check_append_row_limit(10).unwrap();
+    bpann::observation::bpann_write_metadata(dir.path(), 0, 4, 1, false, 0).unwrap();
+    bpann::observation::write_num_obs(dir.path(), 0).unwrap();
+    bpann::observation::write_indexed_rows(dir.path(), 0).unwrap();
+    let mut counter = bpann::observation::NumObsCounter::open(dir.path()).unwrap();
     counter.set(0);
-    assert_eq!(load_num_obs(dir.path()), Some(0));
-    validate_index_backend(dir.path(), INDEX_BACKEND).unwrap();
+    assert_eq!(bpann::observation::bpann_load_num_obs(dir.path()), Some(0));
+    bpann::observation::bpann_validate_index_backend(dir.path(), bpann::observation::INDEX_BACKEND)
+        .unwrap();
     let yv = array![[0.1]];
-    let mut yvar = open_or_append_yvar(dir.path(), 1, Some(&yv)).unwrap();
-    append_yvar_on_add(dir.path(), 1, &mut yvar, Some(&array![[0.2]].view())).unwrap();
+    let mut yvar = bpann::observation::bpann_open_or_append_yvar(dir.path(), 1, Some(&yv)).unwrap();
+    bpann::observation::bpann_append_yvar_on_add(
+        dir.path(),
+        1,
+        &mut yvar,
+        Some(&array![[0.2]].view()),
+    )
+    .unwrap();
     let dirty = Mutex::new(false);
-    mark_index_dirty(&dirty);
+    bpann::observation::bpann_mark_index_dirty(&dirty);
+    bpann::observation::bpann_load_indexed_rows(dir.path());
+    bpann::observation::bpann_load_index_backend(dir.path());
+    bpann::observation::bpann_parse_json_string_field(r#"{"index_backend":"bpann_disk"}"#, "index_backend");
+    let mut x = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+    let mut y = MmapColumnStore::mmap_open_or_create(dir.path().join("y.bin"), 1, None).unwrap();
+    x.mmap_append(&array![[0.0, 0.0]].view()).unwrap();
+    y.mmap_append(&array![[0.0]].view()).unwrap();
+    bpann::observation::bpann_train_rows_at(1, &x, &y, None, &[0]).unwrap();
     open_rejects_record_stride(4).unwrap();
 }
 
@@ -50,12 +57,12 @@ fn search_helpers_called() {
         dir.path().join("index"),
     )
     .unwrap();
-    let _ = search::search_exhaustive_leaves(&index, &[0.0, 0.0], 1);
-    let _ = search::search_greedy_blocks_only(&index, &[0.0, 0.0], 1, 2);
+    let _ = bpann::index::search::search_exhaustive_leaves(&index, &[0.0, 0.0], 1);
+    let _ = bpann::index::search::search_greedy_blocks_only(&index, &[0.0, 0.0], 1, 2);
     let mut log = Vec::new();
-    let _ = search::search_with_skip_refinement(&index, &[0.0, 0.0], 1, 2, &mut log);
-    let _ = search::mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
-    let _ = search::brute_force_topk(&vectors, &[0.0, 0.0], 1);
+    let _ = bpann::index::search::search_with_skip_refinement(&index, &[0.0, 0.0], 1, 2, &mut log);
+    let _ = bpann::index::search::bpann_mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
+    let _ = bpann::index::search::bpann_brute_force_topk(&vectors, &[0.0, 0.0], 1);
 }
 
 #[test]
@@ -66,10 +73,10 @@ fn merge_distance_mmap_called() {
         .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
         .unwrap();
     let mut buf = Vec::new();
-    row_to_f32(&[1.0, 0.0], false, &[1.0, 1.0], &mut buf);
-    let _ = batched_sq_l2_f64_rows(&[0.0, 0.0], &store, &[0, 1], false, &[1.0, 1.0]).unwrap();
-    let _ = row_sq_l2(array![0.0, 0.0].view(), array![1.0, 0.0].view(), false, array![1.0, 1.0].view());
-    let _ = merge_topk_candidates(
+    bpann::distance::bpann_row_to_f32(&[1.0, 0.0], false, &[1.0, 1.0], &mut buf);
+    let _ = bpann::distance::batched_sq_l2_f64_rows(&[0.0, 0.0], &store, &[0, 1], false, &[1.0, 1.0]).unwrap();
+    let _ = bpann::distance::row_sq_l2(array![0.0, 0.0].view(), array![1.0, 0.0].view(), false, array![1.0, 1.0].view());
+    let _ = bpann::merge::bpann_merge_topk_candidates(
         &store,
         &[0.0, 0.0],
         &[(0, 0.0)],
@@ -81,7 +88,7 @@ fn merge_distance_mmap_called() {
         &[1.0, 1.0],
     )
     .unwrap();
-    let _ = search::brute_force_topk_mmap(&store, 0, 2, &[0.0, 0.0], 1, false, &[1.0, 1.0]).unwrap();
+    let _ = bpann::index::search::bpann_brute_force_topk_mmap(&store, 0, 2, &[0.0, 0.0], 1, false, &[1.0, 1.0]).unwrap();
 }
 
 #[test]
@@ -141,7 +148,7 @@ fn incremental_batch_compact_and_precomputed_merge() {
     assert_eq!(idx[[0, 0]], 5);
     let reopened = BpannBackend::reopen(dir.path().to_path_buf()).unwrap();
     assert_eq!(reopened.indexed_rows(), 20);
-    let merged = merge_topk_precomputed_dist(&[(0, 0.0), (1, 4.0)], &[(2, 1.0)], 2, 3, false);
+    let merged = bpann::merge::merge_topk_precomputed_dist(&[(0, 0.0), (1, 4.0)], &[(2, 1.0)], 2, 3, false);
     assert_eq!(merged.len(), 2);
     assert_eq!(merged[0].0, 0);
 }

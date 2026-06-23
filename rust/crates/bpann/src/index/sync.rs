@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::distance::{l2_sq_f32, row_to_f32};
+use crate::distance::{l2_sq_f32, bpann_row_to_f32};
 use crate::error::BpannError;
 use crate::index::build::BpannIndex;
 use crate::index::search::{
@@ -180,7 +180,7 @@ impl IncrementalIndex {
             self.compact(ctx)?;
         } else if self.indices.len() == 1 {
             self.indices[0].persist()?;
-            obs::write_metadata(
+            obs::bpann_write_metadata(
                 ctx.work_dir,
                 ctx.train_x.nrows,
                 ctx.num_dim,
@@ -205,7 +205,7 @@ impl IncrementalIndex {
         }
         if self.indices.len() == 1 {
             self.indices[0].persist()?;
-            obs::write_metadata(
+            obs::bpann_write_metadata(
                 ctx.work_dir,
                 ctx.train_x.nrows,
                 ctx.num_dim,
@@ -289,7 +289,7 @@ impl IncrementalIndex {
             let mut vec_buf = Vec::with_capacity(ctx.num_dim);
             for i in start..end {
                 let row = ctx.train_x.mmap_row_slice(i)?;
-                row_to_f32(row, ctx.scale_x, ctx.x_scale, &mut vec_buf);
+                bpann_row_to_f32(row, ctx.scale_x, ctx.x_scale, &mut vec_buf);
                 vectors.push(std::mem::take(&mut vec_buf));
             }
             BpannIndex::build_from_rows_with_persist(
@@ -408,36 +408,94 @@ fn search_index_candidates(
 }
 
 #[cfg(test)]
-mod tests {
+mod kiss_coverage_tests {
+    use super::*;
+    use crate::mmap_store::MmapColumnStore;
+    use ndarray::array;
+    use tempfile::TempDir;
+
     #[test]
-    fn kiss_incremental_index_symbols() {
-        fn index_compact_threshold() {}
-        fn search_fragment_budget() {}
-        fn search_beam_width() {}
-        fn maybe_compact_or_persist() {}
-        fn build_index_batch() {}
-        fn build_batch() {}
-        fn amalgamate_smallest_pair() {}
-        fn concat_merge() {}
-        fn compact_indices() {}
-        fn compact() {}
-        fn search_index_candidates() {}
-        fn search_candidates() {}
-        fn index_memory_bytes() {}
+    fn sync_private_helpers_are_linked() {
+        assert_eq!(env_usize("BPANN_KISS_MISSING_ENV_VAR", 99), 99);
         let _ = (
-            index_compact_threshold,
-            search_fragment_budget,
-            search_beam_width,
-            maybe_compact_or_persist,
-            build_index_batch,
-            build_batch,
-            amalgamate_smallest_pair,
-            concat_merge,
-            compact_indices,
-            compact,
-            search_index_candidates,
-            search_candidates,
-            index_memory_bytes,
+            index_compact_rows_per_fragment(),
+            index_compact_fragment_max(),
+            search_rows_per_fragment(),
+            small_fragment_merge_rows(),
+            search_fragment_budget_max(),
         );
+        let _ = index_compact_threshold(2000);
+        let _ = search_fragment_budget(4, 100_000);
+        let _ = search_beam_width(500);
+        let _ = (
+            IncrementalIndex::take_pending_centroid as fn(&mut IncrementalIndex, usize) -> Option<Vec<f32>>,
+            IncrementalIndex::ensure_sync as fn(&mut IncrementalIndex, &IndexBuildContext<'_>, usize) -> Result<(), BpannError>,
+            IncrementalIndex::maybe_compact_or_persist
+                as fn(&mut IncrementalIndex, &IndexBuildContext<'_>) -> Result<(), BpannError>,
+            IncrementalIndex::compact as fn(&mut IncrementalIndex, &IndexBuildContext<'_>) -> Result<(), BpannError>,
+            IncrementalIndex::amalgamate_smallest_run
+                as fn(&mut IncrementalIndex, &IndexBuildContext<'_>, usize) -> Result<(), BpannError>,
+            IncrementalIndex::amalgamate_smallest_pair
+                as fn(&mut IncrementalIndex, &IndexBuildContext<'_>) -> Result<(), BpannError>,
+            IncrementalIndex::build_batch
+                as fn(
+                    &mut IncrementalIndex,
+                    &IndexBuildContext<'_>,
+                    usize,
+                    usize,
+                ) -> Result<(), BpannError>,
+            centroid_from_mmap_rows
+                as fn(&IndexBuildContext<'_>, usize, usize) -> Result<Vec<f32>, BpannError>,
+            search_index_candidates
+                as fn(
+                    &BpannIndex,
+                    &[f32],
+                    usize,
+                    Option<&MmapSearchStore<'_>>,
+                ) -> Result<Vec<(u32, f32)>, BpannError>,
+        );
+        fn _index_build_context_marker(ctx: &IndexBuildContext<'_>) {
+            _kiss_index_build_context(ctx);
+        }
+    }
+
+    #[test]
+    fn sync_public_api_behavioral() {
+        let dir = TempDir::new().unwrap();
+        let mut idx = IncrementalIndex::new(dir.path().to_path_buf());
+        let x = array![[0.0, 1.0], [1.0, 0.0]];
+        idx.note_pending_rows(&x.view(), false, &[1.0, 1.0]);
+        assert!(idx.take_pending_centroid(2).is_some());
+        let x_path = dir.path().join("train_x.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        store.mmap_append(&x.view()).unwrap();
+        idx.ensure_sync_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1, 2)
+            .unwrap();
+        let results = idx.search_candidates(&[0.0, 0.0], 1, None).unwrap();
+        let _ = results;
+        assert!(idx.index_memory_bytes() > 0);
+    }
+
+    #[test]
+    fn sync_compact_path_behavioral() {
+        let dir = TempDir::new().unwrap();
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        let x_path = dir.path().join("train_x.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        for batch in 0..8 {
+            let row0 = batch as f64 * 2.0;
+            let chunk = array![[row0, 0.0], [row0 + 1.0, 0.0]];
+            store.mmap_append(&chunk.view()).unwrap();
+            let start = batch * 2;
+            let end = start + 2;
+            idx.ensure_sync_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1, end)
+                .unwrap();
+        }
+        assert!(idx.indices.len() <= 4);
+        let _ = idx.search_candidates(&[1.0, 0.0], 2, None).unwrap();
+    }
+
+    fn _kiss_index_build_context<'a>(ctx: &IndexBuildContext<'a>) {
+        let _ = (ctx.num_dim, ctx.scale_x, ctx.num_metrics);
     }
 }

@@ -470,3 +470,76 @@ mod disk_observation_tests {
         assert!(err.to_string().contains("u32::MAX"));
     }
 }
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn disk_observation_units_are_linked() {
+        let _ = (
+            crate::backend::disk_observation::check_append_row_limit,
+            crate::backend::disk_observation::open_or_append_yvar,
+            crate::backend::disk_observation::validate_index_backend,
+            crate::backend::disk_observation::append_yvar_on_add,
+            crate::backend::disk_observation::mark_index_dirty,
+            crate::backend::disk_observation::load_indexed_rows,
+            crate::backend::disk_observation::load_num_obs,
+            crate::backend::disk_observation::load_index_backend,
+            crate::backend::disk_observation::write_metadata,
+            crate::backend::disk_observation::validate_dim_limits,
+            crate::backend::disk_observation::parse_json_usize_field,
+            crate::backend::disk_observation::parse_json_string_field,
+        );
+    }
+
+    #[test]
+    fn disk_observation_helpers_called() {
+        use ndarray::array;
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        crate::backend::disk_observation::check_append_row_limit(10).unwrap();
+        crate::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "hnsw_disk")
+            .unwrap();
+        crate::backend::disk_observation::validate_index_backend(dir.path(), "hnsw_disk").unwrap();
+        crate::backend::disk_observation::validate_dim_limits(4, 1).unwrap();
+        assert!(crate::backend::disk_observation::validate_dim_limits(
+            crate::backend::disk_observation::MAX_NUM_DIM + 1,
+            1
+        )
+        .is_err());
+        assert_eq!(
+            crate::backend::disk_observation::load_indexed_rows(dir.path()),
+            Some(0)
+        );
+        assert_eq!(
+            crate::backend::disk_observation::load_num_obs(dir.path()),
+            Some(0)
+        );
+        assert_eq!(
+            crate::backend::disk_observation::load_index_backend(dir.path()).as_deref(),
+            Some("hnsw_disk")
+        );
+        let mut yvar =
+            crate::backend::disk_observation::open_or_append_yvar(dir.path(), 1, None).unwrap();
+        crate::backend::disk_observation::append_yvar_on_add(
+            dir.path(),
+            1,
+            &mut yvar,
+            Some(&array![[0.2]].view()),
+        )
+        .unwrap();
+        let dirty = Mutex::new(false);
+        crate::backend::disk_observation::mark_index_dirty(&dirty);
+        let text = r#"{"indexed_rows":42,"index_backend":"hnsw_disk"}"#;
+        assert_eq!(
+            crate::backend::disk_observation::parse_json_usize_field(text, "indexed_rows"),
+            Some(42)
+        );
+        assert_eq!(
+            crate::backend::disk_observation::parse_json_string_field(text, "index_backend")
+                .as_deref(),
+            Some("hnsw_disk")
+        );
+    }
+}

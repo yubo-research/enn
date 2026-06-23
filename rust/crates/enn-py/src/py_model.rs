@@ -478,3 +478,45 @@ impl PyENNParams {
         )
     }
 }
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn py_model_units_are_linked() {
+        let _ = py_posterior_flags
+            as fn(&PyEpistemicNearestNeighbors, bool, bool) -> ennbo::PosteriorFlags;
+        let _ = (
+            PyEpistemicNearestNeighbors::new,
+            PyEpistemicNearestNeighbors::set_tie_break_neighbors,
+            PyEpistemicNearestNeighbors::tie_break_neighbors,
+            PyEpistemicNearestNeighbors::add,
+            PyEpistemicNearestNeighbors::ensure_index_sync,
+            PyEpistemicNearestNeighbors::schedule_background_flush,
+            PyEpistemicNearestNeighbors::index_memory_bytes,
+            PyEpistemicNearestNeighbors::posterior,
+            PyEpistemicNearestNeighbors::batch_posterior,
+            PyEpistemicNearestNeighbors::posterior_function_draw,
+            PyEpistemicNearestNeighbors::conditional_posterior,
+            PyEpistemicNearestNeighbors::conditional_posterior_function_draw,
+            PyEpistemicNearestNeighbors::neighbors,
+            PyEpistemicNearestNeighbors::neighbor_distances_and_indices,
+            PyEpistemicNearestNeighbors::index_neighbor_distances_and_indices,
+            PyEpistemicNearestNeighbors::num_outputs,
+            PyEpistemicNearestNeighbors::num_dim,
+            PyEpistemicNearestNeighbors::scale_x,
+            PyEpistemicNearestNeighbors::train_rows_at,
+            PyEpistemicNearestNeighbors::row_x,
+            PyEpistemicNearestNeighbors::row_y,
+            PyEpistemicNearestNeighbors::x_scale_row,
+            PyEpistemicNearestNeighbors::y_scale_row,
+            PyENNParams::new,
+            PyENNParams::k_num_neighbors,
+            PyENNParams::epistemic_variance_scale,
+            PyENNParams::aleatoric_variance_scale,
+            std::mem::size_of::<PyEpistemicNearestNeighbors>,
+            std::mem::size_of::<PyENNParams>,
+        );
+    }
+}

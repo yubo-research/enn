@@ -1,11 +1,7 @@
 use std::collections::HashSet;
 
-use bpann::distance::{batched_sq_l2_f32, l2_sq_f32, row_sq_l2};
 use bpann::index::build::{BpannIndex, DEFAULT_LEAF_CAPACITY};
-use bpann::index::search::{
-    self, brute_force_topk, brute_force_topk_mmap, mean_recall_at_k, search_exhaustive_leaves,
-    search_greedy_blocks_only, search_with_skip_refinement, TraversalLog,
-};
+use bpann::index::search::{self, TraversalLog};
 use bpann::mmap_store::MmapColumnStore;
 use ndarray::ArrayView1;
 use rand::Rng;
@@ -36,7 +32,13 @@ fn tree_traversal_visits_candidate_blocks() {
     assert!(total_leaves > 1);
     let query = &vectors[0];
     let mut log = TraversalLog::new();
-    search_with_skip_refinement(&index, query, 10, 2, &mut log.visited_pages);
+    bpann::index::search::search_with_skip_refinement(
+        &index,
+        query,
+        10,
+        2,
+        &mut log.visited_pages,
+    );
     assert!(!log.visited_pages.is_empty());
     assert!(log.visited_pages.len() <= total_leaves);
     assert!(log.visited_pages.len() < 256);
@@ -59,10 +61,11 @@ fn skip_edge_refinement_improves_or_matches_greedy() {
     let mut greedy_total = 0.0;
     let mut skip_total = 0.0;
     for q in &queries {
-        let bf = brute_force_topk(&vectors, q, k);
+        let bf = bpann::index::search::bpann_brute_force_topk(&vectors, q, k);
         let bf_set: HashSet<u32> = bf.iter().map(|(id, _)| *id).collect();
-        let greedy = search_greedy_blocks_only(&index, q, k, 2);
-        let skip = search_with_skip_refinement(&index, q, k, 2, &mut Vec::new());
+        let greedy = bpann::index::search::search_greedy_blocks_only(&index, q, k, 2);
+        let skip =
+            bpann::index::search::search_with_skip_refinement(&index, q, k, 2, &mut Vec::new());
         greedy_total +=
             greedy.iter().filter(|(id, _)| bf_set.contains(id)).count() as f64 / k as f64;
         skip_total += skip.iter().filter(|(id, _)| bf_set.contains(id)).count() as f64 / k as f64;
@@ -74,9 +77,9 @@ fn skip_edge_refinement_improves_or_matches_greedy() {
 fn leaf_batched_distances_match_pairwise() {
     let vectors = synth(16, 4, 7);
     let query = &vectors[3];
-    let batched = batched_sq_l2_f32(query, &vectors);
+    let batched = bpann::distance::batched_sq_l2_f32(query, &vectors);
     for (i, v) in vectors.iter().enumerate() {
-        let pairwise = l2_sq_f32(query, v);
+        let pairwise = bpann::distance::l2_sq_f32(query, v);
         assert!((batched[i] - pairwise).abs() < 1e-6);
     }
 }
@@ -94,11 +97,15 @@ fn search_index_returns_neighbors() {
     )
     .unwrap();
     let mut visited = Vec::new();
-    let results = search::search_index(&index, &vectors[0], 5, 2, true, &mut visited, None).unwrap();
+    let results =
+        search::search_index(&index, &vectors[0], 5, 2, true, &mut visited, None).unwrap();
     assert!(!results.is_empty());
     assert_eq!(results.len(), 5);
     assert!(!visited.is_empty());
-    assert_eq!(search_exhaustive_leaves(&index, &vectors[0], 5).len(), 5);
+    assert_eq!(
+        search::search_exhaustive_leaves(&index, &vectors[0], 5).len(),
+        5
+    );
 }
 
 #[test]
@@ -113,7 +120,10 @@ fn mean_recall_at_k_empty() {
         dir.path().join("index"),
     )
     .unwrap();
-    assert_eq!(mean_recall_at_k(&vectors, &[], 3, &index), 0.0);
+    assert_eq!(
+        bpann::index::search::bpann_mean_recall_at_k(&vectors, &[], 3, &index),
+        0.0
+    );
 }
 
 #[test]
@@ -135,10 +145,13 @@ fn brute_force_topk_mmap_scaled_distances_match_row_sq_l2() {
         .unwrap();
     let query = [2.0, 4.0];
     let x_scale = [2.0, 4.0];
-    let top = brute_force_topk_mmap(&store, 0, 2, &query, 2, true, &x_scale).unwrap();
+    let top = bpann::index::search::bpann_brute_force_topk_mmap(
+        &store, 0, 2, &query, 2, true, &x_scale,
+    )
+    .unwrap();
     for (row_id, dist) in top {
         let row = store.mmap_row_slice(row_id as usize).unwrap();
-        let expected = row_sq_l2(
+        let expected = bpann::distance::row_sq_l2(
             ArrayView1::from(&query),
             ArrayView1::from(row),
             true,
@@ -155,7 +168,7 @@ fn brute_force_topk_mmap_scaled_distances_match_row_sq_l2() {
 fn brute_force_topk_and_mmap_paths() {
     let vectors = synth(4, 3, 2);
     let q = &vectors[1];
-    let top = brute_force_topk(&vectors, q, 2);
+    let top = bpann::index::search::bpann_brute_force_topk(&vectors, q, 2);
     assert_eq!(top[0].0, 1);
     let dir = TempDir::new().unwrap();
     let mut store =
@@ -165,7 +178,15 @@ fn brute_force_topk_and_mmap_paths() {
             &ndarray::Array2::from_shape_fn((4, 3), |(i, j)| vectors[i][j] as f64).view(),
         )
         .unwrap();
-    let scaled =
-        brute_force_topk_mmap(&store, 0, 4, &[0.0, 0.0, 0.0], 2, true, &[1.0, 1.0, 1.0]).unwrap();
+    let scaled = bpann::index::search::bpann_brute_force_topk_mmap(
+        &store,
+        0,
+        4,
+        &[0.0, 0.0, 0.0],
+        2,
+        true,
+        &[1.0, 1.0, 1.0],
+    )
+    .unwrap();
     assert_eq!(scaled.len(), 2);
 }

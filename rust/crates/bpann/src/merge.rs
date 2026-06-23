@@ -4,7 +4,7 @@ use crate::error::BpannError;
 use crate::mmap_store::MmapColumnStore;
 
 #[allow(clippy::too_many_arguments)]
-pub fn merge_topk_candidates(
+pub fn bpann_merge_topk_candidates(
     train_x: &MmapColumnStore,
     query: &[f64],
     leg_a: &[(u32, f32)],
@@ -69,4 +69,34 @@ pub fn merge_topk_precomputed_dist(
     ranked.truncate(pool_k.min(ranked.len()));
     ranked.truncate(k_out);
     ranked
+}
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use crate::mmap_store::MmapColumnStore;
+    use ndarray::array;
+    use tempfile::TempDir;
+
+    #[test]
+    fn merge_units_are_linked() {
+        let dir = TempDir::new().unwrap();
+        let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        store
+            .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
+            .unwrap();
+        let merged = crate::merge::bpann_merge_topk_candidates(
+            &store,
+            &[0.0, 0.0],
+            &[(0, 0.0)],
+            &[(1, 1.0)],
+            1,
+            2,
+            false,
+            false,
+            &[1.0, 1.0],
+        )
+        .unwrap();
+        assert!(!merged.is_empty());
+        let _ = crate::merge::merge_topk_precomputed_dist(&[(0, 0.0)], &[(1, 1.0)], 1, 2, false);
+    }
 }

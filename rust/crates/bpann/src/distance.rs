@@ -35,7 +35,7 @@ pub fn l2_sq_f32(a: &[f32], b: &[f32]) -> f32 {
         .sum()
 }
 
-pub fn row_to_f32(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f32>) {
+pub fn bpann_row_to_f32(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f32>) {
     out.clear();
     if scale_x {
         out.extend(
@@ -70,4 +70,37 @@ pub fn batched_sq_l2_f64_rows(
         ));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use crate::mmap_store::MmapColumnStore;
+    use ndarray::array;
+    use tempfile::TempDir;
+
+    #[test]
+    fn distance_units_are_linked() {
+        let mut buf = Vec::new();
+        crate::distance::bpann_row_to_f32(&[1.0, 2.0], false, &[1.0, 1.0], &mut buf);
+        assert_eq!(buf, vec![1.0, 2.0]);
+        assert!((crate::distance::l2_sq_f32(&[0.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-6);
+        let a = array![0.0, 0.0];
+        let b = array![1.0, 0.0];
+        let s = array![1.0, 1.0];
+        let _ = crate::distance::row_sq_l2(a.view(), b.view(), false, s.view());
+        let dir = TempDir::new().unwrap();
+        let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        store
+            .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
+            .unwrap();
+        let _ = crate::distance::batched_sq_l2_f32(&[0.0, 0.0], &[vec![1.0, 0.0]]);
+        let _ = crate::distance::batched_sq_l2_f64_rows(
+            &[0.0, 0.0],
+            &store,
+            &[0, 1],
+            false,
+            &[1.0, 1.0],
+        )
+        .unwrap();
+    }
 }

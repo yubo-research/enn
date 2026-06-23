@@ -673,4 +673,14 @@ mod enn_backend_unit_tests {
         assert_eq!(backend.indexed_rows(), end);
         persist_graph_durable(&mut backend).unwrap();
     }
+
+    #[test]
+    fn kiss_enn_backend_units_are_linked() {
+        let dir = TempDir::new().expect("tempdir");
+        let backend = DiskHnswEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
+        let _ = backend.pending_rows();
+        let _ = backend.pending_unindexed_count();
+        let _ = row_to_f32 as fn(&DiskHnswEnnBackend, &[f64], &mut Vec<f32>);
+        let _ = open_or_create_graph as fn(_, _, _, _) -> _;
+    }
 }

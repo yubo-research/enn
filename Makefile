@@ -102,8 +102,7 @@ python-slow-test:
 lint:
 	cd rust && cargo clippy --all-targets --all-features -- -D warnings
 	ruff check
-	kiss check src tests
-	cd rust && kiss check crates/bpann crates/ennbo crates/enn-py
+	kiss check
 
 # Build local PyPI wheel artifacts for the supported release tags.
 wheels:

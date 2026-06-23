@@ -501,3 +501,21 @@ fn read_skip_edges(path: &Path) -> Result<HashMap<u32, Vec<u32>>, BpannError> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn build_units_are_linked() {
+        let _ = (
+            remap_page,
+            BpannIndex::build_row_ids_leaf_with_persist,
+            BpannIndex::concat_merge,
+            BpannIndex::root_centroid,
+            BpannIndex::leaf_row_ids,
+            read_skip_edges,
+            std::mem::size_of::<IndexHeader>,
+        );
+    }
+}

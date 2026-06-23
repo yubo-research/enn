@@ -579,7 +579,41 @@ mod hnsw_algo_tests {
         let mut graph = crate::disk_hnsw::store::RamGraph::new(2);
         let mut rng = StdRng::seed_from_u64(9);
         insert(&mut graph, &mut header, 0, &[0.0, 0.0], &mut rng);
-        let hits = search(&graph, &header, &[0.0, 0.0], 1, 8, 2);
+        let hits = crate::disk_hnsw::hnsw::search(&graph, &header, &[0.0, 0.0], 1, 8, 2);
         assert!(!hits.is_empty());
+        let vecs = vec![vec![0.0f32, 0.0], vec![1.0, 0.0]];
+        let bf = crate::disk_hnsw::hnsw::brute_force_topk(&vecs, &[0.0, 0.0], 1);
+        assert!(!bf.is_empty());
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut store =
+            crate::knn::MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None)
+                .unwrap();
+        store
+            .mmap_append(&ndarray::array![[0.0, 0.0], [1.0, 0.0]].view())
+            .unwrap();
+        let mmap_hits = crate::disk_hnsw::hnsw::brute_force_topk_mmap(
+            &store,
+            0,
+            2,
+            &[0.0, 0.0],
+            1,
+            false,
+            &[1.0, 1.0],
+        )
+        .unwrap();
+        assert!(!mmap_hits.is_empty());
+        let merged = crate::disk_hnsw::hnsw::merge_topk_candidates(
+            &store,
+            &[0.0, 0.0],
+            &[(0, 0.0)],
+            &[(1, 1.0)],
+            1,
+            2,
+            false,
+            false,
+            &[1.0, 1.0],
+        )
+        .unwrap();
+        assert!(!merged.is_empty());
     }
 }

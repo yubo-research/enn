@@ -6,10 +6,10 @@ use std::sync::Mutex;
 use ndarray::{Array1, Array2, ArrayView2};
 use rayon::prelude::*;
 
-use crate::distance::row_to_f32;
+use crate::distance::bpann_row_to_f32;
 use crate::error::BpannError;
-use crate::index::{brute_force_topk_mmap, BpannIndex, IncrementalIndex, MmapSearchStore};
-use crate::merge::{merge_topk_candidates, merge_topk_precomputed_dist};
+use crate::index::{bpann_brute_force_topk_mmap, BpannIndex, IncrementalIndex, MmapSearchStore};
+use crate::merge::{bpann_merge_topk_candidates, merge_topk_precomputed_dist};
 use crate::mmap_store::MmapColumnStore;
 use crate::observation::{
     self as obs, TrainRowsAt, INDEX_BACKEND, MAX_NUM_DIM, MAX_RECORD_STRIDE,
@@ -44,14 +44,14 @@ impl BpannBackend {
         scale_x: bool,
         x_scale: Array1<f64>,
     ) -> Result<Self, BpannError> {
-        obs::validate_dim_limits(train_x.ncols())?;
+        obs::bpann_validate_dim_limits(train_x.ncols())?;
         fs::create_dir_all(&work_dir).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        obs::validate_index_backend(&work_dir, INDEX_BACKEND)?;
+        obs::bpann_validate_index_backend(&work_dir, INDEX_BACKEND)?;
         let num_obs_counter = obs::NumObsCounter::open(&work_dir)?;
 
         let num_dim = train_x.ncols();
         let num_metrics = train_y.ncols();
-        let known_nrows = obs::load_num_obs(&work_dir);
+        let known_nrows = obs::bpann_load_num_obs(&work_dir);
         let mut train_x_store = MmapColumnStore::mmap_open_or_create(
             work_dir.join("train_x.bin"),
             num_dim,
@@ -67,11 +67,11 @@ impl BpannBackend {
             train_y_store.mmap_append(&train_y.view())?;
         }
         let train_yvar_store =
-            obs::open_or_append_yvar(&work_dir, num_metrics, train_yvar.as_ref())?;
+            obs::bpann_open_or_append_yvar(&work_dir, num_metrics, train_yvar.as_ref())?;
 
         let n = train_x_store.nrows;
         let index_dir = work_dir.join("index");
-        let indexed_rows = obs::load_indexed_rows(&work_dir).unwrap_or(0).min(n);
+        let indexed_rows = obs::bpann_load_indexed_rows(&work_dir).unwrap_or(0).min(n);
         let indices = if index_dir.join("header.json").exists() && indexed_rows > 0 {
             vec![BpannIndex::open(index_dir.clone())?]
         } else {
@@ -114,7 +114,7 @@ impl BpannBackend {
         backend.pending_unindexed
             .store(n.saturating_sub(indexed_rows), Ordering::Relaxed);
         backend.index.indexed_rows = indexed_rows;
-        obs::write_metadata(
+        obs::bpann_write_metadata(
             &backend.work_dir,
             n,
             num_dim,
@@ -230,10 +230,10 @@ impl BpannBackend {
                 got: vec![x.nrows(), x.ncols()],
             });
         }
-        obs::check_append_row_limit(self.len() + x.nrows())?;
+        obs::bpann_check_append_row_limit(self.len() + x.nrows())?;
         self.train_x.mmap_append(x)?;
         self.train_y.mmap_append(y)?;
-        obs::append_yvar_on_add(
+        obs::bpann_append_yvar_on_add(
             &self.work_dir,
             self.num_metrics,
             &mut self.train_yvar,
@@ -270,7 +270,7 @@ impl BpannBackend {
     }
 
     pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAt, BpannError> {
-        obs::train_rows_at(
+        obs::bpann_train_rows_at(
             self.len(),
             &self.train_x,
             &self.train_y,
@@ -317,7 +317,7 @@ impl BpannBackend {
             .par_iter()
             .map(|query_buf| {
                 let mut query_f32 = Vec::with_capacity(num_dim);
-                row_to_f32(
+                bpann_row_to_f32(
                     query_buf,
                     scale_x,
                     &x_scale_vec,
@@ -339,7 +339,7 @@ impl BpannBackend {
 
                 if !has_pending {
                     let merged = if scale_x {
-                        merge_topk_candidates(
+                        bpann_merge_topk_candidates(
                             &self.train_x,
                             query_buf,
                             &leg_a,
@@ -350,7 +350,7 @@ impl BpannBackend {
                             scale_x,
                             &x_scale_vec,
                         )
-                        .expect("merge_topk_candidates")
+                        .expect("bpann_merge_topk_candidates")
                     } else {
                         merge_topk_precomputed_dist(
                             &leg_a,
@@ -369,7 +369,7 @@ impl BpannBackend {
                     return (dist_row, idx_row);
                 }
 
-                let leg_b = brute_force_topk_mmap(
+                let leg_b = bpann_brute_force_topk_mmap(
                     &self.train_x,
                     pending_start,
                     total,
@@ -378,10 +378,10 @@ impl BpannBackend {
                     scale_x,
                     &x_scale_vec,
                 )
-                .expect("brute_force_topk_mmap");
+                .expect("bpann_brute_force_topk_mmap");
 
                 let merged = if scale_x {
-                    merge_topk_candidates(
+                    bpann_merge_topk_candidates(
                         &self.train_x,
                         query_buf,
                         &leg_a,
@@ -392,7 +392,7 @@ impl BpannBackend {
                         scale_x,
                         &x_scale_vec,
                     )
-                    .expect("merge_topk_candidates")
+                    .expect("bpann_merge_topk_candidates")
                 } else {
                     merge_topk_precomputed_dist(
                         &leg_a,
@@ -461,7 +461,7 @@ impl BpannBackend {
 }
 
 pub fn open_rejects_num_dim(num_dim: usize) -> Result<(), BpannError> {
-    obs::validate_dim_limits(num_dim)
+    obs::bpann_validate_dim_limits(num_dim)
 }
 
 pub fn open_rejects_record_stride(num_dim: usize) -> Result<(), BpannError> {

@@ -15,7 +15,7 @@ pub use observation::{MAX_NUM_DIM, MAX_RECORD_STRIDE};
 mod acceptance_tests {
     use super::*;
     use crate::distance::row_sq_l2;
-    use crate::index::mean_recall_at_k;
+    use crate::index::bpann_mean_recall_at_k;
     use ndarray::{array, Array1, Array2};
     use rand::Rng;
     use rand::SeedableRng;
@@ -51,7 +51,8 @@ mod acceptance_tests {
 
     #[test]
     fn test_out_of_scope_doc_lists_deferred_features() {
-        let text = fs::read_to_string(repo_root().join("OUT_OF_SCOPE.md")).expect("OUT_OF_SCOPE.md");
+        let text = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("OUT_OF_SCOPE.md"))
+            .expect("OUT_OF_SCOPE.md");
         for phrase in [
             "Semantic views for temporally correlated queries",
             "Farthest-neighbor (dissimilarity) queries",
@@ -275,7 +276,7 @@ mod acceptance_tests {
             dir.path().join("index"),
         )
         .unwrap();
-        let recall = mean_recall_at_k(&vectors, &queries, K, &index);
+        let recall = bpann_mean_recall_at_k(&vectors, &queries, K, &index);
         assert!(recall >= 0.90, "recall@10 = {recall}");
     }
 
@@ -329,7 +330,7 @@ mod acceptance_tests {
         .unwrap();
         b.ensure_index_sync().unwrap();
         // Pending row 2 is the true nearest for query [0, 4]; row 3 ranks higher only
-        // when brute_force_topk_mmap double-applies x_scale, so k=1 leg_b drops row 2.
+        // when bpann_brute_force_topk_mmap double-applies x_scale, so k=1 leg_b drops row 2.
         b.append_rows(
             &array![[2.0, 4.0], [4.0, 8.0]].view(),
             &array![[2.0], [3.0]].view(),
@@ -568,7 +569,7 @@ mod acceptance_tests {
             .map(|i| x.row(i).iter().map(|&v| v as f32).collect())
             .collect();
         let index = b.index_snapshot().unwrap();
-        let recall = mean_recall_at_k(&vectors, &queries, 10, index);
+        let recall = bpann_mean_recall_at_k(&vectors, &queries, 10, index);
         assert!(recall >= 0.90, "N={n} recall={recall}");
     }
 

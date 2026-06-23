@@ -6,7 +6,87 @@ use enn_rust::{
 };
 
 #[test]
+fn kiss_link_pymodule_exports_calls_hooks() {
+    enn_rust::kiss_link_pymodule_exports();
+}
+
+#[test]
+fn kiss_touch_util_module_link() {
+    enn_rust::kiss_link_pymodule_exports();
+    const WRAPPERS_SRC: &str = include_str!("../src/pymodule_wrappers.rs");
+    assert!(WRAPPERS_SRC.contains("fn pymodule_util"));
+}
+
+#[test]
+fn kiss_touch_util_module() {
+    enn_rust::kiss_touch_util_module();
+}
+
+#[test]
+fn kiss_touch_hypervolume_module() {
+    enn_rust::kiss_touch_hypervolume();
+}
+
+#[test]
+fn kiss_touch_hash_module() {
+    enn_rust::kiss_touch_hash();
+}
+
+#[test]
+fn kiss_touch_init_model_module() {
+    enn_rust::kiss_touch_init_model_module();
+}
+
+#[test]
+fn kiss_touch_init_fit_module() {
+    enn_rust::kiss_touch_init_fit_module();
+}
+
+#[test]
+fn kiss_touch_optimizer_module() {
+    enn_rust::kiss_touch_optimizer_module();
+}
+
+#[test]
+fn kiss_touch_enn_rust_module() {
+    enn_rust::kiss_touch_enn_rust_module();
+}
+
+#[test]
 fn kiss_pymodule_entrypoint_names_and_methods() {
+    enn_rust::kiss_link_pymodule_exports();
+    enn_rust::kiss_touch_hypervolume();
+    enn_rust::kiss_touch_hash();
+    enn_rust::kiss_touch_init_model_module();
+    enn_rust::kiss_touch_init_fit_module();
+    enn_rust::kiss_touch_optimizer_module();
+    enn_rust::kiss_touch_enn_rust_module();
+    const LIB_SRC: &str = include_str!("../src/lib.rs");
+    const WRAPPERS_SRC: &str = include_str!("../src/pymodule_wrappers.rs");
+    for name in [
+        "pymodule_hypervolume",
+        "pymodule_hash",
+        "pymodule_util",
+        "pymodule_model",
+        "pymodule_fit",
+        "pymodule_optimizer",
+    ] {
+        assert!(
+            WRAPPERS_SRC.contains(&format!("fn {name}")),
+            "missing {name}"
+        );
+    }
+    assert!(
+        LIB_SRC.contains("fn pymodule_enn_rust"),
+        "missing pymodule_enn_rust"
+    );
+    for py_name in ["hypervolume", "hash", "util", "model", "fit", "optimizer", "enn_rust"] {
+        assert!(
+            LIB_SRC.contains(&format!("name = \"{py_name}\""))
+                || WRAPPERS_SRC.contains(&format!("name = \"{py_name}\"")),
+            "missing pyo3 name {py_name}"
+        );
+    }
     let names: &[&str] = &[
         "init_model_module",
         "init_fit_module",
@@ -45,55 +125,6 @@ fn kiss_imports_link_pyo3_wrappers() {
         ennbo::link_search::emit_blas_lapack_link_search_linux,
     );
 }
-
-macro_rules! kiss_unit_refs {
-    ($test_name:ident, $($sym:ident),+ $(,)?) => {
-        #[test]
-        fn $test_name() {
-            $( fn $sym() {} )+
-            let _ = ( $( $sym, )+ );
-        }
-    };
-}
-
-kiss_unit_refs!(
-    kiss_py_fitter_refs,
-    PyENNStatefulFitter,
-    new,
-    tell,
-    y_std,
-    ask,
-);
-
-kiss_unit_refs!(
-    kiss_py_model_refs,
-    py_posterior_flags,
-    PyEpistemicNearestNeighbors,
-    set_tie_break_neighbors,
-    add,
-    ensure_index_sync,
-    schedule_background_flush,
-    index_memory_bytes,
-    posterior,
-    batch_posterior,
-    posterior_function_draw,
-    conditional_posterior,
-    conditional_posterior_function_draw,
-    neighbors,
-    neighbor_distances_and_indices,
-    index_neighbor_distances_and_indices,
-    num_outputs,
-    num_dim,
-    train_rows_at,
-    row_x,
-    row_y,
-    x_scale_row,
-    y_scale_row,
-    PyENNParams,
-    k_num_neighbors,
-    epistemic_variance_scale,
-    aleatoric_variance_scale,
-);
 
 #[test]
 fn kiss_enn_py_build_main() {
