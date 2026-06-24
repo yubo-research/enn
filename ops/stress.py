@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import resource
+import struct
 import sys
 import time
 from collections.abc import Iterator
@@ -246,10 +248,34 @@ def iter_synthetic_observation_batches(
         emitted += n
 
 
+def load_num_obs_existing(work_dir: str) -> int:
+    """Return persisted observation count in work_dir, or 0 if none."""
+    root = Path(work_dir)
+    sidecar = root / "num_obs.bin"
+    if sidecar.is_file() and sidecar.stat().st_size == 8:
+        return int(struct.unpack("<Q", sidecar.read_bytes())[0])
+    meta_path = root / "metadata.json"
+    if meta_path.is_file():
+        try:
+            num_obs = json.loads(meta_path.read_text())["num_obs"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return 0
+        if isinstance(num_obs, int) and num_obs >= 0:
+            return num_obs
+    return 0
+
+
 def format_config_header(
-    *, num_dim: int, num_obs: int, work_dir: str | None = None
+    *,
+    num_dim: int,
+    num_obs: int,
+    work_dir: str | None = None,
+    num_obs_existing: int | None = None,
 ) -> str:
-    header = f"num_dim={num_dim} num_obs={num_obs}"
+    prefix = "restarting " if num_obs_existing else ""
+    header = f"{prefix}num_dim={num_dim} num_obs={num_obs}"
+    if num_obs_existing:
+        header = f"{header} num_obs_existing={num_obs_existing}"
     if work_dir is not None:
         header = f"{header} work_dir={work_dir}"
     return header
@@ -388,8 +414,14 @@ def enn(
     if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
         raise click.ClickException(f"{index_type} requires --work-dir")
     driver = parse_index_driver(index_type)
+    num_obs_existing = load_num_obs_existing(work_dir) if work_dir is not None else 0
     click.echo(
-        format_config_header(num_dim=num_dim, num_obs=num_obs, work_dir=work_dir)
+        format_config_header(
+            num_dim=num_dim,
+            num_obs=num_obs,
+            work_dir=work_dir,
+            num_obs_existing=num_obs_existing if num_obs_existing else None,
+        )
     )
     n_width = stress_row_n_width(num_obs)
     for n, query_s, segment_s in run_enn_add_stress(
