@@ -9,3 +9,4 @@ ops/
 /log_2
 results/
 *.md~
+.testmondata
