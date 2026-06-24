@@ -10,3 +10,4 @@ ops/
 results/
 *.md~
 .testmondata
+./src/enn/enn_rust.*.so
