@@ -9,4 +9,4 @@ target/
 results/
 *.md~
 .testmondata
-./src/enn/enn_rust.*.so
+src/enn/enn_rust.*.so
