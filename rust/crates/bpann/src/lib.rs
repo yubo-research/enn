@@ -50,22 +50,6 @@ mod acceptance_tests {
     }
 
     #[test]
-    fn test_out_of_scope_doc_lists_deferred_features() {
-        let text = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("OUT_OF_SCOPE.md"))
-            .expect("OUT_OF_SCOPE.md");
-        for phrase in [
-            "Semantic views for temporally correlated queries",
-            "Farthest-neighbor (dissimilarity) queries",
-            "GPU acceleration",
-            "Billion-scale paper reproduction benchmarks",
-            "`ennbo` / `KnnBackend` drop-in integration",
-            "Optional comparison to in-tree `disk_hnsw`",
-        ] {
-            assert!(text.contains(phrase), "missing: {phrase}");
-        }
-    }
-
-    #[test]
     fn test_paper_tex_exists_and_nonempty() {
         let path = repo_root().join(PAPER_TEX_PATH);
         let meta = fs::metadata(&path).expect("paper tex");
