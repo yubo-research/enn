@@ -1,4 +1,4 @@
-.PHONY: all install clean test rust-test python-test python-slow-test lint wheels wheelsl \
+.PHONY: all install clean test build-ext rust-test python-test python-slow-test lint wheels wheelsl \
 	pypi-build pypi-publish pypi-auth-check
 
 UNAME_S := $(shell uname -s)
@@ -18,8 +18,12 @@ install:
 	maturin develop --release
 	@echo "Installation complete!"
 
+# Build the PyO3 extension into src/enn/ for PYTHONPATH=src pytest runs.
+build-ext:
+	maturin develop --release
+
 # Run all tests (Rust and Python) in parallel; each suite must finish under ~5s.
-test:
+test: build-ext
 	$(MAKE) -j2 rust-test python-test
 
 # Run Rust tests only
@@ -70,7 +74,7 @@ PYTHON_SLOW_IGNORE = \
 	--ignore=tests/test_impl_helpers.py \
 	--ignore=tests/test_rust_optimizer_kiss_tokens.py \
 	--ignore=tests/test_rust_wrapper_coverage.py
-python-test:
+python-test: build-ext
 	PYTHONPATH=src pytest tests --tb=short -m "not slow" -q $(PYTHON_FAST_PLUGINS) $(PYTHON_SLOW_IGNORE)
 
 # Slow/integration Python tests (not part of the default gate).
