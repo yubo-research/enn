@@ -242,11 +242,11 @@ def test_format_stress_row_fixed_width_n():
     from ops.stress import format_stress_row
 
     row = format_stress_row(10, 1.2345, 0.0567, n_width=6)
-    assert row == "    10 1.234 0.057"
-    assert re.fullmatch(r" {4}10 1\.234 0\.057", row)
+    assert row == "    10 1.234 0.0567"
+    assert re.fullmatch(r" {4}10 1\.234 0\.0567", row)
 
     row_large = format_stress_row(100_000, 0.5, 12.3, n_width=6)
-    assert row_large == "100000 0.500 12.300"
+    assert row_large == "100000 0.500 12.3"
 
 
 def test_run_enn_add_stress_segment_excludes_query(monkeypatch):
@@ -273,7 +273,7 @@ def test_run_enn_add_stress_segment_excludes_query(monkeypatch):
         assert segment_s < query_delay_s
 
 
-_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+\.\d{3}")
+_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+(?:\.\d+)?(?:e[+-]?\d+)?")
 
 
 def test_enn_stress_cli_does_not_fit(monkeypatch):
@@ -344,7 +344,10 @@ def test_enn_stress_cli_rejects_disk_driver_without_work_dir():
     assert "hnsw_disk requires --work-dir" in result.output
 
 
-@pytest.mark.parametrize("index_type,subdir", [("hnsw_disk", "enn_cli_disk"), ("bpann_disk", "enn_cli_bpann")])
+@pytest.mark.parametrize(
+    "index_type,subdir",
+    [("hnsw_disk", "enn_cli_disk"), ("bpann_disk", "enn_cli_bpann")],
+)
 def test_enn_stress_cli_disk(tmp_path, index_type, subdir):
     from click.testing import CliRunner
 

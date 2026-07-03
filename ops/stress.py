@@ -345,7 +345,7 @@ def stress_row_n_width(num_obs: int) -> int:
 
 
 def format_stress_row(n: int, query_s: float, segment_s: float, *, n_width: int) -> str:
-    return f"{n:>{n_width}} {query_s:.3f} {segment_s:.3f}"
+    return f"{n:>{n_width}} {query_s:.3f} {segment_s:.3g}"
 
 
 @click.group()
