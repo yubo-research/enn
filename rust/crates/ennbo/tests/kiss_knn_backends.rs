@@ -1,6 +1,6 @@
 //! Kiss static coverage: test files must reference private helper names from knn backends.
 
-const DISK_HNSW_SRC: &str = include_str!("../src/disk_hnsw/enn_backend.rs");
+const DISK_BPANN_SRC: &str = include_str!("../src/disk_bpann/enn_backend.rs");
 const DISK_OBSERVATION_SRC: &str = include_str!("../src/backend/disk_observation.rs");
 const FAISS_BACKEND_SRC: &str = include_str!("../src/knn/faiss_backend.rs");
 const ROW_STORAGE_SRC: &str = include_str!("../src/backend/row_storage.rs");
@@ -53,12 +53,9 @@ fn kiss_row_storage_helper_names_in_source() {
 }
 
 #[test]
-fn kiss_disk_hnsw_helper_names_in_source() {
+fn kiss_disk_bpann_helper_names_in_source() {
     for name in [
-        "write_metadata",
-        "DiskHnswEnnBackend",
-        "index_row_range",
-        "disk_obs::load_num_obs",
+        "DiskBpannEnnBackend",
         "mark_index_stale",
         "ensure_index_sync",
         "row_x",
@@ -67,19 +64,18 @@ fn kiss_disk_hnsw_helper_names_in_source() {
         "search",
         "index_memory_bytes",
         "new_empty",
-        "mmap_open_or_create",
-        "mmap_append",
-        "mmap_row_slice",
+        "pending_flush_threshold",
+        "append_syncs_at_threshold",
     ] {
         assert!(
-            DISK_HNSW_SRC.contains(name),
-            "missing {name} in disk_hnsw/enn_backend.rs"
+            DISK_BPANN_SRC.contains(name),
+            "missing {name} in disk_bpann/enn_backend.rs"
         );
     }
     for name in ["append_rows", "train_rows_at", "load_indexed_rows", "mmap_gather"] {
         assert!(
-            DISK_HNSW_SRC.contains(name) || DISK_OBSERVATION_SRC.contains(name),
-            "missing {name} in disk hnsw/observation sources"
+            DISK_BPANN_SRC.contains(name) || DISK_OBSERVATION_SRC.contains(name),
+            "missing {name} in disk bpann/observation sources"
         );
     }
 }

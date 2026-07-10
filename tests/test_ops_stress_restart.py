@@ -46,7 +46,7 @@ def test_load_num_obs_existing(tmp_path):
 
 @pytest.mark.parametrize(
     "index_type,subdir",
-    [("hnsw_disk", "enn_restart_disk"), ("bpann_disk", "enn_restart_bpann")],
+    [("bpann_disk", "enn_restart_bpann")],
 )
 def test_enn_stress_cli_disk_restart_header(tmp_path, index_type, subdir):
     from click.testing import CliRunner

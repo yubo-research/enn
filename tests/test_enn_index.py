@@ -70,11 +70,11 @@ def test_enn_neighbor_search_k_one_exclude_nearest_yields_zero_columns():
     assert dist2s.shape == (3, 0) and idx.shape == (3, 0)
 
 
-def test_enn_neighbor_search_hnsw_valid_indices_and_shapes():
+def test_enn_neighbor_search_flat_valid_indices_and_shapes():
     rng = np.random.default_rng(11)
     n_train, dim = 40, 3
     train_x = rng.standard_normal((n_train, dim))
-    enn = _enn(train_x, scale_x=False, index_driver=ENNIndexDriver.HNSW)
+    enn = _enn(train_x, scale_x=False, index_driver=ENNIndexDriver.FLAT)
     query = rng.standard_normal((4, dim))
     search_k = 6
     dist2s, idx = enn_neighbor_distances_and_indices(
@@ -193,17 +193,16 @@ def test_enn_index_neighbor_search_matches_faiss_when_no_ties(scale_x):
     assert np.all(exact_idx >= 0) and np.all(exact_idx < 20)
 
 
-def test_enn_index_neighbor_search_exclude_nearest_and_hnsw():
+def test_enn_index_neighbor_search_exclude_nearest():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
     query = train_x[:3]
-    for driver in (ENNIndexDriver.FLAT, ENNIndexDriver.HNSW):
-        enn = _enn(train_x, scale_x=False, index_driver=driver)
-        dist2s, idx = enn_index_neighbor_distances_and_indices(
-            enn.rust_backend, query, search_k=3, exclude_nearest=True
-        )
-        assert dist2s.shape == (3, 2) and idx.shape == (3, 2)
-        assert np.all(idx >= 0) and np.all(idx < 20)
+    enn = _enn(train_x, scale_x=False, index_driver=ENNIndexDriver.FLAT)
+    dist2s, idx = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=3, exclude_nearest=True
+    )
+    assert dist2s.shape == (3, 2) and idx.shape == (3, 2)
+    assert np.all(idx >= 0) and np.all(idx < 20)
 
 
 def test_enn_index_neighbor_search_k_one_exclude_nearest_yields_zero_columns():

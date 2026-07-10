@@ -25,9 +25,9 @@ fn open_or_append_yvar() {
 #[test]
 fn validate_index_backend() {
     let dir = TempDir::new().unwrap();
-    ennbo::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "hnsw_disk")
+    ennbo::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "bpann_disk")
         .unwrap();
-    ennbo::backend::disk_observation::validate_index_backend(dir.path(), "hnsw_disk").unwrap();
+    ennbo::backend::disk_observation::validate_index_backend(dir.path(), "bpann_disk").unwrap();
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn mark_index_dirty() {
 #[test]
 fn load_indexed_rows() {
     let dir = TempDir::new().unwrap();
-    ennbo::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 2, "hnsw_disk")
+    ennbo::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 2, "bpann_disk")
         .unwrap();
     assert_eq!(
         ennbo::backend::disk_observation::load_indexed_rows(dir.path()),
@@ -64,18 +64,18 @@ fn load_indexed_rows() {
 #[test]
 fn load_index_backend() {
     let dir = TempDir::new().unwrap();
-    ennbo::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "hnsw_disk")
+    ennbo::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "bpann_disk")
         .unwrap();
     assert_eq!(
         ennbo::backend::disk_observation::load_index_backend(dir.path()).as_deref(),
-        Some("hnsw_disk")
+        Some("bpann_disk")
     );
 }
 
 #[test]
 fn write_metadata() {
     let dir = TempDir::new().unwrap();
-    ennbo::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "hnsw_disk")
+    ennbo::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "bpann_disk")
         .unwrap();
 }
 
@@ -86,7 +86,7 @@ fn validate_dim_limits() {
 
 #[test]
 fn parse_json_usize_field() {
-    let text = r#"{"num_obs":42,"index_backend":"hnsw_disk"}"#;
+    let text = r#"{"num_obs":42,"index_backend":"bpann_disk"}"#;
     assert_eq!(
         ennbo::backend::disk_observation::parse_json_usize_field(text, "num_obs"),
         Some(42)
@@ -95,10 +95,10 @@ fn parse_json_usize_field() {
 
 #[test]
 fn parse_json_string_field() {
-    let text = r#"{"index_backend":"hnsw_disk"}"#;
+    let text = r#"{"index_backend":"bpann_disk"}"#;
     assert_eq!(
         ennbo::backend::disk_observation::parse_json_string_field(text, "index_backend")
             .as_deref(),
-        Some("hnsw_disk")
+        Some("bpann_disk")
     );
 }

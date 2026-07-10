@@ -38,9 +38,17 @@ impl DiskBpannEnnBackend {
             ));
         }
         let num_metrics = train_y.ncols();
+        let inner = if train_x.nrows() == 0
+            && train_y.nrows() == 0
+            && work_dir.join("metadata.json").exists()
+        {
+            BpannBackend::reopen(work_dir.clone()).map_err(bpann_err)?
+        } else {
+            BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
+                .map_err(bpann_err)?
+        };
         Ok(Self {
-            inner: BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
-                .map_err(bpann_err)?,
+            inner,
             driver,
             num_metrics,
         })
@@ -49,6 +57,23 @@ impl DiskBpannEnnBackend {
     pub fn new_empty(work_dir: PathBuf, num_dim: usize, num_metrics: usize) -> Result<Self, ENNError> {
         Ok(Self {
             inner: BpannBackend::new_empty(work_dir, num_dim, num_metrics).map_err(bpann_err)?,
+            driver: IndexDriver::BpAnnDisk,
+            num_metrics,
+        })
+    }
+
+    pub fn new_empty_with_flush_threshold(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+        pending_flush_threshold: usize,
+    ) -> Result<Self, ENNError> {
+        let inner = BpannBackend::new_empty(work_dir, num_dim, num_metrics)
+            .map_err(bpann_err)?
+            .with_pending_flush_threshold(pending_flush_threshold)
+            .with_defer_append_indexing(true);
+        Ok(Self {
+            inner,
             driver: IndexDriver::BpAnnDisk,
             num_metrics,
         })
@@ -160,5 +185,104 @@ impl DiskBpannEnnBackend {
 
     pub fn index_memory_bytes(&self) -> Result<usize, ENNError> {
         Ok(self.inner.index_memory_bytes())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+    use tempfile::TempDir;
+
+    #[test]
+    fn new_empty_with_flush_threshold_sets_defer_sync() {
+        let dir = TempDir::new().expect("tempdir");
+        let backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
+            dir.path().to_path_buf(),
+            2,
+            1,
+            5,
+        )
+        .expect("backend");
+        assert_eq!(backend.pending_flush_threshold(), 5);
+        assert!(!backend.append_syncs_at_threshold());
+        assert_eq!(backend.pending_unindexed_count(), 0);
+    }
+
+    #[test]
+    fn new_rejects_non_bpann_driver() {
+        let dir = TempDir::new().expect("tempdir");
+        let result = DiskBpannEnnBackend::new(
+            dir.path().to_path_buf(),
+            array![[0.0, 0.0]],
+            array![[0.0]],
+            None,
+            false,
+            array![1.0, 1.0],
+            IndexDriver::Exact,
+        );
+        assert!(matches!(result, Err(ENNError::InvalidParameter(_))));
+    }
+
+    #[test]
+    fn append_rows_shape_error_maps_invalid_shape() {
+        let dir = TempDir::new().expect("tempdir");
+        let mut backend =
+            DiskBpannEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1).expect("backend");
+        let err = backend
+            .append_rows(
+                &array![[0.0, 0.0, 0.0]].view(),
+                &array![[0.0]].view(),
+                None,
+            )
+            .unwrap_err();
+        assert!(matches!(err, ENNError::InvalidShape { .. }));
+    }
+
+    #[test]
+    fn reopen_from_existing_work_dir() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().to_path_buf();
+        let _fresh = DiskBpannEnnBackend::new(
+            path.clone(),
+            array![[0.0, 0.0], [1.0, 0.0]],
+            array![[0.0], [1.0]],
+            None,
+            false,
+            array![1.0, 1.0],
+            IndexDriver::BpAnnDisk,
+        )
+        .expect("fresh");
+        let reopened = DiskBpannEnnBackend::new(
+            path,
+            Array2::zeros((0, 2)),
+            Array2::zeros((0, 1)),
+            None,
+            false,
+            array![1.0, 1.0],
+            IndexDriver::BpAnnDisk,
+        )
+        .expect("reopen");
+        assert_eq!(reopened.len(), 2);
+    }
+
+    #[test]
+    fn pending_unindexed_count_after_append_without_sync() {
+        let dir = TempDir::new().expect("tempdir");
+        let mut backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
+            dir.path().to_path_buf(),
+            2,
+            1,
+            100,
+        )
+        .expect("backend");
+        backend
+            .append_rows(
+                &array![[0.0, 0.0]].view(),
+                &array![[1.0]].view(),
+                None,
+            )
+            .expect("append");
+        assert!(backend.pending_unindexed_count() > 0);
     }
 }

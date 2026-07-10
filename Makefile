@@ -42,7 +42,6 @@ PYTHON_SLOW_IGNORE = \
 	--ignore=tests/test_turbo_adversarial.py \
 	--ignore=tests/test_ops_stress.py \
 	--ignore=tests/test_ops_disk_rss_stress.py \
-	--ignore=tests/test_disk_hnsw_background_flush.py \
 	--ignore=tests/test_enn_index_driver.py \
 	--ignore=tests/test_kiss_coverage.py \
 	--ignore=tests/test_kiss_fullrepo_symbol_registry.py \
@@ -55,7 +54,6 @@ PYTHON_SLOW_IGNORE = \
 	--ignore=tests/test_enn_perf.py \
 	--ignore=tests/test_python_fallback_surface.py \
 	--ignore=tests/test_morbo_turbo_one.py \
-	--ignore=tests/test_try_hnsw_disk.py \
 	--ignore=tests/test_turbo_utils_funcs.py \
 	--ignore=tests/test_turbo_optimizer_utils.py \
 	--ignore=tests/test_enn_fit.py \
@@ -88,12 +86,12 @@ python-slow-test:
 	PYTHONPATH=src pytest tests --tb=short -m "slow" -q
 	PYTHONPATH=src pytest tests/test_turbo_gp.py tests/test_turbo_adversarial.py \
 		tests/test_ops_stress.py tests/test_ops_disk_rss_stress.py \
-		tests/test_disk_hnsw_background_flush.py tests/test_enn_index_driver.py \
+		tests/test_enn_index_driver.py \
 		tests/test_kiss_coverage.py tests/test_kiss_fullrepo_symbol_registry.py \
 		tests/parity tests/test_compare_ennbo_versions.py tests/test_notebooks.py \
 		tests/test_turbo_invariance.py tests/test_turbo_optimizer.py tests/test_components.py \
 		tests/test_enn_perf.py tests/test_python_fallback_surface.py \
-		tests/test_morbo_turbo_one.py tests/test_try_hnsw_disk.py \
+		tests/test_morbo_turbo_one.py \
 		tests/test_turbo_utils_funcs.py tests/test_turbo_optimizer_utils.py \
 		tests/test_enn_fit.py tests/test_candidate_gen_stats.py \
 		tests/test_morbo_separable_unimodal.py \

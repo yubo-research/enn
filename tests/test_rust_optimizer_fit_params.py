@@ -66,14 +66,14 @@ def test_both_fit_params_passed_to_rust_overrides():
     assert overrides["num_fit_candidates"] == 200
 
 
-def test_rust_optimizer_passes_hnsw_disk_index_driver():
+def test_rust_optimizer_passes_bpann_disk_index_driver():
     config = turbo_enn_config(
-        enn=ENNSurrogateConfig(index_driver=ENNIndexDriver.HNSW_DISK)
+        enn=ENNSurrogateConfig(index_driver=ENNIndexDriver.BPANN_DISK)
     )
     overrides = _config_to_rust_overrides(config)
 
     assert overrides is not None
-    assert overrides["index_driver"] == "hnsw_disk"
+    assert overrides["index_driver"] == "bpann_disk"
 
 
 def test_none_fit_params_not_in_overrides():

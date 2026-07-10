@@ -61,7 +61,7 @@ def test_checkpoint_ns_metamorphic_doubling_preserves_prefix():
         assert small == large[: len(small)]
 
 
-@pytest.mark.parametrize("name", ["flat", "hnsw", "hnsw_disk", "bpann_disk"])
+@pytest.mark.parametrize("name", ["flat", "bpann_disk"])
 def test_parse_index_driver(name: str):
     from ops.stress import parse_index_driver
 
@@ -124,7 +124,6 @@ def test_run_enn_add_stress_syncs_at_checkpoints(monkeypatch):
 @pytest.mark.parametrize(
     "driver,subdir",
     [
-        (ENNIndexDriver.HNSW_DISK, "hnsw"),
         (ENNIndexDriver.BPANN_DISK, "bpann"),
     ],
 )
@@ -162,7 +161,7 @@ def test_run_enn_add_stress_disk_no_checkpoint_sync(
     assert len(list(checkpoint_ns(num_obs))) > 0
 
 
-def test_run_enn_add_stress_hnsw_disk_schedules_flush_after_add(monkeypatch, tmp_path):
+def test_run_enn_add_stress_bpann_disk_schedules_flush_after_add(monkeypatch, tmp_path):
     from ops.stress import EnnAddStressConfig, run_enn_add_stress
 
     flush_calls: list[int] = []
@@ -179,7 +178,7 @@ def test_run_enn_add_stress_hnsw_disk_schedules_flush_after_add(monkeypatch, tmp
     num_obs = 30
     list(
         run_enn_add_stress(
-            index_driver=ENNIndexDriver.HNSW_DISK,
+            index_driver=ENNIndexDriver.BPANN_DISK,
             num_obs=num_obs,
             config=EnnAddStressConfig(
                 num_dim=4,
@@ -339,14 +338,14 @@ def test_enn_stress_cli_rejects_disk_driver_without_work_dir():
 
     from ops.stress import cli
 
-    result = CliRunner().invoke(cli, ["enn", "hnsw_disk", "10"])
+    result = CliRunner().invoke(cli, ["enn", "bpann_disk", "10"])
     assert result.exit_code != 0
-    assert "hnsw_disk requires --work-dir" in result.output
+    assert "bpann_disk requires --work-dir" in result.output
 
 
 @pytest.mark.parametrize(
     "index_type,subdir",
-    [("hnsw_disk", "enn_cli_disk"), ("bpann_disk", "enn_cli_bpann")],
+    [("bpann_disk", "enn_cli_bpann")],
 )
 def test_enn_stress_cli_disk(tmp_path, index_type, subdir):
     from click.testing import CliRunner

@@ -9,7 +9,7 @@ use crate::error::BpannError;
 use crate::mmap_store::MmapColumnStore;
 
 pub const FORMAT_VERSION: u32 = 1;
-pub const MAX_NUM_DIM: usize = 1024;
+pub const MAX_NUM_DIM: usize = 8192;
 pub const MAX_RECORD_STRIDE: usize = 8 * 1024 * 1024;
 pub const INDEX_BACKEND: &str = "bpann_disk";
 
@@ -52,13 +52,24 @@ pub fn bpann_validate_index_backend(work_dir: &Path, expected: &str) -> Result<(
 
 pub fn bpann_load_num_obs(work_dir: &Path) -> Option<usize> {
     let sidecar = work_dir.join("num_obs.bin");
-    if let Ok(data) = fs::read(&sidecar) {
+    let from_sidecar = if let Ok(data) = fs::read(&sidecar) {
         if data.len() == 8 {
-            return Some(u64::from_le_bytes(data.try_into().ok()?) as usize);
+            Some(u64::from_le_bytes(data.try_into().ok()?) as usize)
+        } else {
+            None
         }
+    } else {
+        None
+    };
+    let from_meta = fs::read_to_string(work_dir.join("metadata.json"))
+        .ok()
+        .and_then(|text| parse_json_usize_field(&text, "num_obs"));
+    match (from_sidecar, from_meta) {
+        (Some(sidecar), Some(meta)) => Some(sidecar.max(meta)),
+        (Some(sidecar), None) => Some(sidecar),
+        (None, Some(meta)) => Some(meta),
+        (None, None) => None,
     }
-    let text = fs::read_to_string(work_dir.join("metadata.json")).ok()?;
-    parse_json_usize_field(&text, "num_obs")
 }
 
 pub fn write_num_obs(work_dir: &Path, num_obs: usize) -> Result<(), BpannError> {
@@ -253,6 +264,13 @@ mod kiss_coverage_tests {
             crate::observation::bpann_parse_json_string_field,
             crate::observation::parse_json_usize_field,
         );
+    }
+
+    #[test]
+    fn bpann_validate_dim_limits_accepts_8192_rejects_8193() {
+        crate::observation::bpann_validate_dim_limits(8192).unwrap();
+        let err = crate::observation::bpann_validate_dim_limits(8193).unwrap_err();
+        assert!(err.to_string().contains("8192"));
     }
 
     #[test]

@@ -1,6 +1,5 @@
 //! Shared disk backend streaming smoke test body.
 
-use ennbo::backend::DiskEnnBackend;
 use ennbo::{EnnStorage, EpistemicNearestNeighbors, IndexDriver};
 use ndarray::Array2;
 use rand::Rng;
@@ -31,17 +30,8 @@ fn random_batch(
     (x, y)
 }
 
-fn configure_low_flush_threshold(model: &EpistemicNearestNeighbors, threshold: usize) {
-    let arc = model.disk_backend_arc().expect("disk backend");
-    let mut guard = arc.lock().expect("disk lock");
-    let DiskEnnBackend::Hnsw(backend) = &mut *guard else {
-        panic!("expected HNSW disk backend");
-    };
-    backend.set_pending_flush_threshold(threshold);
-    backend.set_defer_append_indexing(true);
-}
-
 pub fn run_disk_streaming_crosses_flush_threshold(driver: IndexDriver) {
+    assert_eq!(driver, IndexDriver::BpAnnDisk);
     let mut rng = ChaCha8Rng::seed_from_u64(STREAMING_SEED);
     let dir = TempDir::new().expect("tempdir");
     let mut model = EpistemicNearestNeighbors::new_empty(
@@ -50,9 +40,9 @@ pub fn run_disk_streaming_crosses_flush_threshold(driver: IndexDriver) {
         driver,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
+        Some(STREAMING_FLUSH_THRESHOLD),
     )
     .expect("new_empty disk");
-    configure_low_flush_threshold(&model, STREAMING_FLUSH_THRESHOLD);
 
     let mut row = 0usize;
     while row < STREAMING_CROSS_ROWS {
@@ -75,6 +65,7 @@ pub fn run_disk_streaming_add_sync_search(driver: IndexDriver) {
         driver,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
+        None,
     )
     .expect("new_empty disk");
 

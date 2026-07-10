@@ -668,13 +668,13 @@ mod tests {
     }
 
     #[test]
-    fn index_search_hnsw_refines_distances() {
+    fn index_search_exact_refines_distances() {
         use super::super::index_search;
 
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::HNSW)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
                 .unwrap();
         let query = array![[0.0, 0.0]];
         let (dist2s, idx) = index_search(&model, &query.view(), 2, false, true).unwrap();

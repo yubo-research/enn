@@ -60,7 +60,7 @@ mod acceptance_tests {
     #[test]
     fn test_open_rejects_num_dim_above_max() {
         let err = backend::open_rejects_num_dim(MAX_NUM_DIM + 1).unwrap_err();
-        assert!(err.to_string().contains("MAX_NUM_DIM") || err.to_string().contains("1024"));
+        assert!(err.to_string().contains("MAX_NUM_DIM") || err.to_string().contains("8192"));
     }
 
     #[test]

@@ -20,37 +20,19 @@ def _enn(train_x, *, index_driver=ENNIndexDriver.FLAT, work_dir=None):
 def test_enn_index_driver_to_rust_maps_all():
     assert set(ENNIndexDriver) == set(ENN_INDEX_DRIVER_TO_RUST.keys())
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "exact"
-    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW] == "hnsw"
-    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.HNSW_DISK] == "hnsw_disk"
     assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.BPANN_DISK] == "bpann_disk"
 
 
-def test_enn_hnsw_disk_in_memory_raises():
+def test_enn_bpann_disk_in_memory_raises():
     train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
     train_y = np.zeros((2, 1), dtype=float)
     with pytest.raises(ValueError, match="work_dir|ENN_WORK_DIR"):
         EpistemicNearestNeighbors(
             train_x,
             train_y,
-            index_driver=ENNIndexDriver.HNSW_DISK,
+            index_driver=ENNIndexDriver.BPANN_DISK,
             enn_storage="disk",
         )
-
-
-def test_enn_index_driver_flat_hnsw_metamorphic_neighbor_set():
-    """On a tiny fixture, Faiss Flat and Faiss HNSW should return identical neighbor indices."""
-    train_x = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=float)
-    query = np.array([[0.25, 0.25]], dtype=float)
-    search_k = 2
-    flat = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
-    hnsw = _enn(train_x, index_driver=ENNIndexDriver.HNSW)
-    _, flat_idx = enn_index_neighbor_distances_and_indices(
-        flat.rust_backend, query, search_k=search_k, exclude_nearest=False
-    )
-    _, hnsw_idx = enn_index_neighbor_distances_and_indices(
-        hnsw.rust_backend, query, search_k=search_k, exclude_nearest=False
-    )
-    np.testing.assert_array_equal(flat_idx, hnsw_idx)
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2, 3, 4])
@@ -59,21 +41,22 @@ def test_enn_index_driver_neighbor_indices_fuzz(seed: int):
     n_train, dim, search_k = 20, 4, 3
     train_x = rng.uniform(0.0, 1.0, size=(n_train, dim))
     query = rng.uniform(0.0, 1.0, size=(1, dim))
-    for driver in (ENNIndexDriver.FLAT, ENNIndexDriver.HNSW):
-        enn = _enn(train_x, index_driver=driver)
-        _, idx = enn_index_neighbor_distances_and_indices(
-            enn.rust_backend, query, search_k=search_k, exclude_nearest=False
-        )
-        assert idx.shape == (1, search_k)
-        assert np.all(idx >= 0)
-        assert np.all(idx < n_train)
+    enn = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
+    _, idx = enn_index_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=search_k, exclude_nearest=False
+    )
+    assert idx.shape == (1, search_k)
+    assert np.all(idx >= 0)
+    assert np.all(idx < n_train)
     print(f"index_driver_neighbor_indices_fuzz seed={seed}")
 
 
 def test_enn_work_dir_requires_disk_driver():
     train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
     train_y = np.zeros((2, 1), dtype=float)
-    with pytest.raises(ValueError, match="Disk storage requires IndexDriver::HNSWDisk|BpAnnDisk"):
+    with pytest.raises(
+        ValueError, match="Disk storage requires IndexDriver::BpAnnDisk"
+    ):
         EpistemicNearestNeighbors(
             train_x,
             train_y,
@@ -89,17 +72,18 @@ def test_enn_disk_backend_persists_observation_files(tmp_path):
     np.zeros((2, 1), dtype=float)
     model = _enn(
         train_x,
-        index_driver=ENNIndexDriver.HNSW_DISK,
+        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
     )
     assert (work_dir / "train_x.bin").exists()
-    size_before = (work_dir / "train_x.bin").stat().st_size
     model.add(np.array([[0.0, 1.0]]), np.zeros((1, 1)))
     assert len(model) == 3
-    assert (work_dir / "train_x.bin").stat().st_size > size_before
+    x_at, _, _ = model.train_rows_at([2])
+    assert x_at.shape == (1, 2)
+    np.testing.assert_allclose(x_at[0], [0.0, 1.0])
 
 
-def test_enn_disk_hnsw_posterior_with_pending_matches_fresh(tmp_path):
+def test_enn_disk_bpann_posterior_with_pending_matches_fresh(tmp_path):
     from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(42)
@@ -114,7 +98,7 @@ def test_enn_disk_hnsw_posterior_with_pending_matches_fresh(tmp_path):
         x0,
         y0,
         scale_x=False,
-        index_driver=ENNIndexDriver.HNSW_DISK,
+        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
         enn_storage="disk",
     )
@@ -125,7 +109,7 @@ def test_enn_disk_hnsw_posterior_with_pending_matches_fresh(tmp_path):
         np.vstack([x0, x1]),
         np.vstack([y0, y1]),
         scale_x=False,
-        index_driver=ENNIndexDriver.HNSW_DISK,
+        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(tmp_path / "enn_disk_fresh"),
         enn_storage="disk",
     )
@@ -140,7 +124,7 @@ def test_enn_disk_hnsw_posterior_with_pending_matches_fresh(tmp_path):
     np.testing.assert_allclose(post_inc.se, post_fresh.se, rtol=1e-5)
 
 
-def test_enn_disk_hnsw_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_path):
+def test_enn_disk_bpann_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_path):
     """Disk reopen with scale_x=true must not return wrong posterior before ensure_index_sync."""
     from enn.enn.enn_params import ENNParams
 
@@ -154,7 +138,7 @@ def test_enn_disk_hnsw_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_p
         x,
         y,
         scale_x=True,
-        index_driver=ENNIndexDriver.HNSW_DISK,
+        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
         enn_storage="disk",
     )
@@ -165,7 +149,7 @@ def test_enn_disk_hnsw_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_p
         np.zeros((0, d)),
         np.zeros((0, 1)),
         scale_x=True,
-        index_driver=ENNIndexDriver.HNSW_DISK,
+        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
         enn_storage="disk",
     )
@@ -173,7 +157,7 @@ def test_enn_disk_hnsw_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_p
         x,
         y,
         scale_x=True,
-        index_driver=ENNIndexDriver.HNSW_DISK,
+        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(tmp_path / "enn_disk_scale_x_reopen_fresh"),
         enn_storage="disk",
     )
@@ -188,7 +172,7 @@ def test_enn_disk_hnsw_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_p
     np.testing.assert_allclose(post_reopen.se, post_fresh.se, rtol=1e-5)
 
 
-def test_enn_disk_hnsw_posterior_scale_x_pending_matches_fresh(tmp_path):
+def test_enn_disk_bpann_posterior_scale_x_pending_matches_fresh(tmp_path):
     """Phase D: scale_x pending leg uses live scale; posterior matches fresh."""
     from enn.enn.enn_params import ENNParams
 
@@ -202,7 +186,7 @@ def test_enn_disk_hnsw_posterior_scale_x_pending_matches_fresh(tmp_path):
         x,
         y,
         scale_x=True,
-        index_driver=ENNIndexDriver.HNSW_DISK,
+        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
         enn_storage="disk",
     )
@@ -211,7 +195,7 @@ def test_enn_disk_hnsw_posterior_scale_x_pending_matches_fresh(tmp_path):
         x,
         y,
         scale_x=True,
-        index_driver=ENNIndexDriver.HNSW_DISK,
+        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(tmp_path / "enn_disk_scale_x_fresh"),
         enn_storage="disk",
     )
@@ -226,8 +210,8 @@ def test_enn_disk_hnsw_posterior_scale_x_pending_matches_fresh(tmp_path):
     np.testing.assert_allclose(post_inc.se, post_fresh.se, rtol=1e-5)
 
 
-@pytest.mark.parametrize("driver", [ENNIndexDriver.HNSW_DISK, ENNIndexDriver.BPANN_DISK])
-def test_enn_disk_backend_incremental_add_and_search_hnsw_disk(tmp_path, driver):
+@pytest.mark.parametrize("driver", [ENNIndexDriver.BPANN_DISK])
+def test_enn_disk_backend_incremental_add_and_search_bpann_disk(tmp_path, driver):
     work_dir = tmp_path / f"enn_disk_{driver.name.lower()}"
     rng = np.random.default_rng(42)
     n, d, init = 60, 4, 50
@@ -256,8 +240,8 @@ def test_enn_disk_backend_incremental_add_and_search_hnsw_disk(tmp_path, driver)
         assert int(idx[0, 0]) == int(flat_idx[0, 0]), f"query row {qi}"
 
 
-@pytest.mark.parametrize("driver", [ENNIndexDriver.HNSW_DISK, ENNIndexDriver.BPANN_DISK])
-def test_enn_disk_backend_train_rows_at_matches_memory_hnsw_disk(tmp_path, driver):
+@pytest.mark.parametrize("driver", [ENNIndexDriver.BPANN_DISK])
+def test_enn_disk_backend_train_rows_at_matches_memory_bpann_disk(tmp_path, driver):
     work_dir = tmp_path / f"enn_disk_rows_{driver.name.lower()}"
     rng = np.random.default_rng(7)
     n, d = 30, 3

@@ -15,16 +15,12 @@ pub enum IndexError {
 pub enum IndexDriver {
     #[default]
     Exact,
-    /// Faiss HNSW32 (in-memory).
-    HNSW,
-    /// In-tree HNSW on disk (`EnnStorage::Disk` + `work_dir`).
-    HNSWDisk,
     /// B+ANN disk index (`EnnStorage::Disk` + `work_dir`).
     BpAnnDisk,
 }
 
 pub fn is_disk_index_driver(driver: IndexDriver) -> bool {
-    matches!(driver, IndexDriver::HNSWDisk | IndexDriver::BpAnnDisk)
+    matches!(driver, IndexDriver::BpAnnDisk)
 }
 
 use std::sync::Mutex;
@@ -184,17 +180,7 @@ mod tests {
         ENNIndex::new(train_x, 2, x_scale, false, driver).unwrap()
     }
 
-    fn run_hnsw_search_tests(make: fn(Array2<f64>) -> ENNIndex) {
-        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
-        let index = make(train_x);
-        let query = array![[0.0, 0.0]];
-        let (dist2s, indices) = index.search(&query.view(), 2, false).unwrap();
-        assert_eq!(indices[[0, 0]], 0);
-        assert!(dist2s[[0, 0]] < 0.001);
-        assert!(dist2s[[0, 1]] > 0.0);
-    }
-
-    fn run_hnsw_regression_test(make: fn(Array2<f64>) -> ENNIndex) {
+    fn run_exact_regression_test(make: fn(Array2<f64>) -> ENNIndex) {
         let n = 10usize;
         let train_x = Array2::from_shape_fn((n, 2), |(i, j)| {
             if j == 0 {
@@ -271,13 +257,8 @@ mod tests {
     }
 
     #[test]
-    fn test_hnsw_search() {
-        run_hnsw_search_tests(|train_x| index_unit(train_x, IndexDriver::HNSW));
-    }
-
-    #[test]
-    fn test_hnsw_search_regression_all_indices_valid_for_k_equals_n() {
-        run_hnsw_regression_test(|train_x| index_unit(train_x, IndexDriver::HNSW));
+    fn test_exact_search_regression_all_indices_valid_for_k_equals_n() {
+        run_exact_regression_test(|train_x| index_unit(train_x, IndexDriver::Exact));
     }
 
     #[test]
@@ -285,7 +266,6 @@ mod tests {
         use crate::knn::{arr2_rows_to_f32, pad_neighbor_cols_to_search_k, unpack_batch_search};
         use faiss::Index;
         assert_eq!(faiss_spec_for_test(IndexDriver::Exact), "Flat");
-        assert_eq!(faiss_spec_for_test(IndexDriver::HNSW), "HNSW32");
         let _ = faiss_map_err_for_test as fn(FaissError) -> IndexError;
         let rows = array![[1.0, 2.0], [3.0, 4.0]];
         let f32v = arr2_rows_to_f32(&rows.view());

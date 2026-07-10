@@ -21,13 +21,13 @@ def test_neighbors_returns_correct_number_and_ordering():
     assert train_y[indices].shape == (5, 1)
 
 
-def test_neighbors_hnsw_index_driver_returns_valid_indices():
+def test_neighbors_flat_index_driver_returns_valid_indices():
     rng = np.random.default_rng(3)
     n, d = 35, 4
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True).astype(float)
     model = EpistemicNearestNeighbors(
-        train_x, train_y, scale_x=False, index_driver=ENNIndexDriver.HNSW
+        train_x, train_y, scale_x=False, index_driver=ENNIndexDriver.FLAT
     )
     x_query = rng.standard_normal(d)
     neighbors = model.neighbors(x_query, k=6, exclude_nearest=False)

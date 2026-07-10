@@ -2,9 +2,8 @@
 
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
-use crate::backend::{DiskEnnBackend, EnnBackend, EnnStorage};
+use crate::backend::{EnnBackend, EnnStorage};
 use crate::error::ENNError;
 use crate::index::{IndexDriver, is_disk_index_driver};
 
@@ -128,7 +127,7 @@ impl EpistemicNearestNeighbors {
             EnnStorage::Disk => {
                 if !is_disk_index_driver(driver) {
                     return Err(ENNError::InvalidParameter(
-                        "Disk storage requires IndexDriver::HNSWDisk or IndexDriver::BpAnnDisk"
+                        "Disk storage requires IndexDriver::BpAnnDisk"
                             .to_string(),
                     ));
                 }
@@ -168,15 +167,22 @@ impl EpistemicNearestNeighbors {
         Ok(model)
     }
 
-    /// Empty model for incremental construction (e.g. TuRBO from zero rows).
     pub fn new_empty(
         num_dim: usize,
         num_metrics: usize,
         driver: IndexDriver,
         storage: EnnStorage,
         work_dir: Option<PathBuf>,
+        pending_flush_threshold: Option<usize>,
     ) -> Result<Self, ENNError> {
-        let backend = EnnBackend::new_empty(num_dim, num_metrics, driver, storage, work_dir)?;
+        let backend = EnnBackend::new_empty(
+            num_dim,
+            num_metrics,
+            driver,
+            storage,
+            work_dir,
+            pending_flush_threshold,
+        )?;
         Ok(Self {
             backend,
             num_obs: 0,
@@ -257,15 +263,6 @@ impl EpistemicNearestNeighbors {
     /// Schedule a background index flush when pending rows exceed the disk threshold.
     pub fn schedule_background_flush(&self) -> Result<(), ENNError> {
         self.backend.schedule_background_flush()
-    }
-
-    /// Hidden accessor for integration tests needing the disk backend handle.
-    #[doc(hidden)]
-    pub fn disk_backend_arc(&self) -> Option<Arc<Mutex<DiskEnnBackend>>> {
-        match &self.backend {
-            EnnBackend::Disk(arc) => Some(Arc::clone(arc)),
-            _ => None,
-        }
     }
 
     pub fn len(&self) -> usize {
@@ -404,10 +401,9 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
         model.x_sumsq = x_sumsq;
         model.x_scale =
             scale_from_moments(n, model.num_dim, &model.x_sum, &model.x_sumsq, 1e-12);
-        // Disk reopen: backend x_scale starts at empty-init ones while the graph may
-        // have been built under a different scale. Force rebuild on first search.
-        model.backend.mark_index_stale();
     }
+    model.backend
+        .ensure_index_sync(model.scale_x, &model.x_scale)?;
     Ok(())
 }
 
@@ -512,6 +508,7 @@ mod tests {
             IndexDriver::Exact,
             EnnStorage::InMemory,
             None,
+            None,
         )
         .unwrap();
         model
@@ -536,75 +533,6 @@ mod tests {
     }
 
     #[test]
-    fn model_add_waits_for_inflight_flush() {
-        use crate::backend::{DiskEnnBackend, EnnBackend};
-        use std::sync::{Arc, Mutex};
-        use tempfile::TempDir;
-
-        let dir = TempDir::new().expect("tempdir");
-        let mut model = EpistemicNearestNeighbors::new_empty(
-            2,
-            1,
-            IndexDriver::HNSWDisk,
-            EnnStorage::Disk,
-            Some(dir.path().to_path_buf()),
-        )
-        .unwrap();
-        for i in 0..3 {
-            model
-                .add(
-                    &array![[i as f64, 0.0]].view(),
-                    &array![[i as f64]].view(),
-                    None,
-                )
-                .unwrap();
-        }
-        let (arc, flush_arc) = match &model.backend {
-            EnnBackend::Disk(a) => {
-                let guard = a.lock().expect("disk lock");
-                let DiskEnnBackend::Hnsw(ref b) = *guard else { panic!("expected HNSW disk backend"); };
-                let f = Arc::clone(&b.flush);
-                drop(guard);
-                (Arc::clone(a), f)
-            }
-            _ => panic!("expected disk backend"),
-        };
-        {
-            let guard = arc.lock().expect("disk lock");
-            let DiskEnnBackend::Hnsw(ref b) = *guard else { panic!("expected HNSW disk backend"); };
-            b.flush_test_barrier_hold(true);
-        }
-        crate::disk_hnsw::flush::try_schedule_background_flush(
-            &flush_arc,
-            Arc::clone(&arc),
-        )
-        .unwrap();
-        let model = Arc::new(Mutex::new(model));
-        let add_handle = {
-            let model = Arc::clone(&model);
-            std::thread::spawn(move || {
-                let mut m = model.lock().expect("model lock");
-                m.add(
-                    &array![[9.0, 9.0]].view(),
-                    &array![[9.0]].view(),
-                    None,
-                )
-                .unwrap();
-            })
-        };
-        flush_arc
-            .lock()
-            .expect("flush lock")
-            .barrier
-            .set_hold(false);
-        add_handle.join().expect("add thread");
-        let guard = arc.lock().expect("disk lock");
-        let DiskEnnBackend::Hnsw(ref b) = *guard else { panic!("expected HNSW disk backend"); };
-        assert_eq!(b.len(), 4);
-        assert_eq!(b.indexed_rows(), 3);
-    }
-
-    #[test]
     fn kiss_model_accessor_helpers() {
         let mut model = EpistemicNearestNeighbors::new(
             array![[0.0, 0.0], [1.0, 0.0]],
@@ -615,8 +543,8 @@ mod tests {
         )
         .unwrap();
         assert!(!model.is_scale_x());
+        assert_eq!(model.backend_driver(), IndexDriver::Exact);
         let _ = model.x_scale_row();
-        assert!(model.disk_backend_arc().is_none());
         model
             .add(&array![[0.5, 0.5]].view(), &array![[0.5]].view(), None)
             .unwrap();

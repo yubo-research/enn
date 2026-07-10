@@ -12,7 +12,7 @@ use crate::knn::MmapColumnStore;
 pub type MmapTrainRowsAt = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
 
 pub const FORMAT_VERSION: u32 = 1;
-pub const MAX_NUM_DIM: usize = 1024;
+pub const MAX_NUM_DIM: usize = 8192;
 pub const MAX_RECORD_STRIDE: usize = 8 * 1024 * 1024;
 
 pub fn check_append_row_limit(new_n: usize) -> Result<(), ENNError> {
@@ -299,15 +299,22 @@ mod disk_observation_tests {
     use tempfile::TempDir;
 
     #[test]
-    fn metadata_roundtrip_hnsw_disk() {
+    fn metadata_roundtrip_bpann_disk() {
         let dir = TempDir::new().expect("tempdir");
-        write_metadata(dir.path(), 7, 3, 2, true, 5, "hnsw_disk").unwrap();
+        write_metadata(dir.path(), 7, 3, 2, true, 5, "bpann_disk").unwrap();
         assert_eq!(load_indexed_rows(dir.path()), Some(5));
         assert_eq!(load_num_obs(dir.path()), Some(7));
         assert_eq!(
             load_index_backend(dir.path()).as_deref(),
-            Some("hnsw_disk")
+            Some("bpann_disk")
         );
+    }
+
+    #[test]
+    fn validate_dim_limits_accepts_8192_rejects_8193() {
+        validate_dim_limits(8192, 100).unwrap();
+        let err = validate_dim_limits(8193, 100).unwrap_err();
+        assert!(err.to_string().contains("8192"));
     }
 
     #[test]
@@ -323,11 +330,11 @@ mod disk_observation_tests {
         let dir = TempDir::new().expect("tempdir");
         std::fs::write(
             dir.path().join("metadata.json"),
-            "{\"indexed_rows\":not_a_number,\"index_backend\":\"hnsw_disk\"}",
+            "{\"indexed_rows\":not_a_number,\"index_backend\":\"bpann_disk\"}",
         )
         .unwrap();
         assert_eq!(load_indexed_rows(dir.path()), None);
-        assert_eq!(load_index_backend(dir.path()), Some("hnsw_disk".to_string()));
+        assert_eq!(load_index_backend(dir.path()), Some("bpann_disk".to_string()));
         std::fs::write(dir.path().join("metadata.json"), "{\"indexed_rows\":5}").unwrap();
         assert_eq!(load_index_backend(dir.path()), None);
         std::fs::write(dir.path().join("metadata.json"), "{\"format_version\":1}").unwrap();
@@ -336,12 +343,12 @@ mod disk_observation_tests {
 
     #[test]
     fn parse_json_helpers_all_branches() {
-        let text = "{\"indexed_rows\":42,\"index_backend\":\"hnsw_disk\"}";
+        let text = "{\"indexed_rows\":42,\"index_backend\":\"bpann_disk\"}";
         assert_eq!(parse_json_usize_field(text, "indexed_rows"), Some(42));
         assert_eq!(parse_json_usize_field(text, "missing"), None);
         assert_eq!(
             parse_json_string_field(text, "index_backend").as_deref(),
-            Some("hnsw_disk")
+            Some("bpann_disk")
         );
         assert_eq!(parse_json_string_field(text, "missing"), None);
         assert_eq!(parse_json_string_field("{\"index_backend\":", "index_backend"), None);
@@ -351,8 +358,8 @@ mod disk_observation_tests {
     fn shared_disk_backend_wrappers() {
         use ndarray::array;
         let dir = TempDir::new().expect("tempdir");
-        write_metadata(dir.path(), 0, 2, 1, false, 0, "hnsw_disk").unwrap();
-        validate_index_backend(dir.path(), "hnsw_disk").unwrap();
+        write_metadata(dir.path(), 0, 2, 1, false, 0, "bpann_disk").unwrap();
+        validate_index_backend(dir.path(), "bpann_disk").unwrap();
         let err = validate_index_backend(dir.path(), "flat").unwrap_err();
         assert!(err.to_string().contains("index_backend"));
 
@@ -499,9 +506,9 @@ mod kiss_coverage_tests {
         use tempfile::TempDir;
         let dir = TempDir::new().unwrap();
         crate::backend::disk_observation::check_append_row_limit(10).unwrap();
-        crate::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "hnsw_disk")
+        crate::backend::disk_observation::write_metadata(dir.path(), 0, 4, 1, false, 0, "bpann_disk")
             .unwrap();
-        crate::backend::disk_observation::validate_index_backend(dir.path(), "hnsw_disk").unwrap();
+        crate::backend::disk_observation::validate_index_backend(dir.path(), "bpann_disk").unwrap();
         crate::backend::disk_observation::validate_dim_limits(4, 1).unwrap();
         assert!(crate::backend::disk_observation::validate_dim_limits(
             crate::backend::disk_observation::MAX_NUM_DIM + 1,
@@ -518,7 +525,7 @@ mod kiss_coverage_tests {
         );
         assert_eq!(
             crate::backend::disk_observation::load_index_backend(dir.path()).as_deref(),
-            Some("hnsw_disk")
+            Some("bpann_disk")
         );
         let mut yvar =
             crate::backend::disk_observation::open_or_append_yvar(dir.path(), 1, None).unwrap();
@@ -531,7 +538,7 @@ mod kiss_coverage_tests {
         .unwrap();
         let dirty = Mutex::new(false);
         crate::backend::disk_observation::mark_index_dirty(&dirty);
-        let text = r#"{"indexed_rows":42,"index_backend":"hnsw_disk"}"#;
+        let text = r#"{"indexed_rows":42,"index_backend":"bpann_disk"}"#;
         assert_eq!(
             crate::backend::disk_observation::parse_json_usize_field(text, "indexed_rows"),
             Some(42)
@@ -539,7 +546,7 @@ mod kiss_coverage_tests {
         assert_eq!(
             crate::backend::disk_observation::parse_json_string_field(text, "index_backend")
                 .as_deref(),
-            Some("hnsw_disk")
+            Some("bpann_disk")
         );
     }
 }

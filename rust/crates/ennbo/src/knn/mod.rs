@@ -10,7 +10,7 @@ use crate::index::{IndexDriver, IndexError};
 
 pub(crate) use faiss_backend::FaissBackend;
 
-/// In-memory Faiss KNN storage (Exact / HNSW).
+/// In-memory Faiss KNN storage (Exact only).
 pub(crate) enum KnnBackend {
     Faiss(Mutex<FaissBackend>),
 }
@@ -22,14 +22,11 @@ impl KnnBackend {
         train_scaled: &ArrayView2<f64>,
     ) -> Result<Self, IndexError> {
         match driver {
-            IndexDriver::Exact | IndexDriver::HNSW => Ok(Self::Faiss(Mutex::new(FaissBackend::new(
+            IndexDriver::Exact => Ok(Self::Faiss(Mutex::new(FaissBackend::new(
                 num_dim,
                 driver,
                 train_scaled,
             )?))),
-            IndexDriver::HNSWDisk => Err(IndexError::InvalidParameter(
-                "IndexDriver::HNSWDisk is disk-only; use DiskHnswEnnBackend".to_string(),
-            )),
             IndexDriver::BpAnnDisk => Err(IndexError::InvalidParameter(
                 "IndexDriver::BpAnnDisk is disk-only; use DiskBpannEnnBackend".to_string(),
             )),
@@ -157,18 +154,11 @@ mod knn_backend_tests {
     }
 
     #[test]
-    fn knn_backend_faiss_hnsw() {
-        let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
-        let backend = KnnBackend::new(2, IndexDriver::HNSW, &train.view()).unwrap();
-        assert_eq!(backend.len(), 3);
-    }
-
-    #[test]
-    fn knn_backend_hnsw_disk_driver_errors() {
+    fn knn_backend_bpann_disk_driver_errors() {
         let train = array![[0.0, 0.0], [1.0, 0.0]];
-        match KnnBackend::new(2, IndexDriver::HNSWDisk, &train.view()) {
+        match KnnBackend::new(2, IndexDriver::BpAnnDisk, &train.view()) {
             Err(e) => assert!(e.to_string().contains("disk-only")),
-            Ok(_) => panic!("expected HNSWDisk on KnnBackend to error"),
+            Ok(_) => panic!("expected BpAnnDisk on KnnBackend to error"),
         }
     }
 

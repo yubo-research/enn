@@ -19,10 +19,6 @@ pub(crate) struct FaissBackend {
 fn faiss_spec(driver: IndexDriver) -> &'static str {
     match driver {
         IndexDriver::Exact => "Flat",
-        IndexDriver::HNSW => "HNSW32",
-        IndexDriver::HNSWDisk => {
-            panic!("HNSWDisk must not be routed to FaissBackend")
-        }
         IndexDriver::BpAnnDisk => {
             panic!("BpAnnDisk must not be routed to FaissBackend")
         }
@@ -65,33 +61,15 @@ impl FaissBackend {
         self.inner.ntotal() as usize
     }
 
-    /// Approximate in-memory footprint of vector storage plus HNSW graph links.
+    /// Approximate in-memory footprint of vector storage.
     pub(crate) fn memory_usage_bytes(&self) -> usize {
         let n = self.inner.ntotal() as usize;
         let d = self.inner.d() as usize;
         if n == 0 {
             return 0;
         }
-        let vector_bytes = n
-            .saturating_mul(d)
-            .saturating_mul(std::mem::size_of::<f32>());
-        match self.driver {
-            IndexDriver::Exact => vector_bytes,
-            IndexDriver::HNSW => {
-                const M: usize = 32;
-                let level0_links = n
-                    .saturating_mul(M)
-                    .saturating_mul(2)
-                    .saturating_mul(std::mem::size_of::<i64>());
-                vector_bytes.saturating_add(level0_links)
-            }
-            IndexDriver::HNSWDisk => {
-                panic!("HNSWDisk must not be routed to FaissBackend")
-            }
-            IndexDriver::BpAnnDisk => {
-                panic!("BpAnnDisk must not be routed to FaissBackend")
-            }
-        }
+        n.saturating_mul(d)
+            .saturating_mul(std::mem::size_of::<f32>())
     }
 
     pub(crate) fn rebuild(&mut self, train_scaled: &ArrayView2<f64>) -> Result<(), IndexError> {
@@ -345,7 +323,7 @@ mod faiss_backend_tests {
 
     #[test]
     fn faiss_spec_and_map_err() {
-        assert_eq!(faiss_spec(IndexDriver::HNSW), "HNSW32");
+        assert_eq!(faiss_spec(IndexDriver::Exact), "Flat");
         let err = faiss_map_err(faiss::error::Error::IndexDescription);
         assert!(matches!(err, IndexError::InvalidParameter(_)));
     }
@@ -435,16 +413,6 @@ mod faiss_backend_tests {
         assert_eq!(store.mmap_row_range(0, store.nrows).unwrap().nrows(), 2);
         let mid = store.mmap_row_range(1, 2).unwrap();
         assert_eq!(mid[[0, 0]], 3.0);
-    }
-
-    #[test]
-    fn faiss_backend_hnsw_search() {
-        let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
-        let mut backend = FaissBackend::new(2, IndexDriver::HNSW, &train.view()).unwrap();
-        let (_d, i) = backend
-            .search(&array![[0.0, 0.0]].view(), 2, 2)
-            .unwrap();
-        assert_eq!(i[[0, 0]], 0);
     }
 
     #[test]

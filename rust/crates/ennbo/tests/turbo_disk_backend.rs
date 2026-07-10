@@ -25,7 +25,7 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
     let mut cfg = turbo_enn_config();
     if let SurrogateConfig::ENN(ref mut enn) = cfg.surrogate {
         let index_driver = match storage {
-            EnnStorage::Disk => IndexDriver::HNSWDisk,
+            EnnStorage::Disk => IndexDriver::BpAnnDisk,
             EnnStorage::InMemory => IndexDriver::Exact,
         };
         *enn = ENNSurrogateConfig {

@@ -18,10 +18,10 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "hnsw", "hnsw_disk", "bpann_disk")
-DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"hnsw_disk", "bpann_disk"})
+INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "bpann_disk")
+DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"bpann_disk"})
 DISK_DEFER_SYNC_DRIVERS: frozenset[ENNIndexDriver] = frozenset(
-    {ENNIndexDriver.HNSW_DISK, ENNIndexDriver.BPANN_DISK}
+    {ENNIndexDriver.BPANN_DISK}
 )
 DEFAULT_NUM_DIM = 10
 STRESS_OBS_BATCH_SIZE = 100
@@ -79,7 +79,7 @@ def run_disk_rss_stress(
     *,
     num_obs: int,
     work_dir: str,
-    index_driver: ENNIndexDriver = ENNIndexDriver.HNSW_DISK,
+    index_driver: ENNIndexDriver = ENNIndexDriver.BPANN_DISK,
     config: DiskRssStressConfig | None = None,
 ) -> DiskRssStressResult:
     """Stream batched adds to disk ENN; return RSS and on-disk metrics."""
@@ -155,8 +155,6 @@ class EnnAddStressConfig:
 def parse_index_driver(name: str) -> ENNIndexDriver:
     mapping = {
         "flat": ENNIndexDriver.FLAT,
-        "hnsw": ENNIndexDriver.HNSW,
-        "hnsw_disk": ENNIndexDriver.HNSW_DISK,
         "bpann_disk": ENNIndexDriver.BPANN_DISK,
     }
     if name not in mapping:
@@ -386,7 +384,7 @@ def cli() -> None:
             ["--work-dir"],
             type=click.Path(file_okay=False, dir_okay=True, path_type=str),
             default=None,
-            help="Disk-backed ENN work directory (requires hnsw_disk or bpann_disk).",
+            help="Disk-backed ENN work directory (requires bpann_disk).",
         ),
     ],
 )

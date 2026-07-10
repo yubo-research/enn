@@ -438,7 +438,7 @@ mod tests {
         let overrides = ConfigOverrides {
             acquisition: Some(AcquisitionConfig::Thompson),
             candidate_rv: Some(CandidateRV::Sobol),
-            index_driver: Some(IndexDriver::HNSW),
+            index_driver: Some(IndexDriver::Exact),
             num_fit_samples: Some(123),
             num_fit_candidates: Some(456),
             scale_x: Some(true),
@@ -451,7 +451,7 @@ mod tests {
         assert!(matches!(applied.acquisition, AcquisitionConfig::Thompson));
         assert_eq!(applied.candidates.candidate_rv, CandidateRV::Sobol);
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
-            assert_eq!(enn.index_driver, IndexDriver::HNSW);
+            assert_eq!(enn.index_driver, IndexDriver::Exact);
             assert_eq!(enn.num_fit_samples, 123);
             assert_eq!(enn.num_fit_candidates, 456);
             assert!(enn.scale_x);
@@ -546,7 +546,7 @@ mod tests {
         use std::path::PathBuf;
 
         let overrides = ConfigOverrides {
-            index_driver: Some(IndexDriver::HNSWDisk),
+            index_driver: Some(IndexDriver::BpAnnDisk),
             enn_storage: Some(EnnStorage::Disk),
             work_dir: Some(PathBuf::from("/tmp/enn_work")),
             ..Default::default()
@@ -555,7 +555,7 @@ mod tests {
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
-        assert_eq!(enn.index_driver, IndexDriver::HNSWDisk);
+        assert_eq!(enn.index_driver, IndexDriver::BpAnnDisk);
         assert_eq!(enn.storage, EnnStorage::Disk);
         assert_eq!(enn.work_dir.as_deref(), Some(Path::new("/tmp/enn_work")));
     }

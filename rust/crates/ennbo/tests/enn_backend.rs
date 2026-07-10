@@ -34,6 +34,7 @@ fn new_empty_in_memory_accepts_incremental_add() {
         IndexDriver::Exact,
         EnnStorage::InMemory,
         None,
+        None,
     )
     .unwrap();
     model
@@ -53,7 +54,7 @@ fn disk_backend_roundtrip_and_search() {
         train_y,
         None,
         false,
-        IndexDriver::HNSWDisk,
+        IndexDriver::BpAnnDisk,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
     )
@@ -77,8 +78,8 @@ fn disk_backend_roundtrip_and_search() {
 }
 
 #[test]
-fn kiss_disk_hnsw_static_coverage_names() {
-    let _type_hint: Option<ennbo::DiskHnswEnnBackend> = None;
+fn kiss_disk_bpann_static_coverage_names() {
+    let _type_hint: Option<ennbo::DiskBpannEnnBackend> = None;
     let names: &[&str] = &[
         "MmapColumnStore",
         "mmap_open_or_create",
@@ -86,7 +87,6 @@ fn kiss_disk_hnsw_static_coverage_names() {
         "mmap_row_slice",
         "mmap_gather",
         "write_metadata",
-        "index_row_range",
         "append_rows",
         "mark_index_stale",
         "ensure_index_sync",
@@ -97,8 +97,6 @@ fn kiss_disk_hnsw_static_coverage_names() {
         "search",
         "index_memory_bytes",
         "new_empty",
-        "indexed_rows",
-        "graph_dir",
     ];
     assert!(!names.is_empty());
 }
@@ -116,7 +114,7 @@ fn disk_storage_rejects_non_disk_driver() {
         Some(dir.path().to_path_buf()),
     ) {
         Ok(_) => panic!("expected disk + Exact to error"),
-        Err(e) => assert!(e.to_string().contains("HNSWDisk")),
+        Err(e) => assert!(e.to_string().contains("BpAnnDisk")),
     }
 }
 

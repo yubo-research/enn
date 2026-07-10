@@ -122,6 +122,7 @@ impl BpannBackend {
             scale_x,
             indexed_rows,
         )?;
+        backend.num_obs_counter.set(n);
         Ok(backend)
     }
 

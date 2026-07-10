@@ -17,25 +17,6 @@ kiss_unit_refs!(
 );
 
 kiss_unit_refs!(
-    kiss_disk_hnsw_layout_refs,
-    write_neighbors_layer,
-    l2_sq_from_record,
-);
-
-kiss_unit_refs!(
-    kiss_disk_hnsw_split_graph_refs,
-    in_ram,
-    read_record_mut,
-);
-
-kiss_unit_refs!(
-    kiss_disk_hnsw_store_refs,
-    ensure_id,
-    set_num_nodes,
-    record_range,
-);
-
-kiss_unit_refs!(
     kiss_fitter_refs,
     update_y,
     build_random_param_candidates,
