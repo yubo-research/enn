@@ -7,10 +7,7 @@ use crate::error::BpannError;
 use crate::index::build::IndexHeader;
 use crate::index::page::{write_pages_index, Page};
 
-pub(crate) fn write_skip_edges_file(
-    path: &Path,
-    edges: &HashMap<u32, Vec<u32>>,
-) -> Result<(), BpannError> {
+pub(crate) fn skip_edges_bytes(edges: &HashMap<u32, Vec<u32>>) -> Vec<u8> {
     let mut buf = Vec::new();
     buf.extend_from_slice(&(edges.len() as u32).to_le_bytes());
     for (&from, tos) in edges {
@@ -20,7 +17,15 @@ pub(crate) fn write_skip_edges_file(
             buf.extend_from_slice(&to.to_le_bytes());
         }
     }
-    fs::write(path, buf).map_err(|e| BpannError::InvalidParameter(e.to_string()))
+    buf
+}
+
+pub(crate) fn write_skip_edges_file(
+    path: &Path,
+    edges: &HashMap<u32, Vec<u32>>,
+) -> Result<(), BpannError> {
+    fs::write(path, skip_edges_bytes(edges))
+        .map_err(|e| BpannError::InvalidParameter(e.to_string()))
 }
 
 pub(crate) fn persist_index_files(

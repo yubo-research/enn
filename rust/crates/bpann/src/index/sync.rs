@@ -191,9 +191,16 @@ impl IncrementalIndex {
         if index_dirty {
             return true;
         }
-        match on_disk_indexed_rows(&self.index_dir) {
-            Ok(on_disk) => on_disk != nrows,
-            Err(_) => true,
+        let on_disk = match on_disk_indexed_rows(&self.index_dir) {
+            Ok(on_disk) => on_disk,
+            Err(_) => return true,
+        };
+        if on_disk != nrows {
+            return true;
+        }
+        match self.indices.first() {
+            Some(index) => !index.on_disk_index_matches().unwrap_or(false),
+            None => on_disk != 0 || nrows != 0,
         }
     }
 
