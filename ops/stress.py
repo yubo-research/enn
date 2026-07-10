@@ -426,7 +426,8 @@ class SampleStressResult:
     num_function_seeds: int
     draws_shape: tuple[int, ...]
     all_finite: bool
-    draw_s: float
+    init_s: float
+    sample_s: float
 
 
 def run_sample_stress(
@@ -438,6 +439,7 @@ def run_sample_stress(
     cfg = config if config is not None else SampleStressConfig()
     if cfg.num_samples < 1:
         raise ValueError("num_samples must be >= 1")
+    t0 = time.perf_counter()
     model, meta = reopen_disk_bpann_enn(work_dir)
     num_dim = int(meta["num_dim"])
     x_query = make_uniform_query_points(
@@ -447,14 +449,15 @@ def run_sample_stress(
         low=cfg.x_low,
         high=cfg.x_high,
     )
-    t0 = time.perf_counter()
+    init_s = time.perf_counter() - t0
+    t1 = time.perf_counter()
     function_seeds = function_seeds_for_sample(cfg.seed)
     draws, _idx = model.posterior_function_draw(
         x_query,
         STRESS_PARAMS,
         function_seeds=function_seeds,
     )
-    draw_s = time.perf_counter() - t0
+    sample_s = time.perf_counter() - t1
     return SampleStressResult(
         num_dim=num_dim,
         num_obs=len(model),
@@ -463,7 +466,8 @@ def run_sample_stress(
         num_function_seeds=len(function_seeds),
         draws_shape=tuple(int(s) for s in draws.shape),
         all_finite=bool(np.all(np.isfinite(draws))),
-        draw_s=draw_s,
+        init_s=init_s,
+        sample_s=sample_s,
     )
 
 
@@ -477,7 +481,8 @@ def format_sample_config_header(*, result: SampleStressResult, work_dir: str) ->
 def format_sample_summary(result: SampleStressResult) -> str:
     return (
         f"draws_shape={result.draws_shape} function_seeds={result.num_function_seeds} "
-        f"all_finite={str(result.all_finite).lower()} draw_s={result.draw_s:.3f}"
+        f"all_finite={str(result.all_finite).lower()} init_s={result.init_s:.3f} "
+        f"sample_s={result.sample_s:.3f}"
     )
 
 
@@ -573,20 +578,11 @@ def enn(
 @cli.command(
     "sample",
     params=[
-        click.Option(
-            ["--work-dir"],
+        click.Argument(
+            ["work_dir"],
             type=click.Path(file_okay=False, dir_okay=True, path_type=str),
-            default=DEFAULT_SAMPLE_WORK_DIR,
-            show_default=True,
-            help="Disk-backed bpann ENN work directory to reopen.",
         ),
-        click.Option(
-            ["--num-samples"],
-            type=int,
-            default=NUM_SAMPLE,
-            show_default=True,
-            help="Number of uniformly random query points.",
-        ),
+        click.Argument(["num_samples"], type=int),
         click.Option(
             ["--seed"],
             type=int,

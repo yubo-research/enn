@@ -49,7 +49,8 @@ def test_run_sample_stress_on_disk_store(tmp_path):
     assert result.num_samples == 5
     assert result.draws_shape == (1, 5, 1)
     assert result.all_finite
-    assert result.draw_s >= 0.0
+    assert result.init_s >= 0.0
+    assert result.sample_s >= 0.0
 
 
 def test_sample_stress_cli_on_disk_store(tmp_path):
@@ -61,7 +62,7 @@ def test_sample_stress_cli_on_disk_store(tmp_path):
     _make_small_disk_bpann_store(work_dir, num_obs=10, num_dim=4)
     result = CliRunner().invoke(
         cli,
-        ["sample", "--work-dir", str(work_dir), "--num-samples", "5", "--seed", "1"],
+        ["sample", str(work_dir), "5", "--seed", "1"],
     )
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
@@ -69,8 +70,9 @@ def test_sample_stress_cli_on_disk_store(tmp_path):
         f"num_dim=4 num_obs=10 work_dir={work_dir} num_samples=5 seed=1"
     )
     assert lines[1].startswith(
-        "draws_shape=(1, 5, 1) function_seeds=1 all_finite=true draw_s="
+        "draws_shape=(1, 5, 1) function_seeds=1 all_finite=true init_s="
     )
+    assert " sample_s=" in lines[1]
 
 
 def test_sample_stress_cli_rejects_missing_work_dir():
@@ -80,10 +82,19 @@ def test_sample_stress_cli_rejects_missing_work_dir():
 
     result = CliRunner().invoke(
         cli,
-        ["sample", "--work-dir", "/nonexistent/enn_store"],
+        ["sample", "/nonexistent/enn_store", "5"],
     )
     assert result.exit_code != 0
     assert "work_dir does not exist" in result.output
+
+
+def test_sample_stress_cli_rejects_missing_required_args():
+    from click.testing import CliRunner
+
+    from ops.stress import cli
+
+    result = CliRunner().invoke(cli, ["sample"])
+    assert result.exit_code != 0
 
 
 def test_sample_stress_cli_rejects_invalid_num_samples(tmp_path):
@@ -95,7 +106,7 @@ def test_sample_stress_cli_rejects_invalid_num_samples(tmp_path):
     _make_small_disk_bpann_store(work_dir)
     result = CliRunner().invoke(
         cli,
-        ["sample", "--work-dir", str(work_dir), "--num-samples", "0"],
+        ["sample", str(work_dir), "0"],
     )
     assert result.exit_code != 0
     assert "num_samples must be >= 1" in result.output
