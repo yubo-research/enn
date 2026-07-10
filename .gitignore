@@ -1,11 +1,7 @@
 target/
-ops/
 **/__pycache__/
 **/*.py[cod]
 **/*.rs.bk
-.malvin/logs/
-.malvin_checks
-/log
-/log_2
+.malvin/
 results/
-*.md~
+*~
