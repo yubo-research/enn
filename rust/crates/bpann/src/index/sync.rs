@@ -1,8 +1,9 @@
+use std::fs;
 use std::path::PathBuf;
 
 use crate::distance::{l2_sq_f32, bpann_row_to_f32};
 use crate::error::BpannError;
-use crate::index::build::BpannIndex;
+use crate::index::build::{BpannIndex, IndexHeader};
 use crate::index::search::{
     search_exhaustive_leaves_with_store, search_greedy_blocks_only_with_store,
     search_with_skip_refinement_with_store, MmapSearchStore,
@@ -183,28 +184,43 @@ impl IncrementalIndex {
         self.persist_to_disk(&ctx)
     }
 
+    pub fn needs_disk_rewrite(&self, index_dirty: bool, nrows: usize) -> bool {
+        if self.indices.len() > 1 {
+            return true;
+        }
+        if index_dirty {
+            return true;
+        }
+        match on_disk_indexed_rows(&self.index_dir) {
+            Ok(on_disk) => on_disk != nrows,
+            Err(_) => true,
+        }
+    }
+
     fn persist_to_disk(&mut self, ctx: &IndexBuildContext<'_>) -> Result<(), BpannError> {
         self.ensure_sync(ctx, ctx.train_x.nrows)?;
         if self.indices.is_empty() && self.indexed_rows == 0 {
             return Ok(());
         }
         if self.indices.len() > 1 {
-            let parts = std::mem::take(&mut self.indices);
-            let merged = BpannIndex::concat_merge(parts, self.index_dir.clone(), false)?;
-            self.indices = vec![merged];
-        }
-        if let Some(index) = self.indices.first_mut() {
-            index.persist()?;
-            obs::bpann_write_metadata(
-                ctx.work_dir,
-                ctx.train_x.nrows,
-                ctx.num_dim,
-                ctx.num_metrics,
-                ctx.scale_x,
-                self.indexed_rows,
+            let merged = BpannIndex::concat_merge(
+                self.indices.clone(),
+                self.index_dir.clone(),
+                false,
             )?;
-            obs::write_indexed_rows(ctx.work_dir, self.indexed_rows)?;
+            merged.persist()?;
+        } else if let Some(index) = self.indices.first() {
+            index.persist()?;
         }
+        obs::bpann_write_metadata(
+            ctx.work_dir,
+            ctx.train_x.nrows,
+            ctx.num_dim,
+            ctx.num_metrics,
+            ctx.scale_x,
+            self.indexed_rows,
+        )?;
+        obs::write_indexed_rows(ctx.work_dir, self.indexed_rows)?;
         Ok(())
     }
 
@@ -450,6 +466,18 @@ fn search_index_candidates(
             search_greedy_blocks_only_with_store(index, query, k, beam, store)
         }
     }
+}
+
+fn on_disk_indexed_rows(index_dir: &std::path::Path) -> Result<usize, BpannError> {
+    let header_path = index_dir.join("header.json");
+    if !header_path.exists() {
+        return Ok(0);
+    }
+    let text = fs::read_to_string(&header_path)
+        .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+    let header: IndexHeader = serde_json::from_str(&text)
+        .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+    Ok(header.indexed_rows)
 }
 
 #[cfg(test)]

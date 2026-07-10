@@ -76,9 +76,7 @@ def _run_fast_test_smoke(notebook_path: str) -> None:
     exec(compile(smoke.strip(), notebook_path, "exec"), {"__name__": "__main__"})
 
 
-def _execute_with_kernel(
-    nb, repo_root: Path, kernel_manager
-) -> None:
+def _execute_with_kernel(nb, repo_root: Path, kernel_manager) -> None:
     from nbclient import NotebookClient
 
     client = NotebookClient(

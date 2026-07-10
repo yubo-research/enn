@@ -164,7 +164,6 @@ def test_index_search_neighbor_lookup_not_much_slower_than_faiss_only(
     )
 
 
-
 def test_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
     """posterior(train_x) tie-break-on must track tie-break-off at n=1024."""
     rng = np.random.default_rng(0)
@@ -194,7 +193,6 @@ def test_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
     assert ratio <= 1.22, (
         f"tie-break posterior must be <= 1.22x no-tie-break at n=1024, got {ratio:.2f}x"
     )
-
 
 
 def test_lattice_posterior_self_search_tie_break_not_much_slower_than_no_tie_break():
@@ -227,7 +225,6 @@ def test_lattice_posterior_self_search_tie_break_not_much_slower_than_no_tie_bre
         f"lattice tie-break posterior must be <= 1.15x no-tie-break at n=1024, "
         f"got {ratio:.2f}x"
     )
-
 
 
 def test_index_search_slowdown_does_not_blow_up_with_n():

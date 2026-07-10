@@ -271,6 +271,15 @@ impl BpannBackend {
     }
 
     pub fn persist_index_to_disk(&mut self) -> Result<(), BpannError> {
+        let index_dirty = *self.index_dirty.lock().expect("index_dirty");
+        if !self
+            .index
+            .needs_disk_rewrite(index_dirty, self.train_x.nrows)
+        {
+            self.pending_unindexed.store(0, Ordering::Relaxed);
+            *self.index_dirty.lock().expect("index_dirty") = false;
+            return Ok(());
+        }
         self.index.persist_to_disk_for_backend(
             &self.train_x,
             self.num_dim,

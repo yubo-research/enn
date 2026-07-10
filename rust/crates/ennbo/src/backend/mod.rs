@@ -311,7 +311,9 @@ impl EnnBackend {
 
 impl Drop for EnnBackend {
     fn drop(&mut self) {
-        let _ = persist_enn_backend_index(self);
+        if let Err(e) = persist_enn_backend_index(self) {
+            eprintln!("ennbo: persist_index_to_disk on drop failed: {e}");
+        }
     }
 }
 

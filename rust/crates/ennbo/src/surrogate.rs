@@ -331,7 +331,7 @@ impl Surrogate for ENNSurrogate {
 
     fn wait_for_background_flush(&self) -> Result<(), ENNError> {
         if let Some(model) = &self.model {
-            model.persist_index_to_disk()
+            model.index_access().ensure_sync()
         } else {
             Ok(())
         }
