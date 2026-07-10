@@ -29,6 +29,10 @@ DEFAULT_HEARTBEAT_SECONDS = 10.0
 STRESS_QUERY_N = 1000
 STRESS_QUERY_SEED = 1
 STRESS_QUERY_K = 10
+NUM_SAMPLE = STRESS_QUERY_N
+DEFAULT_SAMPLE_WORK_DIR = "_enn"
+DEFAULT_SAMPLE_X_LOW = -1.0
+DEFAULT_SAMPLE_X_HIGH = 1.0
 STRESS_PARAMS = ENNParams(
     k_num_neighbors=STRESS_QUERY_K,
     epistemic_variance_scale=1.0,
@@ -201,6 +205,25 @@ def make_query_points(query_n: int, *, num_dim: int, seed: int) -> np.ndarray:
     return rng.standard_normal((query_n, num_dim))
 
 
+def make_uniform_query_points(
+    query_n: int,
+    *,
+    num_dim: int,
+    seed: int,
+    low: float = DEFAULT_SAMPLE_X_LOW,
+    high: float = DEFAULT_SAMPLE_X_HIGH,
+) -> np.ndarray:
+    """Return (query_n, num_dim) uniformly random query batch in [low, high]."""
+    if query_n < 1:
+        raise ValueError("query_n must be >= 1")
+    if num_dim < 1:
+        raise ValueError("num_dim must be >= 1")
+    if low >= high:
+        raise ValueError("low must be < high")
+    rng = np.random.default_rng(seed)
+    return rng.uniform(low, high, size=(query_n, num_dim))
+
+
 def iter_synthetic_observations(
     num_obs: int,
     *,
@@ -244,6 +267,46 @@ def iter_synthetic_observation_batches(
         y_batch = rng.standard_normal((n, 1))
         yield x_batch, y_batch
         emitted += n
+
+
+def load_disk_metadata(work_dir: str) -> dict:
+    """Return metadata.json for a disk-backed bpann store."""
+    meta_path = Path(work_dir) / "metadata.json"
+    if not meta_path.is_file():
+        raise ValueError(f"metadata.json not found in {work_dir}")
+    meta = json.loads(meta_path.read_text())
+    if meta.get("index_backend") != "bpann_disk":
+        raise ValueError(
+            f"work_dir index_backend is not bpann_disk: {meta.get('index_backend')!r}"
+        )
+    for key in ("num_dim", "num_metrics", "num_obs"):
+        if key not in meta:
+            raise ValueError(f"metadata.json missing {key!r}")
+    return meta
+
+
+def function_seeds_for_sample(seed: int, num_seeds: int = 1) -> list[int]:
+    if num_seeds < 1:
+        raise ValueError("num_seeds must be >= 1")
+    return list(range(seed, seed + num_seeds))
+
+
+def reopen_disk_bpann_enn(work_dir: str) -> tuple[EpistemicNearestNeighbors, dict]:
+    """Reopen a persisted bpann_disk store from work_dir."""
+    meta = load_disk_metadata(work_dir)
+    num_dim = int(meta["num_dim"])
+    num_metrics = int(meta["num_metrics"])
+    scale_x = bool(meta.get("scale_x", False))
+    model = EpistemicNearestNeighbors(
+        np.empty((0, num_dim), dtype=float),
+        np.empty((0, num_metrics), dtype=float),
+        scale_x=scale_x,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=work_dir,
+        enn_storage="disk",
+    )
+    model.ensure_index_sync()
+    return model, meta
 
 
 def load_num_obs_existing(work_dir: str) -> int:
@@ -346,6 +409,78 @@ def format_stress_row(n: int, query_s: float, segment_s: float, *, n_width: int)
     return f"{n:>{n_width}} {query_s:.3f} {segment_s:.3g}"
 
 
+@dataclass(frozen=True)
+class SampleStressConfig:
+    num_samples: int = NUM_SAMPLE
+    seed: int = STRESS_QUERY_SEED
+    x_low: float = DEFAULT_SAMPLE_X_LOW
+    x_high: float = DEFAULT_SAMPLE_X_HIGH
+
+
+@dataclass(frozen=True)
+class SampleStressResult:
+    num_dim: int
+    num_obs: int
+    num_samples: int
+    seed: int
+    num_function_seeds: int
+    draws_shape: tuple[int, ...]
+    all_finite: bool
+    draw_s: float
+
+
+def run_sample_stress(
+    *,
+    work_dir: str,
+    config: SampleStressConfig | None = None,
+) -> SampleStressResult:
+    """Reopen disk ENN and draw posterior function samples at uniform random x."""
+    cfg = config if config is not None else SampleStressConfig()
+    if cfg.num_samples < 1:
+        raise ValueError("num_samples must be >= 1")
+    model, meta = reopen_disk_bpann_enn(work_dir)
+    num_dim = int(meta["num_dim"])
+    x_query = make_uniform_query_points(
+        cfg.num_samples,
+        num_dim=num_dim,
+        seed=cfg.seed,
+        low=cfg.x_low,
+        high=cfg.x_high,
+    )
+    t0 = time.perf_counter()
+    function_seeds = function_seeds_for_sample(cfg.seed)
+    draws, _idx = model.posterior_function_draw(
+        x_query,
+        STRESS_PARAMS,
+        function_seeds=function_seeds,
+    )
+    draw_s = time.perf_counter() - t0
+    return SampleStressResult(
+        num_dim=num_dim,
+        num_obs=len(model),
+        num_samples=cfg.num_samples,
+        seed=cfg.seed,
+        num_function_seeds=len(function_seeds),
+        draws_shape=tuple(int(s) for s in draws.shape),
+        all_finite=bool(np.all(np.isfinite(draws))),
+        draw_s=draw_s,
+    )
+
+
+def format_sample_config_header(*, result: SampleStressResult, work_dir: str) -> str:
+    return (
+        f"num_dim={result.num_dim} num_obs={result.num_obs} "
+        f"work_dir={work_dir} num_samples={result.num_samples} seed={result.seed}"
+    )
+
+
+def format_sample_summary(result: SampleStressResult) -> str:
+    return (
+        f"draws_shape={result.draws_shape} function_seeds={result.num_function_seeds} "
+        f"all_finite={str(result.all_finite).lower()} draw_s={result.draw_s:.3f}"
+    )
+
+
 @click.group()
 def cli() -> None:
     """Operational stress tools."""
@@ -433,6 +568,51 @@ def enn(
         ),
     ):
         click.echo(format_stress_row(n, query_s, segment_s, n_width=n_width))
+
+
+@cli.command(
+    "sample",
+    params=[
+        click.Option(
+            ["--work-dir"],
+            type=click.Path(file_okay=False, dir_okay=True, path_type=str),
+            default=DEFAULT_SAMPLE_WORK_DIR,
+            show_default=True,
+            help="Disk-backed bpann ENN work directory to reopen.",
+        ),
+        click.Option(
+            ["--num-samples"],
+            type=int,
+            default=NUM_SAMPLE,
+            show_default=True,
+            help="Number of uniformly random query points.",
+        ),
+        click.Option(
+            ["--seed"],
+            type=int,
+            default=STRESS_QUERY_SEED,
+            show_default=True,
+            help="RNG seed for query points and function draw.",
+        ),
+    ],
+)
+def sample(work_dir: str, num_samples: int, seed: int) -> None:
+    """Draw posterior function samples at uniform random x on a persisted bpann store."""
+    if num_samples < 1:
+        raise click.ClickException("num_samples must be >= 1")
+    if not Path(work_dir).is_dir():
+        raise click.ClickException(f"work_dir does not exist: {work_dir}")
+    try:
+        result = run_sample_stress(
+            work_dir=work_dir,
+            config=SampleStressConfig(num_samples=num_samples, seed=seed),
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not result.all_finite:
+        raise click.ClickException("posterior_function_draw returned non-finite values")
+    click.echo(format_sample_config_header(result=result, work_dir=work_dir))
+    click.echo(format_sample_summary(result))
 
 
 def main() -> None:
