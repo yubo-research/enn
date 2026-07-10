@@ -37,7 +37,6 @@ impl DiskBpannEnnBackend {
                 "DiskBpannEnnBackend requires IndexDriver::BpAnnDisk".to_string(),
             ));
         }
-        let num_metrics = train_y.ncols();
         let inner = if train_x.nrows() == 0
             && train_y.nrows() == 0
             && work_dir.join("metadata.json").exists()
@@ -47,6 +46,7 @@ impl DiskBpannEnnBackend {
             BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
                 .map_err(bpann_err)?
         };
+        let num_metrics = inner.num_metrics();
         Ok(Self {
             inner,
             driver,
@@ -264,6 +264,33 @@ mod tests {
         )
         .expect("reopen");
         assert_eq!(reopened.len(), 2);
+    }
+
+    #[test]
+    fn reopen_uses_persisted_num_metrics_not_placeholder_train_y() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().to_path_buf();
+        let _fresh = DiskBpannEnnBackend::new(
+            path.clone(),
+            array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
+            array![[0.0, 1.0], [1.0, 2.0], [1.0, 3.0]],
+            None,
+            false,
+            array![1.0, 1.0],
+            IndexDriver::BpAnnDisk,
+        )
+        .expect("fresh");
+        let reopened = DiskBpannEnnBackend::new(
+            path,
+            Array2::zeros((0, 2)),
+            Array2::zeros((0, 1)),
+            None,
+            false,
+            array![1.0, 1.0],
+            IndexDriver::BpAnnDisk,
+        )
+        .expect("reopen");
+        assert_eq!(reopened.num_metrics(), 2);
     }
 
     #[test]

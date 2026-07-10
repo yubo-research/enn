@@ -124,6 +124,64 @@ def test_enn_disk_bpann_posterior_with_pending_matches_fresh(tmp_path):
     np.testing.assert_allclose(post_inc.se, post_fresh.se, rtol=1e-5)
 
 
+def test_enn_disk_bpann_reopen_uses_persisted_num_metrics(tmp_path):
+    """Reopen must not trust placeholder empty train_y column count for num_outputs."""
+    from enn.enn.enn_params import ENNParams
+
+    work_dir = tmp_path / "enn_disk_reopen_num_metrics"
+    train_x = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=float)
+    train_y = np.array([[0.0, 1.0], [1.0, 2.0], [1.0, 3.0]], dtype=float)
+    params = ENNParams(
+        k_num_neighbors=2, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
+    query = np.array([[0.5, 0.5]], dtype=float)
+
+    EpistemicNearestNeighbors(
+        train_x,
+        train_y,
+        scale_x=False,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+
+    reopened = EpistemicNearestNeighbors(
+        np.zeros((0, 2), dtype=float),
+        np.zeros((0, 1), dtype=float),
+        scale_x=False,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+    assert reopened.num_outputs == 2
+    post = reopened.posterior(query, params=params)
+    assert post.mu.shape == (1, 2)
+    np.testing.assert_allclose(post.mu[0], [0.5, 1.5], rtol=1e-5)
+
+
+def test_enn_disk_bpann_empty_store_reopen_uses_persisted_num_metrics(tmp_path):
+    """Empty disk store reopen must sync num_outputs from metadata, not placeholder train_y."""
+    work_dir = tmp_path / "enn_disk_empty_reopen_num_metrics"
+    EpistemicNearestNeighbors(
+        np.zeros((0, 2), dtype=float),
+        np.zeros((0, 2), dtype=float),
+        scale_x=False,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+    reopened = EpistemicNearestNeighbors(
+        np.zeros((0, 2), dtype=float),
+        np.zeros((0, 1), dtype=float),
+        scale_x=False,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+    assert reopened.num_outputs == 2
+    assert len(reopened) == 0
+
+
 def test_enn_disk_bpann_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_path):
     """Disk reopen with scale_x=true must not return wrong posterior before ensure_index_sync."""
     from enn.enn.enn_params import ENNParams

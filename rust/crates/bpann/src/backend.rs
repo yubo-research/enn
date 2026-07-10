@@ -168,6 +168,10 @@ impl BpannBackend {
         self.num_dim
     }
 
+    pub fn num_metrics(&self) -> usize {
+        self.num_metrics
+    }
+
     pub fn mark_index_stale(&mut self) {
         self.reset_index();
     }

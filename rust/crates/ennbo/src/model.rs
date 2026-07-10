@@ -114,6 +114,13 @@ impl EpistemicNearestNeighbors {
         let num_metrics = train_y.ncols();
         let (y_scale, y_sum, y_sumsq, x_scale, x_sum, x_sumsq) =
             Self::init_stats(&train_x, &train_y, scale_x);
+        let disk_work_dir = work_dir.clone().or_else(EnnStorage::work_dir_from_env);
+        let disk_reopen = matches!(storage, EnnStorage::Disk)
+            && train_x.nrows() == 0
+            && train_y.nrows() == 0
+            && disk_work_dir
+                .as_ref()
+                .is_some_and(|p| p.join("metadata.json").exists());
 
         let backend = match storage {
             EnnStorage::InMemory => EnnBackend::new_in_memory(
@@ -161,7 +168,7 @@ impl EpistemicNearestNeighbors {
             x_sum,
             x_sumsq,
         };
-        if model.num_obs != model.backend.len() {
+        if disk_reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;
         }
         Ok(model)
@@ -384,6 +391,8 @@ impl EpistemicNearestNeighbors {
 
 /// Rebuild observation count and scale moments from persisted backend rows (disk reopen).
 fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<(), ENNError> {
+    model.num_dim = model.backend.num_dim();
+    model.num_metrics = model.backend.num_metrics();
     let n = model.backend.len();
     model.num_obs = n;
     if n == 0 {
