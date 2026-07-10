@@ -361,6 +361,8 @@ fn kiss_posterior_batch_units_are_linked() {
     let query = array![[0.5, 0.5]];
     let mut mu_all = Array3::zeros((2, 1, 1));
     let mut se_all = Array3::zeros((2, 1, 1));
+    let mut se_epi_all = Array3::zeros((2, 1, 1));
+    let mut se_ale_all = Array3::zeros((2, 1, 1));
     compute_batch_with_shared_neighbors(
         &model,
         &query.view(),
@@ -368,6 +370,8 @@ fn kiss_posterior_batch_units_are_linked() {
         &flags,
         &mut mu_all,
         &mut se_all,
+        &mut se_epi_all,
+        &mut se_ale_all,
     )
     .unwrap();
     let params_a = ENNParams::new(2, 1.0, 0.1).unwrap();
@@ -375,8 +379,19 @@ fn kiss_posterior_batch_units_are_linked() {
     let mixed = vec![params_a, params_b];
     let mut mu2 = Array3::zeros((2, 1, 1));
     let mut se2 = Array3::zeros((2, 1, 1));
-    compute_batch_separate_neighbors(&model, &query.view(), &mixed, &flags, &mut mu2, &mut se2)
-        .unwrap();
+    let mut se_epi2 = Array3::zeros((2, 1, 1));
+    let mut se_ale2 = Array3::zeros((2, 1, 1));
+    compute_batch_separate_neighbors(
+        &model,
+        &query.view(),
+        &mixed,
+        &flags,
+        &mut mu2,
+        &mut se2,
+        &mut se_epi2,
+        &mut se_ale2,
+    )
+    .unwrap();
     let _ = (
         compute_batch_with_shared_neighbors,
         compute_batch_separate_neighbors,

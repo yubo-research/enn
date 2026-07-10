@@ -146,6 +146,8 @@ impl PosteriorFlags {
 ///
 /// * `mu` - Predictive mean for each query point
 /// * `se` - Predictive standard error for each query point
+/// * `se_epi` - Epistemic (model) standard error component
+/// * `se_ale` - Aleatoric (observation) standard error component
 /// * `idx` - Optional neighbor indices used for each prediction
 #[derive(Debug, Clone, PartialEq)]
 pub struct ENNNormal {
@@ -153,14 +155,30 @@ pub struct ENNNormal {
     pub mu: ArrayD<f64>,
     /// Predictive standard errors.
     pub se: ArrayD<f64>,
+    /// Epistemic standard error component.
+    pub se_epi: ArrayD<f64>,
+    /// Aleatoric standard error component.
+    pub se_ale: ArrayD<f64>,
     /// Optional neighbor indices, shape `(n_query, k)`.
     pub idx: Option<Array2<i64>>,
 }
 
 impl ENNNormal {
     /// Create a new ENNNormal instance.
-    pub fn new(mu: ArrayD<f64>, se: ArrayD<f64>, idx: Option<Array2<i64>>) -> Self {
-        Self { mu, se, idx }
+    pub fn new(
+        mu: ArrayD<f64>,
+        se: ArrayD<f64>,
+        se_epi: ArrayD<f64>,
+        se_ale: ArrayD<f64>,
+        idx: Option<Array2<i64>>,
+    ) -> Self {
+        Self {
+            mu,
+            se,
+            se_epi,
+            se_ale,
+            idx,
+        }
     }
 
     /// Get the number of query points.
@@ -244,7 +262,9 @@ mod tests {
     fn test_enn_normal() {
         let mu = array![[1.0, 2.0], [3.0, 4.0]].into_dyn();
         let se = array![[0.1, 0.2], [0.3, 0.4]].into_dyn();
-        let normal = ENNNormal::new(mu.clone(), se.clone(), None);
+        let se_epi = se.clone();
+        let se_ale = array![[0.0, 0.0], [0.0, 0.0]].into_dyn();
+        let normal = ENNNormal::new(mu.clone(), se.clone(), se_epi, se_ale, None);
 
         assert_eq!(normal.len(), 4);
         assert!(!normal.is_empty());
@@ -256,8 +276,10 @@ mod tests {
     fn test_enn_normal_with_idx() {
         let mu = array![[1.0], [2.0]].into_dyn();
         let se = array![[0.1], [0.2]].into_dyn();
+        let se_epi = se.clone();
+        let se_ale = array![[0.0], [0.0]].into_dyn();
         let idx = Some(array![[0, 1], [1, 2]]);
-        let normal = ENNNormal::new(mu, se, idx.clone());
+        let normal = ENNNormal::new(mu, se, se_epi, se_ale, idx.clone());
 
         assert_eq!(normal.idx, idx);
     }
@@ -266,7 +288,9 @@ mod tests {
     fn test_enn_normal_empty() {
         let mu = ArrayD::<f64>::zeros(IxDyn(&[0, 0]));
         let se = ArrayD::<f64>::zeros(IxDyn(&[0, 0]));
-        let normal = ENNNormal::new(mu, se, None);
+        let se_epi = se.clone();
+        let se_ale = se.clone();
+        let normal = ENNNormal::new(mu, se, se_epi, se_ale, None);
 
         assert!(normal.is_empty());
         assert_eq!(normal.len(), 0);

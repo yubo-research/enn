@@ -14,3 +14,5 @@ class DrawInternals:
     l2: np.ndarray
     mu: np.ndarray
     se: np.ndarray
+    se_epi: np.ndarray
+    se_ale: np.ndarray

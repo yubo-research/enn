@@ -40,7 +40,7 @@ def test_enn_posterior_rust_vs_python():
     py_out = py_model.posterior(query, params=params, flags=flags)
 
     rust_model = RustENN(train_x, train_y, scale_x=False, index_driver="Exact")
-    rs_mu, rs_se, _ = rust_model.posterior(
+    rs_mu, rs_se, rs_se_epi, rs_se_ale, _ = rust_model.posterior(
         query,
         k_num_neighbors=2,
         epistemic_variance_scale=1.0,
@@ -51,3 +51,5 @@ def test_enn_posterior_rust_vs_python():
 
     np.testing.assert_allclose(py_out.mu, rs_mu, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(py_out.se, rs_se, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(py_out.se_epi, rs_se_epi, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(py_out.se_ale, rs_se_ale, rtol=1e-12, atol=1e-12)

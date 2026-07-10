@@ -30,7 +30,7 @@ def test_posterior_parity_simple():
     out = model.posterior(query, params=params, flags=flags)
 
     rs_model = RustENN(train_x, train_y, scale_x=False, index_driver="Exact")
-    rs_mu, rs_se, rs_idx = rs_model.posterior(
+    rs_mu, rs_se, rs_se_epi, rs_se_ale, rs_idx = rs_model.posterior(
         query,
         k_num_neighbors=2,
         epistemic_variance_scale=1.0,
@@ -41,6 +41,8 @@ def test_posterior_parity_simple():
 
     np.testing.assert_allclose(out.mu, rs_mu, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(out.se, rs_se, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(out.se_epi, rs_se_epi, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(out.se_ale, rs_se_ale, rtol=1e-12, atol=1e-12)
     assert out.idx is not None and out.idx.shape[0] == 1
 
 
@@ -77,7 +79,7 @@ def test_posterior_parity_observation_noise_with_yvar():
     rs_model = RustENN(
         train_x, train_y, train_yvar=train_yvar, scale_x=False, index_driver="Exact"
     )
-    rs_mu, rs_se, rs_idx = rs_model.posterior(
+    rs_mu, rs_se, rs_se_epi, rs_se_ale, rs_idx = rs_model.posterior(
         query,
         k_num_neighbors=2,
         epistemic_variance_scale=1.0,
@@ -88,6 +90,8 @@ def test_posterior_parity_observation_noise_with_yvar():
 
     np.testing.assert_allclose(out.mu, rs_mu, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(out.se, rs_se, rtol=1e-10, atol=1e-10)
+    np.testing.assert_allclose(out.se_epi, rs_se_epi, rtol=1e-10, atol=1e-10)
+    np.testing.assert_allclose(out.se_ale, rs_se_ale, rtol=1e-10, atol=1e-10)
     assert rs_idx is not None and len(rs_idx) == 1
 
 

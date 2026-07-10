@@ -13,6 +13,8 @@ use ndarray::{Array2, Array3};
 /// * `l2` - L2 norm values, shape (n_query, num_metrics)
 /// * `mu` - Mean predictions, shape (n_query, num_metrics)
 /// * `se` - Standard errors, shape (n_query, num_metrics)
+/// * `se_epi` - Epistemic standard error component, shape (n_query, num_metrics)
+/// * `se_ale` - Aleatoric standard error component, shape (n_query, num_metrics)
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeightedStats {
     /// Normalized weights for each neighbor, shape (n_query, k, num_metrics).
@@ -23,6 +25,10 @@ pub struct WeightedStats {
     pub mu: Array2<f64>,
     /// Standard errors for each query point, shape (n_query, num_metrics).
     pub se: Array2<f64>,
+    /// Epistemic standard error component for each query point.
+    pub se_epi: Array2<f64>,
+    /// Aleatoric standard error component for each query point.
+    pub se_ale: Array2<f64>,
 }
 
 impl WeightedStats {
@@ -43,6 +49,8 @@ impl WeightedStats {
         l2: Array2<f64>,
         mu: Array2<f64>,
         se: Array2<f64>,
+        se_epi: Array2<f64>,
+        se_ale: Array2<f64>,
     ) -> Self {
         let n_query = l2.nrows();
         assert_eq!(
@@ -52,6 +60,8 @@ impl WeightedStats {
         );
         assert_eq!(mu.nrows(), n_query, "mu rows must match l2 rows");
         assert_eq!(se.nrows(), n_query, "se rows must match l2 rows");
+        assert_eq!(se_epi.nrows(), n_query, "se_epi rows must match l2 rows");
+        assert_eq!(se_ale.nrows(), n_query, "se_ale rows must match l2 rows");
         assert_eq!(
             w_normalized.shape()[2],
             l2.ncols(),
@@ -59,12 +69,16 @@ impl WeightedStats {
         );
         assert_eq!(mu.ncols(), l2.ncols(), "mu cols must match l2 cols");
         assert_eq!(se.ncols(), l2.ncols(), "se cols must match l2 cols");
+        assert_eq!(se_epi.ncols(), l2.ncols(), "se_epi cols must match l2 cols");
+        assert_eq!(se_ale.ncols(), l2.ncols(), "se_ale cols must match l2 cols");
 
         Self {
             w_normalized,
             l2,
             mu,
             se,
+            se_epi,
+            se_ale,
         }
     }
 
@@ -101,6 +115,8 @@ mod tests {
             array![[1.0, 1.0]],   // 1 query, 2 metrics
             array![[0.0, 0.5]],
             array![[0.1, 0.2]],
+            array![[0.1, 0.2]],
+            array![[0.0, 0.0]],
         );
 
         assert_eq!(stats.n_queries(), 1);
@@ -116,6 +132,8 @@ mod tests {
             array![[1.0, 1.0], [0.5, 0.5]],                             // 2 queries, 2 metrics
             array![[0.0, 0.0], [1.0, 1.0]],
             array![[0.1, 0.1], [0.2, 0.2]],
+            array![[0.1, 0.1], [0.2, 0.2]],
+            array![[0.0, 0.0], [0.0, 0.0]],
         );
 
         assert_eq!(stats.n_queries(), 2);
@@ -127,6 +145,8 @@ mod tests {
     fn test_weighted_stats_empty() {
         let stats = WeightedStats::new(
             Array3::zeros((0, 0, 0)),
+            Array2::zeros((0, 0)),
+            Array2::zeros((0, 0)),
             Array2::zeros((0, 0)),
             Array2::zeros((0, 0)),
             Array2::zeros((0, 0)),
@@ -144,6 +164,8 @@ mod tests {
             Array2::zeros((1, 2)),    // 1 query - mismatch
             Array2::zeros((2, 2)),
             Array2::zeros((2, 2)),
+            Array2::zeros((2, 2)),
+            Array2::zeros((2, 2)),
         );
     }
 
@@ -154,6 +176,8 @@ mod tests {
             array![[1.0, 1.0]],
             array![[0.0, 0.5]],
             array![[0.1, 0.2]],
+            array![[0.1, 0.2]],
+            array![[0.0, 0.0]],
         );
         let cloned = stats.clone();
         assert_eq!(stats, cloned);

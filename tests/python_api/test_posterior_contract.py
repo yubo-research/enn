@@ -40,8 +40,12 @@ class TestPosteriorContract:
         out = simple_model.posterior(query, params=params, flags=flags)
         assert hasattr(out, "mu")
         assert hasattr(out, "se")
+        assert hasattr(out, "se_epi")
+        assert hasattr(out, "se_ale")
         assert out.mu.shape == (1, 1)
         assert out.se.shape == (1, 1)
+        assert out.se_epi.shape == (1, 1)
+        assert out.se_ale.shape == (1, 1)
         assert np.all(np.isfinite(out.mu))
         assert np.all(np.isfinite(out.se))
 
@@ -75,8 +79,12 @@ class TestBatchPosteriorContract:
         out = simple_model.batch_posterior(query, paramss=[params1, params2])
         assert hasattr(out, "mu")
         assert hasattr(out, "se")
+        assert hasattr(out, "se_epi")
+        assert hasattr(out, "se_ale")
         assert out.mu.shape == (2, 1, 1)
         assert out.se.shape == (2, 1, 1)
+        assert out.se_epi.shape == (2, 1, 1)
+        assert out.se_ale.shape == (2, 1, 1)
 
     def test_batch_posterior_empty_paramss_raises(self, simple_model, query):
         with pytest.raises(ValueError, match="paramss must be non-empty"):
@@ -117,6 +125,12 @@ class TestConditionalPosteriorContract:
 
         np.testing.assert_allclose(post.mu, cond_post.mu, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(post.se, cond_post.se, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(
+            post.se_epi, cond_post.se_epi, rtol=1e-12, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            post.se_ale, cond_post.se_ale, rtol=1e-12, atol=1e-12
+        )
 
     def test_conditional_posterior_with_whatif_returns_mu_se(self, simple_model, query):
         x_whatif = np.array([[0.5, 0.5]], dtype=float)
@@ -133,8 +147,12 @@ class TestConditionalPosteriorContract:
         )
         assert hasattr(out, "mu")
         assert hasattr(out, "se")
+        assert hasattr(out, "se_epi")
+        assert hasattr(out, "se_ale")
         assert out.mu.shape == (1, 1)
         assert out.se.shape == (1, 1)
+        assert out.se_epi.shape == (1, 1)
+        assert out.se_ale.shape == (1, 1)
 
 
 class TestPosteriorFunctionDrawContract:

@@ -8,7 +8,7 @@ use crate::params::{ENNParams, PosteriorFlags};
 
 use super::{empty_posterior_internals, index_search};
 
-pub(crate) type PosteriorLightOut = (Array2<f64>, Array2<f64>, Array2<i64>);
+pub(crate) type PosteriorLightOut = (Array2<f64>, Array2<f64>, Array2<f64>, Array2<f64>, Array2<i64>);
 
 pub(crate) fn idx_nested_to_array2(idx: &[Vec<usize>]) -> Array2<i64> {
     let n_query = idx.len();
@@ -45,7 +45,7 @@ fn fuse_neighbors_to_mu_se(
     dist2s: &ArrayView2<f64>,
     idx: &ArrayView2<i64>,
     params: &ENNParams,
-) -> (Array2<f64>, Array2<f64>, Array2<i64>) {
+) -> PosteriorLightOut {
     let n_query = dist2s.nrows();
     let k = dist2s.ncols();
     let num_metrics = model.num_metrics();
@@ -55,6 +55,8 @@ fn fuse_neighbors_to_mu_se(
 
     let mut mu = Array2::zeros((n_query, num_metrics));
     let mut se = Array2::zeros((n_query, num_metrics));
+    let mut se_epi = Array2::zeros((n_query, num_metrics));
+    let mut se_ale = Array2::zeros((n_query, num_metrics));
     let mut idx_out = Array2::from_elem((n_query, k), -1i64);
     let mut w = vec![0.0f64; k];
 
@@ -91,11 +93,14 @@ fn fuse_neighbors_to_mu_se(
                 }
             }
             mu[[i, m]] = mu_val;
-            se[[i, m]] = se_base * y_scale_m;
+            let se_val = se_base * y_scale_m;
+            se[[i, m]] = se_val;
+            se_epi[[i, m]] = se_val;
+            se_ale[[i, m]] = 0.0;
         }
     }
 
-    (mu, se, idx_out)
+    (mu, se, se_epi, se_ale, idx_out)
 }
 
 /// Fused index_search + mu/se for the no-yvar, no-observation-noise posterior path.
@@ -118,6 +123,8 @@ pub(crate) fn compute_posterior_light(
         return Ok((
             internals.mu,
             internals.se,
+            internals.se_epi,
+            internals.se_ale,
             idx_nested_to_array2(&internals.idx),
         ));
     }
@@ -128,6 +135,8 @@ pub(crate) fn compute_posterior_light(
         return Ok((
             internals.mu,
             internals.se,
+            internals.se_epi,
+            internals.se_ale,
             idx_nested_to_array2(&internals.idx),
         ));
     }
@@ -151,6 +160,8 @@ pub(crate) fn compute_posterior_light(
         return Ok((
             internals.mu,
             internals.se,
+            internals.se_epi,
+            internals.se_ale,
             idx_nested_to_array2(&internals.idx),
         ));
     }
@@ -188,7 +199,7 @@ mod tests {
         let params = ENNParams::new(5, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
 
-        let (mu_light, se_light, idx_light) =
+        let (mu_light, se_light, se_epi_light, se_ale_light, idx_light) =
             compute_posterior_light(&model, &train_x.view(), &params, &flags).unwrap();
         let full = compute_posterior_internals(&model, &train_x.view(), &params, &flags).unwrap();
 
@@ -196,6 +207,8 @@ mod tests {
         assert_eq!(se_light.shape(), full.se.shape());
         assert!((mu_light - &full.mu).mapv(f64::abs).iter().all(|&d| d < 1e-12));
         assert!((se_light - &full.se).mapv(f64::abs).iter().all(|&d| d < 1e-12));
+        assert!((se_epi_light - &full.se_epi).mapv(f64::abs).iter().all(|&d| d < 1e-12));
+        assert!((se_ale_light - &full.se_ale).mapv(f64::abs).iter().all(|&d| d < 1e-12));
         assert_eq!(idx_light, idx_nested_to_array2(&full.idx));
     }
 
@@ -230,7 +243,7 @@ mod tests {
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
         let empty_query: Array2<f64> = Array2::zeros((0, 2));
-        let (mu, se, idx) =
+        let (mu, se, _se_epi, _se_ale, idx) =
             compute_posterior_light(&model, &empty_query.view(), &params, &flags).unwrap();
         assert_eq!(mu.nrows(), 0);
         assert_eq!(se.nrows(), 0);
@@ -259,7 +272,7 @@ mod tests {
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
         let query = array![[0.5, 0.5]];
-        let (mu, se, idx) =
+        let (mu, se, _se_epi, _se_ale, idx) =
             compute_posterior_light(&model, &query.view(), &params, &flags).unwrap();
         assert_eq!(mu.nrows(), 1);
         assert_eq!(se.nrows(), 1);
@@ -277,11 +290,11 @@ mod tests {
         let flags = PosteriorFlags::new();
         let all: Vec<usize> = (0..model.len()).collect();
         let (tx, _, _) = model.rows().train_rows_at(&all).unwrap();
-        let (mu_light, se_light, idx_light) =
+        let (mu_light, se_light, _se_epi_light, _se_ale_light, idx_light) =
             compute_posterior_light(&model, &tx.view(), &params, &flags).unwrap();
         let dist2s = array![[0.0, 1.0], [1.0, 0.0], [2.0, 1.0], [1.0, 2.0]];
         let idx = array![[0, 1], [1, 0], [2, 3], [3, 2]];
-        let (mu, se, idx_out) =
+        let (mu, se, _se_epi, _se_ale, idx_out) =
             fuse_neighbors_to_mu_se(&model, &dist2s.view(), &idx.view(), &params);
         assert_eq!(mu.nrows(), 4);
         assert_eq!(se.nrows(), 4);
@@ -304,7 +317,7 @@ mod tests {
         let flags = PosteriorFlags::new();
         let all: Vec<usize> = (0..model.len()).collect();
         let (tx, _, _) = model.rows().train_rows_at(&all).unwrap();
-        let (mu, se, idx) = compute_posterior_light(
+        let (mu, se, _se_epi, _se_ale, idx) = compute_posterior_light(
             &model,
             &tx.view(),
             &params,

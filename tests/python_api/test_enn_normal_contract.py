@@ -22,19 +22,27 @@ class TestENNNormalContract:
     def test_has_mu_se_idx_attrs(self):
         mu = np.array([[1.0]], dtype=float)
         se = np.array([[0.2]], dtype=float)
-        obj = ENNNormal(mu=mu, se=se)
+        se_epi = se.copy()
+        se_ale = np.zeros_like(se)
+        obj = ENNNormal(mu=mu, se=se, se_epi=se_epi, se_ale=se_ale)
         assert hasattr(obj, "mu")
         assert hasattr(obj, "se")
+        assert hasattr(obj, "se_epi")
+        assert hasattr(obj, "se_ale")
         assert hasattr(obj, "idx")
         assert obj.mu is mu
         assert obj.se is se
+        assert obj.se_epi is se_epi
+        assert obj.se_ale is se_ale
         assert obj.idx is None
 
     def test_idx_optional(self):
         mu = np.array([[1.0]], dtype=float)
         se = np.array([[0.2]], dtype=float)
+        se_epi = se.copy()
+        se_ale = np.zeros_like(se)
         idx = np.array([[0, 1]], dtype=int)
-        obj = ENNNormal(mu=mu, se=se, idx=idx)
+        obj = ENNNormal(mu=mu, se=se, se_epi=se_epi, se_ale=se_ale, idx=idx)
         assert obj.idx is idx
 
     def test_posterior_returns_enn_normal(self):
@@ -55,13 +63,19 @@ class TestENNNormalContract:
         assert isinstance(out, ENNNormal)
         assert out.mu.shape == (1, 1)
         assert out.se.shape == (1, 1)
+        assert out.se_epi.shape == (1, 1)
+        assert out.se_ale.shape == (1, 1)
         assert np.all(np.isfinite(out.mu))
         assert np.all(np.isfinite(out.se))
+        assert np.all(np.isfinite(out.se_epi))
+        assert np.all(np.isfinite(out.se_ale))
 
     def test_sample_method_exists(self):
         mu = np.array([[1.0]], dtype=float)
         se = np.array([[0.2]], dtype=float)
-        obj = ENNNormal(mu=mu, se=se)
+        se_epi = se.copy()
+        se_ale = np.zeros_like(se)
+        obj = ENNNormal(mu=mu, se=se, se_epi=se_epi, se_ale=se_ale)
         assert hasattr(obj, "sample")
         assert callable(obj.sample)
 
@@ -77,7 +91,9 @@ class TestENNNormalContract:
         rng = np.random.default_rng(42)
         mu = np.array([[1.0, 2.0]], dtype=float)
         se = np.array([[0.1, 0.2]], dtype=float)
-        obj = ENNNormal(mu=mu, se=se)
+        se_epi = se.copy()
+        se_ale = np.zeros_like(se)
+        obj = ENNNormal(mu=mu, se=se, se_epi=se_epi, se_ale=se_ale)
         samples = obj.sample(num_samples=10, rng=rng)
         # shape is (*se.shape, num_samples)
         assert samples.shape == (1, 2, 10)

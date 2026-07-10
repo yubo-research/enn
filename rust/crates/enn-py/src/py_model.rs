@@ -9,6 +9,8 @@ use std::path::PathBuf;
 pub(crate) type PosteriorPyOut<'py> = (
     Bound<'py, PyArrayDyn<f64>>,
     Bound<'py, PyArrayDyn<f64>>,
+    Bound<'py, PyArrayDyn<f64>>,
+    Bound<'py, PyArrayDyn<f64>>,
     Option<Bound<'py, PyArrayDyn<i64>>>,
 );
 
@@ -154,6 +156,8 @@ impl PyEpistemicNearestNeighbors {
         Ok((
             out.mu.into_pyarray_bound(py),
             out.se.into_pyarray_bound(py),
+            out.se_epi.into_pyarray_bound(py),
+            out.se_ale.into_pyarray_bound(py),
             out.idx.map(|idx| idx.into_dyn().into_pyarray_bound(py)),
         ))
     }
@@ -170,7 +174,12 @@ impl PyEpistemicNearestNeighbors {
         aleatoric_scales: Vec<f64>,
         exclude_nearest: bool,
         observation_noise: bool,
-    ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArrayDyn<f64>>)> {
+    ) -> PyResult<(
+        Bound<'py, PyArrayDyn<f64>>,
+        Bound<'py, PyArrayDyn<f64>>,
+        Bound<'py, PyArrayDyn<f64>>,
+        Bound<'py, PyArrayDyn<f64>>,
+    )> {
         // Build params list
         let n_params = k_values.len();
         if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {
@@ -193,7 +202,12 @@ impl PyEpistemicNearestNeighbors {
             .inner
             .batch_posterior(&x.as_array(), &paramss, &flags)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok((out.mu.into_pyarray_bound(py), out.se.into_pyarray_bound(py)))
+        Ok((
+            out.mu.into_pyarray_bound(py),
+            out.se.into_pyarray_bound(py),
+            out.se_epi.into_pyarray_bound(py),
+            out.se_ale.into_pyarray_bound(py),
+        ))
     }
 
     /// Posterior function draw - sample from posterior predictive.
@@ -259,6 +273,8 @@ impl PyEpistemicNearestNeighbors {
         Ok((
             out.mu.into_pyarray_bound(py),
             out.se.into_pyarray_bound(py),
+            out.se_epi.into_pyarray_bound(py),
+            out.se_ale.into_pyarray_bound(py),
             out.idx.map(|idx| idx.into_dyn().into_pyarray_bound(py)),
         ))
     }

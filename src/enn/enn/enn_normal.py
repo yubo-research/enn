@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 class ENNNormal:
     mu: np.ndarray
     se: np.ndarray
+    se_epi: np.ndarray
+    se_ale: np.ndarray
     idx: np.ndarray | None = None
 
     def sample(

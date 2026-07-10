@@ -178,12 +178,16 @@ class TestWeightedStatsContract:
             l2=np.array([1.0, 2.0]),
             mu=np.array([0.0, 1.0]),
             se=np.array([0.1, 0.2]),
+            se_epi=np.array([0.1, 0.2]),
+            se_ale=np.array([0.0, 0.0]),
         )
 
         assert hasattr(ws, "w_normalized")
         assert hasattr(ws, "l2")
         assert hasattr(ws, "mu")
         assert hasattr(ws, "se")
+        assert hasattr(ws, "se_epi")
+        assert hasattr(ws, "se_ale")
 
     def test_weighted_stats_is_frozen(self):
         """WeightedStats is frozen (immutable)."""
@@ -194,6 +198,8 @@ class TestWeightedStatsContract:
             l2=np.array([1.0]),
             mu=np.array([0.0]),
             se=np.array([0.1]),
+            se_epi=np.array([0.1]),
+            se_ale=np.array([0.0]),
         )
 
         # Attempting to modify should raise

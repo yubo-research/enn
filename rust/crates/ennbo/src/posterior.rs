@@ -19,6 +19,24 @@ use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::stats::WeightedStats;
 use crate::traits::PosteriorComputation;
 
+/// Split total variance into `se`, `se_epi`, and `se_ale` per the EPS_VAR floor rule.
+pub(crate) fn se_from_variance_components(
+    epistemic_var: f64,
+    aleatoric_var: f64,
+    y_scale: f64,
+) -> (f64, f64, f64) {
+    let sum = epistemic_var + aleatoric_var;
+    if sum < EPS_VAR {
+        let se = EPS_VAR.sqrt() * y_scale;
+        (se, se, 0.0)
+    } else {
+        let se = sum.sqrt() * y_scale;
+        let se_epi = epistemic_var.sqrt() * y_scale;
+        let se_ale = aleatoric_var.sqrt() * y_scale;
+        (se, se_epi, se_ale)
+    }
+}
+
 impl PosteriorComputation for EpistemicNearestNeighbors {
     fn posterior(
         &self,
@@ -26,17 +44,25 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        let (mu, se, idx) = if !flags.observation_noise && !self.has_yvar() {
+        let (mu, se, se_epi, se_ale, idx) = if !flags.observation_noise && !self.has_yvar() {
             compute_posterior_light(self, x, params, flags)?
         } else {
             let internals = compute_posterior_internals(self, x, params, flags)?;
             (
                 internals.mu,
                 internals.se,
+                internals.se_epi,
+                internals.se_ale,
                 idx_nested_to_array2(&internals.idx),
             )
         };
-        Ok(ENNNormal::new(mu.into_dyn(), se.into_dyn(), Some(idx)))
+        Ok(ENNNormal::new(
+            mu.into_dyn(),
+            se.into_dyn(),
+            se_epi.into_dyn(),
+            se_ale.into_dyn(),
+            Some(idx),
+        ))
     }
 
     fn batch_posterior(
@@ -56,17 +82,43 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
 
         let mut mu_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
         let mut se_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
+        let mut se_epi_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
+        let mut se_ale_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
 
         let k_values: std::collections::HashSet<i32> =
             paramss.iter().map(|p| p.k_num_neighbors).collect();
 
         if k_values.len() == 1 && self.num_obs() > 0 {
-            compute_batch_with_shared_neighbors(self, x, paramss, flags, &mut mu_all, &mut se_all)?;
+            compute_batch_with_shared_neighbors(
+                self,
+                x,
+                paramss,
+                flags,
+                &mut mu_all,
+                &mut se_all,
+                &mut se_epi_all,
+                &mut se_ale_all,
+            )?;
         } else {
-            compute_batch_separate_neighbors(self, x, paramss, flags, &mut mu_all, &mut se_all)?;
+            compute_batch_separate_neighbors(
+                self,
+                x,
+                paramss,
+                flags,
+                &mut mu_all,
+                &mut se_all,
+                &mut se_epi_all,
+                &mut se_ale_all,
+            )?;
         }
 
-        Ok(ENNNormal::new(mu_all.into_dyn(), se_all.into_dyn(), None))
+        Ok(ENNNormal::new(
+            mu_all.into_dyn(),
+            se_all.into_dyn(),
+            se_epi_all.into_dyn(),
+            se_ale_all.into_dyn(),
+            None,
+        ))
     }
 
     fn posterior_function_draw(
@@ -94,6 +146,8 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         Ok(ENNNormal::new(
             internals.mu.into_dyn(),
             internals.se.into_dyn(),
+            internals.se_epi.into_dyn(),
+            internals.se_ale.into_dyn(),
             Some(idx_nested_to_array2(&internals.idx)),
         ))
     }
@@ -133,6 +187,7 @@ pub(crate) fn index_search(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compute_batch_with_shared_neighbors(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -140,6 +195,8 @@ fn compute_batch_with_shared_neighbors(
     flags: &PosteriorFlags,
     mu_all: &mut Array3<f64>,
     se_all: &mut Array3<f64>,
+    se_epi_all: &mut Array3<f64>,
+    se_ale_all: &mut Array3<f64>,
 ) -> Result<(), ENNError> {
     let neighbor_data =
         get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest, flags.tie_break_neighbors)?;
@@ -157,18 +214,19 @@ fn compute_batch_with_shared_neighbors(
         for (i, params) in paramss.iter().enumerate() {
             let data_with_params = WeightedPosteriorData { params, ..wp_data };
             let internals = compute_weighted_posterior(model, data_with_params, None)?;
-            assign_posterior_results(&internals, mu_all, se_all, i);
+            assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
         }
     } else {
         let batch_size = x.nrows();
         let internals = empty_posterior_internals(model, batch_size);
         for i in 0..paramss.len() {
-            assign_posterior_results(&internals, mu_all, se_all, i);
+            assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
         }
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compute_batch_separate_neighbors(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -176,10 +234,12 @@ fn compute_batch_separate_neighbors(
     flags: &PosteriorFlags,
     mu_all: &mut Array3<f64>,
     se_all: &mut Array3<f64>,
+    se_epi_all: &mut Array3<f64>,
+    se_ale_all: &mut Array3<f64>,
 ) -> Result<(), ENNError> {
     for (i, params) in paramss.iter().enumerate() {
         let internals = compute_posterior_internals(model, x, params, flags)?;
-        assign_posterior_results(&internals, mu_all, se_all, i);
+        assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
     }
     Ok(())
 }
@@ -188,6 +248,8 @@ fn assign_posterior_results(
     internals: &DrawInternals,
     mu_all: &mut Array3<f64>,
     se_all: &mut Array3<f64>,
+    se_epi_all: &mut Array3<f64>,
+    se_ale_all: &mut Array3<f64>,
     index: usize,
 ) {
     let slice = ndarray::Slice::from(index..index + 1);
@@ -197,6 +259,12 @@ fn assign_posterior_results(
     se_all
         .slice_axis_mut(Axis(0), slice)
         .assign(&internals.se.slice_axis(Axis(0), ndarray::Slice::from(..)));
+    se_epi_all
+        .slice_axis_mut(Axis(0), slice)
+        .assign(&internals.se_epi.slice_axis(Axis(0), ndarray::Slice::from(..)));
+    se_ale_all
+        .slice_axis_mut(Axis(0), slice)
+        .assign(&internals.se_ale.slice_axis(Axis(0), ndarray::Slice::from(..)));
 }
 
 /// Data for weighted posterior computation.
@@ -262,7 +330,78 @@ pub fn compute_weighted_posterior(
         stats.l2,
         stats.mu,
         stats.se,
+        stats.se_epi,
+        stats.se_ale,
     ))
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn stats_from_neighbor_weights(
+    w: &Array2<f64>,
+    y_neighbors: &ArrayView2<f64>,
+    yvar_neighbors: Option<ArrayView2<f64>>,
+    n_query: usize,
+    k: usize,
+    num_metrics: usize,
+    observation_noise: bool,
+    aleatoric_scale: f64,
+    y_scale: &ArrayView1<f64>,
+    y_scale_sq: &[f64],
+) -> (Array3<f64>, Array2<f64>, Array2<f64>, Array2<f64>, Array2<f64>, Array2<f64>) {
+    let yvar_ref = yvar_neighbors.as_ref();
+    let mut w_normalized = Array3::zeros((n_query, k, num_metrics));
+    let mut l2 = Array2::zeros((n_query, num_metrics));
+    let mut mu = Array2::zeros((n_query, num_metrics));
+    let mut se = Array2::zeros((n_query, num_metrics));
+    let mut se_epi = Array2::zeros((n_query, num_metrics));
+    let mut se_ale = Array2::zeros((n_query, num_metrics));
+
+    for i in 0..n_query {
+        for m in 0..num_metrics {
+            let base_idx = i * k;
+            let norm: f64 = (0..k).map(|j| w[[base_idx + j, m]]).sum();
+            let inv_norm = 1.0 / norm;
+
+            let mut l2_sq = 0.0;
+            let mut mu_val = 0.0;
+
+            for j in 0..k {
+                let w_norm = w[[base_idx + j, m]] * inv_norm;
+                w_normalized[[i, j, m]] = w_norm;
+                l2_sq += w_norm * w_norm;
+                mu_val += w_norm * y_neighbors[[base_idx + j, m]];
+            }
+
+            l2[[i, m]] = l2_sq.sqrt();
+            mu[[i, m]] = mu_val;
+
+            let epistemic_var = inv_norm;
+
+            let aleatoric_var = if observation_noise {
+                let mut sum = 0.0;
+                for j in 0..k {
+                    let var_ale_j = aleatoric_scale
+                        + if let Some(yv) = yvar_ref {
+                            yv[[base_idx + j, m]] / y_scale_sq[m]
+                        } else {
+                            0.0
+                        };
+                    sum += w_normalized[[i, j, m]] * var_ale_j;
+                }
+                sum
+            } else {
+                0.0
+            };
+
+            let (se_val, se_epi_val, se_ale_val) =
+                se_from_variance_components(epistemic_var, aleatoric_var, y_scale[m]);
+            se[[i, m]] = se_val;
+            se_epi[[i, m]] = se_epi_val;
+            se_ale[[i, m]] = se_ale_val;
+        }
+    }
+
+    (w_normalized, l2, mu, se, se_epi, se_ale)
 }
 
 pub fn compute_weighted_stats_impl(
@@ -312,56 +451,20 @@ pub fn compute_weighted_stats_impl(
         }
     }
 
-    let mut w_normalized = Array3::zeros((n_query, k, num_metrics));
-    let mut l2 = Array2::zeros((n_query, num_metrics));
-    let mut mu = Array2::zeros((n_query, num_metrics));
-    let mut se = Array2::zeros((n_query, num_metrics));
+    let (w_normalized, l2, mu, se, se_epi, se_ale) = stats_from_neighbor_weights(
+        &w,
+        y_neighbors,
+        yvar_neighbors,
+        n_query,
+        k,
+        num_metrics,
+        observation_noise,
+        aleatoric_scale,
+        y_scale,
+        &y_scale_sq,
+    );
 
-    // Process each query row and metric with optimized inner loops
-    for i in 0..n_query {
-        for m in 0..num_metrics {
-            // Compute normalization factor (sum of weights for this query/metric)
-            let base_idx = i * k;
-            let norm: f64 = (0..k).map(|j| w[[base_idx + j, m]]).sum();
-            let inv_norm = 1.0 / norm;
-
-            // Normalize weights and compute l2 norm in a single pass when possible
-            let mut l2_sq = 0.0;
-            let mut mu_val = 0.0;
-
-            for j in 0..k {
-                let w_norm = w[[base_idx + j, m]] * inv_norm;
-                w_normalized[[i, j, m]] = w_norm;
-                l2_sq += w_norm * w_norm;
-                mu_val += w_norm * y_neighbors[[base_idx + j, m]];
-            }
-
-            l2[[i, m]] = l2_sq.sqrt();
-            mu[[i, m]] = mu_val;
-
-            let epistemic_var = inv_norm;
-
-            let aleatoric_var = if observation_noise {
-                let mut sum = 0.0;
-                for j in 0..k {
-                    let var_ale_j = aleatoric_scale
-                        + if let Some(yv) = yvar_ref {
-                            yv[[base_idx + j, m]] / y_scale_sq[m]
-                        } else {
-                            0.0
-                        };
-                    sum += w_normalized[[i, j, m]] * var_ale_j;
-                }
-                sum
-            } else {
-                0.0
-            };
-
-            se[[i, m]] = (epistemic_var + aleatoric_var).max(EPS_VAR).sqrt() * y_scale[m];
-        }
-    }
-
-    Ok(WeightedStats::new(w_normalized, l2, mu, se))
+    Ok(WeightedStats::new(w_normalized, l2, mu, se, se_epi, se_ale))
 }
 
 pub fn compute_posterior_internals(
@@ -505,6 +608,8 @@ pub fn empty_posterior_internals(
         Array2::ones((batch_size, model.num_metrics())),
         Array2::zeros((batch_size, model.num_metrics())),
         Array2::ones((batch_size, model.num_metrics())),
+        Array2::ones((batch_size, model.num_metrics())),
+        Array2::zeros((batch_size, model.num_metrics())),
     )
 }
 

@@ -12,6 +12,8 @@ def test_draw_internals():
         l2=np.array([[1.0]]),
         mu=np.array([[0.5]]),
         se=np.array([[0.1]]),
+        se_epi=np.array([[0.1]]),
+        se_ale=np.array([[0.0]]),
     )
     assert di.idx.shape == (1, 2)
     assert di.mu.shape == (1, 1)
@@ -34,5 +36,7 @@ def test_weighted_stats():
         l2=np.array([[1.0]]),
         mu=np.array([[0.5]]),
         se=np.array([[0.1]]),
+        se_epi=np.array([[0.1]]),
+        se_ale=np.array([[0.0]]),
     )
     assert ws.mu.shape == (1, 1)

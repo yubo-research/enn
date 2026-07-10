@@ -28,7 +28,7 @@ def test_ennnormal_sample_shape_and_clip():
     rng = np.random.default_rng(0)
     mu = np.array([[0.0, 1.0]], dtype=float)
     se = np.array([[1.0, 2.0]], dtype=float)
-    normal = ENNNormal(mu=mu, se=se)
+    normal = ENNNormal(mu=mu, se=se, se_epi=se.copy(), se_ale=np.zeros_like(se))
     samples = normal.sample(5, clip=1.0, rng=rng)
     assert samples.shape == (1, 2, 5)
     assert np.all(samples >= mu.min() - 2.0)

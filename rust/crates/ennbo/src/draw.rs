@@ -14,6 +14,8 @@ use ndarray::{Array2, Array3};
 /// * `l2` - L2 norm of weights for each query point, shape (n_query, num_metrics)
 /// * `mu` - Predictive mean for each query point, shape (n_query, num_metrics)
 /// * `se` - Predictive standard error for each query point, shape (n_query, num_metrics)
+/// * `se_epi` - Epistemic standard error component, shape (n_query, num_metrics)
+/// * `se_ale` - Aleatoric standard error component, shape (n_query, num_metrics)
 #[derive(Debug, Clone, PartialEq)]
 pub struct DrawInternals {
     /// Neighbor indices for each query point.
@@ -26,6 +28,10 @@ pub struct DrawInternals {
     pub mu: Array2<f64>,
     /// Predictive standard errors, shape (n_query, num_metrics).
     pub se: Array2<f64>,
+    /// Epistemic standard error component, shape (n_query, num_metrics).
+    pub se_epi: Array2<f64>,
+    /// Aleatoric standard error component, shape (n_query, num_metrics).
+    pub se_ale: Array2<f64>,
 }
 
 impl DrawInternals {
@@ -36,6 +42,8 @@ impl DrawInternals {
         l2: Array2<f64>,
         mu: Array2<f64>,
         se: Array2<f64>,
+        se_epi: Array2<f64>,
+        se_ale: Array2<f64>,
     ) -> Self {
         Self {
             idx,
@@ -43,6 +51,8 @@ impl DrawInternals {
             l2,
             mu,
             se,
+            se_epi,
+            se_ale,
         }
     }
 
@@ -189,7 +199,7 @@ mod tests {
         let mu = array![[1.0, 1.0], [2.0, 2.0]];
         let se = array![[0.1, 0.1], [0.2, 0.2]];
 
-        let internals = DrawInternals::new(idx.clone(), w, l2, mu, se);
+        let internals = DrawInternals::new(idx.clone(), w, l2, mu, se.clone(), se, array![[0.0, 0.0], [0.0, 0.0]]);
 
         assert_eq!(internals.n_queries(), 2);
         assert_eq!(internals.n_neighbors(), 2);
@@ -240,6 +250,8 @@ mod tests {
             array![[1.0]],   // 1 query, 1 metric
             array![[1.0]],
             array![[0.1]],
+            array![[0.1]],
+            array![[0.0]],
         );
         let whatif = Candidates::new(array![[1.0]], array![[1.0]]);
 
