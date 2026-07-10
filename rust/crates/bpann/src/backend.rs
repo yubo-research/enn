@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
@@ -200,10 +200,6 @@ impl BpannBackend {
         self.index.indexed_rows
     }
 
-    pub fn index_dir(&self) -> &Path {
-        &self.index.index_dir
-    }
-
     pub fn append_row(
         &mut self,
         x: &Array1<f64>,
@@ -268,6 +264,20 @@ impl BpannBackend {
             &self.work_dir,
             self.num_metrics,
             end,
+        )?;
+        self.pending_unindexed.store(0, Ordering::Relaxed);
+        *self.index_dirty.lock().expect("index_dirty") = false;
+        Ok(())
+    }
+
+    pub fn persist_index_to_disk(&mut self) -> Result<(), BpannError> {
+        self.index.persist_to_disk_for_backend(
+            &self.train_x,
+            self.num_dim,
+            self.scale_x,
+            self.x_scale.as_slice().unwrap(),
+            &self.work_dir,
+            self.num_metrics,
         )?;
         self.pending_unindexed.store(0, Ordering::Relaxed);
         *self.index_dirty.lock().expect("index_dirty") = false;

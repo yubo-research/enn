@@ -272,6 +272,11 @@ impl EpistemicNearestNeighbors {
         self.backend.schedule_background_flush()
     }
 
+    /// Merge in-memory index fragments and persist a single on-disk BPANN index.
+    pub fn persist_index_to_disk(&self) -> Result<(), ENNError> {
+        crate::backend::persist_enn_backend_index(&self.backend)
+    }
+
     pub fn len(&self) -> usize {
         self.num_obs
     }

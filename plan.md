@@ -1,248 +1,145 @@
-# Plan: Raise disk dim cap to 8192 and remove HNSW drivers
+# Plan: Persist BPANN disk index on close
 
 ## User Request
 
-Increase the disk-backend dimension cap from 1024 to 8192. While doing that, remove HNSW and HNSW_DISK support entirely.
+Persist the BPANN disk index when a disk-backed ENN session closes, so reopen does not repeat ~8s of index catch-up (as seen in `./ops/stress.py sample _enn/ 1000` where `init_s ≈ 8s` and `sample_s ≈ 0.2s`).
 
 ## Current State
 
-### Dimension limits (`MAX_NUM_DIM = 1024`)
+### Symptom and measured breakdown
 
-Two independent constants enforce disk observation limits:
+| Phase | Time | What runs |
+|---|---|---|
+| `init_s` | ~8s | `reopen_disk_bpann_enn` → construct + `ensure_index_sync` + query points |
+| `sample_s` | ~0.2s | `posterior_function_draw` |
 
-| Constant | Value | Location | What it guards |
-|----------|-------|----------|----------------|
-| `MAX_NUM_DIM` | 1024 | `rust/crates/bpann/src/observation.rs`, `rust/crates/ennbo/src/backend/disk_observation.rs` | Feature dimension count |
-| `MAX_RECORD_STRIDE` | 8 MiB (`8 * 1024 * 1024`) | same files | Bytes per mmap row (`num_dim × 8` for f64 `train_x`) |
+For `_enn/` (10k obs × 1k dims): metadata load ~60µs; reopen/construct ~8s; query points ~5ms. Almost all of `init_s` is BPANN index catch-up for rows 1000–9999, not query-point generation.
 
-Validation runs at backend open:
+### Incremental index build (bpann)
 
-- **BPANN (production path for `BPANN_DISK`):** `bpann_validate_dim_limits()` in `rust/crates/bpann/src/observation.rs`, called from `rust/crates/bpann/src/backend.rs`. This is what enforces the dim cap for disk models after HNSW removal.
-- **ennbo shared helpers:** `validate_dim_limits()` in `rust/crates/ennbo/src/backend/disk_observation.rs`, called from `rust/crates/ennbo/src/disk_hnsw/enn_backend.rs` today (and unit tests). After HNSW removal it is test-only; still update `MAX_NUM_DIM` there for consistency.
+`rust/crates/bpann/src/index/sync.rs`:
 
-At `d = 8192`, f64 observation stride is 65,536 bytes (64 KiB) — well under the 8 MiB `MAX_RECORD_STRIDE` cap. Raising `MAX_NUM_DIM` alone is sufficient; `MAX_RECORD_STRIDE` does not need to change for 8192.
+- `build_batch` always calls `build_*_with_persist(..., persist: false)` (lines 280–302).
+- `maybe_compact_or_persist` only writes to disk when `indices.len() == 1` (lines 176–191).
+- For 10k rows with 1000-row flushes, compaction stops at 3 fragments (`index_compact_threshold`), so **persist never runs** after the first 1000-row fragment.
 
-Tests that encode the 1024 cap:
+On reopen, `BpannBackend::new` (`rust/crates/bpann/src/backend.rs`):
 
-- `rust/crates/bpann/src/lib.rs` (`test_open_rejects_num_dim_above_max`; also asserts error string contains literal `"1024"`)
-- `rust/crates/bpann/tests/observation.rs`
-- `rust/crates/bpann/src/observation.rs` (kiss test)
-- `rust/crates/ennbo/src/backend/disk_observation.rs` (unit tests)
-- No Python test currently asserts the 1024 rejection boundary
+- Loads `indexed_rows` from `indexed_rows.bin` (authoritative over `metadata.json`; see `observation.rs:127–136`).
+- Opens **one** on-disk fragment via `BpannIndex::open` when `header.json` exists.
+- Sets in-memory `index.indexed_rows = persisted_rows.min(indexed_rows)` (header gates catch-up).
+- If `persisted_rows < indexed_rows`, runs constructor catch-up via `ensure_sync_for_backend`.
+- Writes `indexed_rows.bin` and `metadata.json` after catch-up, but **does not update `header.json` / `pages.bin`** when multiple fragments remain.
 
-Unrelated `1024` elsewhere (do not change): `rust/crates/bpann/src/index/sync.rs` batch row-count threshold; `rust/crates/ennbo/src/posterior/neighbor.rs` perf-test sample sizes; `tests/test_enn_perf.py` sample sizes.
+Result: every reopen repeats O(n·dim) index build; sidecar counters can claim 10k while `header.json` still says 1000.
 
-### Index drivers today
+### ENN disk reopen path (ennbo)
 
-Rust `IndexDriver` (`rust/crates/ennbo/src/index.rs`):
+`EpistemicNearestNeighbors::new_with_storage` (`rust/crates/ennbo/src/model.rs:118–173`):
 
-| Variant | Role |
-|---------|------|
-| `Exact` (default) | Faiss `Flat` in-memory KNN |
-| `HNSW` | Faiss `HNSW32` in-memory KNN |
-| `HNSWDisk` | In-tree mmap HNSW graph under `work_dir/graph/` |
-| `BpAnnDisk` | B+ANN disk index via `bpann` crate |
+- Detects disk reopen (`train_x`/`train_y` empty + existing `metadata.json`).
+- On disk reopen (or `num_obs != backend.len()`), calls `sync_obs_stats_from_backend`, which rescans all rows for scale moments and ends with `backend.ensure_index_sync` (lines 393–416).
 
-Python mirror (`src/enn/turbo/config/enn_index_driver.py`):
+`ops/stress.py`:
 
-| `ENNIndexDriver` | Rust string |
-|------------------|-------------|
-| `FLAT` | `exact` |
-| `HNSW` | `hnsw` |
-| `HNSW_DISK` | `hnsw_disk` |
-| `BPANN_DISK` | `bpann_disk` |
+- `reopen_disk_bpann_enn` constructs empty arrays + `work_dir`, then calls `ensure_index_sync()` (lines 294–308).
+- `run_enn_add_stress` (used to build `_enn/`) calls `schedule_background_flush()` per batch but **never** persists index to disk on exit (lines 383–384).
+- `run_disk_rss_stress` does call `ensure_index_sync()` at end (line 126), but that alone does not persist multi-fragment stores.
 
-String parsing in PyO3:
+### Close / flush hooks (exist but no-op)
 
-- `rust/crates/enn-py/src/py_model.rs` — accepts `"HNSW"`, `"hnsw"`, `"HNSW_DISK"`, `"hnsw_disk"`, etc.
-- `rust/crates/enn-py/src/py_optimizer.rs` — accepts `"hnsw"`, `"hnsw_disk"`
+| Location | Behavior today |
+|---|---|
+| `EpistemicNearestNeighbors::add` (`model.rs:252`) | Calls `backend.wait_for_flush()` **before every append** |
+| `EnnBackend::ensure_index_sync` (`backend/mod.rs:219`) | Pre-calls `wait_for_flush()` |
+| `EnnBackend::Drop` (`backend/mod.rs:305–308`) | Calls `wait_for_flush()` |
+| `EnnBackend::wait_for_flush` | Delegates to disk backend |
+| `DiskBpannEnnBackend::wait_for_flush` (`disk_bpann/enn_backend.rs:123–125`) | **No-op** (`Ok(())`) |
+| `Surrogate::wait_for_background_flush` | Delegates to `model.backend.wait_for_flush()`; optimizer `tell` awaits it (`optimizer/mod.rs:161–162`) |
+| Python `EpistemicNearestNeighbors` | Exposes `schedule_background_flush()` only; **no** persist-on-close / `close` / context manager |
 
-Default index driver for TuRBO config is already `ENNIndexDriver.FLAT` (`src/enn/turbo/config/enn_surrogate_config.py`).
+**Important:** `wait_for_flush` is on the hot path for every `add()`. It cannot be repurposed as merge-and-persist-on-close without destroying deferred-ingest throughput (10k-row stress adds one row at a time).
 
-### HNSW in-memory (`IndexDriver::HNSW`)
+### Tests encoding today's behavior
 
-Routed through `KnnBackend` → `FaissBackend` (`rust/crates/ennbo/src/knn/mod.rs`, `rust/crates/ennbo/src/knn/faiss_backend.rs`). Faiss `index_factory` spec `"HNSW32"`. Faiss remains required for `Exact`/`Flat` after HNSW removal.
-
-### HNSW disk (`IndexDriver::HNSWDisk`)
-
-Self-contained module `rust/crates/ennbo/src/disk_hnsw/` (11 source files): mmap `nodes.bin`, background flush, graph build/search.
-
-Wired through:
-
-- `DiskEnnBackend::Hnsw(DiskHnswEnnBackend)` enum in `rust/crates/ennbo/src/backend/mod.rs`
-- `pub mod disk_hnsw` and `pub use backend::DiskHnswEnnBackend` in `rust/crates/ennbo/src/lib.rs`
-- `is_disk_index_driver()` matches `HNSWDisk | BpAnnDisk` in `rust/crates/ennbo/src/index.rs`
-
-`EnnBackend` disk path has substantial HNSW-only logic: `wait_for_flush`, `schedule_background_flush`, and `disk_hnsw::flush` imports in `backend/mod.rs`. `model.rs` also calls `disk_hnsw::flush::try_schedule_background_flush`. BPANN disk has its own flush via `DiskBpannEnnBackend` / `bpann` crate (synchronous, no background thread).
-
-Disk layout for HNSW (`rust/crates/ennbo/README.md`):
-
-```
-work_dir/graph/header.json, nodes.bin
-metadata.json index_backend: "hnsw_disk"
-```
-
-### BPANN vs HNSW disk test APIs (not a drop-in swap)
-
-Shared disk test helpers assume HNSW-only post-construction APIs:
-
-- `rust/crates/ennbo/tests/disk_streaming_helper.rs` — `configure_low_flush_threshold()` downcasts to `DiskEnnBackend::Hnsw` and calls `set_pending_flush_threshold()` / `set_defer_append_indexing()` (HNSW-only setters)
-- `DiskBpannEnnBackend` exposes `pending_flush_threshold()` / `append_syncs_at_threshold()` getters only; BPANN configures threshold via `BpannBackend::with_pending_flush_threshold()` at build time
-- `rust/crates/ennbo/tests/optimizer_disk_flush.rs` — entirely HNSW background-flush integration (`wait_for_background_flush`, `DiskHnswEnnBackend`); delete or rewrite for BPANN synchronous flush semantics
-
-### Tests and tooling encoding HNSW behavior
-
-**Rust integration/unit tests to delete** (HNSW-specific):
-
-- `rust/crates/ennbo/tests/disk_hnsw_integration.rs`
-- `rust/crates/ennbo/tests/disk_hnsw_background_flush_unit.rs`
-- `rust/crates/ennbo/tests/disk_hnsw_flush_wait_unit.rs`
-- `rust/crates/ennbo/tests/disk_hnsw_pending_buffer.rs`
-- `rust/crates/ennbo/tests/hnsw.rs`
-- `rust/crates/ennbo/tests/flush_hnsw_helpers.rs`
-- `rust/crates/ennbo/tests/kiss_disk_hnsw.rs`
-- `rust/crates/ennbo/tests/optimizer_disk_flush.rs` (HNSW background-flush only; delete unless rewritten for BPANN)
-
-**Rust tests to update** (remove HNSW references, keep BPANN disk coverage):
-
-- `rust/crates/ennbo/src/index.rs` — `test_hnsw_search`, `test_hnsw_search_regression_*`, `faiss_spec_for_test(IndexDriver::HNSW)`
-- `rust/crates/ennbo/src/knn/mod.rs` — `knn_backend_faiss_hnsw`, `knn_backend_hnsw_disk_driver_errors`
-- `rust/crates/ennbo/src/knn/faiss_backend.rs` — HNSW branch and tests
-- `rust/crates/ennbo/src/config.rs` — config tests using `IndexDriver::HNSW` / `HNSWDisk`
-- `rust/crates/ennbo/src/model.rs` — disk tests using `IndexDriver::HNSWDisk`; remove `disk_hnsw::flush` import/usage
-- `rust/crates/ennbo/src/backend/mod.rs` — remove HNSW wiring; delete/replace unit tests `disk_hnsw_enum_dispatch`, `disk_hnsw_new_empty_without_work_dir_errors`, etc.
-- `rust/crates/ennbo/src/posterior/neighbor.rs` — one test uses `IndexDriver::HNSW`
-- `rust/crates/ennbo/tests/turbo_disk_backend.rs` — defaults disk to `HNSWDisk`
-- `rust/crates/ennbo/tests/disk_streaming_helper.rs` — retarget to BPANN; rework flush-threshold setup (see BPANN vs HNSW section)
-- `rust/crates/ennbo/tests/disk_observation.rs` — uses `"hnsw_disk"` as example `index_backend` string (retarget to `bpann_disk`)
-- `rust/crates/ennbo/src/backend/disk_observation.rs` — inline unit tests also use `"hnsw_disk"` (retarget to `bpann_disk`)
-- `rust/crates/ennbo/tests/kiss_gate_coverage.rs` — remove `kiss_disk_hnsw_*` unit-ref macros
-- `rust/crates/ennbo/tests/kiss_knn_backends.rs` — remove `DISK_HNSW_SRC` / `kiss_disk_hnsw_helper_names_in_source`
-- `rust/crates/ennbo/tests/enn_backend.rs` — `IndexDriver::HNSWDisk`, `kiss_disk_hnsw_static_coverage_names`
-- `rust/crates/ennbo/tests/kiss_repo_strings.rs` — remove `"DiskHnswEnnBackend"`, `"HNSWDisk"` from symbol registry
-
-**Python tests to delete:**
-
-- `tests/test_try_hnsw_disk.py`
-- `tests/test_disk_hnsw_background_flush.py`
-
-**Python tests to update:**
-
-- `tests/test_enn_index_driver.py` — flat/hnsw metamorphic test; many `HNSW_DISK`-specific disk tests; parametrized disk tests include `HNSW_DISK`
-- `tests/test_ops_stress.py` — parametrizes `flat`, `hnsw`, `hnsw_disk`, `bpann_disk`; CLI `hnsw_disk` command
-- `tests/test_ops_stress_restart.py` — parametrizes `hnsw_disk`
-- `tests/test_kiss_coverage.py` — enum inequality asserts involving HNSW variants
-- `tests/test_rust_optimizer_fit_params.py` — `test_rust_optimizer_passes_hnsw_disk_index_driver`
-- `tests/test_enn_neighbors.py` — `test_neighbors_hnsw_index_driver_returns_valid_indices`
-- `tests/test_enn_index.py` — any HNSW references
-
-**Examples / scripts / ops tooling:**
-
-- `examples/try_hnsw_disk.py` — delete
-- `go.sh` — HNSW lines already commented; remove dead references
-- `ops/stress.py` (**gitignored**, but required for stress tests) — `INDEX_TYPE_CHOICES` includes `hnsw`, `hnsw_disk`; `DISK_DEFER_SYNC_DRIVERS` includes `HNSW_DISK`; `run_disk_rss_stress` defaults to `ENNIndexDriver.HNSW_DISK`; CLI accepts `hnsw_disk`
-
-**Makefile** (`Makefile`):
-
-- `PYTHON_SLOW_IGNORE` and `python-slow-test` list `test_disk_hnsw_background_flush.py` and `test_try_hnsw_disk.py` — remove those entries after file deletion
-
-**Docs:**
-
-- `rust/crates/ennbo/README.md` — documents `HNSW` and `hnsw_disk` layout; needs rewrite for `Exact` + `BpAnnDisk` only
+- `rust/crates/bpann/src/lib.rs`: `test_reopen_search_matches_pre_close` — small store (32 rows), single fragment; passes today.
+- `rust/crates/bpann/tests/kiss_coverage.rs`: `ensure_index_sync_noop_and_single_index_persist` — single-fragment persist works.
+- `tests/test_enn_index_driver.py`: reopen posterior parity tests; small stores where single-fragment persist succeeds.
+- `tests/test_ops_stress_sample.py`: asserts `init_s >= 0` only; no reopen-speed regression guard.
+- No test for multi-fragment store (10k rows, 1000-row threshold) reopen cost or header/pages alignment.
 
 ## Requested Changes
 
-1. Raise `MAX_NUM_DIM` from 1024 to 8192 in both `bpann` and `ennbo` disk observation modules; update tests that assert the old boundary.
-2. Remove `IndexDriver::HNSW` and `IndexDriver::HNSWDisk` from Rust, Python `ENNIndexDriver`, and all PyO3 string parsing (including uppercase aliases in `py_model.rs`).
-3. Delete the `disk_hnsw` module and all HNSW-specific Rust/Python tests, examples, and Makefile entries.
-4. Simplify disk backend wiring so disk storage only supports `BpAnnDisk` (collapse `DiskEnnBackend` enum and HNSW-only flush paths).
-5. Update docs, `ops/stress.py`, and remaining disk tests to use `BPANN_DISK` / `bpann_disk` exclusively.
+1. On disk session close, sync any pending rows and **persist a single on-disk BPANN index** covering all observations (`header.json`, `pages.bin`, `indexed_rows.bin`, `metadata.json` aligned with `n`).
+2. Add an explicit **`persist_index_to_disk()`** API (Rust + Python) for close; wire **`EnnBackend::Drop`** and optimizer **`wait_for_background_flush`** (tell boundary) to it. **Leave `wait_for_flush` a cheap no-op** on disk so `add()` stays fast.
+3. Expose `persist_index_to_disk()` on Python `EpistemicNearestNeighbors` (thin wrapper in `enn_class.py`). Optional later: context manager / `close()` sugar calling the same method.
+4. Add regression tests: multi-fragment ingest → persist → reopen is fast and search-correct; on-disk header row count equals `n`.
+5. Call `persist_index_to_disk()` at end of `run_enn_add_stress` (in `try/finally`) for disk drivers so `_enn/` and similar fixtures are reopen-ready even if the generator consumer stops early.
 
 ## Q&A
 
-### Q1. Does `MAX_RECORD_STRIDE` also need to increase for 8192 dimensions?
+### Q1. Is `ensure_index_sync()` at close sufficient?
 
-**Answer:** No. At `d = 8192`, f64 mmap row stride is 65,536 bytes. `MAX_RECORD_STRIDE` is 8,388,608 bytes (~1M dimensions for f64 rows). Only `MAX_NUM_DIM` changes.
+**Answer:** No. For stores with multiple in-memory fragments (typical after 1000-row deferred flushes to 10k rows), `ensure_index_sync` builds in RAM and updates `indexed_rows.bin`, but `maybe_compact_or_persist` does not write `header.json`/`pages.bin` unless `indices.len() == 1`. Close must **force merge to one fragment and persist** (e.g. `BpannIndex::concat_merge(..., persist: true)` in `rust/crates/bpann/src/index/build.rs:176–254`).
 
-### Q2. What happens to existing `hnsw_disk` work directories?
+### Q2. Must close persist a single fragment, or support multi-fragment on disk?
 
-**Answer:** Breaking change. Checkpoints with `metadata.json` `"index_backend": "hnsw_disk"` will fail `validate_index_backend` (or equivalent) when reopened. Passing `"hnsw"` / `"hnsw_disk"` as `index_driver` should return a clear `InvalidParameter` / `ValueError` ("unknown index_driver" or "HNSW is no longer supported"). No migration path is required unless the user asks later.
+**Answer:** Single fragment. Reopen opens one index from `index/header.json` (`backend.rs:75–76`). Multi-fragment disk format would require reopen changes; out of scope. Close-time compact-to-one matches the existing reopen contract.
 
-### Q3. Can Faiss be removed entirely?
+### Q3. Use `wait_for_flush`, `persist_index_to_disk`, or `close()`?
 
-**Answer:** No. `IndexDriver::Exact` (Python `FLAT`) still uses Faiss `Flat` via `FaissBackend`. Only the `HNSW32` code path and its memory-usage graph estimate are removed; Faiss dependency stays in `rust/crates/ennbo/Cargo.toml`.
+**Answer:** Add **`persist_index_to_disk`** as the explicit close/persist contract (Rust + Python). **Do not** overload `wait_for_flush` — it is already called before every `add()` and must remain cheap (no-op on the synchronous disk path). **`EnnBackend::Drop`** and **`Surrogate::wait_for_background_flush`** (optimizer tell) call `persist_index_to_disk`, not `wait_for_flush`. Optional later: Python `close()` or context manager as sugar. Keep `wait_for_flush` defined for API stability and future async flush work.
 
-### Q4. Should `DiskEnnBackend` remain an enum after HNSW removal?
+### Q4. Is `Drop` / GC sufficient in Python?
 
-**Answer:** No — with only BPANN disk left, replace `DiskEnnBackend::BpAnn(DiskBpannEnnBackend)` with `DiskBpannEnnBackend` directly in `EnnBackend::Disk(Arc<Mutex<DiskBpannEnnBackend>>)`. This removes all HNSW match arms and `disk_hnsw::flush` imports from `backend/mod.rs` and `model.rs`.
+**Answer:** No as the only mechanism. Rust `EnnBackend::Drop` will call `persist_index_to_disk`, but Python lifecycle is GC-driven and unreliable at interpreter shutdown. **Explicit `persist_index_to_disk()` is the contract** for notebooks, stress harnesses, and fixtures; `Drop` remains best-effort backup when the PyO3 wrapper is released.
 
-### Q5. Should disk tests that today compare `HNSW_DISK` vs `FLAT` be kept for `BPANN_DISK`?
+### Q5. Should incremental `schedule_background_flush` also persist every batch?
 
-**Answer:** Yes. Retain the behavioral coverage (incremental add/search, `train_rows_at`, posterior with pending rows, scale_x reopen) by retargeting existing `HNSW_DISK` tests to `BPANN_DISK`. Drop tests whose sole purpose was HNSW-specific flush/graph mechanics (background flush thread, graph mmap layout, etc.).
+**Answer:** No. Keep deferred in-memory indexing during ingest for throughput. Persist-on-close (explicit call, Drop, or optimizer tell) is the one-time cost; reopen becomes O(mmap) instead of O(n·dim) rebuild. Optimizer `tell` already calls `wait_for_background_flush`; retarget that hook to `persist_index_to_disk` so the store is reopen-ready after each tell — acceptable for that workflow and does not run on every row-level `add()`.
 
-### Q6. Is retargeting shared disk tests a simple enum swap?
+### Q6. Does close need to persist scale stats (`x_sum`, `y_sum`, etc.)?
 
-**Answer:** No. `disk_streaming_helper.rs` must stop using HNSW-only setters (`set_pending_flush_threshold`, `set_defer_append_indexing`). For BPANN, pass low flush threshold via `BpannBackend::with_pending_flush_threshold()` when constructing the backend (may require exposing a builder hook on `DiskBpannEnnBackend::new_empty` or constructing via a test-only path). `optimizer_disk_flush.rs` should be deleted unless rewritten to test BPANN's synchronous `schedule_background_flush` (no background thread).
-
-### Q7. Can HNSW removal be split into separate compile checkpoints?
-
-**Answer:** No. Removing `IndexDriver::HNSW` / `HNSWDisk` from the enum while `disk_hnsw/`, `DiskEnnBackend::Hnsw`, and `backend/mod.rs` match arms still exist will not compile (`cargo check` fails). Enum removal, `disk_hnsw` deletion, `DiskEnnBackend` collapse, and all `src/` test updates must land in **one atomic commit**. Phase 1 (dim cap) is independent and can ship first.
+**Answer:** Not required for the 8s fix. Reopen rescans rows in `sync_obs_stats_from_backend` today; with index persisted, `ensure_index_sync` becomes a no-op and reopen is still fast. Persisting stats is a separate optimization; do not block this plan on it.
 
 ## Plan
 
-### Phase 1 — Raise dimension cap to 8192
+### Phase 1 — bpann: persist-to-disk primitive
 
-- [ ] Change `MAX_NUM_DIM` from `1024` to `8192` in `rust/crates/bpann/src/observation.rs` and `rust/crates/ennbo/src/backend/disk_observation.rs`
-- [ ] Update boundary rejection tests: `rust/crates/bpann/src/lib.rs` (including literal `"1024"` in error-string assert → `"8192"` or `MAX_NUM_DIM`), `rust/crates/bpann/tests/observation.rs`, `rust/crates/bpann/src/observation.rs` (kiss test), `rust/crates/ennbo/src/backend/disk_observation.rs` (unit tests)
-- [ ] Add acceptance test at `d = 8192` and rejection at `d = 8193` (Rust unit test in `bpann` or `ennbo`; optional thin Python smoke opening a `BPANN_DISK` model at 8192 dims)
+- [ ] Add `IncrementalIndex::persist_to_disk(&mut self, ctx: &IndexBuildContext)` in `rust/crates/bpann/src/index/sync.rs`:
+  - Call existing `ensure_sync(ctx, train_x.nrows)` to index any pending rows.
+  - If `indices` is empty and `indexed_rows == 0`, return `Ok(())`.
+  - If `indices.len() > 1`, merge all fragments via `BpannIndex::concat_merge(take(indices), index_dir, false)`, replace `indices` with single merged index.
+  - Call `indices[0].persist()` and `obs::bpann_write_metadata(...)` + `obs::write_indexed_rows(...)`.
+- [ ] Add `BpannBackend::persist_index_to_disk(&mut self)` in `rust/crates/bpann/src/backend.rs` that builds `IndexBuildContext` from backend fields and calls `self.index.persist_to_disk`.
+- [ ] Add unit test in `rust/crates/bpann/tests/kiss_coverage.rs` or `lib.rs`: append ≥2000 rows with 1000-row threshold → `persist_index_to_disk` → reopen → `indexed_rows() == n`, `header.json` `indexed_rows == n`, `pages.bin` checksum stable across second reopen.
 
-**Validation:** `cd rust && cargo test bpann_validate_dim_limits`; `cd rust && cargo test validate_dim_limits`; `cd rust && cargo test open_rejects_num_dim`; assert `bpann_validate_dim_limits(8192)` succeeds and `bpann_validate_dim_limits(8193)` fails with message containing `8192`.
+**Validation:** `cargo test -p bpann kiss_coverage` and `cargo test -p bpann test_reopen`; new test passes; after persist, `header.json` `indexed_rows` equals `num_obs.bin` / `train_x` row count.
 
-### Phase 2 — Remove HNSW entirely (atomic; do not split)
+### Phase 2 — ennbo: wire `persist_index_to_disk`
 
-All items below must land in one commit. Removing enum variants before deleting `disk_hnsw/` and collapsing `DiskEnnBackend` leaves the tree uncompilable (see Q7).
+- [ ] Add `DiskBpannEnnBackend::persist_index_to_disk(&mut self)` (`rust/crates/ennbo/src/disk_bpann/enn_backend.rs`) → `self.inner.persist_index_to_disk()`.
+- [ ] Add `EnnBackend::persist_index_to_disk(&self)` dispatch in `backend/mod.rs` (disk path via `Arc<Mutex<>>`; in-memory no-op).
+- [ ] Add `EpistemicNearestNeighbors::persist_index_to_disk(&self)` on the model (`rust/crates/ennbo/src/model.rs`).
+- [ ] Change `EnnBackend::Drop` to call `persist_index_to_disk()` instead of `wait_for_flush()`.
+- [ ] Change `Surrogate::wait_for_background_flush` to call `model.backend.persist_index_to_disk()` (not `wait_for_flush`).
+- [ ] **Leave `wait_for_flush` a no-op on disk** (`DiskBpannEnnBackend::wait_for_flush` stays `Ok(())`). Do **not** call `persist_index_to_disk` from `ensure_index_sync`'s existing `wait_for_flush` pre-call.
+- [ ] Add Rust integration test: disk ENN, stream adds with deferred flush (threshold 1000, ≥2500 rows), `persist_index_to_disk`, drop model, reopen empty construct → `ensure_index_sync` is fast (no rebuild); neighbor indices match pre-close. Assert ingest with only `schedule_background_flush` (no persist) remains fast.
 
-**Types, bindings, and production `src/`**
+**Validation:** `cargo test -p ennbo`; disk reopen integration test passes; `BpannBackend::reopen` after persist does not mutate `pages.bin` on second open.
 
-- [ ] Delete `rust/crates/ennbo/src/disk_hnsw/` directory entirely
-- [ ] Remove `pub mod disk_hnsw` and `pub use backend::DiskHnswEnnBackend` from `rust/crates/ennbo/src/lib.rs`
-- [ ] Remove `HNSW` and `HNSWDisk` from `IndexDriver` in `rust/crates/ennbo/src/index.rs`; update `is_disk_index_driver()` to match only `BpAnnDisk`; remove HNSW unit tests in the same file
-- [ ] Replace `DiskEnnBackend` enum with direct `DiskBpannEnnBackend` in `rust/crates/ennbo/src/backend/mod.rs`; remove HNSW match arms, `disk_hnsw::flush` usage, HNSW-only unit tests, and default `IndexDriver::HNSWDisk` fallback in `driver()`
-- [ ] Simplify `FaissBackend` / `KnnBackend` in `rust/crates/ennbo/src/knn/faiss_backend.rs` and `rust/crates/ennbo/src/knn/mod.rs` to accept only `IndexDriver::Exact`; remove HNSW branches and tests
-- [ ] Update `rust/crates/ennbo/src/model.rs`: remove `disk_hnsw::flush` import/usage; retarget disk tests to `BpAnnDisk`; update error strings
-- [ ] Update `rust/crates/ennbo/src/config.rs` tests to use `Exact` / `BpAnnDisk` instead of HNSW variants
-- [ ] Update `rust/crates/ennbo/src/posterior/neighbor.rs` test that uses `IndexDriver::HNSW`
-- [ ] Retarget inline unit tests in `rust/crates/ennbo/src/backend/disk_observation.rs` from `"hnsw_disk"` to `"bpann_disk"`
-- [ ] Remove `HNSW` and `HNSW_DISK` from `ENNIndexDriver` and `ENN_INDEX_DRIVER_TO_RUST` in `src/enn/turbo/config/enn_index_driver.py`
-- [ ] Remove all HNSW string parsing from `rust/crates/enn-py/src/py_model.rs` (`"HNSW"`, `"hnsw"`, `"HNSW_DISK"`, `"hnsw_disk"`) and `rust/crates/enn-py/src/py_optimizer.rs` (`"hnsw"`, `"hnsw_disk"`)
+### Phase 3 — Python API and stress harness
 
-**Delete HNSW-specific tests and examples**
+- [ ] Expose `persist_index_to_disk()` on `PyEpistemicNearestNeighbors` (`rust/crates/enn-py/src/py_model.rs`) and `EpistemicNearestNeighbors` (`src/enn/enn/enn_class.py`).
+- [ ] Update KISS symbol registries: `tests/test_kiss_fullrepo_symbol_registry.py`, `rust/crates/ennbo/tests/kiss_repo_strings.rs`, `rust/crates/enn-py` link test.
+- [ ] In `run_enn_add_stress` (`ops/stress.py`), wrap the ingest loop in `try/finally` and call `model.persist_index_to_disk()` in `finally` when `index_driver in DISK_DEFER_SYNC_DRIVERS`.
+- [ ] Add pytest in `tests/test_enn_index_driver.py` or `tests/test_ops_stress_sample.py`: build multi-batch disk store (e.g. 2500 rows, dim 32), `persist_index_to_disk()`, reopen, assert `header.json` indexed_rows == n and posterior matches fresh model.
 
-- [ ] Delete Rust integration test files listed in Current State (including `optimizer_disk_flush.rs` unless rewritten for BPANN)
-- [ ] Delete `examples/try_hnsw_disk.py`, `tests/test_try_hnsw_disk.py`, `tests/test_disk_hnsw_background_flush.py`
+**Validation:** `pytest tests/test_enn_index_driver.py tests/test_ops_stress_sample.py -k disk`; `pre-commit run --all-files` passes.
 
-**Update remaining tests and tooling**
+### Phase 4 — Reopen speed regression
 
-- [ ] Update remaining Rust tests (`turbo_disk_backend.rs`, `disk_streaming_helper.rs`, `tests/disk_observation.rs`, `kiss_gate_coverage.rs`, `kiss_knn_backends.rs`, `enn_backend.rs`, `kiss_repo_strings.rs`) to remove HNSW references; rework `disk_streaming_helper.rs` for BPANN flush-threshold API (see Q6)
-- [ ] Rewrite Python tests: `tests/test_enn_index_driver.py`, `tests/test_ops_stress.py`, `tests/test_ops_stress_restart.py`, `tests/test_kiss_coverage.py`, `tests/test_rust_optimizer_fit_params.py`, `tests/test_enn_neighbors.py`, `tests/test_enn_index.py`, and any other Python tests referencing HNSW
-- [ ] Update `ops/stress.py`: drop `hnsw` / `hnsw_disk` from `INDEX_TYPE_CHOICES` and CLI; remove `HNSW_DISK` from `DISK_DEFER_SYNC_DRIVERS`; default disk RSS stress to `BPANN_DISK`
-- [ ] Update `Makefile` slow-test lists to drop deleted test files
-- [ ] Rewrite `rust/crates/ennbo/README.md` to document `Exact` + `BpAnnDisk` only; remove `hnsw_disk` layout section
-- [ ] Clean `go.sh` commented HNSW lines
+- [ ] Add test (pytest, marked `@pytest.mark.slow`) that builds a disk store mimicking `_enn/` shape (10k rows, 1k dims optional/reduced for CI timing), calls `persist_index_to_disk()`, then times reopen via `run_sample_stress` or direct construct; assert `init_s < 1.0` (or a generous bound vs pre-fix ~8s).
+- [ ] Document in test comment that `_enn/` must be rebuilt with `persist_index_to_disk()` after this lands for local benchmarking.
 
-**Validation:** `cd rust && cargo check -p ennbo -p enn-py`; `cd rust && cargo nextest run --test-threads=8`; `make test`; repo grep (no matches):
-
-```bash
-rg 'disk_hnsw|HNSWDisk|hnsw_disk|IndexDriver::HNSW|DiskHnswEnnBackend|ENNIndexDriver\.HNSW|HNSW_DISK|\bhnsw\b' \
-  rust/crates tests examples ops/stress.py src/enn go.sh
-```
-
-### Phase 3 — End-to-end validation
-
-- [ ] Run `make lint` (clippy, ruff, kiss)
-- [ ] Run `make python-slow-test` (includes `test_enn_index_driver.py`, `test_ops_stress.py`, `test_ops_stress_restart.py`)
-- [ ] Smoke: create `BPANN_DISK` model at `d = 8192` with small `n`, call `ensure_index_sync()` and `posterior()`
-
-**Validation:** `make lint` passes; `make test` passes; `make python-slow-test` passes; manual 8192-dim BPANN disk smoke succeeds without `num_dim … exceeds maximum` error.
-
-(Point-in-time `.tex` reports under `docs/` and `reports/` are out of scope — no update needed.)
+**Validation:** Slow test passes locally; `./ops/stress.py enn bpann_disk 10000 --work-dir /tmp/enn_persist_test --num-dim 100` followed by `./ops/stress.py sample /tmp/enn_persist_test 1000` reports `init_s` ≪ 8s.

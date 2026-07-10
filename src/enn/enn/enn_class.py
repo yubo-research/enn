@@ -105,6 +105,9 @@ class EpistemicNearestNeighbors:
     def schedule_background_flush(self) -> None:
         self._rust_model.schedule_background_flush()
 
+    def persist_index_to_disk(self) -> None:
+        self._rust_model.persist_index_to_disk()
+
     def train_rows_at(
         self, indices: list[int] | np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:

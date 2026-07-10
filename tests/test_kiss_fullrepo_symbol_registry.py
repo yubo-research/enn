@@ -188,6 +188,7 @@ _KISS_STATIC_UNIT_NAMES = (
     "row_y",
     "row_yvar",
     "ensure_index_sync",
+    "persist_index_to_disk",
 )
 
 

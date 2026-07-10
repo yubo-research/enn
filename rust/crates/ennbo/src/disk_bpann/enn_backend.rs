@@ -133,6 +133,10 @@ impl DiskBpannEnnBackend {
         Ok(())
     }
 
+    pub fn persist_index_to_disk(&mut self) -> Result<(), ENNError> {
+        self.inner.persist_index_to_disk().map_err(bpann_err)
+    }
+
     pub fn append_rows(
         &mut self,
         x: &ArrayView2<f64>,

@@ -163,6 +163,51 @@ impl IncrementalIndex {
         self.ensure_sync(&ctx, end)
     }
 
+    pub fn persist_to_disk_for_backend(
+        &mut self,
+        train_x: &MmapColumnStore,
+        num_dim: usize,
+        scale_x: bool,
+        x_scale: &[f64],
+        work_dir: &std::path::Path,
+        num_metrics: usize,
+    ) -> Result<(), BpannError> {
+        let ctx = IndexBuildContext {
+            train_x,
+            num_dim,
+            scale_x,
+            x_scale,
+            work_dir,
+            num_metrics,
+        };
+        self.persist_to_disk(&ctx)
+    }
+
+    fn persist_to_disk(&mut self, ctx: &IndexBuildContext<'_>) -> Result<(), BpannError> {
+        self.ensure_sync(ctx, ctx.train_x.nrows)?;
+        if self.indices.is_empty() && self.indexed_rows == 0 {
+            return Ok(());
+        }
+        if self.indices.len() > 1 {
+            let parts = std::mem::take(&mut self.indices);
+            let merged = BpannIndex::concat_merge(parts, self.index_dir.clone(), false)?;
+            self.indices = vec![merged];
+        }
+        if let Some(index) = self.indices.first_mut() {
+            index.persist()?;
+            obs::bpann_write_metadata(
+                ctx.work_dir,
+                ctx.train_x.nrows,
+                ctx.num_dim,
+                ctx.num_metrics,
+                ctx.scale_x,
+                self.indexed_rows,
+            )?;
+            obs::write_indexed_rows(ctx.work_dir, self.indexed_rows)?;
+        }
+        Ok(())
+    }
+
     fn ensure_sync(&mut self, ctx: &IndexBuildContext<'_>, end: usize) -> Result<(), BpannError> {
         if self.indexed_rows >= end {
             return Ok(());
@@ -429,6 +474,16 @@ mod kiss_coverage_tests {
         let _ = search_beam_width(500);
         let _ = (
             IncrementalIndex::take_pending_centroid as fn(&mut IncrementalIndex, usize) -> Option<Vec<f32>>,
+            IncrementalIndex::persist_to_disk_for_backend
+                as fn(
+                    &mut IncrementalIndex,
+                    &MmapColumnStore,
+                    usize,
+                    bool,
+                    &[f64],
+                    &std::path::Path,
+                    usize,
+                ) -> Result<(), BpannError>,
             IncrementalIndex::ensure_sync as fn(&mut IncrementalIndex, &IndexBuildContext<'_>, usize) -> Result<(), BpannError>,
             IncrementalIndex::maybe_compact_or_persist
                 as fn(&mut IncrementalIndex, &IndexBuildContext<'_>) -> Result<(), BpannError>,
@@ -457,6 +512,27 @@ mod kiss_coverage_tests {
         fn _index_build_context_marker(ctx: &IndexBuildContext<'_>) {
             _kiss_index_build_context(ctx);
         }
+    }
+
+    #[test]
+    fn sync_persist_to_disk_behavioral() {
+        let dir = TempDir::new().unwrap();
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        let x_path = dir.path().join("train_x.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        for batch in 0..3 {
+            let row0 = batch as f64 * 2.0;
+            let chunk = array![[row0, 0.0], [row0 + 1.0, 0.0]];
+            store.mmap_append(&chunk.view()).unwrap();
+            let start = batch * 2;
+            let end = start + 2;
+            idx.ensure_sync_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1, end)
+                .unwrap();
+        }
+        idx.persist_to_disk_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1)
+            .unwrap();
+        assert!(dir.path().join("index/header.json").exists());
+        assert_eq!(idx.indexed_rows, 6);
     }
 
     #[test]

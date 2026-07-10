@@ -268,6 +268,58 @@ def test_enn_disk_bpann_posterior_scale_x_pending_matches_fresh(tmp_path):
     np.testing.assert_allclose(post_inc.se, post_fresh.se, rtol=1e-5)
 
 
+def test_enn_disk_persist_index_multi_batch_reopen_matches_posterior(tmp_path):
+    """Multi-batch disk store: persist aligns header with n; reopen matches post-persist session."""
+    import json
+
+    from enn.enn.enn_params import ENNParams
+
+    rng = np.random.default_rng(17)
+    d = 32
+    work_dir = tmp_path / "enn_disk_persist"
+    x_batches = [
+        rng.standard_normal((1000, d)),
+        rng.standard_normal((1000, d)),
+        rng.standard_normal((500, d)),
+    ]
+    y_batches = [rng.standard_normal((n, 1)) for n in (1000, 1000, 500)]
+
+    model = EpistemicNearestNeighbors(
+        np.empty((0, d)),
+        np.empty((0, 1)),
+        scale_x=False,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+    for x_chunk, y_chunk in zip(x_batches, y_batches, strict=True):
+        model.add(x_chunk, y_chunk)
+        model.schedule_background_flush()
+    model.ensure_index_sync()
+    params = ENNParams(
+        k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
+    x_test = rng.standard_normal((4, d))
+    model.persist_index_to_disk()
+    post_persist = model.posterior(x_test, params=params)
+
+    header = json.loads((work_dir / "index" / "header.json").read_text())
+    assert header["indexed_rows"] == 2500
+
+    reopened = EpistemicNearestNeighbors(
+        np.empty((0, d)),
+        np.empty((0, 1)),
+        scale_x=False,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=str(work_dir),
+        enn_storage="disk",
+    )
+    reopened.ensure_index_sync()
+    post_reopen = reopened.posterior(x_test, params=params)
+    np.testing.assert_allclose(post_persist.mu, post_reopen.mu, rtol=1e-5)
+    np.testing.assert_allclose(post_persist.se, post_reopen.se, rtol=1e-5)
+
+
 @pytest.mark.parametrize("driver", [ENNIndexDriver.BPANN_DISK])
 def test_enn_disk_backend_incremental_add_and_search_bpann_disk(tmp_path, driver):
     work_dir = tmp_path / f"enn_disk_{driver.name.lower()}"

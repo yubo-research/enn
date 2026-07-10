@@ -154,6 +154,39 @@ fn incremental_batch_compact_and_precomputed_merge() {
 }
 
 #[test]
+fn multi_fragment_persist_to_disk_reopen_matches_row_count() {
+    use std::fs;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().to_path_buf();
+    let rows = 2500usize;
+    let dim = 4usize;
+    {
+        let mut b = BpannBackend::new_empty(path.clone(), dim, 1)
+            .unwrap()
+            .with_pending_flush_threshold(1000)
+            .with_defer_append_indexing(true);
+        for (start, count) in [(0, 1000usize), (1000, 1000usize), (2000, 500usize)] {
+            let x = ndarray::Array2::from_shape_fn((count, dim), |(i, j)| (start + i + j) as f64);
+            let y = ndarray::Array2::from_shape_fn((count, 1), |(i, _)| (start + i) as f64);
+            b.append_rows(&x.view(), &y.view(), None).unwrap();
+            b.ensure_index_sync().unwrap();
+        }
+        assert_eq!(b.indexed_rows(), rows);
+        b.persist_index_to_disk().unwrap();
+    }
+    let header_text =
+        fs::read_to_string(path.join("index/header.json")).expect("header.json");
+    assert!(header_text.contains("\"indexed_rows\": 2500"), "header: {header_text}");
+    let b2 = BpannBackend::reopen(path.clone()).unwrap();
+    assert_eq!(b2.indexed_rows(), rows);
+    let pages_first = fs::read(path.join("index/pages.bin")).unwrap();
+    let b3 = BpannBackend::reopen(path.clone()).unwrap();
+    assert_eq!(b3.indexed_rows(), rows);
+    let pages_second = fs::read(path.join("index/pages.bin")).unwrap();
+    assert_eq!(pages_first, pages_second);
+}
+
+#[test]
 fn ensure_index_sync_noop_and_single_index_persist() {
     let dir = TempDir::new().unwrap();
     let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
@@ -213,6 +246,8 @@ fn kiss_incremental_index_module_symbols() {
         "reset",
         "ensure_sync_for_backend",
         "ensure_sync",
+        "persist_to_disk",
+        "persist_to_disk_for_backend",
         "maybe_compact_or_persist",
         "build_index_batch",
         "build_batch",
@@ -227,5 +262,5 @@ fn kiss_incremental_index_module_symbols() {
     let _dir = tempfile::TempDir::new().unwrap();
     let _idx = IncrementalIndex::new(_dir.path().join("index"));
     let _ = (IndexBuildContext, ensure_sync_for_backend);
-    assert_eq!(names.len(), 15);
+    assert_eq!(names.len(), 17);
 }

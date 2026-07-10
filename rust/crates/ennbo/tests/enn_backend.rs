@@ -90,6 +90,7 @@ fn kiss_disk_bpann_static_coverage_names() {
         "append_rows",
         "mark_index_stale",
         "ensure_index_sync",
+        "persist_index_to_disk",
         "train_rows_at",
         "row_x",
         "row_y",

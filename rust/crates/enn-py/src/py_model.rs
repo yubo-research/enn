@@ -123,6 +123,12 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    fn persist_index_to_disk(&self) -> PyResult<()> {
+        self.inner
+            .persist_index_to_disk()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     fn index_memory_bytes(&self) -> PyResult<usize> {
         self.inner
             .index_access()
@@ -508,6 +514,7 @@ mod kiss_coverage_tests {
             PyEpistemicNearestNeighbors::add,
             PyEpistemicNearestNeighbors::ensure_index_sync,
             PyEpistemicNearestNeighbors::schedule_background_flush,
+            PyEpistemicNearestNeighbors::persist_index_to_disk,
             PyEpistemicNearestNeighbors::index_memory_bytes,
             PyEpistemicNearestNeighbors::posterior,
             PyEpistemicNearestNeighbors::batch_posterior,

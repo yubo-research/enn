@@ -172,6 +172,7 @@ fn kiss_fullrepo_static_name_registry_extra() {
         "dist2s_for_neighbor_indices",
         "posterior_row_sq_l2",
         "ensure_index_sync",
+        "persist_index_to_disk",
         "init_model_module",
         "init_fit_module",
         "fitted_num_metrics",

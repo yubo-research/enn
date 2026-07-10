@@ -49,6 +49,13 @@ fn disk_lock<'a>(
         .map_err(|_| ENNError::InvalidParameter("disk backend mutex poisoned".to_string()))
 }
 
+pub(crate) fn persist_enn_backend_index(backend: &EnnBackend) -> Result<(), ENNError> {
+    match backend {
+        EnnBackend::InMemory(_) => Ok(()),
+        EnnBackend::Disk(arc) => disk_lock(arc)?.persist_index_to_disk(),
+    }
+}
+
 impl EnnBackend {
     pub fn new_in_memory(
         train_x: Array2<f64>,
@@ -304,7 +311,7 @@ impl EnnBackend {
 
 impl Drop for EnnBackend {
     fn drop(&mut self) {
-        let _ = self.wait_for_flush();
+        let _ = persist_enn_backend_index(self);
     }
 }
 

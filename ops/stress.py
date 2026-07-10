@@ -375,27 +375,31 @@ def run_enn_add_stress(
 
     last_heartbeat_t = time.perf_counter()
     last_checkpoint_t = time.perf_counter()
-    for n, (x_row, y_row) in enumerate(
-        iter_synthetic_observations(num_obs, num_dim=cfg.num_dim, seed=cfg.seed),
-        start=1,
-    ):
-        model.add(x_row, y_row)
-        if index_driver in DISK_DEFER_SYNC_DRIVERS:
-            model.schedule_background_flush()
-        if cfg.progress_every and (n % cfg.progress_every == 0):
-            click.echo(f"progress n={n}", err=True)
-        if cfg.heartbeat_seconds and (
-            time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
+    try:
+        for n, (x_row, y_row) in enumerate(
+            iter_synthetic_observations(num_obs, num_dim=cfg.num_dim, seed=cfg.seed),
+            start=1,
         ):
-            click.echo(f"heartbeat n={n}", err=True)
-            last_heartbeat_t = time.perf_counter()
-        if n in checkpoints:
-            if index_driver not in DISK_DEFER_SYNC_DRIVERS:
-                model.ensure_index_sync()
-            segment_s = time.perf_counter() - last_checkpoint_t
-            query_s = _time_query_s(model, x_query)
-            last_checkpoint_t = time.perf_counter()
-            yield (n, query_s, segment_s)
+            model.add(x_row, y_row)
+            if index_driver in DISK_DEFER_SYNC_DRIVERS:
+                model.schedule_background_flush()
+            if cfg.progress_every and (n % cfg.progress_every == 0):
+                click.echo(f"progress n={n}", err=True)
+            if cfg.heartbeat_seconds and (
+                time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
+            ):
+                click.echo(f"heartbeat n={n}", err=True)
+                last_heartbeat_t = time.perf_counter()
+            if n in checkpoints:
+                if index_driver not in DISK_DEFER_SYNC_DRIVERS:
+                    model.ensure_index_sync()
+                segment_s = time.perf_counter() - last_checkpoint_t
+                query_s = _time_query_s(model, x_query)
+                last_checkpoint_t = time.perf_counter()
+                yield (n, query_s, segment_s)
+    finally:
+        if index_driver in DISK_DEFER_SYNC_DRIVERS:
+            model.persist_index_to_disk()
 
 
 def stress_row_n_width(num_obs: int) -> int:
