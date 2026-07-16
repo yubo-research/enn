@@ -10,7 +10,6 @@ pytestmark = pytest.mark.slow
 
 def _make_small_disk_bpann_store(work_dir, *, num_obs: int = 10, num_dim: int = 4):
     from enn.enn.enn_class import EpistemicNearestNeighbors
-
     from ops.stress import make_synthetic_observations
 
     train_x, train_y = make_synthetic_observations(num_obs, num_dim=num_dim, seed=0)
@@ -47,7 +46,7 @@ def test_run_sample_stress_on_disk_store(tmp_path):
     assert result.num_dim == 4
     assert result.num_obs == 10
     assert result.num_samples == 5
-    assert result.draws_shape == (1, 5, 1)
+    assert result.draws_shape == (5, 1, 1)
     assert result.all_finite
     assert result.init_s >= 0.0
     assert result.sample_s >= 0.0
@@ -70,7 +69,7 @@ def test_sample_stress_cli_on_disk_store(tmp_path):
         f"num_dim=4 num_obs=10 work_dir={work_dir} num_samples=5 seed=1"
     )
     assert lines[1].startswith(
-        "draws_shape=(1, 5, 1) function_seeds=1 all_finite=true init_s="
+        "draws_shape=(5, 1, 1) function_seeds=1 all_finite=true init_s="
     )
     assert " sample_s=" in lines[1]
 
@@ -103,7 +102,6 @@ def test_disk_persisted_store_10k_reopens_fast(tmp_path):
     import time
 
     from enn.enn.enn_class import EpistemicNearestNeighbors
-
     from ops.stress import make_synthetic_observations
 
     work_dir = tmp_path / "enn_persist_reopen_10k"
@@ -149,7 +147,6 @@ def test_disk_persisted_store_reopens_fast(tmp_path):
     import time
 
     from enn.enn.enn_class import EpistemicNearestNeighbors
-
     from ops.stress import make_synthetic_observations
 
     work_dir = tmp_path / "enn_persist_reopen"

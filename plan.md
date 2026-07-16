@@ -1,108 +1,95 @@
-# Plan: Add `draw` command to ops/stress.py
+# Plan: Add argmin-RMS metric to `ops/stress.py draw`
 
 ## User Request
 
-New command in `ops/stress.py` called `draw` that should:
-- Draw a sample of NUM_OBS points, x, uniformly in [0,1]^num_dim
-- Set y = f(x) + 0.1 * N(0,1) (iid noise at every observation)
-- Use f(x) = (x - 0.3)**2
-- Fit the hyperparameters, including aleatoric variance
-- Draw a new sample of NUM_TEST points, x_test, uniformly in [0,1]^num_dim
-- Compute and report the average likelihood over x_test, using y_test = f(x_test) + 0.1*N(0,1)
-- Use observation_noise=True for all operations
+Add a second metric to the `draw` command that measures joint-sample quality via the path functional \(g(y)=\arg\min_x y(x)\):
+
+- Draw `NUM_TEST` shared \(x\) values.
+- Draw \(y(x)\) from the posterior (both `posterior().sample` and `posterior_function_draw`).
+- For this metric use `observation_noise=False`.
+- \(\varepsilon = \hat{x} - 0.3\cdot\mathbf{1}_d\) where \(\hat{x}=g(y)\) and true \(f(x)=\sum_j(x_j-0.3)^2\).
+- Metric: \(\mathrm{RMS}(\varepsilon)=\sqrt{\mathrm{mean}_s\|\varepsilon^{(s)}\|_2^2}\) over many draws (on the order of 100).
+- Keep marginal avg likelihood as the first metric; agree that the same candidate \(x\)'s are used for both methods, multi-dim uses \(\ell_2\) residual, and the discrete-grid caveat applies.
 
 ## Current State
 
-### ops/stress.py CLI
+### `draw` command (`ops/stress.py`)
 
-- Click group `cli` with two subcommands:
-  - `enn` — stream synthetic adds, time queries at checkpoints
-  - `sample` — reopen a disk bpann store and draw posterior function samples
-- Shared helpers: `make_uniform_query_points` (uniform in `[low, high]`, defaults `[-1, 1]`), `DEFAULT_NUM_DIM = 10`, `STRESS_QUERY_SEED = 1`
-- No synthetic regression / fit / test-likelihood path today
+- Fits ENN on synthetic train data (`draw_f` + noise); scores two methods on the same `x_test`:
+  1. `posterior` — `posterior(..., flags=DRAW_FLAGS)` then `.sample()`; `avg_likelihood` from analytic \(N(y;\mu,\mathrm{se}^2)\).
+  2. `posterior_function_draw` — joint draws; `avg_likelihood` from empirical mean/std over sample axis.
+- `DRAW_FLAGS = PosteriorFlags(observation_noise=True)` used for **both** methods today.
+- Draw tensors are `(batch, metrics, num_samples)` for both APIs (Python `posterior_function_draw` transposed in `_finalize_function_draw`).
+- CLI: `./ops/stress.py draw NUM_OBS NUM_TEST [--num-dim] [--seed] [--k] [--num-fit-candidates] [--num-fit-samples] [--num-samples]`.
+- Defaults: `DEFAULT_DRAW_NUM_SAMPLES = 10`; stdout is header + two method lines with `avg_likelihood=`, `draws_shape=`, `all_finite=`, `eval_s=`.
 
-### Fitting and likelihood (library)
+### Synthetic objective
 
-| Piece | Location | Behavior |
-| --- | --- | --- |
-| `enn_fit` / `ENNStatefulFitter` | `src/enn/enn/enn_fit.py`, `enn_fitter.py` | Random-search hyperparams; `infer_aleatoric_variance_scale=True` by default |
-| `subsample_loglik` (Rust) | `rust/crates/ennbo/src/fit.rs` | Already evaluates candidates with `PosteriorFlags { exclude_nearest: true, observation_noise: true }` |
-| TuRBO-ENN defaults | `rust/crates/ennbo/src/config.rs` `turbo_enn_config` | `k=10`, `num_fit_candidates=30`, `num_fit_samples=10` |
-| Posterior API | `EpistemicNearestNeighbors.posterior(..., flags=PosteriorFlags(...))` | `observation_noise` defaults False; must pass True for test eval |
+- `draw_f(x) = sum_j (x_j - 0.3)^2` → true minimizer \(x^\star = 0.3\cdot\mathbf{1}_d\) on \([0,1]^d\).
+- Center `0.3` is inline in `draw_f` only (no named constant).
 
-### Adjacent patterns
+### Tests
 
-- Multi-dim squared-distance reduction in-repo (sign differs; used as maximizer objective): `-np.sum((x - 0.3) ** 2, axis=1)` in `tests/parity/test_optimizer_coverage_gaps.py`
-- Stress tests: `tests/test_ops_stress.py`, `tests/test_ops_stress_sample.py` (CliRunner + small helper coverage; `sample` marked slow)
+- `tests/test_ops_stress_draw.py` asserts finite `avg_likelihood` and CLI lines starting with `posterior avg_likelihood=` / `posterior_function_draw avg_likelihood=`.
+- No path-functional / argmin metric coverage yet.
 
 ## Requested Changes
 
-1. Add a `draw` Click subcommand on `ops/stress.py` that builds a synthetic train set on `[0,1]^num_dim`, fits ENN hyperparameters (including aleatoric), evaluates average predictive likelihood on a fresh noisy test set, and prints the result.
-2. Use `observation_noise=True` for fit evaluation (already true inside `subsample_loglik`) and for the test-set posterior used to score likelihood.
-3. Cover the new path with unit/CLI tests mirroring existing stress command tests.
+1. Keep marginal `avg_likelihood` scoring with `observation_noise=True` (unchanged intent).
+2. Add `argmin_rms` on both method reports: discrete \(\arg\min\) over the shared `x_test` grid of each draw’s metric-0 values, residual to \(x^\star=0.3\cdot\mathbf{1}\), RMS of \(\ell_2\) residuals over draws.
+3. Compute `argmin_rms` draws with `observation_noise=False` for both `posterior().sample` and `posterior_function_draw`.
+4. Use the same `x_test` for both methods and both metrics.
+5. Raise default `--num-samples` to 100 (enough Monte Carlo for RMS).
+6. Update CLI summary lines and tests accordingly.
 
 ## Q&A
 
-### Q1. How is `f(x) = (x - 0.3)**2` defined when `num_dim > 1`?
+### Q1. Same `--num-samples` for likelihood draws and argmin-RMS draws?
 
-**Answer:** Reduce over dimensions: `y_i = sum_j (x_{ij} - 0.3)^2`, shape `(n, 1)`. Same reduction as in `tests/parity/test_optimizer_coverage_gaps.py` (that file negates the sum for maximization; here we keep the positive sum as `f`).
+**Answer:** Yes. One `num_samples` drives all Monte Carlo counts. Default becomes `100`. Likelihood for `posterior` remains analytic (does not require samples); `posterior().sample` and both `posterior_function_draw` passes still use `num_samples`.
 
-### Q2. Does “average likelihood” mean mean PDF or mean log-likelihood?
+### Q2. Separate posterior calls for `observation_noise=True` vs `False`?
 
-**Answer:** Mean of per-point Gaussian predictive densities \(p(y_i \mid x_i) = \mathcal{N}(y_i; \mu_i, \mathrm{se}_i^2)\) under the fitted posterior with `observation_noise=True`, then `mean` over the `NUM_TEST` points. Do **not** reuse `subsample_loglik` for the reported metric (it returns a sum of y-scaled log-likelihoods with `exclude_nearest=True`, not average likelihood).
+**Answer:** Yes. Keep `DRAW_FLAGS` (`observation_noise=True`) for avg-likelihood paths. Add `DRAW_FLAGS_NO_OBS = PosteriorFlags(observation_noise=False)` for argmin-RMS draws only. That means an extra `posterior(...).sample` and an extra `posterior_function_draw` under the no-obs flag (four draw/eval paths total: lik×2 + rms×2, with posterior lik still analytic).
 
-### Q3. What CLI shape and defaults?
+### Q3. How is multi-dim \(\varepsilon\) defined?
 
-**Answer:** Required positional args `NUM_OBS` and `NUM_TEST`; `--num-dim` is an option defaulting to `DEFAULT_NUM_DIM` (10).
+**Answer:** For draw \(s\), \(\hat{x}^{(s)} = x_{\mathrm{test}}[i^\star]\) with \(i^\star=\arg\min_i y^{(s)}_i\) (metric 0). \(\varepsilon^{(s)}=\hat{x}^{(s)}-0.3\cdot\mathbf{1}_d\). \(\mathrm{RMS}=\sqrt{\frac{1}{S}\sum_s\|\varepsilon^{(s)}\|_2^2}\). Introduce `DRAW_F_CENTER = 0.3` and use it in `draw_f` and the RMS helper.
 
-```text
-./ops/stress.py draw NUM_OBS NUM_TEST [--num-dim N] [--seed S] [--k K]
-  [--num-fit-candidates C] [--num-fit-samples P]
-```
+### Q4. Discrete-grid limitation?
 
-Other defaults: `seed=0`, `k=10`, `num_fit_candidates=30`, `num_fit_samples=10` (TuRBO-ENN defaults). In-memory `FLAT` index only (no `--work-dir`); this is a fit/eval experiment, not a disk stress path.
+**Answer:** Accepted. Metric only searches the finite `x_test` set; high-\(d\) random grids rarely near \(x^\star\). Tests keep small `num_dim` (e.g. 2). No change to how `x_test` is generated.
 
-### Q4. Does fitting already honor `observation_noise=True`?
+### Q5. Which draw tensor is reported in `draws_shape` / `all_finite`?
 
-**Answer:** Yes. `subsample_loglik` hardcodes `.with_observation_noise(true)` (`rust/crates/ennbo/src/fit.rs`). The new command must still pass `PosteriorFlags(observation_noise=True)` when computing the test posterior for the reported average likelihood. Aleatoric inference comes from `ENNStatefulFitter(infer_aleatoric_variance_scale=True)` (the default used inside batch `enn_fit`); `enn_fit` itself has no such kwarg.
-
-### Q5. How should train/test/fit RNGs relate?
-
-**Answer:** `--seed` drives data only: `data_rng = np.random.default_rng(seed)`. Draw train `x`/`noise`, then test `x_test`/`noise` sequentially from `data_rng`. Fit uses a separate RNG: `fit_rng = np.random.default_rng(seed + 1)`. Do **not** pass `data_rng` into `enn_fit`.
-
-### Q6. How to sample uniform `x` in `[0,1]^num_dim`?
-
-**Answer:** Inline `rng.uniform(0.0, 1.0, size=(n, num_dim))` inside `make_draw_observations`. Do **not** use `make_uniform_query_points` (it takes a seed and builds its own RNG, which fights the shared `data_rng` stream).
+**Answer:** Report shapes/finiteness from the **argmin-RMS** draws (`observation_noise=False`), since those are the joint-quality draws. `avg_likelihood` stays on the ON=True path as today.
 
 ## Plan
 
-### Phase 1 — Implement `draw` in ops/stress.py
+### Phase 1 — Argmin-RMS helpers and dual-flag scoring in `run_draw_stress`
 
-- [x] Add helpers (module-level, next to existing synthetic helpers):
-  - `draw_f(x) -> np.ndarray` — `np.sum((x - 0.3) ** 2, axis=1, keepdims=True)`
-  - `make_draw_observations(num_obs, *, num_dim, rng)` — `x = rng.uniform(0.0, 1.0, size=(n, num_dim))`, then `y = draw_f(x) + 0.1 * rng.standard_normal((n, 1))`
-  - `gaussian_likelihood(y, mu, se) -> np.ndarray` — per-point \(\mathcal{N}(y;\mu,\mathrm{se}^2)\) densities
-  - `average_likelihood(y, mu, se) -> float` — `float(np.mean(...))`
-- [x] Add `DrawStressConfig` / `DrawStressResult` dataclasses (num_obs, num_test, num_dim, seed, k, fit knobs, fitted scales, avg_likelihood, timings as useful).
-- [x] Implement `run_draw_stress(config) -> DrawStressResult`:
-  1. `data_rng = default_rng(seed)`; `fit_rng = default_rng(seed + 1)`
-  2. Build train `(x, y)` with `make_draw_observations(..., rng=data_rng)`
-  3. Build test `(x_test, y_test)` the same way (still `data_rng`)
-  4. `EpistemicNearestNeighbors(x, y, scale_x=False)` (FLAT default)
-  5. `enn_fit(..., k=..., num_fit_candidates=..., num_fit_samples=..., rng=fit_rng)` (aleatoric inferred via fitter default)
-  6. `posterior(x_test, params=fitted, flags=PosteriorFlags(observation_noise=True))`
-  7. Compute and store average likelihood
-- [x] Add Click command `draw` with required args `num_obs`, `num_test`; option `--num-dim` default `DEFAULT_NUM_DIM` (10); plus `--seed` / `--k` / fit-knob options above; validate `>= 1` for sizes/dims and fit knobs; echo a config header line and a summary line that includes fitted `epistemic_variance_scale`, `aleatoric_variance_scale`, and `avg_likelihood=...` (same two-line style as `sample`).
+- [x] Add `DRAW_F_CENTER = 0.3`; use it in `draw_f`.
+- [x] Add `DRAW_FLAGS_NO_OBS = PosteriorFlags(observation_noise=False)`.
+- [x] Set `DEFAULT_DRAW_NUM_SAMPLES = 100`.
+- [x] Add `argmin_rms(x_test, draws) -> float`:
+  - `draws` shape `(B, M, S)`; use metric 0.
+  - For each sample \(s\): `i = argmin(draws[:, 0, s])`; `eps = x_test[i] - DRAW_F_CENTER`; accumulate `||eps||_2^2`.
+  - Return `sqrt(mean)`.
+- [x] Extend `DrawMethodResult` with `argmin_rms: float`.
+- [x] In `run_draw_stress`:
+  1. Fit as today.
+  2. **Likelihood (ON=True):** existing `posterior` analytic lik; existing `posterior_function_draw` empirical lik.
+  3. **Argmin RMS (ON=False):** `posterior(...).sample` and `posterior_function_draw` with `DRAW_FLAGS_NO_OBS` on the same `x_test`; compute `argmin_rms` for each.
+  4. Fill each `DrawMethodResult` with both metrics; `draws_shape` / `all_finite` / method `eval_s` from the ON=False draw pass (time both passes into `eval_s` or only the RMS pass — use wall time covering that method’s lik+rms work for a single `eval_s`).
+- [x] Update `format_draw_method_summary` to include `argmin_rms=...`.
 
-**Validation:** `python -c "from ops.stress import cli; ..."` / CliRunner invoke `draw 40 20 --num-dim 2 --seed 0` exits 0; output contains `avg_likelihood=` and a finite float; fitted `aleatoric_variance_scale >= 0`.
+**Validation:** `./ops/stress.py draw 40 20 --num-dim 2 --seed 0 --k 5 --num-fit-candidates 8 --num-fit-samples 5 --num-samples 20` prints three lines; both method lines contain `avg_likelihood=` and `argmin_rms=` with finite values; `draws_shape` matches `(20, 1, 20)` on both lines.
 
 ### Phase 2 — Tests
 
-- [x] Add `tests/test_ops_stress_draw.py`:
-  - `draw_f` shape/value checks (1d and multi-d)
-  - `make_draw_observations` bounds in `[0,1]`, reproducibility for fixed seed
-  - `run_draw_stress` on small `num_obs`/`num_test` returns finite `avg_likelihood` and positive epistemic scale
-  - CliRunner: happy path + rejects `num_obs < 1` / missing args
-- [x] Keep tests fast (small n/d, modest fit candidates/samples); mark slow only if runtime warrants it (prefer not).
+- [x] Unit-test `argmin_rms`: hand-built `x_test` / `draws` where the min is known → expected RMS.
+- [x] `run_draw_stress`: assert finite `argmin_rms` for both methods; assert `posterior_function_draw.argmin_rms <= posterior.argmin_rms` is **not** required (stochastic), only finiteness and `>= 0`.
+- [x] CLI test: both method lines contain `argmin_rms=`; default `num_samples` in help/header reflects 100 when not overridden.
+- [x] Keep existing likelihood / rejection tests green.
 
-**Validation:** `pytest tests/test_ops_stress_draw.py -q` passes; `pre-commit`/existing stress tests still pass.
+**Validation:** `pytest tests/test_ops_stress_draw.py -q` passes.

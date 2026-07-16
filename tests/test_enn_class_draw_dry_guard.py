@@ -51,7 +51,7 @@ def test_function_draw_idx_shape_dtype():
     draws, idx = model.posterior_function_draw(
         x, params, function_seeds=seeds, flags=PosteriorFlags()
     )
-    assert draws.shape == (1, x.shape[0], model.num_outputs)
+    assert draws.shape == (x.shape[0], model.num_outputs, 1)
     idx_arr = np.asarray(idx, dtype=int)
     assert idx_arr.shape == (x.shape[0], params.k_num_neighbors)
 
@@ -90,8 +90,9 @@ def test_function_draw_golden_values_fixed_seed_arrays():
         x, params, function_seeds=seeds, flags=PosteriorFlags()
     )
     # Expected from enn EpistemicNearestNeighbors + Rust draw path (fixed data/seeds).
+    # Shape is (batch, metrics, num_samples) to match posterior().sample().
     expected = np.array(
-        [[[-0.71338448]], [[-0.40793862]]],
+        [[[-0.71338448, -0.40793862]]],
         dtype=np.float64,
     )
     np.testing.assert_allclose(draws, expected, rtol=1e-7, atol=1e-7)

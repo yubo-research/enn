@@ -185,7 +185,7 @@ class TestPosteriorFunctionDrawContract:
         )
 
         assert isinstance(draws, np.ndarray)
-        assert draws.shape == (2, 1, 1)
+        assert draws.shape == (1, 1, 2)
         assert isinstance(idx, (list, np.ndarray))
         assert len(idx) == 1
 

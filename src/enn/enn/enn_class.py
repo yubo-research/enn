@@ -35,8 +35,17 @@ def _rust_function_draw_kwargs(params, flags, seeds: list[int]) -> dict[str, Any
 def _finalize_function_draw(
     x: np.ndarray, draws: np.ndarray, idx: list | None
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Return draws as (batch, metrics, num_samples), matching ENNNormal.sample()."""
+    draws_arr = np.asarray(draws, dtype=float)
+    if draws_arr.ndim != 3:
+        raise ValueError(
+            f"function draws must be 3D (num_samples, batch, metrics), "
+            f"got shape {draws_arr.shape}"
+        )
+    # Rust returns (num_samples, batch, metrics); match posterior().sample().
+    draws_arr = np.transpose(draws_arr, (1, 2, 0))
     idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0), dtype=int)
-    return draws, idx_arr
+    return draws_arr, idx_arr
 
 
 class EpistemicNearestNeighbors:

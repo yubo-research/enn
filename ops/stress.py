@@ -38,7 +38,11 @@ DEFAULT_DRAW_SEED = 0
 DEFAULT_DRAW_K = 10
 DEFAULT_DRAW_NUM_FIT_CANDIDATES = 30
 DEFAULT_DRAW_NUM_FIT_SAMPLES = 10
+DEFAULT_DRAW_NUM_SAMPLES = 100
 DRAW_OBS_NOISE_STD = 0.1
+DRAW_F_CENTER = 0.3
+DRAW_FLAGS = PosteriorFlags(observation_noise=True)
+DRAW_FLAGS_NO_OBS = PosteriorFlags(observation_noise=False)
 STRESS_PARAMS = ENNParams(
     k_num_neighbors=STRESS_QUERY_K,
     epistemic_variance_scale=1.0,
@@ -497,9 +501,33 @@ def format_sample_summary(result: SampleStressResult) -> str:
 
 
 def draw_f(x: np.ndarray) -> np.ndarray:
-    """Return sum_j (x_ij - 0.3)^2 with shape (n, 1)."""
+    """Return sum_j (x_ij - DRAW_F_CENTER)^2 with shape (n, 1)."""
     x_arr = np.asarray(x, dtype=float)
-    return np.sum((x_arr - 0.3) ** 2, axis=1, keepdims=True)
+    return np.sum((x_arr - DRAW_F_CENTER) ** 2, axis=1, keepdims=True)
+
+
+def argmin_rms(x_test: np.ndarray, draws: np.ndarray) -> float:
+    """RMS of ||x_hat - DRAW_F_CENTER||_2 over draws; x_hat = argmin of metric 0.
+
+    ``draws`` has shape ``(batch, metrics, num_samples)``. For each sample ``s``,
+    ``i* = argmin_i draws[i, 0, s]`` and ``x_hat = x_test[i*]``.
+    """
+    x_arr = np.asarray(x_test, dtype=float)
+    draws_arr = np.asarray(draws, dtype=float)
+    if draws_arr.ndim != 3:
+        raise ValueError(f"draws must be 3D (B, M, S), got shape {draws_arr.shape}")
+    if draws_arr.shape[0] != x_arr.shape[0]:
+        raise ValueError(
+            f"x_test rows ({x_arr.shape[0]}) must match draws batch ({draws_arr.shape[0]})"
+        )
+    if draws_arr.shape[1] < 1:
+        raise ValueError("draws must have at least one metric")
+    if draws_arr.shape[2] < 1:
+        raise ValueError("draws must have at least one sample")
+    y0 = draws_arr[:, 0, :]
+    i_star = np.argmin(y0, axis=0)
+    eps = x_arr[i_star] - DRAW_F_CENTER
+    return float(np.sqrt(np.mean(np.sum(eps * eps, axis=-1))))
 
 
 def make_draw_observations(
@@ -533,6 +561,22 @@ def average_likelihood(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> float:
     return float(np.mean(gaussian_likelihood(y, mu, se)))
 
 
+def average_likelihood_from_draws(y: np.ndarray, draws: np.ndarray) -> float:
+    """Mean Gaussian density using empirical mean/std over sample axis -1.
+
+    ``draws`` has shape ``(batch, metrics, num_samples)``.
+    """
+    draws_arr = np.asarray(draws, dtype=float)
+    if draws_arr.ndim != 3:
+        raise ValueError(f"draws must be 3D (B, M, S), got shape {draws_arr.shape}")
+    if draws_arr.shape[-1] < 2:
+        raise ValueError("draws must have at least 2 samples along axis -1")
+    mu = draws_arr.mean(axis=-1)
+    se = draws_arr.std(axis=-1, ddof=1)
+    se = np.maximum(se, 1e-12)
+    return average_likelihood(y, mu, se)
+
+
 @dataclass(frozen=True)
 class DrawStressConfig:
     num_obs: int
@@ -542,6 +586,17 @@ class DrawStressConfig:
     k: int = DEFAULT_DRAW_K
     num_fit_candidates: int = DEFAULT_DRAW_NUM_FIT_CANDIDATES
     num_fit_samples: int = DEFAULT_DRAW_NUM_FIT_SAMPLES
+    num_samples: int = DEFAULT_DRAW_NUM_SAMPLES
+
+
+@dataclass(frozen=True)
+class DrawMethodResult:
+    method: str
+    avg_likelihood: float
+    argmin_rms: float
+    draws_shape: tuple[int, ...]
+    all_finite: bool
+    eval_s: float
 
 
 @dataclass(frozen=True)
@@ -553,15 +608,16 @@ class DrawStressResult:
     k: int
     num_fit_candidates: int
     num_fit_samples: int
+    num_samples: int
     epistemic_variance_scale: float
     aleatoric_variance_scale: float
-    avg_likelihood: float
     fit_s: float
-    eval_s: float
+    posterior: DrawMethodResult
+    posterior_function_draw: DrawMethodResult
 
 
 def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
-    """Fit ENN on synthetic draw data and score average test likelihood."""
+    """Fit ENN on synthetic draw data; score avg likelihood and argmin-RMS."""
     if config.num_obs < 1:
         raise ValueError("num_obs must be >= 1")
     if config.num_test < 1:
@@ -574,9 +630,12 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         raise ValueError("num_fit_candidates must be >= 1")
     if config.num_fit_samples < 1:
         raise ValueError("num_fit_samples must be >= 1")
+    if config.num_samples < 2:
+        raise ValueError("num_samples must be >= 2")
 
     data_rng = np.random.default_rng(config.seed)
     fit_rng = np.random.default_rng(config.seed + 1)
+    sample_rng = np.random.default_rng(config.seed + 2)
     x, y = make_draw_observations(config.num_obs, num_dim=config.num_dim, rng=data_rng)
     x_test, y_test = make_draw_observations(
         config.num_test, num_dim=config.num_dim, rng=data_rng
@@ -594,13 +653,49 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     fit_s = time.perf_counter() - t0
 
     t1 = time.perf_counter()
-    posterior = model.posterior(
-        x_test,
-        params=fitted,
-        flags=PosteriorFlags(observation_noise=True),
+    # Likelihood path: observation_noise=True (posterior lik is analytic).
+    post_lik = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS)
+    avg_lik_post = average_likelihood(y_test, post_lik.mu, post_lik.se)
+    # Argmin-RMS path: observation_noise=False joint draws.
+    post_rms = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS_NO_OBS)
+    post_rms_draws = post_rms.sample(config.num_samples, sample_rng)
+    post_argmin_rms = argmin_rms(x_test, post_rms_draws)
+    eval_post_s = time.perf_counter() - t1
+    posterior_result = DrawMethodResult(
+        method="posterior",
+        avg_likelihood=avg_lik_post,
+        argmin_rms=post_argmin_rms,
+        draws_shape=tuple(int(s) for s in post_rms_draws.shape),
+        all_finite=bool(np.all(np.isfinite(post_rms_draws))),
+        eval_s=eval_post_s,
     )
-    avg_lik = average_likelihood(y_test, posterior.mu, posterior.se)
-    eval_s = time.perf_counter() - t1
+
+    t2 = time.perf_counter()
+    function_seeds_lik = function_seeds_for_sample(config.seed + 3, config.num_samples)
+    fn_draws_lik, _idx = model.posterior_function_draw(
+        x_test,
+        fitted,
+        function_seeds=function_seeds_lik,
+        flags=DRAW_FLAGS,
+    )
+    avg_lik_fn = average_likelihood_from_draws(y_test, fn_draws_lik)
+    function_seeds_rms = function_seeds_for_sample(config.seed + 4, config.num_samples)
+    fn_draws_rms, _idx_rms = model.posterior_function_draw(
+        x_test,
+        fitted,
+        function_seeds=function_seeds_rms,
+        flags=DRAW_FLAGS_NO_OBS,
+    )
+    fn_argmin_rms = argmin_rms(x_test, fn_draws_rms)
+    eval_fn_s = time.perf_counter() - t2
+    function_result = DrawMethodResult(
+        method="posterior_function_draw",
+        avg_likelihood=avg_lik_fn,
+        argmin_rms=fn_argmin_rms,
+        draws_shape=tuple(int(s) for s in fn_draws_rms.shape),
+        all_finite=bool(np.all(np.isfinite(fn_draws_rms))),
+        eval_s=eval_fn_s,
+    )
 
     return DrawStressResult(
         num_obs=config.num_obs,
@@ -610,27 +705,33 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         k=config.k,
         num_fit_candidates=config.num_fit_candidates,
         num_fit_samples=config.num_fit_samples,
+        num_samples=config.num_samples,
         epistemic_variance_scale=float(fitted.epistemic_variance_scale),
         aleatoric_variance_scale=float(fitted.aleatoric_variance_scale),
-        avg_likelihood=avg_lik,
         fit_s=fit_s,
-        eval_s=eval_s,
+        posterior=posterior_result,
+        posterior_function_draw=function_result,
     )
 
 
 def format_draw_config_header(result: DrawStressResult) -> str:
     return (
         f"num_dim={result.num_dim} num_obs={result.num_obs} "
-        f"num_test={result.num_test} seed={result.seed} k={result.k}"
+        f"num_test={result.num_test} seed={result.seed} k={result.k} "
+        f"num_samples={result.num_samples} "
+        f"epistemic_variance_scale={result.epistemic_variance_scale:.6g} "
+        f"aleatoric_variance_scale={result.aleatoric_variance_scale:.6g} "
+        f"fit_s={result.fit_s:.3f}"
     )
 
 
-def format_draw_summary(result: DrawStressResult) -> str:
+def format_draw_method_summary(method: DrawMethodResult) -> str:
     return (
-        f"epistemic_variance_scale={result.epistemic_variance_scale:.6g} "
-        f"aleatoric_variance_scale={result.aleatoric_variance_scale:.6g} "
-        f"avg_likelihood={result.avg_likelihood:.6g} "
-        f"fit_s={result.fit_s:.3f} eval_s={result.eval_s:.3f}"
+        f"{method.method} avg_likelihood={method.avg_likelihood:.6g} "
+        f"argmin_rms={method.argmin_rms:.6g} "
+        f"draws_shape={method.draws_shape} "
+        f"all_finite={str(method.all_finite).lower()} "
+        f"eval_s={method.eval_s:.3f}"
     )
 
 
@@ -799,6 +900,13 @@ def sample(work_dir: str, num_samples: int, seed: int) -> None:
             show_default=True,
             help="Subsample size for fit log-likelihood.",
         ),
+        click.Option(
+            ["--num-samples"],
+            type=int,
+            default=DEFAULT_DRAW_NUM_SAMPLES,
+            show_default=True,
+            help="Draw count for posterior().sample and posterior_function_draw.",
+        ),
     ],
 )
 def draw(
@@ -809,8 +917,9 @@ def draw(
     k: int,
     num_fit_candidates: int,
     num_fit_samples: int,
+    num_samples: int,
 ) -> None:
-    """Fit ENN on synthetic draw data and report average test likelihood."""
+    """Fit ENN on synthetic data; report avg likelihood for two draw methods."""
     if num_obs < 1:
         raise click.ClickException("num_obs must be >= 1")
     if num_test < 1:
@@ -823,6 +932,8 @@ def draw(
         raise click.ClickException("num_fit_candidates must be >= 1")
     if num_fit_samples < 1:
         raise click.ClickException("num_fit_samples must be >= 1")
+    if num_samples < 2:
+        raise click.ClickException("num_samples must be >= 2")
     try:
         result = run_draw_stress(
             DrawStressConfig(
@@ -833,12 +944,14 @@ def draw(
                 k=k,
                 num_fit_candidates=num_fit_candidates,
                 num_fit_samples=num_fit_samples,
+                num_samples=num_samples,
             )
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(format_draw_config_header(result))
-    click.echo(format_draw_summary(result))
+    click.echo(format_draw_method_summary(result.posterior))
+    click.echo(format_draw_method_summary(result.posterior_function_draw))
 
 
 def main() -> None:
