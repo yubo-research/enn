@@ -15,7 +15,8 @@ import click
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_params import ENNParams
+from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "bpann_disk")
@@ -33,6 +34,11 @@ NUM_SAMPLE = STRESS_QUERY_N
 DEFAULT_SAMPLE_WORK_DIR = "_enn"
 DEFAULT_SAMPLE_X_LOW = -1.0
 DEFAULT_SAMPLE_X_HIGH = 1.0
+DEFAULT_DRAW_SEED = 0
+DEFAULT_DRAW_K = 10
+DEFAULT_DRAW_NUM_FIT_CANDIDATES = 30
+DEFAULT_DRAW_NUM_FIT_SAMPLES = 10
+DRAW_OBS_NOISE_STD = 0.1
 STRESS_PARAMS = ENNParams(
     k_num_neighbors=STRESS_QUERY_K,
     epistemic_variance_scale=1.0,
@@ -490,6 +496,144 @@ def format_sample_summary(result: SampleStressResult) -> str:
     )
 
 
+def draw_f(x: np.ndarray) -> np.ndarray:
+    """Return sum_j (x_ij - 0.3)^2 with shape (n, 1)."""
+    x_arr = np.asarray(x, dtype=float)
+    return np.sum((x_arr - 0.3) ** 2, axis=1, keepdims=True)
+
+
+def make_draw_observations(
+    num_obs: int,
+    *,
+    num_dim: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Draw x ~ U[0,1]^num_dim and y = draw_f(x) + 0.1 N(0,1)."""
+    if num_obs < 1:
+        raise ValueError("num_obs must be >= 1")
+    if num_dim < 1:
+        raise ValueError("num_dim must be >= 1")
+    x = rng.uniform(0.0, 1.0, size=(num_obs, num_dim))
+    noise = rng.standard_normal((num_obs, 1))
+    y = draw_f(x) + DRAW_OBS_NOISE_STD * noise
+    return x, y
+
+
+def gaussian_likelihood(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> np.ndarray:
+    """Per-point N(y; mu, se^2) densities."""
+    y_arr = np.asarray(y, dtype=float)
+    mu_arr = np.asarray(mu, dtype=float)
+    se_arr = np.asarray(se, dtype=float)
+    z = (y_arr - mu_arr) / se_arr
+    return (1.0 / (se_arr * np.sqrt(2.0 * np.pi))) * np.exp(-0.5 * z * z)
+
+
+def average_likelihood(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> float:
+    """Mean of per-point Gaussian predictive densities."""
+    return float(np.mean(gaussian_likelihood(y, mu, se)))
+
+
+@dataclass(frozen=True)
+class DrawStressConfig:
+    num_obs: int
+    num_test: int
+    num_dim: int = DEFAULT_NUM_DIM
+    seed: int = DEFAULT_DRAW_SEED
+    k: int = DEFAULT_DRAW_K
+    num_fit_candidates: int = DEFAULT_DRAW_NUM_FIT_CANDIDATES
+    num_fit_samples: int = DEFAULT_DRAW_NUM_FIT_SAMPLES
+
+
+@dataclass(frozen=True)
+class DrawStressResult:
+    num_obs: int
+    num_test: int
+    num_dim: int
+    seed: int
+    k: int
+    num_fit_candidates: int
+    num_fit_samples: int
+    epistemic_variance_scale: float
+    aleatoric_variance_scale: float
+    avg_likelihood: float
+    fit_s: float
+    eval_s: float
+
+
+def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
+    """Fit ENN on synthetic draw data and score average test likelihood."""
+    if config.num_obs < 1:
+        raise ValueError("num_obs must be >= 1")
+    if config.num_test < 1:
+        raise ValueError("num_test must be >= 1")
+    if config.num_dim < 1:
+        raise ValueError("num_dim must be >= 1")
+    if config.k < 1:
+        raise ValueError("k must be >= 1")
+    if config.num_fit_candidates < 1:
+        raise ValueError("num_fit_candidates must be >= 1")
+    if config.num_fit_samples < 1:
+        raise ValueError("num_fit_samples must be >= 1")
+
+    data_rng = np.random.default_rng(config.seed)
+    fit_rng = np.random.default_rng(config.seed + 1)
+    x, y = make_draw_observations(config.num_obs, num_dim=config.num_dim, rng=data_rng)
+    x_test, y_test = make_draw_observations(
+        config.num_test, num_dim=config.num_dim, rng=data_rng
+    )
+    model = EpistemicNearestNeighbors(x, y, scale_x=False)
+
+    t0 = time.perf_counter()
+    fitted = enn_fit(
+        model,
+        k=config.k,
+        num_fit_candidates=config.num_fit_candidates,
+        num_fit_samples=config.num_fit_samples,
+        rng=fit_rng,
+    )
+    fit_s = time.perf_counter() - t0
+
+    t1 = time.perf_counter()
+    posterior = model.posterior(
+        x_test,
+        params=fitted,
+        flags=PosteriorFlags(observation_noise=True),
+    )
+    avg_lik = average_likelihood(y_test, posterior.mu, posterior.se)
+    eval_s = time.perf_counter() - t1
+
+    return DrawStressResult(
+        num_obs=config.num_obs,
+        num_test=config.num_test,
+        num_dim=config.num_dim,
+        seed=config.seed,
+        k=config.k,
+        num_fit_candidates=config.num_fit_candidates,
+        num_fit_samples=config.num_fit_samples,
+        epistemic_variance_scale=float(fitted.epistemic_variance_scale),
+        aleatoric_variance_scale=float(fitted.aleatoric_variance_scale),
+        avg_likelihood=avg_lik,
+        fit_s=fit_s,
+        eval_s=eval_s,
+    )
+
+
+def format_draw_config_header(result: DrawStressResult) -> str:
+    return (
+        f"num_dim={result.num_dim} num_obs={result.num_obs} "
+        f"num_test={result.num_test} seed={result.seed} k={result.k}"
+    )
+
+
+def format_draw_summary(result: DrawStressResult) -> str:
+    return (
+        f"epistemic_variance_scale={result.epistemic_variance_scale:.6g} "
+        f"aleatoric_variance_scale={result.aleatoric_variance_scale:.6g} "
+        f"avg_likelihood={result.avg_likelihood:.6g} "
+        f"fit_s={result.fit_s:.3f} eval_s={result.eval_s:.3f}"
+    )
+
+
 @click.group()
 def cli() -> None:
     """Operational stress tools."""
@@ -613,6 +757,88 @@ def sample(work_dir: str, num_samples: int, seed: int) -> None:
         raise click.ClickException("posterior_function_draw returned non-finite values")
     click.echo(format_sample_config_header(result=result, work_dir=work_dir))
     click.echo(format_sample_summary(result))
+
+
+@cli.command(
+    "draw",
+    params=[
+        click.Argument(["num_obs"], type=int),
+        click.Argument(["num_test"], type=int),
+        click.Option(
+            ["--num-dim"],
+            type=int,
+            default=DEFAULT_NUM_DIM,
+            show_default=True,
+            help="Embedding dimension for synthetic observations.",
+        ),
+        click.Option(
+            ["--seed"],
+            type=int,
+            default=DEFAULT_DRAW_SEED,
+            show_default=True,
+            help="RNG seed for train/test data (fit uses seed+1).",
+        ),
+        click.Option(
+            ["--k"],
+            type=int,
+            default=DEFAULT_DRAW_K,
+            show_default=True,
+            help="Number of neighbors for fit and posterior.",
+        ),
+        click.Option(
+            ["--num-fit-candidates"],
+            type=int,
+            default=DEFAULT_DRAW_NUM_FIT_CANDIDATES,
+            show_default=True,
+            help="Hyperparameter candidates per fit ask.",
+        ),
+        click.Option(
+            ["--num-fit-samples"],
+            type=int,
+            default=DEFAULT_DRAW_NUM_FIT_SAMPLES,
+            show_default=True,
+            help="Subsample size for fit log-likelihood.",
+        ),
+    ],
+)
+def draw(
+    num_obs: int,
+    num_test: int,
+    num_dim: int,
+    seed: int,
+    k: int,
+    num_fit_candidates: int,
+    num_fit_samples: int,
+) -> None:
+    """Fit ENN on synthetic draw data and report average test likelihood."""
+    if num_obs < 1:
+        raise click.ClickException("num_obs must be >= 1")
+    if num_test < 1:
+        raise click.ClickException("num_test must be >= 1")
+    if num_dim < 1:
+        raise click.ClickException("num_dim must be >= 1")
+    if k < 1:
+        raise click.ClickException("k must be >= 1")
+    if num_fit_candidates < 1:
+        raise click.ClickException("num_fit_candidates must be >= 1")
+    if num_fit_samples < 1:
+        raise click.ClickException("num_fit_samples must be >= 1")
+    try:
+        result = run_draw_stress(
+            DrawStressConfig(
+                num_obs=num_obs,
+                num_test=num_test,
+                num_dim=num_dim,
+                seed=seed,
+                k=k,
+                num_fit_candidates=num_fit_candidates,
+                num_fit_samples=num_fit_samples,
+            )
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(format_draw_config_header(result))
+    click.echo(format_draw_summary(result))
 
 
 def main() -> None:
