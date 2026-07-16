@@ -38,7 +38,8 @@ DEFAULT_DRAW_SEED = 0
 DEFAULT_DRAW_K = 10
 DEFAULT_DRAW_NUM_FIT_CANDIDATES = 30
 DEFAULT_DRAW_NUM_FIT_SAMPLES = 10
-DEFAULT_DRAW_NUM_SAMPLES = 100
+DEFAULT_DRAW_NUM_DRAWS = 100
+DEFAULT_DRAW_NUM_SEEDS = 1
 DRAW_OBS_NOISE_STD = 0.1
 DRAW_F_CENTER = 0.3
 DRAW_FLAGS = PosteriorFlags(observation_noise=True)
@@ -506,12 +507,8 @@ def draw_f(x: np.ndarray) -> np.ndarray:
     return np.sum((x_arr - DRAW_F_CENTER) ** 2, axis=1, keepdims=True)
 
 
-def argmin_rms(x_test: np.ndarray, draws: np.ndarray) -> float:
-    """RMS of ||x_hat - DRAW_F_CENTER||_2 over draws; x_hat = argmin of metric 0.
-
-    ``draws`` has shape ``(batch, metrics, num_samples)``. For each sample ``s``,
-    ``i* = argmin_i draws[i, 0, s]`` and ``x_hat = x_test[i*]``.
-    """
+def _draw_argmin_indices(x_test: np.ndarray, draws: np.ndarray) -> np.ndarray:
+    """Return per-sample argmin indices over metric 0; ``draws`` is ``(B, M, S)``."""
     x_arr = np.asarray(x_test, dtype=float)
     draws_arr = np.asarray(draws, dtype=float)
     if draws_arr.ndim != 3:
@@ -524,10 +521,29 @@ def argmin_rms(x_test: np.ndarray, draws: np.ndarray) -> float:
         raise ValueError("draws must have at least one metric")
     if draws_arr.shape[2] < 1:
         raise ValueError("draws must have at least one sample")
-    y0 = draws_arr[:, 0, :]
-    i_star = np.argmin(y0, axis=0)
+    return np.argmin(draws_arr[:, 0, :], axis=0)
+
+
+def argmin_rms(x_test: np.ndarray, draws: np.ndarray) -> float:
+    """RMS of ||x_hat - DRAW_F_CENTER||_2 over draws; x_hat = argmin of metric 0.
+
+    ``draws`` has shape ``(batch, metrics, num_samples)``. For each sample ``s``,
+    ``i* = argmin_i draws[i, 0, s]`` and ``x_hat = x_test[i*]``.
+    """
+    x_arr = np.asarray(x_test, dtype=float)
+    i_star = _draw_argmin_indices(x_test, draws)
     eps = x_arr[i_star] - DRAW_F_CENTER
     return float(np.sqrt(np.mean(np.sum(eps * eps, axis=-1))))
+
+
+def argmin_hit_rate(x_test: np.ndarray, draws: np.ndarray) -> float:
+    """Fraction of draws whose metric-0 argmin matches ``argmin_i draw_f(x_test)_i``.
+
+    ``draws`` has shape ``(batch, metrics, num_samples)``.
+    """
+    i_true = int(np.argmin(draw_f(x_test)[:, 0]))
+    i_star = _draw_argmin_indices(x_test, draws)
+    return float(np.mean(i_star == i_true))
 
 
 def make_draw_observations(
@@ -586,7 +602,7 @@ class DrawStressConfig:
     k: int = DEFAULT_DRAW_K
     num_fit_candidates: int = DEFAULT_DRAW_NUM_FIT_CANDIDATES
     num_fit_samples: int = DEFAULT_DRAW_NUM_FIT_SAMPLES
-    num_samples: int = DEFAULT_DRAW_NUM_SAMPLES
+    num_draws: int = DEFAULT_DRAW_NUM_DRAWS
 
 
 @dataclass(frozen=True)
@@ -594,6 +610,7 @@ class DrawMethodResult:
     method: str
     avg_likelihood: float
     argmin_rms: float
+    argmin_hit_rate: float
     draws_shape: tuple[int, ...]
     all_finite: bool
     eval_s: float
@@ -608,7 +625,7 @@ class DrawStressResult:
     k: int
     num_fit_candidates: int
     num_fit_samples: int
-    num_samples: int
+    num_draws: int
     epistemic_variance_scale: float
     aleatoric_variance_scale: float
     fit_s: float
@@ -630,8 +647,8 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         raise ValueError("num_fit_candidates must be >= 1")
     if config.num_fit_samples < 1:
         raise ValueError("num_fit_samples must be >= 1")
-    if config.num_samples < 2:
-        raise ValueError("num_samples must be >= 2")
+    if config.num_draws < 2:
+        raise ValueError("num_draws must be >= 2")
 
     data_rng = np.random.default_rng(config.seed)
     fit_rng = np.random.default_rng(config.seed + 1)
@@ -658,42 +675,41 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     avg_lik_post = average_likelihood(y_test, post_lik.mu, post_lik.se)
     # Argmin-RMS path: observation_noise=False joint draws.
     post_rms = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS_NO_OBS)
-    post_rms_draws = post_rms.sample(config.num_samples, sample_rng)
+    post_rms_draws = post_rms.sample(config.num_draws, sample_rng)
     post_argmin_rms = argmin_rms(x_test, post_rms_draws)
+    post_argmin_hit_rate = argmin_hit_rate(x_test, post_rms_draws)
     eval_post_s = time.perf_counter() - t1
     posterior_result = DrawMethodResult(
         method="posterior",
         avg_likelihood=avg_lik_post,
         argmin_rms=post_argmin_rms,
+        argmin_hit_rate=post_argmin_hit_rate,
         draws_shape=tuple(int(s) for s in post_rms_draws.shape),
         all_finite=bool(np.all(np.isfinite(post_rms_draws))),
         eval_s=eval_post_s,
     )
 
     t2 = time.perf_counter()
-    function_seeds_lik = function_seeds_for_sample(config.seed + 3, config.num_samples)
-    fn_draws_lik, _idx = model.posterior_function_draw(
+    # One ON=False joint draw serves both empirical lik and argmin metrics.
+    # (A second ON=True draw nearly doubled eval_s without helping argmin quality.)
+    function_seeds = function_seeds_for_sample(config.seed + 4, config.num_draws)
+    fn_draws, _idx = model.posterior_function_draw(
         x_test,
         fitted,
-        function_seeds=function_seeds_lik,
-        flags=DRAW_FLAGS,
-    )
-    avg_lik_fn = average_likelihood_from_draws(y_test, fn_draws_lik)
-    function_seeds_rms = function_seeds_for_sample(config.seed + 4, config.num_samples)
-    fn_draws_rms, _idx_rms = model.posterior_function_draw(
-        x_test,
-        fitted,
-        function_seeds=function_seeds_rms,
+        function_seeds=function_seeds,
         flags=DRAW_FLAGS_NO_OBS,
     )
-    fn_argmin_rms = argmin_rms(x_test, fn_draws_rms)
+    avg_lik_fn = average_likelihood_from_draws(y_test, fn_draws)
+    fn_argmin_rms = argmin_rms(x_test, fn_draws)
+    fn_argmin_hit_rate = argmin_hit_rate(x_test, fn_draws)
     eval_fn_s = time.perf_counter() - t2
     function_result = DrawMethodResult(
         method="posterior_function_draw",
         avg_likelihood=avg_lik_fn,
         argmin_rms=fn_argmin_rms,
-        draws_shape=tuple(int(s) for s in fn_draws_rms.shape),
-        all_finite=bool(np.all(np.isfinite(fn_draws_rms))),
+        argmin_hit_rate=fn_argmin_hit_rate,
+        draws_shape=tuple(int(s) for s in fn_draws.shape),
+        all_finite=bool(np.all(np.isfinite(fn_draws))),
         eval_s=eval_fn_s,
     )
 
@@ -705,7 +721,7 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         k=config.k,
         num_fit_candidates=config.num_fit_candidates,
         num_fit_samples=config.num_fit_samples,
-        num_samples=config.num_samples,
+        num_draws=config.num_draws,
         epistemic_variance_scale=float(fitted.epistemic_variance_scale),
         aleatoric_variance_scale=float(fitted.aleatoric_variance_scale),
         fit_s=fit_s,
@@ -714,11 +730,115 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     )
 
 
+@dataclass(frozen=True)
+class MeanSE:
+    mean: float
+    se: float
+
+
+@dataclass(frozen=True)
+class DrawMethodAggregate:
+    method: str
+    avg_likelihood: MeanSE
+    argmin_rms: MeanSE
+    argmin_hit_rate: MeanSE
+    eval_s: MeanSE
+
+
+@dataclass(frozen=True)
+class DrawStressAggregate:
+    num_obs: int
+    num_test: int
+    num_dim: int
+    seed: int
+    num_seeds: int
+    k: int
+    num_fit_candidates: int
+    num_fit_samples: int
+    num_draws: int
+    epistemic_variance_scale: MeanSE
+    aleatoric_variance_scale: MeanSE
+    fit_s: MeanSE
+    posterior: DrawMethodAggregate
+    posterior_function_draw: DrawMethodAggregate
+
+
+def mean_se(values: np.ndarray | list[float]) -> MeanSE:
+    """Sample mean and standard error of the mean (nan SE if fewer than 2 values)."""
+    arr = np.asarray(values, dtype=float)
+    if arr.size < 1:
+        raise ValueError("values must be non-empty")
+    mean = float(np.mean(arr))
+    if arr.size < 2:
+        return MeanSE(mean=mean, se=float("nan"))
+    se = float(np.std(arr, ddof=1) / np.sqrt(arr.size))
+    return MeanSE(mean=mean, se=se)
+
+
+def format_mean_se(stat: MeanSE, *, fmt: str = ".6g") -> str:
+    if not np.isfinite(stat.se):
+        return format(stat.mean, fmt)
+    return f"{stat.mean:{fmt}} ± {stat.se:{fmt}}"
+
+
+def _aggregate_draw_method(
+    method: str, results: list[DrawMethodResult]
+) -> DrawMethodAggregate:
+    return DrawMethodAggregate(
+        method=method,
+        avg_likelihood=mean_se([r.avg_likelihood for r in results]),
+        argmin_rms=mean_se([r.argmin_rms for r in results]),
+        argmin_hit_rate=mean_se([r.argmin_hit_rate for r in results]),
+        eval_s=mean_se([r.eval_s for r in results]),
+    )
+
+
+def run_draw_stress_over_seeds(
+    config: DrawStressConfig, *, num_seeds: int
+) -> DrawStressAggregate:
+    """Run ``run_draw_stress`` for ``seed .. seed+num_seeds-1`` and aggregate metrics."""
+    if num_seeds < 1:
+        raise ValueError("num_seeds must be >= 1")
+    results = [
+        run_draw_stress(
+            DrawStressConfig(
+                num_obs=config.num_obs,
+                num_test=config.num_test,
+                num_dim=config.num_dim,
+                seed=config.seed + i,
+                k=config.k,
+                num_fit_candidates=config.num_fit_candidates,
+                num_fit_samples=config.num_fit_samples,
+                num_draws=config.num_draws,
+            )
+        )
+        for i in range(num_seeds)
+    ]
+    return DrawStressAggregate(
+        num_obs=config.num_obs,
+        num_test=config.num_test,
+        num_dim=config.num_dim,
+        seed=config.seed,
+        num_seeds=num_seeds,
+        k=config.k,
+        num_fit_candidates=config.num_fit_candidates,
+        num_fit_samples=config.num_fit_samples,
+        num_draws=config.num_draws,
+        epistemic_variance_scale=mean_se([r.epistemic_variance_scale for r in results]),
+        aleatoric_variance_scale=mean_se([r.aleatoric_variance_scale for r in results]),
+        fit_s=mean_se([r.fit_s for r in results]),
+        posterior=_aggregate_draw_method("posterior", [r.posterior for r in results]),
+        posterior_function_draw=_aggregate_draw_method(
+            "posterior_function_draw", [r.posterior_function_draw for r in results]
+        ),
+    )
+
+
 def format_draw_config_header(result: DrawStressResult) -> str:
     return (
         f"num_dim={result.num_dim} num_obs={result.num_obs} "
         f"num_test={result.num_test} seed={result.seed} k={result.k} "
-        f"num_samples={result.num_samples} "
+        f"num_draws={result.num_draws} "
         f"epistemic_variance_scale={result.epistemic_variance_scale:.6g} "
         f"aleatoric_variance_scale={result.aleatoric_variance_scale:.6g} "
         f"fit_s={result.fit_s:.3f}"
@@ -729,9 +849,30 @@ def format_draw_method_summary(method: DrawMethodResult) -> str:
     return (
         f"{method.method} avg_likelihood={method.avg_likelihood:.6g} "
         f"argmin_rms={method.argmin_rms:.6g} "
-        f"draws_shape={method.draws_shape} "
-        f"all_finite={str(method.all_finite).lower()} "
+        f"argmin_hit_rate={method.argmin_hit_rate:0.4f} "
         f"eval_s={method.eval_s:.3f}"
+    )
+
+
+def format_draw_config_header_aggregate(result: DrawStressAggregate) -> str:
+    return (
+        f"num_dim={result.num_dim} num_obs={result.num_obs} "
+        f"num_test={result.num_test} seed={result.seed} "
+        f"num_seeds={result.num_seeds} k={result.k} "
+        f"num_draws={result.num_draws} "
+        f"epistemic_variance_scale={format_mean_se(result.epistemic_variance_scale)} "
+        f"aleatoric_variance_scale={format_mean_se(result.aleatoric_variance_scale)} "
+        f"fit_s={format_mean_se(result.fit_s, fmt='.3f')}"
+    )
+
+
+def format_draw_method_summary_aggregate(method: DrawMethodAggregate) -> str:
+    return (
+        f"{method.method} "
+        f"avg_likelihood={format_mean_se(method.avg_likelihood)} "
+        f"argmin_rms={format_mean_se(method.argmin_rms)} "
+        f"argmin_hit_rate={format_mean_se(method.argmin_hit_rate, fmt='0.4f')} "
+        f"eval_s={format_mean_se(method.eval_s, fmt='.3f')}"
     )
 
 
@@ -901,11 +1042,18 @@ def sample(work_dir: str, num_samples: int, seed: int) -> None:
             help="Subsample size for fit log-likelihood.",
         ),
         click.Option(
-            ["--num-samples"],
+            ["--num-draws"],
             type=int,
-            default=DEFAULT_DRAW_NUM_SAMPLES,
+            default=DEFAULT_DRAW_NUM_DRAWS,
             show_default=True,
-            help="Draw count for posterior().sample and posterior_function_draw.",
+            help="Number of posterior draws for likelihood and argmin metrics.",
+        ),
+        click.Option(
+            ["--num-seeds"],
+            type=int,
+            default=DEFAULT_DRAW_NUM_SEEDS,
+            show_default=True,
+            help="Repeat full draw stress over seed..seed+num_seeds-1; report mean ± SE.",
         ),
     ],
 )
@@ -917,7 +1065,8 @@ def draw(
     k: int,
     num_fit_candidates: int,
     num_fit_samples: int,
-    num_samples: int,
+    num_draws: int,
+    num_seeds: int,
 ) -> None:
     """Fit ENN on synthetic data; report avg likelihood for two draw methods."""
     if num_obs < 1:
@@ -932,26 +1081,27 @@ def draw(
         raise click.ClickException("num_fit_candidates must be >= 1")
     if num_fit_samples < 1:
         raise click.ClickException("num_fit_samples must be >= 1")
-    if num_samples < 2:
-        raise click.ClickException("num_samples must be >= 2")
+    if num_draws < 2:
+        raise click.ClickException("num_draws must be >= 2")
+    if num_seeds < 1:
+        raise click.ClickException("num_seeds must be >= 1")
+    config = DrawStressConfig(
+        num_obs=num_obs,
+        num_test=num_test,
+        num_dim=num_dim,
+        seed=seed,
+        k=k,
+        num_fit_candidates=num_fit_candidates,
+        num_fit_samples=num_fit_samples,
+        num_draws=num_draws,
+    )
     try:
-        result = run_draw_stress(
-            DrawStressConfig(
-                num_obs=num_obs,
-                num_test=num_test,
-                num_dim=num_dim,
-                seed=seed,
-                k=k,
-                num_fit_candidates=num_fit_candidates,
-                num_fit_samples=num_fit_samples,
-                num_samples=num_samples,
-            )
-        )
+        agg = run_draw_stress_over_seeds(config, num_seeds=num_seeds)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(format_draw_config_header(result))
-    click.echo(format_draw_method_summary(result.posterior))
-    click.echo(format_draw_method_summary(result.posterior_function_draw))
+    click.echo(format_draw_config_header_aggregate(agg))
+    click.echo(format_draw_method_summary_aggregate(agg.posterior))
+    click.echo(format_draw_method_summary_aggregate(agg.posterior_function_draw))
 
 
 def main() -> None:

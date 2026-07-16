@@ -17,6 +17,7 @@ faiss = { version = "0.13.0" }
 ndarray = { workspace = true }
 ndarray-linalg = { workspace = true }
 rand = "0.8"
+rayon = "1.10"
 sobol = "1.0.2"
 thiserror = { workspace = true }
 memmap2 = "0.9"

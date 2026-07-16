@@ -4,8 +4,8 @@
 //! and Box-Muller transform for generating standard normal variates.
 
 use ndarray::{Array, ArrayD, IxDyn};
+use rayon::prelude::*;
 use std::collections::HashMap;
-use std::ops::IndexMut;
 use thiserror::Error;
 
 /// Errors that can occur during hash-based RNG.
@@ -64,10 +64,52 @@ pub fn box_muller(u1: f64, u2: f64) -> f64 {
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
 }
 
+#[inline(always)]
+pub fn normal_for_seed_index_metric(seed_u64: u64, unique_idx: i64, metric: usize) -> f64 {
+    let unique_u64 = unique_idx as u64;
+    let base = (seed_u64.wrapping_mul(SEED_PRIME).wrapping_add(unique_u64)).wrapping_mul(SEED_PRIME);
+    let metric_u64 = metric as u64;
+    let combined1 = base.wrapping_add(metric_u64);
+    let r1 = splitmix64(combined1);
+    let combined2 = combined1 ^ SM64_XOR_OFFSET;
+    let r2 = splitmix64(combined2);
+    let mut u1 = u64_to_f53(r1);
+    let u2 = u64_to_f53(r2);
+    u1 = u1.clamp(CLIP_MIN, CLIP_MAX);
+    box_muller(u1, u2)
+}
+
+/// Build sorted-unique neighbor indices and an inverse map for `data_indices`.
+pub fn unique_index_inverse(data_indices: &[i64]) -> (Vec<i64>, Vec<usize>) {
+    let unique_indices: Vec<i64> = {
+        let mut v = data_indices.to_vec();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    let unique_pos: HashMap<i64, usize> = unique_indices
+        .iter()
+        .enumerate()
+        .map(|(pos, &value)| (value, pos))
+        .collect();
+    let inverse: Vec<usize> = data_indices
+        .iter()
+        .map(|&idx| {
+            *unique_pos
+                .get(&idx)
+                .expect("all data_indices must exist in unique_indices")
+        })
+        .collect();
+    (unique_indices, inverse)
+}
+
 /// Fast hash-based RNG for multiple seeds, indices, and metrics.
 ///
 /// This is the optimized SplitMix64 + Box-Muller version that matches
 /// the Python `normal_hash_batch_multi_seed_fast` function.
+///
+/// Seeds are processed in parallel; each seed's outputs are bit-identical to the
+/// serial implementation (deterministic per `(seed, index, metric)`).
 ///
 /// # Arguments
 ///
@@ -95,88 +137,35 @@ pub fn normal_hash_batch_multi_seed_fast(
     let num_seeds = function_seeds.len();
     let num_indices = data_indices.len();
     let num_metrics = num_metrics as usize;
+    let row_len = num_indices * num_metrics;
 
-    // Get unique indices (simplified - assumes sorted or uses hash set)
-    // For now, we use the indices directly as provided
-    let unique_indices: Vec<i64> = {
-        let mut v = data_indices.to_vec();
-        v.sort_unstable();
-        v.dedup();
-        v
-    };
+    let (unique_indices, inverse) = unique_index_inverse(data_indices);
 
-    // Build inverse mapping with O(1) average lookup.
-    let unique_pos: HashMap<i64, usize> = unique_indices
-        .iter()
-        .enumerate()
-        .map(|(pos, &value)| (value, pos))
-        .collect();
-    let mut inverse: Vec<usize> = Vec::with_capacity(num_indices);
-    for &idx in data_indices {
-        let pos = *unique_pos
-            .get(&idx)
-            .expect("all data_indices must exist in unique_indices");
-        inverse.push(pos);
-    }
+    // Flat buffer (num_seeds, num_indices, num_metrics) in C order; fill by seed in parallel.
+    let mut flat = vec![0.0f64; num_seeds * row_len];
+    flat.par_chunks_mut(row_len)
+        .zip(function_seeds.par_iter())
+        .for_each_init(
+            || vec![0.0f64; unique_indices.len() * num_metrics],
+            |unique_cache, (seed_out, &seed)| {
+                let seed_u64 = seed as u64;
+                for (ui, &unique_idx) in unique_indices.iter().enumerate() {
+                    for metric in 0..num_metrics {
+                        unique_cache[ui * num_metrics + metric] =
+                            normal_for_seed_index_metric(seed_u64, unique_idx, metric);
+                    }
+                }
+                for (di, &inv) in inverse.iter().enumerate() {
+                    let src = inv * num_metrics;
+                    let dst = di * num_metrics;
+                    seed_out[dst..dst + num_metrics]
+                        .copy_from_slice(&unique_cache[src..src + num_metrics]);
+                }
+            },
+        );
 
-    // Output shape: (num_seeds, data_indices.len(), num_metrics)
-    let mut output = Array::zeros(IxDyn(&[num_seeds, num_indices, num_metrics]));
-
-    // Generate values for each seed
-    for (si, &seed) in function_seeds.iter().enumerate() {
-        let seed_u64 = seed as u64;
-
-        // Build a cache of values for unique indices to avoid recomputation
-        // when the same unique index appears multiple times in data_indices
-        let mut unique_cache: Vec<Vec<f64>> = Vec::with_capacity(unique_indices.len());
-
-        // Generate for each unique index
-        for &unique_idx in &unique_indices {
-            let unique_u64 = unique_idx as u64;
-
-            // base = (seed * p + unique_idx) * p
-            let base = (seed_u64.wrapping_mul(SEED_PRIME).wrapping_add(unique_u64))
-                .wrapping_mul(SEED_PRIME);
-
-            let mut metric_values = Vec::with_capacity(num_metrics);
-
-            // Generate for each metric
-            for metric in 0..num_metrics {
-                let metric_u64 = metric as u64;
-
-                // First stream
-                let combined1 = base.wrapping_add(metric_u64);
-                let r1 = splitmix64(combined1);
-
-                // Second stream (with XOR offset)
-                let combined2 = combined1 ^ SM64_XOR_OFFSET;
-                let r2 = splitmix64(combined2);
-
-                // Convert to uniform
-                let mut u1 = u64_to_f53(r1);
-                let u2 = u64_to_f53(r2);
-
-                // Clip u1 to avoid log(0)
-                u1 = u1.clamp(CLIP_MIN, CLIP_MAX);
-
-                // Box-Muller transform
-                let normal = box_muller(u1, u2);
-                metric_values.push(normal);
-            }
-
-            unique_cache.push(metric_values);
-        }
-
-        // Write directly to output using inverse mapping
-        for (di, &inv) in inverse.iter().enumerate() {
-            for metric in 0..num_metrics {
-                let val = unique_cache[inv][metric];
-                let idx = output.index_mut(IxDyn(&[si, di, metric]));
-                *idx = val;
-            }
-        }
-    }
-
+    let output = Array::from_shape_vec(IxDyn(&[num_seeds, num_indices, num_metrics]), flat)
+        .expect("flat buffer size matches output shape");
     Ok(output)
 }
 
@@ -289,5 +278,61 @@ mod tests {
         let wrapped = normal_hash_batch_multi_seed(&seeds, &indices, num_metrics).unwrap();
 
         assert_eq!(wrapped, fast);
+    }
+
+    fn normal_hash_batch_multi_seed_fast_serial(
+        function_seeds: &[i64],
+        data_indices: &[i64],
+        num_metrics: i64,
+    ) -> Result<ArrayD<f64>, HashError> {
+        // Serial reference matching the pre-rayon algorithm (for parity checks).
+        if num_metrics <= 0 {
+            return Err(HashError::InvalidNumMetrics(num_metrics));
+        }
+        let num_seeds = function_seeds.len();
+        let num_indices = data_indices.len();
+        let num_metrics = num_metrics as usize;
+        let unique_indices: Vec<i64> = {
+            let mut v = data_indices.to_vec();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        let unique_pos: HashMap<i64, usize> = unique_indices
+            .iter()
+            .enumerate()
+            .map(|(pos, &value)| (value, pos))
+            .collect();
+        let inverse: Vec<usize> = data_indices
+            .iter()
+            .map(|&idx| *unique_pos.get(&idx).expect("index present"))
+            .collect();
+        let mut output = Array::zeros(IxDyn(&[num_seeds, num_indices, num_metrics]));
+        for (si, &seed) in function_seeds.iter().enumerate() {
+            let seed_u64 = seed as u64;
+            let mut unique_cache: Vec<Vec<f64>> = Vec::with_capacity(unique_indices.len());
+            for &unique_idx in &unique_indices {
+                let mut metric_values = Vec::with_capacity(num_metrics);
+                for metric in 0..num_metrics {
+                    metric_values.push(normal_for_seed_index_metric(seed_u64, unique_idx, metric));
+                }
+                unique_cache.push(metric_values);
+            }
+            for (di, &inv) in inverse.iter().enumerate() {
+                for metric in 0..num_metrics {
+                    output[[si, di, metric]] = unique_cache[inv][metric];
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    #[test]
+    fn test_parallel_hash_matches_serial() {
+        let seeds: Vec<i64> = (0..64).collect();
+        let indices = vec![0i64, 5, 5, 2, 9, 2];
+        let parallel = normal_hash_batch_multi_seed_fast(&seeds, &indices, 2).unwrap();
+        let serial = normal_hash_batch_multi_seed_fast_serial(&seeds, &indices, 2).unwrap();
+        assert_eq!(parallel, serial);
     }
 }

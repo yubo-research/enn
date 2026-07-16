@@ -150,6 +150,7 @@ dependencies = [
  "numpy",
  "rand",
  "rand_chacha",
+ "rayon",
  "sobol",
  "tempfile",
  "thiserror 1.0.69",

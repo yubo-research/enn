@@ -39,6 +39,21 @@ def test_argmin_rms_known_minima():
     assert DRAW_F_CENTER == pytest.approx(0.3)
 
 
+def test_argmin_hit_rate_known_minima():
+    from ops.stress import argmin_hit_rate
+
+    # True f-argmin is index 0 (at center); draws pick 0, 1, 0 -> hit rate 2/3.
+    x_test = np.array([[0.3, 0.3], [0.5, 0.1]], dtype=float)
+    draws = np.array(
+        [
+            [[0.0, 2.0, 0.1]],
+            [[1.0, 0.0, 0.2]],
+        ],
+        dtype=float,
+    )
+    assert argmin_hit_rate(x_test, draws) == pytest.approx(2.0 / 3.0)
+
+
 def test_make_draw_observations_bounds_and_reproducible():
     from ops.stress import make_draw_observations
 
@@ -96,7 +111,7 @@ def test_run_draw_stress_finite_likelihood():
             k=5,
             num_fit_candidates=8,
             num_fit_samples=5,
-            num_samples=4,
+            num_draws=4,
         )
     )
     assert np.isfinite(result.posterior.avg_likelihood)
@@ -105,6 +120,8 @@ def test_run_draw_stress_finite_likelihood():
     assert np.isfinite(result.posterior_function_draw.argmin_rms)
     assert result.posterior.argmin_rms >= 0.0
     assert result.posterior_function_draw.argmin_rms >= 0.0
+    assert 0.0 <= result.posterior.argmin_hit_rate <= 1.0
+    assert 0.0 <= result.posterior_function_draw.argmin_hit_rate <= 1.0
     assert result.posterior.method == "posterior"
     assert result.posterior_function_draw.method == "posterior_function_draw"
     assert result.posterior.all_finite
@@ -116,7 +133,100 @@ def test_run_draw_stress_finite_likelihood():
     assert result.num_obs == 40
     assert result.num_test == 20
     assert result.num_dim == 2
-    assert result.num_samples == 4
+    assert result.num_draws == 4
+
+
+def test_mean_se_and_format():
+    from ops.stress import MeanSE, format_mean_se, mean_se
+
+    one = mean_se([2.0])
+    assert one.mean == pytest.approx(2.0)
+    assert not np.isfinite(one.se)
+    assert format_mean_se(one) == "2"
+
+    two = mean_se([1.0, 3.0])
+    assert two.mean == pytest.approx(2.0)
+    assert two.se == pytest.approx(
+        1.0
+    )  # std=sqrt(2)/1? ddof=1: std=sqrt(2), se=sqrt(2)/sqrt(2)=1
+    assert format_mean_se(two) == "2 ± 1"
+    assert format_mean_se(MeanSE(0.2193, 0.0123), fmt="0.4f") == "0.2193 ± 0.0123"
+
+
+def test_run_draw_stress_over_seeds_aggregates():
+    from ops.stress import DrawStressConfig, run_draw_stress_over_seeds
+
+    agg = run_draw_stress_over_seeds(
+        DrawStressConfig(
+            num_obs=40,
+            num_test=20,
+            num_dim=2,
+            seed=0,
+            k=5,
+            num_fit_candidates=8,
+            num_fit_samples=5,
+            num_draws=4,
+        ),
+        num_seeds=3,
+    )
+    assert agg.num_seeds == 3
+    assert agg.seed == 0
+    assert np.isfinite(agg.posterior.avg_likelihood.mean)
+    assert np.isfinite(agg.posterior.avg_likelihood.se)
+    assert np.isfinite(agg.posterior_function_draw.argmin_hit_rate.mean)
+    assert np.isfinite(agg.posterior_function_draw.argmin_hit_rate.se)
+    assert agg.posterior.argmin_hit_rate.se >= 0.0
+
+
+def _tiny_draw_cli_args(*, num_seeds: int | None = None) -> list[str]:
+    args = [
+        "draw",
+        "40",
+        "20",
+        "--num-dim",
+        "2",
+        "--seed",
+        "0",
+        "--k",
+        "5",
+        "--num-fit-candidates",
+        "8",
+        "--num-fit-samples",
+        "5",
+        "--num-draws",
+        "4",
+    ]
+    if num_seeds is not None:
+        args.extend(["--num-seeds", str(num_seeds)])
+    return args
+
+
+def _assert_draw_cli_metric_line(line: str, method: str, *, with_se: bool) -> None:
+    assert line.startswith(f"{method} avg_likelihood=")
+    assert "argmin_rms=" in line
+    assert "argmin_hit_rate=" in line
+    if with_se:
+        assert " ± " in line
+    else:
+        assert " ± " not in line
+        assert "draws_shape=" not in line
+        assert "all_finite=" not in line
+    avg = float(line.split("avg_likelihood=")[1].split()[0])
+    rms = float(line.split("argmin_rms=")[1].split()[0])
+    hit_tok = line.split("argmin_hit_rate=")[1].split()[0]
+    if with_se:
+        hit_tok = line.split("argmin_hit_rate=")[1].split("eval_s=")[0].strip()
+        mean_s, se_s = hit_tok.split(" ± ")
+        hit = float(mean_s)
+        assert mean_s == f"{hit:0.4f}"
+        assert se_s == f"{float(se_s):0.4f}"
+    else:
+        hit = float(hit_tok)
+        assert hit_tok == f"{hit:0.4f}"
+    assert np.isfinite(avg)
+    assert np.isfinite(rms)
+    assert rms >= 0.0
+    assert 0.0 <= hit <= 1.0
 
 
 def test_draw_stress_cli_happy_path():
@@ -124,61 +234,47 @@ def test_draw_stress_cli_happy_path():
 
     from ops.stress import cli
 
-    result = CliRunner().invoke(
-        cli,
-        [
-            "draw",
-            "40",
-            "20",
-            "--num-dim",
-            "2",
-            "--seed",
-            "0",
-            "--k",
-            "5",
-            "--num-fit-candidates",
-            "8",
-            "--num-fit-samples",
-            "5",
-            "--num-samples",
-            "4",
-        ],
-    )
+    result = CliRunner().invoke(cli, _tiny_draw_cli_args())
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
     assert len(lines) == 3
-    assert lines[0].startswith("num_dim=2 num_obs=40 num_test=20 seed=0 k=5")
-    assert "num_samples=4" in lines[0]
+    assert lines[0].startswith("num_dim=2 num_obs=40 num_test=20 seed=0")
+    assert "num_seeds=1" in lines[0]
+    assert "num_draws=4" in lines[0]
     assert "epistemic_variance_scale=" in lines[0]
     assert "aleatoric_variance_scale=" in lines[0]
-    assert lines[1].startswith("posterior avg_likelihood=")
-    assert lines[2].startswith("posterior_function_draw avg_likelihood=")
-    assert "argmin_rms=" in lines[1]
-    assert "argmin_rms=" in lines[2]
-    assert "draws_shape=" in lines[1]
-    assert "draws_shape=" in lines[2]
-    avg_post = float(lines[1].split("avg_likelihood=")[1].split()[0])
-    avg_fn = float(lines[2].split("avg_likelihood=")[1].split()[0])
-    rms_post = float(lines[1].split("argmin_rms=")[1].split()[0])
-    rms_fn = float(lines[2].split("argmin_rms=")[1].split()[0])
-    assert np.isfinite(avg_post)
-    assert np.isfinite(avg_fn)
-    assert np.isfinite(rms_post)
-    assert np.isfinite(rms_fn)
-    assert rms_post >= 0.0
-    assert rms_fn >= 0.0
+    _assert_draw_cli_metric_line(lines[1], "posterior", with_se=False)
+    _assert_draw_cli_metric_line(lines[2], "posterior_function_draw", with_se=False)
 
 
-def test_draw_stress_cli_default_num_samples_is_100():
+def test_draw_stress_cli_multi_seed_reports_mean_se():
     from click.testing import CliRunner
 
-    from ops.stress import DEFAULT_DRAW_NUM_SAMPLES, cli
+    from ops.stress import cli
 
-    assert DEFAULT_DRAW_NUM_SAMPLES == 100
+    result = CliRunner().invoke(cli, _tiny_draw_cli_args(num_seeds=3))
+    assert result.exit_code == 0, result.output
+    lines = result.output.strip().splitlines()
+    assert len(lines) == 3
+    assert "num_seeds=3" in lines[0]
+    assert " ± " in lines[0]
+    _assert_draw_cli_metric_line(lines[1], "posterior", with_se=True)
+    _assert_draw_cli_metric_line(lines[2], "posterior_function_draw", with_se=True)
+
+
+def test_draw_stress_cli_default_num_draws_is_100():
+    from click.testing import CliRunner
+
+    from ops.stress import DEFAULT_DRAW_NUM_DRAWS, DEFAULT_DRAW_NUM_SEEDS, cli
+
+    assert DEFAULT_DRAW_NUM_DRAWS == 100
+    assert DEFAULT_DRAW_NUM_SEEDS == 1
     result = CliRunner().invoke(cli, ["draw", "--help"])
     assert result.exit_code == 0, result.output
     assert "100" in result.output
-    assert "--num-samples" in result.output
+    assert "--num-draws" in result.output
+    assert "--num-seeds" in result.output
+    assert "--num-samples" not in result.output
 
 
 def test_draw_stress_cli_rejects_num_obs_lt_one():
