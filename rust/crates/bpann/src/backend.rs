@@ -66,6 +66,14 @@ impl BpannBackend {
             train_x_store.mmap_append(&train_x.view())?;
             train_y_store.mmap_append(&train_y.view())?;
         }
+        if train_x_store.nrows == 0 {
+            // Pre-grow and pre-touch fresh stores so the first append pays no
+            // file-resize, page-fault, or block-allocation cost.
+            train_x_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
+            train_y_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
+            train_x_store.pretouch();
+            train_y_store.pretouch();
+        }
         let train_yvar_store =
             obs::bpann_open_or_append_yvar(&work_dir, num_metrics, train_yvar.as_ref())?;
 

@@ -7,7 +7,7 @@ import resource
 import struct
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +26,7 @@ DISK_DEFER_SYNC_DRIVERS: frozenset[ENNIndexDriver] = frozenset(
 )
 DEFAULT_NUM_DIM = 10
 STRESS_OBS_BATCH_SIZE = 100
+ENN_ADD_STRESS_BATCH_SIZE = 1000
 DEFAULT_HEARTBEAT_SECONDS = 10.0
 STRESS_QUERY_N = 1000
 STRESS_QUERY_SEED = 1
@@ -160,6 +161,7 @@ def run_disk_rss_stress(
 class EnnAddStressConfig:
     num_dim: int = DEFAULT_NUM_DIM
     seed: int = 0
+    batch_size: int = 1
     progress_every: int = 0
     heartbeat_seconds: float = 0.0
     query_n: int = STRESS_QUERY_N
@@ -264,16 +266,27 @@ def iter_synthetic_observation_batches(
     num_dim: int = DEFAULT_NUM_DIM,
     seed: int = 0,
     batch_size: int = STRESS_OBS_BATCH_SIZE,
+    stop_points: Sequence[int] | None = None,
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """Yield (n, num_dim) x and (n, 1) y batches without holding all num_obs rows."""
+    """Yield (n, num_dim) x and (n, 1) y batches without holding all num_obs rows.
+
+    When ``stop_points`` is given, no batch crosses a stop point, so cumulative
+    row counts land exactly on each stop point (checkpoint alignment).
+    """
     if num_obs < 1:
         raise ValueError("num_obs must be >= 1")
     if batch_size < 1:
         raise ValueError("batch_size must be >= 1")
+    stops = sorted(s for s in (stop_points or ()) if 1 <= s <= num_obs)
+    stop_i = 0
     rng = np.random.default_rng(seed)
     emitted = 0
     while emitted < num_obs:
         n = min(batch_size, num_obs - emitted)
+        while stop_i < len(stops) and stops[stop_i] <= emitted:
+            stop_i += 1
+        if stop_i < len(stops):
+            n = min(n, stops[stop_i] - emitted)
         x_batch = rng.standard_normal((n, num_dim))
         y_batch = rng.standard_normal((n, 1))
         yield x_batch, y_batch
@@ -383,31 +396,89 @@ def run_enn_add_stress(
         model_kwargs["work_dir"] = cfg.work_dir
         model_kwargs["enn_storage"] = "disk"
     model = EpistemicNearestNeighbors(**model_kwargs)
+    # Zero-row warmup: warms the Python validation/binding path only (the
+    # library short-circuits on zero rows), so checkpoint 1 excludes
+    # interpreter warmup but still pays first-touch library costs.
+    model.add(empty_x, empty_y)
 
+    if cfg.batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    checkpoint_list = sorted(checkpoints)
+    next_checkpoint_i = 0
     last_heartbeat_t = time.perf_counter()
-    last_checkpoint_t = time.perf_counter()
-    try:
-        for n, (x_row, y_row) in enumerate(
-            iter_synthetic_observations(num_obs, num_dim=cfg.num_dim, seed=cfg.seed),
-            start=1,
+    # Library-only time (model.add + flush scheduling) accumulated since the
+    # previous checkpoint; excludes synthetic-data generation and loop overhead.
+    segment_lib_s = 0.0
+
+    def emit_checkpoints(current_n: int) -> Iterator[tuple[int, float, float]]:
+        nonlocal next_checkpoint_i, segment_lib_s
+        while (
+            next_checkpoint_i < len(checkpoint_list)
+            and checkpoint_list[next_checkpoint_i] <= current_n
         ):
-            model.add(x_row, y_row)
-            if index_driver in DISK_DEFER_SYNC_DRIVERS:
-                model.schedule_background_flush()
-            if cfg.progress_every and (n % cfg.progress_every == 0):
-                click.echo(f"progress n={n}", err=True)
-            if cfg.heartbeat_seconds and (
-                time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
+            cp = checkpoint_list[next_checkpoint_i]
+            # Index sync is library work, so it counts toward the segment.
+            # Disk mode (batch or single-row) defers indexing to
+            # schedule_background_flush inside the add loop, matching the
+            # baseline; forcing a sync here would build tiny index fragments
+            # the baseline never built.
+            if index_driver not in DISK_DEFER_SYNC_DRIVERS:
+                t_sync = time.perf_counter()
+                model.ensure_index_sync()
+                segment_lib_s += time.perf_counter() - t_sync
+            segment_s = segment_lib_s
+            segment_lib_s = 0.0
+            query_s = _time_query_s(model, x_query)
+            yield (cp, query_s, segment_s)
+            next_checkpoint_i += 1
+
+    try:
+        n = 0
+        if cfg.batch_size <= 1:
+            row_iter = iter_synthetic_observations(
+                num_obs, num_dim=cfg.num_dim, seed=cfg.seed
+            )
+            while True:
+                try:
+                    x_row, y_row = next(row_iter)
+                except StopIteration:
+                    break
+                n += 1
+                t_add = time.perf_counter()
+                model.add(x_row, y_row)
+                if index_driver in DISK_DEFER_SYNC_DRIVERS:
+                    model.schedule_background_flush()
+                segment_lib_s += time.perf_counter() - t_add
+                if cfg.progress_every and (n % cfg.progress_every == 0):
+                    click.echo(f"progress n={n}", err=True)
+                if cfg.heartbeat_seconds and (
+                    time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
+                ):
+                    click.echo(f"heartbeat n={n}", err=True)
+                    last_heartbeat_t = time.perf_counter()
+                yield from emit_checkpoints(n)
+        else:
+            for x_batch, y_batch in iter_synthetic_observation_batches(
+                num_obs,
+                num_dim=cfg.num_dim,
+                seed=cfg.seed,
+                batch_size=cfg.batch_size,
+                stop_points=checkpoint_list,
             ):
-                click.echo(f"heartbeat n={n}", err=True)
-                last_heartbeat_t = time.perf_counter()
-            if n in checkpoints:
-                if index_driver not in DISK_DEFER_SYNC_DRIVERS:
-                    model.ensure_index_sync()
-                segment_s = time.perf_counter() - last_checkpoint_t
-                query_s = _time_query_s(model, x_query)
-                last_checkpoint_t = time.perf_counter()
-                yield (n, query_s, segment_s)
+                t_add = time.perf_counter()
+                model.add(x_batch, y_batch)
+                if index_driver in DISK_DEFER_SYNC_DRIVERS:
+                    model.schedule_background_flush()
+                segment_lib_s += time.perf_counter() - t_add
+                n += x_batch.shape[0]
+                if cfg.progress_every and (n % cfg.progress_every == 0):
+                    click.echo(f"progress n={n}", err=True)
+                if cfg.heartbeat_seconds and (
+                    time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
+                ):
+                    click.echo(f"heartbeat n={n}", err=True)
+                    last_heartbeat_t = time.perf_counter()
+                yield from emit_checkpoints(n)
     finally:
         if index_driver in DISK_DEFER_SYNC_DRIVERS:
             model.persist_index_to_disk()
@@ -916,6 +987,15 @@ def cli() -> None:
             default=None,
             help="Disk-backed ENN work directory (requires bpann_disk).",
         ),
+        click.Option(
+            ["--batch"],
+            is_flag=True,
+            default=False,
+            help=(
+                "Add observations in batches of "
+                f"{ENN_ADD_STRESS_BATCH_SIZE} instead of one row per add."
+            ),
+        ),
     ],
 )
 def enn(
@@ -925,6 +1005,7 @@ def enn(
     progress_every: int,
     heartbeat_seconds: float,
     work_dir: str | None,
+    batch: bool,
 ) -> None:
     """Time 1000-point ENN queries at sparse checkpoints while streaming adds."""
     if num_obs < 1:
@@ -952,11 +1033,13 @@ def enn(
         )
     )
     n_width = stress_row_n_width(num_obs)
+    batch_size = ENN_ADD_STRESS_BATCH_SIZE if batch else 1
     for n, query_s, segment_s in run_enn_add_stress(
         index_driver=driver,
         num_obs=num_obs,
         config=EnnAddStressConfig(
             num_dim=num_dim,
+            batch_size=batch_size,
             progress_every=progress_every,
             heartbeat_seconds=heartbeat_seconds,
             work_dir=work_dir,

@@ -105,16 +105,11 @@ impl IncrementalIndex {
         if self.pending_centroid_sum.len() != x.ncols() {
             self.pending_centroid_sum = vec![0.0; x.ncols()];
         }
-        for row in x.axis_iter(ndarray::Axis(0)) {
-            for (j, &v) in row.iter().enumerate() {
-                self.pending_centroid_sum[j] += if scale_x {
-                    v / x_scale[j]
-                } else {
-                    v
-                };
-            }
-            self.pending_row_count += 1;
+        let col_sums = x.sum_axis(ndarray::Axis(0));
+        for (j, &s) in col_sums.iter().enumerate() {
+            self.pending_centroid_sum[j] += if scale_x { s / x_scale[j] } else { s };
         }
+        self.pending_row_count += x.nrows();
     }
 
     fn take_pending_centroid(&mut self, num_dim: usize) -> Option<Vec<f32>> {

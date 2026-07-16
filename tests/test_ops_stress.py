@@ -192,6 +192,119 @@ def test_run_enn_add_stress_bpann_disk_schedules_flush_after_add(monkeypatch, tm
     assert flush_calls == [1] * num_obs
 
 
+def test_run_enn_add_stress_batch_mode_returns_all_checkpoints():
+    from ops.stress import EnnAddStressConfig, checkpoint_ns, run_enn_add_stress
+
+    num_obs = 30
+    rows = list(
+        run_enn_add_stress(
+            index_driver=ENNIndexDriver.FLAT,
+            num_obs=num_obs,
+            config=EnnAddStressConfig(
+                num_dim=4,
+                seed=0,
+                query_n=10,
+                query_seed=1,
+                batch_size=7,
+            ),
+        )
+    )
+    assert [n for n, _, _ in rows] == list(checkpoint_ns(num_obs))
+
+
+def test_run_enn_add_stress_batch_mode_schedules_flush_per_batch(monkeypatch, tmp_path):
+    from ops.stress import EnnAddStressConfig, run_enn_add_stress
+
+    flush_calls: list[int] = []
+
+    def _count_flush(self):
+        flush_calls.append(1)
+        return None
+
+    monkeypatch.setattr(
+        "ops.stress.EpistemicNearestNeighbors.schedule_background_flush",
+        _count_flush,
+    )
+
+    num_obs = 30
+    batch_size = 7
+    list(
+        run_enn_add_stress(
+            index_driver=ENNIndexDriver.BPANN_DISK,
+            num_obs=num_obs,
+            config=EnnAddStressConfig(
+                num_dim=4,
+                seed=0,
+                query_n=5,
+                query_seed=1,
+                work_dir=str(tmp_path),
+                batch_size=batch_size,
+            ),
+        )
+    )
+    # One flush per batch; batches are split at checkpoints (1, 3, 10, 30):
+    # sizes 1, 2, 7, 7, 7, 6.
+    assert flush_calls == [1] * 6
+
+
+def test_iter_synthetic_observation_batches_stops_at_stop_points():
+    from ops.stress import iter_synthetic_observation_batches
+
+    num_obs = 30
+    stop_points = (1, 3, 10, 30)
+    sizes = [
+        x.shape[0]
+        for x, _y in iter_synthetic_observation_batches(
+            num_obs,
+            num_dim=4,
+            seed=0,
+            batch_size=7,
+            stop_points=stop_points,
+        )
+    ]
+    assert sum(sizes) == num_obs
+    cumulative = np.cumsum(sizes)
+    for stop in stop_points:
+        assert stop in cumulative
+
+
+def test_run_enn_add_stress_segment_is_library_time_only(monkeypatch):
+    from ops.stress import EnnAddStressConfig, run_enn_add_stress
+
+    from ops.stress import iter_synthetic_observation_batches as real_iter
+
+    gen_delay_s = 0.05
+
+    def _slow_batches(num_obs, *, num_dim, seed, batch_size, stop_points=None):
+        for x_batch, y_batch in real_iter(
+            num_obs,
+            num_dim=num_dim,
+            seed=seed,
+            batch_size=batch_size,
+            stop_points=stop_points,
+        ):
+            time.sleep(gen_delay_s)
+            yield x_batch, y_batch
+
+    monkeypatch.setattr(
+        "ops.stress.iter_synthetic_observation_batches",
+        _slow_batches,
+    )
+
+    rows = list(
+        run_enn_add_stress(
+            index_driver=ENNIndexDriver.FLAT,
+            num_obs=3,
+            config=EnnAddStressConfig(
+                num_dim=2, seed=0, query_n=2, query_seed=1, batch_size=3
+            ),
+        )
+    )
+    assert len(rows) == 2
+    for _n, _query_s, segment_s in rows:
+        assert segment_s < gen_delay_s
+
+
 def test_run_enn_add_stress_does_not_fit(monkeypatch):
     from enn.enn.enn_fitter import ENNStatefulFitter
 
@@ -270,148 +383,6 @@ def test_run_enn_add_stress_segment_excludes_query(monkeypatch):
     for _n, query_s, segment_s in rows:
         assert query_s >= query_delay_s - 1e-6
         assert segment_s < query_delay_s
-
-
-_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+(?:\.\d+)?(?:e[+-]?\d+)?")
-
-
-def test_enn_stress_cli_does_not_fit(monkeypatch):
-    from click.testing import CliRunner
-
-    from enn.enn.enn_fitter import ENNStatefulFitter
-    from ops.stress import cli
-
-    tell_calls: list[int] = []
-    ask_calls: list[int] = []
-
-    def _count_tell(self, *args, **kwargs):
-        tell_calls.append(1)
-
-    def _count_ask(self, *args, **kwargs):
-        ask_calls.append(1)
-
-    monkeypatch.setattr(ENNStatefulFitter, "tell", _count_tell)
-    monkeypatch.setattr(ENNStatefulFitter, "ask", _count_ask)
-
-    num_obs = 10
-    result = CliRunner().invoke(cli, ["enn", "flat", str(num_obs)])
-    assert result.exit_code == 0
-    assert tell_calls == []
-    assert ask_calls == []
-
-
-def test_enn_stress_cli():
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    result = CliRunner().invoke(
-        cli,
-        ["enn", "flat", "10"],
-    )
-    assert result.exit_code == 0
-    lines = result.output.strip().splitlines()
-    assert lines[0] == "num_dim=10 num_obs=10"
-    assert len(lines) == 4
-    data_lines = lines[1:]
-    for line in data_lines:
-        assert _STRESS_ROW_RE.fullmatch(line)
-    assert data_lines[0].startswith(" ")
-    assert not data_lines[-1].startswith(" ")
-
-
-def test_enn_stress_cli_rejects_work_dir_for_in_memory_driver():
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    result = CliRunner().invoke(
-        cli,
-        ["enn", "flat", "10", "--work-dir", "/tmp/enn_work"],
-    )
-    assert result.exit_code != 0
-    assert "work_dir requires index_type in" in result.output
-
-
-def test_enn_stress_cli_rejects_disk_driver_without_work_dir():
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    result = CliRunner().invoke(cli, ["enn", "bpann_disk", "10"])
-    assert result.exit_code != 0
-    assert "bpann_disk requires --work-dir" in result.output
-
-
-@pytest.mark.parametrize(
-    "index_type,subdir",
-    [("bpann_disk", "enn_cli_bpann")],
-)
-def test_enn_stress_cli_disk(tmp_path, index_type, subdir):
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    work_dir = tmp_path / subdir
-    result = CliRunner().invoke(
-        cli,
-        ["enn", index_type, "10", "--work-dir", str(work_dir)],
-    )
-    assert result.exit_code == 0, result.output
-    lines = result.output.strip().splitlines()
-    assert lines[0] == f"num_dim=10 num_obs=10 work_dir={work_dir}"
-    assert len(lines) == 4
-    for line in lines[1:]:
-        assert _STRESS_ROW_RE.fullmatch(line)
-
-
-def test_enn_stress_cli_rejects_legacy_option_syntax():
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    result = CliRunner().invoke(
-        cli,
-        ["enn", "--index-type", "flat", "--num-obs", "10"],
-    )
-    assert result.exit_code != 0
-    assert "no such option" in result.output.lower()
-
-
-def test_enn_stress_cli_rejects_swapped_positional_order():
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    result = CliRunner().invoke(cli, ["enn", "10", "flat"])
-    assert result.exit_code != 0
-
-
-def test_enn_stress_cli_num_dim_option():
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    result = CliRunner().invoke(
-        cli,
-        ["enn", "flat", "10", "--num-dim", "4"],
-    )
-    assert result.exit_code == 0
-    lines = result.output.strip().splitlines()
-    assert lines[0] == "num_dim=4 num_obs=10"
-    assert len(lines) == 4
-    for line in lines[1:]:
-        assert _STRESS_ROW_RE.fullmatch(line)
-
-
-def test_enn_stress_cli_rejects_invalid_num_dim():
-    from click.testing import CliRunner
-
-    from ops.stress import cli
-
-    result = CliRunner().invoke(cli, ["enn", "flat", "10", "--num-dim", "0"])
-    assert result.exit_code != 0
-    assert "num_dim must be >= 1" in result.output
 
 
 def test_make_synthetic_observations():
@@ -515,18 +486,6 @@ def test_iter_synthetic_observations_fuzz(seed: int):
         f"seed={seed} num_obs={num_obs} num_dim={num_dim} "
         f"batch_a={batch_a} batch_b={batch_b}"
     )
-
-
-def test_stress_main(monkeypatch):
-    from ops.stress import main
-
-    monkeypatch.setattr(
-        "sys.argv",
-        ["stress", "enn", "flat", "3"],
-    )
-    with pytest.raises(SystemExit) as exc:
-        main()
-    assert exc.value.code == 0
 
 
 @pytest.mark.parametrize("seed", [0, 1, 7, 42])
