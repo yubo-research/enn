@@ -182,90 +182,20 @@ def test_enn_disk_bpann_empty_store_reopen_uses_persisted_num_metrics(tmp_path):
     assert len(reopened) == 0
 
 
-def test_enn_disk_bpann_reopen_scale_x_posterior_matches_fresh_without_sync(tmp_path):
-    """Disk reopen with scale_x=true must not return wrong posterior before ensure_index_sync."""
-    from enn.enn.enn_params import ENNParams
-
-    rng = np.random.default_rng(7)
-    d = 3
-    work_dir = tmp_path / "enn_disk_scale_x_reopen"
-    x = rng.standard_normal((15, d))
-    y = rng.standard_normal((15, 1))
-
-    model = EpistemicNearestNeighbors(
-        x,
-        y,
-        scale_x=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        work_dir=str(work_dir),
-        enn_storage="disk",
-    )
-    model.ensure_index_sync()
-    del model
-
-    reopened = EpistemicNearestNeighbors(
-        np.zeros((0, d)),
-        np.zeros((0, 1)),
-        scale_x=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        work_dir=str(work_dir),
-        enn_storage="disk",
-    )
-    fresh = EpistemicNearestNeighbors(
-        x,
-        y,
-        scale_x=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        work_dir=str(tmp_path / "enn_disk_scale_x_reopen_fresh"),
-        enn_storage="disk",
-    )
-    fresh.ensure_index_sync()
-    params = ENNParams(
-        k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
-    )
-    x_test = rng.standard_normal((4, d))
-    post_reopen = reopened.posterior(x_test, params=params)
-    post_fresh = fresh.posterior(x_test, params=params)
-    np.testing.assert_allclose(post_reopen.mu, post_fresh.mu, rtol=1e-5)
-    np.testing.assert_allclose(post_reopen.se, post_fresh.se, rtol=1e-5)
-
-
-def test_enn_disk_bpann_posterior_scale_x_pending_matches_fresh(tmp_path):
-    """Phase D: scale_x pending leg uses live scale; posterior matches fresh."""
-    from enn.enn.enn_params import ENNParams
-
-    rng = np.random.default_rng(7)
-    d = 3
-    work_dir = tmp_path / "enn_disk_scale_x_pending"
-    x = rng.standard_normal((15, d))
-    y = rng.standard_normal((15, 1))
-
-    inc = EpistemicNearestNeighbors(
-        x,
-        y,
-        scale_x=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        work_dir=str(work_dir),
-        enn_storage="disk",
-    )
-
-    fresh = EpistemicNearestNeighbors(
-        x,
-        y,
-        scale_x=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        work_dir=str(tmp_path / "enn_disk_scale_x_fresh"),
-        enn_storage="disk",
-    )
-    fresh.ensure_index_sync()
-    params = ENNParams(
-        k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
-    )
-    x_test = rng.standard_normal((4, d))
-    post_inc = inc.posterior(x_test, params=params)
-    post_fresh = fresh.posterior(x_test, params=params)
-    np.testing.assert_allclose(post_inc.mu, post_fresh.mu, rtol=1e-5)
-    np.testing.assert_allclose(post_inc.se, post_fresh.se, rtol=1e-5)
+def test_enn_scale_x_incompatible_with_bpann_disk(tmp_path):
+    train_x = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=float)
+    train_y = np.zeros((2, 1), dtype=float)
+    with pytest.raises(
+        ValueError, match=r"scale_x=True is not compatible with BPANN_DISK"
+    ):
+        EpistemicNearestNeighbors(
+            train_x,
+            train_y,
+            scale_x=True,
+            index_driver=ENNIndexDriver.BPANN_DISK,
+            work_dir=str(tmp_path / "enn_scale_x_bpann"),
+            enn_storage="disk",
+        )
 
 
 def _build_multi_batch_disk_persist_model(work_dir, d, rng):

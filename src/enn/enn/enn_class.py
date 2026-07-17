@@ -83,6 +83,8 @@ class EpistemicNearestNeighbors:
         train_x, train_y, train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
         )
+        if scale_x and index_driver == ENNIndexDriver.BPANN_DISK:
+            raise ValueError("scale_x=True is not compatible with BPANN_DISK")
         self._index_driver = index_driver
         idx_driver = _rust_index_driver_name(index_driver)
         rust_kwargs: dict[str, Any] = {

@@ -109,6 +109,11 @@ impl EpistemicNearestNeighbors {
         work_dir: Option<PathBuf>,
     ) -> Result<Self, ENNError> {
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
+        if scale_x && is_disk_index_driver(driver) {
+            return Err(ENNError::InvalidParameter(
+                "scale_x=True is not compatible with BPANN_DISK".to_string(),
+            ));
+        }
         let num_obs = train_x.nrows();
         let num_dim = train_x.ncols();
         let num_metrics = train_y.ncols();

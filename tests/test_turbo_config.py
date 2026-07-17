@@ -8,6 +8,7 @@ from enn.turbo.config import (
     CandidateRV,
     DrawAcquisitionConfig,
     ENNFitConfig,
+    ENNIndexDriver,
     ENNSurrogateConfig,
     GPSurrogateConfig,
     HybridInit,
@@ -227,6 +228,13 @@ def test_enn_surrogate_config_with_values():
     assert cfg.k == 10
     assert cfg.num_fit_samples == 50
     assert cfg.scale_x is True
+
+
+def test_enn_surrogate_config_scale_x_incompatible_with_bpann_disk():
+    with pytest.raises(
+        ValueError, match=r"scale_x=True is not compatible with BPANN_DISK"
+    ):
+        ENNSurrogateConfig(scale_x=True, index_driver=ENNIndexDriver.BPANN_DISK)
 
 
 def test_enn_fit_config_defaults():

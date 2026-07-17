@@ -120,6 +120,26 @@ fn disk_storage_rejects_non_disk_driver() {
 }
 
 #[test]
+fn scale_x_rejects_bpann_disk() {
+    let dir = TempDir::new().expect("tempdir");
+    match EpistemicNearestNeighbors::new_with_storage(
+        array![[0.0, 0.0]],
+        array![[0.0]],
+        None,
+        true,
+        IndexDriver::BpAnnDisk,
+        EnnStorage::Disk,
+        Some(dir.path().to_path_buf()),
+    ) {
+        Ok(_) => panic!("expected scale_x + BpAnnDisk to error"),
+        Err(e) => assert!(
+            e.to_string().contains("scale_x=True is not compatible with BPANN_DISK"),
+            "unexpected error: {e}"
+        ),
+    }
+}
+
+#[test]
 fn kiss_backend_mod_symbol_refs() {
     fn from_env() {}
     fn disk_lock() {}
