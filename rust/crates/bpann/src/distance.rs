@@ -26,13 +26,31 @@ pub fn row_sq_l2(
 }
 
 pub fn l2_sq_f32(a: &[f32], b: &[f32]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(&x, &y)| {
+    // Squared-L2 reduction with independent lane accumulators. A single `.sum()`
+    // accumulator serializes D dependent FP adds and blocks auto-vectorization
+    // (FP add is non-associative). Summing into `LANES` independent lanes breaks
+    // that dependency chain so LLVM emits SIMD adds; the lanes are combined once
+    // at the end. The tail (len not a multiple of LANES) is handled scalar.
+    const LANES: usize = 8;
+    let mut acc = [0.0f32; LANES];
+    let mut a_chunks = a.chunks_exact(LANES);
+    let mut b_chunks = b.chunks_exact(LANES);
+    for (ca, cb) in a_chunks.by_ref().zip(b_chunks.by_ref()) {
+        for ((lane, &x), &y) in acc.iter_mut().zip(ca).zip(cb) {
             let d = x - y;
-            d * d
-        })
-        .sum()
+            *lane += d * d;
+        }
+    }
+    let mut sum: f32 = acc.iter().sum();
+    for (&x, &y) in a_chunks
+        .remainder()
+        .iter()
+        .zip(b_chunks.remainder().iter())
+    {
+        let d = x - y;
+        sum += d * d;
+    }
+    sum
 }
 
 pub fn bpann_row_to_f32(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f32>) {
