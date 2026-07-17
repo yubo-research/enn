@@ -7,6 +7,7 @@ use ndarray::{Array1, Array2, ArrayView2};
 
 use crate::backend::TrainRowsAtResult;
 use crate::error::ENNError;
+use crate::file_config::install_bpann_tuning_from_config;
 use crate::index::IndexDriver;
 
 fn bpann_err(e: bpann::BpannError) -> ENNError {
@@ -14,6 +15,10 @@ fn bpann_err(e: bpann::BpannError) -> ENNError {
         bpann::BpannError::InvalidShape { expected, got } => ENNError::InvalidShape { expected, got },
         bpann::BpannError::InvalidParameter(s) => ENNError::InvalidParameter(s),
     }
+}
+
+fn apply_config_flush_threshold(inner: BpannBackend) -> BpannBackend {
+    inner.with_pending_flush_threshold(bpann::current_tuning().pending_flush_threshold)
 }
 
 pub struct DiskBpannEnnBackend {
@@ -37,6 +42,7 @@ impl DiskBpannEnnBackend {
                 "DiskBpannEnnBackend requires IndexDriver::BpAnnDisk".to_string(),
             ));
         }
+        install_bpann_tuning_from_config();
         let inner = if train_x.nrows() == 0
             && train_y.nrows() == 0
             && work_dir.join("metadata.json").exists()
@@ -46,6 +52,7 @@ impl DiskBpannEnnBackend {
             BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
                 .map_err(bpann_err)?
         };
+        let inner = apply_config_flush_threshold(inner);
         let num_metrics = inner.num_metrics();
         Ok(Self {
             inner,
@@ -55,8 +62,12 @@ impl DiskBpannEnnBackend {
     }
 
     pub fn new_empty(work_dir: PathBuf, num_dim: usize, num_metrics: usize) -> Result<Self, ENNError> {
+        install_bpann_tuning_from_config();
+        let inner = apply_config_flush_threshold(
+            BpannBackend::new_empty(work_dir, num_dim, num_metrics).map_err(bpann_err)?,
+        );
         Ok(Self {
-            inner: BpannBackend::new_empty(work_dir, num_dim, num_metrics).map_err(bpann_err)?,
+            inner,
             driver: IndexDriver::BpAnnDisk,
             num_metrics,
         })
@@ -68,6 +79,12 @@ impl DiskBpannEnnBackend {
         num_metrics: usize,
         pending_flush_threshold: usize,
     ) -> Result<Self, ENNError> {
+        install_bpann_tuning_from_config();
+        if pending_flush_threshold == 0 {
+            return Err(ENNError::InvalidParameter(
+                "pending_flush_threshold must be >= 1".to_string(),
+            ));
+        }
         let inner = BpannBackend::new_empty(work_dir, num_dim, num_metrics)
             .map_err(bpann_err)?
             .with_pending_flush_threshold(pending_flush_threshold)

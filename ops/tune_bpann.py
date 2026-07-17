@@ -14,25 +14,31 @@ import click
 ROOT = Path(__file__).resolve().parents[1]
 STRESS = ROOT / "ops" / "stress.py"
 
-BPANN_ENV_KEYS: tuple[str, ...] = (
-    "BPANN_INDEX_COMPACT_ROWS_PER_FRAGMENT",
-    "BPANN_INDEX_COMPACT_FRAGMENT_MAX",
-    "BPANN_SEARCH_ROWS_PER_FRAGMENT",
-    "BPANN_SEARCH_FRAGMENT_BUDGET_MAX",
-    "BPANN_SMALL_FRAGMENT_MERGE_ROWS",
+BPANN_CONFIG_KEYS: tuple[str, ...] = (
+    "index_compact_rows_per_fragment",
+    "index_compact_fragment_max",
+    "search_rows_per_fragment",
+    "search_fragment_budget_max",
+    "small_fragment_merge_rows",
 )
 
 
 @dataclass(frozen=True)
 class TuneResult:
-    env: dict[str, str]
+    bpann: dict[str, int]
     query_s: float
     segment_s: float
 
 
-def run_stress(*, num_obs: int, env: dict[str, str]) -> tuple[float, float]:
+def write_config(path: Path, bpann: dict[str, int]) -> None:
+    lines = ["[bpann]"]
+    for key, value in bpann.items():
+        lines.append(f"{key} = {value}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def run_stress(*, num_obs: int, config_path: Path) -> tuple[float, float]:
     work_dir = tempfile.mkdtemp(prefix="bpann_tune_")
-    merged = {**os.environ, **env}
     cmd = [
         sys.executable,
         str(STRESS),
@@ -41,11 +47,13 @@ def run_stress(*, num_obs: int, env: dict[str, str]) -> tuple[float, float]:
         str(num_obs),
         "--work-dir",
         work_dir,
+        "--ennbo-config",
+        str(config_path),
     ]
     proc = subprocess.run(
         cmd,
         cwd=ROOT,
-        env={**merged, "PYTHONPATH": str(ROOT / "src")},
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
         check=True,
         capture_output=True,
         text=True,
@@ -57,19 +65,19 @@ def run_stress(*, num_obs: int, env: dict[str, str]) -> tuple[float, float]:
     return query_s, segment_s
 
 
-def default_grid() -> list[dict[str, str]]:
-    rows_per_frag = ("5000", "10000", "20000")
-    frag_max = ("16", "32")
-    search_budget = ("2", "3", "4")
-    out: list[dict[str, str]] = []
+def default_grid() -> list[dict[str, int]]:
+    rows_per_frag = (5000, 10000, 20000)
+    frag_max = (16, 32)
+    search_budget = (2, 3, 4)
+    out: list[dict[str, int]] = []
     for rows in rows_per_frag:
         for mx in frag_max:
             for budget in search_budget:
                 out.append(
                     {
-                        "BPANN_INDEX_COMPACT_ROWS_PER_FRAGMENT": rows,
-                        "BPANN_INDEX_COMPACT_FRAGMENT_MAX": mx,
-                        "BPANN_SEARCH_FRAGMENT_BUDGET_MAX": budget,
+                        "index_compact_rows_per_fragment": rows,
+                        "index_compact_fragment_max": mx,
+                        "search_fragment_budget_max": budget,
                     }
                 )
     return out
@@ -92,23 +100,27 @@ def default_grid() -> list[dict[str, str]]:
     help="Reference segment_s to beat (2x faster target).",
 )
 def main(num_obs: int, baseline_query_s: float, baseline_segment_s: float) -> None:
-    """Grid-search BPANN_* env vars via ops/stress.py for this deployment."""
+    """Grid-search BPANN settings via ops/stress.py for this deployment."""
     target_query = baseline_query_s / 2.0
     target_segment = baseline_segment_s / 2.0
     best: TuneResult | None = None
-    for env in default_grid():
-        query_s, segment_s = run_stress(num_obs=num_obs, env=env)
-        if query_s > target_query or segment_s > target_segment:
-            continue
-        if best is None or (query_s + segment_s) < (best.query_s + best.segment_s):
-            best = TuneResult(env=env, query_s=query_s, segment_s=segment_s)
+    with tempfile.TemporaryDirectory(prefix="ennbo_tune_cfg_") as tmp:
+        cfg_path = Path(tmp) / "config.toml"
+        for bpann in default_grid():
+            write_config(cfg_path, bpann)
+            query_s, segment_s = run_stress(num_obs=num_obs, config_path=cfg_path)
+            if query_s > target_query or segment_s > target_segment:
+                continue
+            if best is None or (query_s + segment_s) < (best.query_s + best.segment_s):
+                best = TuneResult(bpann=bpann, query_s=query_s, segment_s=segment_s)
     if best is None:
         click.echo("No configuration met 2x targets on both query_s and segment_s.")
         raise SystemExit(1)
-    click.echo("Recommended BPANN env for this host:")
-    for key in BPANN_ENV_KEYS:
-        if key in best.env:
-            click.echo(f"export {key}={best.env[key]}")
+    click.echo("Recommended [bpann] section for ~/.ennbo/config.toml:")
+    click.echo("[bpann]")
+    for key in BPANN_CONFIG_KEYS:
+        if key in best.bpann:
+            click.echo(f"{key} = {best.bpann[key]}")
     click.echo(
         f"checkpoint query_s={best.query_s:.3f} segment_s={best.segment_s:.3f} "
         f"(targets query<={target_query:.3f} segment<={target_segment:.3f})"

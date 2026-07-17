@@ -109,6 +109,8 @@ fn kiss_imports_link_pyo3_wrappers() {
         py_util::calculate_sobol_indices_py,
         py_util::sobol_sequence_py,
         py_util::arms_from_pareto_fronts_py,
+        py_util::set_config_path_py,
+        py_util::ensure_config_file_py,
         py_fit::subsample_loglik_py,
         std::mem::size_of::<py_fitter::PyENNStatefulFitter>(),
         std::mem::size_of::<py_model::PyEpistemicNearestNeighbors>(),

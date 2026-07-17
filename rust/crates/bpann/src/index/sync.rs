@@ -11,58 +11,34 @@ use crate::index::search::{
 use crate::index::DEFAULT_LEAF_CAPACITY;
 use crate::mmap_store::MmapColumnStore;
 use crate::observation as obs;
+use crate::tuning::current_tuning;
 
 const INDEX_COMPACT_THRESHOLD_MIN: usize = 3;
 const EXHAUSTIVE_SEARCH_ROW_LIMIT: usize = 2500;
 const SKIP_REFINEMENT_ROW_LIMIT: usize = 150_000;
 
-fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(default)
-}
-
-fn index_compact_rows_per_fragment() -> usize {
-    env_usize("BPANN_INDEX_COMPACT_ROWS_PER_FRAGMENT", 10_000)
-}
-
-fn index_compact_fragment_max() -> usize {
-    env_usize("BPANN_INDEX_COMPACT_FRAGMENT_MAX", 32)
-}
-
-fn search_rows_per_fragment() -> usize {
-    env_usize("BPANN_SEARCH_ROWS_PER_FRAGMENT", 80_000)
-}
-
-fn small_fragment_merge_rows() -> usize {
-    env_usize("BPANN_SMALL_FRAGMENT_MERGE_ROWS", 15_000)
-}
-
-fn search_fragment_budget_max() -> usize {
-    env_usize("BPANN_SEARCH_FRAGMENT_BUDGET_MAX", 3)
-}
-
 fn index_compact_threshold(indexed_rows: usize) -> usize {
     if indexed_rows <= 1000 {
         return 1;
     }
-    (indexed_rows / index_compact_rows_per_fragment())
-        .clamp(INDEX_COMPACT_THRESHOLD_MIN, index_compact_fragment_max())
+    let t = current_tuning();
+    (indexed_rows / t.index_compact_rows_per_fragment)
+        .clamp(INDEX_COMPACT_THRESHOLD_MIN, t.index_compact_fragment_max)
 }
 
 fn search_fragment_budget(fragment_count: usize, indexed_rows: usize) -> usize {
     if fragment_count <= 2 {
         return fragment_count;
     }
-    let scaled = (indexed_rows / search_rows_per_fragment()).max(2);
+    let t = current_tuning();
+    let scaled = (indexed_rows / t.search_rows_per_fragment).max(2);
     scaled
         .min(fragment_count)
-        .min(search_fragment_budget_max())
+        .min(t.search_fragment_budget_max)
 }
 
 fn search_beam_width(_indexed_rows: usize) -> usize {
-    1
+    current_tuning().search_beam_width
 }
 
 struct IndexBuildContext<'a> {
@@ -291,7 +267,7 @@ impl IncrementalIndex {
         let merge_n = merge_n.min(self.indices.len());
         let mut best_i = 0usize;
         let mut best_rows = usize::MAX;
-        let small_limit = small_fragment_merge_rows();
+        let small_limit = current_tuning().small_fragment_merge_rows;
         for i in 0..=self.indices.len().saturating_sub(merge_n) {
             let slice = &self.indices[i..i + merge_n];
             let rows: usize = slice.iter().map(|index| index.header.indexed_rows).sum();
@@ -327,13 +303,11 @@ impl IncrementalIndex {
         if start >= end {
             return Ok(());
         }
-        let seed = std::env::var("BPANN_BUILD_SEED")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(start as u64);
+        let tuning = current_tuning();
+        let seed = tuning.build_seed.unwrap_or(start as u64);
         let row_ids: Vec<u32> = (start..end).map(|i| i as u32).collect();
         let batch_len = end - start;
-        let index = if batch_len <= 1024 {
+        let index = if batch_len <= tuning.structured_build_row_limit {
             let centroid = self
                 .take_pending_centroid(ctx.num_dim)
                 .unwrap_or_else(|| {
@@ -491,13 +465,13 @@ mod kiss_coverage_tests {
 
     #[test]
     fn sync_private_helpers_are_linked() {
-        assert_eq!(env_usize("BPANN_KISS_MISSING_ENV_VAR", 99), 99);
+        let t = current_tuning();
         let _ = (
-            index_compact_rows_per_fragment(),
-            index_compact_fragment_max(),
-            search_rows_per_fragment(),
-            small_fragment_merge_rows(),
-            search_fragment_budget_max(),
+            t.index_compact_rows_per_fragment,
+            t.index_compact_fragment_max,
+            t.search_rows_per_fragment,
+            t.small_fragment_merge_rows,
+            t.search_fragment_budget_max,
         );
         let _ = index_compact_threshold(2000);
         let _ = search_fragment_budget(4, 100_000);
@@ -563,6 +537,30 @@ mod kiss_coverage_tests {
             .unwrap();
         assert!(dir.path().join("index/header.json").exists());
         assert_eq!(idx.indexed_rows, 6);
+    }
+
+    #[test]
+    fn sync_needs_rewrite_and_on_disk_rows_behavioral() {
+        let dir = TempDir::new().unwrap();
+        let index_dir = dir.path().join("index");
+
+        assert_eq!(on_disk_indexed_rows(&index_dir).unwrap(), 0);
+
+        let mut idx = IncrementalIndex::new(index_dir.clone());
+        assert!(!idx.needs_disk_rewrite(false, 0));
+        assert!(idx.needs_disk_rewrite(true, 0));
+
+        let x_path = dir.path().join("train_x.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        let chunk = array![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        store.mmap_append(&chunk.view()).unwrap();
+        idx.ensure_sync_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1, 3)
+            .unwrap();
+        idx.persist_to_disk_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1)
+            .unwrap();
+
+        assert_eq!(on_disk_indexed_rows(&index_dir).unwrap(), 3);
+        assert!(idx.needs_disk_rewrite(false, 999));
     }
 
     #[test]

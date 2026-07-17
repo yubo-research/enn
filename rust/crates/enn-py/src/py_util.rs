@@ -169,3 +169,20 @@ pub fn arms_from_pareto_fronts_py<'py>(
     }
     Ok(out.into_pyarray_bound(py))
 }
+
+/// Override ennbo config path (`None` restores `~/.ennbo/config.toml`).
+#[pyfunction(name = "set_config_path")]
+#[pyo3(signature = (path=None))]
+pub fn set_config_path_py(path: Option<&str>) -> PyResult<()> {
+    ennbo::set_config_path(path.map(std::path::PathBuf::from));
+    Ok(())
+}
+
+/// Ensure `~/.ennbo/config.toml` (or override) exists and return its path.
+#[pyfunction(name = "ensure_config_file")]
+pub fn ensure_config_file_py() -> PyResult<String> {
+    ennbo::install_bpann_tuning_from_config();
+    let cfg = ennbo::Config::new();
+    let _ = cfg.load();
+    Ok(cfg.path().display().to_string())
+}

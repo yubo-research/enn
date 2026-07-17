@@ -5,11 +5,16 @@ pub mod index;
 pub mod merge;
 pub mod mmap_store;
 pub mod observation;
+pub mod tuning;
 
 pub use backend::{BpannBackend, DEFAULT_PENDING_FLUSH_THRESHOLD, PAPER_TEX_PATH};
 pub use error::BpannError;
 pub use index::BpannIndex;
 pub use observation::{MAX_NUM_DIM, MAX_RECORD_STRIDE};
+pub use tuning::{
+    clear_tuning_provider, current_tuning, set_tuning_provider, BpannTuning,
+    INDEX_COMPACT_FRAGMENT_MAX_MIN,
+};
 
 #[cfg(test)]
 mod acceptance_tests {

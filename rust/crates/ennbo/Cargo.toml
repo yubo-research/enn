@@ -21,6 +21,8 @@ rayon = "1.10"
 sobol = "1.0.2"
 thiserror = { workspace = true }
 memmap2 = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
 
 # Modal/Linux images lack a linkable `libfaiss_c`; macOS dev builds use dynamic faiss (static needs OpenMP in cmake).
 [target.'cfg(target_os = "linux")'.dependencies]

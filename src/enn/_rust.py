@@ -22,6 +22,8 @@ pareto_front_2d_maximize = _ext.util.pareto_front_2d_maximize
 calculate_sobol_indices = _ext.util.calculate_sobol_indices
 sobol_sequence = _ext.util.sobol_sequence
 arms_from_pareto_fronts = _ext.util.arms_from_pareto_fronts
+set_config_path = _ext.util.set_config_path
+ensure_config_file = _ext.util.ensure_config_file
 EpistemicNearestNeighbors = _ext.model.EpistemicNearestNeighbors
 ENNParams = _ext.model.ENNParams
 ENNStatefulFitter = _ext.fit.ENNStatefulFitter
@@ -40,6 +42,8 @@ __all__ = [
     "calculate_sobol_indices",
     "sobol_sequence",
     "arms_from_pareto_fronts",
+    "set_config_path",
+    "ensure_config_file",
     "EpistemicNearestNeighbors",
     "ENNParams",
     "ENNStatefulFitter",

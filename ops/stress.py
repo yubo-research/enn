@@ -996,6 +996,12 @@ def cli() -> None:
                 f"{ENN_ADD_STRESS_BATCH_SIZE} instead of one row per add."
             ),
         ),
+        click.Option(
+            ["--ennbo-config"],
+            type=click.Path(file_okay=True, dir_okay=False, path_type=str),
+            default=None,
+            help="Path to ennbo config.toml (overrides ~/.ennbo/config.toml).",
+        ),
     ],
 )
 def enn(
@@ -1006,8 +1012,13 @@ def enn(
     heartbeat_seconds: float,
     work_dir: str | None,
     batch: bool,
+    ennbo_config: str | None,
 ) -> None:
     """Time 1000-point ENN queries at sparse checkpoints while streaming adds."""
+    if ennbo_config is not None:
+        from enn._rust import set_config_path
+
+        set_config_path(ennbo_config)
     if num_obs < 1:
         raise click.ClickException("num_obs must be >= 1")
     if num_dim < 1:

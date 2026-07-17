@@ -28,6 +28,8 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_util::calculate_sobol_indices_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::sobol_sequence_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::arms_from_pareto_fronts_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_util::set_config_path_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_util::ensure_config_file_py, m)?)?;
     Ok(())
 }
 
