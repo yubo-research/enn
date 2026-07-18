@@ -301,6 +301,10 @@ impl IncrementalIndex {
                 false,
             )?
         } else {
+            // Structured leaf path takes pending for placement; the large path
+            // builds its own tree from rows but must still drain the accumulator
+            // so the next small sync is not poisoned by already-indexed mass.
+            let _ = self.take_pending_centroid(ctx.num_dim);
             let mut vectors = Vec::with_capacity(batch_len);
             let mut vec_buf = Vec::with_capacity(ctx.num_dim);
             for i in start..end {
@@ -585,6 +589,56 @@ mod kiss_coverage_tests {
         }
         assert!(idx.indices.len() <= 4);
         let _ = idx.search_candidates(&[1.0, 0.0], 2, None).unwrap();
+    }
+
+    /// Regression: soft-sync batches larger than `structured_build_row_limit` must still
+    /// consume pending-centroid state. Otherwise the next structured fragment is placed
+    /// with a contaminated centroid (already-indexed mass mixed into the mean).
+    #[test]
+    fn large_soft_sync_clears_pending_centroid() {
+        let limit = current_tuning().structured_build_row_limit;
+        let n = limit + 76; // force the build_from_rows path
+        let dir = TempDir::new().unwrap();
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        let x_path = dir.path().join("train_x.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        let scale = [1.0_f64, 1.0];
+
+        let mut large = ndarray::Array2::<f64>::zeros((n, 2));
+        for i in 0..n {
+            large[[i, 0]] = (i as f64) * 0.01;
+            large[[i, 1]] = 1.0;
+        }
+        store.mmap_append(&large.view()).unwrap();
+        idx.note_pending_rows(&large.view(), false, &scale);
+        idx.ensure_sync_for_backend(&store, 2, false, &scale, dir.path(), 1, n)
+            .unwrap();
+
+        assert_eq!(
+            idx.pending_row_count, 0,
+            "large soft-sync batch must clear pending_row_count"
+        );
+        assert!(
+            idx.take_pending_centroid(2).is_none(),
+            "large soft-sync batch must leave no pending centroid to take"
+        );
+
+        // Metamorphic: next singleton fragment must place at the new row, not a blend
+        // with the already-indexed large batch.
+        let far = array![[10_000.0, 0.0]];
+        store.mmap_append(&far.view()).unwrap();
+        idx.note_pending_rows(&far.view(), false, &scale);
+        idx.ensure_sync_for_backend(&store, 2, false, &scale, dir.path(), 1, n + 1)
+            .unwrap();
+        let centroid = idx
+            .indices
+            .last()
+            .expect("singleton fragment")
+            .root_centroid();
+        assert!(
+            (centroid[0] - 10_000.0).abs() < 1.0,
+            "post-large-sync fragment must place near the new row, got {centroid:?}"
+        );
     }
 
     fn _kiss_index_build_context<'a>(ctx: &IndexBuildContext<'a>) {
