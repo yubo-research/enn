@@ -47,6 +47,10 @@ pub struct BpannConfig {
     pub build_seed: Option<u64>,
     /// Rows of pending observations before an index flush is scheduled.
     pub pending_flush_threshold: usize,
+    /// Hard pending cap (soft-sync on caller). `None` means the key was absent in TOML;
+    /// resolved to `max(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, soft)` on load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_hard_flush_threshold: Option<usize>,
     /// Batch size at or below which builds use a single row-ID leaf (no k-means tree).
     pub structured_build_row_limit: usize,
     /// Beam width used during approximate tree traversal.
@@ -74,6 +78,7 @@ impl From<bpann::BpannTuning> for BpannConfig {
             search_fragment_budget_max: t.search_fragment_budget_max,
             build_seed: t.build_seed,
             pending_flush_threshold: t.pending_flush_threshold,
+            pending_hard_flush_threshold: Some(t.pending_hard_flush_threshold),
             structured_build_row_limit: t.structured_build_row_limit,
             search_beam_width: t.search_beam_width,
             exhaustive_search_row_limit: t.exhaustive_search_row_limit,
@@ -88,6 +93,16 @@ impl BpannConfig {
         self.to_tuning().validate()
     }
 
+    /// Resolve the hard pending cap: absent key → `max(DEFAULT_HARD, soft)`.
+    pub fn resolved_pending_hard_flush_threshold(&self) -> usize {
+        self.pending_hard_flush_threshold.unwrap_or_else(|| {
+            std::cmp::max(
+                bpann::DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
+                self.pending_flush_threshold,
+            )
+        })
+    }
+
     fn to_tuning(&self) -> bpann::BpannTuning {
         bpann::BpannTuning {
             index_compact_rows_per_fragment: self.index_compact_rows_per_fragment,
@@ -97,6 +112,7 @@ impl BpannConfig {
             search_fragment_budget_max: self.search_fragment_budget_max,
             build_seed: self.build_seed,
             pending_flush_threshold: self.pending_flush_threshold,
+            pending_hard_flush_threshold: self.resolved_pending_hard_flush_threshold(),
             structured_build_row_limit: self.structured_build_row_limit,
             search_beam_width: self.search_beam_width,
             exhaustive_search_row_limit: self.exhaustive_search_row_limit,
@@ -208,6 +224,10 @@ impl Config {
         self.load().bpann.pending_flush_threshold
     }
 
+    pub fn pending_hard_flush_threshold(&self) -> usize {
+        self.load().bpann.resolved_pending_hard_flush_threshold()
+    }
+
     pub fn structured_build_row_limit(&self) -> usize {
         self.load().bpann.structured_build_row_limit
     }
@@ -246,6 +266,7 @@ mod tests {
         let cfg = Config::with_path(&path);
         assert_eq!(cfg.index_compact_rows_per_fragment(), 10_000);
         assert_eq!(cfg.pending_flush_threshold(), 250);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 1000);
         assert_eq!(cfg.structured_build_row_limit(), 1_024);
         assert_eq!(cfg.search_beam_width(), 1);
         assert_eq!(cfg.exhaustive_search_row_limit(), 2500);
@@ -254,12 +275,14 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("index_compact_rows_per_fragment"));
         assert!(text.contains("pending_flush_threshold"));
+        assert!(text.contains("pending_hard_flush_threshold"));
         assert!(text.contains("structured_build_row_limit"));
         assert!(text.contains("search_beam_width"));
         assert!(text.contains("exhaustive_search_row_limit"));
         assert!(text.contains("skip_refinement_row_limit"));
         assert!(text.contains("10000"));
         assert!(text.contains("pending_flush_threshold = 250"));
+        assert!(text.contains("pending_hard_flush_threshold = 1000"));
         assert!(text.contains("exhaustive_search_row_limit = 2500"));
         assert!(text.contains("skip_refinement_row_limit = 150000"));
     }
@@ -274,6 +297,7 @@ mod tests {
         file.bpann.search_fragment_budget_max = 7;
         file.bpann.search_beam_width = 4;
         file.bpann.pending_flush_threshold = 2_000;
+        file.bpann.pending_hard_flush_threshold = Some(4_000);
         file.bpann.structured_build_row_limit = 2_048;
         file.bpann.exhaustive_search_row_limit = 5_000;
         file.bpann.skip_refinement_row_limit = 200_000;
@@ -281,9 +305,65 @@ mod tests {
         assert_eq!(cfg.search_fragment_budget_max(), 7);
         assert_eq!(cfg.search_beam_width(), 4);
         assert_eq!(cfg.pending_flush_threshold(), 2_000);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 4_000);
         assert_eq!(cfg.structured_build_row_limit(), 2_048);
         assert_eq!(cfg.exhaustive_search_row_limit(), 5_000);
         assert_eq!(cfg.skip_refinement_row_limit(), 200_000);
+    }
+
+    #[test]
+    fn missing_hard_key_with_soft_above_default_preserves_soft() {
+        // Q5: absent hard must not full-default-fallback when soft > 1000.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            "[bpann]\npending_flush_threshold = 2000\nsearch_beam_width = 1\n",
+        )
+        .unwrap();
+        let cfg = Config::with_path(&path);
+        assert_eq!(cfg.pending_flush_threshold(), 2_000);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 2_000);
+    }
+
+    #[test]
+    fn missing_hard_key_with_default_soft_uses_default_hard() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            "[bpann]\npending_flush_threshold = 250\nsearch_beam_width = 1\n",
+        )
+        .unwrap();
+        let cfg = Config::with_path(&path);
+        assert_eq!(cfg.pending_flush_threshold(), 250);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 1000);
+    }
+
+    #[test]
+    fn explicit_hard_below_soft_falls_back_to_defaults() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            "[bpann]\npending_flush_threshold = 2000\npending_hard_flush_threshold = 1000\nsearch_beam_width = 1\n",
+        )
+        .unwrap();
+        let cfg = Config::with_path(&path);
+        assert_eq!(cfg.pending_flush_threshold(), 250);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 1000);
+    }
+
+    #[test]
+    fn save_rejects_hard_below_soft() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        let cfg = Config::with_path(&path);
+        let mut file = ConfigFile::default();
+        file.bpann.pending_flush_threshold = 500;
+        file.bpann.pending_hard_flush_threshold = Some(100);
+        let err = cfg.save(&file).unwrap_err();
+        assert!(err.contains("pending_hard_flush_threshold"));
     }
 
     #[test]

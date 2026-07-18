@@ -18,7 +18,10 @@ fn bpann_err(e: bpann::BpannError) -> ENNError {
 }
 
 fn apply_config_flush_threshold(inner: BpannBackend) -> BpannBackend {
-    inner.with_pending_flush_threshold(bpann::current_tuning().pending_flush_threshold)
+    let t = bpann::current_tuning();
+    inner
+        .with_pending_flush_threshold(t.pending_flush_threshold)
+        .with_pending_hard_flush_threshold(t.pending_hard_flush_threshold)
 }
 
 pub struct DiskBpannEnnBackend {
@@ -73,29 +76,6 @@ impl DiskBpannEnnBackend {
         })
     }
 
-    pub fn new_empty_with_flush_threshold(
-        work_dir: PathBuf,
-        num_dim: usize,
-        num_metrics: usize,
-        pending_flush_threshold: usize,
-    ) -> Result<Self, ENNError> {
-        install_bpann_tuning_from_config();
-        if pending_flush_threshold == 0 {
-            return Err(ENNError::InvalidParameter(
-                "pending_flush_threshold must be >= 1".to_string(),
-            ));
-        }
-        let inner = BpannBackend::new_empty(work_dir, num_dim, num_metrics)
-            .map_err(bpann_err)?
-            .with_pending_flush_threshold(pending_flush_threshold)
-            .with_defer_append_indexing(true);
-        Ok(Self {
-            inner,
-            driver: IndexDriver::BpAnnDisk,
-            num_metrics,
-        })
-    }
-
     pub fn driver(&self) -> IndexDriver {
         self.driver
     }
@@ -113,18 +93,6 @@ impl DiskBpannEnnBackend {
         self.num_metrics
     }
 
-    pub fn pending_unindexed_count(&self) -> usize {
-        self.inner.pending_rows()
-    }
-
-    pub fn pending_flush_threshold(&self) -> usize {
-        self.inner.pending_flush_threshold()
-    }
-
-    pub fn append_syncs_at_threshold(&self) -> bool {
-        !self.inner.defer_append_indexing()
-    }
-
     pub fn defer_index_sync_for_search(&self) -> bool {
         true
     }
@@ -135,26 +103,6 @@ impl DiskBpannEnnBackend {
 
     pub fn mark_index_stale(&mut self) {
         self.inner.mark_index_stale();
-    }
-
-    pub(crate) fn defer_append_indexing_for_flush(&self) -> bool {
-        self.inner.defer_append_indexing()
-    }
-
-    /// Build soft-sync fragments without mutating the published index.
-    pub(crate) fn soft_sync_build_detached(
-        &self,
-    ) -> Result<Option<bpann::IncrementalIndex>, ENNError> {
-        bpann::soft_sync_build(&self.inner).map_err(bpann_err)
-    }
-
-    /// Publish a detached soft-sync result (short exclusive critical section).
-    pub(crate) fn soft_sync_publish_detached(
-        &mut self,
-        built: bpann::IncrementalIndex,
-    ) -> Result<(), ENNError> {
-        bpann::soft_sync_publish(&mut self.inner, built);
-        Ok(())
     }
 
     pub fn persist_index_to_disk(&mut self) -> Result<(), ENNError> {
@@ -213,6 +161,99 @@ impl DiskBpannEnnBackend {
 
     pub fn index_memory_bytes(&self) -> Result<usize, ENNError> {
         Ok(self.inner.index_memory_bytes())
+    }
+}
+
+impl DiskBpannEnnBackend {
+    pub fn new_empty_with_flush_threshold(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+        pending_flush_threshold: usize,
+    ) -> Result<Self, ENNError> {
+        let hard = bpann::current_tuning().pending_hard_flush_threshold;
+        Self::new_empty_with_flush_thresholds(
+            work_dir,
+            num_dim,
+            num_metrics,
+            pending_flush_threshold,
+            hard.max(pending_flush_threshold),
+        )
+    }
+
+    pub fn new_empty_with_flush_thresholds(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+        pending_flush_threshold: usize,
+        pending_hard_flush_threshold: usize,
+    ) -> Result<Self, ENNError> {
+        install_bpann_tuning_from_config();
+        if pending_flush_threshold == 0 {
+            return Err(ENNError::InvalidParameter(
+                "pending_flush_threshold must be >= 1".to_string(),
+            ));
+        }
+        if pending_hard_flush_threshold == 0 {
+            return Err(ENNError::InvalidParameter(
+                "pending_hard_flush_threshold must be >= 1".to_string(),
+            ));
+        }
+        if pending_hard_flush_threshold < pending_flush_threshold {
+            return Err(ENNError::InvalidParameter(
+                "pending_hard_flush_threshold must be >= pending_flush_threshold".to_string(),
+            ));
+        }
+        let inner = BpannBackend::new_empty(work_dir, num_dim, num_metrics)
+            .map_err(bpann_err)?
+            .with_pending_flush_threshold(pending_flush_threshold)
+            .with_pending_hard_flush_threshold(pending_hard_flush_threshold)
+            .with_defer_append_indexing(true);
+        Ok(Self {
+            inner,
+            driver: IndexDriver::BpAnnDisk,
+            num_metrics,
+        })
+    }
+
+    pub fn pending_unindexed_count(&self) -> usize {
+        self.inner.pending_rows()
+    }
+
+    pub fn pending_flush_threshold(&self) -> usize {
+        self.inner.pending_flush_threshold()
+    }
+
+    pub fn pending_hard_flush_threshold(&self) -> usize {
+        self.inner.pending_hard_flush_threshold()
+    }
+
+    pub fn reconfigure_flush_thresholds(&mut self, soft: usize, hard: usize) {
+        self.inner.reconfigure_flush_thresholds(soft, hard);
+    }
+
+    pub fn append_syncs_at_threshold(&self) -> bool {
+        !self.inner.defer_append_indexing()
+    }
+
+    pub(crate) fn defer_append_indexing_for_flush(&self) -> bool {
+        self.inner.defer_append_indexing()
+    }
+
+    /// Build soft-sync fragments without mutating the published index.
+    pub(crate) fn soft_sync_build_detached(
+        &self,
+    ) -> Result<Option<bpann::IncrementalIndex>, ENNError> {
+        bpann::soft_sync_build(&self.inner).map_err(bpann_err)
+    }
+
+    /// Publish a detached soft-sync result (short exclusive critical section).
+    pub(crate) fn soft_sync_publish_detached(
+        &mut self,
+        built: bpann::IncrementalIndex,
+    ) -> Result<(), ENNError> {
+        bpann::soft_sync_publish(&mut self.inner, built);
+        Ok(())
     }
 }
 

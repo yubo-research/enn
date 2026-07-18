@@ -16,7 +16,7 @@ use crate::observation::{
 };
 
 pub const PAPER_TEX_PATH: &str = "papers/bpann_2511.15557v1.tex";
-pub use crate::tuning::DEFAULT_PENDING_FLUSH_THRESHOLD;
+pub use crate::tuning::{DEFAULT_PENDING_FLUSH_THRESHOLD, DEFAULT_PENDING_HARD_FLUSH_THRESHOLD};
 
 pub struct BpannBackend {
     work_dir: PathBuf,
@@ -29,6 +29,7 @@ pub struct BpannBackend {
     x_scale: Array1<f64>,
     index: IncrementalIndex,
     pending_flush_threshold: usize,
+    pending_hard_flush_threshold: usize,
     defer_append_indexing: bool,
     pending_unindexed: AtomicUsize,
     index_dirty: Mutex<bool>,
@@ -103,6 +104,7 @@ impl BpannBackend {
             x_scale,
             index,
             pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
+            pending_hard_flush_threshold: DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
             defer_append_indexing: true,
             pending_unindexed: AtomicUsize::new(n.saturating_sub(indexed_rows)),
             index_dirty: Mutex::new(indexed_rows < n),
@@ -145,18 +147,9 @@ impl BpannBackend {
         )
     }
 
-    pub fn with_pending_flush_threshold(mut self, threshold: usize) -> Self {
-        self.pending_flush_threshold = threshold;
-        self
-    }
-
     pub fn with_defer_append_indexing(mut self, defer: bool) -> Self {
         self.defer_append_indexing = defer;
         self
-    }
-
-    pub fn pending_flush_threshold(&self) -> usize {
-        self.pending_flush_threshold
     }
 
     pub fn defer_append_indexing(&self) -> bool {
@@ -254,8 +247,11 @@ impl BpannBackend {
             .fetch_add(x.nrows(), Ordering::Relaxed);
         *self.index_dirty.lock().expect("index_dirty") = true;
         self.num_obs_counter.set(self.len());
-        if !self.defer_append_indexing
-            && self.pending_rows() >= self.pending_flush_threshold
+        let pending = self.pending_rows();
+        // Hard cap: soft-sync on the caller when pending reaches the hard threshold
+        // (deferred or not). Soft threshold syncs only on the non-deferred path.
+        if pending >= self.pending_hard_flush_threshold
+            || (!self.defer_append_indexing && pending >= self.pending_flush_threshold)
         {
             self.ensure_index_sync()?;
         }
@@ -483,6 +479,36 @@ impl BpannBackend {
             scale_x,
             Array1::ones(num_dim),
         )
+    }
+}
+
+impl BpannBackend {
+    pub fn with_pending_flush_threshold(mut self, threshold: usize) -> Self {
+        self.pending_flush_threshold = threshold;
+        if self.pending_hard_flush_threshold < threshold {
+            self.pending_hard_flush_threshold = threshold;
+        }
+        self
+    }
+
+    pub fn with_pending_hard_flush_threshold(mut self, threshold: usize) -> Self {
+        self.pending_hard_flush_threshold = threshold.max(self.pending_flush_threshold);
+        self
+    }
+
+    pub fn pending_flush_threshold(&self) -> usize {
+        self.pending_flush_threshold
+    }
+
+    pub fn pending_hard_flush_threshold(&self) -> usize {
+        self.pending_hard_flush_threshold
+    }
+
+    /// Update soft/hard pending flush thresholds (keeps `hard >= soft`).
+    pub fn reconfigure_flush_thresholds(&mut self, soft: usize, hard: usize) {
+        let soft = soft.max(1);
+        self.pending_flush_threshold = soft;
+        self.pending_hard_flush_threshold = hard.max(soft);
     }
 }
 

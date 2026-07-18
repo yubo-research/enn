@@ -1,158 +1,180 @@
-# Plan: Expose BPANN search-mode row limits in config
+# Plan: Cap pending brute-force cost (idea E)
 
 ## User Request
 
-(Summarized from the prior next-target decision.) Expose the duplicated
-compile-time search-mode cliffs as tunable config:
-
-- `exhaustive_search_row_limit` (default 2500)
-- `skip_refinement_row_limit` (default 150_000)
-
-Wire them through `BpannTuning` / `~/.ennbo/config.toml` with a single shared
-source of truth for build and search.
+Plan the remaining work from the A–E flush design: **E. Cap pending
+brute-force cost** — when soft flush lags or a large add leaves a big unindexed
+tail, bound `leg_b` (`O(pending × D)` per query) with a hard backstop (sync
+flush / block adds until catch-up). Soft threshold scheduling already exists.
 
 ## Current State
 
-### Search-mode dispatch (hardcoded ×2)
+### Soft threshold only
 
-| Constant | Value | Build use | Search use |
-|---|---:|---|---|
-| `EXHAUSTIVE_SEARCH_ROW_LIMIT` | 2500 | `needs_skip_edges` in `rust/crates/bpann/src/index/build.rs` | `search_index_candidates` in `rust/crates/bpann/src/index/sync.rs` |
-| `SKIP_REFINEMENT_ROW_LIMIT` | 150_000 | same | same |
+| Piece | Behavior today |
+|---|---|
+| `pending_flush_threshold` (default **250**) | Soft gate: `schedule_background_flush` spawns soft sync when `pending_unindexed >=` this |
+| Soft sync | Builds/compacts RAM index; clears pending; does **not** write `pages.bin` |
+| Hard persist | `persist_index_to_disk` / Drop only |
+| Search | Hybrid ANN(`indexed`) ∪ brute-force pending (`bpann_brute_force_topk_mmap` as `leg_b`) |
+| Disk search | `defer_index_sync_for_search() == true` — queries do **not** force sync |
 
-Runtime behavior for a fragment with `rows` indexed rows:
+Key files: `bpann/src/backend.rs` (append + search), `ennbo/src/backend/flush_controller.rs`,
+`bpann/src/tuning.rs`, `ennbo/src/file_config.rs`.
 
-1. `rows <= exhaustive` → exhaustive leaf search; build stores **no** skip edges
-2. `exhaustive < rows <= skip_refinement` → skip-refinement search; build **writes** skip edges
-3. `rows > skip_refinement` → greedy blocks only; build stores **no** skip edges
+### Why pending can still spike
 
-Both files define identical private `const`s. They are not in `BpannTuning`.
+- **Well-behaved `add` + `schedule`:** `model.add` already `wait_for_flush` before
+  append (`ennbo/src/model.rs`), and the flush worker is single-slot, so steady
+  state pending is roughly bounded by one batch after a soft sync. Soft threshold
+  alone is often enough here.
+- **Large one-shot add:** appending `B ≫ soft` rows in one call leaves
+  `pending ≈ B` until the next wait/sync; search pays full `leg_b` in that window.
+- **Add without `schedule_background_flush`:** pending grows without bound;
+  every query brute-forces the whole tail.
+- **No hard knob** exists in `BpannTuning` / config today.
 
-### Existing tuning / config path (pattern to extend)
+### Explicitly not chosen here
 
-| Layer | File | Role |
-|---|---|---|
-| `BpannTuning` | `rust/crates/bpann/src/tuning.rs` | Process-wide snapshot; `current_tuning()`; `validate()` |
-| `BpannConfig` | `rust/crates/ennbo/src/file_config.rs` | `[bpann]` TOML; `From`/`to_tuning`; `serde(default)` |
-| Provider | `install_bpann_tuning_from_config()` | Reads config on each `current_tuning()` access |
-| Already tunable | flush threshold, structured build limit, beam width, compaction/budget knobs | Wired end-to-end |
-
-`search_beam_width` already goes through `current_tuning()` in `sync.rs`; the
-row-limit cliffs do not.
-
-### Adjacent / out of scope today
-
-- Persist/reopen tests that use **2500 rows** as a data size
-  (`persist_hardening.rs`, `disk_persist_index.rs`, `test_enn_index_driver.py`)
-  are about `indexed_rows` counts, not the exhaustive cliff constant.
-- `ops/tune_bpann.py` grids only compaction/budget knobs; it cannot tune these
-  limits until they exist in config (follow-up, not this plan).
-- Async soft sync / concurrent search work is already shipped.
-- If limits change between build and search, search may take the skip-refinement
-  path when `skip_edges` is empty (lookups are optional — fewer candidates, no
-  panic). Shared runtime config keeps build and search agreed *at each call*;
-  on-disk indexes are not rewritten until rebuild/compaction.
+- Over-fetch from the ANN index to shrink the pending window (approximate; changes
+  neighbor semantics). Out of scope for this plan.
+- Search-time sync when pending ≥ hard (would surprise
+  `defer_index_sync_for_search` callers). Reopen with a large pending tail is
+  bounded on the next `add` / `schedule`, not on query.
 
 ## Requested Changes
 
-1. Add `exhaustive_search_row_limit` and `skip_refinement_row_limit` to
-   `BpannTuning` and `BpannConfig`, with defaults `2500` and `150_000`.
-2. Remove the duplicated compile-time constants; build `needs_skip_edges` and
-   search `search_index_candidates` both read `current_tuning()`.
-3. Validate: `exhaustive_search_row_limit >= 1` and
-   `skip_refinement_row_limit >= exhaustive_search_row_limit`.
-4. Update default-config and validation tests so new keys appear in generated
-   `config.toml` and invalid pairs are rejected.
+1. Add a configurable **hard** pending cap,
+   `pending_hard_flush_threshold`, with default `1000` (`4 ×` default soft `250`),
+   validated `>= pending_flush_threshold`.
+2. After a deferred-path append, if `pending_unindexed >=` hard cap: soft-sync
+   on the calling thread so pending is drained before `add` returns.
+   (`model.add` already `wait_for_flush` before append; schedule’s hard path
+   also waits. Join lives at the ennbo flush layer, not inside `bpann`.)
+3. If `schedule_background_flush` sees pending already at/above the hard cap:
+   `wait_for_flush` + soft-sync synchronously instead of fire-and-forget.
+4. Keep soft-threshold async scheduling unchanged when
+   `soft <= pending < hard`.
+5. Comparison is **`>=` hard** everywhere (append and schedule). A batch of
+   exactly `hard` forces sync on that add.
 
 ## Q&A
 
-### Q1. Include extending `ops/tune_bpann.py` in this plan?
+### Q1. Soft sync vs hard persist when hitting the cap?
 
-**Answer:** No. Library wiring must land first; the tuner cannot grid fields
-that do not exist. Tuner expansion is a separate follow-up after this change.
+**Answer:** Soft sync only. The goal is to shrink the search pending tail, not
+to rewrite `pages.bin`. Hard persist stays on explicit persist / Drop.
+Soft sync clears all pending (`pending → 0`), not merely to just under hard.
 
-### Q2. Keep today’s boundary semantics (`<= exhaustive` vs `>`)?
+### Q2. Default hard cap value?
 
-**Answer:** Yes. Preserve current behavior at defaults:
-`needs_skip_edges` uses `row_count > exhaustive && row_count <= skip_refinement`;
-search uses `rows <= exhaustive` then `rows <= skip_refinement`. Do not change
-cliff meaning while exposing the knobs.
+**Answer:** `1000` (`4 × DEFAULT_PENDING_FLUSH_THRESHOLD`). Validate
+`pending_hard_flush_threshold >= pending_flush_threshold`. Explicit saves that
+set `hard < soft` are rejected.
 
-### Q3. What happens to existing user `config.toml` files missing the new keys?
+### Q3. Enforce on search as well?
 
-**Answer:** `#[serde(default)]` on `BpannConfig` fills missing fields from
-`BpannTuning::default()`, so old files keep today’s 2500 / 150_000 behavior
-without migration.
+**Answer:** No. Enforce on **append** and **schedule** so `add` latency absorbs
+the catch-up and queries keep using the existing pending path without a hidden
+sync. Search-time sync would surprise callers who opted into
+`defer_index_sync_for_search`.
 
-### Q4. Rebuild on-disk indexes when these config values change?
+### Q4. Does `add`’s existing `wait_for_flush` make E redundant?
 
-**Answer:** No. Match existing Tier 1 behavior: tuning is read at call time.
-Build uses current limits when creating skip edges; search uses current limits
-when choosing a path. Rebuild/reindex remains an operator concern (same as
-changing beam width today). Optionally document the mismatch risk in comments
-near `needs_skip_edges` / `search_index_candidates`; do not add automatic
-rebuild.
+**Answer:** No. It prevents pending growth *while a job runs*, but does not
+cap a single large append or unbounded growth when schedule is never called.
+E closes those cases.
+
+### Q5. Migration when an existing TOML has soft > 1000 and no hard key?
+
+**Answer:** Do **not** let serde’s field default (`1000`) + `hard >= soft`
+validation trigger `Config::load`’s full-file fallback (which would silently
+reset soft to 250). On load / `BpannConfig` construction, if the hard key is
+absent, set
+`pending_hard_flush_threshold = max(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, pending_flush_threshold)`.
+Fresh writes still emit an explicit `pending_hard_flush_threshold = …` line.
+Explicit `hard < soft` in a file remains invalid (save rejects; load falls back
+to defaults as today).
+
+### Q6. Builder setters that only bump soft?
+
+**Answer:** Keep `hard >= soft` on the runtime path too:
+`with_pending_flush_threshold` raises hard to at least the new soft when needed;
+`with_pending_hard_flush_threshold` rejects (or clamps per local convention)
+`hard < soft`. `new_empty_with_flush_threshold` / `apply_config_flush_threshold`
+apply both soft and hard from `current_tuning()` (or the explicit args).
 
 ## Plan
 
-### Phase 1 — Tuning types + validation
+### Phase 1 — Config + tuning
 
-- [ ] Add fields to `BpannTuning` in `rust/crates/bpann/src/tuning.rs` with
-      defaults `exhaustive_search_row_limit: 2500`,
-      `skip_refinement_row_limit: 150_000`.
-- [ ] Extend `validate()`:
-      - `exhaustive_search_row_limit == 0` → error
-      - `skip_refinement_row_limit < exhaustive_search_row_limit` → error
-- [ ] Mirror fields through `BpannConfig` `From` / `to_tuning` / accessors in
-      `rust/crates/ennbo/src/file_config.rs`.
-- [ ] Update `file_config` and `tuning` unit tests (defaults in written TOML,
-      invalid exhaustive=0, invalid `skip < exhaustive`).
-- [ ] Update `tests/test_ennbo_config.py` assertions for the new default keys.
+- [ ] Add `pending_hard_flush_threshold: usize` to `BpannTuning`
+      (`bpann/src/tuning.rs`) with default `1000` and constant
+      `DEFAULT_PENDING_HARD_FLUSH_THRESHOLD`.
+- [ ] Validate: `>= 1` and `>= pending_flush_threshold`.
+- [ ] Mirror through `BpannConfig` / `From` / `to_tuning` / accessor /
+      default TOML in `ennbo/src/file_config.rs`.
+- [ ] Migration: missing hard key →
+      `max(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, soft)` (see Q5); do not
+      full-default-fallback solely because hard was absent.
+- [ ] Update `tests/test_ennbo_config.py` and Rust config/tuning unit tests
+      (defaults written; explicit `hard < soft` rejected; missing hard +
+      soft=2000 loads with hard=2000, soft preserved).
 
 **Validation:**
 
-- `cd rust && RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup" cargo test -p bpann tuning`
-- `cd rust && RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup" cargo test -p ennbo file_config`
+- From `rust/`: `cargo test -p bpann tuning`
+- From `rust/`: `cargo test -p ennbo file_config`
 - `PYTHONPATH=src pytest tests/test_ennbo_config.py -q`
-- Fresh `ensure_config_file` output contains
-  `exhaustive_search_row_limit = 2500` and
-  `skip_refinement_row_limit = 150000` (or TOML-equivalent).
+- Fresh config contains `pending_hard_flush_threshold = 1000`.
 
-### Phase 2 — Call sites use `current_tuning()`
+### Phase 2 — Enforce on append and schedule
 
-- [ ] Delete local `EXHAUSTIVE_SEARCH_ROW_LIMIT` /
-      `SKIP_REFINEMENT_ROW_LIMIT` from
-      `rust/crates/bpann/src/index/build.rs` and
-      `rust/crates/bpann/src/index/sync.rs`.
-- [ ] Implement `needs_skip_edges` via `current_tuning()` limits (same
-      inequalities as today).
-- [ ] Implement `search_index_candidates` mode selection via the same tuning
-      fields.
-- [ ] Optionally comment near those call sites that on-disk skip edges reflect
-      build-time limits (Q4).
-- [ ] Add a focused test that changing tuning (test provider or
-      `set_tuning_provider`) switches search/build mode at a fixed row count
-      (e.g. force exhaustive above former default, or force skip-edges on/off).
+- [ ] Thread hard threshold onto `BpannBackend` (constructor /
+      `with_pending_hard_flush_threshold` / apply soft+hard from
+      `current_tuning()` in `disk_bpann/enn_backend.rs`
+      `apply_config_flush_threshold`).
+- [ ] Enforce `hard >= soft` on builder setters (Q6).
+- [ ] After successful `append_rows` on the deferred path: if
+      `pending_rows() >= hard`, run soft sync immediately (exclusive
+      `ensure_index_sync` / publish on the caller; `model.add` already
+      `wait_for_flush` before append).
+- [ ] In `DiskBackendHandle::schedule_background_flush`: if
+      `pending >= hard`, `wait_for_flush` then soft-sync under write lock and
+      return; else keep today’s async soft schedule when `pending >= soft`.
+- [ ] Do not change hard-persist behavior.
 
 **Validation:**
 
-- `rg EXHAUSTIVE_SEARCH_ROW_LIMIT SKIP_REFINEMENT_ROW_LIMIT rust/crates/bpann`
-  returns no matches.
-- `cd rust && RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup" cargo test -p bpann`
-- `cd rust && RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup" cargo test -p ennbo`
-- Mode-switch test passes; default-path persist/search tests still pass
-  (`persist_hardening`, `disk_persist_index`, kiss coverage).
+- Unit test: soft `2`, hard `5`; append 4 rows → pending stays, no forced sync;
+  append more to cross hard → after add, `pending_unindexed_count() == 0`
+  and search no longer brute-forces that tail alone.
+- Unit test: soft `2`, hard `5`; append past soft, `schedule_background_flush`
+  with barrier still async; append past hard without schedule still syncs on add.
+- Unit test: `schedule` with `pending >= hard` completes soft sync before return
+  (no in-flight job left).
+- Unit test: `with_pending_flush_threshold(2000)` leaves `hard >= 2000`.
+- `cargo test -p bpann`
+- `cargo test -p ennbo` (incl. `flush_controller` concurrent-search tests).
 
-### Phase 3 — Integration sanity
+### Phase 3 — Integration / stress sanity
 
-- [ ] Confirm `install_bpann_tuning_from_config` path picks up overrides: write
-      a temp config with non-default limits, `set_config_path`, open a disk
-      backend / run a small search or build that exercises `needs_skip_edges`
-      consistently with search.
+- [ ] Comparison is `>=` hard (documented in Requested Changes). A batch of
+      exactly hard forces sync on that add — including default
+      `ENN_ADD_STRESS_BATCH_SIZE=1000` with default hard=1000 under `--batch`.
+- [ ] Separately confirm async soft schedule when
+      `soft <= pending < hard` (e.g. soft=2, hard=5, or stress without
+      `--batch` / smaller batches so pending stays under hard).
+- [ ] Existing disk persist / reopen tests still pass.
 
 **Validation:**
 
-- `PYTHONPATH=src pytest tests/test_ennbo_config.py tests/test_enn_index_driver.py -q`
-- Manual: set `exhaustive_search_row_limit` high enough that a small multi-k
-  tree build skips skip-edge generation; reopen/search still succeeds (empty
-  skip edges degrade candidate recall, not panic).
+- `PYTHONPATH=src pytest tests/test_enn_index_driver.py tests/test_ennbo_config.py -q`
+- Async-path smoke (pending stays under hard): soft=250, hard=1000, **no**
+  `--batch` (row adds + `schedule`), or an explicit smaller batch:
+  `./ops/stress.py enn bpann_disk 5000 --num-dim=100 --work-dir=/tmp/enn_hard_cap_async --heartbeat-seconds=0`
+  completes with soft schedule still async for ordinary adds.
+- Hard-cap smoke: soft=250, hard=1000, `--batch` (batch=1000 → sync on each add);
+  plus a forced huge single add above hard — `add` time includes soft sync and
+  subsequent query does not scan a multi-thousand pending tail:
+  `./ops/stress.py enn bpann_disk 5000 --num-dim=100 --batch --work-dir=/tmp/enn_hard_cap --heartbeat-seconds=0`

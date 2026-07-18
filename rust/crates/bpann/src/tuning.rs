@@ -11,6 +11,11 @@ pub const INDEX_COMPACT_FRAGMENT_MAX_MIN: usize = 3;
 /// Default rows of pending observations before an index flush is scheduled.
 pub const DEFAULT_PENDING_FLUSH_THRESHOLD: usize = 250;
 
+/// Default hard cap on pending rows before soft sync runs on the calling thread.
+///
+/// Equal to `4 × DEFAULT_PENDING_FLUSH_THRESHOLD`. Must stay `>=` the soft threshold.
+pub const DEFAULT_PENDING_HARD_FLUSH_THRESHOLD: usize = 1000;
+
 /// Default max indexed rows for exhaustive leaf search (and no skip edges at build).
 pub const DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT: usize = 2500;
 
@@ -27,6 +32,8 @@ pub struct BpannTuning {
     pub search_fragment_budget_max: usize,
     pub build_seed: Option<u64>,
     pub pending_flush_threshold: usize,
+    /// Hard pending cap: soft-sync on the caller when `pending >=` this value.
+    pub pending_hard_flush_threshold: usize,
     pub structured_build_row_limit: usize,
     pub search_beam_width: usize,
     /// Max indexed rows using exhaustive leaf search; build stores no skip edges at or below.
@@ -46,6 +53,7 @@ impl Default for BpannTuning {
             search_fragment_budget_max: 3,
             build_seed: None,
             pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
+            pending_hard_flush_threshold: DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
             structured_build_row_limit: 1_024,
             search_beam_width: 1,
             exhaustive_search_row_limit: DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT,
@@ -81,6 +89,14 @@ impl BpannTuning {
             (
                 self.pending_flush_threshold == 0,
                 "pending_flush_threshold must be >= 1".to_string(),
+            ),
+            (
+                self.pending_hard_flush_threshold == 0,
+                "pending_hard_flush_threshold must be >= 1".to_string(),
+            ),
+            (
+                self.pending_hard_flush_threshold < self.pending_flush_threshold,
+                "pending_hard_flush_threshold must be >= pending_flush_threshold".to_string(),
             ),
             (
                 self.structured_build_row_limit == 0,
@@ -181,6 +197,23 @@ mod tests {
     }
 
     #[test]
+    fn default_pending_hard_flush_threshold_is_1000() {
+        assert_eq!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, 1000);
+        assert_eq!(
+            DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
+            4 * DEFAULT_PENDING_FLUSH_THRESHOLD
+        );
+        assert_eq!(
+            BpannTuning::default().pending_hard_flush_threshold,
+            DEFAULT_PENDING_HARD_FLUSH_THRESHOLD
+        );
+        assert_eq!(
+            current_tuning().pending_hard_flush_threshold,
+            DEFAULT_PENDING_HARD_FLUSH_THRESHOLD
+        );
+    }
+
+    #[test]
     fn metamorphic_default_threshold_independent_of_other_fields() {
         // Changing unrelated fields must not change the pending_flush default.
         let base = BpannTuning::default();
@@ -200,6 +233,10 @@ mod tests {
         ];
         for v in variants {
             assert_eq!(v.pending_flush_threshold, DEFAULT_PENDING_FLUSH_THRESHOLD);
+            assert_eq!(
+                v.pending_hard_flush_threshold,
+                DEFAULT_PENDING_HARD_FLUSH_THRESHOLD
+            );
             assert!(v.validate().is_ok());
         }
     }
@@ -212,17 +249,42 @@ mod tests {
         println!("fuzz_pending_flush_threshold_validation seed={seed}");
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         for _ in 0..64 {
-            let thr = rng.gen_range(0usize..10_000);
+            let soft = rng.gen_range(0usize..10_000);
+            let hard = rng.gen_range(0usize..10_000);
             let t = BpannTuning {
-                pending_flush_threshold: thr,
+                pending_flush_threshold: soft,
+                pending_hard_flush_threshold: hard,
                 ..Default::default()
             };
-            if thr == 0 {
-                assert!(t.validate().is_err());
-            } else {
-                assert!(t.validate().is_ok());
-            }
+            let expect_ok = soft >= 1 && hard >= 1 && hard >= soft;
+            assert_eq!(t.validate().is_ok(), expect_ok, "soft={soft} hard={hard}");
         }
+    }
+
+    #[test]
+    fn rejects_hard_below_soft_pending_threshold() {
+        let t = BpannTuning {
+            pending_flush_threshold: 500,
+            pending_hard_flush_threshold: 499,
+            ..Default::default()
+        };
+        assert!(t
+            .validate()
+            .unwrap_err()
+            .contains("pending_hard_flush_threshold"));
+    }
+
+    #[test]
+    fn rejects_zero_hard_pending_threshold() {
+        let t = BpannTuning {
+            pending_hard_flush_threshold: 0,
+            pending_flush_threshold: 1,
+            ..Default::default()
+        };
+        assert!(t
+            .validate()
+            .unwrap_err()
+            .contains("pending_hard_flush_threshold"));
     }
 
     #[test]

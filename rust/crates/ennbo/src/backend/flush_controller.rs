@@ -117,6 +117,35 @@ impl DiskBackendHandle {
             if let Some(msg) = err.as_ref() {
                 return Err(ENNError::InvalidParameter(msg.clone()));
             }
+        }
+
+        let (defer, pending, soft, hard) = {
+            let g = disk_read(&self.data)?;
+            (
+                g.defer_append_indexing_for_flush(),
+                g.pending_unindexed_count(),
+                g.pending_flush_threshold(),
+                g.pending_hard_flush_threshold(),
+            )
+        };
+
+        // Hard cap: wait for any in-flight soft sync, then soft-sync synchronously.
+        if defer && pending >= hard {
+            self.wait_for_flush()?;
+            let mut g = self
+                .data
+                .write()
+                .map_err(|_| ENNError::InvalidParameter("disk backend lock poisoned".to_string()))?;
+            // Re-check under write lock: another path may have drained pending.
+            if g.pending_unindexed_count() >= g.pending_hard_flush_threshold() {
+                if let Some(built) = g.soft_sync_build_detached()? {
+                    g.soft_sync_publish_detached(built)?;
+                }
+            }
+            return Ok(());
+        }
+
+        {
             let job = self
                 .job
                 .lock()
@@ -127,12 +156,7 @@ impl DiskBackendHandle {
             }
         }
 
-        let should_run = {
-            let g = disk_read(&self.data)?;
-            g.defer_append_indexing_for_flush()
-                && g.pending_unindexed_count() >= g.pending_flush_threshold()
-        };
-        if !should_run {
+        if !(defer && pending >= soft) {
             return Ok(());
         }
 
@@ -456,5 +480,120 @@ mod tests {
         handle.schedule_background_flush().expect("schedule ok");
         handle.wait_for_flush().expect("drain");
         handle.persist_index_to_disk().expect("persist");
+    }
+
+    #[test]
+    fn schedule_soft_band_stays_async() {
+        // soft=2, hard=5: land pending in [soft, hard) and assert schedule is async.
+        let dir = TempDir::new().expect("tempdir");
+        let handle = DiskBackendHandle::new(
+            crate::disk_bpann::DiskBpannEnnBackend::new_empty_with_flush_thresholds(
+                dir.path().to_path_buf(),
+                2,
+                1,
+                2,
+                5,
+            )
+            .expect("backend"),
+        );
+        let x = Array2::from_shape_fn((3, 2), |(i, j)| (i + j) as f64);
+        let y = Array2::from_shape_fn((3, 1), |(i, _)| i as f64);
+        write_backend(handle.data())
+            .append_rows(&x.view(), &y.view(), None)
+            .expect("append");
+        assert_eq!(
+            disk_read(handle.data())
+                .expect("read")
+                .pending_unindexed_count(),
+            3
+        );
+
+        let barrier = Arc::new(Barrier::new(2));
+        arm_test_flush_worker_barrier(Arc::clone(&barrier));
+        let t0 = Instant::now();
+        handle.schedule_background_flush().expect("schedule");
+        assert!(
+            t0.elapsed() < Duration::from_millis(200),
+            "soft-band schedule must return without waiting"
+        );
+        // Job still in flight until barrier releases.
+        {
+            let job = handle.job.lock().expect("job");
+            assert!(job.is_some(), "soft-band must leave an in-flight job");
+        }
+        barrier.wait();
+        handle.wait_for_flush().expect("wait");
+        clear_test_flush_worker_barrier();
+        assert_eq!(
+            disk_read(handle.data())
+                .expect("read")
+                .pending_unindexed_count(),
+            0
+        );
+    }
+
+    #[test]
+    fn schedule_hard_path_drains_pending_synchronously() {
+        let dir = TempDir::new().expect("tempdir");
+        let handle = DiskBackendHandle::new(
+            crate::disk_bpann::DiskBpannEnnBackend::new_empty_with_flush_thresholds(
+                dir.path().to_path_buf(),
+                2,
+                1,
+                2,
+                100,
+            )
+            .expect("backend"),
+        );
+        let x = Array2::from_shape_fn((6, 2), |(i, j)| (i + j) as f64);
+        let y = Array2::from_shape_fn((6, 1), |(i, _)| i as f64);
+        write_backend(handle.data())
+            .append_rows(&x.view(), &y.view(), None)
+            .expect("append");
+        assert_eq!(
+            disk_read(handle.data())
+                .expect("read")
+                .pending_unindexed_count(),
+            6
+        );
+        // Drop hard to 5 so existing pending is already at/above the hard cap.
+        write_backend(handle.data()).reconfigure_flush_thresholds(2, 5);
+        handle.schedule_background_flush().expect("hard schedule");
+        assert!(handle.job.lock().expect("job").is_none());
+        assert_eq!(
+            disk_read(handle.data())
+                .expect("read")
+                .pending_unindexed_count(),
+            0
+        );
+        assert!(!dir.path().join("index/pages.bin").exists());
+    }
+
+    #[test]
+    fn append_past_hard_without_schedule_syncs_on_add() {
+        let dir = TempDir::new().expect("tempdir");
+        let handle = DiskBackendHandle::new(
+            crate::disk_bpann::DiskBpannEnnBackend::new_empty_with_flush_thresholds(
+                dir.path().to_path_buf(),
+                2,
+                1,
+                2,
+                5,
+            )
+            .expect("backend"),
+        );
+        let x = Array2::from_shape_fn((5, 2), |(i, j)| (i + j) as f64);
+        let y = Array2::from_shape_fn((5, 1), |(i, _)| i as f64);
+        write_backend(handle.data())
+            .append_rows(&x.view(), &y.view(), None)
+            .expect("append");
+        assert_eq!(
+            disk_read(handle.data())
+                .expect("read")
+                .pending_unindexed_count(),
+            0
+        );
+        // Soft band would have left a job; hard append path must not.
+        assert!(handle.job.lock().expect("job").is_none());
     }
 }

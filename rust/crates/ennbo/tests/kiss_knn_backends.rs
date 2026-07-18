@@ -65,6 +65,7 @@ fn kiss_disk_bpann_helper_names_in_source() {
         "index_memory_bytes",
         "new_empty",
         "pending_flush_threshold",
+        "pending_hard_flush_threshold",
         "append_syncs_at_threshold",
     ] {
         assert!(
