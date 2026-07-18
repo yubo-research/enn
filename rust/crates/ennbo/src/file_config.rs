@@ -313,7 +313,9 @@ mod tests {
 
     #[test]
     fn missing_hard_key_with_soft_above_default_preserves_soft() {
-        // Q5: absent hard must not full-default-fallback when soft > 1000.
+        // Q5: absent hard must not full-default-fallback when soft is elevated.
+        // Resolve policy: hard = max(DEFAULT_HARD, soft). With DEFAULT_HARD=3000
+        // and soft=2000, hard becomes 3000; soft stays 2000.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
         fs::write(
@@ -323,7 +325,22 @@ mod tests {
         .unwrap();
         let cfg = Config::with_path(&path);
         assert_eq!(cfg.pending_flush_threshold(), 2_000);
-        assert_eq!(cfg.pending_hard_flush_threshold(), 2_000);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 3_000);
+    }
+
+    #[test]
+    fn missing_hard_key_with_soft_above_default_hard_uses_soft() {
+        // When soft exceeds DEFAULT_HARD, absent hard resolves to soft.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            "[bpann]\npending_flush_threshold = 5000\nsearch_beam_width = 1\n",
+        )
+        .unwrap();
+        let cfg = Config::with_path(&path);
+        assert_eq!(cfg.pending_flush_threshold(), 5_000);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 5_000);
     }
 
     #[test]

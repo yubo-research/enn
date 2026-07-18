@@ -116,19 +116,24 @@ impl MmapColumnStore {
         self.ensure_capacity(new_nrows)?;
         let row_bytes = self.row_bytes();
         let offset = self.nrows * row_bytes;
-        let dst = &mut self.mmap[offset..offset + rows.nrows() * row_bytes];
-        if rows.is_standard_layout() {
-            let total_bytes = rows.len() * std::mem::size_of::<f64>();
-            let src =
-                unsafe { std::slice::from_raw_parts(rows.as_ptr() as *const u8, total_bytes) };
-            dst.copy_from_slice(src);
+        let n = rows.nrows() * self.ncols;
+        let dst = &mut self.mmap[offset..offset + n * std::mem::size_of::<f64>()];
+        // Bulk memcpy only when the source is C-contiguous. Non-standard layouts
+        // (e.g. Fortran order) have strided rows; copying `row_bytes` from
+        // `row.as_ptr()` would silently write the wrong values.
+        if let Some(src) = rows.as_slice() {
+            let src_bytes = unsafe {
+                std::slice::from_raw_parts(src.as_ptr() as *const u8, n * std::mem::size_of::<f64>())
+            };
+            dst.copy_from_slice(src_bytes);
         } else {
+            let dst_f64 =
+                unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr() as *mut f64, n) };
             for (i, row) in rows.axis_iter(Axis(0)).enumerate() {
-                let row_offset = i * row_bytes;
-                let row_dst = &mut dst[row_offset..row_offset + row_bytes];
-                let bytes =
-                    unsafe { std::slice::from_raw_parts(row.as_ptr() as *const u8, row_bytes) };
-                row_dst.copy_from_slice(bytes);
+                let row_dst = &mut dst_f64[i * self.ncols..(i + 1) * self.ncols];
+                for (d, s) in row_dst.iter_mut().zip(row.iter()) {
+                    *d = *s;
+                }
             }
         }
         self.nrows = new_nrows;

@@ -2,7 +2,7 @@ use faiss::error::Error as FaissError;
 use faiss::index::IndexImpl;
 use faiss::{index_factory, Index, MetricType};
 use memmap2::MmapMut;
-use ndarray::{Array2, ArrayView2, Axis};
+use ndarray::{Array2, ArrayView2};
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 
@@ -223,15 +223,19 @@ impl MmapColumnStore {
         }
         let new_nrows = self.nrows + rows.nrows();
         self.ensure_capacity(new_nrows)?;
-        let row_bytes = self.row_bytes();
-        for (i, row) in rows.axis_iter(Axis(0)).enumerate() {
-            let offset = (self.nrows + i) * row_bytes;
-            let dst = &mut self.mmap[offset..offset + row_bytes];
-            let bytes = unsafe {
-                std::slice::from_raw_parts(row.as_ptr() as *const u8, row_bytes)
-            };
-            dst.copy_from_slice(bytes);
-        }
+        let offset = self.nrows * self.row_bytes();
+        let n = rows.nrows() * self.ncols;
+        let byte_len = n * std::mem::size_of::<f64>();
+        let dst = &mut self.mmap[offset..offset + byte_len];
+        // Always materialize C-order first, then one memcpy. Correct for Fortran /
+        // strided views without sharing bpann's as_slice + axis_iter dual path.
+        let contiguous = rows.as_standard_layout();
+        let src = contiguous
+            .as_slice()
+            .expect("as_standard_layout yields a contiguous f64 slice");
+        let src_bytes =
+            unsafe { std::slice::from_raw_parts(src.as_ptr() as *const u8, byte_len) };
+        dst.copy_from_slice(src_bytes);
         self.nrows = new_nrows;
         Ok(())
     }
@@ -394,6 +398,31 @@ mod faiss_backend_tests {
         }
         assert_eq!(store.nrows, n);
         assert_eq!(store.mmap_row_slice(n - 1).unwrap()[0], (n - 1) as f64);
+    }
+
+    #[test]
+    fn mmap_append_fortran_order_preserves_rows() {
+        use ndarray::{Array2, ShapeBuilder};
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().expect("tempdir");
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 3, None).unwrap();
+        let mut f = Array2::<f64>::zeros((2, 3).f());
+        f[[0, 0]] = 1.0;
+        f[[0, 1]] = 2.0;
+        f[[0, 2]] = 3.0;
+        f[[1, 0]] = 4.0;
+        f[[1, 1]] = 5.0;
+        f[[1, 2]] = 6.0;
+        assert!(!f.is_standard_layout());
+        store.mmap_append(&f.view()).unwrap();
+        assert_eq!(
+            store.mmap_row_slice(0).unwrap(),
+            &[1.0, 2.0, 3.0],
+            "row0 corrupted under Fortran layout"
+        );
+        assert_eq!(store.mmap_row_slice(1).unwrap(), &[4.0, 5.0, 6.0]);
     }
 
     #[test]

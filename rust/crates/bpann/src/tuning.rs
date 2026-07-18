@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn default_pending_hard_flush_threshold_is_3000() {
         assert_eq!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, 3000);
-        assert!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD >= DEFAULT_PENDING_FLUSH_THRESHOLD);
+        // hard >= soft is enforced by BpannTuning::validate (see default_tuning_is_valid).
         assert_eq!(
             BpannTuning::default().pending_hard_flush_threshold,
             DEFAULT_PENDING_HARD_FLUSH_THRESHOLD
