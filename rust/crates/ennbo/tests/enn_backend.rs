@@ -142,8 +142,9 @@ fn scale_x_rejects_bpann_disk() {
 #[test]
 fn kiss_backend_mod_symbol_refs() {
     fn from_env() {}
-    fn disk_lock() {}
+    fn disk_read() {}
+    fn disk_write() {}
     fn disk_driver() {}
     fn index_len() {}
-    let _ = (from_env, disk_lock, disk_driver, index_len);
+    let _ = (from_env, disk_read, disk_write, disk_driver, index_len);
 }

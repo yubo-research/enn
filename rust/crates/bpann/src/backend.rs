@@ -266,17 +266,9 @@ impl BpannBackend {
     /// May write `indexed_rows.bin`. Does not write `pages.bin` / `skip_edges.bin`
     /// and does not clear `index_dirty` (hard persist alone clears disk-dirty).
     pub fn ensure_index_sync(&mut self) -> Result<(), BpannError> {
-        let end = self.len();
-        self.index.ensure_sync_for_backend(
-            &self.train_x,
-            self.num_dim,
-            self.scale_x,
-            self.x_scale.as_slice().unwrap(),
-            &self.work_dir,
-            self.num_metrics,
-            end,
-        )?;
-        self.pending_unindexed.store(0, Ordering::Relaxed);
+        if let Some(built) = soft_sync_build(self)? {
+            soft_sync_publish(self, built);
+        }
         Ok(())
     }
 
@@ -492,6 +484,34 @@ impl BpannBackend {
             Array1::ones(num_dim),
         )
     }
+}
+
+/// Build a soft-sync result under a shared borrow (no publish).
+/// Readers may search the live index concurrently while this runs.
+pub fn soft_sync_build(backend: &BpannBackend) -> Result<Option<IncrementalIndex>, BpannError> {
+    let end = backend.len();
+    if backend.index.indexed_rows >= end {
+        return Ok(None);
+    }
+    let mut working = backend.index.clone();
+    working.ensure_sync_for_backend(
+        &backend.train_x,
+        backend.num_dim,
+        backend.scale_x,
+        backend.x_scale.as_slice().unwrap(),
+        &backend.work_dir,
+        backend.num_metrics,
+        end,
+    )?;
+    Ok(Some(working))
+}
+
+/// Publish a detached soft-sync result under exclusive borrow.
+pub fn soft_sync_publish(backend: &mut BpannBackend, built: IncrementalIndex) {
+    backend.index = built;
+    backend
+        .pending_unindexed
+        .store(0, Ordering::Relaxed);
 }
 
 pub fn open_rejects_num_dim(num_dim: usize) -> Result<(), BpannError> {

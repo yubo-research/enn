@@ -7,9 +7,12 @@ pub mod mmap_store;
 pub mod observation;
 pub mod tuning;
 
-pub use backend::{BpannBackend, DEFAULT_PENDING_FLUSH_THRESHOLD, PAPER_TEX_PATH};
+pub use backend::{
+    soft_sync_build, soft_sync_publish, BpannBackend, DEFAULT_PENDING_FLUSH_THRESHOLD,
+    PAPER_TEX_PATH,
+};
 pub use error::BpannError;
-pub use index::BpannIndex;
+pub use index::{BpannIndex, IncrementalIndex};
 pub use observation::{MAX_NUM_DIM, MAX_RECORD_STRIDE};
 pub use tuning::{
     clear_tuning_provider, current_tuning, set_tuning_provider, BpannTuning,

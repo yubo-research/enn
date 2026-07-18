@@ -50,6 +50,7 @@ struct IndexBuildContext<'a> {
     num_metrics: usize,
 }
 
+#[derive(Clone)]
 pub struct IncrementalIndex {
     pub indices: Vec<BpannIndex>,
     pub indexed_rows: usize,

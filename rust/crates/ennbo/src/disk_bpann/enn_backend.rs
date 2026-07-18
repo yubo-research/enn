@@ -141,8 +141,20 @@ impl DiskBpannEnnBackend {
         self.inner.defer_append_indexing()
     }
 
-    pub(crate) fn soft_sync_inner(&mut self) -> Result<(), ENNError> {
-        self.inner.ensure_index_sync().map_err(bpann_err)
+    /// Build soft-sync fragments without mutating the published index.
+    pub(crate) fn soft_sync_build_detached(
+        &self,
+    ) -> Result<Option<bpann::IncrementalIndex>, ENNError> {
+        bpann::soft_sync_build(&self.inner).map_err(bpann_err)
+    }
+
+    /// Publish a detached soft-sync result (short exclusive critical section).
+    pub(crate) fn soft_sync_publish_detached(
+        &mut self,
+        built: bpann::IncrementalIndex,
+    ) -> Result<(), ENNError> {
+        bpann::soft_sync_publish(&mut self.inner, built);
+        Ok(())
     }
 
     pub fn persist_index_to_disk(&mut self) -> Result<(), ENNError> {
@@ -348,7 +360,11 @@ mod tests {
             )
             .expect("append");
         assert!(backend.pending_unindexed_count() > 0);
-        backend.soft_sync_inner().expect("soft sync");
+        if let Some(built) = backend.soft_sync_build_detached().expect("build") {
+            backend
+                .soft_sync_publish_detached(built)
+                .expect("publish");
+        }
         assert_eq!(backend.pending_unindexed_count(), 0);
         assert!(!dir.path().join("index/pages.bin").exists());
         let _mapped = bpann_err(bpann::BpannError::InvalidParameter("x".into()));
