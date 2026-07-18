@@ -7,6 +7,31 @@ use crate::error::BpannError;
 use crate::index::build::IndexHeader;
 use crate::index::page::{write_pages_index, Page};
 
+#[cfg(test)]
+thread_local! {
+    static TEST_PERSIST_FAIL_AFTER_PAGES_RENAME: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Hold while injecting a mid-persist failure (thread-local; safe under parallel tests).
+#[cfg(test)]
+pub(crate) struct TestPersistFailGuard;
+
+#[cfg(test)]
+impl TestPersistFailGuard {
+    pub(crate) fn after_pages_rename() -> Self {
+        TEST_PERSIST_FAIL_AFTER_PAGES_RENAME.with(|c| c.set(true));
+        Self
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestPersistFailGuard {
+    fn drop(&mut self) {
+        TEST_PERSIST_FAIL_AFTER_PAGES_RENAME.with(|c| c.set(false));
+    }
+}
+
 pub(crate) fn skip_edges_bytes(edges: &HashMap<u32, Vec<u32>>) -> Vec<u8> {
     let mut buf = Vec::new();
     buf.extend_from_slice(&(edges.len() as u32).to_le_bytes());
@@ -65,7 +90,8 @@ pub(crate) fn persist_index_files(
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
         fs::rename(&skip_tmp, &skip_path)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        if std::env::var("BPANN_TEST_PERSIST_FAIL").as_deref() == Ok("after_pages_rename") {
+        #[cfg(test)]
+        if TEST_PERSIST_FAIL_AFTER_PAGES_RENAME.with(|c| c.get()) {
             return Err(BpannError::InvalidParameter(
                 "test-injected persist failure after pages rename".to_string(),
             ));
@@ -127,18 +153,15 @@ mod tests {
         )
         .unwrap();
         let pages_before = fs::read(index_dir.join("pages.bin")).unwrap();
-        unsafe {
-            std::env::set_var("BPANN_TEST_PERSIST_FAIL", "after_pages_rename");
-        }
-        assert!(persist_index_files(
-            &index_dir,
-            &index.header,
-            &index.pages,
-            &index.skip_edges,
-        )
-        .is_err());
-        unsafe {
-            std::env::remove_var("BPANN_TEST_PERSIST_FAIL");
+        {
+            let _fail = TestPersistFailGuard::after_pages_rename();
+            assert!(persist_index_files(
+                &index_dir,
+                &index.header,
+                &index.pages,
+                &index.skip_edges,
+            )
+            .is_err());
         }
         assert_eq!(pages_before, fs::read(index_dir.join("pages.bin")).unwrap());
         BpannIndex::open(index_dir).expect("index must open after rollback");
@@ -167,18 +190,15 @@ mod tests {
         let opened = BpannIndex::open(index_dir.clone()).expect("initial open");
         assert_eq!(opened.header.indexed_rows, 3);
 
-        unsafe {
-            std::env::set_var("BPANN_TEST_PERSIST_FAIL", "after_pages_rename");
-        }
-        assert!(persist_index_files(
-            &index_dir,
-            &index.header,
-            &index.pages,
-            &index.skip_edges,
-        )
-        .is_err());
-        unsafe {
-            std::env::remove_var("BPANN_TEST_PERSIST_FAIL");
+        {
+            let _fail = TestPersistFailGuard::after_pages_rename();
+            assert!(persist_index_files(
+                &index_dir,
+                &index.header,
+                &index.pages,
+                &index.skip_edges,
+            )
+            .is_err());
         }
 
         let reopened = BpannIndex::open(index_dir).expect("index must open after partial write");

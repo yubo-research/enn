@@ -262,6 +262,9 @@ impl BpannBackend {
         Ok(())
     }
 
+    /// Soft sync: build/compact fragments in memory and update pending counters.
+    /// May write `indexed_rows.bin`. Does not write `pages.bin` / `skip_edges.bin`
+    /// and does not clear `index_dirty` (hard persist alone clears disk-dirty).
     pub fn ensure_index_sync(&mut self) -> Result<(), BpannError> {
         let end = self.len();
         self.index.ensure_sync_for_backend(
@@ -274,7 +277,6 @@ impl BpannBackend {
             end,
         )?;
         self.pending_unindexed.store(0, Ordering::Relaxed);
-        *self.index_dirty.lock().expect("index_dirty") = false;
         Ok(())
     }
 

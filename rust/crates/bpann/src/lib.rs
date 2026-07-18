@@ -515,6 +515,7 @@ mod acceptance_tests {
             let (x, y) = synthetic_train(24, 4, 2);
             b.append_rows(&x.view(), &y.view(), None).unwrap();
             b.ensure_index_sync().unwrap();
+            b.persist_index_to_disk().unwrap();
             fs::read(path.join("index/pages.bin")).unwrap()
         };
         let b2 = BpannBackend::reopen(path.clone()).unwrap();

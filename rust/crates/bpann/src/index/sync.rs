@@ -207,26 +207,17 @@ impl IncrementalIndex {
             return Ok(());
         }
         self.build_batch(ctx, self.indexed_rows, end)?;
-        self.maybe_compact_or_persist(ctx)?;
+        self.maybe_compact(ctx)?;
         obs::write_indexed_rows(ctx.work_dir, self.indexed_rows)?;
         Ok(())
     }
 
-    fn maybe_compact_or_persist(&mut self, ctx: &IndexBuildContext<'_>) -> Result<(), BpannError> {
+    /// RAM amalgamation only: no `persist()`, no metadata rewrite.
+    fn maybe_compact(&mut self, ctx: &IndexBuildContext<'_>) -> Result<(), BpannError> {
         let max_fragments = index_compact_threshold(self.indexed_rows);
         let compact_limit = max_fragments.saturating_mul(2).max(max_fragments + 1);
         if self.indices.len() > compact_limit {
             self.compact(ctx)?;
-        } else if self.indices.len() == 1 {
-            self.indices[0].persist()?;
-            obs::bpann_write_metadata(
-                ctx.work_dir,
-                ctx.train_x.nrows,
-                ctx.num_dim,
-                ctx.num_metrics,
-                ctx.scale_x,
-                self.indexed_rows,
-            )?;
         }
         Ok(())
     }
@@ -241,17 +232,6 @@ impl IncrementalIndex {
             let over = self.indices.len() - max_fragments;
             let merge_n = over.clamp(2, 4).min(self.indices.len());
             self.amalgamate_smallest_run(ctx, merge_n)?;
-        }
-        if self.indices.len() == 1 {
-            self.indices[0].persist()?;
-            obs::bpann_write_metadata(
-                ctx.work_dir,
-                ctx.train_x.nrows,
-                ctx.num_dim,
-                ctx.num_metrics,
-                ctx.scale_x,
-                self.indexed_rows,
-            )?;
         }
         Ok(())
     }
@@ -489,7 +469,7 @@ mod kiss_coverage_tests {
                     usize,
                 ) -> Result<(), BpannError>,
             IncrementalIndex::ensure_sync as fn(&mut IncrementalIndex, &IndexBuildContext<'_>, usize) -> Result<(), BpannError>,
-            IncrementalIndex::maybe_compact_or_persist
+            IncrementalIndex::maybe_compact
                 as fn(&mut IncrementalIndex, &IndexBuildContext<'_>) -> Result<(), BpannError>,
             IncrementalIndex::compact as fn(&mut IncrementalIndex, &IndexBuildContext<'_>) -> Result<(), BpannError>,
             IncrementalIndex::amalgamate_smallest_run
@@ -577,6 +557,12 @@ mod kiss_coverage_tests {
             .unwrap();
         let results = idx.search_candidates(&[0.0, 0.0], 1, None).unwrap();
         let _ = results;
+        assert_eq!(idx.indexed_rows, 2);
+        assert!(!idx.indices.is_empty());
+        // Soft sync leaves pages on disk unwritten; hard persist materializes files.
+        assert_eq!(idx.index_memory_bytes(), 0);
+        idx.persist_to_disk_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1)
+            .unwrap();
         assert!(idx.index_memory_bytes() > 0);
     }
 

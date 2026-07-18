@@ -149,3 +149,41 @@ fn disk_tell_does_not_rewrite_index() {
         .expect("neighbors");
     assert_eq!(neighbors_after_persist, neighbors_after_sync);
 }
+
+#[test]
+fn schedule_soft_sync_leaves_pages_unchanged_until_persist() {
+    let dir = TempDir::new().expect("tempdir");
+    let work_dir = dir.path().to_path_buf();
+    let dim = 8usize;
+    let mut model = EpistemicNearestNeighbors::new_empty(
+        dim,
+        1,
+        IndexDriver::BpAnnDisk,
+        EnnStorage::Disk,
+        Some(work_dir.clone()),
+        Some(50),
+    )
+    .expect("new_empty");
+    let pages = work_dir.join("index/pages.bin");
+    assert!(!pages.exists());
+
+    for start in [0usize, 50, 100] {
+        let x = Array2::from_shape_fn((60, dim), |(i, j)| (start + i + j) as f64);
+        let y = Array2::from_shape_fn((60, 1), |(i, _)| (start + i) as f64);
+        append_rows(&mut model, &x.view(), &y.view());
+        model.schedule_background_flush().expect("schedule");
+        model.index_access().ensure_sync().expect("wait");
+    }
+    model.index_access().ensure_sync().expect("soft drain");
+    assert!(!pages.exists(), "schedule/wait soft sync must not write pages.bin");
+
+    let query = Array2::from_shape_fn((1, dim), |(_, j)| j as f64 * 0.01);
+    let idx = model
+        .neighbors(&query.view(), 3, false)
+        .expect("neighbors searchable after soft sync");
+    assert_eq!(idx.ncols(), 3);
+    assert!(idx[[0, 0]] < 180);
+
+    model.persist_index_to_disk().expect("hard persist");
+    assert!(pages.exists());
+}

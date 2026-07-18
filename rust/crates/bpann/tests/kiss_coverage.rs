@@ -187,7 +187,7 @@ fn multi_fragment_persist_to_disk_reopen_matches_row_count() {
 }
 
 #[test]
-fn ensure_index_sync_noop_and_single_index_persist() {
+fn ensure_index_sync_noop_and_soft_sync_skips_hard_persist() {
     let dir = TempDir::new().unwrap();
     let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
     b.ensure_index_sync().unwrap();
@@ -199,6 +199,9 @@ fn ensure_index_sync_noop_and_single_index_persist() {
     .unwrap();
     b.ensure_index_sync().unwrap();
     assert_eq!(b.indexed_rows(), 3);
+    assert!(!dir.path().join("index/header.json").exists());
+    assert!(!dir.path().join("index/pages.bin").exists());
+    b.persist_index_to_disk().unwrap();
     assert!(dir.path().join("index/header.json").exists());
 }
 
@@ -248,7 +251,7 @@ fn kiss_incremental_index_module_symbols() {
         "ensure_sync",
         "persist_to_disk",
         "persist_to_disk_for_backend",
-        "maybe_compact_or_persist",
+        "maybe_compact",
         "build_index_batch",
         "build_batch",
         "amalgamate_smallest_pair",

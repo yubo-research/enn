@@ -137,17 +137,12 @@ impl DiskBpannEnnBackend {
         self.inner.mark_index_stale();
     }
 
-    pub fn wait_for_flush(&self) -> Result<(), ENNError> {
-        Ok(())
+    pub(crate) fn defer_append_indexing_for_flush(&self) -> bool {
+        self.inner.defer_append_indexing()
     }
 
-    pub fn schedule_background_flush(&mut self) -> Result<(), ENNError> {
-        if self.inner.defer_append_indexing()
-            && self.pending_unindexed_count() >= self.pending_flush_threshold()
-        {
-            self.inner.ensure_index_sync().map_err(bpann_err)?;
-        }
-        Ok(())
+    pub(crate) fn soft_sync_inner(&mut self) -> Result<(), ENNError> {
+        self.inner.ensure_index_sync().map_err(bpann_err)
     }
 
     pub fn persist_index_to_disk(&mut self) -> Result<(), ENNError> {
@@ -332,5 +327,35 @@ mod tests {
             )
             .expect("append");
         assert!(backend.pending_unindexed_count() > 0);
+    }
+
+    #[test]
+    fn soft_sync_inner_drains_pending_without_pages() {
+        let dir = TempDir::new().expect("tempdir");
+        let mut backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
+            dir.path().to_path_buf(),
+            2,
+            1,
+            5,
+        )
+        .expect("backend");
+        assert!(backend.defer_append_indexing_for_flush());
+        backend
+            .append_rows(
+                &array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]].view(),
+                &array![[0.0], [1.0], [2.0]].view(),
+                None,
+            )
+            .expect("append");
+        assert!(backend.pending_unindexed_count() > 0);
+        backend.soft_sync_inner().expect("soft sync");
+        assert_eq!(backend.pending_unindexed_count(), 0);
+        assert!(!dir.path().join("index/pages.bin").exists());
+        let _mapped = bpann_err(bpann::BpannError::InvalidParameter("x".into()));
+        assert!(matches!(_mapped, ENNError::InvalidParameter(_)));
+        let _tuned = apply_config_flush_threshold(
+            bpann::BpannBackend::new_empty(dir.path().join("t"), 2, 1).expect("tuned"),
+        );
+        assert!(_tuned.pending_flush_threshold() >= 1);
     }
 }
