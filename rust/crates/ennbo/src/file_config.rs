@@ -51,6 +51,10 @@ pub struct BpannConfig {
     pub structured_build_row_limit: usize,
     /// Beam width used during approximate tree traversal.
     pub search_beam_width: usize,
+    /// Max indexed rows using exhaustive leaf search; build stores no skip edges at or below.
+    pub exhaustive_search_row_limit: usize,
+    /// Max indexed rows using skip-refinement search; build stores skip edges in the middle band.
+    pub skip_refinement_row_limit: usize,
 }
 
 impl Default for BpannConfig {
@@ -72,6 +76,8 @@ impl From<bpann::BpannTuning> for BpannConfig {
             pending_flush_threshold: t.pending_flush_threshold,
             structured_build_row_limit: t.structured_build_row_limit,
             search_beam_width: t.search_beam_width,
+            exhaustive_search_row_limit: t.exhaustive_search_row_limit,
+            skip_refinement_row_limit: t.skip_refinement_row_limit,
         }
     }
 }
@@ -93,6 +99,8 @@ impl BpannConfig {
             pending_flush_threshold: self.pending_flush_threshold,
             structured_build_row_limit: self.structured_build_row_limit,
             search_beam_width: self.search_beam_width,
+            exhaustive_search_row_limit: self.exhaustive_search_row_limit,
+            skip_refinement_row_limit: self.skip_refinement_row_limit,
         }
     }
 }
@@ -207,6 +215,14 @@ impl Config {
     pub fn search_beam_width(&self) -> usize {
         self.load().bpann.search_beam_width
     }
+
+    pub fn exhaustive_search_row_limit(&self) -> usize {
+        self.load().bpann.exhaustive_search_row_limit
+    }
+
+    pub fn skip_refinement_row_limit(&self) -> usize {
+        self.load().bpann.skip_refinement_row_limit
+    }
 }
 
 /// Install BPANN tuning so the `bpann` crate reads values via [`Config`].
@@ -232,14 +248,20 @@ mod tests {
         assert_eq!(cfg.pending_flush_threshold(), 250);
         assert_eq!(cfg.structured_build_row_limit(), 1_024);
         assert_eq!(cfg.search_beam_width(), 1);
+        assert_eq!(cfg.exhaustive_search_row_limit(), 2500);
+        assert_eq!(cfg.skip_refinement_row_limit(), 150_000);
         assert!(path.exists());
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("index_compact_rows_per_fragment"));
         assert!(text.contains("pending_flush_threshold"));
         assert!(text.contains("structured_build_row_limit"));
         assert!(text.contains("search_beam_width"));
+        assert!(text.contains("exhaustive_search_row_limit"));
+        assert!(text.contains("skip_refinement_row_limit"));
         assert!(text.contains("10000"));
         assert!(text.contains("pending_flush_threshold = 250"));
+        assert!(text.contains("exhaustive_search_row_limit = 2500"));
+        assert!(text.contains("skip_refinement_row_limit = 150000"));
     }
 
     #[test]
@@ -253,11 +275,15 @@ mod tests {
         file.bpann.search_beam_width = 4;
         file.bpann.pending_flush_threshold = 2_000;
         file.bpann.structured_build_row_limit = 2_048;
+        file.bpann.exhaustive_search_row_limit = 5_000;
+        file.bpann.skip_refinement_row_limit = 200_000;
         cfg.save(&file).unwrap();
         assert_eq!(cfg.search_fragment_budget_max(), 7);
         assert_eq!(cfg.search_beam_width(), 4);
         assert_eq!(cfg.pending_flush_threshold(), 2_000);
         assert_eq!(cfg.structured_build_row_limit(), 2_048);
+        assert_eq!(cfg.exhaustive_search_row_limit(), 5_000);
+        assert_eq!(cfg.skip_refinement_row_limit(), 200_000);
     }
 
     #[test]
@@ -269,6 +295,17 @@ mod tests {
         file.bpann.search_beam_width = 0;
         let err = cfg.save(&file).unwrap_err();
         assert!(err.contains("search_beam_width"));
+
+        let mut file = ConfigFile::default();
+        file.bpann.exhaustive_search_row_limit = 0;
+        let err = cfg.save(&file).unwrap_err();
+        assert!(err.contains("exhaustive_search_row_limit"));
+
+        let mut file = ConfigFile::default();
+        file.bpann.exhaustive_search_row_limit = 100;
+        file.bpann.skip_refinement_row_limit = 50;
+        let err = cfg.save(&file).unwrap_err();
+        assert!(err.contains("skip_refinement_row_limit"));
     }
 
     #[test]
@@ -337,5 +374,25 @@ mod tests {
         assert_eq!(cfg.search_rows_per_fragment(), 50_000);
         assert_eq!(cfg.small_fragment_merge_rows(), 9_000);
         assert_eq!(cfg.build_seed(), Some(42));
+    }
+
+    #[test]
+    fn install_tuning_picks_up_row_limit_overrides() {
+        // Avoid set_config_path here: it is process-global and races other tests.
+        // Mirror install_bpann_tuning_from_config by loading via with_path → to_tuning.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        let cfg = Config::with_path(&path);
+        let mut file = ConfigFile::default();
+        file.bpann.exhaustive_search_row_limit = 7_000;
+        file.bpann.skip_refinement_row_limit = 90_000;
+        cfg.save(&file).unwrap();
+
+        let t = cfg.load().bpann.to_tuning();
+        assert_eq!(t.exhaustive_search_row_limit, 7_000);
+        assert_eq!(t.skip_refinement_row_limit, 90_000);
+        assert!(!t.rows_need_skip_edges(5_000));
+        assert!(t.rows_need_skip_edges(8_000));
+        assert!(!t.rows_need_skip_edges(100_000));
     }
 }

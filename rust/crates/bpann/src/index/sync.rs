@@ -14,8 +14,6 @@ use crate::observation as obs;
 use crate::tuning::current_tuning;
 
 const INDEX_COMPACT_THRESHOLD_MIN: usize = 3;
-const EXHAUSTIVE_SEARCH_ROW_LIMIT: usize = 2500;
-const SKIP_REFINEMENT_ROW_LIMIT: usize = 150_000;
 
 fn index_compact_threshold(indexed_rows: usize) -> usize {
     if indexed_rows <= 1000 {
@@ -412,12 +410,15 @@ fn search_index_candidates(
     store: Option<&MmapSearchStore<'_>>,
 ) -> Result<Vec<(u32, f32)>, BpannError> {
     let rows = index.header.indexed_rows;
-    if rows <= EXHAUSTIVE_SEARCH_ROW_LIMIT {
+    // Mode cliffs are call-time tuning. On-disk skip edges reflect build-time limits
+    // and may be empty if limits changed since the fragment was built.
+    let t = current_tuning();
+    if t.use_exhaustive_search(rows) {
         search_exhaustive_leaves_with_store(index, query, k, store)
     } else {
         let beam = search_beam_width(rows);
         let mut visited = Vec::new();
-        if rows <= SKIP_REFINEMENT_ROW_LIMIT {
+        if t.use_skip_refinement_search(rows) {
             search_with_skip_refinement_with_store(index, query, k, beam, &mut visited, store)
         } else {
             search_greedy_blocks_only_with_store(index, query, k, beam, store)

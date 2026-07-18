@@ -7,6 +7,7 @@ use crate::error::BpannError;
 use crate::index::kmeans::{PartitionNode, PartitionTree};
 use crate::index::page::{write_pages_index, Page};
 use crate::index::persist_atomic::skip_edges_bytes;
+use crate::tuning::current_tuning;
 
 pub const DEFAULT_LEAF_CAPACITY: usize = 32;
 pub const DEFAULT_SKIP_NEIGHBORS: usize = 3;
@@ -29,11 +30,10 @@ pub struct BpannIndex {
     pub index_dir: PathBuf,
 }
 
-const EXHAUSTIVE_SEARCH_ROW_LIMIT: usize = 2500;
-const SKIP_REFINEMENT_ROW_LIMIT: usize = 150_000;
-
+/// Skip edges are written only for the middle row-count band. Limits come from
+/// call-time tuning; on-disk edges still reflect whatever limits were active at build.
 fn needs_skip_edges(row_count: usize) -> bool {
-    row_count > EXHAUSTIVE_SEARCH_ROW_LIMIT && row_count <= SKIP_REFINEMENT_ROW_LIMIT
+    current_tuning().rows_need_skip_edges(row_count)
 }
 
 fn remap_page(page: &Page, id_map: &HashMap<u32, u32>) -> Page {
@@ -542,5 +542,31 @@ mod kiss_coverage_tests {
         pages[0] ^= 0xFF;
         fs::write(&pages_path, pages).unwrap();
         assert!(!index.on_disk_index_matches().unwrap());
+    }
+
+    #[test]
+    fn needs_skip_edges_follows_tuning_provider() {
+        use crate::tuning::{clear_tuning_provider, set_tuning_provider, BpannTuning};
+
+        clear_tuning_provider();
+        // Defaults: 100 rows is exhaustive → no skip edges.
+        assert!(!needs_skip_edges(100));
+
+        set_tuning_provider(Box::new(|| BpannTuning {
+            exhaustive_search_row_limit: 10,
+            skip_refinement_row_limit: 1_000,
+            ..Default::default()
+        }));
+        assert!(needs_skip_edges(100));
+
+        set_tuning_provider(Box::new(|| BpannTuning {
+            exhaustive_search_row_limit: 10,
+            skip_refinement_row_limit: 50,
+            ..Default::default()
+        }));
+        assert!(!needs_skip_edges(100));
+
+        clear_tuning_provider();
+        assert!(!needs_skip_edges(100));
     }
 }

@@ -16,6 +16,7 @@ pub use index::{BpannIndex, IncrementalIndex};
 pub use observation::{MAX_NUM_DIM, MAX_RECORD_STRIDE};
 pub use tuning::{
     clear_tuning_provider, current_tuning, set_tuning_provider, BpannTuning,
+    DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT, DEFAULT_SKIP_REFINEMENT_ROW_LIMIT,
     INDEX_COMPACT_FRAGMENT_MAX_MIN,
 };
 
