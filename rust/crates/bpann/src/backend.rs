@@ -396,7 +396,7 @@ impl BpannBackend {
                     pending_start,
                     total,
                     query_buf,
-                    k_eff,
+                    pool_k,
                     scale_x,
                     &x_scale_vec,
                 )

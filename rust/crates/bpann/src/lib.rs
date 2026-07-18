@@ -240,6 +240,73 @@ mod acceptance_tests {
         assert_eq!(idx[[0, 0]], 1);
     }
 
+    /// Regression: with pending (unindexed) rows, exclude_nearest must still
+    /// surface the true second-nearest pending neighbor, not a far indexed decoy.
+    /// Requires the pending brute-force leg to fetch pool_k (= search_k+1), not k_eff.
+    #[test]
+    fn test_search_exclude_nearest_pending_returns_second_nearest() {
+        let dir = TempDir::new().unwrap();
+        let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1).unwrap();
+        // Far indexed decoys.
+        b.append_rows(
+            &array![[1000.0], [1001.0], [1002.0]].view(),
+            &array![[0.0], [0.0], [0.0]].view(),
+            None,
+        )
+        .unwrap();
+        b.ensure_index_sync().unwrap();
+        assert_eq!(b.indexed_rows(), 3);
+        // Pending: nearest (row 3) and second-nearest (row 4) to query at 0.
+        b.append_rows(
+            &array![[1.0], [2.0]].view(),
+            &array![[0.0], [0.0]].view(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(b.pending_rows(), 2);
+        let (_, idx) = b
+            .search(&array![[0.0]].view(), 1, true)
+            .unwrap();
+        assert_eq!(
+            idx[[0, 0]],
+            4,
+            "exclude_nearest with pending top-2 must return second-nearest pending (4), got {}",
+            idx[[0, 0]]
+        );
+    }
+
+    /// Same pending under-fetch bug at search_k > 1: last returned slot must stay
+    /// on the pending distance ladder, not promote a far indexed decoy.
+    #[test]
+    fn test_search_exclude_nearest_pending_ladder_topk() {
+        let dir = TempDir::new().unwrap();
+        let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1).unwrap();
+        b.append_rows(
+            &array![[1000.0], [1001.0], [1002.0]].view(),
+            &array![[0.0], [0.0], [0.0]].view(),
+            None,
+        )
+        .unwrap();
+        b.ensure_index_sync().unwrap();
+        // Pending ladder at 1,2,3,4,5 (nearest..5th); query at 0 needs ranks 2..5 after exclude.
+        b.append_rows(
+            &array![[1.0], [2.0], [3.0], [4.0], [5.0]].view(),
+            &array![[0.0], [0.0], [0.0], [0.0], [0.0]].view(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(b.pending_rows(), 5);
+        let (_, idx) = b
+            .search(&array![[0.0]].view(), 4, true)
+            .unwrap();
+        let got: Vec<i64> = idx.row(0).iter().copied().collect();
+        assert_eq!(
+            got,
+            vec![4, 5, 6, 7],
+            "exclude_nearest pending ladder must return pending ranks 2..5, got {got:?}"
+        );
+    }
+
     #[test]
     fn test_search_batch_matches_rowwise() {
         let dir = TempDir::new().unwrap();
