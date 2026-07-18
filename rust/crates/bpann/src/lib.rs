@@ -453,14 +453,14 @@ mod acceptance_tests {
     }
 
     #[test]
-    fn test_pending_hard_flush_threshold_default_is_1000() {
+    fn test_pending_hard_flush_threshold_default_is_3000() {
         let dir = TempDir::new().unwrap();
         let b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
         assert_eq!(
             b.pending_hard_flush_threshold(),
             DEFAULT_PENDING_HARD_FLUSH_THRESHOLD
         );
-        assert_eq!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, 1000);
+        assert_eq!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, 3000);
     }
 
     #[test]

@@ -266,7 +266,7 @@ mod tests {
         let cfg = Config::with_path(&path);
         assert_eq!(cfg.index_compact_rows_per_fragment(), 10_000);
         assert_eq!(cfg.pending_flush_threshold(), 250);
-        assert_eq!(cfg.pending_hard_flush_threshold(), 1000);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 3000);
         assert_eq!(cfg.structured_build_row_limit(), 1_024);
         assert_eq!(cfg.search_beam_width(), 1);
         assert_eq!(cfg.exhaustive_search_row_limit(), 2500);
@@ -282,7 +282,7 @@ mod tests {
         assert!(text.contains("skip_refinement_row_limit"));
         assert!(text.contains("10000"));
         assert!(text.contains("pending_flush_threshold = 250"));
-        assert!(text.contains("pending_hard_flush_threshold = 1000"));
+        assert!(text.contains("pending_hard_flush_threshold = 3000"));
         assert!(text.contains("exhaustive_search_row_limit = 2500"));
         assert!(text.contains("skip_refinement_row_limit = 150000"));
     }
@@ -337,7 +337,7 @@ mod tests {
         .unwrap();
         let cfg = Config::with_path(&path);
         assert_eq!(cfg.pending_flush_threshold(), 250);
-        assert_eq!(cfg.pending_hard_flush_threshold(), 1000);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 3000);
     }
 
     #[test]
@@ -351,7 +351,7 @@ mod tests {
         .unwrap();
         let cfg = Config::with_path(&path);
         assert_eq!(cfg.pending_flush_threshold(), 250);
-        assert_eq!(cfg.pending_hard_flush_threshold(), 1000);
+        assert_eq!(cfg.pending_hard_flush_threshold(), 3000);
     }
 
     #[test]

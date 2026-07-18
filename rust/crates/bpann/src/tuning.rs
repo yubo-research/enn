@@ -14,7 +14,7 @@ pub const DEFAULT_PENDING_FLUSH_THRESHOLD: usize = 250;
 /// Default hard cap on pending rows before soft sync runs on the calling thread.
 ///
 /// Equal to `4 × DEFAULT_PENDING_FLUSH_THRESHOLD`. Must stay `>=` the soft threshold.
-pub const DEFAULT_PENDING_HARD_FLUSH_THRESHOLD: usize = 1000;
+pub const DEFAULT_PENDING_HARD_FLUSH_THRESHOLD: usize = 3000;
 
 /// Default max indexed rows for exhaustive leaf search (and no skip edges at build).
 pub const DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT: usize = 2500;
@@ -197,12 +197,9 @@ mod tests {
     }
 
     #[test]
-    fn default_pending_hard_flush_threshold_is_1000() {
-        assert_eq!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, 1000);
-        assert_eq!(
-            DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
-            4 * DEFAULT_PENDING_FLUSH_THRESHOLD
-        );
+    fn default_pending_hard_flush_threshold_is_3000() {
+        assert_eq!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, 3000);
+        assert!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD >= DEFAULT_PENDING_FLUSH_THRESHOLD);
         assert_eq!(
             BpannTuning::default().pending_hard_flush_threshold,
             DEFAULT_PENDING_HARD_FLUSH_THRESHOLD
