@@ -12,7 +12,7 @@ use crate::knn::MmapColumnStore;
 pub type MmapTrainRowsAt = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
 
 pub const FORMAT_VERSION: u32 = 1;
-pub const MAX_NUM_DIM: usize = 8192;
+pub const MAX_NUM_DIM: usize = 100_000;
 pub const MAX_RECORD_STRIDE: usize = 8 * 1024 * 1024;
 
 pub fn check_append_row_limit(new_n: usize) -> Result<(), ENNError> {
@@ -311,10 +311,10 @@ mod disk_observation_tests {
     }
 
     #[test]
-    fn validate_dim_limits_accepts_8192_rejects_8193() {
-        validate_dim_limits(8192, 100).unwrap();
-        let err = validate_dim_limits(8193, 100).unwrap_err();
-        assert!(err.to_string().contains("8192"));
+    fn validate_dim_limits_accepts_max_rejects_above() {
+        validate_dim_limits(MAX_NUM_DIM, 100).unwrap();
+        let err = validate_dim_limits(MAX_NUM_DIM + 1, 100).unwrap_err();
+        assert!(err.to_string().contains(&MAX_NUM_DIM.to_string()));
     }
 
     #[test]

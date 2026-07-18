@@ -9,7 +9,7 @@ use crate::error::BpannError;
 use crate::mmap_store::MmapColumnStore;
 
 pub const FORMAT_VERSION: u32 = 1;
-pub const MAX_NUM_DIM: usize = 8192;
+pub const MAX_NUM_DIM: usize = 100_000;
 pub const MAX_RECORD_STRIDE: usize = 8 * 1024 * 1024;
 pub const INDEX_BACKEND: &str = "bpann_disk";
 
@@ -267,10 +267,10 @@ mod kiss_coverage_tests {
     }
 
     #[test]
-    fn bpann_validate_dim_limits_accepts_8192_rejects_8193() {
-        crate::observation::bpann_validate_dim_limits(8192).unwrap();
-        let err = crate::observation::bpann_validate_dim_limits(8193).unwrap_err();
-        assert!(err.to_string().contains("8192"));
+    fn bpann_validate_dim_limits_accepts_max_rejects_above() {
+        crate::observation::bpann_validate_dim_limits(MAX_NUM_DIM).unwrap();
+        let err = crate::observation::bpann_validate_dim_limits(MAX_NUM_DIM + 1).unwrap_err();
+        assert!(err.to_string().contains(&MAX_NUM_DIM.to_string()));
     }
 
     #[test]
