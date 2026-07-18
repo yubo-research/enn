@@ -8,6 +8,9 @@ use std::sync::RwLock;
 /// Minimum allowed `index_compact_fragment_max` (matches compaction clamp floor).
 pub const INDEX_COMPACT_FRAGMENT_MAX_MIN: usize = 3;
 
+/// Default rows of pending observations before an index flush is scheduled.
+pub const DEFAULT_PENDING_FLUSH_THRESHOLD: usize = 250;
+
 /// Snapshot of tunable BPANN parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BpannTuning {
@@ -31,7 +34,7 @@ impl Default for BpannTuning {
             small_fragment_merge_rows: 15_000,
             search_fragment_budget_max: 3,
             build_seed: None,
-            pending_flush_threshold: 1_000,
+            pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
             structured_build_row_limit: 1_024,
             search_beam_width: 1,
         }
@@ -122,6 +125,64 @@ mod tests {
     #[test]
     fn default_tuning_is_valid() {
         assert!(BpannTuning::default().validate().is_ok());
+    }
+
+    #[test]
+    fn default_pending_flush_threshold_is_250() {
+        assert_eq!(DEFAULT_PENDING_FLUSH_THRESHOLD, 250);
+        assert_eq!(
+            BpannTuning::default().pending_flush_threshold,
+            DEFAULT_PENDING_FLUSH_THRESHOLD
+        );
+        assert_eq!(
+            current_tuning().pending_flush_threshold,
+            DEFAULT_PENDING_FLUSH_THRESHOLD
+        );
+    }
+
+    #[test]
+    fn metamorphic_default_threshold_independent_of_other_fields() {
+        // Changing unrelated fields must not change the pending_flush default.
+        let base = BpannTuning::default();
+        let variants = [
+            BpannTuning {
+                index_compact_rows_per_fragment: 5_000,
+                ..base
+            },
+            BpannTuning {
+                search_beam_width: 8,
+                ..base
+            },
+            BpannTuning {
+                structured_build_row_limit: 4_096,
+                ..base
+            },
+        ];
+        for v in variants {
+            assert_eq!(v.pending_flush_threshold, DEFAULT_PENDING_FLUSH_THRESHOLD);
+            assert!(v.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn fuzz_pending_flush_threshold_validation_all_seeds() {
+        use rand::{Rng, SeedableRng};
+        use rand_chacha::ChaCha8Rng;
+        let seed = 0x5045_4e44_u64; // "PEND"
+        println!("fuzz_pending_flush_threshold_validation seed={seed}");
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        for _ in 0..64 {
+            let thr = rng.gen_range(0usize..10_000);
+            let t = BpannTuning {
+                pending_flush_threshold: thr,
+                ..Default::default()
+            };
+            if thr == 0 {
+                assert!(t.validate().is_err());
+            } else {
+                assert!(t.validate().is_ok());
+            }
+        }
     }
 
     #[test]

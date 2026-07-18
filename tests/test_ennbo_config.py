@@ -16,7 +16,7 @@ def _assert_default_config_written(cfg: Path) -> None:
     assert "structured_build_row_limit" in text
     assert "search_beam_width" in text
     assert "10000" in text
-    assert "1000" in text
+    assert "pending_flush_threshold = 250" in text
     assert "1024" in text
 
 

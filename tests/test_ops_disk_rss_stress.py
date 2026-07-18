@@ -58,9 +58,9 @@ def test_disk_rss_stress_train_x_on_disk(tmp_path):
 
 
 def test_disk_rss_stress_crosses_flush_threshold(tmp_path):
-    """N just above default 1000-row pending threshold still stays under RSS ceiling."""
+    """N just above default 250-row pending threshold still stays under RSS ceiling."""
     num_dim = 10
-    num_obs = 1_001
+    num_obs = 251
     result = _run_disk_rss_stress(tmp_path, num_obs, num_dim=num_dim)
     _assert_disk_rss_below_ceiling(result, num_dim=num_dim, num_obs=num_obs)
 

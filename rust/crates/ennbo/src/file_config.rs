@@ -229,7 +229,7 @@ mod tests {
         assert!(!path.exists());
         let cfg = Config::with_path(&path);
         assert_eq!(cfg.index_compact_rows_per_fragment(), 10_000);
-        assert_eq!(cfg.pending_flush_threshold(), 1_000);
+        assert_eq!(cfg.pending_flush_threshold(), 250);
         assert_eq!(cfg.structured_build_row_limit(), 1_024);
         assert_eq!(cfg.search_beam_width(), 1);
         assert!(path.exists());
@@ -239,6 +239,7 @@ mod tests {
         assert!(text.contains("structured_build_row_limit"));
         assert!(text.contains("search_beam_width"));
         assert!(text.contains("10000"));
+        assert!(text.contains("pending_flush_threshold = 250"));
     }
 
     #[test]

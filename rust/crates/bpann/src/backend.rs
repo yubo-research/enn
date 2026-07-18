@@ -16,7 +16,7 @@ use crate::observation::{
 };
 
 pub const PAPER_TEX_PATH: &str = "papers/bpann_2511.15557v1.tex";
-pub const DEFAULT_PENDING_FLUSH_THRESHOLD: usize = 1000;
+pub use crate::tuning::DEFAULT_PENDING_FLUSH_THRESHOLD;
 
 pub struct BpannBackend {
     work_dir: PathBuf,
