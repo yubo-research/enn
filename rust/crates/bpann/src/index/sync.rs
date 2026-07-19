@@ -505,6 +505,15 @@ mod kiss_coverage_tests {
     }
 
     #[test]
+    fn search_fragment_budget_respects_default_max_of_one() {
+        // Default search_fragment_budget_max=1: with many fragments, search only one.
+        assert_eq!(search_fragment_budget(1, 100_000), 1);
+        assert_eq!(search_fragment_budget(2, 100_000), 2);
+        assert_eq!(search_fragment_budget(8, 100_000), 1);
+        assert_eq!(search_fragment_budget(32, 800_000), 1);
+    }
+
+    #[test]
     fn sync_persist_to_disk_behavioral() {
         let dir = TempDir::new().unwrap();
         let mut idx = IncrementalIndex::new(dir.path().join("index"));

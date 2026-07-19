@@ -282,11 +282,13 @@ mod tests {
         assert!(text.contains("search_beam_width"));
         assert!(text.contains("exhaustive_search_row_limit"));
         assert!(text.contains("skip_refinement_row_limit"));
+        assert!(text.contains("search_fragment_budget_max"));
         assert!(text.contains("10000"));
         assert!(text.contains("pending_flush_threshold = 250"));
         assert!(text.contains("pending_hard_flush_threshold = 3000"));
         assert!(text.contains("exhaustive_search_row_limit = 2500"));
         assert!(text.contains("skip_refinement_row_limit = 150000"));
+        assert!(text.contains("search_fragment_budget_max = 1"));
     }
 
     #[test]
@@ -294,7 +296,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
         let cfg = Config::with_path(&path);
-        assert_eq!(cfg.search_fragment_budget_max(), 3);
+        assert_eq!(cfg.search_fragment_budget_max(), 1);
         let mut file = ConfigFile::default();
         file.bpann.search_fragment_budget_max = 7;
         file.bpann.search_beam_width = 4;

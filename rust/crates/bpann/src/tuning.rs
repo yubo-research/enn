@@ -50,7 +50,7 @@ impl Default for BpannTuning {
             index_compact_fragment_max: 32,
             search_rows_per_fragment: 80_000,
             small_fragment_merge_rows: 15_000,
-            search_fragment_budget_max: 3,
+            search_fragment_budget_max: 1,
             build_seed: None,
             pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
             pending_hard_flush_threshold: DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
@@ -329,6 +329,8 @@ mod tests {
         assert_eq!(t.skip_refinement_row_limit, DEFAULT_SKIP_REFINEMENT_ROW_LIMIT);
         assert_eq!(DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT, 2500);
         assert_eq!(DEFAULT_SKIP_REFINEMENT_ROW_LIMIT, 150_000);
+        // Latency default: search at most one fragment when many exist (proposal scout).
+        assert_eq!(t.search_fragment_budget_max, 1);
     }
 
     #[test]
