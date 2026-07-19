@@ -17,6 +17,7 @@ from ops.stress import (
     format_turbo_enn_row,
     run_turbo_enn_stress,
 )
+from tests.ops_stress_cli_helpers import assert_stress_cli_rejects
 
 _TURBO_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+\.\d{3} \d+\.\d{3}")
 
@@ -185,8 +186,4 @@ def test_turbo_enn_cli_bpann_disk(tmp_path, monkeypatch):
     ],
 )
 def test_turbo_enn_cli_rejects(args, fragment):
-    from ops.stress import cli
-
-    result = CliRunner().invoke(cli, args)
-    assert result.exit_code != 0
-    assert fragment in result.output
+    assert_stress_cli_rejects(args, fragment)

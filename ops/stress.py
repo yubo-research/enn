@@ -59,6 +59,20 @@ TURBO_ENN_ACKLEY_NOISE = 0.1
 TURBO_ENN_SEED = 0
 TURBO_ENN_K = 10
 TURBO_ENN_NUM_FIT_SAMPLES = 100
+PROPOSAL_SCALE_NS: tuple[int, ...] = (
+    10,
+    30,
+    100,
+    300,
+    1000,
+    3000,
+    10000,
+    30000,
+    100000,
+)
+PROPOSAL_SCALE_NUM_PROBES = 30
+PROPOSAL_SCALE_WARMUP = 2
+PROPOSAL_SCALE_SEED_CHUNK = 1000
 
 
 def max_rss_bytes() -> int:
@@ -1082,6 +1096,190 @@ def run_turbo_enn_stress(
         )
 
 
+@dataclass(frozen=True)
+class ProposalScaleResult:
+    n: int
+    ask_s: float
+    tell_s: float
+    proposal_s: float
+
+
+def proposal_scale_ns(max_n: int) -> tuple[int, ...]:
+    """Return fixed proposal-scale grid filtered by ``max_n`` (all N >= num_init)."""
+    if max_n < TURBO_ENN_NUM_INIT:
+        raise ValueError(f"max_n must be >= {TURBO_ENN_NUM_INIT} (TuRBO-ENN num_init)")
+    return tuple(n for n in PROPOSAL_SCALE_NS if n <= max_n)
+
+
+def seed_turbo_enn_to_n(
+    opt,
+    objective,
+    bounds: np.ndarray,
+    n: int,
+    *,
+    rng: np.random.Generator,
+    chunk: int = PROPOSAL_SCALE_SEED_CHUNK,
+) -> None:
+    """Bulk-seed optimizer with N synthetic Ackley points via chunked ``tell``."""
+    if n < 1:
+        raise ValueError("n must be >= 1")
+    if chunk < 1:
+        raise ValueError("chunk must be >= 1")
+    bounds = np.asarray(bounds, dtype=float)
+    assert bounds.ndim == 2 and bounds.shape[1] == 2, (
+        f"expected bounds shape (d, 2), got {bounds.shape}"
+    )
+    num_dim = int(bounds.shape[0])
+    lo = bounds[:, 0]
+    hi = bounds[:, 1]
+    assert np.all(hi > lo), "bounds require hi > lo per dimension"
+    x = rng.uniform(lo, hi, size=(n, num_dim))
+    y = np.asarray(objective(x), dtype=float)
+    if y.ndim == 1:
+        y = y.reshape(-1, 1)
+    assert y.shape == (n, 1), f"expected y shape ({n}, 1), got {y.shape}"
+    for start in range(0, n, chunk):
+        end = min(start + chunk, n)
+        opt.tell(x[start:end], y[start:end])
+
+
+def _timed_ask_tell_round(opt, objective) -> tuple[float, float]:
+    """Run one ask → eval → tell round; return (ask_s, tell_s)."""
+    t0 = time.perf_counter()
+    x = opt.ask(num_arms=1)
+    ask_s = time.perf_counter() - t0
+    y = np.asarray(objective(x), dtype=float)
+    if y.ndim == 1:
+        y = y.reshape(-1, 1)
+    assert y.shape == (1, 1), f"expected y shape (1, 1), got {y.shape}"
+    t_tell0 = time.perf_counter()
+    opt.tell(x, y)
+    tell_s = time.perf_counter() - t_tell0
+    return ask_s, tell_s
+
+
+def probe_turbo_enn_proposal(
+    opt,
+    objective,
+    *,
+    warmup: int = PROPOSAL_SCALE_WARMUP,
+    num_probes: int = PROPOSAL_SCALE_NUM_PROBES,
+) -> tuple[float, float, float]:
+    """Warmup then time ask/tell probes; return mean ask_s, tell_s, proposal_s."""
+    if warmup < 0:
+        raise ValueError("warmup must be >= 0")
+    if num_probes < 1:
+        raise ValueError("num_probes must be >= 1")
+
+    for _ in range(warmup):
+        _timed_ask_tell_round(opt, objective)
+
+    ask_times: list[float] = []
+    tell_times: list[float] = []
+    for _ in range(num_probes):
+        ask_s, tell_s = _timed_ask_tell_round(opt, objective)
+        ask_times.append(ask_s)
+        tell_times.append(tell_s)
+
+    ask_mean = float(np.mean(ask_times))
+    tell_mean = float(np.mean(tell_times))
+    proposal_mean = ask_mean + tell_mean
+    return ask_mean, tell_mean, proposal_mean
+
+
+def format_proposal_scale_config_header(
+    *,
+    num_dim: int,
+    max_n: int,
+    num_probes: int,
+    index_type: str,
+    work_dir: str | None = None,
+) -> str:
+    header = (
+        f"num_dim={num_dim} max_n={max_n} num_probes={num_probes} "
+        f"index_type={index_type}"
+    )
+    if work_dir is not None:
+        header = f"{header} work_dir={work_dir}"
+    return header
+
+
+def format_proposal_scale_row(
+    n: int, ask_s: float, tell_s: float, proposal_s: float, *, n_width: int
+) -> str:
+    return f"{n:>{n_width}} {ask_s:.3f} {tell_s:.3f} {proposal_s:.3f}"
+
+
+def run_proposal_scale_stress(
+    index_driver: ENNIndexDriver,
+    num_dim: int,
+    max_n: int,
+    *,
+    work_dir: str | None = None,
+    num_probes: int = PROPOSAL_SCALE_NUM_PROBES,
+    warmup: int = PROPOSAL_SCALE_WARMUP,
+    seed_chunk: int = PROPOSAL_SCALE_SEED_CHUNK,
+    seed: int = TURBO_ENN_SEED,
+    optimizer_factory=None,
+    objective=None,
+) -> Iterator[ProposalScaleResult]:
+    """Fresh opt per N: seed to N, warmup, probe; yield mean proposal timings."""
+    if num_dim < 1:
+        raise ValueError("num_dim must be >= 1")
+    if num_probes < 1:
+        raise ValueError("num_probes must be >= 1")
+    if warmup < 0:
+        raise ValueError("warmup must be >= 0")
+    if seed_chunk < 1:
+        raise ValueError("seed_chunk must be >= 1")
+    grid = proposal_scale_ns(max_n)
+
+    from enn import create_optimizer
+    from enn.benchmarks import Ackley
+
+    if objective is None:
+        ackley = Ackley(noise=TURBO_ENN_ACKLEY_NOISE, rng=np.random.default_rng(seed))
+    else:
+        ackley = objective
+    bounds = np.array([ackley.bounds] * num_dim, dtype=float)
+
+    for n in grid:
+        n_work_dir: str | None
+        if work_dir is not None:
+            n_work_dir = str(Path(work_dir) / f"n{n}")
+            Path(n_work_dir).mkdir(parents=True, exist_ok=True)
+        else:
+            n_work_dir = None
+        if optimizer_factory is not None:
+            opt = optimizer_factory(n=n, work_dir=n_work_dir)
+        else:
+            config = build_turbo_enn_optimizer_config(
+                index_driver=index_driver,
+                work_dir=n_work_dir,
+                num_init=TURBO_ENN_NUM_INIT,
+            )
+            opt = create_optimizer(
+                bounds=bounds, config=config, rng=np.random.default_rng(seed + n)
+            )
+        seed_turbo_enn_to_n(
+            opt,
+            ackley,
+            bounds,
+            n,
+            rng=np.random.default_rng(seed + 10_000 + n),
+            chunk=seed_chunk,
+        )
+        ask_mean, tell_mean, proposal_mean = probe_turbo_enn_proposal(
+            opt,
+            ackley,
+            warmup=warmup,
+            num_probes=num_probes,
+        )
+        yield ProposalScaleResult(
+            n=n, ask_s=ask_mean, tell_s=tell_mean, proposal_s=proposal_mean
+        )
+
+
 @click.group()
 def cli() -> None:
     """Operational stress tools."""
@@ -1398,6 +1596,96 @@ def turbo_enn(
                     row.iter_s,
                     row.ask_s,
                     row.tell_s,
+                    n_width=n_width,
+                )
+            )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@cli.command(
+    "proposal-scale",
+    params=[
+        click.Argument(
+            ["index_type"],
+            type=click.Choice(INDEX_TYPE_CHOICES),
+        ),
+        click.Option(
+            ["--num-dim"],
+            type=int,
+            default=DEFAULT_NUM_DIM,
+            show_default=True,
+            help="Embedding dimension for Ackley / TuRBO-ENN.",
+        ),
+        click.Option(
+            ["--max-n"],
+            type=int,
+            default=PROPOSAL_SCALE_NS[-1],
+            show_default=True,
+            help="Largest N on the proposal-scale grid (filters fixed checkpoints).",
+        ),
+        click.Option(
+            ["--num-probes"],
+            type=int,
+            default=PROPOSAL_SCALE_NUM_PROBES,
+            show_default=True,
+            help="Timed ask/tell rounds per N after warmup.",
+        ),
+        click.Option(
+            ["--work-dir"],
+            type=click.Path(file_okay=False, dir_okay=True, path_type=str),
+            default=None,
+            help="Disk-backed ENN work directory (requires bpann_disk).",
+        ),
+    ],
+)
+def proposal_scale(
+    index_type: str,
+    num_dim: int,
+    max_n: int,
+    num_probes: int,
+    work_dir: str | None,
+) -> None:
+    """Time mean TuRBO-ENN proposal cost at log-spaced N (seed then probe)."""
+    if num_dim < 1:
+        raise click.ClickException("num_dim must be >= 1")
+    if max_n < TURBO_ENN_NUM_INIT:
+        raise click.ClickException(
+            f"max_n must be >= {TURBO_ENN_NUM_INIT} (TuRBO-ENN num_init)"
+        )
+    if num_probes < 1:
+        raise click.ClickException("num_probes must be >= 1")
+    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
+        raise click.ClickException(
+            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
+        )
+    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
+        raise click.ClickException(f"{index_type} requires --work-dir")
+    driver = parse_index_driver(index_type)
+    click.echo(
+        format_proposal_scale_config_header(
+            num_dim=num_dim,
+            max_n=max_n,
+            num_probes=num_probes,
+            index_type=index_type,
+            work_dir=work_dir,
+        )
+    )
+    n_width = len(str(max_n))
+    try:
+        for row in run_proposal_scale_stress(
+            driver,
+            num_dim,
+            max_n,
+            work_dir=work_dir,
+            num_probes=num_probes,
+        ):
+            click.echo(
+                format_proposal_scale_row(
+                    row.n,
+                    row.ask_s,
+                    row.tell_s,
+                    row.proposal_s,
                     n_width=n_width,
                 )
             )
