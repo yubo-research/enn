@@ -246,11 +246,13 @@ impl Config {
 }
 
 /// Install BPANN tuning so the `bpann` crate reads values via [`Config`].
+///
+/// Snapshot once at install time. Reloading the TOML inside the provider (old
+/// behavior) put disk I/O on every `current_tuning()` — including per-query
+/// search mode selection — and dominated TuRBO ask time.
 pub fn install_bpann_tuning_from_config() {
-    bpann::set_tuning_provider(Box::new(|| {
-        let file = Config::new().load();
-        file.bpann.to_tuning()
-    }));
+    let cached = Config::new().load().bpann.to_tuning();
+    bpann::set_tuning_provider(Box::new(move || cached));
 }
 
 #[cfg(test)]

@@ -53,6 +53,12 @@ STRESS_PARAMS = ENNParams(
 DISK_STRESS_RSS_BASELINE_MIB = 512
 DISK_STRESS_RSS_PER_SHARD_ROW_BYTES = 64
 DEFAULT_SHARD_MAX_ROWS = 500_000
+TURBO_ENN_NUM_INIT = 10
+TURBO_ENN_EVAL_SLEEP_S = 0.1
+TURBO_ENN_ACKLEY_NOISE = 0.1
+TURBO_ENN_SEED = 0
+TURBO_ENN_K = 10
+TURBO_ENN_NUM_FIT_SAMPLES = 100
 
 
 def max_rss_bytes() -> int:
@@ -947,6 +953,135 @@ def format_draw_method_summary_aggregate(method: DrawMethodAggregate) -> str:
     )
 
 
+@dataclass(frozen=True)
+class TurboEnnRoundResult:
+    round_idx: int
+    iter_s: float
+    ask_s: float
+    tell_s: float
+
+
+def build_turbo_enn_optimizer_config(
+    *,
+    index_driver: ENNIndexDriver,
+    work_dir: str | None = None,
+    num_init: int = TURBO_ENN_NUM_INIT,
+):
+    """Build turbo_enn config matching compare's single-metric Ackley path.
+
+    Overrides only ``num_init`` (fixed at ``TURBO_ENN_NUM_INIT`` for the stress CLI).
+    For ``BPANN_DISK``, both ``enn_storage="disk"`` and ``work_dir`` are required.
+    """
+    from enn.turbo.config import (
+        AcqType,
+        ENNFitConfig,
+        ENNSurrogateConfig,
+        TurboTRConfig,
+        turbo_enn_config,
+    )
+
+    if num_init < 1:
+        raise ValueError("num_init must be >= 1")
+    enn_kwargs: dict[str, object] = {
+        "k": TURBO_ENN_K,
+        "fit": ENNFitConfig(num_fit_samples=TURBO_ENN_NUM_FIT_SAMPLES),
+        "index_driver": index_driver,
+    }
+    if index_driver == ENNIndexDriver.BPANN_DISK:
+        if work_dir is None:
+            raise ValueError("bpann_disk requires work_dir")
+        enn_kwargs["enn_storage"] = "disk"
+        enn_kwargs["work_dir"] = work_dir
+    elif work_dir is not None:
+        raise ValueError("work_dir requires bpann_disk")
+    return turbo_enn_config(
+        enn=ENNSurrogateConfig(**enn_kwargs),
+        trust_region=TurboTRConfig(noise_aware=True),
+        acq_type=AcqType.UCB,
+        num_init=num_init,
+    )
+
+
+def format_turbo_enn_config_header(
+    *,
+    num_dim: int,
+    num_rounds: int,
+    index_type: str,
+    work_dir: str | None = None,
+) -> str:
+    header = f"num_dim={num_dim} num_rounds={num_rounds} index_type={index_type}"
+    if work_dir is not None:
+        header = f"{header} work_dir={work_dir}"
+    return header
+
+
+def format_turbo_enn_row(
+    round_idx: int, iter_s: float, ask_s: float, tell_s: float, *, n_width: int
+) -> str:
+    return f"{round_idx:>{n_width}} {iter_s:.3f} {ask_s:.3f} {tell_s:.3f}"
+
+
+def run_turbo_enn_stress(
+    *,
+    index_driver: ENNIndexDriver,
+    num_dim: int,
+    num_rounds: int,
+    work_dir: str | None = None,
+    seed: int = TURBO_ENN_SEED,
+    eval_sleep_s: float = TURBO_ENN_EVAL_SLEEP_S,
+    optimizer=None,
+    objective=None,
+    sleep_fn=None,
+) -> Iterator[TurboEnnRoundResult]:
+    """Run ask → Ackley eval → sleep → tell; yield per-round wall timings."""
+    if num_dim < 1:
+        raise ValueError("num_dim must be >= 1")
+    if num_rounds < TURBO_ENN_NUM_INIT:
+        raise ValueError(
+            f"num_rounds must be >= {TURBO_ENN_NUM_INIT} (includes LHD init)"
+        )
+    if eval_sleep_s < 0:
+        raise ValueError("eval_sleep_s must be >= 0")
+
+    from enn import create_optimizer
+    from enn.benchmarks import Ackley
+
+    if objective is None:
+        ackley = Ackley(noise=TURBO_ENN_ACKLEY_NOISE, rng=np.random.default_rng(seed))
+    else:
+        ackley = objective
+    if optimizer is None:
+        bounds = np.array([ackley.bounds] * num_dim, dtype=float)
+        config = build_turbo_enn_optimizer_config(
+            index_driver=index_driver,
+            work_dir=work_dir,
+            num_init=TURBO_ENN_NUM_INIT,
+        )
+        opt = create_optimizer(
+            bounds=bounds, config=config, rng=np.random.default_rng(seed)
+        )
+    else:
+        opt = optimizer
+    sleep = sleep_fn if sleep_fn is not None else time.sleep
+
+    for round_idx in range(1, num_rounds + 1):
+        t0 = time.perf_counter()
+        x = opt.ask(num_arms=1)
+        ask_s = time.perf_counter() - t0
+        y = np.asarray(ackley(x), dtype=float)
+        if y.ndim == 1:
+            y = y.reshape(-1, 1)
+        assert y.shape == (1, 1), f"expected y shape (1, 1), got {y.shape}"
+        sleep(eval_sleep_s)
+        t_tell0 = time.perf_counter()
+        opt.tell(x, y)
+        tell_s = time.perf_counter() - t_tell0
+        iter_s = time.perf_counter() - t0
+        yield TurboEnnRoundResult(
+            round_idx=round_idx, iter_s=iter_s, ask_s=ask_s, tell_s=tell_s
+        )
+
+
 @click.group()
 def cli() -> None:
     """Operational stress tools."""
@@ -1196,6 +1331,78 @@ def draw(
     click.echo(format_draw_config_header_aggregate(agg))
     click.echo(format_draw_method_summary_aggregate(agg.posterior))
     click.echo(format_draw_method_summary_aggregate(agg.posterior_function_draw))
+
+
+@cli.command(
+    "turbo-enn",
+    params=[
+        click.Argument(
+            ["index_type"],
+            type=click.Choice(INDEX_TYPE_CHOICES),
+        ),
+        click.Argument(["num_rounds"], type=int),
+        click.Option(
+            ["--num-dim"],
+            type=int,
+            default=DEFAULT_NUM_DIM,
+            show_default=True,
+            help="Embedding dimension for Ackley / TuRBO-ENN.",
+        ),
+        click.Option(
+            ["--work-dir"],
+            type=click.Path(file_okay=False, dir_okay=True, path_type=str),
+            default=None,
+            help="Disk-backed ENN work directory (requires bpann_disk).",
+        ),
+    ],
+)
+def turbo_enn(
+    index_type: str,
+    num_rounds: int,
+    num_dim: int,
+    work_dir: str | None,
+) -> None:
+    """Time TuRBO-ENN ask/tell rounds on Ackley (init included in NUM_ROUNDS)."""
+    if num_dim < 1:
+        raise click.ClickException("num_dim must be >= 1")
+    if num_rounds < TURBO_ENN_NUM_INIT:
+        raise click.ClickException(
+            f"num_rounds must be >= {TURBO_ENN_NUM_INIT} (includes LHD init)"
+        )
+    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
+        raise click.ClickException(
+            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
+        )
+    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
+        raise click.ClickException(f"{index_type} requires --work-dir")
+    driver = parse_index_driver(index_type)
+    click.echo(
+        format_turbo_enn_config_header(
+            num_dim=num_dim,
+            num_rounds=num_rounds,
+            index_type=index_type,
+            work_dir=work_dir,
+        )
+    )
+    n_width = len(str(num_rounds))
+    try:
+        for row in run_turbo_enn_stress(
+            index_driver=driver,
+            num_dim=num_dim,
+            num_rounds=num_rounds,
+            work_dir=work_dir,
+        ):
+            click.echo(
+                format_turbo_enn_row(
+                    row.round_idx,
+                    row.iter_s,
+                    row.ask_s,
+                    row.tell_s,
+                    n_width=n_width,
+                )
+            )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def main() -> None:
