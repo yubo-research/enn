@@ -59,7 +59,9 @@ TURBO_ENN_SEED = 0
 TURBO_ENN_K = 10
 TURBO_ENN_NUM_FIT_SAMPLES = 100
 # Larger than proposal-scale chunk: turbo-enn large gaps pay per-tell fit/TR cost.
+# Flat benefits from fewer, larger tells; bpann_disk regresses above ~20k (I/O).
 TURBO_ENN_SEED_CHUNK = 20_000
+TURBO_ENN_SEED_CHUNK_FLAT = 100_000
 PROPOSAL_SCALE_NS: tuple[int, ...] = (
     10,
     30,
@@ -198,6 +200,13 @@ def parse_index_driver(name: str) -> ENNIndexDriver:
     if name not in mapping:
         raise ValueError(f"Unknown index type: {name}")
     return mapping[name]
+
+
+def turbo_enn_default_seed_chunk(index_driver: ENNIndexDriver) -> int:
+    """Return turbo-enn bulk-seed chunk sized for the index backend."""
+    if index_driver == ENNIndexDriver.FLAT:
+        return TURBO_ENN_SEED_CHUNK_FLAT
+    return TURBO_ENN_SEED_CHUNK
 
 
 def _next_checkpoint(n: int) -> int:
@@ -1078,7 +1087,7 @@ def run_turbo_enn_stress(
     num_ask: int,
     work_dir: str | None = None,
     seed: int = TURBO_ENN_SEED,
-    seed_chunk: int = TURBO_ENN_SEED_CHUNK,
+    seed_chunk: int | None = None,
     optimizer=None,
     objective=None,
     bounds: np.ndarray | None = None,
@@ -1087,6 +1096,8 @@ def run_turbo_enn_stress(
     if num_dim < 1:
         raise ValueError("num_dim must be >= 1")
     stops = turbo_enn_ask_stops(num_obs, num_ask)
+    if seed_chunk is None:
+        seed_chunk = turbo_enn_default_seed_chunk(index_driver)
     if seed_chunk < 1:
         raise ValueError("seed_chunk must be >= 1")
 

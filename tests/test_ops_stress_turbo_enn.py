@@ -308,19 +308,31 @@ def test_turbo_enn_cli_real_optimizer_smoke():
 
 
 def test_turbo_enn_seed_chunk_default_is_large():
-    """Large default chunk cuts per-tell overhead for N>=10000 gaps."""
+    """Flat uses a larger default chunk than disk; both beat tiny proposal-scale chunks."""
     import inspect
 
-    from ops.stress import TURBO_ENN_SEED_CHUNK
+    from ops.stress import (
+        TURBO_ENN_SEED_CHUNK,
+        TURBO_ENN_SEED_CHUNK_FLAT,
+        turbo_enn_default_seed_chunk,
+    )
 
     assert TURBO_ENN_SEED_CHUNK == 20_000
+    assert TURBO_ENN_SEED_CHUNK_FLAT == 100_000
+    assert TURBO_ENN_SEED_CHUNK_FLAT > TURBO_ENN_SEED_CHUNK
+    assert (
+        turbo_enn_default_seed_chunk(ENNIndexDriver.FLAT) == TURBO_ENN_SEED_CHUNK_FLAT
+    )
+    assert (
+        turbo_enn_default_seed_chunk(ENNIndexDriver.BPANN_DISK) == TURBO_ENN_SEED_CHUNK
+    )
     sig = inspect.signature(run_turbo_enn_stress)
-    assert sig.parameters["seed_chunk"].default == TURBO_ENN_SEED_CHUNK
+    assert sig.parameters["seed_chunk"].default is None
 
 
-def test_turbo_enn_larger_seed_chunk_not_slower_on_large_gap():
-    """Metamorphic: fewer tell chunks must not increase wall time for a large gap."""
-    import time
+def _turbo_enn_seed_gap_tell_count(gap: int, chunk: int) -> int:
+    """Count ``tell`` calls while bulk-seeding ``gap`` points with ``chunk``."""
+    from unittest.mock import MagicMock
 
     from enn import create_optimizer
     from enn.benchmarks import Ackley
@@ -331,23 +343,47 @@ def test_turbo_enn_larger_seed_chunk_not_slower_on_large_gap():
         seed_turbo_enn_to_n,
     )
 
-    def timed_gap(chunk: int) -> float:
-        cfg = build_turbo_enn_optimizer_config(index_driver=ENNIndexDriver.FLAT)
-        ackley = Ackley(
-            noise=TURBO_ENN_ACKLEY_NOISE, rng=np.random.default_rng(TURBO_ENN_SEED)
-        )
-        bounds = np.array([ackley.bounds] * 10, dtype=float)
-        opt = create_optimizer(
-            bounds=bounds, config=cfg, rng=np.random.default_rng(TURBO_ENN_SEED)
-        )
-        rng = np.random.default_rng(TURBO_ENN_SEED + 17)
-        seed_turbo_enn_to_n(opt, ackley, bounds, 5_000, rng=rng, chunk=chunk)
-        t0 = time.perf_counter()
-        seed_turbo_enn_to_n(opt, ackley, bounds, 20_000, rng=rng, chunk=chunk)
-        return time.perf_counter() - t0
-
-    slow = timed_gap(1_000)
-    fast = timed_gap(20_000)
-    assert fast <= slow * 0.75, (
-        f"chunk=20k {fast:.3f}s should beat chunk=1k {slow:.3f}s by >=25%"
+    cfg = build_turbo_enn_optimizer_config(index_driver=ENNIndexDriver.FLAT)
+    ackley = Ackley(
+        noise=TURBO_ENN_ACKLEY_NOISE, rng=np.random.default_rng(TURBO_ENN_SEED)
     )
+    bounds = np.array([ackley.bounds] * 10, dtype=float)
+    opt = create_optimizer(
+        bounds=bounds, config=cfg, rng=np.random.default_rng(TURBO_ENN_SEED)
+    )
+    counter = MagicMock(side_effect=opt.tell)
+    opt.tell = counter  # type: ignore[method-assign]
+    rng = np.random.default_rng(TURBO_ENN_SEED + 17)
+    seed_turbo_enn_to_n(opt, ackley, bounds, gap, rng=rng, chunk=chunk)
+    return int(counter.call_count)
+
+
+def test_turbo_enn_larger_seed_chunk_fewer_tells_on_large_gap():
+    """Metamorphic: larger seed_chunk ⇒ fewer tell() calls on a fixed gap (no wall clock)."""
+    from ops.stress import TURBO_ENN_SEED_CHUNK_FLAT
+
+    gap = 1_000
+    small_chunk = 100
+    assert TURBO_ENN_SEED_CHUNK_FLAT > gap, "flat default chunk must cover the test gap"
+
+    small = _turbo_enn_seed_gap_tell_count(gap, small_chunk)
+    large = _turbo_enn_seed_gap_tell_count(gap, TURBO_ENN_SEED_CHUNK_FLAT)
+    assert small == (gap + small_chunk - 1) // small_chunk
+    assert large == 1
+    assert large < small, (
+        f"chunk={TURBO_ENN_SEED_CHUNK_FLAT} → {large} tells; "
+        f"chunk={small_chunk} → {small} tells; expected fewer tells"
+    )
+
+
+def test_turbo_enn_flat_chunk_covers_medium_gap_in_one_tell():
+    """Flat default chunk is large enough that a 50k gap is a single tell; disk is not."""
+    from ops.stress import TURBO_ENN_SEED_CHUNK, TURBO_ENN_SEED_CHUNK_FLAT
+
+    gap = 50_000
+    assert TURBO_ENN_SEED_CHUNK < gap < TURBO_ENN_SEED_CHUNK_FLAT
+    flat_tells = _turbo_enn_seed_gap_tell_count(gap, TURBO_ENN_SEED_CHUNK_FLAT)
+    disk_tells = _turbo_enn_seed_gap_tell_count(gap, TURBO_ENN_SEED_CHUNK)
+    assert flat_tells == 1
+    assert disk_tells == (gap + TURBO_ENN_SEED_CHUNK - 1) // TURBO_ENN_SEED_CHUNK
+    assert flat_tells < disk_tells

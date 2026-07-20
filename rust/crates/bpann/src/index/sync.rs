@@ -205,8 +205,27 @@ impl IncrementalIndex {
         if self.indexed_rows >= end {
             return Ok(());
         }
-        self.build_batch(ctx, self.indexed_rows, end)?;
-        self.maybe_compact(ctx)?;
+        let limit = current_tuning().structured_build_row_limit;
+        let pending = end - self.indexed_rows;
+        // Soft-sync spans just above `limit` used to take one structured
+        // `build_from_rows` tree (better ask, slower tell). Very large spans
+        // (turbo-enn 20k tells) are much faster as chunked row-id leaves plus
+        // maybe_compact. Only chunk when the span is well above `limit` so
+        // mid-size gaps (e.g. ~1–2k) keep the structured single-build path.
+        let chunk_large_spans = pending > limit.saturating_mul(2);
+        if chunk_large_spans {
+            // Drain pending centroid once so the first chunk does not place
+            // with a mean over the entire pending span.
+            let _ = self.take_pending_centroid(ctx.num_dim);
+            while self.indexed_rows < end {
+                let chunk_end = (self.indexed_rows + limit).min(end);
+                self.build_batch(ctx, self.indexed_rows, chunk_end)?;
+                self.maybe_compact(ctx)?;
+            }
+        } else {
+            self.build_batch(ctx, self.indexed_rows, end)?;
+            self.maybe_compact(ctx)?;
+        }
         obs::write_indexed_rows(ctx.work_dir, self.indexed_rows)?;
         Ok(())
     }
@@ -600,13 +619,13 @@ mod kiss_coverage_tests {
         let _ = idx.search_candidates(&[1.0, 0.0], 2, None).unwrap();
     }
 
-    /// Regression: soft-sync batches larger than `structured_build_row_limit` must still
-    /// consume pending-centroid state. Otherwise the next structured fragment is placed
-    /// with a contaminated centroid (already-indexed mass mixed into the mean).
+    /// Regression: soft-sync spans larger than `structured_build_row_limit` must still
+    /// consume pending-centroid state (drained before chunked leaf builds). Otherwise
+    /// the next structured fragment is placed with a contaminated centroid.
     #[test]
     fn large_soft_sync_clears_pending_centroid() {
         let limit = current_tuning().structured_build_row_limit;
-        let n = limit + 76; // force the build_from_rows path
+        let n = limit + 76; // force multi-chunk soft-sync
         let dir = TempDir::new().unwrap();
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
         let x_path = dir.path().join("train_x.bin");
@@ -648,6 +667,65 @@ mod kiss_coverage_tests {
             (centroid[0] - 10_000.0).abs() < 1.0,
             "post-large-sync fragment must place near the new row, got {centroid:?}"
         );
+    }
+
+    #[test]
+    fn large_soft_sync_uses_chunked_leaf_builds() {
+        let limit = current_tuning().structured_build_row_limit;
+        // Must exceed 2*limit to take the chunked path.
+        let n = limit * 3 + 10;
+        let dir = TempDir::new().unwrap();
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        let x_path = dir.path().join("train_x.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        let scale = [1.0_f64, 1.0];
+        let mut large = ndarray::Array2::<f64>::zeros((n, 2));
+        for i in 0..n {
+            large[[i, 0]] = i as f64;
+            large[[i, 1]] = 0.0;
+        }
+        store.mmap_append(&large.view()).unwrap();
+        idx.note_pending_rows(&large.view(), false, &scale);
+        idx.ensure_sync_for_backend(&store, 2, false, &scale, dir.path(), 1, n)
+            .unwrap();
+        assert_eq!(idx.indexed_rows, n);
+        // At ~3k rows, compact threshold is 3 and limit is 6, so three leaf
+        // chunks should remain (pre-amalgamation). A single build_from_rows
+        // path would have left exactly one fragment.
+        assert!(
+            idx.indices.len() >= 2,
+            "expected chunked builds, got {} fragment(s)",
+            idx.indices.len()
+        );
+    }
+
+    #[test]
+    fn midsize_soft_sync_stays_single_fragment() {
+        let limit = current_tuning().structured_build_row_limit;
+        // Between limit and 2*limit: structured single-build path.
+        let n = limit + limit / 2;
+        assert!(n > limit && n <= limit * 2);
+        let dir = TempDir::new().unwrap();
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        let x_path = dir.path().join("train_x.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        let scale = [1.0_f64, 1.0];
+        let mut mid = ndarray::Array2::<f64>::zeros((n, 2));
+        for i in 0..n {
+            mid[[i, 0]] = i as f64;
+            mid[[i, 1]] = 0.0;
+        }
+        store.mmap_append(&mid.view()).unwrap();
+        idx.note_pending_rows(&mid.view(), false, &scale);
+        idx.ensure_sync_for_backend(&store, 2, false, &scale, dir.path(), 1, n)
+            .unwrap();
+        assert_eq!(idx.indexed_rows, n);
+        assert_eq!(
+            idx.indices.len(),
+            1,
+            "mid-size sync should stay one structured fragment"
+        );
+        assert_eq!(idx.indices[0].header.indexed_rows, n);
     }
 
     fn _kiss_index_build_context<'a>(ctx: &IndexBuildContext<'a>) {
