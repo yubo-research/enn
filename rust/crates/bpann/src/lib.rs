@@ -576,6 +576,29 @@ mod acceptance_tests {
     }
 
     #[test]
+    fn ensure_index_sync_in_place_drains_pending_and_is_idempotent() {
+        // Caller soft-sync mutates the live index (no publish swap required).
+        let dir = TempDir::new().unwrap();
+        let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1)
+            .unwrap()
+            .with_pending_flush_threshold(100)
+            .with_pending_hard_flush_threshold(100)
+            .with_defer_append_indexing(true);
+        let x = Array2::from_shape_fn((6, 2), |(i, j)| (i + j) as f64);
+        let y = Array2::from_shape_fn((6, 1), |(i, _)| i as f64);
+        b.append_rows(&x.view(), &y.view(), None).unwrap();
+        assert_eq!(b.pending_rows(), 6);
+        assert_eq!(b.indexed_rows(), 0);
+        b.ensure_index_sync().unwrap();
+        assert_eq!(b.pending_rows(), 0);
+        assert_eq!(b.indexed_rows(), 6);
+        let indexed = b.indexed_rows();
+        b.ensure_index_sync().unwrap();
+        assert_eq!(b.indexed_rows(), indexed);
+        assert_eq!(b.pending_rows(), 0);
+    }
+
+    #[test]
     fn test_deferred_append_cross_hard_in_two_batches() {
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1)

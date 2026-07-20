@@ -261,10 +261,26 @@ impl BpannBackend {
     /// Soft sync: build/compact fragments in memory and update pending counters.
     /// May write `indexed_rows.bin`. Does not write `pages.bin` / `skip_edges.bin`
     /// and does not clear `index_dirty` (hard persist alone clears disk-dirty).
+    ///
+    /// Mutates the live index in place. Background flush still uses
+    /// [`soft_sync_build`] / [`soft_sync_publish`] so readers can search the
+    /// previous snapshot while a detached build runs.
     pub fn ensure_index_sync(&mut self) -> Result<(), BpannError> {
-        if let Some(built) = soft_sync_build(self)? {
-            soft_sync_publish(self, built);
+        let end = self.len();
+        if self.index.indexed_rows >= end {
+            self.pending_unindexed.store(0, Ordering::Relaxed);
+            return Ok(());
         }
+        self.index.ensure_sync_for_backend(
+            &self.train_x,
+            self.num_dim,
+            self.scale_x,
+            self.x_scale.as_slice().unwrap(),
+            &self.work_dir,
+            self.num_metrics,
+            end,
+        )?;
+        self.pending_unindexed.store(0, Ordering::Relaxed);
         Ok(())
     }
 

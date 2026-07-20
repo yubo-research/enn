@@ -15,6 +15,14 @@ use crate::tuning::current_tuning;
 
 const INDEX_COMPACT_THRESHOLD_MIN: usize = 3;
 
+/// Soft-sync spans in `(2 * structured_build_row_limit, MID_BAND_SHALLOW_MAX]`
+/// use chunked partition trees sized just above the exhaustive-search cliff
+/// so ask uses greedy leaf visits. Larger spans stay on chunked row-id leaves.
+const MID_BAND_SHALLOW_MAX: usize = 10_000;
+/// Larger than DEFAULT_LEAF_CAPACITY (32) to cheapen mid-band partition tell
+/// while still pruning under greedy search (beam visits one leaf).
+const MID_BAND_LEAF_CAPACITY: usize = 256;
+
 fn index_compact_threshold(indexed_rows: usize) -> usize {
     if indexed_rows <= 1000 {
         return 1;
@@ -210,16 +218,30 @@ impl IncrementalIndex {
         // Soft-sync spans just above `limit` used to take one structured
         // `build_from_rows` tree (better ask, slower tell). Very large spans
         // (turbo-enn 20k tells) are much faster as chunked row-id leaves plus
-        // maybe_compact. Only chunk when the span is well above `limit` so
-        // mid-size gaps (e.g. ~1–2k) keep the structured single-build path.
+        // maybe_compact. Mid-band spans (just above 2*limit, up to ~10k) use
+        // chunked shallow trees so ask gets pruning without deep k-means tell.
         let chunk_large_spans = pending > limit.saturating_mul(2);
-        if chunk_large_spans {
+        if chunk_large_spans && pending > MID_BAND_SHALLOW_MAX {
             // Drain pending centroid once so the first chunk does not place
             // with a mean over the entire pending span.
             let _ = self.take_pending_centroid(ctx.num_dim);
             while self.indexed_rows < end {
                 let chunk_end = (self.indexed_rows + limit).min(end);
                 self.build_batch(ctx, self.indexed_rows, chunk_end)?;
+                self.maybe_compact(ctx)?;
+            }
+        } else if chunk_large_spans {
+            // Mid-band: chunk just above the exhaustive-search row cliff so
+            // each fragment uses greedy/beam ask (visits ~leaf_capacity rows)
+            // instead of exhaustive scoring of a 1k empty leaf.
+            let _ = self.take_pending_centroid(ctx.num_dim);
+            let chunk_size = current_tuning()
+                .exhaustive_search_row_limit
+                .saturating_add(1)
+                .max(limit);
+            while self.indexed_rows < end {
+                let chunk_end = (self.indexed_rows + chunk_size).min(end);
+                self.build_shallow_structured_batch(ctx, self.indexed_rows, chunk_end)?;
                 self.maybe_compact(ctx)?;
             }
         } else {
@@ -292,6 +314,33 @@ impl IncrementalIndex {
         self.amalgamate_smallest_run(ctx, 2)
     }
 
+    /// Mid-band: load vectors and build a shallow partition tree (large leaf capacity).
+    fn build_shallow_structured_batch(
+        &mut self,
+        ctx: &IndexBuildContext<'_>,
+        start: usize,
+        end: usize,
+    ) -> Result<(), BpannError> {
+        if start >= end {
+            return Ok(());
+        }
+        let seed = current_tuning().build_seed.unwrap_or(start as u64);
+        let row_ids: Vec<u32> = (start..end).map(|i| i as u32).collect();
+        let vectors = load_vectors_from_mmap(ctx, start, end)?;
+        let index = BpannIndex::build_from_rows_with_persist(
+            &row_ids,
+            &vectors,
+            ctx.num_dim,
+            MID_BAND_LEAF_CAPACITY,
+            seed,
+            self.index_dir.clone(),
+            false,
+        )?;
+        self.indices.push(index);
+        self.indexed_rows = end;
+        Ok(())
+    }
+
     fn build_batch(
         &mut self,
         ctx: &IndexBuildContext<'_>,
@@ -324,13 +373,7 @@ impl IncrementalIndex {
             // builds its own tree from rows but must still drain the accumulator
             // so the next small sync is not poisoned by already-indexed mass.
             let _ = self.take_pending_centroid(ctx.num_dim);
-            let mut vectors = Vec::with_capacity(batch_len);
-            let mut vec_buf = Vec::with_capacity(ctx.num_dim);
-            for i in start..end {
-                let row = ctx.train_x.mmap_row_slice(i)?;
-                bpann_row_to_f32(row, ctx.scale_x, ctx.x_scale, &mut vec_buf);
-                vectors.push(std::mem::take(&mut vec_buf));
-            }
+            let vectors = load_vectors_from_mmap(ctx, start, end)?;
             BpannIndex::build_from_rows_with_persist(
                 &row_ids,
                 &vectors,
@@ -397,6 +440,21 @@ impl IncrementalIndex {
     pub fn index_memory_bytes(&self) -> usize {
         self.indices.iter().map(|i| i.index_memory_bytes()).sum()
     }
+}
+
+fn load_vectors_from_mmap(
+    ctx: &IndexBuildContext<'_>,
+    start: usize,
+    end: usize,
+) -> Result<Vec<Vec<f32>>, BpannError> {
+    let mut vectors = Vec::with_capacity(end - start);
+    let mut vec_buf = Vec::with_capacity(ctx.num_dim);
+    for i in start..end {
+        let row = ctx.train_x.mmap_row_slice(i)?;
+        bpann_row_to_f32(row, ctx.scale_x, ctx.x_scale, &mut vec_buf);
+        vectors.push(std::mem::take(&mut vec_buf));
+    }
+    Ok(vectors)
 }
 
 fn centroid_from_mmap_rows(
@@ -508,6 +566,15 @@ mod kiss_coverage_tests {
                     usize,
                     usize,
                 ) -> Result<(), BpannError>,
+            IncrementalIndex::build_shallow_structured_batch
+                as fn(
+                    &mut IncrementalIndex,
+                    &IndexBuildContext<'_>,
+                    usize,
+                    usize,
+                ) -> Result<(), BpannError>,
+            load_vectors_from_mmap
+                as fn(&IndexBuildContext<'_>, usize, usize) -> Result<Vec<Vec<f32>>, BpannError>,
             centroid_from_mmap_rows
                 as fn(&IndexBuildContext<'_>, usize, usize) -> Result<Vec<f32>, BpannError>,
             search_index_candidates
@@ -672,8 +739,8 @@ mod kiss_coverage_tests {
     #[test]
     fn large_soft_sync_uses_chunked_leaf_builds() {
         let limit = current_tuning().structured_build_row_limit;
-        // Must exceed 2*limit to take the chunked path.
-        let n = limit * 3 + 10;
+        // Must exceed MID_BAND_SHALLOW_MAX to take the empty-leaf chunk path.
+        let n = MID_BAND_SHALLOW_MAX + limit + 10;
         let dir = TempDir::new().unwrap();
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
         let x_path = dir.path().join("train_x.bin");
@@ -689,14 +756,40 @@ mod kiss_coverage_tests {
         idx.ensure_sync_for_backend(&store, 2, false, &scale, dir.path(), 1, n)
             .unwrap();
         assert_eq!(idx.indexed_rows, n);
-        // At ~3k rows, compact threshold is 3 and limit is 6, so three leaf
-        // chunks should remain (pre-amalgamation). A single build_from_rows
-        // path would have left exactly one fragment.
         assert!(
             idx.indices.len() >= 2,
             "expected chunked builds, got {} fragment(s)",
             idx.indices.len()
         );
+    }
+
+    #[test]
+    fn midband_soft_sync_uses_greedy_sized_structured_chunks() {
+        let limit = current_tuning().structured_build_row_limit;
+        let n = limit * 2 + 100;
+        assert!(n > limit * 2 && n <= MID_BAND_SHALLOW_MAX);
+        let dir = TempDir::new().unwrap();
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        let x_path = dir.path().join("train_x.bin");
+        let mut store = MmapColumnStore::mmap_open_or_create(x_path, 2, None).unwrap();
+        let scale = [1.0_f64, 1.0];
+        let mut mid = ndarray::Array2::<f64>::zeros((n, 2));
+        for i in 0..n {
+            mid[[i, 0]] = i as f64;
+        }
+        store.mmap_append(&mid.view()).unwrap();
+        idx.note_pending_rows(&mid.view(), false, &scale);
+        idx.ensure_sync_for_backend(&store, 2, false, &scale, dir.path(), 1, n)
+            .unwrap();
+        assert_eq!(idx.indexed_rows, n);
+        assert!(!idx.indices.is_empty());
+        let index = &idx.indices[0];
+        assert_eq!(index.header.leaf_capacity, MID_BAND_LEAF_CAPACITY);
+        let has_vectors = index.pages.iter().any(|p| {
+            matches!(p, crate::index::page::Page::Leaf { vectors, .. } if !vectors.is_empty())
+        });
+        assert!(has_vectors);
+        assert!(!idx.search_candidates(&[1.0, 0.0], 3, None).unwrap().is_empty());
     }
 
     #[test]
