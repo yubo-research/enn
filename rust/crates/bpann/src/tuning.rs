@@ -54,7 +54,9 @@ impl Default for BpannTuning {
             build_seed: None,
             pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
             pending_hard_flush_threshold: DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
-            structured_build_row_limit: 1_024,
+            // Batches ≤ this limit use row-id-only leaves (mmap score path). Default 1
+            // so ordinary soft/hard flushes build in-memory leaf vectors instead.
+            structured_build_row_limit: 1,
             search_beam_width: 1,
             exhaustive_search_row_limit: DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT,
             skip_refinement_row_limit: DEFAULT_SKIP_REFINEMENT_ROW_LIMIT,
