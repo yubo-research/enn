@@ -305,3 +305,49 @@ def test_turbo_enn_cli_real_optimizer_smoke():
     for line, stop in zip(lines[1:], stops, strict=True):
         assert _TURBO_ROW_RE.fullmatch(line), line
         assert int(line.split()[0]) == stop
+
+
+def test_turbo_enn_seed_chunk_default_is_large():
+    """Large default chunk cuts per-tell overhead for N>=10000 gaps."""
+    import inspect
+
+    from ops.stress import TURBO_ENN_SEED_CHUNK
+
+    assert TURBO_ENN_SEED_CHUNK == 20_000
+    sig = inspect.signature(run_turbo_enn_stress)
+    assert sig.parameters["seed_chunk"].default == TURBO_ENN_SEED_CHUNK
+
+
+def test_turbo_enn_larger_seed_chunk_not_slower_on_large_gap():
+    """Metamorphic: fewer tell chunks must not increase wall time for a large gap."""
+    import time
+
+    from enn import create_optimizer
+    from enn.benchmarks import Ackley
+    from ops.stress import (
+        TURBO_ENN_ACKLEY_NOISE,
+        TURBO_ENN_SEED,
+        build_turbo_enn_optimizer_config,
+        seed_turbo_enn_to_n,
+    )
+
+    def timed_gap(chunk: int) -> float:
+        cfg = build_turbo_enn_optimizer_config(index_driver=ENNIndexDriver.FLAT)
+        ackley = Ackley(
+            noise=TURBO_ENN_ACKLEY_NOISE, rng=np.random.default_rng(TURBO_ENN_SEED)
+        )
+        bounds = np.array([ackley.bounds] * 10, dtype=float)
+        opt = create_optimizer(
+            bounds=bounds, config=cfg, rng=np.random.default_rng(TURBO_ENN_SEED)
+        )
+        rng = np.random.default_rng(TURBO_ENN_SEED + 17)
+        seed_turbo_enn_to_n(opt, ackley, bounds, 5_000, rng=rng, chunk=chunk)
+        t0 = time.perf_counter()
+        seed_turbo_enn_to_n(opt, ackley, bounds, 20_000, rng=rng, chunk=chunk)
+        return time.perf_counter() - t0
+
+    slow = timed_gap(1_000)
+    fast = timed_gap(20_000)
+    assert fast <= slow * 0.75, (
+        f"chunk=20k {fast:.3f}s should beat chunk=1k {slow:.3f}s by >=25%"
+    )

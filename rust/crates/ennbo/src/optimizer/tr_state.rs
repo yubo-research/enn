@@ -53,6 +53,14 @@ impl TrustRegionState {
         }
     }
 
+    /// Observations accounted for by the TuRBO length-adaptation state (0 for Morbo).
+    pub fn turbo_prev_num_obs(&self) -> usize {
+        match self {
+            TrustRegionState::Turbo(t) => t.prev_num_obs(),
+            TrustRegionState::Morbo(_) => 0,
+        }
+    }
+
     pub fn set_num_arms(&mut self, num_arms: usize) {
         match self {
             TrustRegionState::Turbo(t) => t.set_num_arms(num_arms),
@@ -171,13 +179,45 @@ impl TrustRegionState {
                         y_incumbent.len()
                     )));
                 }
-                let y_1d = y_all.column(0).to_owned();
-                t.update_with_incumbent(&y_1d.view(), num_obs, y_incumbent[0])
+                let y_1d = y_all.column(0);
+                t.update_with_incumbent(&y_1d, num_obs, y_incumbent[0])
                     .map_err(|e| ENNError::InvalidParameter(e.to_string()))
             }
             TrustRegionState::Morbo(m) => m
                 .as_mut()
                 .update(&y_all.view(), y_incumbent)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string())),
+        }
+    }
+
+    /// TuRBO trust-region update from the newly told batch only (O(batch), not O(history)).
+    pub fn tell_update_new_batch(
+        &mut self,
+        y_new: &ArrayView2<f64>,
+        y_incumbent: &ArrayView1<f64>,
+        num_obs: usize,
+    ) -> Result<(), ENNError> {
+        match self {
+            TrustRegionState::Turbo(t) => {
+                if y_new.ncols() != 1 {
+                    return Err(ENNError::InvalidParameter(format!(
+                        "Turbo TR expects 1 objective column, got {}",
+                        y_new.ncols()
+                    )));
+                }
+                if y_incumbent.len() != 1 {
+                    return Err(ENNError::InvalidParameter(format!(
+                        "Turbo TR expects 1 incumbent scalar, got {}",
+                        y_incumbent.len()
+                    )));
+                }
+                let y_1d = y_new.column(0);
+                t.update_with_incumbent_new_batch(&y_1d, num_obs, y_incumbent[0])
+                    .map_err(|e| ENNError::InvalidParameter(e.to_string()))
+            }
+            TrustRegionState::Morbo(m) => m
+                .as_mut()
+                .update(&y_new.view(), y_incumbent)
                 .map_err(|e| ENNError::InvalidParameter(e.to_string())),
         }
     }

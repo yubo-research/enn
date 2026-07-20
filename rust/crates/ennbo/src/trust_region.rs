@@ -71,6 +71,10 @@ pub struct TurboTrustRegion {
     num_arms: Option<usize>,
     /// Length configuration.
     config: TRLengthConfig,
+    /// Min of y[0..prev_num_obs] for O(1) improvement scale (no full-history scan).
+    hist_ymin: f64,
+    /// Max of y[0..prev_num_obs] for O(1) improvement scale.
+    hist_ymax: f64,
 }
 
 impl TurboTrustRegion {
@@ -87,6 +91,23 @@ impl TurboTrustRegion {
             num_dim,
             num_arms: None,
             config,
+            hist_ymin: f64::INFINITY,
+            hist_ymax: f64::NEG_INFINITY,
+        }
+    }
+
+    fn incorporate_hist(&mut self, y_new: &ArrayView1<f64>) {
+        for &v in y_new.iter() {
+            self.hist_ymin = self.hist_ymin.min(v);
+            self.hist_ymax = self.hist_ymax.max(v);
+        }
+    }
+
+    fn scale_from_hist(&self) -> f64 {
+        if self.prev_num_obs >= 2 {
+            (self.hist_ymax - self.hist_ymin).max(1e-6)
+        } else {
+            0.0
         }
     }
 
@@ -292,22 +313,39 @@ impl TurboTrustRegion {
             )));
         }
 
+        let y_new = y_all.slice(s![self.prev_num_obs..]);
+        self.update_with_incumbent_new_batch(&y_new, num_obs, y_incumbent_value)
+    }
+
+    /// Same as [`Self::update_with_incumbent`], but only the newly told batch is required.
+    ///
+    /// Maintains running y min/max so improvement scale is O(1) in history length.
+    pub fn update_with_incumbent_new_batch(
+        &mut self,
+        y_new: &ArrayView1<f64>,
+        num_obs: usize,
+        y_incumbent_value: f64,
+    ) -> Result<(), TrustRegionError> {
+        let n_new = y_new.len();
+        if n_new == 0 {
+            return Ok(());
+        }
+        let n = self.prev_num_obs + n_new;
+        if num_obs != n {
+            return Err(TrustRegionError::InvalidParameter(format!(
+                "num_obs {} must equal prev_num_obs {} + y_new.len() {}",
+                num_obs, self.prev_num_obs, n_new
+            )));
+        }
+
         if !self.best_value.is_finite() {
             self.best_value = y_incumbent_value;
+            self.incorporate_hist(y_new);
             self.prev_num_obs = n;
             return Ok(());
         }
 
-        let prev_slice = y_all.slice(s![..self.prev_num_obs]);
-        let prev_len = prev_slice.len();
-        let scale = if prev_len >= 2 {
-            let min_val = prev_slice.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-            let max_val = prev_slice.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-            (max_val - min_val).max(1e-6)
-        } else {
-            0.0
-        };
-
+        let scale = self.scale_from_hist();
         let improved = y_incumbent_value > self.best_value + 1e-3 * scale;
         if improved {
             self.success_counter += 1;
@@ -327,6 +365,7 @@ impl TurboTrustRegion {
             self.failure_counter = 0;
         }
         self.best_value = self.best_value.max(y_incumbent_value);
+        self.incorporate_hist(y_new);
         self.prev_num_obs = n;
         Ok(())
     }
@@ -363,6 +402,8 @@ impl TurboTrustRegion {
         self.success_counter = 0;
         self.best_value = f64::NEG_INFINITY;
         self.prev_num_obs = 0;
+        self.hist_ymin = f64::INFINITY;
+        self.hist_ymax = f64::NEG_INFINITY;
     }
 }
 
@@ -520,5 +561,91 @@ mod tests {
         let e2 = TrustRegionError::InvalidState("bad state".to_string());
         assert!(e1.to_string().contains("Invalid parameter"));
         assert!(e2.to_string().contains("Invalid state"));
+    }
+
+    #[test]
+    fn update_with_incumbent_new_batch_matches_full_history() {
+        let config = TRLengthConfig::default();
+        let mut full = TurboTrustRegion::new(2, config);
+        let mut batch = TurboTrustRegion::new(2, config);
+        full.set_num_arms(1);
+        batch.set_num_arms(1);
+
+        let batches: [&[f64]; 4] = [&[1.0], &[0.5, 0.4], &[2.0], &[1.9, 1.8, 2.1]];
+        let incumbents = [1.0, 1.0, 2.0, 2.1];
+        let mut y_all: Vec<f64> = Vec::new();
+        for (b, &inc) in batches.iter().zip(incumbents.iter()) {
+            y_all.extend_from_slice(b);
+            let y_arr = ndarray::Array1::from_vec(y_all.clone());
+            full
+                .update_with_incumbent(&y_arr.view(), y_all.len(), inc)
+                .unwrap();
+            let y_new = ndarray::Array1::from_vec(b.to_vec());
+            batch
+                .update_with_incumbent_new_batch(&y_new.view(), y_all.len(), inc)
+                .unwrap();
+            assert_eq!(full.length(), batch.length());
+            assert_eq!(full.prev_num_obs, batch.prev_num_obs);
+            assert_eq!(full.success_counter, batch.success_counter);
+            assert_eq!(full.failure_counter, batch.failure_counter);
+        }
+    }
+
+    #[test]
+    fn update_with_incumbent_restart_catchup_then_batch_matches_full() {
+        // Mirrors tell_turbo: after restart, catch up once with full y, then O(batch).
+        let config = TRLengthConfig::default();
+        let mut full = TurboTrustRegion::new(2, config);
+        let mut mixed = TurboTrustRegion::new(2, config);
+        full.set_num_arms(1);
+        mixed.set_num_arms(1);
+
+        let pre: [&[f64]; 2] = [&[1.0, 0.5], &[0.8]];
+        let mut y_all: Vec<f64> = Vec::new();
+        for (b, &inc) in pre.iter().zip([1.0_f64, 1.0].iter()) {
+            y_all.extend_from_slice(b);
+            let y_arr = ndarray::Array1::from_vec(y_all.clone());
+            full
+                .update_with_incumbent(&y_arr.view(), y_all.len(), inc)
+                .unwrap();
+            mixed
+                .update_with_incumbent(&y_arr.view(), y_all.len(), inc)
+                .unwrap();
+        }
+
+        full.restart();
+        mixed.restart();
+        assert_eq!(mixed.prev_num_obs(), 0);
+
+        // Catch-up: full history as one tell (prev_num_obs == 0 path).
+        let y_catch = ndarray::Array1::from_vec(y_all.clone());
+        full
+            .update_with_incumbent(&y_catch.view(), y_all.len(), 1.0)
+            .unwrap();
+        mixed
+            .update_with_incumbent(&y_catch.view(), y_all.len(), 1.0)
+            .unwrap();
+        assert_eq!(full.length(), mixed.length());
+        assert_eq!(full.prev_num_obs, mixed.prev_num_obs);
+
+        let post: [&[f64]; 3] = [&[2.0], &[1.5, 2.2], &[2.3]];
+        let post_inc = [2.0_f64, 2.2, 2.3];
+        for (b, &inc) in post.iter().zip(post_inc.iter()) {
+            y_all.extend_from_slice(b);
+            let y_arr = ndarray::Array1::from_vec(y_all.clone());
+            full
+                .update_with_incumbent(&y_arr.view(), y_all.len(), inc)
+                .unwrap();
+            let y_new = ndarray::Array1::from_vec(b.to_vec());
+            mixed
+                .update_with_incumbent_new_batch(&y_new.view(), y_all.len(), inc)
+                .unwrap();
+            assert_eq!(full.length(), mixed.length());
+            assert_eq!(full.prev_num_obs, mixed.prev_num_obs);
+            assert_eq!(full.success_counter, mixed.success_counter);
+            assert_eq!(full.failure_counter, mixed.failure_counter);
+            assert_eq!(full.hist_ymin, mixed.hist_ymin);
+            assert_eq!(full.hist_ymax, mixed.hist_ymax);
+        }
     }
 }

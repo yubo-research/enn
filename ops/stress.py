@@ -58,6 +58,8 @@ TURBO_ENN_ACKLEY_NOISE = 0.1
 TURBO_ENN_SEED = 0
 TURBO_ENN_K = 10
 TURBO_ENN_NUM_FIT_SAMPLES = 100
+# Larger than proposal-scale chunk: turbo-enn large gaps pay per-tell fit/TR cost.
+TURBO_ENN_SEED_CHUNK = 20_000
 PROPOSAL_SCALE_NS: tuple[int, ...] = (
     10,
     30,
@@ -1076,7 +1078,7 @@ def run_turbo_enn_stress(
     num_ask: int,
     work_dir: str | None = None,
     seed: int = TURBO_ENN_SEED,
-    seed_chunk: int = PROPOSAL_SCALE_SEED_CHUNK,
+    seed_chunk: int = TURBO_ENN_SEED_CHUNK,
     optimizer=None,
     objective=None,
     bounds: np.ndarray | None = None,

@@ -319,19 +319,31 @@ fn tell_turbo(
 ) -> Result<(), ENNError> {
     tell_common(optimizer, x, y, Some(telemetry), rng)?;
 
-    let y_all = optimizer
-        .y_obs()
-        .ok_or_else(|| ENNError::InvalidParameter("Missing y observations".to_string()))?;
-    let num_obs = y_all.nrows();
+    let num_obs = optimizer.obs_count();
     let y_incumbent = optimizer
         .incumbent_y_scalar()
         .ok_or_else(|| ENNError::InvalidParameter("Missing incumbent y".to_string()))?
         .to_owned();
     optimizer.trust_region_mut().set_num_arms(x.nrows());
     if !optimizer.trust_region().is_morbo() {
-        optimizer
-            .trust_region_mut()
-            .tell_update(&y_all.view(), &y_incumbent.view(), num_obs)?;
+        // Init-phase tells do not advance TR prev_num_obs. Catch up once with full y,
+        // then use O(batch) updates for subsequent tells.
+        if optimizer.trust_region().turbo_prev_num_obs() == 0 {
+            let y_all = optimizer.y_obs().ok_or_else(|| {
+                ENNError::InvalidParameter("Missing y observations".to_string())
+            })?;
+            optimizer.trust_region_mut().tell_update(
+                &y_all.view(),
+                &y_incumbent.view(),
+                num_obs,
+            )?;
+        } else {
+            optimizer.trust_region_mut().tell_update_new_batch(
+                y,
+                &y_incumbent.view(),
+                num_obs,
+            )?;
+        }
     }
     if optimizer.trust_region().needs_restart() {
         optimizer.trust_region_mut().restart(Some(rng));
