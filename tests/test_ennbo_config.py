@@ -19,13 +19,14 @@ def _assert_default_config_written(cfg: Path) -> None:
     assert "exhaustive_search_row_limit" in text
     assert "skip_refinement_row_limit" in text
     assert "search_fragment_budget_max" in text
-    assert "10000" in text
+    assert "index_compact_rows_per_fragment = 10000" in text
     assert "pending_flush_threshold = 250" in text
     assert "pending_hard_flush_threshold = 3000" in text
+    assert "structured_build_row_limit = 1" in text
+    assert "search_beam_width = 1" in text
     assert "exhaustive_search_row_limit = 2500" in text
     assert "skip_refinement_row_limit = 150000" in text
     assert "search_fragment_budget_max = 1" in text
-    assert "1024" in text
 
 
 def test_ensure_config_file_creates_defaults(tmp_path: Path) -> None:
