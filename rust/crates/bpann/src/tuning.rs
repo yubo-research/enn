@@ -22,6 +22,12 @@ pub const DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT: usize = 2500;
 /// Default max indexed rows for skip-refinement search (and skip-edge build).
 pub const DEFAULT_SKIP_REFINEMENT_ROW_LIMIT: usize = 150_000;
 
+/// Default max batch size for row-id-only leaf builds (mmap score path).
+///
+/// Matches the historical hardcoded cutoff in `build_batch` on main. Batches
+/// larger than this use full in-memory leaf vectors.
+pub const DEFAULT_STRUCTURED_BUILD_ROW_LIMIT: usize = 1024;
+
 /// Snapshot of tunable BPANN parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BpannTuning {
@@ -54,9 +60,8 @@ impl Default for BpannTuning {
             build_seed: None,
             pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
             pending_hard_flush_threshold: DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
-            // Batches ≤ this limit use row-id-only leaves (mmap score path). Default 1
-            // so ordinary soft/hard flushes build in-memory leaf vectors instead.
-            structured_build_row_limit: 1,
+            // Batches ≤ this limit use row-id-only leaves (mmap score path).
+            structured_build_row_limit: DEFAULT_STRUCTURED_BUILD_ROW_LIMIT,
             search_beam_width: 1,
             exhaustive_search_row_limit: DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT,
             skip_refinement_row_limit: DEFAULT_SKIP_REFINEMENT_ROW_LIMIT,
@@ -331,6 +336,8 @@ mod tests {
         assert_eq!(t.skip_refinement_row_limit, DEFAULT_SKIP_REFINEMENT_ROW_LIMIT);
         assert_eq!(DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT, 2500);
         assert_eq!(DEFAULT_SKIP_REFINEMENT_ROW_LIMIT, 150_000);
+        assert_eq!(t.structured_build_row_limit, DEFAULT_STRUCTURED_BUILD_ROW_LIMIT);
+        assert_eq!(DEFAULT_STRUCTURED_BUILD_ROW_LIMIT, 1024);
         // Latency default: search at most one fragment when many exist (proposal scout).
         assert_eq!(t.search_fragment_budget_max, 1);
     }

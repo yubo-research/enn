@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(cfg.index_compact_rows_per_fragment(), 10_000);
         assert_eq!(cfg.pending_flush_threshold(), 250);
         assert_eq!(cfg.pending_hard_flush_threshold(), 3000);
-        assert_eq!(cfg.structured_build_row_limit(), 1);
+        assert_eq!(cfg.structured_build_row_limit(), 1024);
         assert_eq!(cfg.search_beam_width(), 1);
         assert_eq!(cfg.exhaustive_search_row_limit(), 2500);
         assert_eq!(cfg.skip_refinement_row_limit(), 150_000);

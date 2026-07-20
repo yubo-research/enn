@@ -54,7 +54,6 @@ DISK_STRESS_RSS_BASELINE_MIB = 512
 DISK_STRESS_RSS_PER_SHARD_ROW_BYTES = 64
 DEFAULT_SHARD_MAX_ROWS = 500_000
 TURBO_ENN_NUM_INIT = 10
-TURBO_ENN_EVAL_SLEEP_S = 0.1
 TURBO_ENN_ACKLEY_NOISE = 0.1
 TURBO_ENN_SEED = 0
 TURBO_ENN_K = 10
@@ -969,10 +968,41 @@ def format_draw_method_summary_aggregate(method: DrawMethodAggregate) -> str:
 
 @dataclass(frozen=True)
 class TurboEnnRoundResult:
-    round_idx: int
+    n: int
     iter_s: float
     ask_s: float
     tell_s: float
+
+
+def turbo_enn_ask_stops(num_obs: int, num_ask: int) -> tuple[int, ...]:
+    """Return NUM_ASK exponentially spaced cumulative observation stops in [1, NUM_OBS].
+
+    Example: ``turbo_enn_ask_stops(30, 4) == (1, 3, 10, 30)``.
+    """
+    if num_obs < 1:
+        raise ValueError("num_obs must be >= 1")
+    if num_ask < 1:
+        raise ValueError("num_ask must be >= 1")
+    if num_ask > num_obs:
+        raise ValueError("num_ask must be <= num_obs")
+    if num_ask == 1:
+        return (num_obs,)
+
+    ideal = np.exp(np.linspace(np.log(1.0), np.log(float(num_obs)), num=num_ask))
+    stops: list[int] = []
+    for i, value in enumerate(ideal):
+        lo = (stops[-1] + 1) if stops else 1
+        hi = num_obs - (num_ask - i - 1)
+        assert lo <= hi, f"no room for stop {i}: lo={lo} hi={hi}"
+        cand = int(round(float(value)))
+        cand = min(max(cand, lo), hi)
+        stops.append(cand)
+    assert len(stops) == num_ask, f"expected {num_ask} stops, got {len(stops)}"
+    assert stops[-1] == num_obs, (
+        f"final stop must be num_obs={num_obs}, got {stops[-1]}"
+    )
+    assert all(stops[i] < stops[i + 1] for i in range(num_ask - 1)), stops
+    return tuple(stops)
 
 
 def build_turbo_enn_optimizer_config(
@@ -1019,43 +1049,44 @@ def build_turbo_enn_optimizer_config(
 def format_turbo_enn_config_header(
     *,
     num_dim: int,
-    num_rounds: int,
+    num_obs: int,
+    num_ask: int,
     index_type: str,
     work_dir: str | None = None,
 ) -> str:
-    header = f"num_dim={num_dim} num_rounds={num_rounds} index_type={index_type}"
+    header = (
+        f"num_dim={num_dim} num_obs={num_obs} num_ask={num_ask} index_type={index_type}"
+    )
     if work_dir is not None:
         header = f"{header} work_dir={work_dir}"
     return header
 
 
 def format_turbo_enn_row(
-    round_idx: int, iter_s: float, ask_s: float, tell_s: float, *, n_width: int
+    n: int, iter_s: float, ask_s: float, tell_s: float, *, n_width: int
 ) -> str:
-    return f"{round_idx:>{n_width}} {iter_s:.3f} {ask_s:.3f} {tell_s:.3f}"
+    return f"{n:>{n_width}} {iter_s:.3f} {ask_s:.3f} {tell_s:.3f}"
 
 
 def run_turbo_enn_stress(
     *,
     index_driver: ENNIndexDriver,
     num_dim: int,
-    num_rounds: int,
+    num_obs: int,
+    num_ask: int,
     work_dir: str | None = None,
     seed: int = TURBO_ENN_SEED,
-    eval_sleep_s: float = TURBO_ENN_EVAL_SLEEP_S,
+    seed_chunk: int = PROPOSAL_SCALE_SEED_CHUNK,
     optimizer=None,
     objective=None,
-    sleep_fn=None,
+    bounds: np.ndarray | None = None,
 ) -> Iterator[TurboEnnRoundResult]:
-    """Run ask → Ackley eval → sleep → tell; yield per-round wall timings."""
+    """Tell DGP obs in exponential groups; at each stop time ask(1) and discard arms."""
     if num_dim < 1:
         raise ValueError("num_dim must be >= 1")
-    if num_rounds < TURBO_ENN_NUM_INIT:
-        raise ValueError(
-            f"num_rounds must be >= {TURBO_ENN_NUM_INIT} (includes LHD init)"
-        )
-    if eval_sleep_s < 0:
-        raise ValueError("eval_sleep_s must be >= 0")
+    stops = turbo_enn_ask_stops(num_obs, num_ask)
+    if seed_chunk < 1:
+        raise ValueError("seed_chunk must be >= 1")
 
     from enn import create_optimizer
     from enn.benchmarks import Ackley
@@ -1064,36 +1095,43 @@ def run_turbo_enn_stress(
         ackley = Ackley(noise=TURBO_ENN_ACKLEY_NOISE, rng=np.random.default_rng(seed))
     else:
         ackley = objective
+    if bounds is None:
+        bounds_arr = np.array([ackley.bounds] * num_dim, dtype=float)
+    else:
+        bounds_arr = np.asarray(bounds, dtype=float)
     if optimizer is None:
-        bounds = np.array([ackley.bounds] * num_dim, dtype=float)
         config = build_turbo_enn_optimizer_config(
             index_driver=index_driver,
             work_dir=work_dir,
             num_init=TURBO_ENN_NUM_INIT,
         )
         opt = create_optimizer(
-            bounds=bounds, config=config, rng=np.random.default_rng(seed)
+            bounds=bounds_arr, config=config, rng=np.random.default_rng(seed)
         )
     else:
         opt = optimizer
-    sleep = sleep_fn if sleep_fn is not None else time.sleep
 
-    for round_idx in range(1, num_rounds + 1):
+    dgp_rng = np.random.default_rng(seed + 17)
+    prev = 0
+    for stop in stops:
+        gap = stop - prev
+        assert gap >= 1, f"empty group at stop={stop} prev={prev}"
         t0 = time.perf_counter()
-        x = opt.ask(num_arms=1)
-        ask_s = time.perf_counter() - t0
-        y = np.asarray(ackley(x), dtype=float)
-        if y.ndim == 1:
-            y = y.reshape(-1, 1)
-        assert y.shape == (1, 1), f"expected y shape (1, 1), got {y.shape}"
-        sleep(eval_sleep_s)
-        t_tell0 = time.perf_counter()
-        opt.tell(x, y)
-        tell_s = time.perf_counter() - t_tell0
-        iter_s = time.perf_counter() - t0
-        yield TurboEnnRoundResult(
-            round_idx=round_idx, iter_s=iter_s, ask_s=ask_s, tell_s=tell_s
+        seed_turbo_enn_to_n(
+            opt,
+            ackley,
+            bounds_arr,
+            gap,
+            rng=dgp_rng,
+            chunk=seed_chunk,
         )
+        tell_s = time.perf_counter() - t0
+        t_ask0 = time.perf_counter()
+        _ = opt.ask(num_arms=1)  # discard arms; timing only
+        ask_s = time.perf_counter() - t_ask0
+        iter_s = ask_s + tell_s
+        yield TurboEnnRoundResult(n=stop, iter_s=iter_s, ask_s=ask_s, tell_s=tell_s)
+        prev = stop
 
 
 @dataclass(frozen=True)
@@ -1538,7 +1576,8 @@ def draw(
             ["index_type"],
             type=click.Choice(INDEX_TYPE_CHOICES),
         ),
-        click.Argument(["num_rounds"], type=int),
+        click.Argument(["num_obs"], type=int),
+        click.Argument(["num_ask"], type=int),
         click.Option(
             ["--num-dim"],
             type=int,
@@ -1556,17 +1595,20 @@ def draw(
 )
 def turbo_enn(
     index_type: str,
-    num_rounds: int,
+    num_obs: int,
+    num_ask: int,
     num_dim: int,
     work_dir: str | None,
 ) -> None:
-    """Time TuRBO-ENN ask/tell rounds on Ackley (init included in NUM_ROUNDS)."""
+    """Time TuRBO-ENN ask at exponentially spaced DGP observation checkpoints."""
     if num_dim < 1:
         raise click.ClickException("num_dim must be >= 1")
-    if num_rounds < TURBO_ENN_NUM_INIT:
-        raise click.ClickException(
-            f"num_rounds must be >= {TURBO_ENN_NUM_INIT} (includes LHD init)"
-        )
+    if num_obs < 1:
+        raise click.ClickException("num_obs must be >= 1")
+    if num_ask < 1:
+        raise click.ClickException("num_ask must be >= 1")
+    if num_ask > num_obs:
+        raise click.ClickException("num_ask must be <= num_obs")
     if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
         raise click.ClickException(
             f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
@@ -1577,22 +1619,24 @@ def turbo_enn(
     click.echo(
         format_turbo_enn_config_header(
             num_dim=num_dim,
-            num_rounds=num_rounds,
+            num_obs=num_obs,
+            num_ask=num_ask,
             index_type=index_type,
             work_dir=work_dir,
         )
     )
-    n_width = len(str(num_rounds))
+    n_width = len(str(num_obs))
     try:
         for row in run_turbo_enn_stress(
             index_driver=driver,
             num_dim=num_dim,
-            num_rounds=num_rounds,
+            num_obs=num_obs,
+            num_ask=num_ask,
             work_dir=work_dir,
         ):
             click.echo(
                 format_turbo_enn_row(
-                    row.round_idx,
+                    row.n,
                     row.iter_s,
                     row.ask_s,
                     row.tell_s,

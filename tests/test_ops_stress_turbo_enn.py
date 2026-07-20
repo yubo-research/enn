@@ -9,17 +9,44 @@ from click.testing import CliRunner
 from enn.turbo.config import UCBAcquisitionConfig
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from ops.stress import (
-    TURBO_ENN_EVAL_SLEEP_S,
     TURBO_ENN_NUM_FIT_SAMPLES,
     TURBO_ENN_NUM_INIT,
     build_turbo_enn_optimizer_config,
     format_turbo_enn_config_header,
     format_turbo_enn_row,
     run_turbo_enn_stress,
+    turbo_enn_ask_stops,
 )
 from tests.ops_stress_cli_helpers import assert_stress_cli_rejects
 
 _TURBO_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+\.\d{3} \d+\.\d{3}")
+
+
+def test_turbo_enn_ask_stops_plan_example():
+    assert turbo_enn_ask_stops(30, 4) == (1, 3, 10, 30)
+
+
+def test_turbo_enn_ask_stops_invariants():
+    for num_obs, num_ask in ((1, 1), (10, 1), (10, 10), (100, 5), (30, 4), (7, 3)):
+        stops = turbo_enn_ask_stops(num_obs, num_ask)
+        assert len(stops) == num_ask
+        assert stops[-1] == num_obs
+        assert stops[0] >= 1
+        assert all(stops[i] < stops[i + 1] for i in range(len(stops) - 1))
+        assert all(1 <= s <= num_obs for s in stops)
+
+
+@pytest.mark.parametrize(
+    "num_obs, num_ask, fragment",
+    [
+        (0, 1, "num_obs must be >="),
+        (10, 0, "num_ask must be >="),
+        (5, 6, "num_ask must be <="),
+    ],
+)
+def test_turbo_enn_ask_stops_rejects(num_obs, num_ask, fragment):
+    with pytest.raises(ValueError, match=fragment):
+        turbo_enn_ask_stops(num_obs, num_ask)
 
 
 def test_build_turbo_enn_optimizer_config_flat():
@@ -59,104 +86,181 @@ def test_build_turbo_enn_optimizer_config_rejects_work_dir_for_flat():
 
 def test_format_turbo_enn_header_and_row():
     assert (
-        format_turbo_enn_config_header(num_dim=10, num_rounds=12, index_type="flat")
-        == "num_dim=10 num_rounds=12 index_type=flat"
+        format_turbo_enn_config_header(
+            num_dim=10, num_obs=30, num_ask=4, index_type="flat"
+        )
+        == "num_dim=10 num_obs=30 num_ask=4 index_type=flat"
     )
     assert (
         format_turbo_enn_config_header(
             num_dim=10,
-            num_rounds=12,
+            num_obs=30,
+            num_ask=4,
             index_type="bpann_disk",
             work_dir="/tmp/w",
         )
-        == "num_dim=10 num_rounds=12 index_type=bpann_disk work_dir=/tmp/w"
+        == "num_dim=10 num_obs=30 num_ask=4 index_type=bpann_disk work_dir=/tmp/w"
     )
     assert (
         format_turbo_enn_row(1, 0.1234, 0.01, 0.02, n_width=2) == " 1 0.123 0.010 0.020"
     )
 
 
-def test_run_turbo_enn_stress_call_order_and_sleep():
+def test_run_turbo_enn_stress_dgp_tell_then_ask_ignore():
     events: list[str] = []
-    sleep_args: list[float] = []
+    tell_sizes: list[int] = []
+    ask_returns_used: list[object] = []
 
     class FakeOpt:
         def ask(self, num_arms=1):
             events.append(f"ask:{num_arms}")
-            return np.zeros((1, 2), dtype=float)
+            arms = np.full((1, 2), 99.0, dtype=float)
+            ask_returns_used.append(arms)
+            return arms
 
         def tell(self, x, y):
-            events.append("tell")
-            assert x.shape == (1, 2)
-            assert y.shape == (1, 1)
+            x = np.asarray(x)
+            y = np.asarray(y)
+            events.append(f"tell:{x.shape[0]}")
+            tell_sizes.append(int(x.shape[0]))
+            assert y.shape == (x.shape[0], 1)
+            assert x.shape[1] == 2
 
-    def fake_objective(x):
-        events.append("eval")
-        return np.array([1.0])
+    class FakeObjective:
+        bounds = [-1.0, 1.0]
 
-    def fake_sleep(seconds):
-        events.append("sleep")
-        sleep_args.append(seconds)
+        def __call__(self, x):
+            x = np.asarray(x)
+            events.append(f"eval:{x.shape[0]}")
+            return np.zeros(x.shape[0], dtype=float)
 
     rows = list(
         run_turbo_enn_stress(
             index_driver=ENNIndexDriver.FLAT,
             num_dim=2,
-            num_rounds=TURBO_ENN_NUM_INIT,
+            num_obs=10,
+            num_ask=3,
             optimizer=FakeOpt(),
-            objective=fake_objective,
-            sleep_fn=fake_sleep,
+            objective=FakeObjective(),
+            bounds=np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float),
+            seed_chunk=100,
         )
     )
-    assert len(rows) == TURBO_ENN_NUM_INIT
-    assert events == ["ask:1", "eval", "sleep", "tell"] * TURBO_ENN_NUM_INIT
-    assert sleep_args == [TURBO_ENN_EVAL_SLEEP_S] * TURBO_ENN_NUM_INIT
-    assert all(r.round_idx == i for i, r in enumerate(rows, start=1))
+    stops = turbo_enn_ask_stops(10, 3)
+    assert [r.n for r in rows] == list(stops)
+    gaps = [stops[0]] + [stops[i] - stops[i - 1] for i in range(1, len(stops))]
+    assert tell_sizes == gaps
+    expected_events: list[str] = []
+    for gap in gaps:
+        expected_events.extend([f"eval:{gap}", f"tell:{gap}", "ask:1"])
+    assert events == expected_events
+    # Ask arms must not be fed back into tell (tell sizes == DGP gaps only).
+    assert sum(tell_sizes) == 10
+    assert all(r.iter_s == pytest.approx(r.ask_s + r.tell_s) for r in rows)
+    assert len(ask_returns_used) == len(stops)
 
 
-def test_run_turbo_enn_stress_rejects_short_num_rounds():
-    with pytest.raises(ValueError, match="num_rounds must be >="):
+def test_run_turbo_enn_stress_rejects_bad_num_ask():
+    with pytest.raises(ValueError, match="num_ask must be <="):
         list(
             run_turbo_enn_stress(
                 index_driver=ENNIndexDriver.FLAT,
                 num_dim=2,
-                num_rounds=TURBO_ENN_NUM_INIT - 1,
+                num_obs=3,
+                num_ask=4,
                 optimizer=object(),
-                objective=lambda x: np.array([0.0]),
-                sleep_fn=lambda _s: None,
+                objective=lambda x: np.zeros(np.asarray(x).shape[0]),
             )
         )
 
 
-def test_turbo_enn_cli_flat(monkeypatch):
-    from ops.stress import cli
+@pytest.mark.parametrize(
+    "num_obs, num_ask", [(30, 4), (1, 1), (50, 7), (8, 8), (100, 3)]
+)
+def test_turbo_enn_gaps_sum_to_num_obs(num_obs, num_ask):
+    stops = turbo_enn_ask_stops(num_obs, num_ask)
+    gaps = [stops[0]] + [stops[i] - stops[i - 1] for i in range(1, len(stops))]
+    assert sum(gaps) == num_obs
+    assert all(g >= 1 for g in gaps)
 
-    monkeypatch.setattr("ops.stress.time.sleep", lambda _s: None)
-    result = CliRunner().invoke(cli, ["turbo-enn", "flat", "11", "--num-dim", "4"])
+    tell_sizes: list[int] = []
+
+    class FakeOpt:
+        def ask(self, num_arms=1):
+            return np.zeros((1, 2), dtype=float)
+
+        def tell(self, x, y):
+            tell_sizes.append(int(np.asarray(x).shape[0]))
+
+    class FakeObjective:
+        bounds = [-1.0, 1.0]
+
+        def __call__(self, x):
+            return np.zeros(np.asarray(x).shape[0], dtype=float)
+
+    list(
+        run_turbo_enn_stress(
+            index_driver=ENNIndexDriver.FLAT,
+            num_dim=2,
+            num_obs=num_obs,
+            num_ask=num_ask,
+            optimizer=FakeOpt(),
+            objective=FakeObjective(),
+            bounds=np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float),
+        )
+    )
+    assert tell_sizes == gaps
+    assert sum(tell_sizes) == num_obs
+
+
+def test_turbo_enn_cli_flat_mocked(monkeypatch):
+    from ops.stress import TurboEnnRoundResult, cli
+
+    def fake_run(*, index_driver, num_dim, num_obs, num_ask, **kwargs):
+        assert num_obs == 30
+        assert num_ask == 4
+        assert num_dim == 4
+        yield TurboEnnRoundResult(n=1, iter_s=0.1, ask_s=0.04, tell_s=0.06)
+        yield TurboEnnRoundResult(n=3, iter_s=0.2, ask_s=0.05, tell_s=0.15)
+        yield TurboEnnRoundResult(n=10, iter_s=0.3, ask_s=0.06, tell_s=0.24)
+        yield TurboEnnRoundResult(n=30, iter_s=0.4, ask_s=0.07, tell_s=0.33)
+
+    monkeypatch.setattr("ops.stress.run_turbo_enn_stress", fake_run)
+    result = CliRunner().invoke(cli, ["turbo-enn", "flat", "30", "4", "--num-dim", "4"])
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
-    assert lines[0] == "num_dim=4 num_rounds=11 index_type=flat"
-    assert len(lines) == 12
+    assert lines[0] == "num_dim=4 num_obs=30 num_ask=4 index_type=flat"
+    assert lines[1:] == [
+        " 1 0.100 0.040 0.060",
+        " 3 0.200 0.050 0.150",
+        "10 0.300 0.060 0.240",
+        "30 0.400 0.070 0.330",
+    ]
     for line in lines[1:]:
         assert _TURBO_ROW_RE.fullmatch(line), line
-        parts = line.split()
-        assert len(parts) == 4
-        float(parts[1])
-        float(parts[2])
-        float(parts[3])
 
 
-def test_turbo_enn_cli_bpann_disk(tmp_path, monkeypatch):
-    from ops.stress import cli
+def test_turbo_enn_cli_bpann_disk_mocked(tmp_path, monkeypatch):
+    from ops.stress import TurboEnnRoundResult, cli
 
-    monkeypatch.setattr("ops.stress.time.sleep", lambda _s: None)
     work_dir = tmp_path / "turbo_enn_cli"
+    work_dir.mkdir()
+
+    def fake_run(*, index_driver, num_dim, num_obs, num_ask, **kwargs):
+        assert kwargs["work_dir"] == str(work_dir)
+        assert num_obs == 10
+        assert num_ask == 2
+        yield TurboEnnRoundResult(n=3, iter_s=1.0, ask_s=0.4, tell_s=0.6)
+        yield TurboEnnRoundResult(n=10, iter_s=2.0, ask_s=0.5, tell_s=1.5)
+
+    monkeypatch.setattr("ops.stress.run_turbo_enn_stress", fake_run)
     result = CliRunner().invoke(
         cli,
         [
             "turbo-enn",
             "bpann_disk",
-            "11",
+            "10",
+            "2",
             "--num-dim",
             "4",
             "--work-dir",
@@ -166,24 +270,38 @@ def test_turbo_enn_cli_bpann_disk(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
     assert lines[0] == (
-        f"num_dim=4 num_rounds=11 index_type=bpann_disk work_dir={work_dir}"
+        f"num_dim=4 num_obs=10 num_ask=2 index_type=bpann_disk work_dir={work_dir}"
     )
-    assert len(lines) == 12
-    for line in lines[1:]:
-        assert _TURBO_ROW_RE.fullmatch(line), line
+    assert lines[1:] == [" 3 1.000 0.400 0.600", "10 2.000 0.500 1.500"]
 
 
 @pytest.mark.parametrize(
     "args, fragment",
     [
-        (["turbo-enn", "flat", "5"], "num_rounds must be >="),
-        (["turbo-enn", "bpann_disk", "12"], "bpann_disk requires --work-dir"),
+        (["turbo-enn", "flat", "5", "6"], "num_ask must be <="),
+        (["turbo-enn", "flat", "0", "1"], "num_obs must be >="),
+        (["turbo-enn", "flat", "10", "0"], "num_ask must be >="),
+        (["turbo-enn", "bpann_disk", "12", "3"], "bpann_disk requires --work-dir"),
         (
-            ["turbo-enn", "flat", "12", "--work-dir", "/tmp/x"],
+            ["turbo-enn", "flat", "12", "3", "--work-dir", "/tmp/x"],
             "work_dir requires index_type in",
         ),
-        (["turbo-enn", "flat", "11", "--num-dim", "0"], "num_dim must be >= 1"),
+        (["turbo-enn", "flat", "11", "2", "--num-dim", "0"], "num_dim must be >= 1"),
     ],
 )
 def test_turbo_enn_cli_rejects(args, fragment):
     assert_stress_cli_rejects(args, fragment)
+
+
+def test_turbo_enn_cli_real_optimizer_smoke():
+    from ops.stress import cli
+
+    result = CliRunner().invoke(cli, ["turbo-enn", "flat", "10", "3", "--num-dim", "2"])
+    assert result.exit_code == 0, result.output
+    lines = result.output.strip().splitlines()
+    assert lines[0] == "num_dim=2 num_obs=10 num_ask=3 index_type=flat"
+    stops = turbo_enn_ask_stops(10, 3)
+    assert len(lines) == 1 + len(stops)
+    for line, stop in zip(lines[1:], stops, strict=True):
+        assert _TURBO_ROW_RE.fullmatch(line), line
+        assert int(line.split()[0]) == stop

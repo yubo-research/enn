@@ -22,7 +22,7 @@ def _assert_default_config_written(cfg: Path) -> None:
     assert "index_compact_rows_per_fragment = 10000" in text
     assert "pending_flush_threshold = 250" in text
     assert "pending_hard_flush_threshold = 3000" in text
-    assert "structured_build_row_limit = 1" in text
+    assert "structured_build_row_limit = 1024" in text
     assert "search_beam_width = 1" in text
     assert "exhaustive_search_row_limit = 2500" in text
     assert "skip_refinement_row_limit = 150000" in text
