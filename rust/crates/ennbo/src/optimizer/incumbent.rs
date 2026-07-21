@@ -31,6 +31,7 @@ impl Optimizer {
         Ok(())
     }
 
+    #[allow(dead_code)] // retained for tests / morbo callers; tell_turbo must not use it
     pub(crate) fn reset_incumbent_tracker(&mut self) {
         self.incumbent_tracker.reset();
     }

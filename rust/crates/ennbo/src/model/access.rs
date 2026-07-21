@@ -33,6 +33,10 @@ impl<'a> EnnIndexAccess<'a> {
         self.model.backend.is_index_stale()
     }
 
+    pub fn release_observation_pages(&self) -> Result<(), ENNError> {
+        crate::backend::release_enn_observation_pages(&self.model.backend)
+    }
+
     pub fn len(&self) -> usize {
         self.model.backend.index_len()
     }

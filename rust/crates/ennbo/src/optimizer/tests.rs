@@ -169,6 +169,51 @@ fn test_noise_aware_config_and_incumbent_after_tell() {
 }
 
 #[test]
+fn reset_incumbent_tracker_desyncs_count_from_obs() {
+    // Regression lock: tell_turbo must not reset the tracker on TR restart, because
+    // a zeroed observation_count forces update_incumbent to load full y_obs (Θ(N)).
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(56);
+    let overrides = ConfigOverrides {
+        noise_aware: Some(true),
+        ..Default::default()
+    };
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+    let x = array![[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]];
+    let y = array![[0.0], [1.0], [0.5]];
+    opt.tell(&x.view(), &y.view(), &mut rng).unwrap();
+    assert_eq!(opt.incumbent_tracker.observation_count(), opt.obs_count());
+    opt.reset_incumbent_tracker();
+    assert_eq!(opt.incumbent_tracker.observation_count(), 0);
+    assert!(opt.obs_count() > 0);
+}
+
+#[test]
+fn turbo_length_restart_keeps_incumbent_tracker_synced() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(57);
+    let overrides = ConfigOverrides {
+        noise_aware: Some(true),
+        ..Default::default()
+    };
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+    // Drive failure counter to force a turbo length restart.
+    for i in 0..64 {
+        let x = array![[0.1 + 0.01 * (i as f64), 0.2]];
+        let y = array![[-(i as f64)]]; // never improve incumbent
+        opt.tell(&x.view(), &y.view(), &mut rng).unwrap();
+        assert_eq!(
+            opt.incumbent_tracker.observation_count(),
+            opt.obs_count(),
+            "tracker must stay synced after tell (incl. post-restart)"
+        );
+    }
+    assert!(opt.restart_generation() >= 1, "expected at least one TR restart");
+}
+
+#[test]
 fn kiss_optimizer_bounds_and_seed_helpers() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(1);

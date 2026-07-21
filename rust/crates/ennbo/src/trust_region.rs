@@ -396,14 +396,21 @@ impl TurboTrustRegion {
     }
 
     /// Restart the trust region (reset to initial state).
+    ///
+    /// Keeps `prev_num_obs` so the next tell can use the O(batch) path without
+    /// reloading full observation history (critical for disk-backed large N).
     pub fn restart(&mut self) {
         self.length = self.config.length_init;
         self.failure_counter = 0;
         self.success_counter = 0;
         self.best_value = f64::NEG_INFINITY;
-        self.prev_num_obs = 0;
         self.hist_ymin = f64::INFINITY;
         self.hist_ymax = f64::NEG_INFINITY;
+    }
+
+    /// Set observation watermark without scanning history (post-init / restart).
+    pub fn set_prev_num_obs(&mut self, prev_num_obs: usize) {
+        self.prev_num_obs = prev_num_obs;
     }
 }
 
@@ -592,8 +599,8 @@ mod tests {
     }
 
     #[test]
-    fn update_with_incumbent_restart_catchup_then_batch_matches_full() {
-        // Mirrors tell_turbo: after restart, catch up once with full y, then O(batch).
+    fn update_with_incumbent_restart_preserves_watermark_then_batch_matches_full() {
+        // After restart, prev_num_obs is kept so the next tell stays O(batch).
         let config = TRLengthConfig::default();
         let mut full = TurboTrustRegion::new(2, config);
         let mut mixed = TurboTrustRegion::new(2, config);
@@ -613,20 +620,12 @@ mod tests {
                 .unwrap();
         }
 
+        let watermark = mixed.prev_num_obs();
+        assert!(watermark > 0);
         full.restart();
         mixed.restart();
-        assert_eq!(mixed.prev_num_obs(), 0);
-
-        // Catch-up: full history as one tell (prev_num_obs == 0 path).
-        let y_catch = ndarray::Array1::from_vec(y_all.clone());
-        full
-            .update_with_incumbent(&y_catch.view(), y_all.len(), 1.0)
-            .unwrap();
-        mixed
-            .update_with_incumbent(&y_catch.view(), y_all.len(), 1.0)
-            .unwrap();
-        assert_eq!(full.length(), mixed.length());
-        assert_eq!(full.prev_num_obs, mixed.prev_num_obs);
+        assert_eq!(mixed.prev_num_obs(), watermark);
+        assert_eq!(full.prev_num_obs(), watermark);
 
         let post: [&[f64]; 3] = [&[2.0], &[1.5, 2.2], &[2.3]];
         let post_inc = [2.0_f64, 2.2, 2.3];

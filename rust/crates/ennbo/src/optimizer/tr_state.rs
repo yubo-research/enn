@@ -61,6 +61,13 @@ impl TrustRegionState {
         }
     }
 
+    pub fn set_turbo_prev_num_obs(&mut self, prev_num_obs: usize) {
+        match self {
+            TrustRegionState::Turbo(t) => t.set_prev_num_obs(prev_num_obs),
+            TrustRegionState::Morbo(_) => {}
+        }
+    }
+
     pub fn set_num_arms(&mut self, num_arms: usize) {
         match self {
             TrustRegionState::Turbo(t) => t.set_num_arms(num_arms),

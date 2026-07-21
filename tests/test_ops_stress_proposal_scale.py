@@ -99,6 +99,42 @@ def test_seed_turbo_enn_to_n_chunk_partition():
     assert all(dim == 2 for _, dim in opt.shapes)
 
 
+def test_seed_turbo_enn_to_n_does_not_materialize_full_n():
+    """Seed buffers must stay O(chunk), not O(n), so large-N disk stress stays RAM-bounded."""
+    n = 50_000
+    chunk = 1_000
+    peak_obj_rows = {"n": 0}
+    peak_uniform_rows = {"n": 0}
+
+    def counting_objective(x: np.ndarray) -> np.ndarray:
+        rows = int(np.asarray(x).shape[0])
+        peak_obj_rows["n"] = max(peak_obj_rows["n"], rows)
+        assert rows <= chunk, f"objective saw {rows} rows; chunk={chunk}"
+        return np.zeros((rows, 1), dtype=float)
+
+    inner_rng = np.random.default_rng(0)
+
+    def bounded_uniform(*args, **kwargs):
+        size = kwargs.get("size", args[2] if len(args) > 2 else None)
+        if size is not None and len(size) >= 1:
+            peak_uniform_rows["n"] = max(peak_uniform_rows["n"], int(size[0]))
+            assert int(size[0]) <= chunk, f"uniform size {size}; chunk={chunk}"
+        return inner_rng.uniform(*args, **kwargs)
+
+    from types import SimpleNamespace
+
+    seed_turbo_enn_to_n(
+        _TellRecorder(),
+        counting_objective,
+        np.array([[-1.0, 1.0], [-2.0, 2.0]], dtype=float),
+        n,
+        rng=SimpleNamespace(uniform=bounded_uniform),
+        chunk=chunk,
+    )
+    assert peak_obj_rows["n"] == chunk
+    assert peak_uniform_rows["n"] == chunk
+
+
 @pytest.mark.parametrize(
     "n, chunk, expected",
     [

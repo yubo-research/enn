@@ -13,13 +13,34 @@ pub enum Page {
     },
     Leaf {
         page_id: u32,
+        /// Explicit row membership. Empty when [`Self::Leaf::row_range`] is set.
         row_ids: Vec<u32>,
+        /// Half-open contiguous membership `[start, end)`. Used by empty-leaf
+        /// forests so soft-sync never materializes Θ(N) `u32` identities.
+        row_range: Option<(u32, u32)>,
         vectors: Vec<Vec<f32>>,
         stored_centroid: Option<Vec<f32>>,
     },
 }
 
 impl Page {
+    /// Empty (mmap-backed) leaf over a contiguous row span.
+    pub fn empty_range_leaf(
+        page_id: u32,
+        start: u32,
+        end: u32,
+        centroid: Vec<f32>,
+    ) -> Self {
+        debug_assert!(start <= end);
+        Page::Leaf {
+            page_id,
+            row_ids: Vec::new(),
+            row_range: Some((start, end)),
+            vectors: Vec::new(),
+            stored_centroid: Some(centroid),
+        }
+    }
+
     pub fn page_id(&self) -> u32 {
         match self {
             Page::Internal { page_id, .. } | Page::Leaf { page_id, .. } => *page_id,
@@ -89,9 +110,23 @@ impl Page {
             Page::Leaf {
                 page_id,
                 row_ids,
+                row_range,
                 vectors,
                 stored_centroid,
             } => {
+                if let Some((start, end)) = row_range {
+                    // Kind 3: contiguous empty range leaf (no per-row id list).
+                    buf.push(3u8);
+                    buf.extend_from_slice(&page_id.to_le_bytes());
+                    buf.extend_from_slice(&(num_dim as u32).to_le_bytes());
+                    buf.extend_from_slice(&start.to_le_bytes());
+                    buf.extend_from_slice(&end.to_le_bytes());
+                    let centroid = stored_centroid.as_deref().unwrap_or(&[]);
+                    for j in 0..num_dim {
+                        buf.extend_from_slice(&centroid.get(j).copied().unwrap_or(0.0).to_le_bytes());
+                    }
+                    return buf;
+                }
                 if vectors.is_empty() {
                     buf.push(2u8);
                     buf.extend_from_slice(&page_id.to_le_bytes());
@@ -127,6 +162,7 @@ impl Page {
             0 => Self::deserialize_internal(data, page_id, num_dim, off),
             1 => Self::deserialize_leaf(data, page_id, num_dim, off),
             2 => Self::deserialize_row_id_leaf(data, page_id, num_dim, off),
+            3 => Self::deserialize_range_leaf(data, page_id, num_dim, off),
             _ => Err(format!("unknown page kind {kind}")),
         }
     }
@@ -202,6 +238,7 @@ impl Page {
         Ok(Page::Leaf {
             page_id,
             row_ids,
+            row_range: None,
             vectors,
             stored_centroid: None,
         })
@@ -222,9 +259,25 @@ impl Page {
         Ok(Page::Leaf {
             page_id,
             row_ids,
+            row_range: None,
             vectors: Vec::new(),
             stored_centroid: Some(centroid),
         })
+    }
+
+    fn deserialize_range_leaf(
+        data: &[u8],
+        page_id: u32,
+        num_dim: usize,
+        mut off: usize,
+    ) -> Result<Self, String> {
+        let start = Self::read_u32(data, &mut off)?;
+        let end = Self::read_u32(data, &mut off)?;
+        if start > end {
+            return Err(format!("range leaf start {start} > end {end}"));
+        }
+        let centroid = Self::read_f32_vec(data, &mut off, num_dim)?;
+        Ok(Page::empty_range_leaf(page_id, start, end, centroid))
     }
 }
 
@@ -285,12 +338,14 @@ mod tests {
             Page::Leaf {
                 page_id: 1,
                 row_ids: vec![0, 1],
+                row_range: None,
                 vectors: vec![vec![1.0, 2.0], vec![1.1, 2.1]],
                 stored_centroid: None,
             },
             Page::Leaf {
                 page_id: 2,
                 row_ids: vec![2],
+                row_range: None,
                 vectors: vec![vec![3.0, 4.0]],
                 stored_centroid: None,
             },
@@ -305,5 +360,30 @@ mod tests {
             (Page::Leaf { row_ids: a, .. }, Page::Leaf { row_ids: b, .. }) => assert_eq!(a, b),
             _ => panic!("expected leaf"),
         }
+    }
+
+    #[test]
+    fn range_leaf_roundtrip_and_no_id_list() {
+        let page = Page::empty_range_leaf(7, 100, 1100, vec![1.0, 2.0]);
+        let bytes = page.serialize(2);
+        let back = Page::deserialize(&bytes).unwrap();
+        match back {
+            Page::Leaf {
+                page_id,
+                row_ids,
+                row_range,
+                vectors,
+                stored_centroid,
+            } => {
+                assert_eq!(page_id, 7);
+                assert!(row_ids.is_empty());
+                assert_eq!(row_range, Some((100, 1100)));
+                assert!(vectors.is_empty());
+                assert_eq!(stored_centroid.as_deref(), Some(&[1.0f32, 2.0][..]));
+            }
+            _ => panic!("expected leaf"),
+        }
+        // Kind byte is 3 (after magic).
+        assert_eq!(bytes[4], 3);
     }
 }

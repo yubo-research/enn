@@ -281,6 +281,18 @@ impl BpannBackend {
             end,
         )?;
         self.pending_unindexed.store(0, Ordering::Relaxed);
+        // Soft-sync and centroid builds fault train pages; drop them from RSS.
+        self.release_observation_pages()?;
+        Ok(())
+    }
+
+    /// Remap observation mmaps so faulted/dirty pages leave process RSS.
+    pub fn release_observation_pages(&mut self) -> Result<(), BpannError> {
+        self.train_x.release_resident_pages()?;
+        self.train_y.release_resident_pages()?;
+        if let Some(store) = self.train_yvar.as_mut() {
+            store.release_resident_pages()?;
+        }
         Ok(())
     }
 
@@ -472,6 +484,19 @@ impl BpannBackend {
 
     pub fn mmap_row_slice(&self, i: usize) -> Result<&[f64], BpannError> {
         self.train_x.mmap_row_slice(i)
+    }
+
+    /// Y (and optional yvar) row slices without touching `train_x`.
+    pub fn mmap_row_y_and_yvar(
+        &self,
+        i: usize,
+    ) -> Result<(&[f64], Option<&[f64]>), BpannError> {
+        let y = self.train_y.mmap_row_slice(i)?;
+        let yvar = match self.train_yvar.as_ref() {
+            None => None,
+            Some(store) => Some(store.mmap_row_slice(i)?),
+        };
+        Ok((y, yvar))
     }
 
     pub fn index_memory_bytes(&self) -> usize {

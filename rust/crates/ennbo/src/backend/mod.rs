@@ -322,6 +322,14 @@ impl EnnBackend {
     }
 }
 
+/// Drop faulted observation mmap pages from process RSS (disk backend only).
+pub(crate) fn release_enn_observation_pages(backend: &EnnBackend) -> Result<(), ENNError> {
+    match backend {
+        EnnBackend::InMemory(_) => Ok(()),
+        EnnBackend::Disk(h) => disk_write(h.data())?.release_observation_pages(),
+    }
+}
+
 impl Drop for EnnBackend {
     fn drop(&mut self) {
         if let Err(e) = persist_enn_backend_index(self) {

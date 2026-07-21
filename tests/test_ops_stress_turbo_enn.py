@@ -317,8 +317,8 @@ def test_turbo_enn_seed_chunk_default_is_large():
         turbo_enn_default_seed_chunk,
     )
 
-    assert TURBO_ENN_SEED_CHUNK == 20_000
-    assert TURBO_ENN_SEED_CHUNK_FLAT == 100_000
+    assert TURBO_ENN_SEED_CHUNK == 100_000
+    assert TURBO_ENN_SEED_CHUNK_FLAT == 200_000
     assert TURBO_ENN_SEED_CHUNK_FLAT > TURBO_ENN_SEED_CHUNK
     assert (
         turbo_enn_default_seed_chunk(ENNIndexDriver.FLAT) == TURBO_ENN_SEED_CHUNK_FLAT
@@ -377,10 +377,10 @@ def test_turbo_enn_larger_seed_chunk_fewer_tells_on_large_gap():
 
 
 def test_turbo_enn_flat_chunk_covers_medium_gap_in_one_tell():
-    """Flat default chunk is large enough that a 50k gap is a single tell; disk is not."""
+    """Flat default chunk covers a mid-size gap in one tell; disk still chunks it."""
     from ops.stress import TURBO_ENN_SEED_CHUNK, TURBO_ENN_SEED_CHUNK_FLAT
 
-    gap = 50_000
+    gap = 150_000
     assert TURBO_ENN_SEED_CHUNK < gap < TURBO_ENN_SEED_CHUNK_FLAT
     flat_tells = _turbo_enn_seed_gap_tell_count(gap, TURBO_ENN_SEED_CHUNK_FLAT)
     disk_tells = _turbo_enn_seed_gap_tell_count(gap, TURBO_ENN_SEED_CHUNK)

@@ -128,6 +128,10 @@ impl DiskBpannEnnBackend {
             .map_err(bpann_err)
     }
 
+    pub fn release_observation_pages(&mut self) -> Result<(), ENNError> {
+        self.inner.release_observation_pages().map_err(bpann_err)
+    }
+
     pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAtResult, ENNError> {
         self.inner.train_rows_at(indices).map_err(bpann_err)
     }
@@ -139,13 +143,15 @@ impl DiskBpannEnnBackend {
     }
 
     pub fn row_y(&self, i: usize) -> Result<Array1<f64>, ENNError> {
-        let (_, y, _) = self.inner.train_rows_at(&[i]).map_err(bpann_err)?;
-        Ok(y.row(0).to_owned())
+        // Do not use train_rows_at here: that gathers train_x too and faults Θ(N·D)
+        // when callers iterate all rows (y_obs / incumbent rebuild).
+        let (y, _) = self.inner.mmap_row_y_and_yvar(i).map_err(bpann_err)?;
+        Ok(Array1::from(y.to_vec()))
     }
 
     pub fn row_yvar(&self, i: usize) -> Result<Option<Array1<f64>>, ENNError> {
-        let (_, _, yvar) = self.inner.train_rows_at(&[i]).map_err(bpann_err)?;
-        Ok(yvar.map(|v| v.row(0).to_owned()))
+        let (_, yvar) = self.inner.mmap_row_y_and_yvar(i).map_err(bpann_err)?;
+        Ok(yvar.map(|row| Array1::from(row.to_vec())))
     }
 
     pub fn search(

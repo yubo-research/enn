@@ -140,6 +140,22 @@ impl MmapColumnStore {
         Ok(())
     }
 
+    /// Drop faulted/dirty pages from process RSS while keeping the file mapping.
+    ///
+    /// Remaps the same file so previously resident pages are no longer charged to
+    /// this process. File contents are unchanged; subsequent reads fault pages back
+    /// in (typically via the OS file cache). Call only when no borrows into `mmap`
+    /// are live.
+    ///
+    /// Does not `flush()` the whole mapping first: a full-map flush can briefly
+    /// force large residency (hurting `ru_maxrss`) on multi-GB stores.
+    pub fn release_resident_pages(&mut self) -> Result<(), BpannError> {
+        self.mmap = unsafe {
+            MmapMut::map_mut(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
+        };
+        Ok(())
+    }
+
     pub fn mmap_row_slice(&self, i: usize) -> Result<&[f64], BpannError> {
         if i >= self.nrows {
             return Err(BpannError::InvalidParameter(format!(
@@ -202,16 +218,20 @@ mod tests {
     }
 
     #[test]
-    fn pretouch() {
+    fn release_resident_pages_preserves_rows() {
         let dir = TempDir::new().unwrap();
         let mut store =
             MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
-        store.ensure_capacity(MMAP_GROW_ROWS).unwrap();
-        store.pretouch();
         store
-            .mmap_append(&array![[1.0, 2.0], [3.0, 4.0]].view())
+            .mmap_append(&array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]].view())
             .unwrap();
+        store.release_resident_pages().unwrap();
         assert_eq!(store.mmap_row_slice(0).unwrap(), &[1.0, 2.0]);
-        assert_eq!(store.mmap_row_slice(1).unwrap(), &[3.0, 4.0]);
+        assert_eq!(store.mmap_row_slice(2).unwrap(), &[5.0, 6.0]);
+        store
+            .mmap_append(&array![[7.0, 8.0]].view())
+            .unwrap();
+        store.release_resident_pages().unwrap();
+        assert_eq!(store.mmap_row_slice(3).unwrap(), &[7.0, 8.0]);
     }
 }

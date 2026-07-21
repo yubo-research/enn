@@ -157,10 +157,13 @@ pub fn subsample_loglik<R: Rng>(
         y_sel.row_mut(new_i).assign(&y.row(old_i));
     }
 
-    // Compute posterior for all parameter sets at once
+    // Fit hyperparameter search must not escalate to a full-train distance scan
+    // (tie_break_neighbors default). That path is Θ(N) RAM/time and blows the
+    // 1 GiB bound on large bpann_disk turbo-enn seeds.
     let flags = PosteriorFlags::new()
         .with_exclude_nearest(true)
-        .with_observation_noise(true);
+        .with_observation_noise(true)
+        .with_tie_break_neighbors(false);
     let post = model.batch_posterior(&x_sel.view(), paramss, &flags)?;
 
     let num_params = paramss.len();

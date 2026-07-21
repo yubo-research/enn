@@ -59,9 +59,9 @@ TURBO_ENN_SEED = 0
 TURBO_ENN_K = 10
 TURBO_ENN_NUM_FIT_SAMPLES = 100
 # Larger than proposal-scale chunk: turbo-enn large gaps pay per-tell fit/TR cost.
-# Flat benefits from fewer, larger tells; bpann_disk regresses above ~20k (I/O).
-TURBO_ENN_SEED_CHUNK = 20_000
-TURBO_ENN_SEED_CHUNK_FLAT = 100_000
+# Fewer, larger tells cut soft-sync overhead on bpann_disk empty-leaf drains.
+TURBO_ENN_SEED_CHUNK = 100_000
+TURBO_ENN_SEED_CHUNK_FLAT = 200_000
 PROPOSAL_SCALE_NS: tuple[int, ...] = (
     10,
     30,
@@ -1184,14 +1184,17 @@ def seed_turbo_enn_to_n(
     lo = bounds[:, 0]
     hi = bounds[:, 1]
     assert np.all(hi > lo), "bounds require hi > lo per dimension"
-    x = rng.uniform(lo, hi, size=(n, num_dim))
-    y = np.asarray(objective(x), dtype=float)
-    if y.ndim == 1:
-        y = y.reshape(-1, 1)
-    assert y.shape == (n, 1), f"expected y shape ({n}, 1), got {y.shape}"
+    # Generate per chunk so peak RAM stays O(chunk·D), not O(n·D). Full-N
+    # materialization made turbo-enn bpann_disk exceed 1 GiB well below n=1e8.
     for start in range(0, n, chunk):
         end = min(start + chunk, n)
-        opt.tell(x[start:end], y[start:end])
+        take = end - start
+        x = rng.uniform(lo, hi, size=(take, num_dim))
+        y = np.asarray(objective(x), dtype=float)
+        if y.ndim == 1:
+            y = y.reshape(-1, 1)
+        assert y.shape == (take, 1), f"expected y shape ({take}, 1), got {y.shape}"
+        opt.tell(x, y)
 
 
 def _timed_ask_tell_round(opt, objective) -> tuple[float, float]:

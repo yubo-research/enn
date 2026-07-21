@@ -4,6 +4,7 @@ pub mod page;
 pub mod persist_atomic;
 pub mod search;
 pub mod sync;
+pub mod sync_forest;
 
 pub use build::{BpannIndex, DEFAULT_LEAF_CAPACITY, IndexHeader};
 pub use sync::IncrementalIndex;

@@ -40,6 +40,41 @@ pub fn score_leaf_rows(
     Ok(scored)
 }
 
+/// Score a contiguous half-open row span via mmap (range empty-leaf path).
+pub fn score_leaf_range(
+    store: Option<&MmapSearchStore<'_>>,
+    query: &[f32],
+    start: u32,
+    end: u32,
+) -> Result<Vec<(u32, f32)>, BpannError> {
+    assert!(start <= end);
+    let Some(store) = store else {
+        return Ok(Vec::new());
+    };
+    let mut scored = Vec::with_capacity((end - start) as usize);
+    let mut vec_buf = Vec::new();
+    for row_id in start..end {
+        let row = store.train_x.mmap_row_slice(row_id as usize)?;
+        bpann_row_to_f32(row, store.scale_x, store.x_scale, &mut vec_buf);
+        scored.push((row_id, l2_sq_f32(query, &vec_buf)));
+    }
+    Ok(scored)
+}
+
+pub(crate) fn score_leaf_page(
+    store: Option<&MmapSearchStore<'_>>,
+    query: &[f32],
+    row_ids: &[u32],
+    row_range: Option<(u32, u32)>,
+    vectors: &[Vec<f32>],
+) -> Result<Vec<(u32, f32)>, BpannError> {
+    if let Some((start, end)) = row_range {
+        debug_assert!(vectors.is_empty());
+        return score_leaf_range(store, query, start, end);
+    }
+    score_leaf_rows(store, query, row_ids, vectors)
+}
+
 pub const MAX_CANDIDATE_LEAVES: usize = 384;
 
 pub fn search_exhaustive_leaves(index: &BpannIndex, query: &[f32], k: usize) -> Vec<(u32, f32)> {
@@ -57,11 +92,12 @@ pub fn search_exhaustive_leaves_with_store(
     for page in &index.pages {
         if let Page::Leaf {
             row_ids,
+            row_range,
             vectors,
             ..
         } = page
         {
-            scored.extend(score_leaf_rows(store, query, row_ids, vectors)?);
+            scored.extend(score_leaf_page(store, query, row_ids, *row_range, vectors)?);
         }
     }
     scored.sort_by(|a, b| {
@@ -145,11 +181,12 @@ pub fn search_index(
     for leaf_id in candidate_leaves {
         if let Some(Page::Leaf {
             row_ids,
+            row_range,
             vectors,
             ..
         }) = index.page_by_id(leaf_id)
         {
-            scored.extend(score_leaf_rows(store, query, row_ids, vectors)?);
+            scored.extend(score_leaf_page(store, query, row_ids, *row_range, vectors)?);
         }
     }
     scored.sort_by(|a, b| {
