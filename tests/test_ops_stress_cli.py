@@ -6,7 +6,7 @@ import pytest
 
 pytestmark = pytest.mark.slow
 
-_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+(?:\.\d+)?(?:e[+-]?\d+)?")
+_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{4} \d+\.\d{4}")
 
 
 def test_enn_stress_cli_does_not_fit(monkeypatch):

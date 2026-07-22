@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+(?:\.\d+)?(?:e[+-]?\d+)?")
+_STRESS_ROW_RE = re.compile(r" *\d+ \d+\.\d{4} \d+\.\d{4}")
 
 
 def test_format_config_header_restart():

@@ -354,11 +354,11 @@ def test_format_stress_row_fixed_width_n():
     from ops.stress import format_stress_row
 
     row = format_stress_row(10, 1.2345, 0.0567, n_width=6)
-    assert row == "    10 1.234 0.0567"
-    assert re.fullmatch(r" {4}10 1\.234 0\.0567", row)
+    assert row == "    10 1.2345 0.0567"
+    assert re.fullmatch(r" {4}10 1\.2345 0\.0567", row)
 
     row_large = format_stress_row(100_000, 0.5, 12.3, n_width=6)
-    assert row_large == "100000 0.500 12.3"
+    assert row_large == "100000 0.5000 12.3000"
 
 
 def test_run_enn_add_stress_segment_excludes_query(monkeypatch):

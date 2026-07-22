@@ -153,6 +153,99 @@ def test_mean_se_and_format():
     assert format_mean_se(MeanSE(0.2193, 0.0123), fmt="0.4f") == "0.2193 ± 0.0123"
 
 
+def test_draw_and_sample_duration_outputs_use_four_decimals():
+    from ops.stress import (
+        DURATION_S_FMT,
+        DrawMethodAggregate,
+        DrawMethodResult,
+        DrawStressAggregate,
+        DrawStressResult,
+        MeanSE,
+        SampleStressResult,
+        format_draw_config_header,
+        format_draw_config_header_aggregate,
+        format_draw_method_summary,
+        format_draw_method_summary_aggregate,
+        format_sample_summary,
+        format_stress_row,
+    )
+
+    assert DURATION_S_FMT == ".4f"
+    # Gate-visible cover for enn-add rows (test_ops_stress.py is ignored by make test).
+    assert format_stress_row(10, 1.2345, 0.0567, n_width=6) == "    10 1.2345 0.0567"
+    assert format_stress_row(100_000, 0.5, 12.3, n_width=6) == "100000 0.5000 12.3000"
+
+    sample = SampleStressResult(
+        num_dim=2,
+        num_obs=5,
+        num_samples=3,
+        seed=1,
+        num_function_seeds=1,
+        draws_shape=(3, 1, 1),
+        all_finite=True,
+        init_s=0.12345,
+        sample_s=0.01,
+    )
+    summary = format_sample_summary(sample)
+    assert "init_s=0.1235" in summary
+    assert "sample_s=0.0100" in summary
+
+    method = DrawMethodResult(
+        method="posterior",
+        avg_likelihood=1.0,
+        argmin_rms=0.1,
+        argmin_hit_rate=0.5,
+        draws_shape=(2, 1, 2),
+        all_finite=True,
+        eval_s=0.12345,
+    )
+    assert "eval_s=0.1235" in format_draw_method_summary(method)
+
+    result = DrawStressResult(
+        num_obs=4,
+        num_test=2,
+        num_dim=2,
+        seed=0,
+        k=5,
+        num_fit_candidates=8,
+        num_fit_samples=5,
+        num_draws=4,
+        epistemic_variance_scale=1.0,
+        aleatoric_variance_scale=0.1,
+        fit_s=0.98765,
+        posterior=method,
+        posterior_function_draw=method,
+    )
+    assert "fit_s=0.9877" in format_draw_config_header(result)
+
+    method_agg = DrawMethodAggregate(
+        method="posterior",
+        avg_likelihood=MeanSE(1.0, 0.1),
+        argmin_rms=MeanSE(0.1, 0.01),
+        argmin_hit_rate=MeanSE(0.5, 0.05),
+        eval_s=MeanSE(0.12345, 0.00678),
+    )
+    assert "eval_s=0.1235 ± 0.0068" in format_draw_method_summary_aggregate(method_agg)
+
+    agg = DrawStressAggregate(
+        num_obs=4,
+        num_test=2,
+        num_dim=2,
+        seed=0,
+        num_seeds=2,
+        k=5,
+        num_fit_candidates=8,
+        num_fit_samples=5,
+        num_draws=4,
+        epistemic_variance_scale=MeanSE(1.0, 0.1),
+        aleatoric_variance_scale=MeanSE(0.1, 0.01),
+        fit_s=MeanSE(0.98765, 0.00123),
+        posterior=method_agg,
+        posterior_function_draw=method_agg,
+    )
+    assert "fit_s=0.9877 ± 0.0012" in format_draw_config_header_aggregate(agg)
+
+
 def test_run_draw_stress_over_seeds_aggregates():
     from ops.stress import DrawStressConfig, run_draw_stress_over_seeds
 

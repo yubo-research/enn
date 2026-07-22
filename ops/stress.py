@@ -45,6 +45,8 @@ DRAW_OBS_NOISE_STD = 0.1
 DRAW_F_CENTER = 0.3
 DRAW_FLAGS = PosteriorFlags(observation_noise=True)
 DRAW_FLAGS_NO_OBS = PosteriorFlags(observation_noise=False)
+# Printed duration fields (*_s) use fixed four fractional digits.
+DURATION_S_FMT = ".4f"
 STRESS_PARAMS = ENNParams(
     k_num_neighbors=STRESS_QUERY_K,
     epistemic_variance_scale=1.0,
@@ -522,7 +524,7 @@ def stress_row_n_width(num_obs: int) -> int:
 
 
 def format_stress_row(n: int, query_s: float, segment_s: float, *, n_width: int) -> str:
-    return f"{n:>{n_width}} {query_s:.3f} {segment_s:.3g}"
+    return f"{n:>{n_width}} {query_s:{DURATION_S_FMT}} {segment_s:{DURATION_S_FMT}}"
 
 
 @dataclass(frozen=True)
@@ -597,8 +599,9 @@ def format_sample_config_header(*, result: SampleStressResult, work_dir: str) ->
 def format_sample_summary(result: SampleStressResult) -> str:
     return (
         f"draws_shape={result.draws_shape} function_seeds={result.num_function_seeds} "
-        f"all_finite={str(result.all_finite).lower()} init_s={result.init_s:.3f} "
-        f"sample_s={result.sample_s:.3f}"
+        f"all_finite={str(result.all_finite).lower()} "
+        f"init_s={result.init_s:{DURATION_S_FMT}} "
+        f"sample_s={result.sample_s:{DURATION_S_FMT}}"
     )
 
 
@@ -942,7 +945,7 @@ def format_draw_config_header(result: DrawStressResult) -> str:
         f"num_draws={result.num_draws} "
         f"epistemic_variance_scale={result.epistemic_variance_scale:.6g} "
         f"aleatoric_variance_scale={result.aleatoric_variance_scale:.6g} "
-        f"fit_s={result.fit_s:.3f}"
+        f"fit_s={result.fit_s:{DURATION_S_FMT}}"
     )
 
 
@@ -951,7 +954,7 @@ def format_draw_method_summary(method: DrawMethodResult) -> str:
         f"{method.method} avg_likelihood={method.avg_likelihood:.6g} "
         f"argmin_rms={method.argmin_rms:.6g} "
         f"argmin_hit_rate={method.argmin_hit_rate:0.4f} "
-        f"eval_s={method.eval_s:.3f}"
+        f"eval_s={method.eval_s:{DURATION_S_FMT}}"
     )
 
 
@@ -963,7 +966,7 @@ def format_draw_config_header_aggregate(result: DrawStressAggregate) -> str:
         f"num_draws={result.num_draws} "
         f"epistemic_variance_scale={format_mean_se(result.epistemic_variance_scale)} "
         f"aleatoric_variance_scale={format_mean_se(result.aleatoric_variance_scale)} "
-        f"fit_s={format_mean_se(result.fit_s, fmt='.3f')}"
+        f"fit_s={format_mean_se(result.fit_s, fmt=DURATION_S_FMT)}"
     )
 
 
@@ -973,7 +976,7 @@ def format_draw_method_summary_aggregate(method: DrawMethodAggregate) -> str:
         f"avg_likelihood={format_mean_se(method.avg_likelihood)} "
         f"argmin_rms={format_mean_se(method.argmin_rms)} "
         f"argmin_hit_rate={format_mean_se(method.argmin_hit_rate, fmt='0.4f')} "
-        f"eval_s={format_mean_se(method.eval_s, fmt='.3f')}"
+        f"eval_s={format_mean_se(method.eval_s, fmt=DURATION_S_FMT)}"
     )
 
 
@@ -1079,7 +1082,10 @@ def format_turbo_enn_config_header(
 def format_turbo_enn_row(
     n: int, iter_s: float, ask_s: float, tell_s: float, *, n_width: int
 ) -> str:
-    return f"{n:>{n_width}} {iter_s:.3f} {ask_s:.3f} {tell_s:.3f}"
+    return (
+        f"{n:>{n_width}} {iter_s:{DURATION_S_FMT}} "
+        f"{ask_s:{DURATION_S_FMT}} {tell_s:{DURATION_S_FMT}}"
+    )
 
 
 def run_turbo_enn_stress(
@@ -1267,7 +1273,10 @@ def format_proposal_scale_config_header(
 def format_proposal_scale_row(
     n: int, ask_s: float, tell_s: float, proposal_s: float, *, n_width: int
 ) -> str:
-    return f"{n:>{n_width}} {ask_s:.3f} {tell_s:.3f} {proposal_s:.3f}"
+    return (
+        f"{n:>{n_width}} {ask_s:{DURATION_S_FMT}} "
+        f"{tell_s:{DURATION_S_FMT}} {proposal_s:{DURATION_S_FMT}}"
+    )
 
 
 def run_proposal_scale_stress(

@@ -25,7 +25,7 @@ from tests.ops_stress_turbo_enn_helpers import (
     unit_bounds,
 )
 
-_TURBO_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+\.\d{3} \d+\.\d{3}")
+_TURBO_ROW_RE = re.compile(r" *\d+ \d+\.\d{4} \d+\.\d{4} \d+\.\d{4}")
 
 
 def test_turbo_enn_ask_stops_plan_example():
@@ -132,7 +132,8 @@ def test_format_turbo_enn_header_and_row():
         num_dim=2, num_obs=10, num_ask=3, index_type="flat", tell_all=False
     )
     assert (
-        format_turbo_enn_row(1, 0.1234, 0.01, 0.02, n_width=2) == " 1 0.123 0.010 0.020"
+        format_turbo_enn_row(1, 0.1234, 0.01, 0.02, n_width=2)
+        == " 1 0.1234 0.0100 0.0200"
     )
 
 
@@ -282,10 +283,10 @@ def test_turbo_enn_cli_flat_mocked(monkeypatch):
     assert lines[0] == "num_dim=4 num_obs=30 num_ask=4 index_type=flat"
     assert "tell_all" not in lines[0]
     assert lines[1:] == [
-        " 1 0.100 0.040 0.060",
-        " 3 0.200 0.050 0.150",
-        "10 0.300 0.060 0.240",
-        "30 0.400 0.070 0.330",
+        " 1 0.1000 0.0400 0.0600",
+        " 3 0.2000 0.0500 0.1500",
+        "10 0.3000 0.0600 0.2400",
+        "30 0.4000 0.0700 0.3300",
     ]
     for line in lines[1:]:
         assert _TURBO_ROW_RE.fullmatch(line), line
@@ -352,7 +353,7 @@ def test_turbo_enn_cli_bpann_disk_mocked(tmp_path, monkeypatch):
     assert lines[0] == (
         f"num_dim=4 num_obs=10 num_ask=2 index_type=bpann_disk work_dir={work_dir}"
     )
-    assert lines[1:] == [" 3 1.000 0.400 0.600", "10 2.000 0.500 1.500"]
+    assert lines[1:] == [" 3 1.0000 0.4000 0.6000", "10 2.0000 0.5000 1.5000"]
 
 
 @pytest.mark.parametrize(

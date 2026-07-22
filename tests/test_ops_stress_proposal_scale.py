@@ -20,7 +20,7 @@ from ops.stress import (
 )
 from tests.ops_stress_cli_helpers import assert_stress_cli_rejects
 
-_PS_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+\.\d{3} \d+\.\d{3}")
+_PS_ROW_RE = re.compile(r" *\d+ \d+\.\d{4} \d+\.\d{4} \d+\.\d{4}")
 
 
 class _TellRecorder:
@@ -220,7 +220,7 @@ def test_format_proposal_scale_header_and_row():
     )
     assert (
         format_proposal_scale_row(100, 0.1234, 0.01, 0.1334, n_width=4)
-        == " 100 0.123 0.010 0.133"
+        == " 100 0.1234 0.0100 0.1334"
     )
 
 
@@ -271,7 +271,7 @@ def test_proposal_scale_cli_flat_mocked(monkeypatch):
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
     assert lines[0] == "num_dim=10 max_n=30 num_probes=2 index_type=flat"
-    assert lines[1:] == ["10 0.100 0.200 0.300", "30 0.110 0.210 0.320"]
+    assert lines[1:] == ["10 0.1000 0.2000 0.3000", "30 0.1100 0.2100 0.3200"]
     for line in lines[1:]:
         assert _PS_ROW_RE.fullmatch(line), line
 
@@ -322,7 +322,7 @@ def test_proposal_scale_cli_bpann_disk_mocked(tmp_path, monkeypatch):
     assert lines[0] == (
         f"num_dim=10 max_n=10 num_probes=1 index_type=bpann_disk work_dir={work_dir}"
     )
-    assert lines[1] == "10 1.000 2.000 3.000"
+    assert lines[1] == "10 1.0000 2.0000 3.0000"
 
 
 def test_constants_match_plan():
