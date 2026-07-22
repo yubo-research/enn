@@ -18,6 +18,12 @@ from ops.stress import (
     turbo_enn_ask_stops,
 )
 from tests.ops_stress_cli_helpers import assert_stress_cli_rejects
+from tests.ops_stress_turbo_enn_helpers import (
+    RecordingObjective,
+    RecordingTurboOpt,
+    collect_tell_sizes,
+    unit_bounds,
+)
 
 _TURBO_ROW_RE = re.compile(r" *\d+ \d+\.\d{3} \d+\.\d{3} \d+\.\d{3}")
 
@@ -102,6 +108,30 @@ def test_format_turbo_enn_header_and_row():
         == "num_dim=10 num_obs=30 num_ask=4 index_type=bpann_disk work_dir=/tmp/w"
     )
     assert (
+        format_turbo_enn_config_header(
+            num_dim=2,
+            num_obs=10,
+            num_ask=3,
+            index_type="flat",
+            tell_all=True,
+        )
+        == "num_dim=2 num_obs=10 num_ask=3 index_type=flat tell_all=true"
+    )
+    assert format_turbo_enn_config_header(
+        num_dim=2,
+        num_obs=10,
+        num_ask=3,
+        index_type="bpann_disk",
+        work_dir="/tmp/w",
+        tell_all=True,
+    ) == (
+        "num_dim=2 num_obs=10 num_ask=3 index_type=bpann_disk "
+        "work_dir=/tmp/w tell_all=true"
+    )
+    assert "tell_all" not in format_turbo_enn_config_header(
+        num_dim=2, num_obs=10, num_ask=3, index_type="flat", tell_all=False
+    )
+    assert (
         format_turbo_enn_row(1, 0.1234, 0.01, 0.02, n_width=2) == " 1 0.123 0.010 0.020"
     )
 
@@ -110,39 +140,20 @@ def test_run_turbo_enn_stress_dgp_tell_then_ask_ignore():
     events: list[str] = []
     tell_sizes: list[int] = []
     ask_returns_used: list[object] = []
-
-    class FakeOpt:
-        def ask(self, num_arms=1):
-            events.append(f"ask:{num_arms}")
-            arms = np.full((1, 2), 99.0, dtype=float)
-            ask_returns_used.append(arms)
-            return arms
-
-        def tell(self, x, y):
-            x = np.asarray(x)
-            y = np.asarray(y)
-            events.append(f"tell:{x.shape[0]}")
-            tell_sizes.append(int(x.shape[0]))
-            assert y.shape == (x.shape[0], 1)
-            assert x.shape[1] == 2
-
-    class FakeObjective:
-        bounds = [-1.0, 1.0]
-
-        def __call__(self, x):
-            x = np.asarray(x)
-            events.append(f"eval:{x.shape[0]}")
-            return np.zeros(x.shape[0], dtype=float)
-
+    opt = RecordingTurboOpt(
+        tell_sizes=tell_sizes,
+        events=events,
+        ask_returns_used=ask_returns_used,
+    )
     rows = list(
         run_turbo_enn_stress(
             index_driver=ENNIndexDriver.FLAT,
             num_dim=2,
             num_obs=10,
             num_ask=3,
-            optimizer=FakeOpt(),
-            objective=FakeObjective(),
-            bounds=np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float),
+            optimizer=opt,
+            objective=RecordingObjective(events=events),
+            bounds=unit_bounds(2),
             seed_chunk=100,
         )
     )
@@ -183,43 +194,82 @@ def test_turbo_enn_gaps_sum_to_num_obs(num_obs, num_ask):
     assert sum(gaps) == num_obs
     assert all(g >= 1 for g in gaps)
 
+    tell_sizes = collect_tell_sizes(num_obs=num_obs, num_ask=num_ask, tell_all=False)
+    assert tell_sizes == gaps
+    assert sum(tell_sizes) == num_obs
+
+
+def test_run_turbo_enn_stress_tell_all_one_row_per_tell():
+    """tell_all=True → every tell has one row; tell count equals num_obs."""
+    events: list[str] = []
     tell_sizes: list[int] = []
-
-    class FakeOpt:
-        def ask(self, num_arms=1):
-            return np.zeros((1, 2), dtype=float)
-
-        def tell(self, x, y):
-            tell_sizes.append(int(np.asarray(x).shape[0]))
-
-    class FakeObjective:
-        bounds = [-1.0, 1.0]
-
-        def __call__(self, x):
-            return np.zeros(np.asarray(x).shape[0], dtype=float)
-
-    list(
+    opt = RecordingTurboOpt(tell_sizes=tell_sizes, events=events)
+    num_obs, num_ask = 10, 3
+    rows = list(
         run_turbo_enn_stress(
             index_driver=ENNIndexDriver.FLAT,
             num_dim=2,
             num_obs=num_obs,
             num_ask=num_ask,
-            optimizer=FakeOpt(),
-            objective=FakeObjective(),
-            bounds=np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float),
+            optimizer=opt,
+            objective=RecordingObjective(events=events),
+            bounds=unit_bounds(2),
+            seed_chunk=100,  # must lose to tell_all
+            tell_all=True,
         )
     )
-    assert tell_sizes == gaps
+    stops = turbo_enn_ask_stops(num_obs, num_ask)
+    gaps = [stops[0]] + [stops[i] - stops[i - 1] for i in range(1, len(stops))]
+    assert [r.n for r in rows] == list(stops)
+    assert tell_sizes == [1] * num_obs
     assert sum(tell_sizes) == num_obs
+    expected_events: list[str] = []
+    for gap in gaps:
+        expected_events.extend(["eval:1", "tell:1"] * gap)
+        expected_events.append("ask:1")
+    assert events == expected_events
+    assert all(r.iter_s == pytest.approx(r.ask_s + r.tell_s) for r in rows)
+
+
+def test_run_turbo_enn_stress_tell_all_overrides_invalid_seed_chunk():
+    """tell_all forces seed_chunk=1 before validation, so seed_chunk=0 is fine."""
+    tell_sizes = collect_tell_sizes(num_obs=5, num_ask=2, tell_all=True, seed_chunk=0)
+    assert tell_sizes == [1] * 5
+
+
+def test_run_turbo_enn_stress_unit_gaps_match_with_or_without_tell_all():
+    """When every gap is already 1, tell streams match; only header advertises flag."""
+    num_obs = num_ask = 4
+    without = collect_tell_sizes(num_obs=num_obs, num_ask=num_ask, tell_all=False)
+    with_flag = collect_tell_sizes(num_obs=num_obs, num_ask=num_ask, tell_all=True)
+    assert without == with_flag == [1] * num_obs
+    assert "tell_all" not in format_turbo_enn_config_header(
+        num_dim=2, num_obs=num_obs, num_ask=num_ask, index_type="flat"
+    )
+    assert (
+        format_turbo_enn_config_header(
+            num_dim=2,
+            num_obs=num_obs,
+            num_ask=num_ask,
+            index_type="flat",
+            tell_all=True,
+        )
+        == f"num_dim=2 num_obs={num_obs} num_ask={num_ask} index_type=flat tell_all=true"
+    )
 
 
 def test_turbo_enn_cli_flat_mocked(monkeypatch):
     from ops.stress import TurboEnnRoundResult, cli
 
+    seen: dict[str, object] = {}
+
     def fake_run(*, index_driver, num_dim, num_obs, num_ask, **kwargs):
+        seen.update(kwargs)
         assert num_obs == 30
         assert num_ask == 4
         assert num_dim == 4
+        assert kwargs.get("tell_all") is False
+        assert "seed_chunk" not in kwargs
         yield TurboEnnRoundResult(n=1, iter_s=0.1, ask_s=0.04, tell_s=0.06)
         yield TurboEnnRoundResult(n=3, iter_s=0.2, ask_s=0.05, tell_s=0.15)
         yield TurboEnnRoundResult(n=10, iter_s=0.3, ask_s=0.06, tell_s=0.24)
@@ -230,12 +280,42 @@ def test_turbo_enn_cli_flat_mocked(monkeypatch):
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
     assert lines[0] == "num_dim=4 num_obs=30 num_ask=4 index_type=flat"
+    assert "tell_all" not in lines[0]
     assert lines[1:] == [
         " 1 0.100 0.040 0.060",
         " 3 0.200 0.050 0.150",
         "10 0.300 0.060 0.240",
         "30 0.400 0.070 0.330",
     ]
+    for line in lines[1:]:
+        assert _TURBO_ROW_RE.fullmatch(line), line
+
+
+def test_turbo_enn_cli_tell_all_mocked(monkeypatch):
+    from ops.stress import TurboEnnRoundResult, cli
+
+    received: dict[str, object] = {}
+
+    def fake_run(*, index_driver, num_dim, num_obs, num_ask, **kwargs):
+        received["tell_all"] = kwargs.get("tell_all")
+        received["kwargs"] = kwargs
+        assert num_obs == 10
+        assert num_ask == 3
+        assert num_dim == 2
+        assert "seed_chunk" not in kwargs
+        yield TurboEnnRoundResult(n=1, iter_s=0.1, ask_s=0.04, tell_s=0.06)
+        yield TurboEnnRoundResult(n=3, iter_s=0.2, ask_s=0.05, tell_s=0.15)
+        yield TurboEnnRoundResult(n=10, iter_s=0.3, ask_s=0.06, tell_s=0.24)
+
+    monkeypatch.setattr("ops.stress.run_turbo_enn_stress", fake_run)
+    result = CliRunner().invoke(
+        cli, ["turbo-enn", "flat", "10", "3", "--num-dim", "2", "--tell-all"]
+    )
+    assert result.exit_code == 0, result.output
+    assert received["tell_all"] is True
+    lines = result.output.strip().splitlines()
+    assert lines[0] == "num_dim=2 num_obs=10 num_ask=3 index_type=flat tell_all=true"
+    assert len(lines) == 4
     for line in lines[1:]:
         assert _TURBO_ROW_RE.fullmatch(line), line
 

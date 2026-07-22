@@ -1064,12 +1064,15 @@ def format_turbo_enn_config_header(
     num_ask: int,
     index_type: str,
     work_dir: str | None = None,
+    tell_all: bool = False,
 ) -> str:
     header = (
         f"num_dim={num_dim} num_obs={num_obs} num_ask={num_ask} index_type={index_type}"
     )
     if work_dir is not None:
         header = f"{header} work_dir={work_dir}"
+    if tell_all:
+        header = f"{header} tell_all=true"
     return header
 
 
@@ -1088,6 +1091,7 @@ def run_turbo_enn_stress(
     work_dir: str | None = None,
     seed: int = TURBO_ENN_SEED,
     seed_chunk: int | None = None,
+    tell_all: bool = False,
     optimizer=None,
     objective=None,
     bounds: np.ndarray | None = None,
@@ -1098,6 +1102,8 @@ def run_turbo_enn_stress(
     stops = turbo_enn_ask_stops(num_obs, num_ask)
     if seed_chunk is None:
         seed_chunk = turbo_enn_default_seed_chunk(index_driver)
+    if tell_all:
+        seed_chunk = 1
     if seed_chunk < 1:
         raise ValueError("seed_chunk must be >= 1")
 
@@ -1607,6 +1613,15 @@ def draw(
             default=None,
             help="Disk-backed ENN work directory (requires bpann_disk).",
         ),
+        click.Option(
+            ["--tell-all"],
+            is_flag=True,
+            default=False,
+            help=(
+                "Deliver each DGP observation with its own tell() "
+                "(intended for small-N fidelity; large N is much slower)."
+            ),
+        ),
     ],
 )
 def turbo_enn(
@@ -1615,6 +1630,7 @@ def turbo_enn(
     num_ask: int,
     num_dim: int,
     work_dir: str | None,
+    tell_all: bool,
 ) -> None:
     """Time TuRBO-ENN ask at exponentially spaced DGP observation checkpoints."""
     if num_dim < 1:
@@ -1639,6 +1655,7 @@ def turbo_enn(
             num_ask=num_ask,
             index_type=index_type,
             work_dir=work_dir,
+            tell_all=tell_all,
         )
     )
     n_width = len(str(num_obs))
@@ -1649,6 +1666,7 @@ def turbo_enn(
             num_obs=num_obs,
             num_ask=num_ask,
             work_dir=work_dir,
+            tell_all=tell_all,
         ):
             click.echo(
                 format_turbo_enn_row(
