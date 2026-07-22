@@ -586,10 +586,20 @@ mod tests {
 
         let model = sur.model().expect("model");
         // Pending must be drained: otherwise disk search brute-forces Θ(pending).
+        // Soft sync writes indexed_rows.bin; metadata may lag until hard persist.
+        let indexed = std::fs::read(dir.path().join("indexed_rows.bin"))
+            .ok()
+            .and_then(|b| {
+                if b.len() >= 8 {
+                    Some(u64::from_le_bytes(b[..8].try_into().ok()?) as usize)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
         assert_eq!(
-            model.index_access().len(),
-            model.len(),
-            "indexed rows must match num_obs after fit_append sync-before-fit"
+            indexed, model.len(),
+            "indexed_rows.bin must match num_obs after fit_append sync-before-fit"
         );
     }
 }

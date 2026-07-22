@@ -1,18 +1,19 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use ndarray::{Array1, Array2, ArrayView2};
-use rayon::prelude::*;
 
-use crate::distance::bpann_row_to_f32;
 use crate::error::BpannError;
-use crate::index::{bpann_brute_force_topk_mmap, BpannIndex, IncrementalIndex, MmapSearchStore};
-use crate::merge::{bpann_merge_topk_candidates, merge_topk_precomputed_dist};
+use crate::index::{BpannIndex, IncrementalIndex};
+use crate::large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 use crate::mmap_store::MmapColumnStore;
 use crate::observation::{
     self as obs, TrainRowsAt, INDEX_BACKEND, MAX_NUM_DIM, MAX_RECORD_STRIDE,
+};
+use crate::small_n_search::{
+    score_queries_flat, ScoreQueriesFlat, SMALL_N_INCORE_SEARCH_LIMIT,
 };
 
 pub const PAPER_TEX_PATH: &str = "papers/bpann_2511.15557v1.tex";
@@ -20,20 +21,23 @@ pub use crate::tuning::{DEFAULT_PENDING_FLUSH_THRESHOLD, DEFAULT_PENDING_HARD_FL
 
 pub struct BpannBackend {
     work_dir: PathBuf,
-    train_x: MmapColumnStore,
+    pub(crate) train_x: MmapColumnStore,
     train_y: MmapColumnStore,
     train_yvar: Option<MmapColumnStore>,
-    num_dim: usize,
+    pub(crate) num_dim: usize,
     num_metrics: usize,
-    scale_x: bool,
-    x_scale: Array1<f64>,
-    index: IncrementalIndex,
+    pub(crate) scale_x: bool,
+    pub(crate) x_scale: Array1<f64>,
+    pub(crate) index: IncrementalIndex,
     pending_flush_threshold: usize,
     pending_hard_flush_threshold: usize,
     defer_append_indexing: bool,
     pending_unindexed: AtomicUsize,
     index_dirty: Mutex<bool>,
     num_obs_counter: obs::NumObsCounter,
+    /// Resident flat `N·D` f32 train cache for the small-N search path.
+    /// Invalidated on append. Arc so parallel queries share one buffer.
+    pub(crate) small_n_x_cache: Mutex<Option<(usize, Arc<[f32]>)>>,
 }
 
 impl BpannBackend {
@@ -109,6 +113,7 @@ impl BpannBackend {
             pending_unindexed: AtomicUsize::new(n.saturating_sub(indexed_rows)),
             index_dirty: Mutex::new(indexed_rows < n),
             num_obs_counter,
+            small_n_x_cache: Mutex::new(None),
         };
         if persisted_rows < indexed_rows {
             backend.index.ensure_sync_for_backend(
@@ -246,6 +251,7 @@ impl BpannBackend {
         self.pending_unindexed
             .fetch_add(x.nrows(), Ordering::Relaxed);
         *self.index_dirty.lock().expect("index_dirty") = true;
+        *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.num_obs_counter.set(self.len());
         let pending = self.pending_rows();
         // Hard cap: soft-sync on the caller when pending reaches the hard threshold
@@ -340,7 +346,6 @@ impl BpannBackend {
         if total == 0 {
             return Ok((Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0))));
         }
-        let indexed = self.index.indexed_rows;
         let k_eff = search_k.min(total);
         let pool_k = if exclude_nearest {
             (search_k + 1).min(total)
@@ -351,122 +356,51 @@ impl BpannBackend {
         let mut indices = Array2::zeros((n_query, k_eff));
         let scale_x = self.scale_x;
         let x_scale_vec = self.x_scale.as_slice().unwrap().to_vec();
-        let pending_start = indexed;
-        let has_pending = pending_start < total;
-        let index_k = if exclude_nearest {
-            pool_k.max(k_eff * 2)
-        } else {
-            k_eff
-        };
         let num_dim = self.num_dim;
-        let train_x = &self.train_x;
         let query_rows: Vec<Vec<f64>> = (0..n_query)
             .map(|q| queries.row(q).to_vec())
             .collect();
-        let per_query: Vec<(Vec<f64>, Vec<i64>)> = query_rows
-            .par_iter()
-            .map(|query_buf| {
-                let mut query_f32 = Vec::with_capacity(num_dim);
-                bpann_row_to_f32(
-                    query_buf,
-                    scale_x,
-                    &x_scale_vec,
-                    &mut query_f32,
-                );
-                let store = MmapSearchStore {
-                    train_x,
+
+        // Small-N: resident flat f32 cache + heap top-k (shared across queries).
+        if total <= SMALL_N_INCORE_SEARCH_LIMIT {
+            let flat = crate::small_n_search::load_or_build_small_n_cache(self, total)?;
+            let per_query = score_queries_flat(
+                &query_rows,
+                &ScoreQueriesFlat {
+                    flat: &flat,
+                    total,
+                    num_dim,
                     scale_x,
                     x_scale: &x_scale_vec,
-                };
-
-                let leg_a = if indexed > 0 && !self.index.indices.is_empty() {
-                    self.index
-                        .search_candidates(&query_f32, index_k.max(1), Some(&store))
-                        .expect("search_candidates")
-                } else {
-                    Vec::new()
-                };
-
-                if !has_pending {
-                    let merged = if scale_x {
-                        bpann_merge_topk_candidates(
-                            &self.train_x,
-                            query_buf,
-                            &leg_a,
-                            &[],
-                            k_eff,
-                            pool_k,
-                            exclude_nearest,
-                            scale_x,
-                            &x_scale_vec,
-                        )
-                        .expect("bpann_merge_topk_candidates")
-                    } else {
-                        merge_topk_precomputed_dist(
-                            &leg_a,
-                            &[],
-                            k_eff,
-                            pool_k,
-                            exclude_nearest,
-                        )
-                    };
-                    let mut dist_row = vec![0.0; k_eff];
-                    let mut idx_row = vec![0; k_eff];
-                    for (j, (id, dist)) in merged.into_iter().enumerate() {
-                        dist_row[j] = dist;
-                        idx_row[j] = id as i64;
-                    }
-                    return (dist_row, idx_row);
-                }
-
-                let leg_b = bpann_brute_force_topk_mmap(
-                    &self.train_x,
-                    pending_start,
-                    total,
-                    query_buf,
+                    k_eff,
                     pool_k,
-                    scale_x,
-                    &x_scale_vec,
-                )
-                .expect("bpann_brute_force_topk_mmap");
-
-                let merged = if scale_x {
-                    bpann_merge_topk_candidates(
-                        &self.train_x,
-                        query_buf,
-                        &leg_a,
-                        &leg_b,
-                        k_eff,
-                        pool_k,
-                        exclude_nearest,
-                        scale_x,
-                        &x_scale_vec,
-                    )
-                    .expect("bpann_merge_topk_candidates")
-                } else {
-                    merge_topk_precomputed_dist(
-                        &leg_a,
-                        &leg_b,
-                        k_eff,
-                        pool_k,
-                        exclude_nearest,
-                    )
-                };
-                let mut dist_row = vec![0.0; k_eff];
-                let mut idx_row = vec![0; k_eff];
-                for (j, (id, dist)) in merged.into_iter().enumerate() {
-                    dist_row[j] = dist;
-                    idx_row[j] = id as i64;
+                    exclude_nearest,
+                },
+            );
+            for (q, (dist_row, idx_row)) in per_query.into_iter().enumerate() {
+                for j in 0..k_eff {
+                    dist2s[[q, j]] = dist_row[j];
+                    indices[[q, j]] = idx_row[j];
                 }
-                (dist_row, idx_row)
-            })
-            .collect();
-        for (q, (dist_row, idx_row)) in per_query.into_iter().enumerate() {
-            for j in 0..k_eff {
-                dist2s[[q, j]] = dist_row[j];
-                indices[[q, j]] = idx_row[j];
             }
+            return Ok((dist2s, indices));
         }
+
+        search_indexed_and_pending(
+            self,
+            &query_rows,
+            &mut dist2s,
+            &mut indices,
+            SearchPendingArgs {
+                total,
+                k_eff,
+                pool_k,
+                exclude_nearest,
+                scale_x,
+                x_scale: &x_scale_vec,
+                num_dim,
+            },
+        )?;
         Ok((dist2s, indices))
     }
 

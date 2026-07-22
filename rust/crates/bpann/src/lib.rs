@@ -2,9 +2,11 @@ pub mod backend;
 pub mod distance;
 pub mod error;
 pub mod index;
+pub mod large_n_search;
 pub mod merge;
 pub mod mmap_store;
 pub mod observation;
+pub mod small_n_search;
 pub mod tuning;
 
 pub use backend::{
@@ -14,6 +16,11 @@ pub use backend::{
 pub use error::BpannError;
 pub use index::{BpannIndex, IncrementalIndex};
 pub use observation::{MAX_NUM_DIM, MAX_RECORD_STRIDE};
+pub use large_n_search::{search_indexed_and_pending, SearchPendingArgs};
+pub use small_n_search::{
+    load_or_build_small_n_cache, score_queries_flat, topk_flat_sq_l2, OrderedF32,
+    ScoreQueriesFlat, SMALL_N_INCORE_SEARCH_LIMIT,
+};
 pub use tuning::{
     clear_tuning_provider, current_tuning, set_tuning_provider, BpannTuning,
     DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT, DEFAULT_SKIP_REFINEMENT_ROW_LIMIT,
