@@ -239,8 +239,11 @@ fn tell_common(
 
     // noise_aware incumbent predict (and similar) re-faults disk observation pages
     // after fit_append's release; drop them again so bulk seed RSS stays bounded.
-    if let Some(surrogate) = optimizer.surrogate() {
-        surrogate.release_observation_pages()?;
+    // Skip remap on tiny tells (e.g. --tell-all): O(N) remaps dominate mid-N wall time.
+    if x.nrows() >= 64 {
+        if let Some(surrogate) = optimizer.surrogate() {
+            surrogate.release_observation_pages()?;
+        }
     }
 
     Ok(())

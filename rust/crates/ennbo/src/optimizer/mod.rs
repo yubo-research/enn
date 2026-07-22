@@ -169,6 +169,17 @@ impl Optimizer {
         self.telemetry = telemetry;
 
         self.telemetry.dt_tell = start.elapsed().as_secs_f64();
+        if result.is_ok() {
+            // Soft-threshold drain for disk: tell-all never reaches ask between
+            // rows, so schedule here (ask already schedules after propose).
+            // Skip after bulk seed chunks: overlapping soft-sync with the next
+            // ask regresses ask@1e6; bulk fit_append already ensure_index_sync'd.
+            if x.nrows() < 64 {
+                if let Some(surrogate) = self.surrogate.as_ref() {
+                    surrogate.schedule_background_flush()?;
+                }
+            }
+        }
         result
     }
 

@@ -213,23 +213,32 @@ impl ENNSurrogate {
     ) -> Result<(), ENNError> {
         // Large disk tells (stress seed chunks) must not run neighbor-based
         // hyperparameter search: each fit query faults mmap pages and peak RSS
-        // grows with N. y-stats still update; refit on small tells / predict.
+        // grows with N. Tiny disk tells (--tell-all) must also skip once params
+        // exist: otherwise every row pays a full fitter.ask. y-stats still update;
+        // predict uses last/default params until a non-skipped tell refreshes.
         const BULK_DISK_TELL_SKIP_FIT_ROWS: usize = 4_096;
         if let Some(model) = &mut self.model {
             model.add(x_new, y_new, yvar_new)?;
             if let Some(fitter) = self.fitter.as_mut() {
                 fitter.tell(x_new, y_new, yvar_new)?;
             }
-            // Disk search defers sync so pending rows are brute-forced via mmap.
-            // Drain pending before any search; otherwise bulk tell scans Θ(N).
-            model.ensure_index_sync()?;
-            let skip_fit = model.backend_driver() == IndexDriver::BpAnnDisk
-                && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
+            let is_disk = model.backend_driver() == IndexDriver::BpAnnDisk;
+            let bulk_disk = is_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
+            // Skip HP search on disk bulk tells, and on subsequent disk tells
+            // after the first fit (streaming / --tell-all thrash).
+            let skip_fit = bulk_disk || (is_disk && self.params.is_some());
+            // Drain pending before neighbor fit, or after large bulk appends so
+            // later search is not stuck with Θ(N) pending mmap scans.
+            if !skip_fit || bulk_disk {
+                model.ensure_index_sync()?;
+            }
             if !skip_fit {
                 self.run_fitter(rng)?;
             }
-            if let Some(model) = &self.model {
-                model.index_access().release_observation_pages()?;
+            if !skip_fit || bulk_disk {
+                if let Some(model) = &self.model {
+                    model.index_access().release_observation_pages()?;
+                }
             }
             return Ok(());
         }
@@ -241,7 +250,18 @@ impl ENNSurrogate {
         let skip_fit = self.config.index_driver == IndexDriver::BpAnnDisk
             && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
         if !skip_fit {
+            // First construct: sync+fit so subsequent disk streaming can skip.
+            if self.config.index_driver == IndexDriver::BpAnnDisk {
+                if let Some(model) = &self.model {
+                    model.ensure_index_sync()?;
+                }
+            }
             self.run_fitter(rng)?;
+            if self.config.index_driver == IndexDriver::BpAnnDisk {
+                if let Some(model) = &self.model {
+                    model.index_access().release_observation_pages()?;
+                }
+            }
         }
         Ok(())
     }
@@ -360,8 +380,10 @@ impl Surrogate for ENNSurrogate {
 
     fn wait_for_background_flush(&self) -> Result<(), ENNError> {
         if let Some(model) = &self.model {
-            model.backend.wait_for_flush()?;
-            model.index_access().ensure_sync()
+            // Join in-flight soft sync only. Do not ensure_index_sync here:
+            // tell() calls this on every observation, and a forced drain turns
+            // --tell-all (one-row tells) into O(N) soft-syncs.
+            model.backend.wait_for_flush()
         } else {
             Ok(())
         }
@@ -579,8 +601,8 @@ mod tests {
         let y0 = array![[0.0], [1.0], [0.5]];
         sur.fit(&x0.view(), &y0.view(), None, &mut rng).unwrap();
 
-        let x1 = Array2::from_shape_fn((4_000, 2), |(i, j)| (i + j) as f64 * 0.001);
-        let y1 = Array2::from_shape_fn((4_000, 1), |(i, _)| (i as f64) * 0.01);
+        let x1 = Array2::from_shape_fn((4_096, 2), |(i, j)| (i + j) as f64 * 0.001);
+        let y1 = Array2::from_shape_fn((4_096, 1), |(i, _)| (i as f64) * 0.01);
         sur.fit_append(&x1.view(), &y1.view(), None, &mut rng)
             .unwrap();
 
@@ -600,6 +622,60 @@ mod tests {
         assert_eq!(
             indexed, model.len(),
             "indexed_rows.bin must match num_obs after fit_append sync-before-fit"
+        );
+    }
+
+    #[test]
+    fn fit_append_disk_streaming_skips_sync_when_params_exist() {
+        use crate::backend::EnnStorage;
+        use crate::index::IndexDriver;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 2,
+            num_fit_samples: 2,
+            index_driver: IndexDriver::BpAnnDisk,
+            storage: EnnStorage::Disk,
+            work_dir: Some(dir.path().to_path_buf()),
+            scale_x: false,
+            ..Default::default()
+        };
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(11);
+        let x0 = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        let y0 = array![[0.0], [1.0], [0.5]];
+        sur.fit(&x0.view(), &y0.view(), None, &mut rng).unwrap();
+        assert!(sur.params().is_some(), "initial fit must set params");
+
+        // One-row tells must not force soft-sync (tell-all path).
+        let before = std::fs::metadata(dir.path().join("indexed_rows.bin"))
+            .ok()
+            .map(|m| m.len());
+        for i in 0..20 {
+            let x = array![[i as f64 * 0.01, 0.1]];
+            let y = array![[i as f64 * 0.1]];
+            sur.fit_append(&x.view(), &y.view(), None, &mut rng)
+                .unwrap();
+        }
+        let after = std::fs::metadata(dir.path().join("indexed_rows.bin"))
+            .ok()
+            .map(|m| m.len());
+        assert_eq!(
+            before, after,
+            "streaming one-row disk fit_append must not rewrite indexed_rows.bin"
+        );
+        assert_eq!(sur.model().expect("model").len(), 23);
+
+        // wait_for_background_flush must not drain pending either.
+        sur.wait_for_background_flush().unwrap();
+        let after_wait = std::fs::metadata(dir.path().join("indexed_rows.bin"))
+            .ok()
+            .map(|m| m.len());
+        assert_eq!(
+            before, after_wait,
+            "wait_for_background_flush must not force ensure_index_sync"
         );
     }
 }
