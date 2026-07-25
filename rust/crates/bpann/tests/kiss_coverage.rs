@@ -133,7 +133,7 @@ fn backend_scale_and_row_accessors() {
     let (_d2, idx2) = b.search(&array![[0.1, 0.1]].view(), 1, false).unwrap();
     assert_eq!(idx1[[0, 0]], idx2[[0, 0]]);
     assert_eq!(idx1[[0, 0]], 0);
-    assert_eq!(bpann::SMALL_N_INCORE_SEARCH_LIMIT, 4096);
+    assert_eq!(bpann::SMALL_N_INCORE_SEARCH_LIMIT, 8192);
     let flat = bpann::load_or_build_small_n_cache(&b, b.len()).unwrap();
     assert_eq!(flat.len(), b.len() * 2);
     let hits = bpann::topk_flat_sq_l2(&[0.0, 0.0], &flat, 2, 2, 1);

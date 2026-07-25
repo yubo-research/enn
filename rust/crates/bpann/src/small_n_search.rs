@@ -1,4 +1,4 @@
-//! In-RAM exhaustive search for small/mid observation counts (N ≤ 4096).
+//! In-RAM exhaustive search for small/mid observation counts (N ≤ 8192).
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -8,8 +8,11 @@ use crate::merge::merge_topk_precomputed_dist;
 use rayon::prelude::*;
 
 /// When `len() ≤` this, search uses a resident flat f32 matrix + heap top-k.
-/// Covers turbo-enn mid checkpoints (N=1232, N=3000) under `--tell-all`.
-pub const SMALL_N_INCORE_SEARCH_LIMIT: usize = 4096;
+///
+/// Covers turbo-enn mid checkpoints (N=1232, N=3000) under `--tell-all`, and
+/// bridges the post-4096 immature indexed+pending window without riding
+/// late in-core O(N) cost up to 16k (which relocates the cum-mean peak).
+pub const SMALL_N_INCORE_SEARCH_LIMIT: usize = 8192;
 
 /// Total order wrapper so squared distances can live in a binary heap.
 #[derive(Copy, Clone, Debug)]
@@ -153,8 +156,8 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn small_n_incore_limit_is_4096() {
-        assert_eq!(SMALL_N_INCORE_SEARCH_LIMIT, 4096);
+    fn small_n_incore_limit_is_8192() {
+        assert_eq!(SMALL_N_INCORE_SEARCH_LIMIT, 8192);
     }
 
     #[test]
