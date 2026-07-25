@@ -37,6 +37,7 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
             index_driver,
             storage,
             work_dir,
+            y_bounds: None,
         };
     }
     cfg.candidates = CandidateConfig {

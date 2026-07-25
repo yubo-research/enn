@@ -1,5 +1,6 @@
 //! Posterior computation for ENN model.
 
+mod dual_api;
 mod draw_compute;
 mod light;
 mod neighbor;
@@ -9,7 +10,6 @@ mod tie_break;
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 
 use self::draw_compute::draw_from_internals;
-use self::light::{compute_posterior_light, idx_nested_to_array2};
 use self::neighbor::{get_conditional_neighbor_data, get_neighbor_data};
 use crate::draw::DrawInternals;
 use crate::error::{ENNError, EPS_VAR};
@@ -44,25 +44,8 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        let (mu, se, se_epi, se_ale, idx) = if !flags.observation_noise && !self.has_yvar() {
-            compute_posterior_light(self, x, params, flags)?
-        } else {
-            let internals = compute_posterior_internals(self, x, params, flags)?;
-            (
-                internals.mu,
-                internals.se,
-                internals.se_epi,
-                internals.se_ale,
-                idx_nested_to_array2(&internals.idx),
-            )
-        };
-        Ok(ENNNormal::new(
-            mu.into_dyn(),
-            se.into_dyn(),
-            se_epi.into_dyn(),
-            se_ale.into_dyn(),
-            Some(idx),
-        ))
+        // Trait path stays warped for crate-internal UFCS callers.
+        self.posterior_warped(x, params, flags)
     }
 
     fn batch_posterior(
@@ -128,9 +111,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         function_seeds: &[i64],
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
-        let internals = compute_posterior_internals(self, x, params, flags)?;
-        let draws = draw_from_internals(self, &internals, function_seeds)?;
-        Ok((draws, internals.idx))
+        self.posterior_function_draw_warped(x, params, function_seeds, flags)
     }
 
     fn conditional_posterior(
@@ -141,15 +122,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        let internals =
-            compute_conditional_posterior_internals(self, x, x_whatif, y_whatif, params, flags)?;
-        Ok(ENNNormal::new(
-            internals.mu.into_dyn(),
-            internals.se.into_dyn(),
-            internals.se_epi.into_dyn(),
-            internals.se_ale.into_dyn(),
-            Some(idx_nested_to_array2(&internals.idx)),
-        ))
+        self.conditional_posterior_warped(x_whatif, y_whatif, x, params, flags)
     }
 
     fn conditional_posterior_function_draw(
@@ -161,8 +134,15 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         function_seeds: &[i64],
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
-        let internals =
-            compute_conditional_posterior_internals(self, x, x_whatif, y_whatif, params, flags)?;
+        let (y_z, _) = self.warp_observations(y_whatif, None)?;
+        let internals = compute_conditional_posterior_internals(
+            self,
+            x,
+            x_whatif,
+            &y_z.view(),
+            params,
+            flags,
+        )?;
         let draws = draw_from_internals(self, &internals, function_seeds)?;
         Ok((draws, internals.idx))
     }
@@ -620,3 +600,7 @@ mod tests_core;
 #[cfg(test)]
 #[path = "posterior/tests_conditional.rs"]
 mod tests_conditional;
+
+#[cfg(test)]
+#[path = "posterior/tests_y_bounds.rs"]
+mod tests_y_bounds;

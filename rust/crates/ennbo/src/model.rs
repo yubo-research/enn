@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use crate::backend::{EnnBackend, EnnStorage};
 use crate::error::ENNError;
 use crate::index::{IndexDriver, is_disk_index_driver};
+use crate::y_bounds::resolve_y_bounds;
 
 type InitStats = (
     Array1<f64>,
@@ -17,6 +18,7 @@ type InitStats = (
 );
 
 mod access;
+mod y_bounds_api;
 pub use access::{EnnIndexAccess, EnnRowAccess};
 
 /// Epistemic Nearest Neighbors model.
@@ -28,10 +30,14 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) scale_x: bool,
     pub(crate) x_scale: Array1<f64>,
     pub(crate) y_scale: Array1<f64>,
+    /// Per-metric `(lo, hi)` in natural units; open sides are `±∞`.
+    pub(crate) y_bounds: Array2<f64>,
     y_sum: Array1<f64>,
     y_sumsq: Array1<f64>,
     x_sum: Array1<f64>,
     x_sumsq: Array1<f64>,
+    /// Disk work directory when using disk storage (for metadata patches).
+    work_dir: Option<PathBuf>,
 }
 
 impl EpistemicNearestNeighbors {
@@ -95,10 +101,16 @@ impl EpistemicNearestNeighbors {
             driver,
             EnnStorage::InMemory,
             None,
+            None,
         )
     }
 
     /// Create a new ENN model with explicit storage backend.
+    ///
+    /// `y_bounds`: optional `(num_metrics, 2)` natural-unit open intervals.
+    /// `None` → all `(−∞,+∞)` for new models; on disk reopen, load from metadata.
+    /// `Some` on reopen must match persisted bounds.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_storage(
         train_x: Array2<f64>,
         train_y: Array2<f64>,
@@ -107,6 +119,7 @@ impl EpistemicNearestNeighbors {
         driver: IndexDriver,
         storage: EnnStorage,
         work_dir: Option<PathBuf>,
+        y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
         if scale_x && is_disk_index_driver(driver) {
@@ -114,11 +127,8 @@ impl EpistemicNearestNeighbors {
                 "scale_x=True is not compatible with BPANN_DISK".to_string(),
             ));
         }
-        let num_obs = train_x.nrows();
         let num_dim = train_x.ncols();
         let num_metrics = train_y.ncols();
-        let (y_scale, y_sum, y_sumsq, x_scale, x_sum, x_sumsq) =
-            Self::init_stats(&train_x, &train_y, scale_x);
         let disk_work_dir = work_dir.clone().or_else(EnnStorage::work_dir_from_env);
         let disk_reopen = matches!(storage, EnnStorage::Disk)
             && train_x.nrows() == 0
@@ -127,6 +137,31 @@ impl EpistemicNearestNeighbors {
                 .as_ref()
                 .is_some_and(|p| p.join("metadata.json").exists());
 
+        let meta_text = if disk_reopen {
+            disk_work_dir
+                .as_ref()
+                .and_then(|p| std::fs::read_to_string(p.join("metadata.json")).ok())
+        } else {
+            None
+        };
+        let y_bounds = resolve_y_bounds(
+            y_bounds.as_ref(),
+            num_metrics,
+            meta_text.as_deref(),
+        )?;
+
+        // On disk reopen, stored rows are already warped; skip ingress warp.
+        let (train_y, train_yvar) = if disk_reopen {
+            (train_y, train_yvar)
+        } else {
+            Self::ingress_warp_owned(train_y, train_yvar, &y_bounds)?
+        };
+
+        let num_obs = train_x.nrows();
+        let (y_scale, y_sum, y_sumsq, x_scale, x_sum, x_sumsq) =
+            Self::init_stats(&train_x, &train_y, scale_x);
+
+        let stored_work_dir = disk_work_dir.clone();
         let backend = match storage {
             EnnStorage::InMemory => EnnBackend::new_in_memory(
                 train_x,
@@ -168,14 +203,17 @@ impl EpistemicNearestNeighbors {
             scale_x,
             x_scale,
             y_scale,
+            y_bounds,
             y_sum,
             y_sumsq,
             x_sum,
             x_sumsq,
+            work_dir: stored_work_dir,
         };
         if disk_reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;
         }
+        model.persist_y_bounds_metadata()?;
         Ok(model)
     }
 
@@ -187,27 +225,15 @@ impl EpistemicNearestNeighbors {
         work_dir: Option<PathBuf>,
         pending_flush_threshold: Option<usize>,
     ) -> Result<Self, ENNError> {
-        let backend = EnnBackend::new_empty(
+        Self::new_empty_with_y_bounds(
             num_dim,
             num_metrics,
             driver,
             storage,
             work_dir,
             pending_flush_threshold,
-        )?;
-        Ok(Self {
-            backend,
-            num_obs: 0,
-            num_dim,
-            num_metrics,
-            scale_x: false,
-            x_scale: Array1::ones(num_dim),
-            y_scale: Array1::ones(num_metrics),
-            y_sum: Array1::zeros(num_metrics),
-            y_sumsq: Array1::zeros(num_metrics),
-            x_sum: Array1::zeros(num_dim),
-            x_sumsq: Array1::zeros(num_dim),
-        })
+            None,
+        )
     }
 
     fn validate_add(
@@ -254,9 +280,12 @@ impl EpistemicNearestNeighbors {
             return Err(err);
         }
         if x.nrows() > 0 {
+            let (y_z, yvar_z) = self.warp_observations(y, yvar)?;
+            let yvar_view = yvar_z.as_ref().map(|v| v.view());
             self.backend.wait_for_flush()?;
-            self.backend.append_rows(x, y, yvar)?;
-            accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y.view());
+            self.backend
+                .append_rows(x, &y_z.view(), yvar_view.as_ref())?;
+            accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y_z.view());
             let n = self.backend.len();
             self.y_scale = scale_from_moments(n, self.num_metrics, &self.y_sum, &self.y_sumsq, 0.0);
 
@@ -268,6 +297,7 @@ impl EpistemicNearestNeighbors {
             }
 
             self.num_obs = n;
+            self.persist_y_bounds_metadata()?;
         }
         Ok(())
     }
@@ -279,7 +309,8 @@ impl EpistemicNearestNeighbors {
 
     /// Merge in-memory index fragments and persist a single on-disk BPANN index.
     pub fn persist_index_to_disk(&self) -> Result<(), ENNError> {
-        crate::backend::persist_enn_backend_index(&self.backend)
+        crate::backend::persist_enn_backend_index(&self.backend)?;
+        self.persist_y_bounds_metadata()
     }
 
     pub fn len(&self) -> usize {

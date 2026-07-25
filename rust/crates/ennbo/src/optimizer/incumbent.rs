@@ -45,7 +45,7 @@ impl Optimizer {
         }
 
         if self.incumbent_tracker.observation_count() != self.obs_count() {
-            if let Some(y_obs) = self.y_obs() {
+            if let Some(y_obs) = self.obs_access().y_obs_warped() {
                 self.incumbent_tracker.rebuild(&y_obs.view());
             }
         }

@@ -7,7 +7,6 @@ use rand::Rng;
 use crate::error::ENNError;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
-use crate::traits::PosteriorComputation;
 
 /// Validates subsample log-likelihood inputs.
 fn validate_subsample_inputs(

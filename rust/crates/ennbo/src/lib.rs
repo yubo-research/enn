@@ -39,6 +39,7 @@ pub mod traits;
 pub mod trust_region;
 pub mod trust_region_config;
 pub mod util;
+pub mod y_bounds;
 
 #[cfg(test)]
 pub(crate) mod test_helpers;
@@ -82,3 +83,4 @@ pub use morbo_trust_region::{MorboTRSettings, MorboTrustRegion, Rescalarize};
 pub use trust_region::{NoTrustRegion, TRLengthConfig, TrustRegionError, TurboTrustRegion};
 pub use trust_region_config::TrustRegionConfig;
 pub use util::{argmax_random_tie, calculate_sobol_indices, pareto_front_2d_maximize, standardize_y};
+pub use y_bounds::{bounds_to_json, is_identity_bounds, unbounded_bounds, validate_bounds};

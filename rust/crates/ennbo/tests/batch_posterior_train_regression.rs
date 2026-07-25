@@ -1,7 +1,6 @@
 use ennbo::index::IndexDriver;
 use ennbo::model::EpistemicNearestNeighbors;
 use ennbo::params::{ENNParams, PosteriorFlags};
-use ennbo::traits::PosteriorComputation;
 use ndarray::array;
 
 #[test]

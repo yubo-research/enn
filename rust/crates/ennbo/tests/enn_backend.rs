@@ -34,8 +34,8 @@ fn new_empty_in_memory_accepts_incremental_add() {
         IndexDriver::Exact,
         EnnStorage::InMemory,
         None,
-        None,
-    )
+            None,
+        )
     .unwrap();
     model
         .add(&array![[1.0, 2.0]].view(), &array![[3.0]].view(), None)
@@ -57,7 +57,8 @@ fn disk_backend_roundtrip_and_search() {
         IndexDriver::BpAnnDisk,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
-    )
+            None,
+        )
     .unwrap();
     assert_eq!(model.len(), 4);
     let (_, y_all, _) = model.rows().train_rows_at(&(0..4).collect::<Vec<_>>()).unwrap();
@@ -113,7 +114,8 @@ fn disk_storage_rejects_non_disk_driver() {
         IndexDriver::Exact,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
-    ) {
+            None,
+        ) {
         Ok(_) => panic!("expected disk + Exact to error"),
         Err(e) => assert!(e.to_string().contains("BpAnnDisk")),
     }
@@ -130,7 +132,8 @@ fn scale_x_rejects_bpann_disk() {
         IndexDriver::BpAnnDisk,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
-    ) {
+            None,
+        ) {
         Ok(_) => panic!("expected scale_x + BpAnnDisk to error"),
         Err(e) => assert!(
             e.to_string().contains("scale_x=True is not compatible with BPANN_DISK"),

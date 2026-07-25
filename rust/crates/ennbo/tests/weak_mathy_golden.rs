@@ -2,7 +2,7 @@
 
 use ennbo::{
     compute_conditional_posterior_internals, EpistemicNearestNeighbors, ENNParams, IndexDriver,
-    ParetoAcquisition, PosteriorComputation, PosteriorFlags,
+    ParetoAcquisition, PosteriorFlags,
 };
 use ndarray::array;
 use rand::SeedableRng;

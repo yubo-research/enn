@@ -79,12 +79,23 @@ class EpistemicNearestNeighbors:
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
         work_dir: str | os.PathLike[str] | None = None,
         enn_storage: str | None = None,
+        y_bounds: np.ndarray | None = None,
     ) -> None:
         train_x, train_y, train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
         )
         if scale_x and index_driver == ENNIndexDriver.BPANN_DISK:
             raise ValueError("scale_x=True is not compatible with BPANN_DISK")
+        if y_bounds is not None:
+            y_bounds = np.asarray(y_bounds, dtype=float)
+            if y_bounds.ndim != 2 or y_bounds.shape[1] != 2:
+                raise ValueError(
+                    f"y_bounds must have shape (num_metrics, 2), got {y_bounds.shape}"
+                )
+            if y_bounds.shape[0] != train_y.shape[1]:
+                raise ValueError(
+                    f"y_bounds rows {y_bounds.shape[0]} != num_metrics {train_y.shape[1]}"
+                )
         self._index_driver = index_driver
         idx_driver = _rust_index_driver_name(index_driver)
         rust_kwargs: dict[str, Any] = {
@@ -98,8 +109,11 @@ class EpistemicNearestNeighbors:
             rust_kwargs["work_dir"] = os.fspath(work_dir)
         if enn_storage is not None:
             rust_kwargs["enn_storage"] = enn_storage
+        if y_bounds is not None:
+            rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
         self._tie_break_neighbors: bool = True
+        self._y_bounds = y_bounds
 
     def add(
         self,
@@ -199,7 +213,8 @@ class EpistemicNearestNeighbors:
             observation_noise=flags.observation_noise,
         )
         idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
-        return ENNNormal(mu, se, se_epi, se_ale, idx=idx_arr)
+        yb = np.asarray(self._rust_model.y_bounds, dtype=float)
+        return ENNNormal(mu, se, se_epi, se_ale, idx=idx_arr, y_bounds=yb)
 
     def conditional_posterior(
         self,
@@ -225,7 +240,8 @@ class EpistemicNearestNeighbors:
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
-        return ENNNormal(mu, se, se_epi, se_ale)
+        yb = np.asarray(self._rust_model.y_bounds, dtype=float)
+        return ENNNormal(mu, se, se_epi, se_ale, y_bounds=yb)
 
     def batch_posterior(
         self,
@@ -255,7 +271,8 @@ class EpistemicNearestNeighbors:
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
-        return ENNNormal(mu_all, se_all, se_epi_all, se_ale_all)
+        yb = np.asarray(self._rust_model.y_bounds, dtype=float)
+        return ENNNormal(mu_all, se_all, se_epi_all, se_ale_all, y_bounds=yb)
 
     def neighbors(
         self, x: np.ndarray, k: int, *, exclude_nearest: bool = False

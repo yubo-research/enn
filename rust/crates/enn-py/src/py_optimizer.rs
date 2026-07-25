@@ -142,6 +142,10 @@ pub fn parse_config_overrides_from_dict(
     if let Some(v) = dict.get_item("work_dir")? {
         overrides.work_dir = Some(PathBuf::from(v.extract::<String>()?));
     }
+    if let Some(v) = dict.get_item("y_bounds")? {
+        let arr: numpy::PyReadonlyArray2<f64> = v.extract()?;
+        overrides.y_bounds = Some(arr.as_array().to_owned());
+    }
     apply_scalar_overrides(dict, &mut overrides)?;
     Ok(overrides)
 }
