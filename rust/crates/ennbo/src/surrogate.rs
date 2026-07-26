@@ -12,7 +12,6 @@ use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
-use crate::traits::PosteriorComputation;
 
 #[derive(Debug, Clone)]
 pub struct SurrogatePrediction {
@@ -79,6 +78,16 @@ pub trait Surrogate: Send + Sync {
         Ok(None)
     }
 
+    /// Naturalize warped observation matrix for public `y_obs` (default: identity).
+    fn naturalize_observations_y(&self, y_warped: Array2<f64>) -> Array2<f64> {
+        y_warped
+    }
+
+    /// Warp natural y for incumbent / internal trackers (default: identity).
+    fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
+        Ok(y.to_owned())
+    }
+
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
         Ok(None)
     }
@@ -112,6 +121,8 @@ pub struct ENNSurrogateConfig {
     pub index_driver: IndexDriver,
     pub storage: EnnStorage,
     pub work_dir: Option<PathBuf>,
+    /// Optional per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
+    pub y_bounds: Option<Array2<f64>>,
 }
 
 impl Default for ENNSurrogateConfig {
@@ -125,6 +136,7 @@ impl Default for ENNSurrogateConfig {
             index_driver: IndexDriver::Exact,
             storage: EnnStorage::InMemory,
             work_dir: None,
+            y_bounds: None,
         }
     }
 }
@@ -168,6 +180,7 @@ impl ENNSurrogate {
             self.config.index_driver,
             self.config.storage,
             self.config.work_dir.clone(),
+            self.config.y_bounds.clone(),
         )
     }
 
@@ -218,9 +231,11 @@ impl ENNSurrogate {
         // predict uses last/default params until a non-skipped tell refreshes.
         const BULK_DISK_TELL_SKIP_FIT_ROWS: usize = 4_096;
         if let Some(model) = &mut self.model {
+            let (y_z, yvar_z) = model.warp_observations(y_new, yvar_new)?;
+            let yvar_z_view = yvar_z.as_ref().map(|v| v.view());
             model.add(x_new, y_new, yvar_new)?;
             if let Some(fitter) = self.fitter.as_mut() {
-                fitter.tell(x_new, y_new, yvar_new)?;
+                fitter.tell(x_new, &y_z.view(), yvar_z_view.as_ref())?;
             }
             let is_disk = model.backend_driver() == IndexDriver::BpAnnDisk;
             let bulk_disk = is_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
@@ -243,8 +258,11 @@ impl ENNSurrogate {
             return Ok(());
         }
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
-        fitter.tell(x_new, y_new, yvar_new)?;
+        // Construct warps natural → z into storage; fitter gets a warped copy (not double-stored).
         let model = self.construct_model(x_new, y_new, yvar_new)?;
+        let (y_z, yvar_z) = model.warp_observations(y_new, yvar_new)?;
+        let yvar_z_view = yvar_z.as_ref().map(|v| v.view());
+        fitter.tell(x_new, &y_z.view(), yvar_z_view.as_ref())?;
         self.model = Some(model);
         self.fitter = Some(fitter);
         let skip_fit = self.config.index_driver == IndexDriver::BpAnnDisk
@@ -309,6 +327,29 @@ impl Surrogate for ENNSurrogate {
         Ok(Some(y))
     }
 
+    fn naturalize_observations_y(&self, y_warped: Array2<f64>) -> Array2<f64> {
+        let Some(model) = self.model.as_ref() else {
+            return y_warped;
+        };
+        if crate::y_bounds::is_identity_bounds(model.y_bounds()) {
+            return y_warped;
+        }
+        crate::y_bounds::inv_y(y_warped.view(), model.y_bounds())
+    }
+
+    fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
+        if let Some(model) = self.model.as_ref() {
+            let (yz, _) = model.warp_observations(y, None)?;
+            return Ok(yz);
+        }
+        let bounds = match &self.config.y_bounds {
+            Some(b) => b.clone(),
+            None => crate::y_bounds::unbounded_bounds(y.ncols()),
+        };
+        crate::y_bounds::validate_bounds(&bounds, y.ncols())?;
+        crate::y_bounds::warp_y(*y, &bounds)
+    }
+
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
         let model = match self.model.as_ref() {
             Some(m) => m,
@@ -339,7 +380,9 @@ impl Surrogate for ENNSurrogate {
         let model = self.construct_model(x, y, yvar)?;
 
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
-        fitter.tell(x, y, yvar)?;
+        let (y_z, yvar_z) = model.warp_observations(y, yvar)?;
+        let yvar_z_view = yvar_z.as_ref().map(|v| v.view());
+        fitter.tell(x, &y_z.view(), yvar_z_view.as_ref())?;
         if let Some(p) = self.params {
             fitter.set_params(p);
         }
@@ -415,7 +458,7 @@ impl Surrogate for ENNSurrogate {
 
         let flags = PosteriorFlags::new()
             .with_tie_break_neighbors(false);
-        let posterior = model.posterior(x, &params, &flags)?;
+        let posterior = model.posterior_warped(x, &params, &flags)?;
 
         // Convert from dynamic dimension to fixed 2D
         let mu = posterior
@@ -452,7 +495,7 @@ impl Surrogate for ENNSurrogate {
         let function_seeds: Vec<i64> = (0..num_samples as i64).map(|i| base_seed + i).collect();
 
         let (draws, _) =
-            model.posterior_function_draw(x, params, &function_seeds, &Default::default())?;
+            model.posterior_function_draw_warped(x, params, &function_seeds, &Default::default())?;
 
         Ok(draws)
     }

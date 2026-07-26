@@ -173,7 +173,7 @@ fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError>
     if !optimizer.trust_region().is_morbo() {
         return Ok(());
     }
-    let Some(y_all) = optimizer.y_obs() else {
+    let Some(y_all) = optimizer.obs_access().y_obs_warped() else {
         return Ok(());
     };
     if y_all.nrows() == 0 {
@@ -216,9 +216,14 @@ fn tell_common(
     }
 
     if optimizer.trust_region().is_morbo() && delta.new_n > delta.old_n {
+        let y_new_z = if let Some(surrogate) = optimizer.surrogate() {
+            surrogate.warp_observations_y(&delta.y_new_view())?
+        } else {
+            delta.y_new_view().to_owned()
+        };
         optimizer
             .trust_region_mut()
-            .morbo_update_ranges_only(&delta.y_new_view())?;
+            .morbo_update_ranges_only(&y_new_z.view())?;
     }
 
     optimizer.update_incumbent(rng)?;

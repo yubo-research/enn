@@ -14,7 +14,7 @@ pub(crate) type PosteriorPyOut<'py> = (
     Option<Bound<'py, PyArrayDyn<i64>>>,
 );
 
-type TrainRowsAtPyOut<'py> = (
+pub(crate) type TrainRowsAtPyOut<'py> = (
     Bound<'py, PyArray2<f64>>,
     Bound<'py, PyArray2<f64>>,
     Option<Bound<'py, PyArray2<f64>>>,
@@ -41,7 +41,8 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         train_x: PyReadonlyArray2<f64>,
         train_y: PyReadonlyArray2<f64>,
@@ -50,6 +51,7 @@ impl PyEpistemicNearestNeighbors {
         index_driver: &str,
         work_dir: Option<&str>,
         enn_storage: Option<&str>,
+        y_bounds: Option<PyReadonlyArray2<f64>>,
     ) -> PyResult<Self> {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
@@ -72,6 +74,7 @@ impl PyEpistemicNearestNeighbors {
             }
         };
         let work_dir = work_dir.map(PathBuf::from);
+        let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let model = ennbo::EpistemicNearestNeighbors::new_with_storage(
             train_x.as_array().to_owned(),
             train_y.as_array().to_owned(),
@@ -80,6 +83,7 @@ impl PyEpistemicNearestNeighbors {
             driver,
             storage,
             work_dir,
+            y_bounds,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self {
@@ -91,10 +95,6 @@ impl PyEpistemicNearestNeighbors {
     #[pyo3(signature = (enabled=true))]
     fn set_tie_break_neighbors(&self, enabled: bool) {
         self.tie_break_neighbors.set(enabled);
-    }
-
-    fn tie_break_neighbors(&self) -> bool {
-        self.tie_break_neighbors.get()
     }
 
     #[pyo3(signature = (x, y, yvar=None))]
@@ -410,7 +410,6 @@ impl PyEpistemicNearestNeighbors {
     ) -> PyResult<TrainRowsAtPyOut<'py>> {
         let (x, y, yvar) = self
             .inner
-            .rows()
             .train_rows_at(&indices)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
@@ -432,10 +431,14 @@ impl PyEpistemicNearestNeighbors {
     fn row_y<'py>(&self, py: Python<'py>, i: usize) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let row = self
             .inner
-            .rows()
-            .row_y(i)
+            .row_y_natural(i)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(row.insert_axis(ndarray::Axis(0)).into_pyarray_bound(py))
+    }
+
+    #[getter]
+    fn y_bounds<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        Ok(self.inner.y_bounds().clone().into_pyarray_bound(py))
     }
 
     #[getter]
@@ -447,6 +450,25 @@ impl PyEpistemicNearestNeighbors {
     fn y_scale_row<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         Ok(self.inner.y_scale_row().into_pyarray_bound(py))
     }
+}
+
+/// Storage-space (warped) row gather; kept off the pyclass to satisfy methods_per_class.
+#[pyfunction]
+pub(crate) fn train_rows_at_warped<'py>(
+    py: Python<'py>,
+    model: PyRef<'_, PyEpistemicNearestNeighbors>,
+    indices: Vec<usize>,
+) -> PyResult<TrainRowsAtPyOut<'py>> {
+    let (x, y, yvar) = model
+        .inner
+        .rows()
+        .train_rows_at(&indices)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok((
+        x.into_pyarray_bound(py),
+        y.into_pyarray_bound(py),
+        yvar.map(|a| a.into_pyarray_bound(py)),
+    ))
 }
 
 /// Wrapper for ENNParams
@@ -510,7 +532,6 @@ mod kiss_coverage_tests {
         let _ = (
             PyEpistemicNearestNeighbors::new,
             PyEpistemicNearestNeighbors::set_tie_break_neighbors,
-            PyEpistemicNearestNeighbors::tie_break_neighbors,
             PyEpistemicNearestNeighbors::add,
             PyEpistemicNearestNeighbors::ensure_index_sync,
             PyEpistemicNearestNeighbors::schedule_background_flush,
@@ -532,6 +553,8 @@ mod kiss_coverage_tests {
             PyEpistemicNearestNeighbors::row_y,
             PyEpistemicNearestNeighbors::x_scale_row,
             PyEpistemicNearestNeighbors::y_scale_row,
+            PyEpistemicNearestNeighbors::y_bounds,
+            train_rows_at_warped,
             PyENNParams::new,
             PyENNParams::k_num_neighbors,
             PyENNParams::epistemic_variance_scale,

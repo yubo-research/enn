@@ -39,6 +39,7 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
 pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_model::PyEpistemicNearestNeighbors>()?;
     m.add_class::<crate::py_model::PyENNParams>()?;
+    m.add_function(wrap_pyfunction!(crate::py_model::train_rows_at_warped, m)?)?;
     Ok(())
 }
 

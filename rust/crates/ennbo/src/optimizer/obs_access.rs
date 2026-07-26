@@ -38,6 +38,17 @@ impl<'a> ObsAccess<'a> {
             .cloned()
             .ok_or_else(|| ENNError::InvalidParameter(format!("observation index {idx} out of range")))
     }
+
+    /// Observation values in warped storage units (fit / incumbent / Morbo).
+    pub(crate) fn y_obs_warped(&self) -> Option<Array2<f64>> {
+        if let Some(surrogate) = self.opt.surrogate() {
+            return surrogate.observations_y().ok().flatten();
+        }
+        if self.opt.fallback_y.is_empty() {
+            return None;
+        }
+        Some(build_obs_array2(&self.opt.fallback_y))
+    }
 }
 
 pub fn build_obs_array2(vecs: &[Array1<f64>]) -> Array2<f64> {

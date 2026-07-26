@@ -17,7 +17,7 @@ use crate::error::ENNError;
 use crate::index::{ENNIndex, IndexDriver};
 
 /// Gathered training rows: `x`, `y`, optional `yvar`.
-pub(crate) type TrainRowsAtResult = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
+pub type TrainRowsAtResult = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnnStorage {

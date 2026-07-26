@@ -399,13 +399,16 @@ impl TurboTrustRegion {
     ///
     /// Keeps `prev_num_obs` so the next tell can use the O(batch) path without
     /// reloading full observation history (critical for disk-backed large N).
+    ///
+    /// Also keeps `hist_ymin` / `hist_ymax`: those are the running min/max of
+    /// `y[0..prev_num_obs]`, and observations are not discarded on restart.
+    /// Clearing them while retaining the watermark collapses improvement scale
+    /// to ~1e-6 and mis-classifies tiny gains as successes.
     pub fn restart(&mut self) {
         self.length = self.config.length_init;
         self.failure_counter = 0;
         self.success_counter = 0;
         self.best_value = f64::NEG_INFINITY;
-        self.hist_ymin = f64::INFINITY;
-        self.hist_ymax = f64::NEG_INFINITY;
     }
 
     /// Set observation watermark without scanning history (post-init / restart).
@@ -568,6 +571,55 @@ mod tests {
         let e2 = TrustRegionError::InvalidState("bad state".to_string());
         assert!(e1.to_string().contains("Invalid parameter"));
         assert!(e2.to_string().contains("Invalid state"));
+    }
+
+    #[test]
+    fn restart_preserves_hist_scale_for_improvement() {
+        // Regression: restart must keep hist_ymin/hist_ymax. Clearing them while
+        // retaining prev_num_obs collapses improvement scale to ~1e-6 and treats
+        // tiny absolute gains as successes (wrong vs full-history y-range scale).
+        let config = TRLengthConfig::default();
+        let mut tr = TurboTrustRegion::new(2, config);
+        tr.set_num_arms(1);
+
+        let y0 = array![0.0, 100.0];
+        tr.update_with_incumbent_new_batch(&y0.view(), 2, 100.0)
+            .unwrap();
+        assert_eq!(tr.hist_ymin, 0.0);
+        assert_eq!(tr.hist_ymax, 100.0);
+
+        let length_before = tr.length();
+        tr.restart();
+        assert_eq!(tr.prev_num_obs(), 2);
+        assert_eq!(
+            tr.hist_ymin, 0.0,
+            "restart must preserve historical y min for scale"
+        );
+        assert_eq!(
+            tr.hist_ymax, 100.0,
+            "restart must preserve historical y max for scale"
+        );
+
+        // Re-seed best after restart (first post-restart update is init-only).
+        let y1 = array![100.0];
+        tr.update_with_incumbent_new_batch(&y1.view(), 3, 100.0)
+            .unwrap();
+
+        // Three absolute gains of 0.05: with correct scale=100, threshold=0.1,
+        // none count as improvements. With wiped hist (scale≈1e-6), all three
+        // succeed and expand the trust-region length.
+        for (i, inc) in [100.05_f64, 100.10, 100.15].into_iter().enumerate() {
+            let y = array![inc];
+            tr.update_with_incumbent_new_batch(&y.view(), 4 + i, inc)
+                .unwrap();
+        }
+        assert_eq!(
+            tr.length(),
+            length_before,
+            "tiny post-restart gains must not expand length when hist scale is preserved"
+        );
+        assert_eq!(tr.success_counter, 0);
+        assert!(tr.failure_counter > 0);
     }
 
     #[test]

@@ -19,7 +19,8 @@ impl<'a> EnnIndexAccess<'a> {
     pub fn ensure_sync(&self) -> Result<(), ENNError> {
         self.model
             .backend
-            .ensure_index_sync(self.model.scale_x, &self.model.x_scale)
+            .ensure_index_sync(self.model.scale_x, &self.model.x_scale)?;
+        self.model.persist_y_bounds_metadata()
     }
 
     pub fn memory_bytes(&self) -> Result<usize, ENNError> {

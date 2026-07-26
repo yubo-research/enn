@@ -247,18 +247,16 @@ impl Optimizer {
         Some(obs_access::build_obs_array2(&self.fallback_x))
     }
 
-    /// Get observation values (ENN model or fallback store).
+    /// Get observation values in natural units (ENN model or fallback store).
     pub fn y_obs(&self) -> Option<Array2<f64>> {
+        let y_z = self.obs_access().y_obs_warped()?;
         if let Some(surrogate) = self.surrogate.as_ref() {
-            return surrogate.observations_y().ok().flatten();
+            return Some(surrogate.naturalize_observations_y(y_z));
         }
-        if self.fallback_y.is_empty() {
-            return None;
-        }
-        Some(obs_access::build_obs_array2(&self.fallback_y))
+        Some(y_z)
     }
 
-    /// Add observations (internal).
+    /// Add observations (internal). `y` is natural-unit; incumbent gets a warped copy.
     pub fn add_observations(
         &mut self,
         x: &ArrayView2<f64>,
@@ -271,12 +269,17 @@ impl Optimizer {
             });
         }
         let old_n = self.obs_count();
+        let y_for_incumbent = if let Some(surrogate) = self.surrogate.as_ref() {
+            surrogate.warp_observations_y(y)?
+        } else {
+            y.to_owned()
+        };
         for i in 0..x.nrows() {
-            let y_row: Array1<f64> = y.row(i).to_owned();
+            let y_row: Array1<f64> = y_for_incumbent.row(i).to_owned();
             self.incumbent_tracker.tell(old_n + i, &y_row);
             if self.surrogate.is_none() {
                 self.fallback_x.push(x.row(i).to_owned());
-                self.fallback_y.push(y_row);
+                self.fallback_y.push(y.row(i).to_owned());
             }
         }
         observation_delta::observation_delta_from_batch(old_n, x, y)

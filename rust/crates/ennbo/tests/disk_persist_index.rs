@@ -32,7 +32,8 @@ fn build_reference_disk_model(
         IndexDriver::BpAnnDisk,
         EnnStorage::Disk,
         Some(work_dir.to_path_buf()),
-    )
+            None,
+        )
     .expect("reference new");
     model.index_access().ensure_sync().expect("reference sync");
     model
@@ -108,7 +109,8 @@ fn disk_persist_index_multi_batch_reopen_is_fast_and_correct() {
         IndexDriver::BpAnnDisk,
         EnnStorage::Disk,
         Some(work_dir.clone()),
-    )
+            None,
+        )
     .expect("reopen");
     let reopen_s = t0.elapsed().as_secs_f64();
     assert!(

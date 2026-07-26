@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import numpy as np
+
 from .config.acquisition import (
     DrawAcquisitionConfig,
     ParetoAcquisitionConfig,
@@ -153,6 +155,8 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
             overrides["num_fit_candidates"] = int(surrogate.num_fit_candidates)
         if surrogate.scale_x:
             overrides["scale_x"] = True
+        if surrogate.y_bounds is not None:
+            overrides["y_bounds"] = np.asarray(surrogate.y_bounds, dtype=float)
         if surrogate.enn_storage is not None:
             overrides["enn_storage"] = surrogate.enn_storage
         if surrogate.work_dir is not None:
