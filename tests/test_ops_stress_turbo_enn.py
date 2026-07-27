@@ -17,8 +17,8 @@ from ops.stress import (
     run_turbo_enn_stress,
     turbo_enn_ask_stops,
 )
-from tests.ops_stress_cli_helpers import assert_stress_cli_rejects
-from tests.ops_stress_turbo_enn_helpers import (
+from ops_stress_cli_helpers import assert_stress_cli_rejects
+from ops_stress_turbo_enn_helpers import (
     RecordingObjective,
     RecordingTurboOpt,
     collect_tell_sizes,

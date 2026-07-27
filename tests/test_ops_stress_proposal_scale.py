@@ -18,7 +18,7 @@ from ops.stress import (
     run_proposal_scale_stress,
     seed_turbo_enn_to_n,
 )
-from tests.ops_stress_cli_helpers import assert_stress_cli_rejects
+from ops_stress_cli_helpers import assert_stress_cli_rejects
 
 _PS_ROW_RE = re.compile(r" *\d+ \d+\.\d{4} \d+\.\d{4} \d+\.\d{4}")
 
