@@ -156,7 +156,19 @@ build_linux_x86_64_cp312() {
   done
 }
 
-build_macos_arm64_cp311
-build_linux_x86_64_cp312
+wheels_mode="${1:-all}"
+case "$wheels_mode" in
+  all)
+    build_macos_arm64_cp311
+    build_linux_x86_64_cp312
+    ;;
+  --linux|linux)
+    build_linux_x86_64_cp312
+    ;;
+  *)
+    echo "usage: $0 [all|--linux]" >&2
+    exit 1
+    ;;
+esac
 
 echo "Wheel builds complete. Artifacts are under dist/."

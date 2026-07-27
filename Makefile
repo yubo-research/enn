@@ -1,5 +1,5 @@
 .PHONY: all install clean test build-ext rust-test python-test python-test-body python-slow-test lint wheels wheelsl \
-	pypi-build pypi-publish pypi-auth-check
+	wheels-linux pypi-build pypi-publish pypi-auth-check
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
@@ -117,6 +117,10 @@ wheels:
 	scripts/build_wheels.sh
 
 wheelsl: wheels
+
+# Linux/manylinux wheels only (skip macOS).
+wheels-linux:
+	scripts/build_wheels.sh --linux
 
 # --- PyPI (ennbo): token in MATURIN_PYPI_TOKEN, or credentials in ~/.pypirc ---
 pypi-build:
