@@ -64,12 +64,12 @@ pub struct BpannConfig {
 impl Default for BpannConfig {
     /// Mirror the compiled-in BPANN defaults so the values live in exactly one place.
     fn default() -> Self {
-        bpann::BpannTuning::default().into()
+        ennbo_bpann::BpannTuning::default().into()
     }
 }
 
-impl From<bpann::BpannTuning> for BpannConfig {
-    fn from(t: bpann::BpannTuning) -> Self {
+impl From<ennbo_bpann::BpannTuning> for BpannConfig {
+    fn from(t: ennbo_bpann::BpannTuning) -> Self {
         Self {
             index_compact_rows_per_fragment: t.index_compact_rows_per_fragment,
             index_compact_fragment_max: t.index_compact_fragment_max,
@@ -97,14 +97,14 @@ impl BpannConfig {
     pub fn resolved_pending_hard_flush_threshold(&self) -> usize {
         self.pending_hard_flush_threshold.unwrap_or_else(|| {
             std::cmp::max(
-                bpann::DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
+                ennbo_bpann::DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
                 self.pending_flush_threshold,
             )
         })
     }
 
-    fn to_tuning(&self) -> bpann::BpannTuning {
-        bpann::BpannTuning {
+    fn to_tuning(&self) -> ennbo_bpann::BpannTuning {
+        ennbo_bpann::BpannTuning {
             index_compact_rows_per_fragment: self.index_compact_rows_per_fragment,
             index_compact_fragment_max: self.index_compact_fragment_max,
             search_rows_per_fragment: self.search_rows_per_fragment,
@@ -245,14 +245,14 @@ impl Config {
     }
 }
 
-/// Install BPANN tuning so the `bpann` crate reads values via [`Config`].
+/// Install BPANN tuning so the `ennbo-bpann` crate reads values via [`Config`].
 ///
 /// Snapshot once at install time. Reloading the TOML inside the provider (old
 /// behavior) put disk I/O on every `current_tuning()` — including per-query
 /// search mode selection — and dominated TuRBO ask time.
 pub fn install_bpann_tuning_from_config() {
     let cached = Config::new().load().bpann.to_tuning();
-    bpann::set_tuning_provider(Box::new(move || cached));
+    ennbo_bpann::set_tuning_provider(Box::new(move || cached));
 }
 
 #[cfg(test)]

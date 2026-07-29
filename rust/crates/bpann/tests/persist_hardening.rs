@@ -1,6 +1,6 @@
 //! Persist-on-close hardening tests: in-session parity and idempotency.
 
-use bpann::BpannBackend;
+use ennbo_bpann::BpannBackend;
 use tempfile::TempDir;
 
 #[test]

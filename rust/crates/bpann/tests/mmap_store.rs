@@ -1,4 +1,4 @@
-use bpann::mmap_store;
+use ennbo_bpann::mmap_store;
 use ndarray::{array, Array2, ShapeBuilder};
 use tempfile::TempDir;
 

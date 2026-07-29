@@ -10,7 +10,7 @@ ENN estimates a function's value and epistemic uncertainty using K-Nearest Neigh
 - **TuRBO-ENN optimizer** — Thompson sampling, UCB, RAASP candidate generation
 - Neighbor search via Faiss in-memory (`IndexDriver::Exact`)
 - Disk mode: mmap `train_*.bin` + B+ANN index under `work_dir`
-  - `IndexDriver::BpAnnDisk` — disk-backed B+ANN index via the `bpann` crate
+  - `IndexDriver::BpAnnDisk` — disk-backed B+ANN index via the `ennbo-bpann` crate
 
 ### Disk layout (`bpann_disk`)
 

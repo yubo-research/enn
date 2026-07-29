@@ -5,7 +5,7 @@
 //! `chunks_exact` remainder for lengths that are not a multiple of the lane
 //! count) or overfit to a single length.
 
-use bpann::distance::l2_sq_f32;
+use ennbo_bpann::distance::l2_sq_f32;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
