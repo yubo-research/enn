@@ -15,6 +15,10 @@ pub use backend::{
 };
 pub use error::BpannError;
 pub use index::{BpannIndex, IncrementalIndex};
+pub use merge::{
+    bpann_apply_exclude_nearest, bpann_merge_topk_candidates, merge_topk_precomputed_dist,
+    merge_topk_precomputed_dist_with_self,
+};
 pub use observation::{MAX_NUM_DIM, MAX_RECORD_STRIDE};
 pub use large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 pub use small_n_search::{

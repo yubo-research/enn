@@ -210,7 +210,8 @@ impl ENNFitter {
                 sample(rng, n, p_actual).into_iter().collect()
             }
         };
-        let (train_x, train_y, _) = model.rows().train_rows_at(&indices)?;
+        // Natural-unit targets: matches inherent batch_posterior (naturalized μ/σ).
+        let (train_x, train_y, _) = model.train_rows_at(&indices)?;
         let y_std = self.y_std();
         let logliks = crate::fit::subsample_loglik(
             model,

@@ -5,7 +5,6 @@ mod draw_compute;
 mod light;
 mod neighbor;
 pub mod neighbor_dist;
-mod tie_break;
 
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 
@@ -143,7 +142,8 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
             params,
             flags,
         )?;
-        let draws = draw_from_internals(self, &internals, function_seeds)?;
+        let mut draws = draw_from_internals(self, &internals, function_seeds)?;
+        self.naturalize_draws_3d(&mut draws);
         Ok((draws, internals.idx))
     }
 }
@@ -153,13 +153,12 @@ pub(crate) fn index_search(
     x: &ArrayView2<f64>,
     search_k: i32,
     exclude_nearest: bool,
-    tie_break_neighbors: bool,
 ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
     if !model.backend.defer_index_sync_for_search() {
         model.ensure_index_sync()?;
     }
     if model.backend_driver() == IndexDriver::Exact {
-        neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest, tie_break_neighbors)
+        neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest)
     } else {
         let (_, idx) = model.backend_search(x, search_k, exclude_nearest)?;
         let dist2s = neighbor::dist2s_for_neighbor_indices(model, x, &idx);
@@ -178,8 +177,7 @@ fn compute_batch_with_shared_neighbors(
     se_epi_all: &mut Array3<f64>,
     se_ale_all: &mut Array3<f64>,
 ) -> Result<(), ENNError> {
-    let neighbor_data =
-        get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest, flags.tie_break_neighbors)?;
+    let neighbor_data = get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest)?;
 
     if let Some(data) = neighbor_data {
         let wp_data = WeightedPosteriorData {
@@ -466,8 +464,7 @@ pub fn compute_posterior_internals(
         return Ok(empty_posterior_internals(model, batch_size));
     }
 
-    let neighbor_data =
-        get_neighbor_data(model, x, params, flags.exclude_nearest, flags.tie_break_neighbors)?;
+    let neighbor_data = get_neighbor_data(model, x, params, flags.exclude_nearest)?;
 
     if let Some(data) = neighbor_data {
         let wp_data = WeightedPosteriorData {

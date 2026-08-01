@@ -141,13 +141,8 @@ pub(crate) fn compute_posterior_light(
         ));
     }
 
-    let (dist2s_full, idx_full) = index_search(
-        model,
-        x,
-        search_k as i32,
-        flags.exclude_nearest,
-        flags.tie_break_neighbors,
-    )?;
+    let (dist2s_full, idx_full) =
+        index_search(model, x, search_k as i32, flags.exclude_nearest)?;
 
     let available_k = if flags.exclude_nearest {
         search_k.saturating_sub(1)

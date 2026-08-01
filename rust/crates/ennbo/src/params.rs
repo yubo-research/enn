@@ -105,17 +105,12 @@ pub struct PosteriorFlags {
     pub exclude_nearest: bool,
     /// Include observation noise in uncertainty computation.
     pub observation_noise: bool,
-    /// Break distance ties by lower train index (Exact driver neighbor lookup).
-    pub tie_break_neighbors: bool,
 }
 
 impl PosteriorFlags {
-    /// Create new PosteriorFlags with default values (all false except tie_break_neighbors).
+    /// Create new PosteriorFlags with default values (all false).
     pub fn new() -> Self {
-        Self {
-            tie_break_neighbors: true,
-            ..Self::default()
-        }
+        Self::default()
     }
 
     /// Set exclude_nearest flag.
@@ -127,12 +122,6 @@ impl PosteriorFlags {
     /// Set observation_noise flag.
     pub fn with_observation_noise(mut self, value: bool) -> Self {
         self.observation_noise = value;
-        self
-    }
-
-    /// Set tie_break_neighbors flag.
-    pub fn with_tie_break_neighbors(mut self, value: bool) -> Self {
-        self.tie_break_neighbors = value;
         self
     }
 }
@@ -246,7 +235,6 @@ mod tests {
         let flags = PosteriorFlags::new();
         assert!(!flags.exclude_nearest);
         assert!(!flags.observation_noise);
-        assert!(flags.tie_break_neighbors);
     }
 
     #[test]

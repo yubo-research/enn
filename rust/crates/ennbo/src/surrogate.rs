@@ -307,7 +307,8 @@ impl Surrogate for ENNSurrogate {
             .model
             .as_ref()
             .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
-        model.rows().row_y(idx)
+        // Natural units for incumbent / TR comparisons under y_bounds.
+        model.row_y_natural(idx)
     }
 
     fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError> {
@@ -320,6 +321,7 @@ impl Surrogate for ENNSurrogate {
             return Ok(None);
         }
         // Gather y only. `train_rows_at` also materializes full x (Θ(N·D) RAM).
+        // Return warped storage; callers that need natural units naturalize explicitly.
         let mut y = Array2::zeros((n, model.num_metrics()));
         for i in 0..n {
             y.row_mut(i).assign(&model.rows().row_y(i)?);
@@ -456,8 +458,7 @@ impl Surrogate for ENNSurrogate {
             }
         };
 
-        let flags = PosteriorFlags::new()
-            .with_tie_break_neighbors(false);
+        let flags = PosteriorFlags::new();
         let posterior = model.posterior_warped(x, &params, &flags)?;
 
         // Convert from dynamic dimension to fixed 2D

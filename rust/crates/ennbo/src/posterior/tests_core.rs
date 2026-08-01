@@ -160,7 +160,7 @@ fn test_get_neighbor_data() {
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let query = array![[0.5, 0.5]];
 
-    let result = get_neighbor_data(&model, &query.view(), &params, false, true);
+    let result = get_neighbor_data(&model, &query.view(), &params, false);
     assert!(result.is_ok());
     assert!(result.unwrap().is_some());
 }
@@ -226,7 +226,7 @@ fn test_compute_weighted_posterior() {
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let query = array![[0.5, 0.5]];
 
-    let neighbor_data = get_neighbor_data(&model, &query.view(), &params, false, true)
+    let neighbor_data = get_neighbor_data(&model, &query.view(), &params, false)
         .unwrap()
         .unwrap();
 
@@ -249,7 +249,7 @@ fn test_get_neighbor_data_exclude_nearest() {
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let query = array![[0.5, 0.5]];
 
-    let result = get_neighbor_data(&model, &query.view(), &params, true, true);
+    let result = get_neighbor_data(&model, &query.view(), &params, true);
     assert!(result.is_ok());
 }
 

@@ -53,12 +53,12 @@ fn compute_single_loglik(
     mu_i: &ArrayView2<f64>,
     se_i: &ArrayView2<f64>,
 ) -> f64 {
-    // Check for non-finite values
+    // Invalid moments must lose argmax over real (large negative) log-likelihoods.
     if !mu_i.iter().all(|v| v.is_finite()) || !se_i.iter().all(|v| v.is_finite()) {
-        return 0.0;
+        return f64::NEG_INFINITY;
     }
     if se_i.iter().any(|&v| v <= 0.0) {
-        return 0.0;
+        return f64::NEG_INFINITY;
     }
 
     let mut loglik = 0.0;
@@ -156,13 +156,9 @@ pub fn subsample_loglik<R: Rng>(
         y_sel.row_mut(new_i).assign(&y.row(old_i));
     }
 
-    // Fit hyperparameter search must not escalate to a full-train distance scan
-    // (tie_break_neighbors default). That path is Θ(N) RAM/time and blows the
-    // 1 GiB bound on large bpann_disk turbo-enn seeds.
     let flags = PosteriorFlags::new()
         .with_exclude_nearest(true)
-        .with_observation_noise(true)
-        .with_tie_break_neighbors(false);
+        .with_observation_noise(true);
     let post = model.batch_posterior(&x_sel.view(), paramss, &flags)?;
 
     let num_params = paramss.len();
@@ -441,14 +437,15 @@ mod tests {
         let se_ok = array![[1.0]];
         assert_eq!(
             compute_single_loglik(&y.view(), &mu_bad.view(), &se_ok.view()),
-            0.0
+            f64::NEG_INFINITY
         );
 
         let mu_ok = array![[1.0]];
         let se_bad = array![[0.0]];
         assert_eq!(
             compute_single_loglik(&y.view(), &mu_ok.view(), &se_bad.view()),
-            0.0
+            f64::NEG_INFINITY
         );
     }
+
 }

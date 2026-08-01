@@ -256,7 +256,8 @@ impl Optimizer {
         Some(y_z)
     }
 
-    /// Add observations (internal). `y` is natural-unit; incumbent gets a warped copy.
+    /// Add observations (internal). `y` is natural-unit; incumbent stores natural units
+    /// so trust-region updates compare batch `y` and incumbent in the same space.
     pub fn add_observations(
         &mut self,
         x: &ArrayView2<f64>,
@@ -269,13 +270,8 @@ impl Optimizer {
             });
         }
         let old_n = self.obs_count();
-        let y_for_incumbent = if let Some(surrogate) = self.surrogate.as_ref() {
-            surrogate.warp_observations_y(y)?
-        } else {
-            y.to_owned()
-        };
         for i in 0..x.nrows() {
-            let y_row: Array1<f64> = y_for_incumbent.row(i).to_owned();
+            let y_row: Array1<f64> = y.row(i).to_owned();
             self.incumbent_tracker.tell(old_n + i, &y_row);
             if self.surrogate.is_none() {
                 self.fallback_x.push(x.row(i).to_owned());

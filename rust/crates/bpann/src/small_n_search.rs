@@ -4,7 +4,9 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::distance::{bpann_row_to_f32, l2_sq_f32};
-use crate::merge::merge_topk_precomputed_dist;
+use crate::merge::{
+    find_query_train_id_flat, merge_topk_precomputed_dist_with_self,
+};
 use rayon::prelude::*;
 
 /// When `len() ≤` this, search uses a resident flat f32 matrix + heap top-k.
@@ -108,10 +110,22 @@ pub fn score_queries_flat(
             let mut query_f32 = Vec::with_capacity(num_dim);
             bpann_row_to_f32(query_buf, scale_x, x_scale, &mut query_f32);
             let leg = topk_flat_sq_l2(&query_f32, flat, total, num_dim, pool_k);
-            let merged =
-                merge_topk_precomputed_dist(&leg, &[], k_eff, pool_k, exclude_nearest);
-            let mut dist_row = vec![0.0; k_eff];
-            let mut idx_row = vec![0; k_eff];
+            let self_id = if exclude_nearest {
+                find_query_train_id_flat(flat, total, num_dim, &query_f32)
+            } else {
+                None
+            };
+            let merged = merge_topk_precomputed_dist_with_self(
+                &leg,
+                &[],
+                k_eff,
+                pool_k,
+                exclude_nearest,
+                self_id,
+            );
+            // Sentinel fill: never leave (dist=0, idx=0) for missing hits.
+            let mut dist_row = vec![f64::INFINITY; k_eff];
+            let mut idx_row = vec![-1i64; k_eff];
             for (j, (id, dist)) in merged.into_iter().enumerate() {
                 dist_row[j] = dist;
                 idx_row[j] = id as i64;

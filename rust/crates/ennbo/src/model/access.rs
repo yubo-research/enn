@@ -63,10 +63,8 @@ impl<'a> EnnIndexAccess<'a> {
         x: &ArrayView2<f64>,
         search_k: i32,
         exclude_nearest: bool,
-        tie_break_neighbors: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-        let _ = tie_break_neighbors;
-        crate::posterior::index_search(self.model, x, search_k, exclude_nearest, tie_break_neighbors)
+        crate::posterior::index_search(self.model, x, search_k, exclude_nearest)
     }
 }
 
@@ -136,7 +134,7 @@ mod access_tests {
             .neighbor_distances_and_indices(&query.view(), 1, false)
             .unwrap();
         let _ = access
-            .index_neighbor_distances_and_indices(&query.view(), 1, false, true)
+            .index_neighbor_distances_and_indices(&query.view(), 1, false)
             .unwrap();
     }
 }

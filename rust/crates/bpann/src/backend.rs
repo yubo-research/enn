@@ -346,14 +346,27 @@ impl BpannBackend {
         if total == 0 {
             return Ok((Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0))));
         }
-        let k_eff = search_k.min(total);
+        let k_req = search_k.min(total);
+        // When excluding, return at most total-1 columns (Exact shrinks; do not pad with idx 0).
+        let k_eff = if exclude_nearest {
+            k_req.min(total.saturating_sub(1))
+        } else {
+            k_req
+        };
         let pool_k = if exclude_nearest {
-            (search_k + 1).min(total)
+            (k_eff + 1).min(total)
         } else {
             k_eff
         };
-        let mut dist2s = Array2::zeros((n_query, k_eff));
-        let mut indices = Array2::zeros((n_query, k_eff));
+        if k_eff == 0 {
+            return Ok((
+                Array2::zeros((n_query, 0)),
+                Array2::zeros((n_query, 0)),
+            ));
+        }
+        // Unfilled slots must not look like a valid neighbor (idx 0, dist 0).
+        let mut dist2s = Array2::from_elem((n_query, k_eff), f64::INFINITY);
+        let mut indices = Array2::from_elem((n_query, k_eff), -1i64);
         let scale_x = self.scale_x;
         let x_scale_vec = self.x_scale.as_slice().unwrap().to_vec();
         let num_dim = self.num_dim;
@@ -533,3 +546,4 @@ pub fn open_rejects_record_stride(num_dim: usize) -> Result<(), BpannError> {
     }
     Ok(())
 }
+

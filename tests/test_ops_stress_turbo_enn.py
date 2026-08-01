@@ -17,8 +17,8 @@ from ops.stress import (
     run_turbo_enn_stress,
     turbo_enn_ask_stops,
 )
-from tests.ops_stress_cli_helpers import assert_stress_cli_rejects
-from tests.ops_stress_turbo_enn_helpers import (
+from ops_stress_cli_helpers import assert_stress_cli_rejects
+from ops_stress_turbo_enn_helpers import (
     RecordingObjective,
     RecordingTurboOpt,
     collect_tell_sizes,
@@ -364,7 +364,7 @@ def test_turbo_enn_cli_bpann_disk_mocked(tmp_path, monkeypatch):
         (["turbo-enn", "flat", "10", "0"], "num_ask must be >="),
         (["turbo-enn", "bpann_disk", "12", "3"], "bpann_disk requires --work-dir"),
         (
-            ["turbo-enn", "flat", "12", "3", "--work-dir", "/tmp/x"],
+            ["turbo-enn", "flat", "12", "3", "--work-dir", "/tmp/enn_cli_reject_work_dir_absent"],
             "work_dir requires index_type in",
         ),
         (["turbo-enn", "flat", "11", "2", "--num-dim", "0"], "num_dim must be >= 1"),

@@ -18,7 +18,7 @@ from ops.stress import (
     run_proposal_scale_stress,
     seed_turbo_enn_to_n,
 )
-from tests.ops_stress_cli_helpers import assert_stress_cli_rejects
+from ops_stress_cli_helpers import assert_stress_cli_rejects
 
 _PS_ROW_RE = re.compile(r" *\d+ \d+\.\d{4} \d+\.\d{4} \d+\.\d{4}")
 
@@ -281,7 +281,7 @@ def test_proposal_scale_cli_flat_mocked(monkeypatch):
     [
         (["proposal-scale", "bpann_disk", "--max-n", "1000"], "requires --work-dir"),
         (
-            ["proposal-scale", "flat", "--work-dir", "/tmp/x", "--max-n", "1000"],
+            ["proposal-scale", "flat", "--work-dir", "/tmp/enn_cli_reject_work_dir_absent", "--max-n", "1000"],
             "work_dir requires index_type in",
         ),
         (["proposal-scale", "flat", "--max-n", "5"], "max_n must be >="),

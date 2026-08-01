@@ -1,5 +1,6 @@
 use ndarray::ArrayView1;
 
+#[cfg(test)]
 use crate::model::EpistemicNearestNeighbors;
 
 pub fn posterior_row_sq_l2(
@@ -24,6 +25,7 @@ pub fn posterior_row_sq_l2(
     acc.max(0.0)
 }
 
+#[cfg(test)]
 pub(crate) fn row_dist2s_for_query(
     model: &EpistemicNearestNeighbors,
     x_row: ArrayView1<f64>,
