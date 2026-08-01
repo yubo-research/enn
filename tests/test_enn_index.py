@@ -53,12 +53,13 @@ def test_enn_neighbor_search_empty_train_sentinel_never_uses_negative_one():
     d2_ex, idx_ex = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=search_k, exclude_nearest=True
     )
-    assert d2_ex.shape == (2, search_k - 1) and idx_ex.shape == (2, search_k - 1)
+    # Empty train has no self row; exclude keeps the sentinel width (no silent drop).
+    assert d2_ex.shape == (2, search_k) and idx_ex.shape == (2, search_k)
     assert np.all(np.isposinf(d2_ex))
     assert np.all(idx_ex == 0)
 
 
-def test_enn_neighbor_search_k_one_exclude_nearest_yields_zero_columns():
+def test_enn_neighbor_search_k_one_exclude_nearest_keeps_novel_nn():
     rng = np.random.default_rng(7)
     train_x = rng.standard_normal((10, 2))
     enn = _enn(train_x, scale_x=False)
@@ -66,7 +67,9 @@ def test_enn_neighbor_search_k_one_exclude_nearest_yields_zero_columns():
     dist2s, idx = enn_neighbor_distances_and_indices(
         enn.rust_backend, q, search_k=1, exclude_nearest=True
     )
-    assert dist2s.shape == (3, 0) and idx.shape == (3, 0)
+    # Novel queries keep the true NN; distances API bumps fetch so search_k cols remain.
+    assert dist2s.shape == (3, 1) and idx.shape == (3, 1)
+    assert np.all(idx >= 0) and np.all(idx < 10)
 
 
 def test_enn_neighbor_search_flat_valid_indices_and_shapes():
@@ -128,7 +131,7 @@ def test_enn_index_neighbor_search_exclude_nearest():
     assert np.all(idx >= 0) and np.all(idx < 20)
 
 
-def test_enn_index_neighbor_search_k_one_exclude_nearest_yields_zero_columns():
+def test_enn_index_neighbor_search_k_one_exclude_nearest_keeps_novel_nn():
     rng = np.random.default_rng(7)
     train_x = rng.standard_normal((10, 2))
     enn = _enn(train_x, scale_x=False)
@@ -136,7 +139,9 @@ def test_enn_index_neighbor_search_k_one_exclude_nearest_yields_zero_columns():
     dist2s, idx = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, q, search_k=1, exclude_nearest=True
     )
-    assert dist2s.shape == (3, 0) and idx.shape == (3, 0)
+    # Novel queries keep the true NN (Exact LOO); no silent empty result.
+    assert dist2s.shape == (3, 1) and idx.shape == (3, 1)
+    assert np.all(idx >= 0) and np.all(idx < 10)
 
 
 def test_exact_index_search_zero_k_and_k_exceeds_train():
@@ -166,8 +171,12 @@ def test_enn_neighbor_search_exclude_nearest():
     dist2s_exclude, idx_exclude = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=True
     )
-    assert dist2s_include.shape == (3, 3) and dist2s_exclude.shape == (3, 2)
+    # Self-queries: bump fetch so exclude still returns search_k columns.
+    assert dist2s_include.shape == (3, 3) and dist2s_exclude.shape == (3, 3)
     assert np.allclose(dist2s_include[:, 0], 0.0, atol=1e-6)
+    assert np.all(dist2s_exclude[:, 0] > 1e-12)
+    _ = idx_include
+    _ = idx_exclude
 
 
 def test_enn_neighbor_search_with_scaling():

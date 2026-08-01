@@ -55,7 +55,26 @@ impl<'a> EnnIndexAccess<'a> {
         if !self.model.backend.defer_index_sync_for_search() {
             self.ensure_sync()?;
         }
-        self.model.backend.search(x, search_k, exclude_nearest)
+        let n_obs = self.model.num_obs();
+        // Without exclude (or empty train): pass search_k through so backends can
+        // pad / sentinel as before. With exclude on a non-empty model: fetch one
+        // extra like neighbors so the caller still receives search_k columns.
+        if !exclude_nearest || n_obs == 0 || search_k <= 0 {
+            return self.model.backend.search(x, search_k, exclude_nearest);
+        }
+        let fetch_k = ((search_k as usize) + 1).min(n_obs);
+        let (dist, idx) = self.model.backend.search(x, fetch_k as i32, true)?;
+        let k_out = (search_k as usize).min(idx.ncols());
+        if k_out == idx.ncols() {
+            Ok((dist, idx))
+        } else {
+            Ok((
+                dist.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
+                    .to_owned(),
+                idx.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
+                    .to_owned(),
+            ))
+        }
     }
 
     pub fn index_neighbor_distances_and_indices(

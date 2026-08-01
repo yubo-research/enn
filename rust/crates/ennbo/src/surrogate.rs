@@ -197,7 +197,8 @@ impl ENNSurrogate {
         if self.fitter.is_none() {
             let n = model.len();
             let indices: Vec<usize> = (0..n).collect();
-            let (train_x, train_y, train_yvar) = model.rows().train_rows_at(&indices)?;
+            // Natural-unit y: matches fitter.ask / batch_posterior unit contract.
+            let (train_x, train_y, train_yvar) = model.train_rows_at(&indices)?;
             let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
             let yvar_view = train_yvar.as_ref().map(|v| v.view());
             fitter.tell(
@@ -236,11 +237,10 @@ impl ENNSurrogate {
         // predict uses last/default params until a non-skipped tell refreshes.
         const BULK_DISK_TELL_SKIP_FIT_ROWS: usize = 4_096;
         if let Some(model) = &mut self.model {
-            let (y_z, yvar_z) = model.warp_observations(y_new, yvar_new)?;
-            let yvar_z_view = yvar_z.as_ref().map(|v| v.view());
             model.add(x_new, y_new, yvar_new)?;
             if let Some(fitter) = self.fitter.as_mut() {
-                fitter.tell(x_new, &y_z.view(), yvar_z_view.as_ref())?;
+                // Tell natural units (model.add warps into storage separately).
+                fitter.tell(x_new, y_new, yvar_new)?;
             }
             let is_disk = model.backend_driver() == IndexDriver::BpAnnDisk;
             let bulk_disk = is_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
@@ -263,11 +263,9 @@ impl ENNSurrogate {
             return Ok(());
         }
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
-        // Construct warps natural → z into storage; fitter gets a warped copy (not double-stored).
+        // Construct warps natural → z into storage; fitter keeps natural units.
         let model = self.construct_model(x_new, y_new, yvar_new)?;
-        let (y_z, yvar_z) = model.warp_observations(y_new, yvar_new)?;
-        let yvar_z_view = yvar_z.as_ref().map(|v| v.view());
-        fitter.tell(x_new, &y_z.view(), yvar_z_view.as_ref())?;
+        fitter.tell(x_new, y_new, yvar_new)?;
         self.model = Some(model);
         self.fitter = Some(fitter);
         let skip_fit = self.config.index_driver == IndexDriver::BpAnnDisk
@@ -407,9 +405,7 @@ impl Surrogate for ENNSurrogate {
         let model = self.construct_model(x, y, yvar)?;
 
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
-        let (y_z, yvar_z) = model.warp_observations(y, yvar)?;
-        let yvar_z_view = yvar_z.as_ref().map(|v| v.view());
-        fitter.tell(x, &y_z.view(), yvar_z_view.as_ref())?;
+        fitter.tell(x, y, yvar)?;
         if let Some(p) = self.params {
             fitter.set_params(p);
         }
@@ -650,6 +646,43 @@ mod tests {
     fn kiss_surrogate_config_default() {
         let cfg = ENNSurrogateConfig::default();
         assert!(cfg.k >= 1);
+    }
+
+    #[test]
+    fn fit_tells_fitter_natural_y_under_y_bounds() {
+        // bugs.md bug 7: natural y_std ≈ 0.316; warped logit ≈ 1.64.
+        let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
+        let y = array![[0.1], [0.2], [0.8], [0.9]];
+        let bounds = array![[0.0, 1.0]];
+        let mut fit_nat = crate::fitter::ENNFitter::new(2, true);
+        fit_nat.tell(&x.view(), &y.view(), None).unwrap();
+        let nat_std = fit_nat.y_std()[0];
+        let y_z = crate::y_bounds::warp_y(y.view(), &bounds).unwrap();
+        let mut fit_z = crate::fitter::ENNFitter::new(2, true);
+        fit_z.tell(&x.view(), &y_z.view(), None).unwrap();
+        let z_std = fit_z.y_std()[0];
+        // Population std of [0.1,0.2,0.8,0.9] ≈ 0.354; warped logit std ≫ 1.
+        assert!(
+            (nat_std - 0.35355).abs() < 0.01,
+            "natural y_std={nat_std}"
+        );
+        assert!(z_std > 1.5, "warped y_std={z_std}");
+
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 4,
+            num_fit_samples: 4,
+            y_bounds: Some(bounds),
+            ..Default::default()
+        };
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(7);
+        sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
+        let fitter_std = sur.fitter.as_ref().expect("fitter").y_std()[0];
+        assert!(
+            (fitter_std - nat_std).abs() < 1e-9,
+            "surrogate fitter must be told natural y: got {fitter_std} want {nat_std} (warped would be {z_std})"
+        );
     }
 
     #[test]

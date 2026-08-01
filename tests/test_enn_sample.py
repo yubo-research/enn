@@ -107,8 +107,9 @@ def test_posterior_function_sample_batch_empty_k():
         function_seeds=[1, 2],
         flags=PosteriorFlags(exclude_nearest=True),
     )
+    # Novel queries keep all available neighbors under exclude (n=2 → 2 cols).
     assert samples.shape == (5, 1, 2)
-    assert idx.shape == (5, 1)
+    assert idx.shape == (5, 2)
 
 
 def test_posterior_function_sample_with_observation_noise():

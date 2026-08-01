@@ -251,11 +251,11 @@ mod acceptance_tests {
         assert_eq!(idx[[0, 0]], 1);
     }
 
-    /// Regression: with pending (unindexed) rows, exclude_nearest must still
-    /// surface the true second-nearest pending neighbor, not a far indexed decoy.
+    /// Regression: with pending (unindexed) rows, exclude_nearest on a novel query
+    /// must keep the true NN from pending (Exact LOO), not a far indexed decoy.
     /// Requires the pending brute-force leg to fetch pool_k (= search_k+1), not k_eff.
     #[test]
-    fn test_search_exclude_nearest_pending_returns_second_nearest() {
+    fn test_search_exclude_nearest_pending_keeps_novel_nn() {
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1).unwrap();
         // Far indexed decoys.
@@ -267,7 +267,7 @@ mod acceptance_tests {
         .unwrap();
         b.ensure_index_sync().unwrap();
         assert_eq!(b.indexed_rows(), 3);
-        // Pending: nearest (row 3) and second-nearest (row 4) to query at 0.
+        // Pending: nearest (row 3) and second-nearest (row 4) to novel query at 0.
         b.append_rows(
             &array![[1.0], [2.0]].view(),
             &array![[0.0], [0.0]].view(),
@@ -280,14 +280,14 @@ mod acceptance_tests {
             .unwrap();
         assert_eq!(
             idx[[0, 0]],
-            4,
-            "exclude_nearest with pending top-2 must return second-nearest pending (4), got {}",
+            3,
+            "exclude_nearest novel+pending must keep true NN pending (3), got {}",
             idx[[0, 0]]
         );
     }
 
-    /// Same pending under-fetch bug at search_k > 1: last returned slot must stay
-    /// on the pending distance ladder, not promote a far indexed decoy.
+    /// Same pending path at search_k > 1: novel exclude keeps the pending distance
+    /// ladder (ranks 1..k), not promote a far indexed decoy.
     #[test]
     fn test_search_exclude_nearest_pending_ladder_topk() {
         let dir = TempDir::new().unwrap();
@@ -299,7 +299,7 @@ mod acceptance_tests {
         )
         .unwrap();
         b.ensure_index_sync().unwrap();
-        // Pending ladder at 1,2,3,4,5 (nearest..5th); query at 0 needs ranks 2..5 after exclude.
+        // Pending ladder at 1,2,3,4,5 (nearest..5th); novel query at 0 keeps ranks 1..4.
         b.append_rows(
             &array![[1.0], [2.0], [3.0], [4.0], [5.0]].view(),
             &array![[0.0], [0.0], [0.0], [0.0], [0.0]].view(),
@@ -313,8 +313,8 @@ mod acceptance_tests {
         let got: Vec<i64> = idx.row(0).iter().copied().collect();
         assert_eq!(
             got,
-            vec![4, 5, 6, 7],
-            "exclude_nearest pending ladder must return pending ranks 2..5, got {got:?}"
+            vec![3, 4, 5, 6],
+            "exclude_nearest novel pending ladder must return pending ranks 1..4, got {got:?}"
         );
     }
 

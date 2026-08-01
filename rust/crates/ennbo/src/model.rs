@@ -130,7 +130,7 @@ impl EpistemicNearestNeighbors {
             ));
         }
         let num_dim = train_x.ncols();
-        let num_metrics = train_y.ncols();
+        let mut num_metrics = train_y.ncols();
         let disk_work_dir = work_dir.clone().or_else(EnnStorage::work_dir_from_env);
         let disk_reopen = matches!(storage, EnnStorage::Disk)
             && train_x.nrows() == 0
@@ -146,6 +146,17 @@ impl EpistemicNearestNeighbors {
         } else {
             None
         };
+        // Empty reopen: prefer persisted num_metrics over placeholder train_y width
+        // so y_bounds resolution matches disk metadata.
+        if disk_reopen {
+            if let Some(text) = meta_text.as_deref() {
+                if let Some(persisted) =
+                    crate::backend::disk_observation::parse_json_usize_field(text, "num_metrics")
+                {
+                    num_metrics = persisted;
+                }
+            }
+        }
         let y_bounds = resolve_y_bounds(
             y_bounds.as_ref(),
             num_metrics,
@@ -391,7 +402,20 @@ impl EpistemicNearestNeighbors {
     }
 
     pub fn y_scale_row(&self) -> Array2<f64> {
-        self.y_scale.clone().insert_axis(ndarray::Axis(0))
+        // Public scale matches public natural row gathers under y_bounds.
+        // Internal `y_scale` stays in storage (warped) units for posterior.
+        if crate::y_bounds::is_identity_bounds(&self.y_bounds) || self.num_obs == 0 {
+            return self.y_scale.clone().insert_axis(ndarray::Axis(0));
+        }
+        let indices: Vec<usize> = (0..self.num_obs).collect();
+        match self.train_rows_at(&indices) {
+            Ok((_, y_nat, _)) => {
+                let (y_sum, y_sumsq) = column_sums_and_sumsq(y_nat.view());
+                scale_from_moments(self.num_obs, self.num_metrics, &y_sum, &y_sumsq, 0.0)
+                    .insert_axis(ndarray::Axis(0))
+            }
+            Err(_) => self.y_scale.clone().insert_axis(ndarray::Axis(0)),
+        }
     }
 
     pub(crate) fn num_obs(&self) -> usize {

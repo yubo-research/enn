@@ -10,8 +10,8 @@ const SELF_DIST_EPS: f64 = 1e-15;
 ///
 /// - If `self_id` is known and present: remove that id (even if not nearest).
 /// - If `self_id` is known but absent: do not strip a neighbor (approx miss).
-/// - If `self_id` is unknown: remove zero-distance hit if any, else nearest
-///   (Exact parity for queries that are not training rows).
+/// - If `self_id` is unknown: remove a zero-distance hit if any; otherwise keep
+///   the true NN (Exact LOO parity for novel queries that are not training rows).
 pub fn bpann_apply_exclude_nearest(
     ranked: &mut Vec<(u32, f64)>,
     exclude_nearest: bool,
@@ -28,9 +28,7 @@ pub fn bpann_apply_exclude_nearest(
     }
     if let Some(pos) = ranked.iter().position(|(_, d)| *d <= SELF_DIST_EPS) {
         ranked.remove(pos);
-        return;
     }
-    ranked.remove(0);
 }
 
 /// Exact float row match of `query` against training rows (identity for LOO).
@@ -208,15 +206,16 @@ mod kiss_coverage_tests {
     }
 
     #[test]
-    fn exclude_unknown_self_prefers_zero_dist_then_nearest() {
+    fn exclude_unknown_self_drops_zero_dist_keeps_novel_nn() {
         let mut ranked = vec![(3u32, 0.5), (7u32, 0.0), (4u32, 1.0)];
         crate::merge::bpann_apply_exclude_nearest(&mut ranked, true, None);
         assert!(!ranked.iter().any(|(id, _)| *id == 7));
 
+        // Novel query (no self_id, no zero-dist): keep true NN.
         let mut ranked2 = vec![(3u32, 0.5), (4u32, 1.0)];
         crate::merge::bpann_apply_exclude_nearest(&mut ranked2, true, None);
-        assert_eq!(ranked2[0].0, 4);
-        assert_eq!(ranked2.len(), 1);
+        assert_eq!(ranked2[0].0, 3);
+        assert_eq!(ranked2.len(), 2);
     }
 
     #[test]

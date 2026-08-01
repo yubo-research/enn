@@ -30,34 +30,57 @@ const SELF_DIST_EPS: f64 = 1e-15;
 
 /// Drop the query's own training row when present; keep the true NN otherwise.
 ///
-/// Callers that set `exclude_nearest` fetch `k+1` neighbors. This returns `k`
-/// columns: drop column 0 only on a zero-distance self-match; for novel queries
-/// keep the nearest neighbors and drop the extra last column instead.
+/// Callers that set `exclude_nearest` often fetch `k+1` neighbors. Self-match
+/// rows drop column 0 and pad with `(-1, inf)`; novel rows keep every fetched
+/// column (including when `k == n` so no extra slot was available). Trailing
+/// columns that are unused in every row are trimmed.
 fn apply_exclude_nearest_identity(
     dist2s: Array2<f64>,
     idx: Array2<i64>,
 ) -> (Array2<f64>, Array2<i64>) {
     let n_query = dist2s.nrows();
     let nc = dist2s.ncols();
-    let out_c = nc.saturating_sub(1);
-    if out_c == 0 {
-        return (
-            Array2::zeros((n_query, 0)),
-            Array2::zeros((n_query, 0)),
-        );
+    if nc == 0 {
+        return (dist2s, idx);
     }
-    let mut out_d = Array2::zeros((n_query, out_c));
-    let mut out_i = Array2::zeros((n_query, out_c));
+    let mut out_d = Array2::from_elem((n_query, nc), f64::INFINITY);
+    let mut out_i = Array2::from_elem((n_query, nc), -1i64);
     for r in 0..n_query {
         let nearest_d = dist2s[[r, 0]];
         let is_self = nearest_d.is_finite() && nearest_d <= SELF_DIST_EPS;
-        let src0 = if is_self { 1 } else { 0 };
-        for c in 0..out_c {
-            out_d[[r, c]] = dist2s[[r, src0 + c]];
-            out_i[[r, c]] = idx[[r, src0 + c]];
+        if is_self {
+            for c in 0..(nc - 1) {
+                out_d[[r, c]] = dist2s[[r, c + 1]];
+                out_i[[r, c]] = idx[[r, c + 1]];
+            }
+        } else {
+            for c in 0..nc {
+                out_d[[r, c]] = dist2s[[r, c]];
+                out_i[[r, c]] = idx[[r, c]];
+            }
         }
     }
-    (out_d, out_i)
+    let mut width = nc;
+    while width > 0 && (0..n_query).all(|r| out_i[[r, width - 1]] < 0) {
+        width -= 1;
+    }
+    if width == nc {
+        (out_d, out_i)
+    } else if width == 0 {
+        (
+            Array2::zeros((n_query, 0)),
+            Array2::zeros((n_query, 0)),
+        )
+    } else {
+        (
+            out_d
+                .slice_axis(ndarray::Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+            out_i
+                .slice_axis(ndarray::Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+        )
+    }
 }
 
 pub struct ENNIndex {
@@ -259,7 +282,8 @@ mod tests {
         let index = index_unit(train_x, IndexDriver::Exact);
         let query = array![[10.1, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 3, true).unwrap();
-        assert_eq!(dist2s.ncols(), 2);
+        // Novel query: keep all fetched columns (caller truncates to requested k).
+        assert_eq!(dist2s.ncols(), 3);
         assert_eq!(indices[[0, 0]], 1);
     }
 

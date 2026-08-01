@@ -260,3 +260,86 @@ fn select_with_functions_direct_smoke() {
     let out_pf = select_with_pareto(sur, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_pf.nrows(), 2);
 }
+
+#[test]
+fn select_with_pareto_scores_naturalized_under_y_bounds() {
+    use crate::acquisition::ParetoAcquisition;
+    use crate::config::{ConfigOverrides, SurrogateConfig};
+    use crate::optimizer_factory::create_optimizer_enn_with_overrides;
+
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(303);
+    let overrides = ConfigOverrides {
+        y_bounds: Some(array![[0.0, 1.0]]),
+        acquisition: Some(AcquisitionConfig::Pareto),
+        ..Default::default()
+    };
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+    if let SurrogateConfig::ENN(enn) = &opt.config().surrogate {
+        assert!(enn.y_bounds.is_some());
+    }
+    let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.7, 0.3]];
+    let yf = array![[0.1], [0.9], [0.4], [0.6]];
+    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
+    let sur = opt.surrogate().expect("enn surrogate");
+    let x_cand = array![
+        [0.1, 0.2],
+        [0.3, 0.4],
+        [0.5, 0.6],
+        [0.7, 0.8],
+        [0.15, 0.85],
+        [0.55, 0.25]
+    ];
+    let mut rng_a = StdRng::seed_from_u64(404);
+    let mut rng_b = StdRng::seed_from_u64(404);
+    let out = select_with_pareto(sur, &x_cand.view(), 2, &mut rng_a).unwrap();
+    let pred_nat = sur.naturalize_prediction(sur.predict(&x_cand.view()).unwrap());
+    let idx = ParetoAcquisition::new()
+        .select(&pred_nat.mu.view(), &pred_nat.se.view(), 2, &mut rng_b)
+        .unwrap();
+    let expected = x_cand.select(ndarray::Axis(0), &idx);
+    assert_eq!(out, expected, "Pareto must rank naturalized μ/σ under y_bounds");
+}
+
+#[test]
+fn select_with_thompson_scores_naturalized_under_y_bounds() {
+    use crate::config::ConfigOverrides;
+    use crate::optimizer_factory::create_optimizer_enn_with_overrides;
+
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(505);
+    let overrides = ConfigOverrides {
+        y_bounds: Some(array![[0.0, 1.0]]),
+        acquisition: Some(AcquisitionConfig::Thompson),
+        ..Default::default()
+    };
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+    let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.7, 0.3]];
+    let yf = array![[0.1], [0.9], [0.4], [0.6]];
+    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
+    let sur = opt.surrogate().expect("enn surrogate");
+    let x_cand = array![[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]];
+    let mut rng_sel = StdRng::seed_from_u64(606);
+    let out = select_with_thompson(&opt, sur, &x_cand.view(), 2, &mut rng_sel).unwrap();
+    assert_eq!(out.nrows(), 2);
+
+    // Same RNG seed → same warped draws; ranking must use naturalized values.
+    let mut rng_ref = StdRng::seed_from_u64(606);
+    let samples = sur.sample(&x_cand.view(), 2, &mut rng_ref).unwrap();
+    let mut flat = ndarray::Array2::zeros((x_cand.nrows(), 1));
+    for i in 0..x_cand.nrows() {
+        flat[[i, 0]] = samples[[0, i, 0]];
+    }
+    let nat = sur.naturalize_observations_y(flat.clone());
+    let mut warped_order: Vec<usize> = (0..x_cand.nrows()).collect();
+    warped_order.sort_by(|&a, &b| flat[[b, 0]].partial_cmp(&flat[[a, 0]]).unwrap());
+    let mut nat_order: Vec<usize> = (0..x_cand.nrows()).collect();
+    nat_order.sort_by(|&a, &b| nat[[b, 0]].partial_cmp(&nat[[a, 0]]).unwrap());
+    let expected = x_cand.select(ndarray::Axis(0), &nat_order[..2]);
+    assert_eq!(
+        out, expected,
+        "scalar Thompson must rank naturalized draws; warped_order={warped_order:?} nat_order={nat_order:?}"
+    );
+}

@@ -354,12 +354,9 @@ impl BpannBackend {
             return Ok((Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0))));
         }
         let k_req = search_k.min(total);
-        // When excluding, return at most total-1 columns (Exact shrinks; do not pad with idx 0).
-        let k_eff = if exclude_nearest {
-            k_req.min(total.saturating_sub(1))
-        } else {
-            k_req
-        };
+        // Fetch/return up to k_req columns; exclude drops self when present.
+        // Novel queries keep the true NN (including when k_req == total).
+        let k_eff = k_req;
         let pool_k = if exclude_nearest {
             (k_eff + 1).min(total)
         } else {
@@ -403,7 +400,7 @@ impl BpannBackend {
                     indices[[q, j]] = idx_row[j];
                 }
             }
-            return Ok((dist2s, indices));
+            return Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices));
         }
 
         search_indexed_and_pending(
@@ -421,7 +418,7 @@ impl BpannBackend {
                 num_dim,
             },
         )?;
-        Ok((dist2s, indices))
+        Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices))
     }
 
     pub fn index_snapshot(&self) -> Option<&BpannIndex> {
@@ -504,6 +501,35 @@ impl BpannBackend {
         let soft = soft.max(1);
         self.pending_flush_threshold = soft;
         self.pending_hard_flush_threshold = hard.max(soft);
+    }
+}
+
+/// Drop trailing neighbor columns that are invalid (`idx < 0`) in every query row.
+fn trim_trailing_invalid_neighbor_cols(
+    dist2s: Array2<f64>,
+    indices: Array2<i64>,
+) -> (Array2<f64>, Array2<i64>) {
+    let n_query = indices.nrows();
+    let mut width = indices.ncols();
+    while width > 0 && (0..n_query).all(|r| indices[[r, width - 1]] < 0) {
+        width -= 1;
+    }
+    if width == indices.ncols() {
+        (dist2s, indices)
+    } else if width == 0 {
+        (
+            Array2::zeros((n_query, 0)),
+            Array2::zeros((n_query, 0)),
+        )
+    } else {
+        (
+            dist2s
+                .slice_axis(ndarray::Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+            indices
+                .slice_axis(ndarray::Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+        )
     }
 }
 

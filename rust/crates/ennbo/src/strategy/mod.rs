@@ -427,7 +427,13 @@ fn select_with_thompson(
         }
         return Ok(select_by_indices(x_cand, &indices));
     }
-    let sample_values: Vec<f64> = (0..n_candidates).map(|i| samples[[0, i, 0]]).collect();
+    // Function draws are warped; naturalize scalar Thompson like UCB / Morbo.
+    let mut flat = ndarray::Array2::zeros((n_candidates, 1));
+    for i in 0..n_candidates {
+        flat[[i, 0]] = samples[[0, i, 0]];
+    }
+    let flat = surrogate.naturalize_observations_y(flat);
+    let sample_values: Vec<f64> = (0..n_candidates).map(|i| flat[[i, 0]]).collect();
     let mut indices: Vec<usize> = (0..n_candidates).collect();
     indices.sort_by(|&a, &b| {
         sample_values[b]
@@ -477,7 +483,8 @@ fn select_with_pareto(
     num_arms: usize,
     rng: &mut dyn RngCore,
 ) -> Result<Array2<f64>, ENNError> {
-    let pred = surrogate.predict(x_cand)?;
+    // Naturalize μ/σ so Pareto dominance matches UCB / natural unit contract.
+    let pred = surrogate.naturalize_prediction(surrogate.predict(x_cand)?);
     let pareto = ParetoAcquisition::new();
     let indices = pareto
         .select(&pred.mu.view(), &pred.se.view(), num_arms, rng)

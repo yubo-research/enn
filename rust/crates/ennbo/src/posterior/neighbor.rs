@@ -173,9 +173,8 @@ const SELF_DIST_EPS: f64 = 1e-15;
 
 /// Drop the query's own training row when present; keep the true NN otherwise.
 ///
-/// Callers that set `exclude_nearest` fetch `k+1` neighbors. This returns `k`
-/// columns: drop column 0 only on a zero-distance self-match; for novel queries
-/// keep the nearest neighbors and drop the extra last column instead.
+/// Self-match rows drop column 0 and pad with `(-1, inf)`; novel rows keep every
+/// fetched column. Trailing columns unused in every row are trimmed.
 fn apply_exclude_nearest(
     dist2s: Array2<f64>,
     idx: Array2<i64>,
@@ -186,25 +185,47 @@ fn apply_exclude_nearest(
     }
     let n_query = dist2s.nrows();
     let nc = dist2s.ncols();
-    let out_c = nc.saturating_sub(1);
-    if out_c == 0 {
-        return (
-            Array2::zeros((n_query, 0)),
-            Array2::zeros((n_query, 0)),
-        );
+    if nc == 0 {
+        return (dist2s, idx);
     }
-    let mut out_d = Array2::zeros((n_query, out_c));
-    let mut out_i = Array2::zeros((n_query, out_c));
+    let mut out_d = Array2::from_elem((n_query, nc), f64::INFINITY);
+    let mut out_i = Array2::from_elem((n_query, nc), -1i64);
     for r in 0..n_query {
         let nearest_d = dist2s[[r, 0]];
         let is_self = nearest_d.is_finite() && nearest_d <= SELF_DIST_EPS;
-        let src0 = if is_self { 1 } else { 0 };
-        for c in 0..out_c {
-            out_d[[r, c]] = dist2s[[r, src0 + c]];
-            out_i[[r, c]] = idx[[r, src0 + c]];
+        if is_self {
+            for c in 0..(nc - 1) {
+                out_d[[r, c]] = dist2s[[r, c + 1]];
+                out_i[[r, c]] = idx[[r, c + 1]];
+            }
+        } else {
+            for c in 0..nc {
+                out_d[[r, c]] = dist2s[[r, c]];
+                out_i[[r, c]] = idx[[r, c]];
+            }
         }
     }
-    (out_d, out_i)
+    let mut width = nc;
+    while width > 0 && (0..n_query).all(|r| out_i[[r, width - 1]] < 0) {
+        width -= 1;
+    }
+    if width == nc {
+        (out_d, out_i)
+    } else if width == 0 {
+        (
+            Array2::zeros((n_query, 0)),
+            Array2::zeros((n_query, 0)),
+        )
+    } else {
+        (
+            out_d
+                .slice_axis(Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+            out_i
+                .slice_axis(Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+        )
+    }
 }
 
 pub(crate) fn get_neighbor_data(
@@ -232,11 +253,8 @@ pub(crate) fn get_neighbor_data(
     let (dist2s_full, idx_full) =
         super::index_search(model, x, search_k as i32, exclude_nearest)?;
 
-    let available_k = if exclude_nearest {
-        search_k.saturating_sub(1)
-    } else {
-        search_k
-    };
+    // After exclude, novel queries may keep all fetched columns; self rows shrink.
+    let available_k = idx_full.ncols();
     let k = (params.k_num_neighbors as usize).min(available_k);
 
     if k == 0 {
@@ -500,13 +518,16 @@ mod tests {
         let dist2s = array![[0.0, 1.0], [2.0, 3.0]];
         let idx = array![[0i64, 1], [1, 0]];
         let (d, i) = apply_exclude_nearest(dist2s.clone(), idx.clone(), true);
-        assert_eq!(d.shape(), [2, 1]);
-        // Row 0: self-match (dist 0) → drop col 0, keep idx 1.
+        // Mixed batch: self row pads; novel keeps both columns → width 2.
+        assert_eq!(d.shape(), [2, 2]);
+        // Row 0: self-match (dist 0) → drop col 0, keep idx 1, pad -1.
         assert_eq!(i[[0, 0]], 1);
         assert_eq!(d[[0, 0]], 1.0);
-        // Row 1: novel (dist 2) → keep true NN idx 1, drop extra last.
+        assert_eq!(i[[0, 1]], -1);
+        // Row 1: novel (dist 2) → keep true NN and the second column.
         assert_eq!(i[[1, 0]], 1);
         assert_eq!(d[[1, 0]], 2.0);
+        assert_eq!(i[[1, 1]], 0);
         let (d0, i0) = apply_exclude_nearest(
             Array2::from_elem((1, 1), 0.0),
             Array2::from_elem((1, 1), 0i64),
@@ -529,7 +550,7 @@ mod tests {
         // Novel query near train row 3 (index 3); must not drop that true NN.
         let query = array![[10.1, 10.1]];
         let (dist2s, idx) = exact_f64_batch_topk(&model, &query.view(), 3, true).unwrap();
-        assert_eq!(dist2s.shape(), [1, 2]);
+        assert_eq!(dist2s.shape(), [1, 3]);
         assert_eq!(idx[[0, 0]], 3);
         assert!(dist2s[[0, 0]] > super::SELF_DIST_EPS);
     }

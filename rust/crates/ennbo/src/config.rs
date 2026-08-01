@@ -128,6 +128,7 @@ pub struct ConfigOverrides {
     pub index_driver: Option<IndexDriver>,
     pub num_fit_samples: Option<usize>,
     pub num_fit_candidates: Option<usize>,
+    pub infer_aleatoric_variance: Option<bool>,
     pub scale_x: Option<bool>,
     pub y_bounds: Option<ndarray::Array2<f64>>,
     pub noise_aware: Option<bool>,
@@ -152,6 +153,9 @@ fn apply_enn_surrogate_fields(config: &mut OptimizerConfig, overrides: &ConfigOv
     }
     if let Some(nfc) = overrides.num_fit_candidates {
         enn.num_fit_candidates = nfc;
+    }
+    if let Some(ale) = overrides.infer_aleatoric_variance {
+        enn.infer_aleatoric_variance = ale;
     }
     if let Some(sx) = overrides.scale_x {
         enn.scale_x = sx;
@@ -247,6 +251,7 @@ impl ConfigOverrides {
         if self.index_driver.is_some()
             || self.num_fit_samples.is_some()
             || self.num_fit_candidates.is_some()
+            || self.infer_aleatoric_variance.is_some()
             || self.scale_x.is_some()
             || self.enn_storage.is_some()
             || self.work_dir.is_some()
