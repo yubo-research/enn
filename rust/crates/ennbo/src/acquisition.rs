@@ -223,15 +223,9 @@ impl ParetoAcquisition {
             );
         }
 
-        // Multi-objective: non-dominated sort on [mu | se] so predictive
-        // uncertainty participates (same spirit as single-obj mu/se fronts).
-        let mut objectives = Array2::zeros((n_candidates, n_objectives * 2));
-        objectives
-            .slice_mut(ndarray::s![.., ..n_objectives])
-            .assign(mu);
-        objectives
-            .slice_mut(ndarray::s![.., n_objectives..])
-            .assign(se);
+        // Multi-objective: non-dominated sort on interleaved
+        // (y_1, se_1, y_2, se_2, ...) so predictive uncertainty participates.
+        let objectives = Self::interleave_mu_se(mu, se);
         let pareto_fronts = self.non_domin_sort(&objectives.view());
 
         // Select from fronts until we have enough
@@ -253,6 +247,18 @@ impl ParetoAcquisition {
         }
 
         Ok(selected)
+    }
+
+    /// Build objectives as (y_1, se_1, y_2, se_2, …) for multi-obj ranking.
+    fn interleave_mu_se(mu: &ArrayView2<f64>, se: &ArrayView2<f64>) -> Array2<f64> {
+        let n_candidates = mu.nrows();
+        let n_objectives = mu.ncols();
+        let mut objectives = Array2::zeros((n_candidates, n_objectives * 2));
+        for j in 0..n_objectives {
+            objectives.column_mut(2 * j).assign(&mu.column(j));
+            objectives.column_mut(2 * j + 1).assign(&se.column(j));
+        }
+        objectives
     }
 
     /// Non-dominated sorting (simplified implementation).
@@ -511,6 +517,17 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(42);
         let selected = pareto.select(&mu.view(), &se.view(), 1, &mut rng).unwrap();
         assert_eq!(selected, vec![1]);
+    }
+
+    #[test]
+    fn test_pareto_multi_objective_interleaves_mu_se() {
+        let mu = array![[1.0, 2.0], [3.0, 4.0]];
+        let se = array![[0.1, 0.2], [0.3, 0.4]];
+        let objectives = ParetoAcquisition::interleave_mu_se(&mu.view(), &se.view());
+        assert_eq!(
+            objectives,
+            array![[1.0, 0.1, 2.0, 0.2], [3.0, 0.3, 4.0, 0.4]]
+        );
     }
 
     #[test]
