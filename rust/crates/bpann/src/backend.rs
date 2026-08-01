@@ -67,6 +67,13 @@ impl BpannBackend {
             num_metrics,
             known_nrows,
         )?;
+        if train_x_store.nrows > 0 && train_x.nrows() > 0 {
+            return Err(BpannError::InvalidParameter(format!(
+                "work_dir already has {} persisted rows; refusing to ignore nonempty train_x/train_y (nrows={}). Reopen with empty arrays to resume, or use a fresh work_dir",
+                train_x_store.nrows,
+                train_x.nrows()
+            )));
+        }
         if train_x_store.nrows == 0 && train_x.nrows() > 0 {
             train_x_store.mmap_append(&train_x.view())?;
             train_y_store.mmap_append(&train_y.view())?;

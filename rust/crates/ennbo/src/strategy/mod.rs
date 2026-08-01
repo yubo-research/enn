@@ -95,26 +95,27 @@ impl Strategy {
         optimizer: &mut Optimizer,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
+        yvar: Option<&ArrayView2<f64>>,
         telemetry: &mut Telemetry,
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError> {
         match self {
-            Strategy::Init(state) => tell_init(state, optimizer, x, y, rng),
-            Strategy::Turbo(_) => tell_turbo(optimizer, x, y, telemetry, rng),
+            Strategy::Init(state) => tell_init(state, optimizer, x, y, yvar, rng),
+            Strategy::Turbo(_) => tell_turbo(optimizer, x, y, yvar, telemetry, rng),
             Strategy::Hybrid {
                 init,
                 turbo: _,
                 in_init,
             } => {
                 if *in_init {
-                    tell_init(init, optimizer, x, y, rng)?;
+                    tell_init(init, optimizer, x, y, yvar, rng)?;
                     // Check if init is complete
                     if init.completed >= init.num_init {
                         *in_init = false;
                     }
                     Ok(())
                 } else {
-                    tell_turbo(optimizer, x, y, telemetry, rng)
+                    tell_turbo(optimizer, x, y, yvar, telemetry, rng)
                 }
             }
         }
@@ -173,7 +174,8 @@ fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError>
     if !optimizer.trust_region().is_morbo() {
         return Ok(());
     }
-    // Natural units: match incumbent scalarization (obs_row_y / naturalized predict μ).
+    // Natural units: match tell_common ranges, incumbent scalarization
+    // (obs_row_y / naturalized predict μ), and Thompson/UCB Morbo scores.
     let Some(y_all) = optimizer.y_obs() else {
         return Ok(());
     };
@@ -190,6 +192,7 @@ fn tell_common(
     optimizer: &mut Optimizer,
     x: &ArrayView2<f64>,
     y: &ArrayView2<f64>,
+    yvar: Option<&ArrayView2<f64>>,
     telemetry: Option<&mut Telemetry>,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
@@ -208,7 +211,7 @@ fn tell_common(
         surrogate.fit_append(
             &delta.x_new_view(),
             &delta.y_new_view(),
-            None,
+            yvar,
             rng,
         )?;
         if let Some(tel) = telemetry {
@@ -217,14 +220,10 @@ fn tell_common(
     }
 
     if optimizer.trust_region().is_morbo() && delta.new_n > delta.old_n {
-        let y_new_z = if let Some(surrogate) = optimizer.surrogate() {
-            surrogate.warp_observations_y(&delta.y_new_view())?
-        } else {
-            delta.y_new_view().to_owned()
-        };
+        // Natural units: match incumbent scalarization and morbo_sync_ranges_from_obs.
         optimizer
             .trust_region_mut()
-            .morbo_update_ranges_only(&y_new_z.view())?;
+            .morbo_update_ranges_only(&delta.y_new_view())?;
     }
 
     optimizer.update_incumbent(rng)?;
@@ -261,10 +260,11 @@ fn tell_init(
     optimizer: &mut Optimizer,
     x: &ArrayView2<f64>,
     y: &ArrayView2<f64>,
+    yvar: Option<&ArrayView2<f64>>,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
     state.completed += x.nrows();
-    tell_common(optimizer, x, y, None, rng)
+    tell_common(optimizer, x, y, yvar, None, rng)
 }
 
 /// Ask for TuRBO phase.
@@ -329,10 +329,11 @@ fn tell_turbo(
     optimizer: &mut Optimizer,
     x: &ArrayView2<f64>,
     y: &ArrayView2<f64>,
+    yvar: Option<&ArrayView2<f64>>,
     telemetry: &mut Telemetry,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
-    tell_common(optimizer, x, y, Some(telemetry), rng)?;
+    tell_common(optimizer, x, y, yvar, Some(telemetry), rng)?;
 
     let num_obs = optimizer.obs_count();
     let y_incumbent = optimizer
@@ -401,6 +402,8 @@ fn select_with_thompson(
                 }
             }
         }
+        // Function draws are warped; naturalize to match Morbo ranges / incumbents.
+        let flat = surrogate.naturalize_observations_y(flat);
         let flat_scores = optimizer
             .trust_region()
             .morbo_scalarize(&flat.view(), false)
@@ -444,8 +447,9 @@ fn select_with_ucb(
     beta: f64,
     rng: &mut dyn RngCore,
 ) -> Result<Array2<f64>, ENNError> {
-    let pred = surrogate.predict(x_cand)?;
+    let pred = surrogate.naturalize_prediction(surrogate.predict(x_cand)?);
     if optimizer.trust_region().is_morbo() {
+        // Naturalized μ/se so UCB matches natural Morbo ranges / incumbents.
         let ucb_vals = &pred.mu + &(pred.se * beta);
         let scores = optimizer
             .trust_region()

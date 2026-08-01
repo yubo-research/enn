@@ -46,6 +46,7 @@ class RustOptimizer:
         self._rng = rng
         self._inner = inner
         self._num_dim = self._bounds.shape[0]
+        self._expects_yvar: bool | None = None
 
     @property
     def _x_obs(self) -> _ObsView:
@@ -115,28 +116,33 @@ class RustOptimizer:
     def tell(
         self, x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None = None
     ) -> np.ndarray:
-        x_arr = np.asarray(x, dtype=float)
-        y_arr = np.asarray(y, dtype=float)
+        from .python_fallback.turbo_optimizer_utils import validate_tell_inputs
 
-        if x_arr.ndim != 2 or x_arr.shape[1] != self._num_dim:
+        inputs = validate_tell_inputs(x, y, y_var, self._num_dim)
+        if self._expects_yvar is None:
+            self._expects_yvar = inputs.y_var is not None
+        if (inputs.y_var is not None) != bool(self._expects_yvar):
             raise ValueError(
-                f"x must have shape (n, {self._num_dim}), got {x_arr.shape}"
+                f"y_var must be {'provided' if self._expects_yvar else 'omitted'} on every tell()"
             )
-        if y_arr.ndim == 1:
-            y_arr = y_arr.reshape(-1, 1)
-        if y_arr.ndim != 2 or y_arr.shape[0] != x_arr.shape[0]:
-            raise ValueError(
-                f"y must have shape ({x_arr.shape[0]}, m), got {y_arr.shape}"
+        if inputs.x.shape[0] == 0:
+            return (
+                np.array([], dtype=float)
+                if inputs.num_metrics == 1
+                else np.empty((0, inputs.num_metrics), dtype=float)
             )
 
         lower = self._bounds[:, 0]
         upper = self._bounds[:, 1]
-        x_unit = (x_arr - lower) / (upper - lower)
+        x_unit = (inputs.x - lower) / (upper - lower)
 
         seed = int(self._rng.integers(2**63 - 1))
-        self._inner.tell(x_unit, y_arr, seed)
+        if inputs.y_var is None:
+            self._inner.tell(x_unit, inputs.y, seed)
+        else:
+            self._inner.tell(x_unit, inputs.y, seed, inputs.y_var)
 
-        return y_arr
+        return inputs.y
 
 
 def create_optimizer(

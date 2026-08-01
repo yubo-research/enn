@@ -149,11 +149,12 @@ impl Optimizer {
         result
     }
 
-    /// Tell observations.
+    /// Tell observations with optional observation noise (`yvar`).
     pub fn tell(
         &mut self,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
+        yvar: Option<&ArrayView2<f64>>,
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError> {
         let start = std::time::Instant::now();
@@ -164,7 +165,7 @@ impl Optimizer {
 
         let mut strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
-        let result = strategy.tell(self, x, y, &mut telemetry, rng);
+        let result = strategy.tell(self, x, y, yvar, &mut telemetry, rng);
         self.strategy = strategy;
         self.telemetry = telemetry;
 

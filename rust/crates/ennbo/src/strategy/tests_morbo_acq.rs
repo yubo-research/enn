@@ -1,13 +1,13 @@
 //! Regression tests for Morbo acquisition / incumbent RNG contracts.
 
 use super::{select_with_thompson, select_with_ucb};
-use crate::config::{turbo_enn_config, AcquisitionConfig, InitStrategy};
+use crate::config::{turbo_enn_config, AcquisitionConfig, InitStrategy, SurrogateConfig};
 use approx::relative_eq;
 use crate::error::ENNError;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
-use crate::surrogate::{Surrogate, SurrogatePrediction};
+use crate::surrogate::{ENNSurrogateConfig, Surrogate, SurrogatePrediction};
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::TrustRegionConfig;
 use ndarray::{array, Array1, Array2, Array3, ArrayView2};
@@ -170,7 +170,7 @@ fn morbo_pareto_ask_after_multiobjective_tell() {
     for i in 0..4 {
         let x = opt.ask(2, &mut rng).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
     }
     let x_arms = opt.ask(2, &mut rng).unwrap();
     assert_eq!(x_arms.nrows(), 2);
@@ -211,7 +211,7 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
     for i in 0..4 {
         let x = opt.ask(2, &mut rng).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
     }
     let w0 = opt
         .trust_region()
@@ -271,7 +271,7 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
     for i in 0..4 {
         let x = opt.ask(2, &mut rng).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
     }
     let w0 = opt
         .trust_region()
@@ -299,4 +299,67 @@ fn kiss_tie_surrogate_type() {
     let x = array![[0.0, 0.0]];
     let pred = sur.predict(&x.view()).unwrap();
     assert_eq!(pred.mu.nrows(), 1);
+}
+
+#[test]
+fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(4242);
+    let mut cfg = turbo_enn_config();
+    cfg.surrogate = SurrogateConfig::ENN(ENNSurrogateConfig {
+        k: 3,
+        num_fit_samples: 4,
+        num_fit_candidates: 4,
+        y_bounds: Some(array![[0.0, 1.0], [0.0, 1.0]]),
+        ..Default::default()
+    });
+    cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
+        num_metrics: 2,
+        alpha: 0.05,
+        length: TRLengthConfig::default(),
+        rescalarize: Rescalarize::OnRestart,
+        noise_aware: false,
+    });
+    let mut opt =
+        Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
+    let x = array![
+        [0.1, 0.1],
+        [0.9, 0.1],
+        [0.1, 0.9],
+        [0.5, 0.5],
+    ];
+    let y = array![
+        [0.1, 0.9],
+        [0.9, 0.1],
+        [0.2, 0.8],
+        [0.5, 0.5],
+    ];
+    opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
+
+    let morbo = opt.trust_region().morbo().expect("morbo");
+    let ymin = morbo.y_min().expect("ymin").to_owned();
+    let ymax = morbo.y_max().expect("ymax").to_owned();
+    // Natural extremes ≈ 0.1 / 0.9. Logit(0.1) ≈ -2.2 would fail these bounds.
+    assert!(
+        ymin[0] > 0.0 && ymin[0] < 0.3 && ymin[1] > 0.0 && ymin[1] < 0.3,
+        "tell ranges not natural: ymin={ymin:?}"
+    );
+    assert!(
+        ymax[0] > 0.7 && ymax[0] < 1.0 && ymax[1] > 0.7 && ymax[1] < 1.0,
+        "tell ranges not natural: ymax={ymax:?}"
+    );
+
+    // Restart clears ranges; sync rebuilds from natural y_obs() (same as morbo_sync).
+    let y_all = opt.y_obs().expect("y_obs");
+    opt.trust_region_mut().restart(Some(&mut rng));
+    opt.trust_region_mut()
+        .morbo_update_ranges_only(&y_all.view())
+        .unwrap();
+    let morbo2 = opt.trust_region().morbo().expect("morbo");
+    let ymin2 = morbo2.y_min().expect("ymin").to_owned();
+    let ymax2 = morbo2.y_max().expect("ymax").to_owned();
+    assert!(
+        relative_eq!(ymin, ymin2, epsilon = 1e-12) && relative_eq!(ymax, ymax2, epsilon = 1e-12),
+        "restart sync ranges diverge from tell: tell=({ymin:?},{ymax:?}) sync=({ymin2:?},{ymax2:?})"
+    );
 }

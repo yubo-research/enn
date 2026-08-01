@@ -60,6 +60,8 @@ impl EpistemicNearestNeighbors {
                 });
             }
         }
+        let yvar_view = train_yvar.map(|v| v.view());
+        validate_finite_xy(&train_x.view(), &train_y.view(), yvar_view.as_ref())?;
         Ok(())
     }
 
@@ -255,6 +257,9 @@ impl EpistemicNearestNeighbors {
                 self.num_metrics
             )));
         }
+        if let Err(e) = validate_finite_xy(x, y, yvar) {
+            return Some(e);
+        }
         match (yvar, self.rows().row_yvar(0).ok().flatten().is_some()) {
             (Some(yv), _) if yv.shape() != y.shape() => Some(ENNError::InvalidShape {
                 expected: y.shape().to_vec(),
@@ -428,6 +433,36 @@ impl EpistemicNearestNeighbors {
         }
         self.backend.search(x, search_k, exclude_nearest)
     }
+}
+
+fn validate_finite_xy(
+    x: &ArrayView2<f64>,
+    y: &ArrayView2<f64>,
+    yvar: Option<&ArrayView2<f64>>,
+) -> Result<(), ENNError> {
+    if x.iter().any(|v| !v.is_finite()) {
+        return Err(ENNError::InvalidParameter(
+            "x must contain only finite values".to_string(),
+        ));
+    }
+    if y.iter().any(|v| !v.is_finite()) {
+        return Err(ENNError::InvalidParameter(
+            "y must contain only finite values".to_string(),
+        ));
+    }
+    if let Some(yv) = yvar {
+        if yv.iter().any(|v| !v.is_finite()) {
+            return Err(ENNError::InvalidParameter(
+                "yvar must contain only finite values".to_string(),
+            ));
+        }
+        if yv.iter().any(|&v| v < 0.0) {
+            return Err(ENNError::InvalidParameter(
+                "yvar must be non-negative".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Rebuild observation count and scale moments from persisted backend rows (disk reopen).

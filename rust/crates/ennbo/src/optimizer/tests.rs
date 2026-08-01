@@ -89,7 +89,7 @@ fn test_tell() {
     let y = array![[1.0], [2.0], [3.0], [4.0], [5.0]];
 
     optimizer
-        .tell(&candidates.view(), &y.view(), &mut rng)
+        .tell(&candidates.view(), &y.view(), None, &mut rng)
         .unwrap();
 
     assert!(optimizer.telemetry().dt_tell > 0.0);
@@ -117,15 +117,15 @@ fn test_create_optimizer_factories_and_telemetry_defaults() {
 
     let x0 = enn.ask(1, &mut rng).unwrap();
     let y0 = array![[0.1]];
-    enn.tell(&x0.view(), &y0.view(), &mut rng).unwrap();
+    enn.tell(&x0.view(), &y0.view(), None, &mut rng).unwrap();
 
     let x1 = zero.ask(1, &mut rng).unwrap();
     let y1 = array![[0.2]];
-    zero.tell(&x1.view(), &y1.view(), &mut rng).unwrap();
+    zero.tell(&x1.view(), &y1.view(), None, &mut rng).unwrap();
 
     let x2 = lhd.ask(1, &mut rng).unwrap();
     let y2 = array![[0.3]];
-    lhd.tell(&x2.view(), &y2.view(), &mut rng).unwrap();
+    lhd.tell(&x2.view(), &y2.view(), None, &mut rng).unwrap();
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn test_noise_aware_config_and_incumbent_after_tell() {
         [0.8, 0.9],
     ];
     let y = array![[0.0], [1.0], [2.0], [0.5]];
-    opt.tell(&x.view(), &y.view(), &mut rng).unwrap();
+    opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
     assert!(opt.incumbent_x_unit().is_some());
     assert_eq!(opt.incumbent_tracker.observation_count(), 4);
 }
@@ -186,7 +186,7 @@ fn reset_incumbent_tracker_desyncs_count_from_obs() {
         create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
     let x = array![[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]];
     let y = array![[0.0], [1.0], [0.5]];
-    opt.tell(&x.view(), &y.view(), &mut rng).unwrap();
+    opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
     assert_eq!(opt.incumbent_tracker.observation_count(), opt.obs_count());
     opt.reset_incumbent_tracker();
     assert_eq!(opt.incumbent_tracker.observation_count(), 0);
@@ -207,7 +207,7 @@ fn turbo_length_restart_keeps_incumbent_tracker_synced() {
     for i in 0..64 {
         let x = array![[0.1 + 0.01 * (i as f64), 0.2]];
         let y = array![[-(i as f64)]]; // never improve incumbent
-        opt.tell(&x.view(), &y.view(), &mut rng).unwrap();
+        opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
         assert_eq!(
             opt.incumbent_tracker.observation_count(),
             opt.obs_count(),

@@ -65,49 +65,51 @@ impl ENNFitter {
         }
     }
 
+    fn tell_input_error(
+        x: &ArrayView2<f64>,
+        y: &ArrayView2<f64>,
+        yvar: Option<&ArrayView2<f64>>,
+    ) -> Option<String> {
+        if x.iter().any(|v| !v.is_finite()) {
+            return Some("x must contain only finite values".to_string());
+        }
+        if y.iter().any(|v| !v.is_finite()) {
+            return Some("y must contain only finite values".to_string());
+        }
+        if x.nrows() != y.nrows() {
+            return Some(format!(
+                "x and y must have same number of rows: {} vs {}",
+                x.nrows(),
+                y.nrows()
+            ));
+        }
+        if let Some(yv) = yvar {
+            if yv.iter().any(|v| !v.is_finite()) {
+                return Some("yvar must contain only finite values".to_string());
+            }
+            if yv.iter().any(|&v| v < 0.0) || yv.shape() != y.shape() {
+                return Some(if yv.iter().any(|&v| v < 0.0) {
+                    "yvar must be non-negative".to_string()
+                } else {
+                    format!(
+                        "yvar shape {:?} must match y shape {:?}",
+                        yv.shape(),
+                        y.shape()
+                    )
+                });
+            }
+        }
+        None
+    }
+
     pub fn tell(
         &mut self,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        if x.iter().any(|v| !v.is_finite()) {
-            return Err(ENNError::InvalidParameter(
-                "x must contain only finite values".to_string(),
-            ));
-        }
-        if y.iter().any(|v| !v.is_finite()) {
-            return Err(ENNError::InvalidParameter(
-                "y must contain only finite values".to_string(),
-            ));
-        }
-        if x.nrows() != y.nrows() {
-            return Err(ENNError::InvalidParameter(format!(
-                "x and y must have same number of rows: {} vs {}",
-                x.nrows(),
-                y.nrows()
-            )));
-        }
-        if let Some(yv) = yvar {
-            if yv.iter().any(|v| !v.is_finite()) {
-                return Err(ENNError::InvalidParameter(
-                    "yvar must contain only finite values".to_string(),
-                ));
-            }
-            if yv.nrows() != y.nrows() {
-                return Err(ENNError::InvalidParameter(format!(
-                    "yvar and y must have same number of rows: {} vs {}",
-                    yv.nrows(),
-                    y.nrows()
-                )));
-            }
-            if yv.ncols() != y.ncols() {
-                return Err(ENNError::InvalidParameter(format!(
-                    "yvar and y must have same number of columns: {} vs {}",
-                    yv.ncols(),
-                    y.ncols()
-                )));
-            }
+        if let Some(msg) = Self::tell_input_error(x, y, yvar) {
+            return Err(ENNError::InvalidParameter(msg));
         }
         self.update_y(y);
         Ok(())
@@ -268,6 +270,8 @@ mod tests {
         assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar.view())).is_err());
         let yvar_bad = array![[f64::INFINITY]];
         assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_bad.view())).is_err());
+        let yvar_neg = array![[-0.1], [-0.1]];
+        assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_neg.view())).is_err());
     }
 
     #[test]

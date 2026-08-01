@@ -177,18 +177,25 @@ impl PyOptimizer {
     }
 
     /// Tell observations
-    #[pyo3(signature = (x, y, seed))]
+    #[pyo3(signature = (x, y, seed, y_var=None))]
     fn tell(
         &mut self,
         x: PyReadonlyArray2<f64>,
         y: PyReadonlyArray2<f64>,
         seed: u64,
+        y_var: Option<PyReadonlyArray2<f64>>,
     ) -> PyResult<()> {
         let mut rng = StdRng::seed_from_u64(seed);
-
-        self.inner
-            .tell(&x.as_array(), &y.as_array(), &mut rng)
-            .map_err(|e| PyValueError::new_err(e.to_string()))
+        let x_arr = x.as_array();
+        let y_arr = y.as_array();
+        let result = match y_var.as_ref() {
+            Some(yv) => {
+                let yv_arr = yv.as_array();
+                self.inner.tell(&x_arr, &y_arr, Some(&yv_arr), &mut rng)
+            }
+            None => self.inner.tell(&x_arr, &y_arr, None, &mut rng),
+        };
+        result.map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// Get init progress if in initialization phase

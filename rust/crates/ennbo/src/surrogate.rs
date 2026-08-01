@@ -83,6 +83,11 @@ pub trait Surrogate: Send + Sync {
         y_warped
     }
 
+    /// Naturalize warped predict μ/se with Jacobian scaling (default: identity).
+    fn naturalize_prediction(&self, pred: SurrogatePrediction) -> SurrogatePrediction {
+        pred
+    }
+
     /// Warp natural y for incumbent / internal trackers (default: identity).
     fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
         Ok(y.to_owned())
@@ -339,6 +344,26 @@ impl Surrogate for ENNSurrogate {
         crate::y_bounds::inv_y(y_warped.view(), model.y_bounds())
     }
 
+    fn naturalize_prediction(&self, mut pred: SurrogatePrediction) -> SurrogatePrediction {
+        let Some(model) = self.model.as_ref() else {
+            return pred;
+        };
+        let bounds = model.y_bounds();
+        if crate::y_bounds::is_identity_bounds(bounds) {
+            return pred;
+        }
+        let mut se_epi = pred.se.clone();
+        let mut se_ale = pred.se.clone();
+        crate::y_bounds::naturalize_mu_se(
+            &mut pred.mu,
+            &mut pred.se,
+            &mut se_epi,
+            &mut se_ale,
+            bounds,
+        );
+        pred
+    }
+
     fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
         if let Some(model) = self.model.as_ref() {
             let (yz, _) = model.warp_observations(y, None)?;
@@ -484,10 +509,16 @@ impl Surrogate for ENNSurrogate {
             .model
             .as_ref()
             .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
-        let params = self
-            .params
-            .as_ref()
-            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
+        let params = match self.params.as_ref() {
+            Some(p) => *p,
+            None => {
+                // Bulk disk tells may skip neighbor fit; match predict's default
+                // params so Thompson acquisition can still sample.
+                ENNParams::new(self.config.k, 1.0, 0.0).map_err(|e| {
+                    ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
+                })?
+            }
+        };
 
         // Use deterministic seeds based on current state
         let mut seed_bytes = [0u8; 8];
@@ -496,7 +527,7 @@ impl Surrogate for ENNSurrogate {
         let function_seeds: Vec<i64> = (0..num_samples as i64).map(|i| base_seed + i).collect();
 
         let (draws, _) =
-            model.posterior_function_draw_warped(x, params, &function_seeds, &Default::default())?;
+            model.posterior_function_draw_warped(x, &params, &function_seeds, &Default::default())?;
 
         Ok(draws)
     }
