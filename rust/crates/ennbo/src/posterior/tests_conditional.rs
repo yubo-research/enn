@@ -101,6 +101,45 @@ fn test_conditional_posterior_exclude_nearest() {
 }
 
 #[test]
+fn conditional_exclude_nearest_keeps_nearest_whatif_for_novel_query() {
+    // Live check from bugs.md: what-if at (5,5), query at (5.05,5.05) must not
+    // drop the what-if under exclude_nearest (not a self-match).
+    let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
+    let train_y = array![[0.0], [1.0], [1.0], [0.3]];
+    let model =
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            .unwrap();
+    let params = ENNParams::new(2, 1.0, 0.0).unwrap();
+    let query = array![[5.05, 5.05]];
+    let x_whatif = array![[5.0, 5.0]];
+    let y_whatif = array![[2.0]];
+    let off = compute_conditional_posterior_internals(
+        &model,
+        &query.view(),
+        &x_whatif.view(),
+        &y_whatif.view(),
+        &params,
+        &PosteriorFlags::new(),
+    )
+    .unwrap();
+    let on = compute_conditional_posterior_internals(
+        &model,
+        &query.view(),
+        &x_whatif.view(),
+        &y_whatif.view(),
+        &params,
+        &PosteriorFlags::new().with_exclude_nearest(true),
+    )
+    .unwrap();
+    assert!(
+        (off.mu[[0, 0]] - on.mu[[0, 0]]).abs() < 0.05,
+        "exclude_nearest must not discard nearest what-if for novel query: off={} on={}",
+        off.mu[[0, 0]],
+        on.mu[[0, 0]]
+    );
+}
+
+#[test]
 fn test_conditional_posterior_scaled_model() {
     let train_x = array![[0.0, 0.0], [2.0, 2.0], [4.0, 4.0]];
     let train_y = array![[0.0], [1.0], [2.0]];

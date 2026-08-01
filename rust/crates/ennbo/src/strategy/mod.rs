@@ -173,7 +173,8 @@ fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError>
     if !optimizer.trust_region().is_morbo() {
         return Ok(());
     }
-    let Some(y_all) = optimizer.obs_access().y_obs_warped() else {
+    // Natural units: match incumbent scalarization (obs_row_y / naturalized predict μ).
+    let Some(y_all) = optimizer.y_obs() else {
         return Ok(());
     };
     if y_all.nrows() == 0 {

@@ -70,14 +70,19 @@ pub fn open_or_append_yvar(
     num_metrics: usize,
     train_yvar: Option<&Array2<f64>>,
 ) -> Result<Option<MmapColumnStore>, ENNError> {
+    let yv_path = work_dir.join("train_yvar.bin");
     if let Some(yv) = train_yvar {
-        let yv_path = work_dir.join("train_yvar.bin");
         let known_nrows = load_num_obs(work_dir);
         let mut store =
             MmapColumnStore::mmap_open_or_create(yv_path, num_metrics, known_nrows)?;
         if store.nrows == 0 {
             store.mmap_append(&yv.view())?;
         }
+        Ok(Some(store))
+    } else if yv_path.exists() {
+        // Reopen path: remap persisted noise even when no in-memory array is passed.
+        let known_nrows = load_num_obs(work_dir);
+        let store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics, known_nrows)?;
         Ok(Some(store))
     } else {
         Ok(None)
@@ -371,7 +376,11 @@ mod disk_observation_tests {
         let store = open_or_append_yvar(dir.path(), 1, Some(&yv)).unwrap();
         assert!(store.is_some());
         assert_eq!(store.unwrap().nrows, 2);
-        assert!(open_or_append_yvar(dir.path(), 1, None).unwrap().is_none());
+        // Consistent reopen: num_obs matches persisted yvar rows.
+        write_metadata(dir.path(), 2, 2, 1, false, 0, "bpann_disk").unwrap();
+        let remapped = open_or_append_yvar(dir.path(), 1, None).unwrap();
+        assert!(remapped.is_some());
+        assert_eq!(remapped.unwrap().nrows, 2);
 
         let x_path = dir.path().join("train_x.bin");
         let y_path = dir.path().join("train_y.bin");

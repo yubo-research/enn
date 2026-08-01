@@ -142,6 +142,10 @@ fn fallback_observations_without_surrogate() {
     let ya = optimizer.y_obs().unwrap();
     assert_eq!(ya.shape(), &[1, 2]);
     assert!((optimizer.obs_access().obs_row_x(0).unwrap()[[0]] - 1.0).abs() < 1e-12);
+    // Cover fallback branch of y_obs_warped (no surrogate).
+    let yw = optimizer.obs_access().y_obs_warped().unwrap();
+    assert_eq!(yw.shape(), &[1, 2]);
+    assert!((yw[[0, 0]] - 0.5).abs() < 1e-12);
 }
 
 #[test]

@@ -78,7 +78,8 @@ fn compute_single_loglik(
     if loglik.is_finite() {
         loglik
     } else {
-        0.0
+        // Overflowing sums must lose argmax (not tie at 0.0 against real negatives).
+        f64::NEG_INFINITY
     }
 }
 
@@ -113,7 +114,8 @@ pub fn subsample_loglik_model<R: Rng>(
     } else {
         sample(rng, n, p_actual).into_iter().collect()
     };
-    let (x, y, _) = model.rows().train_rows_at(&indices)?;
+    // Natural-unit targets: matches public batch_posterior (naturalized μ/σ).
+    let (x, y, _) = model.train_rows_at(&indices)?;
     subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
 }
 
@@ -133,9 +135,9 @@ pub fn subsample_loglik<R: Rng>(
         return Ok(vec![0.0; paramss.len()]);
     }
 
-    // Check for non-finite y values
+    // Non-finite targets must not look better than real negative log-likelihoods.
     if !y.iter().all(|v| v.is_finite()) {
-        return Ok(vec![0.0; paramss.len()]);
+        return Ok(vec![f64::NEG_INFINITY; paramss.len()]);
     }
 
     let p_actual = p.min(n);
@@ -253,7 +255,7 @@ mod tests {
         let via_model = subsample_loglik_model(&model, &paramss, 2, &mut rng, None).unwrap();
         let mut rng2 = StdRng::seed_from_u64(99);
         let all: Vec<usize> = (0..model.len()).collect();
-        let (full_x, full_y, _) = model.rows().train_rows_at(&all).unwrap();
+        let (full_x, full_y, _) = model.train_rows_at(&all).unwrap();
         let via_views =
             subsample_loglik(&model, &full_x.view(), &full_y.view(), &paramss, 2, &mut rng2, None)
                 .unwrap();
@@ -446,6 +448,31 @@ mod tests {
             compute_single_loglik(&y.view(), &mu_ok.view(), &se_bad.view()),
             f64::NEG_INFINITY
         );
+    }
+
+    #[test]
+    fn test_compute_single_loglik_overflow_sum_is_neg_infinity() {
+        // Finite μ/σ but enormous residual → non-finite sum must lose argmax.
+        let y = array![[1e308]];
+        let mu = array![[-1e308]];
+        let se = array![[1e-308]];
+        assert_eq!(
+            compute_single_loglik(&y.view(), &mu.view(), &se.view()),
+            f64::NEG_INFINITY
+        );
+    }
+
+    #[test]
+    fn test_subsample_loglik_nonfinite_y_scores_neg_infinity() {
+        let model = create_test_model();
+        let x = array![[0.0, 0.0], [1.0, 1.0]];
+        let y = array![[1.0], [f64::NAN]];
+        let params = ENNParams::new(2, 1.0, 0.1).unwrap();
+        let paramss = vec![params, params];
+        let mut rng = StdRng::seed_from_u64(0);
+        let logliks =
+            subsample_loglik(&model, &x.view(), &y.view(), &paramss, 2, &mut rng, None).unwrap();
+        assert_eq!(logliks, vec![f64::NEG_INFINITY, f64::NEG_INFINITY]);
     }
 
 }

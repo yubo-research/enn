@@ -168,6 +168,14 @@ pub(crate) fn exact_f64_batch_topk(
     Ok(apply_exclude_nearest(dist2s, idx, exclude_nearest))
 }
 
+/// Squared-distance threshold treated as an exact self hit (LOO identity).
+const SELF_DIST_EPS: f64 = 1e-15;
+
+/// Drop the query's own training row when present; keep the true NN otherwise.
+///
+/// Callers that set `exclude_nearest` fetch `k+1` neighbors. This returns `k`
+/// columns: drop column 0 only on a zero-distance self-match; for novel queries
+/// keep the nearest neighbors and drop the extra last column instead.
 fn apply_exclude_nearest(
     dist2s: Array2<f64>,
     idx: Array2<i64>,
@@ -178,20 +186,25 @@ fn apply_exclude_nearest(
     }
     let n_query = dist2s.nrows();
     let nc = dist2s.ncols();
-    if nc <= 1 {
-        (
-            Array2::zeros((n_query, nc.saturating_sub(1))),
-            Array2::zeros((n_query, nc.saturating_sub(1))),
-        )
-    } else {
-        (
-            dist2s
-                .slice_axis(Axis(1), ndarray::Slice::from(1..))
-                .to_owned(),
-            idx.slice_axis(Axis(1), ndarray::Slice::from(1..))
-                .to_owned(),
-        )
+    let out_c = nc.saturating_sub(1);
+    if out_c == 0 {
+        return (
+            Array2::zeros((n_query, 0)),
+            Array2::zeros((n_query, 0)),
+        );
     }
+    let mut out_d = Array2::zeros((n_query, out_c));
+    let mut out_i = Array2::zeros((n_query, out_c));
+    for r in 0..n_query {
+        let nearest_d = dist2s[[r, 0]];
+        let is_self = nearest_d.is_finite() && nearest_d <= SELF_DIST_EPS;
+        let src0 = if is_self { 1 } else { 0 };
+        for c in 0..out_c {
+            out_d[[r, c]] = dist2s[[r, src0 + c]];
+            out_i[[r, c]] = idx[[r, src0 + c]];
+        }
+    }
+    (out_d, out_i)
 }
 
 pub(crate) fn get_neighbor_data(
@@ -347,7 +360,14 @@ pub(crate) fn get_conditional_neighbor_data(
         }
 
         let sel: Vec<(f64, usize)> = if flags.exclude_nearest && sel_end > 0 {
-            combined[1..sel_end].to_vec()
+            let nearest_d = combined[0].0;
+            let is_self = nearest_d.is_finite() && nearest_d <= SELF_DIST_EPS;
+            if is_self {
+                combined[1..sel_end].to_vec()
+            } else {
+                // Novel query: keep true NN; search_k includes +1 extra for LOO.
+                combined[..sel_end].to_vec()
+            }
         } else {
             combined[..sel_end].to_vec()
         };
@@ -481,7 +501,12 @@ mod tests {
         let idx = array![[0i64, 1], [1, 0]];
         let (d, i) = apply_exclude_nearest(dist2s.clone(), idx.clone(), true);
         assert_eq!(d.shape(), [2, 1]);
+        // Row 0: self-match (dist 0) → drop col 0, keep idx 1.
         assert_eq!(i[[0, 0]], 1);
+        assert_eq!(d[[0, 0]], 1.0);
+        // Row 1: novel (dist 2) → keep true NN idx 1, drop extra last.
+        assert_eq!(i[[1, 0]], 1);
+        assert_eq!(d[[1, 0]], 2.0);
         let (d0, i0) = apply_exclude_nearest(
             Array2::from_elem((1, 1), 0.0),
             Array2::from_elem((1, 1), 0i64),
@@ -492,6 +517,21 @@ mod tests {
         let (d2, i2) = apply_exclude_nearest(dist2s.clone(), idx.clone(), false);
         assert_eq!(d2, dist2s);
         assert_eq!(i2, idx);
+    }
+
+    #[test]
+    fn exact_f64_batch_topk_exclude_nearest_keeps_nn_for_novel_query() {
+        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [10.0, 10.0]];
+        let train_y = array![[0.0], [1.0], [1.0], [2.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        // Novel query near train row 3 (index 3); must not drop that true NN.
+        let query = array![[10.1, 10.1]];
+        let (dist2s, idx) = exact_f64_batch_topk(&model, &query.view(), 3, true).unwrap();
+        assert_eq!(dist2s.shape(), [1, 2]);
+        assert_eq!(idx[[0, 0]], 3);
+        assert!(dist2s[[0, 0]] > super::SELF_DIST_EPS);
     }
 
     #[test]
