@@ -16,6 +16,8 @@ pub struct ENNFitter {
     y_sumsq: Array1<f64>,
     y_count: usize,
     num_metrics: usize,
+    /// Feature width from the first `tell`; must match the model at `ask`.
+    num_dim: Option<usize>,
 }
 
 impl ENNFitter {
@@ -28,6 +30,7 @@ impl ENNFitter {
             y_sumsq: Array1::zeros(0),
             y_count: 0,
             num_metrics: 0,
+            num_dim: None,
         }
     }
 
@@ -69,6 +72,7 @@ impl ENNFitter {
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
+        expected_num_dim: Option<usize>,
     ) -> Option<String> {
         if x.iter().any(|v| !v.is_finite()) {
             return Some("x must contain only finite values".to_string());
@@ -82,6 +86,15 @@ impl ENNFitter {
                 x.nrows(),
                 y.nrows()
             ));
+        }
+        if let Some(dim) = expected_num_dim {
+            if x.ncols() != dim {
+                return Some(format!(
+                    "x has {} columns but fitter expects {} feature dimensions",
+                    x.ncols(),
+                    dim
+                ));
+            }
         }
         if let Some(yv) = yvar {
             if yv.iter().any(|v| !v.is_finite()) {
@@ -108,8 +121,11 @@ impl ENNFitter {
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        if let Some(msg) = Self::tell_input_error(x, y, yvar) {
+        if let Some(msg) = Self::tell_input_error(x, y, yvar, self.num_dim) {
             return Err(ENNError::InvalidParameter(msg));
+        }
+        if self.num_dim.is_none() {
+            self.num_dim = Some(x.ncols());
         }
         self.update_y(y);
         Ok(())
@@ -172,6 +188,15 @@ impl ENNFitter {
         params_warm_start: Option<&ENNParams>,
         rng: &mut R,
     ) -> Result<ENNParams, ENNError> {
+        if let Some(dim) = self.num_dim {
+            if dim != model.num_dim() {
+                return Err(ENNError::InvalidParameter(format!(
+                    "x has {} columns but model expects {} feature dimensions",
+                    dim,
+                    model.num_dim()
+                )));
+            }
+        }
         if model.num_obs() < 2 {
             let best = ENNParams::new(self.k, 1.0, 0.0).map_err(|e| {
                 ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
@@ -272,6 +297,35 @@ mod tests {
         assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_bad.view())).is_err());
         let yvar_neg = array![[-0.1], [-0.1]];
         assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_neg.view())).is_err());
+    }
+
+    #[test]
+    fn ask_rejects_x_ncols_mismatch_vs_model() {
+        let train_x = array![[0.0, 0.0], [1.0, 1.0]];
+        let train_y = array![[0.0], [1.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let mut fitter = ENNFitter::new(2, true);
+        let x_bad = array![[0.0], [1.0]];
+        let y = array![[0.0], [1.0]];
+        fitter.tell(&x_bad.view(), &y.view(), None).unwrap();
+        let mut rng = StdRng::seed_from_u64(0);
+        let err = fitter.ask(&model, 5, 3, None, &mut rng).unwrap_err();
+        assert!(
+            err.to_string().contains("feature dimensions"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn tell_rejects_inconsistent_x_ncols() {
+        let mut fitter = ENNFitter::new(2, true);
+        let x2 = array![[0.0, 0.0]];
+        let y = array![[0.0]];
+        fitter.tell(&x2.view(), &y.view(), None).unwrap();
+        let x1 = array![[1.0]];
+        assert!(fitter.tell(&x1.view(), &y.view(), None).is_err());
     }
 
     #[test]

@@ -196,6 +196,16 @@ fn tell_common(
     telemetry: Option<&mut Telemetry>,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
+    if optimizer.trust_region().is_morbo() {
+        let nm = optimizer.trust_region().num_metrics();
+        if y.ncols() != nm {
+            return Err(ENNError::InvalidParameter(format!(
+                "y has {} metric columns but Morbo expects {nm}",
+                y.ncols()
+            )));
+        }
+    }
+
     let delta = optimizer.add_observations(x, y)?;
 
     if let Some(nm) = optimizer.surrogate().and_then(|s| s.fitted_num_metrics()) {
@@ -427,21 +437,23 @@ fn select_with_thompson(
         }
         return Ok(select_by_indices(x_cand, &indices));
     }
+    // Python ThompsonAcqOptimizer: one argmax per function draw (repeats allowed).
     // Function draws are warped; naturalize scalar Thompson like UCB / Morbo.
-    let mut flat = ndarray::Array2::zeros((n_candidates, 1));
-    for i in 0..n_candidates {
-        flat[[i, 0]] = samples[[0, i, 0]];
+    let mut flat = ndarray::Array2::zeros((num_arms * n_candidates, 1));
+    for arm in 0..num_arms {
+        for i in 0..n_candidates {
+            flat[[arm * n_candidates + i, 0]] = samples[[arm, i, 0]];
+        }
     }
     let flat = surrogate.naturalize_observations_y(flat);
-    let sample_values: Vec<f64> = (0..n_candidates).map(|i| flat[[i, 0]]).collect();
-    let mut indices: Vec<usize> = (0..n_candidates).collect();
-    indices.sort_by(|&a, &b| {
-        sample_values[b]
-            .partial_cmp(&sample_values[a])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    let selected: Vec<usize> = indices.into_iter().take(num_arms).collect();
-    Ok(select_by_indices(x_cand, &selected))
+    let mut indices = Vec::with_capacity(num_arms);
+    for arm in 0..num_arms {
+        let arm_scores: Vec<f64> = (0..n_candidates)
+            .map(|i| flat[[arm * n_candidates + i, 0]])
+            .collect();
+        indices.push(argmax_random_tie(&arm_scores, rng));
+    }
+    Ok(select_by_indices(x_cand, &indices))
 }
 
 /// Select arms via UCB (upper confidence bound).

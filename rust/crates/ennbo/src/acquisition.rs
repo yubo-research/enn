@@ -1,6 +1,6 @@
 //! Acquisition function optimizers for TuRBO.
 
-use ndarray::{Array1, ArrayView1, ArrayView2};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use thiserror::Error;
@@ -223,8 +223,16 @@ impl ParetoAcquisition {
             );
         }
 
-        // Multi-objective: use non-dominated sorting (simplified)
-        let pareto_fronts = self.non_domin_sort(mu);
+        // Multi-objective: non-dominated sort on [mu | se] so predictive
+        // uncertainty participates (same spirit as single-obj mu/se fronts).
+        let mut objectives = Array2::zeros((n_candidates, n_objectives * 2));
+        objectives
+            .slice_mut(ndarray::s![.., ..n_objectives])
+            .assign(mu);
+        objectives
+            .slice_mut(ndarray::s![.., n_objectives..])
+            .assign(se);
+        let pareto_fronts = self.non_domin_sort(&objectives.view());
 
         // Select from fronts until we have enough
         let mut selected = Vec::with_capacity(num_arms);
@@ -491,6 +499,18 @@ mod tests {
 
         assert_eq!(selected.len(), 3);
         assert!(selected.contains(&4));
+    }
+
+    #[test]
+    fn test_pareto_multi_objective_uses_predictive_se() {
+        let pareto = ParetoAcquisition::new();
+        // Identical means: only se distinguishes the fronts.
+        let mu = array![[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]];
+        let se = array![[0.01, 0.01], [10.0, 10.0], [0.5, 0.5]];
+
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        let selected = pareto.select(&mu.view(), &se.view(), 1, &mut rng).unwrap();
+        assert_eq!(selected, vec![1]);
     }
 
     #[test]

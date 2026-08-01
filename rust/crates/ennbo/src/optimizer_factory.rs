@@ -34,7 +34,7 @@ pub fn create_optimizer_enn_with_overrides(
         enn_cfg.k = k;
     }
     if let Some(o) = overrides {
-        config = o.apply_to(config);
+        config = o.apply_to(config)?;
     }
     let strategy = Strategy::hybrid(InitStrategy::LHD, num_init);
     Optimizer::new_with_strategy(bounds, config, strategy, rng)
@@ -58,7 +58,7 @@ pub fn create_optimizer_zero_with_overrides(
 ) -> Result<Optimizer, ENNError> {
     let mut config = turbo_zero_config();
     if let Some(o) = overrides {
-        config = o.apply_to(config);
+        config = o.apply_to(config)?;
     }
     let strategy = Strategy::hybrid(InitStrategy::LHD, num_init);
     Optimizer::new_with_strategy(bounds, config, strategy, rng)
@@ -82,7 +82,7 @@ pub fn create_optimizer_lhd_with_overrides(
 ) -> Result<Optimizer, ENNError> {
     let mut config = lhd_only_config();
     if let Some(o) = overrides {
-        config = o.apply_to(config);
+        config = o.apply_to(config)?;
     }
     let strategy = Strategy::init(InitStrategy::LHD, num_init);
     Optimizer::new_with_strategy(bounds, config, strategy, rng)

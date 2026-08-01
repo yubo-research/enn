@@ -83,7 +83,26 @@ impl<'a> EnnIndexAccess<'a> {
         search_k: i32,
         exclude_nearest: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-        crate::posterior::index_search(self.model, x, search_k, exclude_nearest)
+        let n_obs = self.model.num_obs();
+        // Mirror neighbor_distances_and_indices: fetch one extra under exclude so
+        // LOO self-queries still return search_k columns after identity drop.
+        if !exclude_nearest || n_obs == 0 || search_k <= 0 {
+            return crate::posterior::index_search(self.model, x, search_k, exclude_nearest);
+        }
+        let fetch_k = ((search_k as usize) + 1).min(n_obs);
+        let (dist, idx) =
+            crate::posterior::index_search(self.model, x, fetch_k as i32, true)?;
+        let k_out = (search_k as usize).min(idx.ncols());
+        if k_out == idx.ncols() {
+            Ok((dist, idx))
+        } else {
+            Ok((
+                dist.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
+                    .to_owned(),
+                idx.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
+                    .to_owned(),
+            ))
+        }
     }
 }
 

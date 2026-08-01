@@ -155,9 +155,19 @@ impl MorboTrustRegion {
         )
     }
 
-    pub fn update_ranges_incremental(&mut self, y_new: &ArrayView2<f64>) {
+    pub fn update_ranges_incremental(
+        &mut self,
+        y_new: &ArrayView2<f64>,
+    ) -> Result<(), TrustRegionError> {
         if y_new.nrows() == 0 {
-            return;
+            return Ok(());
+        }
+        if y_new.ncols() != self.num_metrics {
+            return Err(TrustRegionError::InvalidParameter(format!(
+                "y_new cols {} != num_metrics {}",
+                y_new.ncols(),
+                self.num_metrics
+            )));
         }
         if self.y_min.is_none() || self.y_max.is_none() {
             let mut y_min = Array1::from_elem(self.num_metrics, f64::INFINITY);
@@ -175,7 +185,7 @@ impl MorboTrustRegion {
             }
             self.y_min = Some(y_min);
             self.y_max = Some(y_max);
-            return;
+            return Ok(());
         }
         let y_min = self.y_min.as_mut().expect("y_min");
         let y_max = self.y_max.as_mut().expect("y_max");
@@ -190,6 +200,7 @@ impl MorboTrustRegion {
                 }
             }
         }
+        Ok(())
     }
 
     pub fn update_incumbent_only(

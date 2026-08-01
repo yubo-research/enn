@@ -9,6 +9,7 @@ pub mod neighbor_dist;
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 
 use self::draw_compute::draw_from_internals;
+use self::light::idx_nested_to_array2;
 use self::neighbor::{get_conditional_neighbor_data, get_neighbor_data};
 use crate::draw::DrawInternals;
 use crate::error::{ENNError, EPS_VAR};
@@ -70,7 +71,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         let k_values: std::collections::HashSet<i32> =
             paramss.iter().map(|p| p.k_num_neighbors).collect();
 
-        if k_values.len() == 1 && self.num_obs() > 0 {
+        let idx = if k_values.len() == 1 && self.num_obs() > 0 {
             compute_batch_with_shared_neighbors(
                 self,
                 x,
@@ -80,7 +81,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
                 &mut se_all,
                 &mut se_epi_all,
                 &mut se_ale_all,
-            )?;
+            )?
         } else {
             compute_batch_separate_neighbors(
                 self,
@@ -92,14 +93,15 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
                 &mut se_epi_all,
                 &mut se_ale_all,
             )?;
-        }
+            None
+        };
 
         Ok(ENNNormal::new(
             mu_all.into_dyn(),
             se_all.into_dyn(),
             se_epi_all.into_dyn(),
             se_ale_all.into_dyn(),
-            None,
+            idx,
         ))
     }
 
@@ -176,10 +178,11 @@ fn compute_batch_with_shared_neighbors(
     se_all: &mut Array3<f64>,
     se_epi_all: &mut Array3<f64>,
     se_ale_all: &mut Array3<f64>,
-) -> Result<(), ENNError> {
+) -> Result<Option<Array2<i64>>, ENNError> {
     let neighbor_data = get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest)?;
 
     if let Some(data) = neighbor_data {
+        let idx = idx_nested_to_array2(&data.idx);
         let wp_data = WeightedPosteriorData {
             dist2s: &data.dist2s.view(),
             idx: &data.idx,
@@ -194,14 +197,15 @@ fn compute_batch_with_shared_neighbors(
             let internals = compute_weighted_posterior(model, data_with_params, None)?;
             assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
         }
+        Ok(Some(idx))
     } else {
         let batch_size = x.nrows();
         let internals = empty_posterior_internals(model, batch_size);
         for i in 0..paramss.len() {
             assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
         }
+        Ok(Some(idx_nested_to_array2(&internals.idx)))
     }
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

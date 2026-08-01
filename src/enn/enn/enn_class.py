@@ -225,7 +225,7 @@ class EpistemicNearestNeighbors:
 
         flags = _posterior_flags_coerced(flags)
 
-        mu, se, se_epi, se_ale, _ = self._rust_model.conditional_posterior(
+        mu, se, se_epi, se_ale, idx = self._rust_model.conditional_posterior(
             x_whatif,
             y_whatif,
             x,
@@ -235,8 +235,9 @@ class EpistemicNearestNeighbors:
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
+        idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
         yb = np.asarray(self._rust_model.y_bounds, dtype=float)
-        return ENNNormal(mu, se, se_epi, se_ale, y_bounds=yb)
+        return ENNNormal(mu, se, se_epi, se_ale, idx=idx_arr, y_bounds=yb)
 
     def batch_posterior(
         self,
@@ -257,7 +258,7 @@ class EpistemicNearestNeighbors:
         k_values = [p.k_num_neighbors for p in paramss]
         epistemic_scales = [p.epistemic_variance_scale for p in paramss]
         aleatoric_scales = [p.aleatoric_variance_scale for p in paramss]
-        mu_all, se_all, se_epi_all, se_ale_all = self._rust_model.batch_posterior(
+        mu_all, se_all, se_epi_all, se_ale_all, idx = self._rust_model.batch_posterior(
             x,
             k_values=k_values,
             epistemic_scales=epistemic_scales,
@@ -265,8 +266,11 @@ class EpistemicNearestNeighbors:
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
+        idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
         yb = np.asarray(self._rust_model.y_bounds, dtype=float)
-        return ENNNormal(mu_all, se_all, se_epi_all, se_ale_all, y_bounds=yb)
+        return ENNNormal(
+            mu_all, se_all, se_epi_all, se_ale_all, idx=idx_arr, y_bounds=yb
+        )
 
     def neighbors(
         self, x: np.ndarray, k: int, *, exclude_nearest: bool = False

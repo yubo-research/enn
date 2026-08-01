@@ -262,7 +262,7 @@ fn test_compute_batch_with_shared_neighbors_direct() {
     let params2 = ENNParams::new(2, 2.0, 0.2).unwrap();
     let paramss = vec![params1, params2];
     assert_batch_neighbor_fill(&model, paramss, |m, q, p, f, mu, se, se_epi, se_ale| {
-        compute_batch_with_shared_neighbors(m, q, p, f, mu, se, se_epi, se_ale)
+        compute_batch_with_shared_neighbors(m, q, p, f, mu, se, se_epi, se_ale).map(|_| ())
     });
 }
 

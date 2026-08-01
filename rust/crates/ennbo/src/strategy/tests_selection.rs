@@ -325,21 +325,26 @@ fn select_with_thompson_scores_naturalized_under_y_bounds() {
     let out = select_with_thompson(&opt, sur, &x_cand.view(), 2, &mut rng_sel).unwrap();
     assert_eq!(out.nrows(), 2);
 
-    // Same RNG seed → same warped draws; ranking must use naturalized values.
-    let mut rng_ref = StdRng::seed_from_u64(606);
-    let samples = sur.sample(&x_cand.view(), 2, &mut rng_ref).unwrap();
-    let mut flat = ndarray::Array2::zeros((x_cand.nrows(), 1));
-    for i in 0..x_cand.nrows() {
-        flat[[i, 0]] = samples[[0, i, 0]];
+    // Same RNG seed → same warped draws; per-draw argmax on naturalized values
+    // (Python ThompsonAcqOptimizer contract; repeats allowed).
+    let n_cand = x_cand.nrows();
+    let mut rng_full = StdRng::seed_from_u64(606);
+    let samples = sur.sample(&x_cand.view(), 2, &mut rng_full).unwrap();
+    let mut flat = ndarray::Array2::zeros((2 * n_cand, 1));
+    for arm in 0..2 {
+        for i in 0..n_cand {
+            flat[[arm * n_cand + i, 0]] = samples[[arm, i, 0]];
+        }
     }
-    let nat = sur.naturalize_observations_y(flat.clone());
-    let mut warped_order: Vec<usize> = (0..x_cand.nrows()).collect();
-    warped_order.sort_by(|&a, &b| flat[[b, 0]].partial_cmp(&flat[[a, 0]]).unwrap());
-    let mut nat_order: Vec<usize> = (0..x_cand.nrows()).collect();
-    nat_order.sort_by(|&a, &b| nat[[b, 0]].partial_cmp(&nat[[a, 0]]).unwrap());
-    let expected = x_cand.select(ndarray::Axis(0), &nat_order[..2]);
+    let nat = sur.naturalize_observations_y(flat);
+    let mut expected_idx = Vec::with_capacity(2);
+    for arm in 0..2 {
+        let arm_scores: Vec<f64> = (0..n_cand).map(|i| nat[[arm * n_cand + i, 0]]).collect();
+        expected_idx.push(crate::util::argmax_random_tie(&arm_scores, &mut rng_full));
+    }
+    let expected = x_cand.select(ndarray::Axis(0), &expected_idx);
     assert_eq!(
         out, expected,
-        "scalar Thompson must rank naturalized draws; warped_order={warped_order:?} nat_order={nat_order:?}"
+        "scalar Thompson must per-draw-argmax naturalized samples; idx={expected_idx:?}"
     );
 }

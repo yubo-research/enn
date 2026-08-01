@@ -127,7 +127,13 @@ def test_enn_index_neighbor_search_exclude_nearest():
     dist2s, idx = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=True
     )
-    assert dist2s.shape == (3, 2) and idx.shape == (3, 2)
+    # LOO self-queries keep public search_k columns (fetch bump + exclude).
+    assert dist2s.shape == (3, 3) and idx.shape == (3, 3)
+    neigh_d, neigh_i = enn_neighbor_distances_and_indices(
+        enn.rust_backend, query, search_k=3, exclude_nearest=True
+    )
+    assert neigh_d.shape == dist2s.shape == (3, 3)
+    assert neigh_i.shape == idx.shape
     assert np.all(idx >= 0) and np.all(idx < 20)
 
 

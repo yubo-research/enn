@@ -1,9 +1,10 @@
 //! Configuration types for the optimizer.
 
+use crate::backend::EnnStorage;
 use crate::candidates::CandidateRV;
+use crate::error::ENNError;
 use crate::index::IndexDriver;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
-use crate::backend::EnnStorage;
 use crate::surrogate::ENNSurrogateConfig;
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::TrustRegionConfig;
@@ -69,7 +70,7 @@ pub struct CandidateConfig {
 impl Default for CandidateConfig {
     fn default() -> Self {
         Self {
-            num_candidates_factor: 1000.0,
+            num_candidates_factor: 100.0,
             min_candidates: 100,
             max_candidates: None,
             num_candidates_per_arm: None,
@@ -83,8 +84,7 @@ impl CandidateConfig {
     ///
     /// Matches Python `CandidateGenConfig.resolve_num_candidates`: default base
     /// `min(max_candidates, factor * dim)` when set, optional `max(fixed, per_arm * arms)`,
-    /// no `num_arms` multiplier. `max_candidates` caps the formula base only when
-    /// `num_candidates_per_arm` is set; otherwise exact-fixed mode uses min=max as pool size.
+    /// no `num_arms` multiplier. Exact-fixed mode uses min=max as pool size.
     pub fn num_candidates(&self, num_dim: usize, num_arms: usize) -> usize {
         let is_exact_fixed = self.num_candidates_factor == 1.0
             && self.max_candidates == Some(self.min_candidates)
@@ -95,11 +95,8 @@ impl CandidateConfig {
         } else {
             let raw = (self.num_candidates_factor * num_dim as f64) as usize;
             let formula = match self.max_candidates {
-                Some(cap) if self.num_candidates_per_arm.is_some() => raw.min(cap),
-                Some(cap) if (self.num_candidates_factor - 100.0).abs() < f64::EPSILON => {
-                    raw.min(cap)
-                }
-                _ => raw,
+                Some(cap) => raw.min(cap),
+                None => raw,
             };
             formula.max(self.min_candidates)
         };
@@ -172,7 +169,10 @@ fn apply_enn_surrogate_fields(config: &mut OptimizerConfig, overrides: &ConfigOv
     config.surrogate = SurrogateConfig::ENN(enn);
 }
 
-fn apply_trust_region_overrides(overrides: &ConfigOverrides, config: &mut OptimizerConfig) {
+fn apply_trust_region_overrides(
+    overrides: &ConfigOverrides,
+    config: &mut OptimizerConfig,
+) -> Result<(), ENNError> {
     if let Some(kind) = &overrides.trust_region_kind {
         if kind == "morbo" {
             let num_metrics = overrides.num_metrics.unwrap_or(2);
@@ -182,11 +182,14 @@ fn apply_trust_region_overrides(overrides: &ConfigOverrides, config: &mut Optimi
                 length_min: overrides.length_min.unwrap_or(0.5f64.powi(7)),
                 length_max: overrides.length_max.unwrap_or(1.6),
             };
-            let rescalarize = overrides
-                .rescalarize
-                .as_deref()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(Rescalarize::OnPropose);
+            let rescalarize = match overrides.rescalarize.as_deref() {
+                None => Rescalarize::OnPropose,
+                Some(s) => s.parse().map_err(|_| {
+                    ENNError::InvalidParameter(format!(
+                        "Unknown rescalarize mode: {s:?}; expected \"on_propose\" or \"on_restart\""
+                    ))
+                })?,
+            };
             config.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
                 num_metrics,
                 alpha,
@@ -194,14 +197,16 @@ fn apply_trust_region_overrides(overrides: &ConfigOverrides, config: &mut Optimi
                 rescalarize,
                 noise_aware: overrides.noise_aware.unwrap_or(false),
             });
+            return Ok(());
         }
-        return;
+        // Unknown kind: keep the active (Turbo) trust region and still apply
+        // length_* overrides below — do not silently drop them.
     }
     if overrides.length_init.is_none()
         && overrides.length_min.is_none()
         && overrides.length_max.is_none()
     {
-        return;
+        return Ok(());
     }
     let TRLengthConfig {
         length_init,
@@ -224,11 +229,12 @@ fn apply_trust_region_overrides(overrides: &ConfigOverrides, config: &mut Optimi
             TrustRegionConfig::Morbo(morbo)
         }
     };
+    Ok(())
 }
 
 impl ConfigOverrides {
     /// Apply overrides to an existing config.
-    pub fn apply_to(&self, mut config: OptimizerConfig) -> OptimizerConfig {
+    pub fn apply_to(&self, mut config: OptimizerConfig) -> Result<OptimizerConfig, ENNError> {
         if let Some(acq) = self.acquisition {
             config.acquisition = acq;
         }
@@ -247,7 +253,7 @@ impl ConfigOverrides {
         if let Some(m) = self.num_candidates_per_arm {
             config.candidates.num_candidates_per_arm = Some(m);
         }
-        apply_trust_region_overrides(self, &mut config);
+        apply_trust_region_overrides(self, &mut config)?;
         if self.index_driver.is_some()
             || self.num_fit_samples.is_some()
             || self.num_fit_candidates.is_some()
@@ -262,7 +268,7 @@ impl ConfigOverrides {
         if let Some(na) = self.noise_aware {
             config.noise_aware = na;
         }
-        config
+        Ok(config)
     }
 }
 
@@ -306,7 +312,7 @@ pub fn turbo_enn_config() -> OptimizerConfig {
         }),
         trust_region: TrustRegionConfig::default(),
         candidates: CandidateConfig {
-            num_candidates_factor: 1000.0,
+            num_candidates_factor: 100.0,
             min_candidates: 100,
             max_candidates: None,
             num_candidates_per_arm: None,
@@ -323,7 +329,7 @@ pub fn turbo_zero_config() -> OptimizerConfig {
         surrogate: SurrogateConfig::None,
         trust_region: TrustRegionConfig::default(),
         candidates: CandidateConfig {
-            num_candidates_factor: 1000.0,
+            num_candidates_factor: 100.0,
             min_candidates: 100,
             max_candidates: None,
             num_candidates_per_arm: None,
@@ -391,6 +397,32 @@ mod tests {
     }
 
     #[test]
+    fn max_candidates_caps_any_factor() {
+        let config = CandidateConfig {
+            num_candidates_factor: 200.0,
+            min_candidates: 1,
+            max_candidates: Some(50),
+            num_candidates_per_arm: None,
+            candidate_rv: CandidateRV::Uniform,
+        };
+        assert_eq!(config.num_candidates(2, 1), 50);
+    }
+
+    #[test]
+    fn unknown_trust_region_kind_still_applies_length_overrides() {
+        let overrides = ConfigOverrides {
+            trust_region_kind: Some("not_morbo".to_string()),
+            length_init: Some(0.123),
+            ..Default::default()
+        };
+        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let TrustRegionConfig::Turbo(length) = applied.trust_region else {
+            panic!("expected Turbo trust region for unknown kind");
+        };
+        assert!((length.length_init - 0.123).abs() < 1e-12);
+    }
+
+    #[test]
     fn test_config_defaults() {
         let config = OptimizerConfig::default();
         assert!(matches!(config.acquisition, AcquisitionConfig::UCB { .. }));
@@ -440,7 +472,7 @@ mod tests {
         };
 
         let config = turbo_enn_config();
-        let applied = overrides.apply_to(config);
+        let applied = overrides.apply_to(config).unwrap();
 
         assert!(matches!(applied.acquisition, AcquisitionConfig::Thompson));
         assert_eq!(applied.candidates.candidate_rv, CandidateRV::Sobol);
@@ -460,7 +492,7 @@ mod tests {
             scale_x: Some(true),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config());
+        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
@@ -479,7 +511,7 @@ mod tests {
             num_metrics: Some(1),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config());
+        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
         let TrustRegionConfig::Morbo(settings) = applied.trust_region else {
             panic!("expected Morbo trust region");
         };
@@ -512,7 +544,7 @@ mod tests {
             num_candidates_per_arm: Some(40),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_zero_config());
+        let applied = overrides.apply_to(turbo_zero_config()).unwrap();
         assert_eq!(applied.candidates.num_candidates(2, 3), 120);
         assert_eq!(applied.candidates.num_candidates(2, 8), 320);
     }
@@ -525,7 +557,7 @@ mod tests {
             scale_x: Some(true),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config());
+        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
@@ -545,7 +577,7 @@ mod tests {
             work_dir: Some(PathBuf::from("/tmp/enn_work")),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config());
+        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
@@ -566,7 +598,7 @@ mod tests {
             num_metrics: Some(2),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config());
+        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
         let TrustRegionConfig::Morbo(settings) = applied.trust_region else {
             panic!("expected Morbo trust region");
         };
@@ -574,6 +606,21 @@ mod tests {
             settings.rescalarize,
             Rescalarize::OnPropose,
             "missing rescalarize should match Python MorboTRConfig default ON_PROPOSE"
+        );
+    }
+
+    #[test]
+    fn morbo_config_unknown_rescalarize_errors() {
+        let overrides = ConfigOverrides {
+            trust_region_kind: Some("morbo".to_string()),
+            num_metrics: Some(2),
+            rescalarize: Some("NOT_A_MODE".to_string()),
+            ..Default::default()
+        };
+        let err = overrides.apply_to(turbo_enn_config()).unwrap_err();
+        assert!(
+            err.to_string().contains("Unknown rescalarize"),
+            "unexpected error: {err}"
         );
     }
 
