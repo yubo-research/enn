@@ -3,6 +3,8 @@ A fast, alternative surrogate for Bayesian optimization
 
 ENN estimates a function's value and associated epistemic uncertainty using a K-Nearest Neighbors model. Queries take $O(N lnK)$ time, where $N$ is the number of observations available for KNN lookups. Compare to an exact GP, which takes $O(N^2)$ time. Additionally, measured running times are very small compared to GPs and other alternative surrogates. [1]
 
+We also extend ENN with an alternative, disk-based approximate nearest neighbors backend based on B+ANN [4]. This reduces ENN and TuRBO-ENN to [effectively O(lnN)](https://github.com/yubo-research/enn/blob/main/reports/report_002/report_002.pdf) per iteration.
+
 ## Contents
 - ENN surrogate, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) [1]
 - TuRBO optimizer via [`create_optimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/rust_optimizer.py) with config factories
@@ -23,6 +25,8 @@ The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow Tu
 [2] **Eriksson, D., Pearce, M., Gardner, J. R., Turner, R., & Poloczek, M. (2020).** Scalable Global Optimization via Local Bayesian Optimization. *Advances in Neural Information Processing Systems, 32*.
    https://arxiv.org/abs/1910.01739
 [3] **Rashidi, B., Johnstonbaugh, K., & Gao, C. (2024).** Cylindrical Thompson Sampling for High-Dimensional Bayesian Optimization. *Proceedings of The 27th International Conference on Artificial Intelligence and Statistics* (pp. 3502–3510). PMLR.
+[4] [4] **Tekin, S. F., & Bordawekar, R. (2025).** B+ANN: A Fast Billion-Scale Disk-based Nearest-Neighbor Index. *arXiv preprint arXiv:2511.15557*.
+    https://arxiv.org/abs/2511.15557
    https://proceedings.mlr.press/v238/rashidi24a.html
 
 
