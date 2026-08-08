@@ -772,7 +772,7 @@ mod acceptance_tests {
     }
 
     #[test]
-    #[ignore = "Run manually: cargo test -p bpann test_scale_recall_ignored -- --ignored --nocapture"]
+    #[ignore = "Run manually: cargo test -p ennbo-bpann test_scale_recall_ignored -- --ignored --nocapture"]
     fn test_scale_recall_ignored() {
         let n = 1000usize;
         let d = 32usize;
@@ -798,7 +798,7 @@ mod acceptance_tests {
     }
 
     #[test]
-    #[ignore = "Run manually: cargo test -p bpann test_scale_10m_ignored -- --ignored --nocapture"]
+    #[ignore = "Run manually: cargo test -p ennbo-bpann test_scale_10m_ignored -- --ignored --nocapture"]
     fn test_scale_10m_ignored() {
         let n = 10_000_000usize;
         let d = 8usize;

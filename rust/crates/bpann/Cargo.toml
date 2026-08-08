@@ -1,5 +1,5 @@
 [package]
-name = "bpann"
+name = "ennbo-bpann"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
