@@ -1,8 +1,8 @@
-use bpann::merge::{
+use ennbo_bpann::merge::{
     bpann_apply_exclude_nearest, bpann_merge_topk_candidates, find_query_train_id,
     find_query_train_id_flat, merge_topk_precomputed_dist, merge_topk_precomputed_dist_with_self,
 };
-use bpann::mmap_store::MmapColumnStore;
+use ennbo_bpann::mmap_store::MmapColumnStore;
 use ndarray::array;
 use tempfile::TempDir;
 
@@ -29,7 +29,7 @@ fn test_bpann_merge_topk_candidates_excludes_self() {
 }
 
 #[test]
-fn test_merge_topk_precomputed_dist_excludes_nearest() {
+fn merge_topk_precomputed_dist_excludes_nearest() {
     let merged = merge_topk_precomputed_dist(
         &[(0, 0.0), (1, 1.0), (2, 4.0)],
         &[],

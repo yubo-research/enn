@@ -1,8 +1,8 @@
-//! Disk-backed ENN backend wrapping the standalone `bpann` crate.
+//! Disk-backed ENN backend wrapping the standalone `ennbo-bpann` crate.
 
 use std::path::PathBuf;
 
-use bpann::BpannBackend;
+use ennbo_bpann::BpannBackend;
 use ndarray::{Array1, Array2, ArrayView2};
 
 use crate::backend::TrainRowsAtResult;
@@ -10,15 +10,15 @@ use crate::error::ENNError;
 use crate::file_config::install_bpann_tuning_from_config;
 use crate::index::IndexDriver;
 
-fn bpann_err(e: bpann::BpannError) -> ENNError {
+fn bpann_err(e: ennbo_bpann::BpannError) -> ENNError {
     match e {
-        bpann::BpannError::InvalidShape { expected, got } => ENNError::InvalidShape { expected, got },
-        bpann::BpannError::InvalidParameter(s) => ENNError::InvalidParameter(s),
+        ennbo_bpann::BpannError::InvalidShape { expected, got } => ENNError::InvalidShape { expected, got },
+        ennbo_bpann::BpannError::InvalidParameter(s) => ENNError::InvalidParameter(s),
     }
 }
 
 fn apply_config_flush_threshold(inner: BpannBackend) -> BpannBackend {
-    let t = bpann::current_tuning();
+    let t = ennbo_bpann::current_tuning();
     inner
         .with_pending_flush_threshold(t.pending_flush_threshold)
         .with_pending_hard_flush_threshold(t.pending_hard_flush_threshold)
@@ -177,7 +177,7 @@ impl DiskBpannEnnBackend {
         num_metrics: usize,
         pending_flush_threshold: usize,
     ) -> Result<Self, ENNError> {
-        let hard = bpann::current_tuning().pending_hard_flush_threshold;
+        let hard = ennbo_bpann::current_tuning().pending_hard_flush_threshold;
         Self::new_empty_with_flush_thresholds(
             work_dir,
             num_dim,
@@ -249,16 +249,16 @@ impl DiskBpannEnnBackend {
     /// Build soft-sync fragments without mutating the published index.
     pub(crate) fn soft_sync_build_detached(
         &self,
-    ) -> Result<Option<bpann::IncrementalIndex>, ENNError> {
-        bpann::soft_sync_build(&self.inner).map_err(bpann_err)
+    ) -> Result<Option<ennbo_bpann::IncrementalIndex>, ENNError> {
+        ennbo_bpann::soft_sync_build(&self.inner).map_err(bpann_err)
     }
 
     /// Publish a detached soft-sync result (short exclusive critical section).
     pub(crate) fn soft_sync_publish_detached(
         &mut self,
-        built: bpann::IncrementalIndex,
+        built: ennbo_bpann::IncrementalIndex,
     ) -> Result<(), ENNError> {
-        bpann::soft_sync_publish(&mut self.inner, built);
+        ennbo_bpann::soft_sync_publish(&mut self.inner, built);
         Ok(())
     }
 }
@@ -414,10 +414,10 @@ mod tests {
         }
         assert_eq!(backend.pending_unindexed_count(), 0);
         assert!(!dir.path().join("index/pages.bin").exists());
-        let _mapped = bpann_err(bpann::BpannError::InvalidParameter("x".into()));
+        let _mapped = bpann_err(ennbo_bpann::BpannError::InvalidParameter("x".into()));
         assert!(matches!(_mapped, ENNError::InvalidParameter(_)));
         let _tuned = apply_config_flush_threshold(
-            bpann::BpannBackend::new_empty(dir.path().join("t"), 2, 1).expect("tuned"),
+            ennbo_bpann::BpannBackend::new_empty(dir.path().join("t"), 2, 1).expect("tuned"),
         );
         assert!(_tuned.pending_flush_threshold() >= 1);
     }

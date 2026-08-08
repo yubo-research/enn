@@ -1,11 +1,11 @@
 //! Integration tests exercising bpann modules for kiss coverage and behavior.
 
-use bpann::backend::open_rejects_record_stride;
-use bpann::index::kmeans::PartitionTree;
-use bpann::index::page::closest_child;
-use bpann::index::{BpannIndex, DEFAULT_LEAF_CAPACITY};
-use bpann::mmap_store::MmapColumnStore;
-use bpann::BpannBackend;
+use ennbo_bpann::backend::open_rejects_record_stride;
+use ennbo_bpann::index::kmeans::PartitionTree;
+use ennbo_bpann::index::page::closest_child;
+use ennbo_bpann::index::{BpannIndex, DEFAULT_LEAF_CAPACITY};
+use ennbo_bpann::mmap_store::MmapColumnStore;
+use ennbo_bpann::BpannBackend;
 use ndarray::array;
 use std::sync::Mutex;
 use tempfile::TempDir;
@@ -13,19 +13,19 @@ use tempfile::TempDir;
 #[test]
 fn observation_helpers_called() {
     let dir = TempDir::new().unwrap();
-    bpann::observation::bpann_validate_dim_limits(4).unwrap();
-    bpann::observation::bpann_check_append_row_limit(10).unwrap();
-    bpann::observation::bpann_write_metadata(dir.path(), 0, 4, 1, false, 0).unwrap();
-    bpann::observation::write_num_obs(dir.path(), 0).unwrap();
-    bpann::observation::write_indexed_rows(dir.path(), 0).unwrap();
-    let mut counter = bpann::observation::NumObsCounter::open(dir.path()).unwrap();
+    ennbo_bpann::observation::bpann_validate_dim_limits(4).unwrap();
+    ennbo_bpann::observation::bpann_check_append_row_limit(10).unwrap();
+    ennbo_bpann::observation::bpann_write_metadata(dir.path(), 0, 4, 1, false, 0).unwrap();
+    ennbo_bpann::observation::write_num_obs(dir.path(), 0).unwrap();
+    ennbo_bpann::observation::write_indexed_rows(dir.path(), 0).unwrap();
+    let mut counter = ennbo_bpann::observation::NumObsCounter::open(dir.path()).unwrap();
     counter.set(0);
-    assert_eq!(bpann::observation::bpann_load_num_obs(dir.path()), Some(0));
-    bpann::observation::bpann_validate_index_backend(dir.path(), bpann::observation::INDEX_BACKEND)
+    assert_eq!(ennbo_bpann::observation::bpann_load_num_obs(dir.path()), Some(0));
+    ennbo_bpann::observation::bpann_validate_index_backend(dir.path(), ennbo_bpann::observation::INDEX_BACKEND)
         .unwrap();
     let yv = array![[0.1]];
-    let mut yvar = bpann::observation::bpann_open_or_append_yvar(dir.path(), 1, Some(&yv)).unwrap();
-    bpann::observation::bpann_append_yvar_on_add(
+    let mut yvar = ennbo_bpann::observation::bpann_open_or_append_yvar(dir.path(), 1, Some(&yv)).unwrap();
+    ennbo_bpann::observation::bpann_append_yvar_on_add(
         dir.path(),
         1,
         &mut yvar,
@@ -33,15 +33,15 @@ fn observation_helpers_called() {
     )
     .unwrap();
     let dirty = Mutex::new(false);
-    bpann::observation::bpann_mark_index_dirty(&dirty);
-    bpann::observation::bpann_load_indexed_rows(dir.path());
-    bpann::observation::bpann_load_index_backend(dir.path());
-    bpann::observation::bpann_parse_json_string_field(r#"{"index_backend":"bpann_disk"}"#, "index_backend");
+    ennbo_bpann::observation::bpann_mark_index_dirty(&dirty);
+    ennbo_bpann::observation::bpann_load_indexed_rows(dir.path());
+    ennbo_bpann::observation::bpann_load_index_backend(dir.path());
+    ennbo_bpann::observation::bpann_parse_json_string_field(r#"{"index_backend":"bpann_disk"}"#, "index_backend");
     let mut x = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
     let mut y = MmapColumnStore::mmap_open_or_create(dir.path().join("y.bin"), 1, None).unwrap();
     x.mmap_append(&array![[0.0, 0.0]].view()).unwrap();
     y.mmap_append(&array![[0.0]].view()).unwrap();
-    bpann::observation::bpann_train_rows_at(1, &x, &y, None, &[0]).unwrap();
+    ennbo_bpann::observation::bpann_train_rows_at(1, &x, &y, None, &[0]).unwrap();
     open_rejects_record_stride(4).unwrap();
 }
 
@@ -57,12 +57,12 @@ fn search_helpers_called() {
         dir.path().join("index"),
     )
     .unwrap();
-    let _ = bpann::index::search::search_exhaustive_leaves(&index, &[0.0, 0.0], 1);
-    let _ = bpann::index::search::search_greedy_blocks_only(&index, &[0.0, 0.0], 1, 2);
+    let _ = ennbo_bpann::index::search::search_exhaustive_leaves(&index, &[0.0, 0.0], 1);
+    let _ = ennbo_bpann::index::search::search_greedy_blocks_only(&index, &[0.0, 0.0], 1, 2);
     let mut log = Vec::new();
-    let _ = bpann::index::search::search_with_skip_refinement(&index, &[0.0, 0.0], 1, 2, &mut log);
-    let _ = bpann::index::search::bpann_mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
-    let _ = bpann::index::search::bpann_brute_force_topk(&vectors, &[0.0, 0.0], 1);
+    let _ = ennbo_bpann::index::search::search_with_skip_refinement(&index, &[0.0, 0.0], 1, 2, &mut log);
+    let _ = ennbo_bpann::index::search::bpann_mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
+    let _ = ennbo_bpann::index::search::bpann_brute_force_topk(&vectors, &[0.0, 0.0], 1);
 }
 
 #[test]
@@ -73,10 +73,10 @@ fn merge_distance_mmap_called() {
         .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
         .unwrap();
     let mut buf = Vec::new();
-    bpann::distance::bpann_row_to_f32(&[1.0, 0.0], false, &[1.0, 1.0], &mut buf);
-    let _ = bpann::distance::batched_sq_l2_f64_rows(&[0.0, 0.0], &store, &[0, 1], false, &[1.0, 1.0]).unwrap();
-    let _ = bpann::distance::row_sq_l2(array![0.0, 0.0].view(), array![1.0, 0.0].view(), false, array![1.0, 1.0].view());
-    let _ = bpann::merge::bpann_merge_topk_candidates(
+    ennbo_bpann::distance::bpann_row_to_f32(&[1.0, 0.0], false, &[1.0, 1.0], &mut buf);
+    let _ = ennbo_bpann::distance::batched_sq_l2_f64_rows(&[0.0, 0.0], &store, &[0, 1], false, &[1.0, 1.0]).unwrap();
+    let _ = ennbo_bpann::distance::row_sq_l2(array![0.0, 0.0].view(), array![1.0, 0.0].view(), false, array![1.0, 1.0].view());
+    let _ = ennbo_bpann::merge::bpann_merge_topk_candidates(
         &store,
         &[0.0, 0.0],
         &[(0, 0.0)],
@@ -88,7 +88,7 @@ fn merge_distance_mmap_called() {
         &[1.0, 1.0],
     )
     .unwrap();
-    let _ = bpann::index::search::bpann_brute_force_topk_mmap(&store, 0, 2, &[0.0, 0.0], 1, false, &[1.0, 1.0]).unwrap();
+    let _ = ennbo_bpann::index::search::bpann_brute_force_topk_mmap(&store, 0, 2, &[0.0, 0.0], 1, false, &[1.0, 1.0]).unwrap();
 }
 
 #[test]
@@ -133,16 +133,16 @@ fn backend_scale_and_row_accessors() {
     let (_d2, idx2) = b.search(&array![[0.1, 0.1]].view(), 1, false).unwrap();
     assert_eq!(idx1[[0, 0]], idx2[[0, 0]]);
     assert_eq!(idx1[[0, 0]], 0);
-    assert_eq!(bpann::SMALL_N_INCORE_SEARCH_LIMIT, 8192);
-    let flat = bpann::load_or_build_small_n_cache(&b, b.len()).unwrap();
+    assert_eq!(ennbo_bpann::SMALL_N_INCORE_SEARCH_LIMIT, 8192);
+    let flat = ennbo_bpann::load_or_build_small_n_cache(&b, b.len()).unwrap();
     assert_eq!(flat.len(), b.len() * 2);
-    let hits = bpann::topk_flat_sq_l2(&[0.0, 0.0], &flat, 2, 2, 1);
+    let hits = ennbo_bpann::topk_flat_sq_l2(&[0.0, 0.0], &flat, 2, 2, 1);
     assert_eq!(hits[0].0, 0);
-    assert!(bpann::OrderedF32(1.0) > bpann::OrderedF32(0.0));
-    assert!(bpann::topk_flat_sq_l2(&[0.0, 0.0], &[], 0, 2, 1).is_empty());
-    let scored = bpann::score_queries_flat(
+    assert!(ennbo_bpann::OrderedF32(1.0) > ennbo_bpann::OrderedF32(0.0));
+    assert!(ennbo_bpann::topk_flat_sq_l2(&[0.0, 0.0], &[], 0, 2, 1).is_empty());
+    let scored = ennbo_bpann::score_queries_flat(
         &[vec![0.1, 0.1]],
-        &bpann::ScoreQueriesFlat {
+        &ennbo_bpann::ScoreQueriesFlat {
             flat: &flat,
             total: 2,
             num_dim: 2,
@@ -173,7 +173,7 @@ fn large_n_search_indexed_and_pending_finds_nearest() {
     let dir = TempDir::new().unwrap();
     let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
     // N > SMALL_N_INCORE_SEARCH_LIMIT forces the indexed+pending path.
-    let n = bpann::SMALL_N_INCORE_SEARCH_LIMIT + 50;
+    let n = ennbo_bpann::SMALL_N_INCORE_SEARCH_LIMIT + 50;
     let mut xs = Array2::<f64>::zeros((n, 2));
     let mut ys = Array2::<f64>::zeros((n, 1));
     for i in 0..n {
@@ -185,12 +185,12 @@ fn large_n_search_indexed_and_pending_finds_nearest() {
     let mut dist2s = Array2::zeros((1, 1));
     let mut indices = Array2::zeros((1, 1));
     let x_scale = [1.0f64, 1.0];
-    bpann::search_indexed_and_pending(
+    ennbo_bpann::search_indexed_and_pending(
         &b,
         &[vec![10.0, 0.0]],
         &mut dist2s,
         &mut indices,
-        bpann::SearchPendingArgs {
+        ennbo_bpann::SearchPendingArgs {
             total: n,
             k_eff: 1,
             pool_k: 1,
@@ -220,7 +220,7 @@ fn incremental_batch_compact_and_precomputed_merge() {
     assert_eq!(idx[[0, 0]], 5);
     let reopened = BpannBackend::reopen(dir.path().to_path_buf()).unwrap();
     assert_eq!(reopened.indexed_rows(), 20);
-    let merged = bpann::merge::merge_topk_precomputed_dist(&[(0, 0.0), (1, 4.0)], &[(2, 1.0)], 2, 3, false);
+    let merged = ennbo_bpann::merge::merge_topk_precomputed_dist(&[(0, 0.0), (1, 4.0)], &[(2, 1.0)], 2, 3, false);
     assert_eq!(merged.len(), 2);
     assert_eq!(merged[0].0, 0);
 }
@@ -312,7 +312,7 @@ fn search_tree_path_for_large_index() {
 #[test]
 #[allow(non_snake_case)]
 fn kiss_incremental_index_module_symbols() {
-    use bpann::index::IncrementalIndex;
+    use ennbo_bpann::index::IncrementalIndex;
     fn IndexBuildContext() {}
     fn ensure_sync_for_backend() {}
     let names = [

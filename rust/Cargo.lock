@@ -36,22 +36,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
 
 [[package]]
-name = "bpann"
-version = "0.2.8"
-dependencies = [
- "approx",
- "memmap2",
- "ndarray",
- "rand",
- "rand_chacha",
- "rayon",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "cauchy"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -142,7 +126,7 @@ name = "ennbo"
 version = "0.2.8"
 dependencies = [
  "approx",
- "bpann",
+ "ennbo-bpann",
  "faiss",
  "memmap2",
  "ndarray",
@@ -156,6 +140,22 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "toml",
+]
+
+[[package]]
+name = "ennbo-bpann"
+version = "0.2.8"
+dependencies = [
+ "approx",
+ "memmap2",
+ "ndarray",
+ "rand",
+ "rand_chacha",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
