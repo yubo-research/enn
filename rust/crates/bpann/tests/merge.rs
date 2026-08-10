@@ -1,8 +1,8 @@
-use bpann::merge::{
+use ennbo_bpann::merge::{
     bpann_apply_exclude_nearest, bpann_merge_topk_candidates, find_query_train_id,
     find_query_train_id_flat, merge_topk_precomputed_dist, merge_topk_precomputed_dist_with_self,
 };
-use bpann::mmap_store::MmapColumnStore;
+use ennbo_bpann::mmap_store::MmapColumnStore;
 use ndarray::array;
 use tempfile::TempDir;
 
