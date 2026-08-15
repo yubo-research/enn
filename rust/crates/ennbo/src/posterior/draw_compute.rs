@@ -5,7 +5,9 @@ use rayon::prelude::*;
 
 use crate::draw::DrawInternals;
 use crate::error::ENNError;
-use crate::hash::{normal_for_seed_index_metric, unique_index_inverse};
+use crate::hash::{
+    normal_for_seed_index_metric, normal_for_seed_query_metric, unique_index_inverse,
+};
 use crate::model::EpistemicNearestNeighbors;
 
 pub(crate) fn draw_from_internals(
@@ -48,13 +50,19 @@ pub(crate) fn draw_from_internals(
     }
 
     let out_stride = n * m;
+    // Correlated noise field uses epistemic SE only; aleatoric is independent.
     let mut scale = vec![0.0f64; n * m];
+    let mut ale_scale = vec![0.0f64; n * m];
     let mut w_flat = vec![0.0f64; n * k * m];
     let mut mu_flat = vec![0.0f64; n * m];
+    let mut any_ale = false;
     for i in 0..n {
         for j in 0..m {
             let l2_safe = internals.l2[[i, j]].max(1e-12);
-            scale[i * m + j] = internals.se[[i, j]] / l2_safe;
+            scale[i * m + j] = internals.se_epi[[i, j]] / l2_safe;
+            let ale = internals.se_ale[[i, j]];
+            ale_scale[i * m + j] = ale;
+            any_ale |= ale > 0.0;
             mu_flat[i * m + j] = internals.mu[[i, j]];
             for ki in 0..k {
                 w_flat[(i * k + ki) * m + j] = internals.w_normalized[[i, ki, j]];
@@ -88,8 +96,14 @@ pub(crate) fn draw_from_internals(
                             let w = w_flat[(i * k + ki) * m + j];
                             weighted_u += w * unique_cache[inv * m + j];
                         }
-                        out_seed[i * m + j] =
-                            mu_flat[i * m + j] + scale[i * m + j] * weighted_u;
+                        let mut val = mu_flat[i * m + j] + scale[i * m + j] * weighted_u;
+                        if any_ale {
+                            let ale = ale_scale[i * m + j];
+                            if ale > 0.0 {
+                                val += ale * normal_for_seed_query_metric(seed_u64, i, j);
+                            }
+                        }
+                        out_seed[i * m + j] = val;
                     }
                 }
             },
@@ -110,11 +124,16 @@ fn draw_from_internals_m1(
 ) -> Result<Array3<f64>, ENNError> {
     let num_seeds = function_seeds.len();
     let mut scale = vec![0.0f64; n];
+    let mut ale_scale = vec![0.0f64; n];
     let mut mu_flat = vec![0.0f64; n];
     let mut w_flat = vec![0.0f64; n * k];
+    let mut any_ale = false;
     for i in 0..n {
         let l2_safe = internals.l2[[i, 0]].max(1e-12);
-        scale[i] = internals.se[[i, 0]] / l2_safe;
+        scale[i] = internals.se_epi[[i, 0]] / l2_safe;
+        let ale = internals.se_ale[[i, 0]];
+        ale_scale[i] = ale;
+        any_ale |= ale > 0.0;
         mu_flat[i] = internals.mu[[i, 0]];
         for ki in 0..k {
             w_flat[i * k + ki] = internals.w_normalized[[i, ki, 0]];
@@ -142,7 +161,14 @@ fn draw_from_internals_m1(
                     for ki in 0..k {
                         weighted_u += w_flat[base + ki] * unique_cache[inverse[base + ki]];
                     }
-                    out_seed[i] = mu_flat[i] + scale[i] * weighted_u;
+                    let mut val = mu_flat[i] + scale[i] * weighted_u;
+                    if any_ale {
+                        let ale = ale_scale[i];
+                        if ale > 0.0 {
+                            val += ale * normal_for_seed_query_metric(seed_u64, i, 0);
+                        }
+                    }
+                    out_seed[i] = val;
                 }
             },
         );

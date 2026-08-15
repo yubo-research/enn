@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from enn_helpers import enn_all_train_rows
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
-
-from enn_helpers import enn_all_train_rows
 
 
 def _params(
@@ -178,6 +177,28 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
         x_test, [params], flags=PosteriorFlags(exclude_nearest=True)
     )
     assert post.mu.shape == (1, 4, 1) and post.se.shape == (1, 4, 1)
+    assert np.all(np.isfinite(post.mu))
+    assert np.all(np.isfinite(post.se))
+
+
+def test_batch_posterior_exclude_nearest_mixed_self_novel_k_equals_n():
+    """Mixed LOO/novel batch must not cast padded -1 neighbor ids into row_y."""
+    rng = np.random.default_rng(0)
+    n = d = k = 10
+    train_x = rng.standard_normal((n, d)) * 10.0
+    train_y = rng.standard_normal((n, 1))
+    train_yvar = 0.01 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar, scale_x=True)
+    x_query = np.vstack([train_x[:5], rng.standard_normal((5, d)) * 10.0])
+    params = ENNParams(
+        k_num_neighbors=k, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
+    post = model.batch_posterior(
+        x_query,
+        [params],
+        flags=PosteriorFlags(exclude_nearest=True, observation_noise=True),
+    )
+    assert post.mu.shape == (1, 10, 1)
     assert np.all(np.isfinite(post.mu))
     assert np.all(np.isfinite(post.se))
 

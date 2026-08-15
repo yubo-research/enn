@@ -16,6 +16,9 @@ use ndarray::{Array2, Array3};
 /// * `se` - Predictive standard error for each query point, shape (n_query, num_metrics)
 /// * `se_epi` - Epistemic standard error component, shape (n_query, num_metrics)
 /// * `se_ale` - Aleatoric standard error component, shape (n_query, num_metrics)
+///
+/// Function draws scale the correlated neighbor noise field by `se_epi` and, when
+/// `se_ale > 0` (observation noise on), add independent `se_ale * N(0,1)` per query.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DrawInternals {
     /// Neighbor indices for each query point.

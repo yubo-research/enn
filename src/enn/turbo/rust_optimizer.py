@@ -136,11 +136,18 @@ class RustOptimizer:
         upper = self._bounds[:, 1]
         x_unit = (inputs.x - lower) / (upper - lower)
 
+        # The native optimizer stores objectives as an (n, m) matrix, while the
+        # public Python API also accepts a one-dimensional single-objective y.
+        y_native = inputs.y[:, None] if inputs.y.ndim == 1 else inputs.y
+        y_var_native = inputs.y_var
+        if y_var_native is not None and y_var_native.ndim == 1:
+            y_var_native = y_var_native[:, None]
+
         seed = int(self._rng.integers(2**63 - 1))
-        if inputs.y_var is None:
-            self._inner.tell(x_unit, inputs.y, seed)
+        if y_var_native is None:
+            self._inner.tell(x_unit, y_native, seed)
         else:
-            self._inner.tell(x_unit, inputs.y, seed, inputs.y_var)
+            self._inner.tell(x_unit, y_native, seed, y_var_native)
 
         return inputs.y
 

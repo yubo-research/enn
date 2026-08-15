@@ -253,9 +253,23 @@ pub(crate) fn get_neighbor_data(
     let (dist2s_full, idx_full) =
         super::index_search(model, x, search_k as i32, exclude_nearest)?;
 
-    // After exclude, novel queries may keep all fetched columns; self rows shrink.
+    // After exclude, novel queries may keep all fetched columns while self rows
+    // pad with -1. Cap k to the shortest run of valid (>= 0) indices so mixed
+    // batches never cast sentinel -1 into usize::MAX for row_y.
     let available_k = idx_full.ncols();
-    let k = (params.k_num_neighbors as usize).min(available_k);
+    let min_valid = (0..idx_full.nrows())
+        .map(|r| {
+            idx_full
+                .row(r)
+                .iter()
+                .take_while(|&&i| i >= 0)
+                .count()
+        })
+        .min()
+        .unwrap_or(0);
+    let k = (params.k_num_neighbors as usize)
+        .min(available_k)
+        .min(min_valid);
 
     if k == 0 {
         return Ok(None);
@@ -268,18 +282,26 @@ pub(crate) fn get_neighbor_data(
         .slice_axis(Axis(1), ndarray::Slice::from(..k))
         .rows()
         .into_iter()
-        .map(|row| row.iter().map(|&i| i as usize).collect())
+        .map(|row| {
+            row.iter()
+                .map(|&i| {
+                    debug_assert!(i >= 0, "neighbor index sentinel leaked into gather");
+                    i as usize
+                })
+                .collect()
+        })
         .collect();
 
     let n_query = x.nrows();
     let num_metrics = model.num_metrics();
     let mut y_neighbors = Array2::zeros((n_query * k, num_metrics));
 
-
     for (i, idx_row) in idx.iter().enumerate().take(n_query) {
         let base_idx = i * k;
         for (j, &neighbor_idx) in idx_row.iter().enumerate() {
-            let source_row = model.rows().row_y(neighbor_idx).expect("row_y");
+            let source_row = model.rows().row_y(neighbor_idx).map_err(|e| {
+                ENNError::InvalidParameter(format!("row_y: {e}"))
+            })?;
             y_neighbors
                 .row_mut(base_idx + j)
                 .assign(&source_row.view());
@@ -432,12 +454,12 @@ pub(crate) fn get_conditional_neighbor_data(
 mod tests {
     use super::{
         apply_exclude_nearest, dist2s_for_neighbor_indices, exact_f64_batch_topk,
-        faiss_pairs_from_row, get_conditional_neighbor_data, pairwise_sq_l2,
+        faiss_pairs_from_row, get_conditional_neighbor_data, get_neighbor_data, pairwise_sq_l2,
     };
     use super::{batched_row_dists_threshold, use_matrix_topk_batch};
     use crate::index::IndexDriver;
     use crate::model::EpistemicNearestNeighbors;
-    use ndarray::{array, Array2};
+    use ndarray::{array, Array2, Axis};
 
     #[test]
     fn faiss_pairs_from_row_and_threshold_helpers() {
@@ -538,6 +560,38 @@ mod tests {
         let (d2, i2) = apply_exclude_nearest(dist2s.clone(), idx.clone(), false);
         assert_eq!(d2, dist2s);
         assert_eq!(i2, idx);
+    }
+
+    #[test]
+    fn get_neighbor_data_mixed_exclude_does_not_gather_sentinel() {
+        use crate::params::ENNParams;
+        use ndarray::concatenate;
+
+        // k == n so a self-row pads with -1 while a novel row keeps all columns.
+        let train_x = Array2::from_shape_fn((10, 2), |(i, j)| (i as f64) + 0.1 * (j as f64));
+        let train_y = Array2::from_shape_fn((10, 1), |(i, _)| i as f64);
+        let train_yvar = Array2::from_elem((10, 1), 0.01);
+        let model = EpistemicNearestNeighbors::new(
+            train_x.clone(),
+            train_y,
+            Some(train_yvar),
+            true,
+            IndexDriver::Exact,
+        )
+        .unwrap();
+        let novel = Array2::from_shape_fn((5, 2), |(i, j)| 100.0 + i as f64 + 0.1 * j as f64);
+        let query = concatenate(
+            Axis(0),
+            &[train_x.slice(ndarray::s![..5, ..]), novel.view()],
+        )
+        .unwrap();
+        let params = ENNParams::new(10, 1.0, 0.0).unwrap();
+        let data = get_neighbor_data(&model, &query.view(), &params, true)
+            .expect("neighbor search")
+            .expect("neighbors present");
+        assert!(data.k() < 10, "mixed exclude must drop padded column");
+        assert!(data.idx.iter().flatten().all(|&i| i < 10));
+        assert_eq!(data.y_neighbors.nrows(), query.nrows() * data.k());
     }
 
     #[test]

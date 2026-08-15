@@ -79,6 +79,29 @@ pub fn normal_for_seed_index_metric(seed_u64: u64, unique_idx: i64, metric: usiz
     box_muller(u1, u2)
 }
 
+/// Independent standard normal for aleatoric noise at a query/metric.
+///
+/// Uses a distinct salt from [`normal_for_seed_index_metric`] so query-local
+/// aleatoric draws do not collide with neighbor-indexed noise-field normals.
+#[inline(always)]
+pub fn normal_for_seed_query_metric(seed_u64: u64, query_idx: usize, metric: usize) -> f64 {
+    const QUERY_SALT: u64 = 0xC0FF_EE00_D15C_A11E;
+    let base = seed_u64
+        .wrapping_mul(SEED_PRIME)
+        .wrapping_add(query_idx as u64)
+        .wrapping_mul(SEED_PRIME)
+        .wrapping_add(QUERY_SALT);
+    let metric_u64 = metric as u64;
+    let combined1 = base.wrapping_add(metric_u64);
+    let r1 = splitmix64(combined1);
+    let combined2 = combined1 ^ SM64_XOR_OFFSET;
+    let r2 = splitmix64(combined2);
+    let mut u1 = u64_to_f53(r1);
+    let u2 = u64_to_f53(r2);
+    u1 = u1.clamp(CLIP_MIN, CLIP_MAX);
+    box_muller(u1, u2)
+}
+
 /// Build sorted-unique neighbor indices and an inverse map for `data_indices`.
 pub fn unique_index_inverse(data_indices: &[i64]) -> (Vec<i64>, Vec<usize>) {
     let unique_indices: Vec<i64> = {

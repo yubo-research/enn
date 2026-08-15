@@ -599,6 +599,10 @@ pub fn empty_posterior_internals(
 mod tests_core;
 
 #[cfg(test)]
+#[path = "posterior/tests_draw_noise.rs"]
+mod tests_draw_noise;
+
+#[cfg(test)]
 #[path = "posterior/tests_conditional.rs"]
 mod tests_conditional;
 
