@@ -98,3 +98,17 @@ class TestENNNormalContract:
         # shape is (*se.shape, num_samples)
         assert samples.shape == (1, 2, 10)
         assert np.all(np.isfinite(samples))
+
+    def test_confidence_interval_method_exists(self):
+        mu = np.array([[1.0]], dtype=float)
+        se = np.array([[0.2]], dtype=float)
+        se_epi = se.copy()
+        se_ale = np.zeros_like(se)
+        obj = ENNNormal(mu=mu, se=se, se_epi=se_epi, se_ale=se_ale)
+        assert hasattr(obj, "confidence_interval")
+        assert callable(obj.confidence_interval)
+
+    def test_confidence_interval_signature(self):
+        sig = inspect.signature(ENNNormal.confidence_interval)
+        params = list(sig.parameters.keys())
+        assert params == ["self", "level"]
