@@ -201,8 +201,8 @@ fn partition_recursive_with_vectors(
     let non_empty_clusters = clusters.iter().filter(|c| !c.is_empty()).count();
     let max_cluster_len = clusters.iter().map(|c| c.len()).max().unwrap_or(0);
     if non_empty_clusters <= 1 || max_cluster_len >= row_ids.len() {
-        // Degenerate k-means (e.g. identical points): round-robin by index so each
-        // recursive call strictly shrinks the subproblem.
+
+
         clusters = vec![Vec::new(); k];
         cluster_vectors = vec![Vec::new(); k];
         for (i, (&id, pt)) in row_ids.iter().zip(points.iter()).enumerate() {

@@ -54,21 +54,21 @@ impl UCBAcquisition {
             return Ok(Vec::new());
         }
 
-        // Compute UCB scores
+
         let ucb: Array1<f64> = mu + &(sigma * self.beta);
 
-        // Get top indices with random tie-breaking
+
         let mut indices: Vec<usize> = (0..ucb.len()).collect();
         indices.shuffle(rng);
 
-        // Sort by UCB (descending) with stable random tie-breaking
+
         indices.sort_by(|&a, &b| {
             let ucb_a = ucb[a];
             let ucb_b = ucb[b];
-            ucb_b.total_cmp(&ucb_a) // Descending
+            ucb_b.total_cmp(&ucb_a)
         });
 
-        // Return top num_arms
+
         let result: Vec<usize> = indices.into_iter().take(num_arms).collect();
         Ok(result)
     }
@@ -111,12 +111,12 @@ impl ThompsonAcquisition {
         const CLIP_MIN: f64 = 1e-12;
         const CLIP_MAX: f64 = 1.0 - 1e-12;
 
-        // Sample from posterior
+
         let mut samples = Array1::zeros(mu.len());
         for i in 0..mu.len() {
             let mean = mu[i];
             let std = sigma[i];
-            // Box-Muller transform for normal sample (clamp u1 to avoid log(0) -> inf)
+
             let mut u1: f64 = Standard.sample(rng);
             u1 = u1.clamp(CLIP_MIN, CLIP_MAX);
             let u2: f64 = Standard.sample(rng);
@@ -124,11 +124,11 @@ impl ThompsonAcquisition {
             samples[i] = mean + std * z;
         }
 
-        // Select best samples with random tie-breaking
+
         let mut indices: Vec<usize> = (0..samples.len()).collect();
         indices.shuffle(rng);
         indices.sort_by(|&a, &b| {
-            samples[b].total_cmp(&samples[a]) // Descending
+            samples[b].total_cmp(&samples[a])
         });
 
         Ok(indices.into_iter().take(num_arms).collect())
@@ -223,12 +223,12 @@ impl ParetoAcquisition {
             );
         }
 
-        // Multi-objective: non-dominated sort on interleaved
-        // (y_1, se_1, y_2, se_2, ...) so predictive uncertainty participates.
+
+
         let objectives = Self::interleave_mu_se(mu, se);
         let pareto_fronts = self.non_domin_sort(&objectives.view());
 
-        // Select from fronts until we have enough
+
         let mut selected = Vec::with_capacity(num_arms);
         for front in pareto_fronts {
             if selected.len() >= num_arms {
@@ -239,7 +239,7 @@ impl ParetoAcquisition {
             if front.len() <= remaining {
                 selected.extend(front);
             } else {
-                // Random selection from front
+
                 let mut front_indices = front;
                 front_indices.shuffle(rng);
                 selected.extend(front_indices.into_iter().take(remaining));
@@ -274,19 +274,19 @@ impl ParetoAcquisition {
             return Vec::new();
         }
 
-        // Domination counts and dominated set
+
         let mut domination_count: Vec<usize> = vec![0; n];
         let mut dominated: Vec<Vec<usize>> = vec![Vec::new(); n];
         let mut fronts: Vec<Vec<usize>> = Vec::new();
 
-        // Compute domination
+
         for i in 0..n {
             for j in 0..n {
                 if i == j {
                     continue;
                 }
 
-                // Check if i dominates j (all objectives >= and at least one >)
+
                 let mut all_gte = true;
                 let mut any_gt = false;
                 for k in 0..m {
@@ -302,7 +302,7 @@ impl ParetoAcquisition {
                 if all_gte && any_gt {
                     dominated[i].push(j);
                 } else if !all_gte {
-                    // Check if j dominates i
+
                     let mut j_gte = true;
                     let mut j_gt = false;
                     for k in 0..m {
@@ -321,7 +321,7 @@ impl ParetoAcquisition {
             }
         }
 
-        // First front: points with domination count 0
+
         let mut current_front: Vec<usize> = (0..n).filter(|&i| domination_count[i] == 0).collect();
 
         while !current_front.is_empty() {
@@ -354,14 +354,14 @@ impl ParetoAcquisition {
         let mut fronts: Vec<Vec<usize>> = Vec::new();
 
         while !remaining.is_empty() {
-            // Sort by objective 0 descending, then objective 1 descending.
+
             remaining.sort_by(|&i, &j| {
                 objectives[[j, 0]]
                     .total_cmp(&objectives[[i, 0]])
                     .then_with(|| objectives[[j, 1]].total_cmp(&objectives[[i, 1]]))
             });
 
-            // Sweep to extract current non-dominated front.
+
             let mut front: Vec<usize> = Vec::new();
             let mut best_obj1 = f64::NEG_INFINITY;
             let mut last_obj0 = f64::NAN;
@@ -376,7 +376,7 @@ impl ParetoAcquisition {
                     last_obj0 = obj0;
                     last_obj1 = obj1;
                 } else if obj1 == best_obj1 && obj0 == last_obj0 && obj1 == last_obj1 {
-                    // Equal points do not dominate each other; keep ties.
+
                     front.push(idx);
                 }
             }
@@ -440,7 +440,7 @@ mod tests {
         let selected = ucb.select(&mu.view(), &sigma.view(), 3, &mut rng).unwrap();
 
         assert_eq!(selected.len(), 3);
-        // Highest UCB should be selected (with random tie-breaking)
+
         assert!(selected.iter().all(|&i| i < 5));
     }
 
@@ -510,7 +510,7 @@ mod tests {
     #[test]
     fn test_pareto_multi_objective_uses_predictive_se() {
         let pareto = ParetoAcquisition::new();
-        // Identical means: only se distinguishes the fronts.
+
         let mu = array![[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]];
         let se = array![[0.01, 0.01], [10.0, 10.0], [0.5, 0.5]];
 
@@ -543,7 +543,7 @@ mod tests {
     #[test]
     fn test_non_domin_sort_2d_with_ties() {
         let pareto = ParetoAcquisition::new();
-        // Points 0 and 1 are identical and both should be on first front.
+
         let objectives = array![[2.0, 2.0], [2.0, 2.0], [1.0, 1.0], [0.0, 3.0]];
         let fronts = pareto.non_domin_sort(&objectives.view());
         assert!(!fronts.is_empty());

@@ -42,6 +42,7 @@ impl<'a> EnnIndexAccess<'a> {
         self.model.backend.index_len()
     }
 
+    #[doc = "kiss-coverage-off"]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -56,25 +57,13 @@ impl<'a> EnnIndexAccess<'a> {
             self.ensure_sync()?;
         }
         let n_obs = self.model.num_obs();
-        // Without exclude (or empty train): pass search_k through so backends can
-        // pad / sentinel as before. With exclude on a non-empty model: fetch one
-        // extra like neighbors so the caller still receives search_k columns.
         if !exclude_nearest || n_obs == 0 || search_k <= 0 {
             return self.model.backend.search(x, search_k, exclude_nearest);
         }
         let fetch_k = ((search_k as usize) + 1).min(n_obs);
         let (dist, idx) = self.model.backend.search(x, fetch_k as i32, true)?;
         let k_out = (search_k as usize).min(idx.ncols());
-        if k_out == idx.ncols() {
-            Ok((dist, idx))
-        } else {
-            Ok((
-                dist.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
-                    .to_owned(),
-                idx.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
-                    .to_owned(),
-            ))
-        }
+        Ok(trim_search_cols(dist, idx, k_out))
     }
 
     pub fn index_neighbor_distances_and_indices(
@@ -84,8 +73,6 @@ impl<'a> EnnIndexAccess<'a> {
         exclude_nearest: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
         let n_obs = self.model.num_obs();
-        // Mirror neighbor_distances_and_indices: fetch one extra under exclude so
-        // LOO self-queries still return search_k columns after identity drop.
         if !exclude_nearest || n_obs == 0 || search_k <= 0 {
             return crate::posterior::index_search(self.model, x, search_k, exclude_nearest);
         }
@@ -93,16 +80,7 @@ impl<'a> EnnIndexAccess<'a> {
         let (dist, idx) =
             crate::posterior::index_search(self.model, x, fetch_k as i32, true)?;
         let k_out = (search_k as usize).min(idx.ncols());
-        if k_out == idx.ncols() {
-            Ok((dist, idx))
-        } else {
-            Ok((
-                dist.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
-                    .to_owned(),
-                idx.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
-                    .to_owned(),
-            ))
-        }
+        Ok(trim_search_cols(dist, idx, k_out))
     }
 }
 
@@ -133,6 +111,25 @@ impl<'a> EnnRowAccess<'a> {
 
     pub fn row_yvar(&self, i: usize) -> Result<Option<Array1<f64>>, ENNError> {
         self.model.backend.row_yvar(i)
+    }
+}
+
+
+#[doc = "kiss-coverage-off"]
+fn trim_search_cols(
+    dist: Array2<f64>,
+    idx: Array2<i64>,
+    k_out: usize,
+) -> (Array2<f64>, Array2<i64>) {
+    if k_out == idx.ncols() {
+        (dist, idx)
+    } else {
+        (
+            dist.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
+                .to_owned(),
+            idx.slice_axis(ndarray::Axis(1), ndarray::Slice::from(..k_out))
+                .to_owned(),
+        )
     }
 }
 

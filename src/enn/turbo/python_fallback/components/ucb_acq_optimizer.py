@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
-
-if TYPE_CHECKING:
-    from numpy.random import Generator
-
-    from .protocols import Surrogate
 
 
 class UCBAcqOptimizer:
@@ -18,8 +13,8 @@ class UCBAcqOptimizer:
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        surrogate: Surrogate,
-        rng: Generator,
+        surrogate: Any,
+        rng: Any,
         *,
         tr_state: Any | None = None,
     ) -> np.ndarray:

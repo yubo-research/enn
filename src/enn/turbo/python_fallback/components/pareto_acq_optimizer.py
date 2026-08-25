@@ -28,8 +28,8 @@ class ParetoAcqOptimizer:
         if mu.ndim == 2 and mu.shape[1] > 1:
             from nds import ndomsort
 
-            # Rank on interleaved (y_1, se_1, y_2, se_2, ...) so predictive
-            # uncertainty participates (aligned with Rust ParetoAcquisition).
+
+
             m = mu.shape[1]
             objectives = np.empty((mu.shape[0], m * 2), dtype=mu.dtype)
             objectives[:, 0::2] = mu

@@ -79,8 +79,8 @@ impl BpannBackend {
             train_y_store.mmap_append(&train_y.view())?;
         }
         if train_x_store.nrows == 0 {
-            // Pre-grow and pre-touch fresh stores so the first append pays no
-            // file-resize, page-fault, or block-allocation cost.
+
+
             train_x_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
             train_y_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
             train_x_store.pretouch();
@@ -261,8 +261,8 @@ impl BpannBackend {
         *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.num_obs_counter.set(self.len());
         let pending = self.pending_rows();
-        // Hard cap: soft-sync on the caller when pending reaches the hard threshold
-        // (deferred or not). Soft threshold syncs only on the non-deferred path.
+
+
         if pending >= self.pending_hard_flush_threshold
             || (!self.defer_append_indexing && pending >= self.pending_flush_threshold)
         {
@@ -294,7 +294,7 @@ impl BpannBackend {
             end,
         )?;
         self.pending_unindexed.store(0, Ordering::Relaxed);
-        // Soft-sync and centroid builds fault train pages; drop them from RSS.
+
         self.release_observation_pages()?;
         Ok(())
     }
@@ -354,8 +354,8 @@ impl BpannBackend {
             return Ok((Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0))));
         }
         let k_req = search_k.min(total);
-        // Fetch/return up to k_req columns; exclude drops self when present.
-        // Novel queries keep the true NN (including when k_req == total).
+
+
         let k_eff = k_req;
         let pool_k = if exclude_nearest {
             (k_eff + 1).min(total)
@@ -368,7 +368,7 @@ impl BpannBackend {
                 Array2::zeros((n_query, 0)),
             ));
         }
-        // Unfilled slots must not look like a valid neighbor (idx 0, dist 0).
+
         let mut dist2s = Array2::from_elem((n_query, k_eff), f64::INFINITY);
         let mut indices = Array2::from_elem((n_query, k_eff), -1i64);
         let scale_x = self.scale_x;
@@ -378,7 +378,7 @@ impl BpannBackend {
             .map(|q| queries.row(q).to_vec())
             .collect();
 
-        // Small-N: resident flat f32 cache + heap top-k (shared across queries).
+
         if total <= SMALL_N_INCORE_SEARCH_LIMIT {
             let flat = crate::small_n_search::load_or_build_small_n_cache(self, total)?;
             let per_query = score_queries_flat(

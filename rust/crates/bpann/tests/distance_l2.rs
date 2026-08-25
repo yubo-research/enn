@@ -37,8 +37,8 @@ fn close(candidate: f32, reference: f64, len: usize) -> bool {
 
 #[test]
 fn l2_matches_scalar_reference_across_lengths() {
-    // Cover lengths straddling the lane width (8): exact multiples, one below,
-    // one above, empty, and the D=1000 production dimension.
+
+
     let seed: u64 = rand::random();
     println!("l2_matches_scalar_reference_across_lengths seed={seed}");
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -59,8 +59,8 @@ fn l2_matches_scalar_reference_across_lengths() {
 
 #[test]
 fn l2_fuzz_random_lengths() {
-    // Fully randomized lengths (including many non-multiples of the lane width,
-    // which exercise the remainder path) and magnitudes. Must hold for any seed.
+
+
     let seed: u64 = rand::random();
     println!("l2_fuzz_random_lengths seed={seed}");
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -93,18 +93,18 @@ fn l2_metamorphic_properties() {
         let b = rand_vec(&mut rng, len, 5.0);
         let base = l2_sq_f32(&a, &b);
 
-        // Identity: distance from a vector to itself is exactly zero.
+
         assert_eq!(l2_sq_f32(&a, &a), 0.0, "self-distance nonzero seed={seed}");
 
-        // Symmetry: (x-y)^2 == (y-x)^2 elementwise, so the result is exact.
+
         assert_eq!(
             base,
             l2_sq_f32(&b, &a),
             "asymmetric distance seed={seed} len={len}"
         );
 
-        // Translation invariance: shifting both vectors by the same constant
-        // leaves the squared distance unchanged (up to f32 rounding).
+
+
         let c = (rng.gen::<f32>() - 0.5) * 20.0;
         let a_shift: Vec<f32> = a.iter().map(|&v| v + c).collect();
         let b_shift: Vec<f32> = b.iter().map(|&v| v + c).collect();
@@ -114,8 +114,8 @@ fn l2_metamorphic_properties() {
             "translation changed distance: base={base} shifted={shifted} c={c} seed={seed}"
         );
 
-        // Positive scaling: scaling both vectors by k scales the squared
-        // distance by k^2.
+
+
         let k = rng.gen_range(0.25f32..4.0);
         let a_scale: Vec<f32> = a.iter().map(|&v| v * k).collect();
         let b_scale: Vec<f32> = b.iter().map(|&v| v * k).collect();

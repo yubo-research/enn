@@ -197,8 +197,8 @@ mod tests {
     #[test]
     fn test_draw_internals() {
         let idx = vec![vec![0, 1], vec![1, 2]];
-        let w = array![[[0.5, 0.5], [0.5, 0.5]], [[0.3, 0.7], [0.3, 0.7]]]; // 2 queries, 2 neighbors, 2 metrics
-        let l2 = array![[0.7, 0.7], [0.5, 0.5]]; // 2 queries, 2 metrics
+        let w = array![[[0.5, 0.5], [0.5, 0.5]], [[0.3, 0.7], [0.3, 0.7]]];
+        let l2 = array![[0.7, 0.7], [0.5, 0.5]];
         let mu = array![[1.0, 1.0], [2.0, 2.0]];
         let se = array![[0.1, 0.1], [0.2, 0.2]];
 
@@ -211,9 +211,9 @@ mod tests {
 
     #[test]
     fn test_neighbor_data() {
-        let dist2s = array![[1.0, 2.0, 3.0]]; // 1 query, 3 neighbors
+        let dist2s = array![[1.0, 2.0, 3.0]];
         let idx = vec![vec![0, 1, 2]];
-        let y = array![[1.0, 2.0, 3.0]]; // Flattened (1*3, 1)
+        let y = array![[1.0, 2.0, 3.0]];
 
         let data = NeighborData::new(dist2s, idx, y, 3);
 
@@ -249,8 +249,8 @@ mod tests {
     fn test_conditional_posterior_internals() {
         let base = DrawInternals::new(
             vec![vec![0]],
-            array![[[1.0]]], // 1 query, 1 neighbor, 1 metric
-            array![[1.0]],   // 1 query, 1 metric
+            array![[[1.0]]],
+            array![[1.0]],
             array![[1.0]],
             array![[0.1]],
             array![[0.1]],

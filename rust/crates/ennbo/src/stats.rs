@@ -111,8 +111,8 @@ mod tests {
     #[test]
     fn test_weighted_stats_creation() {
         let stats = WeightedStats::new(
-            array![[[0.5, 0.5]]], // 1 query, 1 neighbor, 2 metrics
-            array![[1.0, 1.0]],   // 1 query, 2 metrics
+            array![[[0.5, 0.5]]],
+            array![[1.0, 1.0]],
             array![[0.0, 0.5]],
             array![[0.1, 0.2]],
             array![[0.1, 0.2]],
@@ -128,8 +128,8 @@ mod tests {
     #[test]
     fn test_weighted_stats_multiple_queries() {
         let stats = WeightedStats::new(
-            array![[[0.5, 0.5], [0.5, 0.5]], [[0.3, 0.3], [0.7, 0.7]]], // 2 queries, 2 neighbors, 2 metrics
-            array![[1.0, 1.0], [0.5, 0.5]],                             // 2 queries, 2 metrics
+            array![[[0.5, 0.5], [0.5, 0.5]], [[0.3, 0.3], [0.7, 0.7]]],
+            array![[1.0, 1.0], [0.5, 0.5]],
             array![[0.0, 0.0], [1.0, 1.0]],
             array![[0.1, 0.1], [0.2, 0.2]],
             array![[0.1, 0.1], [0.2, 0.2]],
@@ -160,8 +160,8 @@ mod tests {
     #[should_panic(expected = "w_normalized rows must match l2 rows")]
     fn test_mismatched_lengths() {
         WeightedStats::new(
-            Array3::zeros((2, 2, 2)), // 2 queries
-            Array2::zeros((1, 2)),    // 1 query - mismatch
+            Array3::zeros((2, 2, 2)),
+            Array2::zeros((1, 2)),
             Array2::zeros((2, 2)),
             Array2::zeros((2, 2)),
             Array2::zeros((2, 2)),

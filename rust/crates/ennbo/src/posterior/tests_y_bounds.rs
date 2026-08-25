@@ -35,11 +35,11 @@ fn posterior_warped_differs_from_naturalized_posterior() {
         .unwrap();
     let natural = model.posterior(&query.view(), &params, &flags).unwrap();
 
-    // Natural mu must lie in (0,1); warped logit mu need not.
+
     assert!(natural.mu[[0, 0]] > 0.0 && natural.mu[[0, 0]] < 1.0);
     assert!((natural.mu[[0, 0]] - warped.mu[[0, 0]]).abs() > 1e-6);
 
-    // naturalize_enn_normal: applying inv to warped mu recovers natural mu.
+
     let mut copy = warped.clone();
     model.naturalize_enn_normal(&mut copy).unwrap();
     assert!((copy.mu[[0, 0]] - natural.mu[[0, 0]]).abs() < 1e-12);
@@ -63,7 +63,7 @@ fn posterior_function_draw_warped_naturalize_draws_3d() {
 
     assert_eq!(warped_draws.shape(), natural_draws.shape());
     assert!(natural_draws.iter().all(|&v| v > 0.0 && v < 1.0));
-    // naturalize_draws_3d must change values under logit bounds
+
     let max_diff = warped_draws
         .iter()
         .zip(natural_draws.iter())

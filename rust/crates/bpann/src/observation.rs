@@ -149,8 +149,8 @@ pub fn bpann_write_metadata(
     indexed_rows: usize,
 ) -> Result<(), BpannError> {
     let meta_path = work_dir.join("metadata.json");
-    // Preserve opaque fields (notably y_bounds) written by higher layers so Drop/hard
-    // persist cannot strip them while leaving warped row storage on disk.
+
+
     let preserved = fs::read_to_string(&meta_path)
         .ok()
         .and_then(|text| preserve_metadata_extension_fields(&text));
@@ -283,7 +283,7 @@ pub fn bpann_open_or_append_yvar(
         }
         Ok(Some(store))
     } else if yv_path.exists() {
-        // Reopen path: remap persisted noise even when no in-memory array is passed.
+
         let known_nrows = bpann_load_num_obs(work_dir);
         let store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics, known_nrows)?;
         Ok(Some(store))

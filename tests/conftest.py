@@ -3,6 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+_tests_path = Path(__file__).parent
+if str(_tests_path) not in sys.path:
+    sys.path.insert(0, str(_tests_path))
+
 src_path = Path(__file__).parent.parent / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))

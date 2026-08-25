@@ -211,11 +211,11 @@ impl IncrementalIndex {
         }
         let limit = current_tuning().structured_build_row_limit;
         let pending = end - self.indexed_rows;
-        // Soft-sync spans just above `limit` used to take one structured
-        // `build_from_rows` tree (better ask, slower tell). Very large spans
-        // become one empty-leaf forest (Internal → row-id leaves of `limit`).
-        // Mid-band spans become one in-RAM vector-leaf forest so ask prunes
-        // without k-means tell.
+
+
+
+
+
         let chunk_large_spans = pending > limit.saturating_mul(2);
         if chunk_large_spans && pending > MID_BAND_SHALLOW_MAX {
             let _ = self.take_pending_centroid(ctx.num_dim);
@@ -365,9 +365,9 @@ impl IncrementalIndex {
                 false,
             )?
         } else {
-            // Structured leaf path takes pending for placement; the large path
-            // builds its own tree from rows but must still drain the accumulator
-            // so the next small sync is not poisoned by already-indexed mass.
+
+
+
             let _ = self.take_pending_centroid(ctx.num_dim);
             let vectors = load_vectors_from_mmap(ctx, start, end)?;
             BpannIndex::build_from_rows_with_persist(
@@ -445,8 +445,8 @@ fn search_index_candidates(
     store: Option<&MmapSearchStore<'_>>,
 ) -> Result<Vec<(u32, f32)>, BpannError> {
     let rows = index.header.indexed_rows;
-    // Mode cliffs are call-time tuning. On-disk skip edges reflect build-time limits
-    // and may be empty if limits changed since the fragment was built.
+
+
     let t = current_tuning();
     if t.use_exhaustive_search(rows) {
         search_exhaustive_leaves_with_store(index, query, k, store)
@@ -582,7 +582,7 @@ mod kiss_coverage_tests {
 
     #[test]
     fn search_fragment_budget_respects_default_max_of_one() {
-        // Default search_fragment_budget_max=1: with many fragments, search only one.
+
         assert_eq!(search_fragment_budget(1, 100_000), 1);
         assert_eq!(search_fragment_budget(2, 100_000), 2);
         assert_eq!(search_fragment_budget(8, 100_000), 1);
@@ -650,7 +650,7 @@ mod kiss_coverage_tests {
         let _ = results;
         assert_eq!(idx.indexed_rows, 2);
         assert!(!idx.indices.is_empty());
-        // Soft sync leaves pages on disk unwritten; hard persist materializes files.
+
         assert_eq!(idx.index_memory_bytes(), 0);
         idx.persist_to_disk_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1)
             .unwrap();
@@ -682,7 +682,7 @@ mod kiss_coverage_tests {
     #[test]
     fn large_soft_sync_clears_pending_centroid() {
         let limit = current_tuning().structured_build_row_limit;
-        let n = limit + 76; // force multi-chunk soft-sync
+        let n = limit + 76;
         let dir = TempDir::new().unwrap();
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
         let x_path = dir.path().join("train_x.bin");
@@ -708,8 +708,8 @@ mod kiss_coverage_tests {
             "large soft-sync batch must leave no pending centroid to take"
         );
 
-        // Metamorphic: next singleton fragment must place at the new row, not a blend
-        // with the already-indexed large batch.
+
+
         let far = array![[10_000.0, 0.0]];
         store.mmap_append(&far.view()).unwrap();
         idx.note_pending_rows(&far.view(), false, &scale);
@@ -729,7 +729,7 @@ mod kiss_coverage_tests {
     #[test]
     fn large_soft_sync_uses_chunked_leaf_builds() {
         let limit = current_tuning().structured_build_row_limit;
-        // Must exceed MID_BAND_SHALLOW_MAX to take the empty-leaf chunk path.
+
         let n = MID_BAND_SHALLOW_MAX + limit + 10;
         let dir = TempDir::new().unwrap();
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
@@ -785,7 +785,7 @@ mod kiss_coverage_tests {
     #[test]
     fn midsize_soft_sync_stays_single_fragment() {
         let limit = current_tuning().structured_build_row_limit;
-        // Between limit and 2*limit: structured single-build path.
+
         let n = limit + limit / 2;
         assert!(n > limit && n <= limit * 2);
         let dir = TempDir::new().unwrap();

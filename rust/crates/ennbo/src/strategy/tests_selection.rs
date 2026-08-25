@@ -325,8 +325,8 @@ fn select_with_thompson_scores_naturalized_under_y_bounds() {
     let out = select_with_thompson(&opt, sur, &x_cand.view(), 2, &mut rng_sel).unwrap();
     assert_eq!(out.nrows(), 2);
 
-    // Same RNG seed → same warped draws; per-draw argmax on naturalized values
-    // (Python ThompsonAcqOptimizer contract; repeats allowed).
+
+
     let n_cand = x_cand.nrows();
     let mut rng_full = StdRng::seed_from_u64(606);
     let samples = sur.sample(&x_cand.view(), 2, &mut rng_full).unwrap();

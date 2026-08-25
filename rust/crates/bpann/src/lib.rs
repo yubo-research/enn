@@ -258,7 +258,7 @@ mod acceptance_tests {
     fn test_search_exclude_nearest_pending_keeps_novel_nn() {
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1).unwrap();
-        // Far indexed decoys.
+
         b.append_rows(
             &array![[1000.0], [1001.0], [1002.0]].view(),
             &array![[0.0], [0.0], [0.0]].view(),
@@ -267,7 +267,7 @@ mod acceptance_tests {
         .unwrap();
         b.ensure_index_sync().unwrap();
         assert_eq!(b.indexed_rows(), 3);
-        // Pending: nearest (row 3) and second-nearest (row 4) to novel query at 0.
+
         b.append_rows(
             &array![[1.0], [2.0]].view(),
             &array![[0.0], [0.0]].view(),
@@ -299,7 +299,7 @@ mod acceptance_tests {
         )
         .unwrap();
         b.ensure_index_sync().unwrap();
-        // Pending ladder at 1,2,3,4,5 (nearest..5th); novel query at 0 keeps ranks 1..4.
+
         b.append_rows(
             &array![[1.0], [2.0], [3.0], [4.0], [5.0]].view(),
             &array![[0.0], [0.0], [0.0], [0.0], [0.0]].view(),
@@ -403,8 +403,8 @@ mod acceptance_tests {
         )
         .unwrap();
         b.ensure_index_sync().unwrap();
-        // Pending row 2 is the true nearest for query [0, 4]; row 3 ranks higher only
-        // when bpann_brute_force_topk_mmap double-applies x_scale, so k=1 leg_b drops row 2.
+
+
         b.append_rows(
             &array![[2.0, 4.0], [4.0, 8.0]].view(),
             &array![[2.0], [3.0]].view(),
@@ -582,13 +582,13 @@ mod acceptance_tests {
         b.append_rows(&x.view(), &y.view(), None).unwrap();
         assert_eq!(b.pending_rows(), 0);
         assert_eq!(b.indexed_rows(), 5);
-        // Soft sync does not write pages.bin.
+
         assert!(!dir.path().join("index/pages.bin").exists());
     }
 
     #[test]
     fn ensure_index_sync_in_place_drains_pending_and_is_idempotent() {
-        // Caller soft-sync mutates the live index (no publish swap required).
+
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1)
             .unwrap()
@@ -630,7 +630,7 @@ mod acceptance_tests {
 
     #[test]
     fn metamorphic_hard_cap_clears_all_pending_not_trim() {
-        // Soft sync on hard hit must drain pending to 0, not leave hard-1.
+
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 3, 1)
             .unwrap()
@@ -649,7 +649,7 @@ mod acceptance_tests {
     fn fuzz_hard_cap_boundary_all_seeds() {
         use rand::{Rng, SeedableRng};
         use rand_chacha::ChaCha8Rng;
-        let seed = 0x4841_5244_u64; // "HARD"
+        let seed = 0x4841_5244_u64;
         println!("fuzz_hard_cap_boundary_all_seeds seed={seed}");
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         for trial in 0..16 {
@@ -775,8 +775,8 @@ mod acceptance_tests {
         assert_eq!(got, expected);
     }
 
-    #[test]
-    #[ignore = "Run manually: cargo test -p ennbo-bpann test_scale_recall_ignored -- --ignored --nocapture"]
+    /// Manual scale-recall check (not a unit test; run by temporarily adding `#[test]`).
+    #[allow(dead_code)]
     fn test_scale_recall_ignored() {
         let n = 1000usize;
         let d = 32usize;
@@ -801,8 +801,8 @@ mod acceptance_tests {
         assert!(recall >= 0.90, "N={n} recall={recall}");
     }
 
-    #[test]
-    #[ignore = "Run manually: cargo test -p ennbo-bpann test_scale_10m_ignored -- --ignored --nocapture"]
+    /// Manual 10M append stress check (not a unit test; run by temporarily adding `#[test]`).
+    #[allow(dead_code)]
     fn test_scale_10m_ignored() {
         let n = 10_000_000usize;
         let d = 8usize;

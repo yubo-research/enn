@@ -57,7 +57,7 @@ pub fn to_unit(x: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f64> {
             if range > 0.0 {
                 result[[i, j]] = (x[[i, j]] - lower) / range;
             } else {
-                result[[i, j]] = 0.5; // Degenerate dimension
+                result[[i, j]] = 0.5;
             }
         }
     }
@@ -87,14 +87,14 @@ pub fn generate_candidates<R: Rng + ?Sized>(
                 for i in 0..num_candidates {
                     let sample = engine.sample(rng)?;
                     for j in 0..num_dim {
-                        // Scale from unit to TR bounds
+
                         let unit = sample[j];
                         candidates[[i, j]] = lower_1d[j] + unit * (upper_1d[j] - lower_1d[j]);
                     }
                 }
                 Ok(candidates)
             } else {
-                // Fallback to uniform if no Sobol engine
+
                 generate_uniform(&lower_1d, &upper_1d, num_candidates, rng)
             }
         }
@@ -279,9 +279,9 @@ pub fn generate_lhd<R: Rng + ?Sized>(
         let upper = bounds[[j, 1]];
         let range = upper - lower;
 
-        // Generate stratified samples
+
         let mut perm: Vec<usize> = (0..num_samples).collect();
-        // Fisher-Yates shuffle
+
         for i in (1..num_samples).rev() {
             let j_idx = rng.gen_range(0..=i);
             perm.swap(i, j_idx);
@@ -315,7 +315,7 @@ mod tests {
         let unit = to_unit(&x.view(), &bounds.view());
         let back = from_unit(&unit.view(), &bounds.view());
 
-        // Check roundtrip (with tolerance)
+
         for i in 0..x.nrows() {
             for j in 0..x.ncols() {
                 assert!((back[[i, j]] - x[[i, j]]).abs() < 1e-10);
@@ -334,7 +334,7 @@ mod tests {
         assert_eq!(candidates.nrows(), 10);
         assert_eq!(candidates.ncols(), 2);
 
-        // Check bounds
+
         for i in 0..candidates.nrows() {
             for j in 0..candidates.ncols() {
                 assert!(candidates[[i, j]] >= lower[j]);
@@ -353,7 +353,7 @@ mod tests {
         assert_eq!(samples.nrows(), 5);
         assert_eq!(samples.ncols(), 2);
 
-        // Check bounds
+
         for i in 0..samples.nrows() {
             for j in 0..samples.ncols() {
                 assert!(samples[[i, j]] >= 0.0);
@@ -373,12 +373,12 @@ mod tests {
         assert_eq!(sample1.len(), 2);
         assert_eq!(sample2.len(), 2);
 
-        // Sobol samples should be in [0, 1)
+
         for v in &sample1 {
             assert!(*v >= 0.0 && *v < 1.0);
         }
 
-        // Consecutive samples should be different
+
         assert_ne!(sample1, sample2);
     }
 
@@ -536,8 +536,8 @@ mod tests {
 
     #[test]
     fn test_sobol_engine_matches_scipy_reference_points() {
-        // Reference generated from scipy.stats.qmc.Sobol(d=5, scramble=False),
-        // taking the first 8 points from random_base2(m=4).
+
+
         let expected = [
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.5, 0.5, 0.5, 0.5, 0.5],

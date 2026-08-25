@@ -102,8 +102,8 @@ fn test_conditional_posterior_exclude_nearest() {
 
 #[test]
 fn conditional_exclude_nearest_keeps_nearest_whatif_for_novel_query() {
-    // Live check from bugs.md: what-if at (5,5), query at (5.05,5.05) must not
-    // drop the what-if under exclude_nearest (not a self-match).
+
+
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
     let train_y = array![[0.0], [1.0], [1.0], [0.3]];
     let model =
@@ -214,7 +214,7 @@ fn test_conditional_posterior_y_whatif_shape_error_reports_y_whatif_shape() {
     let flags = PosteriorFlags::new();
     let query = array![[0.5, 0.5]];
     let x_whatif = array![[0.5, 0.5]];
-    // y_whatif has wrong number of columns (2 instead of 1)
+
     let y_whatif = array![[1.0, 2.0]];
 
     let result = compute_conditional_posterior_internals(
@@ -265,11 +265,11 @@ fn test_conditional_posterior_nan_in_x_whatif_returns_error_not_panic() {
     );
 }
 
-// Tests for empty-query cases (Bug fixes for panic issues)
+
 
 #[test]
 fn test_empty_query_posterior_with_yvar_no_panic() {
-    // Bug fix: Empty query with train_yvar should not panic
+
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
     let train_yvar = array![[0.1], [0.1], [0.1], [0.1]];
@@ -300,7 +300,7 @@ fn test_empty_query_posterior_with_yvar_no_panic() {
 
 #[test]
 fn test_empty_query_conditional_posterior_no_panic() {
-    // Bug fix: Empty query conditional posterior should not panic
+
     let model = create_test_model();
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
@@ -328,7 +328,7 @@ fn test_empty_query_conditional_posterior_no_panic() {
 
 #[test]
 fn test_empty_query_conditional_posterior_with_yvar_no_panic() {
-    // Bug fix: Empty query conditional posterior with train_yvar should not panic
+
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
     let train_yvar = array![[0.1], [0.1], [0.1], [0.1]];

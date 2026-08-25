@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
-
-if TYPE_CHECKING:
-    from numpy.random import Generator
-
-    from .protocols import Surrogate
 
 
 class ThompsonAcqOptimizer:
@@ -15,8 +10,8 @@ class ThompsonAcqOptimizer:
         self,
         x_cand: np.ndarray,
         num_arms: int,
-        surrogate: Surrogate,
-        rng: Generator,
+        surrogate: Any,
+        rng: Any,
         *,
         tr_state: Any | None = None,
     ) -> np.ndarray:
@@ -34,9 +29,9 @@ class ThompsonAcqOptimizer:
         num_metrics = samples.shape[2]
         if tr_state is not None and hasattr(tr_state, "scalarize"):
             indices = []
-            # Vectorize scalarization across all arms and candidates
-            # samples is (num_arms, num_candidates, num_metrics)
-            # Reshape to (num_arms * num_candidates, num_metrics) for scalarize
+
+
+
             flat_samples = samples.reshape(-1, num_metrics)
             flat_scores = tr_state.scalarize(flat_samples, clip=False)
             all_scores = flat_scores.reshape(num_arms, num_candidates)

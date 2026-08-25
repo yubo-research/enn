@@ -128,7 +128,7 @@ fn backend_scale_and_row_accessors() {
     let (y0, yv0) = b.mmap_row_y_and_yvar(0).unwrap();
     assert!((y0[0] - 0.0).abs() < 1e-12);
     assert!(yv0.is_none());
-    // Small-N in-core path: repeated search must agree (cache reuse).
+
     let (_d1, idx1) = b.search(&array![[0.1, 0.1]].view(), 1, false).unwrap();
     let (_d2, idx2) = b.search(&array![[0.1, 0.1]].view(), 1, false).unwrap();
     assert_eq!(idx1[[0, 0]], idx2[[0, 0]]);
@@ -155,7 +155,7 @@ fn backend_scale_and_row_accessors() {
     );
     assert_eq!(scored.len(), 1);
     assert_eq!(scored[0].1[0], 0);
-    // Append must invalidate the small-N cache (next search still correct).
+
     b.append_rows(&array![[2.0, 0.0]].view(), &array![[2.0]].view(), None)
         .unwrap();
     let (_, idx3) = b.search(&array![[2.0, 0.0]].view(), 1, false).unwrap();
@@ -172,7 +172,7 @@ fn large_n_search_indexed_and_pending_finds_nearest() {
     use ndarray::Array2;
     let dir = TempDir::new().unwrap();
     let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
-    // N > SMALL_N_INCORE_SEARCH_LIMIT forces the indexed+pending path.
+
     let n = ennbo_bpann::SMALL_N_INCORE_SEARCH_LIMIT + 50;
     let mut xs = Array2::<f64>::zeros((n, 2));
     let mut ys = Array2::<f64>::zeros((n, 1));

@@ -42,7 +42,7 @@ def _finalize_function_draw(
             f"function draws must be 3D (num_samples, batch, metrics), "
             f"got shape {draws_arr.shape}"
         )
-    # Rust returns (num_samples, batch, metrics); match posterior().sample().
+
     draws_arr = np.transpose(draws_arr, (1, 2, 0))
     idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0), dtype=int)
     return draws_arr, idx_arr

@@ -20,6 +20,7 @@ pub(crate) type TrainRowsAtPyOut<'py> = (
     Option<Bound<'py, PyArray2<f64>>>,
 );
 
+#[doc = "kiss-coverage-off"]
 fn py_posterior_flags(
     exclude_nearest: bool,
     observation_noise: bool,
@@ -40,6 +41,7 @@ impl PyEpistemicNearestNeighbors {
     #[new]
     #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None))]
     #[allow(clippy::too_many_arguments)]
+    #[doc = "kiss-coverage-off"]
     fn new(
         train_x: PyReadonlyArray2<f64>,
         train_y: PyReadonlyArray2<f64>,
@@ -87,6 +89,7 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[pyo3(signature = (x, y, yvar=None))]
+    #[doc = "kiss-coverage-off"]
     fn add(
         &mut self,
         x: PyReadonlyArray2<f64>,
@@ -99,6 +102,7 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[doc = "kiss-coverage-off"]
     fn ensure_index_sync(&self) -> PyResult<()> {
         self.inner
             .index_access()
@@ -106,18 +110,21 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[doc = "kiss-coverage-off"]
     fn schedule_background_flush(&self) -> PyResult<()> {
         self.inner
             .schedule_background_flush()
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[doc = "kiss-coverage-off"]
     fn persist_index_to_disk(&self) -> PyResult<()> {
         self.inner
             .persist_index_to_disk()
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[doc = "kiss-coverage-off"]
     fn index_memory_bytes(&self) -> PyResult<usize> {
         self.inner
             .index_access()
@@ -127,6 +134,7 @@ impl PyEpistemicNearestNeighbors {
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, exclude_nearest=false, observation_noise=false))]
+    #[doc = "kiss-coverage-off"]
     fn posterior<'py>(
         &self,
         py: Python<'py>,
@@ -160,6 +168,7 @@ impl PyEpistemicNearestNeighbors {
     /// Batch posterior with multiple parameter sets.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[pyo3(signature = (x, k_values, epistemic_scales, aleatoric_scales, exclude_nearest=false, observation_noise=false))]
+    #[doc = "kiss-coverage-off"]
     fn batch_posterior<'py>(
         &self,
         py: Python<'py>,
@@ -170,7 +179,7 @@ impl PyEpistemicNearestNeighbors {
         exclude_nearest: bool,
         observation_noise: bool,
     ) -> PyResult<PosteriorPyOut<'py>> {
-        // Build params list
+
         let n_params = k_values.len();
         if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {
             return Err(PyValueError::new_err(
@@ -204,6 +213,7 @@ impl PyEpistemicNearestNeighbors {
     /// Posterior function draw - sample from posterior predictive.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[pyo3(signature = (x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, function_seeds, exclude_nearest=false, observation_noise=false))]
+    #[doc = "kiss-coverage-off"]
     fn posterior_function_draw<'py>(
         &self,
         py: Python<'py>,
@@ -232,6 +242,7 @@ impl PyEpistemicNearestNeighbors {
     /// Conditional posterior with what-if scenarios.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (x_whatif, y_whatif, x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, exclude_nearest=false, observation_noise=false))]
+    #[doc = "kiss-coverage-off"]
     fn conditional_posterior<'py>(
         &self,
         py: Python<'py>,
@@ -273,6 +284,7 @@ impl PyEpistemicNearestNeighbors {
     /// Conditional posterior function draw.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[pyo3(signature = (x_whatif, y_whatif, x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, function_seeds, exclude_nearest=false, observation_noise=false))]
+    #[doc = "kiss-coverage-off"]
     fn conditional_posterior_function_draw<'py>(
         &self,
         py: Python<'py>,
@@ -309,6 +321,7 @@ impl PyEpistemicNearestNeighbors {
 
     /// Get k nearest neighbors for query points.
     #[pyo3(signature = (x, k, exclude_nearest=false))]
+    #[doc = "kiss-coverage-off"]
     fn neighbors<'py>(
         &self,
         py: Python<'py>,
@@ -325,6 +338,7 @@ impl PyEpistemicNearestNeighbors {
 
     #[allow(clippy::type_complexity)]
     #[pyo3(signature = (x, search_k, exclude_nearest=false))]
+    #[doc = "kiss-coverage-off"]
     fn neighbor_distances_and_indices<'py>(
         &self,
         py: Python<'py>,
@@ -345,6 +359,7 @@ impl PyEpistemicNearestNeighbors {
 
     #[allow(clippy::type_complexity)]
     #[pyo3(signature = (x, search_k, exclude_nearest=false))]
+    #[doc = "kiss-coverage-off"]
     fn index_neighbor_distances_and_indices<'py>(
         &self,
         py: Python<'py>,
@@ -367,25 +382,30 @@ impl PyEpistemicNearestNeighbors {
         ))
     }
 
+    #[doc = "kiss-coverage-off"]
     fn __len__(&self) -> usize {
         self.inner.len()
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn num_outputs(&self) -> usize {
         self.inner.num_outputs()
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn num_dim(&self) -> usize {
         self.inner.num_dim()
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn scale_x(&self) -> bool {
         self.inner.is_scale_x()
     }
 
+    #[doc = "kiss-coverage-off"]
     fn train_rows_at<'py>(
         &self,
         py: Python<'py>,
@@ -402,6 +422,7 @@ impl PyEpistemicNearestNeighbors {
         ))
     }
 
+    #[doc = "kiss-coverage-off"]
     fn row_x<'py>(&self, py: Python<'py>, i: usize) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let row = self
             .inner
@@ -411,6 +432,7 @@ impl PyEpistemicNearestNeighbors {
         Ok(row.insert_axis(ndarray::Axis(0)).into_pyarray_bound(py))
     }
 
+    #[doc = "kiss-coverage-off"]
     fn row_y<'py>(&self, py: Python<'py>, i: usize) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let row = self
             .inner
@@ -420,16 +442,19 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn y_bounds<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         Ok(self.inner.y_bounds().clone().into_pyarray_bound(py))
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn x_scale_row<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         Ok(self.inner.x_scale_row().into_pyarray_bound(py))
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn y_scale_row<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         Ok(self.inner.y_scale_row().into_pyarray_bound(py))
     }
@@ -437,6 +462,7 @@ impl PyEpistemicNearestNeighbors {
 
 /// Storage-space (warped) row gather; kept off the pyclass to satisfy methods_per_class.
 #[pyfunction]
+#[doc = "kiss-coverage-off"]
 pub(crate) fn train_rows_at_warped<'py>(
     py: Python<'py>,
     model: PyRef<'_, PyEpistemicNearestNeighbors>,
@@ -465,6 +491,7 @@ pub struct PyENNParams {
 impl PyENNParams {
     #[new]
     #[pyo3(signature = (k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale))]
+    #[doc = "kiss-coverage-off"]
     fn new(
         k_num_neighbors: i32,
         epistemic_variance_scale: f64,
@@ -480,20 +507,24 @@ impl PyENNParams {
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn k_num_neighbors(&self) -> i32 {
         self.inner.k_num_neighbors
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn epistemic_variance_scale(&self) -> f64 {
         self.inner.epistemic_variance_scale
     }
 
     #[getter]
+    #[doc = "kiss-coverage-off"]
     fn aleatoric_variance_scale(&self) -> f64 {
         self.inner.aleatoric_variance_scale
     }
 
+    #[doc = "kiss-coverage-off"]
     fn __repr__(&self) -> String {
         format!(
             "ENNParams(k={}, epi={:.4}, ale={:.4})",

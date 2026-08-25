@@ -9,7 +9,7 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 try:
     from . import enn_rust as _ext
-except ImportError as exc:  # pragma: no cover - exercised when extension unavailable
+except ImportError as exc:
     raise ImportError(
         "Rust extension submodule `enn.enn_rust` is not available"
     ) from exc

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
@@ -10,10 +10,6 @@ from .turbo_utils_perturb import (
     generate_raasp_candidates,
     generate_raasp_candidates_uniform,
 )
-
-if TYPE_CHECKING:
-    from numpy.random import Generator
-    from scipy.stats._qmc import QMCEngine
 
 __all__ = [
     "generate_tr_candidates",
@@ -28,9 +24,9 @@ def _generate_tr_candidates_raasp(
     ub: np.ndarray,
     num_candidates: int,
     *,
-    rng: Generator,
+    rng: Any,
     candidate_rv: CandidateRV,
-    sobol_engine: QMCEngine | None,
+    sobol_engine: Any,
     num_pert: int,
 ) -> np.ndarray:
     if candidate_rv == CandidateRV.SOBOL and sobol_engine is None:
@@ -53,9 +49,9 @@ def generate_tr_candidates_orig(
     lengthscales: np.ndarray | None,
     num_candidates: int,
     *,
-    rng: Generator,
+    rng: Any,
     candidate_rv: CandidateRV,
-    sobol_engine: QMCEngine | None = None,
+    sobol_engine: Any = None,
     num_pert: int = 20,
 ) -> np.ndarray:
     lb, ub = compute_bounds_1d(x_center, lengthscales)
@@ -95,7 +91,7 @@ def generate_tr_candidates_fast(
     lengthscales: np.ndarray | None,
     num_candidates: int,
     *,
-    rng: Generator,
+    rng: Any,
     candidate_rv: CandidateRV,
     num_pert: int,
 ) -> np.ndarray:
@@ -127,9 +123,9 @@ def generate_tr_candidates(
     lengthscales: np.ndarray | None,
     num_candidates: int,
     *,
-    rng: Generator,
+    rng: Any,
     candidate_rv: CandidateRV,
-    sobol_engine: QMCEngine | None,
+    sobol_engine: Any,
     raasp_driver: RAASPDriver,
     num_pert: int,
 ) -> np.ndarray:

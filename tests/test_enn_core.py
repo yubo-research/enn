@@ -285,23 +285,23 @@ def test_add_updates_y_scale_for_posterior_se():
     rng = np.random.default_rng(42)
     d = 3
 
-    # Create initial model with small y values
+
     x_init = rng.random((5, d))
-    y_init = rng.random((5, 1)) * 0.1  # y values in [0, 0.1]
+    y_init = rng.random((5, 1)) * 0.1
 
     model_incremental = EpistemicNearestNeighbors(x_init, y_init)
 
-    # Add data with much larger y values
+
     x_new = rng.random((3, d))
-    y_new = rng.random((3, 1)) * 100  # y values in [0, 100]
+    y_new = rng.random((3, 1)) * 100
     model_incremental.add(x_new, y_new)
 
-    # Create fresh model with all data at once
+
     all_x = np.vstack([x_init, x_new])
     all_y = np.vstack([y_init, y_new])
     model_fresh = EpistemicNearestNeighbors(all_x, all_y)
 
-    # Compare posteriors - they should be equivalent
+
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
     )
@@ -310,11 +310,11 @@ def test_add_updates_y_scale_for_posterior_se():
     post_incremental = model_incremental.posterior(x_test, params=params)
     post_fresh = model_fresh.posterior(x_test, params=params)
 
-    # mu values should match (they're based on weighted neighbor values)
+
     np.testing.assert_allclose(post_incremental.mu, post_fresh.mu, rtol=1e-6)
 
-    # se values should also match - this is where the bug manifests
-    # Without the fix, se values differ by ~1000x
+
+
     np.testing.assert_allclose(post_incremental.se, post_fresh.se, rtol=0.01)
 
 

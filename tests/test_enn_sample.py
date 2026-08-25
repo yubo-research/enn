@@ -107,7 +107,7 @@ def test_posterior_function_sample_batch_empty_k():
         function_seeds=[1, 2],
         flags=PosteriorFlags(exclude_nearest=True),
     )
-    # Novel queries keep all available neighbors under exclude (n=2 → 2 cols).
+
     assert samples.shape == (5, 1, 2)
     assert idx.shape == (5, 2)
 
@@ -165,7 +165,7 @@ def test_posterior_function_draw_aleatoric_is_independent_of_noise_field():
         draws_on.std(axis=1, ddof=1), post_on.se[:, 0], rtol=0.08, atol=0.05
     )
 
-    # Epistemic-only field is shared; independent aleatoric must reduce corr.
+
     corr_off = np.corrcoef(draws_off[0], draws_off[1])[0, 1]
     corr_on = np.corrcoef(draws_on[0], draws_on[1])[0, 1]
     se_ratio = (post_on.se_epi[0, 0] * post_on.se_epi[1, 0]) / (

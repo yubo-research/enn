@@ -100,8 +100,8 @@ pub fn bpann_merge_topk_candidates(
         if let Some((id, _)) = ranked.iter().find(|(_, d)| *d <= SELF_DIST_EPS) {
             Some(*id)
         } else {
-            // No zero-dist hit in the pool: identify whether query is a train row so we
-            // do not strip a true neighbor when approx search missed self.
+
+
             find_query_train_id(train_x, query)
         }
     } else {
@@ -211,7 +211,7 @@ mod kiss_coverage_tests {
         crate::merge::bpann_apply_exclude_nearest(&mut ranked, true, None);
         assert!(!ranked.iter().any(|(id, _)| *id == 7));
 
-        // Novel query (no self_id, no zero-dist): keep true NN.
+
         let mut ranked2 = vec![(3u32, 0.5), (4u32, 1.0)];
         crate::merge::bpann_apply_exclude_nearest(&mut ranked2, true, None);
         assert_eq!(ranked2[0].0, 3);

@@ -146,8 +146,8 @@ impl EpistemicNearestNeighbors {
         } else {
             None
         };
-        // Empty reopen: prefer persisted num_metrics over placeholder train_y width
-        // so y_bounds resolution matches disk metadata.
+
+
         if disk_reopen {
             if let Some(text) = meta_text.as_deref() {
                 if let Some(persisted) =
@@ -163,7 +163,7 @@ impl EpistemicNearestNeighbors {
             meta_text.as_deref(),
         )?;
 
-        // On disk reopen, stored rows are already warped; skip ingress warp.
+
         let (train_y, train_yvar) = if disk_reopen {
             (train_y, train_yvar)
         } else {
@@ -402,8 +402,8 @@ impl EpistemicNearestNeighbors {
     }
 
     pub fn y_scale_row(&self) -> Array2<f64> {
-        // Public scale matches public natural row gathers under y_bounds.
-        // Internal `y_scale` stays in storage (warped) units for posterior.
+
+
         if crate::y_bounds::is_identity_bounds(&self.y_bounds) || self.num_obs == 0 {
             return self.y_scale.clone().insert_axis(ndarray::Axis(0));
         }

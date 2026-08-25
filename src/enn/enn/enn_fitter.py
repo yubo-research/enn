@@ -1,24 +1,18 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
 
 from enn._rust import ENNParams as RustENNParams
 from enn._rust import ENNStatefulFitter as _RustENNStatefulFitter
 
-if TYPE_CHECKING:
-    from numpy.random import Generator
-
-    from .enn_class import EpistemicNearestNeighbors
-    from .enn_params import ENNParams
-
 
 class ENNStatefulFitter:
     def __init__(
         self,
         k: int,
-        rng: Generator,
+        rng: Any,
         *,
         infer_aleatoric_variance_scale: bool = True,
     ) -> None:
@@ -52,12 +46,12 @@ class ENNStatefulFitter:
 
     def ask(
         self,
-        model: EpistemicNearestNeighbors,
+        model: Any,
         *,
         num_fit_candidates: int,
         num_fit_samples: int,
-        params_warm_start: ENNParams | None = None,
-    ) -> ENNParams:
+        params_warm_start: Any | None = None,
+    ) -> Any:
         """Fit hyperparameters; tell row count must equal model.num_obs() or y_std is wrong."""
         from .enn_class import EpistemicNearestNeighbors as PyENN
         from .enn_params import ENNParams as PyENNParams

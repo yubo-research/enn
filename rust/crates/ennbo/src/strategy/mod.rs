@@ -109,7 +109,7 @@ impl Strategy {
             } => {
                 if *in_init {
                     tell_init(init, optimizer, x, y, yvar, rng)?;
-                    // Check if init is complete
+
                     if init.completed >= init.num_init {
                         *in_init = false;
                     }
@@ -174,8 +174,8 @@ fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError>
     if !optimizer.trust_region().is_morbo() {
         return Ok(());
     }
-    // Natural units: match tell_common ranges, incumbent scalarization
-    // (obs_row_y / naturalized predict μ), and Thompson/UCB Morbo scores.
+
+
     let Some(y_all) = optimizer.y_obs() else {
         return Ok(());
     };
@@ -230,7 +230,7 @@ fn tell_common(
     }
 
     if optimizer.trust_region().is_morbo() && delta.new_n > delta.old_n {
-        // Natural units: match incumbent scalarization and morbo_sync_ranges_from_obs.
+
         optimizer
             .trust_region_mut()
             .morbo_update_ranges_only(&delta.y_new_view())?;
@@ -252,9 +252,9 @@ fn tell_common(
         }
     }
 
-    // noise_aware incumbent predict (and similar) re-faults disk observation pages
-    // after fit_append's release; drop them again so bulk seed RSS stays bounded.
-    // Skip remap on tiny tells (e.g. --tell-all): O(N) remaps dominate mid-N wall time.
+
+
+
     if x.nrows() >= 64 {
         if let Some(surrogate) = optimizer.surrogate() {
             surrogate.release_observation_pages()?;
@@ -296,7 +296,7 @@ fn ask_turbo(
         }
     }
 
-    // Fetch incumbent center and lengthscales once (B5: was duplicated)
+
     let default_center = Array1::from_elem(optimizer.num_dim(), 0.5);
     let x_center = optimizer
         .incumbent_x_unit()
@@ -309,7 +309,7 @@ fn ask_turbo(
         .trust_region()
         .compute_bounds_1d(&x_center.view(), ls_ref.as_ref());
 
-    // Generate candidates
+
     let num_dim = optimizer.num_dim();
     let config = optimizer.config().candidates.clone();
     let num_candidates = config.num_candidates(num_dim, num_arms);
@@ -326,7 +326,7 @@ fn ask_turbo(
         20,
     )?;
 
-    // Select arms using acquisition function (with timing)
+
     let start = std::time::Instant::now();
     let selected = select_arms(optimizer, &x_cand_unit.view(), num_arms, rng)?;
     telemetry.dt_sel = start.elapsed().as_secs_f64();
@@ -352,9 +352,9 @@ fn tell_turbo(
         .to_owned();
     optimizer.trust_region_mut().set_num_arms(x.nrows());
     if !optimizer.trust_region().is_morbo() {
-        // Init-phase tells do not advance TR prev_num_obs. After init (or a
-        // restart that cleared hist), advance the watermark without loading
-        // full y history — critical for disk-backed N ≫ 1e6.
+
+
+
         if optimizer.trust_region().turbo_prev_num_obs() == 0 {
             let prev = num_obs.saturating_sub(y.nrows());
             optimizer
@@ -370,9 +370,9 @@ fn tell_turbo(
     if optimizer.trust_region().needs_restart() {
         optimizer.trust_region_mut().restart(Some(rng));
         optimizer.increment_restart_generation();
-        // Do not reset the incumbent tracker: clearing observation_count forces
-        // the next tell to rebuild from full y_obs() (Θ(N) RAM on disk). The
-        // tracker is already maintained incrementally in add_observations.
+
+
+
         morbo_sync_ranges_from_obs(optimizer)?;
     }
 
@@ -412,7 +412,7 @@ fn select_with_thompson(
                 }
             }
         }
-        // Function draws are warped; naturalize to match Morbo ranges / incumbents.
+
         let flat = surrogate.naturalize_observations_y(flat);
         let flat_scores = optimizer
             .trust_region()
@@ -437,8 +437,8 @@ fn select_with_thompson(
         }
         return Ok(select_by_indices(x_cand, &indices));
     }
-    // Python ThompsonAcqOptimizer: one argmax per function draw (repeats allowed).
-    // Function draws are warped; naturalize scalar Thompson like UCB / Morbo.
+
+
     let mut flat = ndarray::Array2::zeros((num_arms * n_candidates, 1));
     for arm in 0..num_arms {
         for i in 0..n_candidates {
@@ -467,7 +467,7 @@ fn select_with_ucb(
 ) -> Result<Array2<f64>, ENNError> {
     let pred = surrogate.naturalize_prediction(surrogate.predict(x_cand)?);
     if optimizer.trust_region().is_morbo() {
-        // Naturalized μ/se so UCB matches natural Morbo ranges / incumbents.
+
         let ucb_vals = &pred.mu + &(pred.se * beta);
         let scores = optimizer
             .trust_region()
@@ -495,7 +495,7 @@ fn select_with_pareto(
     num_arms: usize,
     rng: &mut dyn RngCore,
 ) -> Result<Array2<f64>, ENNError> {
-    // Naturalize μ/σ so Pareto dominance matches UCB / natural unit contract.
+
     let pred = surrogate.naturalize_prediction(surrogate.predict(x_cand)?);
     let pareto = ParetoAcquisition::new();
     let indices = pareto

@@ -282,7 +282,7 @@ mod tests {
         let index = index_unit(train_x, IndexDriver::Exact);
         let query = array![[10.1, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 3, true).unwrap();
-        // Novel query: keep all fetched columns (caller truncates to requested k).
+
         assert_eq!(dist2s.ncols(), 3);
         assert_eq!(indices[[0, 0]], 1);
     }

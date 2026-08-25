@@ -52,7 +52,7 @@ pub fn hypervolume_2d_max(
     y: &ArrayView2<f64>,
     ref_point: &ArrayView1<f64>,
 ) -> Result<f64, HypervolumeError> {
-    // Validate dimensions
+
     if y.ndim() != 2 {
         return Err(HypervolumeError::InvalidDimension(y.shape().to_vec()));
     }
@@ -63,7 +63,7 @@ pub fn hypervolume_2d_max(
         return Err(HypervolumeError::InvalidRefPoint(ref_point.len()));
     }
 
-    // Handle empty input
+
     if y.nrows() == 0 {
         return Ok(0.0);
     }
@@ -71,7 +71,7 @@ pub fn hypervolume_2d_max(
     let ref0 = ref_point[0];
     let ref1 = ref_point[1];
 
-    // Collect points that dominate reference point in both dimensions
+
     let mut dominating: Vec<(f64, f64)> = Vec::with_capacity(y.nrows());
     for row in y.rows() {
         let x0 = row[0];
@@ -81,35 +81,35 @@ pub fn hypervolume_2d_max(
         }
     }
 
-    // If no points dominate, hypervolume is zero
+
     if dominating.is_empty() {
         return Ok(0.0);
     }
 
-    // Sort by first objective in descending order (stable sort for parity).
-    // total_cmp avoids panic if NaNs ever reach this point.
+
+
     dominating.sort_by(|a, b| b.0.total_cmp(&a.0));
 
-    // Walking frontier algorithm
+
     let mut hv = 0.0;
     let mut best_y1 = ref1;
 
     for i in 0..dominating.len() {
         let (x0, y1) = dominating[i];
 
-        // Update best y1 seen so far
+
         if y1 > best_y1 {
             best_y1 = y1;
         }
 
-        // Next x coordinate (reference if at end)
+
         let x_next = if i + 1 < dominating.len() {
             dominating[i + 1].0
         } else {
             ref0
         };
 
-        // Accumulate rectangle area
+
         hv += (x0 - x_next) * (best_y1 - ref1);
     }
 
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn test_invalid_column_count() {
-        let y = array![[1.0, 0.5, 0.3]]; // 3 columns instead of 2
+        let y = array![[1.0, 0.5, 0.3]];
         let ref_point = array![0.0, 0.0];
         let result = hypervolume_2d_max(&y.view(), &ref_point.view());
         assert!(matches!(
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn test_invalid_ref_point() {
         let y = array![[1.0, 0.5]];
-        let ref_point = array![0.0]; // Wrong length
+        let ref_point = array![0.0];
         let result = hypervolume_2d_max(&y.view(), &ref_point.view());
         assert!(matches!(result, Err(HypervolumeError::InvalidRefPoint(1))));
     }

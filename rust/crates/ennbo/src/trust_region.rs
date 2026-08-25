@@ -29,7 +29,7 @@ impl Default for TRLengthConfig {
     fn default() -> Self {
         Self {
             length_init: 0.8,
-            length_min: 0.5f64.powi(7), // 0.5^7 ≈ 0.0078
+            length_min: 0.5f64.powi(7), 
             length_max: 1.6,
         }
     }
@@ -229,7 +229,7 @@ impl TurboTrustRegion {
             )));
         }
 
-        // First update: establish best value and return
+        
         if !self.best_value.is_finite() {
             let new_best = y_all.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
             self.best_value = new_best;
@@ -237,26 +237,23 @@ impl TurboTrustRegion {
             return Ok(());
         }
 
-        // prev_values = observations before this batch (matches Python)
+        
         let prev_slice = y_all.slice(s![..self.prev_num_obs]);
         let new_batch = y_all.slice(s![self.prev_num_obs..]);
 
         let new_best = new_batch.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
-        // Scale from prev_values (all observations before current batch)
+        
         let prev_len = prev_slice.len();
         let scale = if prev_len >= 2 {
             let min_val = prev_slice.iter().fold(f64::INFINITY, |a, &b| a.min(b));
             let max_val = prev_slice.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
             (max_val - min_val).max(1e-6)
-        } else if prev_len == 0 {
-            0.0
         } else {
-            // Single value: max - min = 0 (matches Python)
             0.0
         };
 
-        // Check for improvement
+        
         let improvement_threshold = 1e-3 * scale;
         let improved = new_best > self.best_value + improvement_threshold;
 
@@ -269,16 +266,16 @@ impl TurboTrustRegion {
             self.success_counter = 0;
         }
 
-        // Adapt length
+        
         let success_tol = self.success_tolerance;
         let failure_tol = self.failure_tolerance.unwrap_or(4);
 
         if self.success_counter >= success_tol {
-            // Expand: double length
+            
             self.length = (self.length * 2.0).min(self.config.length_max);
             self.success_counter = 0;
         } else if self.failure_counter >= failure_tol {
-            // Contract: halve length
+            
             self.length *= 0.5;
             self.failure_counter = 0;
         }
@@ -388,7 +385,7 @@ impl TurboTrustRegion {
         let lb = x_center - &half_length;
         let ub = x_center + &half_length;
 
-        // Clip to [0, 1]
+        
         let lb = lb.mapv(|v| v.clamp(0.0, 1.0));
         let ub = ub.mapv(|v| v.clamp(0.0, 1.0));
 
@@ -479,16 +476,16 @@ mod tests {
         let mut tr = TurboTrustRegion::new(5, config);
         tr.set_num_arms(1);
 
-        // First update - establish best value (y_all = [1.0])
+        
         tr.update(&array![1.0].view(), 1).unwrap();
         assert_eq!(tr.length(), 0.8);
 
-        // Three consecutive improvements should expand (y_all grows each time)
+        
         tr.update(&array![1.0, 2.0].view(), 2).unwrap();
         tr.update(&array![1.0, 2.0, 3.0].view(), 3).unwrap();
         tr.update(&array![1.0, 2.0, 3.0, 4.0].view(), 4).unwrap();
 
-        assert!(tr.length() > 0.8); // Should have expanded
+        assert!(tr.length() > 0.8); 
     }
 
     #[test]
@@ -497,10 +494,10 @@ mod tests {
         let mut tr = TurboTrustRegion::new(5, config);
         tr.set_num_arms(1);
 
-        // Establish best value
+        
         tr.update(&array![1.0].view(), 1).unwrap();
 
-        // Multiple failures should contract (y_all grows: [1, 0.5], [1, 0.5, 0.5], ...)
+        
         let failure_tol = tr.failure_tolerance.unwrap();
         let mut y_all = vec![1.0];
         for _ in 0..failure_tol {
@@ -509,7 +506,7 @@ mod tests {
             tr.update(&y_arr.view(), y_all.len()).unwrap();
         }
 
-        assert!(tr.length() < 0.8); // Should have contracted
+        assert!(tr.length() < 0.8); 
     }
 
     #[test]
@@ -518,7 +515,7 @@ mod tests {
         let mut tr = TurboTrustRegion::new(5, config);
         tr.set_num_arms(1);
 
-        // Contract length (y_all grows: [1], [1,0.5], [1,0.5,0.5], ...)
+        
         tr.update(&array![1.0].view(), 1).unwrap();
         let mut y_all = vec![1.0, 0.5];
         for _ in 0..10 {
@@ -529,7 +526,7 @@ mod tests {
 
         assert!(tr.length() < 0.8);
 
-        // Restart
+        
         tr.restart();
         assert_eq!(tr.length(), 0.8);
         assert!(!tr.needs_restart());
@@ -575,9 +572,9 @@ mod tests {
 
     #[test]
     fn restart_preserves_hist_scale_for_improvement() {
-        // Regression: restart must keep hist_ymin/hist_ymax. Clearing them while
-        // retaining prev_num_obs collapses improvement scale to ~1e-6 and treats
-        // tiny absolute gains as successes (wrong vs full-history y-range scale).
+        
+        
+        
         let config = TRLengthConfig::default();
         let mut tr = TurboTrustRegion::new(2, config);
         tr.set_num_arms(1);
@@ -600,14 +597,14 @@ mod tests {
             "restart must preserve historical y max for scale"
         );
 
-        // Re-seed best after restart (first post-restart update is init-only).
+        
         let y1 = array![100.0];
         tr.update_with_incumbent_new_batch(&y1.view(), 3, 100.0)
             .unwrap();
 
-        // Three absolute gains of 0.05: with correct scale=100, threshold=0.1,
-        // none count as improvements. With wiped hist (scale≈1e-6), all three
-        // succeed and expand the trust-region length.
+        
+        
+        
         for (i, inc) in [100.05_f64, 100.10, 100.15].into_iter().enumerate() {
             let y = array![inc];
             tr.update_with_incumbent_new_batch(&y.view(), 4 + i, inc)
@@ -652,7 +649,7 @@ mod tests {
 
     #[test]
     fn update_with_incumbent_restart_preserves_watermark_then_batch_matches_full() {
-        // After restart, prev_num_obs is kept so the next tell stays O(batch).
+        
         let config = TRLengthConfig::default();
         let mut full = TurboTrustRegion::new(2, config);
         let mut mixed = TurboTrustRegion::new(2, config);
@@ -698,5 +695,11 @@ mod tests {
             assert_eq!(full.hist_ymin, mixed.hist_ymin);
             assert_eq!(full.hist_ymax, mixed.hist_ymax);
         }
+    }
+
+    #[test]
+    fn tr_length_config_new_smoke() {
+        let cfg = TRLengthConfig::new(0.8, 0.1, 1.0);
+        assert!(cfg.length_init > 0.0);
     }
 }

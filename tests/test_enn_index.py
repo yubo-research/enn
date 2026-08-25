@@ -53,7 +53,7 @@ def test_enn_neighbor_search_empty_train_sentinel_never_uses_negative_one():
     d2_ex, idx_ex = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=search_k, exclude_nearest=True
     )
-    # Empty train has no self row; exclude keeps the sentinel width (no silent drop).
+
     assert d2_ex.shape == (2, search_k) and idx_ex.shape == (2, search_k)
     assert np.all(np.isposinf(d2_ex))
     assert np.all(idx_ex == 0)
@@ -67,7 +67,7 @@ def test_enn_neighbor_search_k_one_exclude_nearest_keeps_novel_nn():
     dist2s, idx = enn_neighbor_distances_and_indices(
         enn.rust_backend, q, search_k=1, exclude_nearest=True
     )
-    # Novel queries keep the true NN; distances API bumps fetch so search_k cols remain.
+
     assert dist2s.shape == (3, 1) and idx.shape == (3, 1)
     assert np.all(idx >= 0) and np.all(idx < 10)
 
@@ -127,7 +127,7 @@ def test_enn_index_neighbor_search_exclude_nearest():
     dist2s, idx = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=True
     )
-    # LOO self-queries keep public search_k columns (fetch bump + exclude).
+
     assert dist2s.shape == (3, 3) and idx.shape == (3, 3)
     neigh_d, neigh_i = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=True
@@ -145,7 +145,7 @@ def test_enn_index_neighbor_search_k_one_exclude_nearest_keeps_novel_nn():
     dist2s, idx = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, q, search_k=1, exclude_nearest=True
     )
-    # Novel queries keep the true NN (Exact LOO); no silent empty result.
+
     assert dist2s.shape == (3, 1) and idx.shape == (3, 1)
     assert np.all(idx >= 0) and np.all(idx < 10)
 
@@ -177,7 +177,7 @@ def test_enn_neighbor_search_exclude_nearest():
     dist2s_exclude, idx_exclude = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=True
     )
-    # Self-queries: bump fetch so exclude still returns search_k columns.
+
     assert dist2s_include.shape == (3, 3) and dist2s_exclude.shape == (3, 3)
     assert np.allclose(dist2s_include[:, 0], 0.0, atol=1e-6)
     assert np.all(dist2s_exclude[:, 0] > 1e-12)

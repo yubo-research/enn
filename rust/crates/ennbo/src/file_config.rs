@@ -317,9 +317,9 @@ mod tests {
 
     #[test]
     fn missing_hard_key_with_soft_above_default_preserves_soft() {
-        // Q5: absent hard must not full-default-fallback when soft is elevated.
-        // Resolve policy: hard = max(DEFAULT_HARD, soft). With DEFAULT_HARD=3000
-        // and soft=2000, hard becomes 3000; soft stays 2000.
+
+
+
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
         fs::write(
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn missing_hard_key_with_soft_above_default_hard_uses_soft() {
-        // When soft exceeds DEFAULT_HARD, absent hard resolves to soft.
+
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
         fs::write(
@@ -479,8 +479,8 @@ mod tests {
 
     #[test]
     fn install_tuning_picks_up_row_limit_overrides() {
-        // Avoid set_config_path here: it is process-global and races other tests.
-        // Mirror install_bpann_tuning_from_config by loading via with_path → to_tuning.
+
+
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
         let cfg = Config::with_path(&path);

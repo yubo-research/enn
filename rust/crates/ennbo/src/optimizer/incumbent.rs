@@ -32,7 +32,7 @@ impl Optimizer {
         Ok(())
     }
 
-    #[allow(dead_code)] // retained for tests / morbo callers; tell_turbo must not use it
+    #[allow(dead_code)]
     pub(crate) fn reset_incumbent_tracker(&mut self) {
         self.incumbent_tracker.reset();
     }
@@ -46,7 +46,7 @@ impl Optimizer {
         }
 
         if self.incumbent_tracker.observation_count() != self.obs_count() {
-            // Rebuild in natural units to match incremental tell (add_observations).
+
             if let Some(y_nat) = self.y_obs() {
                 self.incumbent_tracker.rebuild(&y_nat.view());
             }
@@ -78,7 +78,7 @@ impl Optimizer {
                             x_cand[[r, d]] = x_row[d];
                         }
                     }
-                    // Naturalize warped predict μ to match obs_row_y / Morbo ranges.
+
                     y_rows = surrogate
                         .naturalize_observations_y(surrogate.predict(&x_cand.view())?.mu);
                 }

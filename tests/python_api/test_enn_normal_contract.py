@@ -95,7 +95,7 @@ class TestENNNormalContract:
         se_ale = np.zeros_like(se)
         obj = ENNNormal(mu=mu, se=se, se_epi=se_epi, se_ale=se_ale)
         samples = obj.sample(num_samples=10, rng=rng)
-        # shape is (*se.shape, num_samples)
+
         assert samples.shape == (1, 2, 10)
         assert np.all(np.isfinite(samples))
 

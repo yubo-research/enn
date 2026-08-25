@@ -19,7 +19,7 @@ class TestPublicAPIExports:
         from enn import EpistemicNearestNeighbors
 
         assert inspect.isclass(EpistemicNearestNeighbors)
-        # Check constructor signature has required parameters
+
         sig = inspect.signature(EpistemicNearestNeighbors.__init__)
         params = list(sig.parameters.keys())
         assert "train_x" in params
@@ -46,7 +46,7 @@ class TestPublicAPIExports:
             TurboTRConfig,
         )
 
-        # These are dataclasses or similar - should be constructible
+
         assert inspect.isclass(OptimizerConfig)
         assert inspect.isclass(TurboTRConfig)
         assert inspect.isclass(MorboTRConfig)

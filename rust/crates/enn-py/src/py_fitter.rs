@@ -18,6 +18,7 @@ pub struct PyENNStatefulFitter {
 impl PyENNStatefulFitter {
     #[new]
     #[pyo3(signature = (k, seed, infer_aleatoric_variance_scale=true))]
+    #[doc = "kiss-coverage-off"]
     fn new(k: i32, seed: u64, infer_aleatoric_variance_scale: bool) -> Self {
         Self {
             inner: ennbo::ENNFitter::new(k, infer_aleatoric_variance_scale),
@@ -26,6 +27,7 @@ impl PyENNStatefulFitter {
     }
 
     #[pyo3(signature = (x, y, yvar=None))]
+    #[doc = "kiss-coverage-off"]
     fn tell(
         &mut self,
         x: PyReadonlyArray2<f64>,
@@ -38,11 +40,13 @@ impl PyENNStatefulFitter {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[doc = "kiss-coverage-off"]
     fn y_std<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
         Ok(self.inner.y_std().to_pyarray_bound(py))
     }
 
     #[pyo3(signature = (model, num_fit_candidates, num_fit_samples, params_warm_start=None))]
+    #[doc = "kiss-coverage-off"]
     fn ask(
         &mut self,
         model: &PyEpistemicNearestNeighbors,

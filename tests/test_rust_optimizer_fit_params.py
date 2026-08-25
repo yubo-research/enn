@@ -81,7 +81,7 @@ def test_none_fit_params_not_in_overrides():
     config = _make_enn_config(num_fit_samples=None, num_fit_candidates=None)
     overrides = _config_to_rust_overrides(config)
 
-    # overrides may be None or a dict without these keys
+
     if overrides is not None:
         assert (
             "num_fit_samples" not in overrides or overrides["num_fit_samples"] is None

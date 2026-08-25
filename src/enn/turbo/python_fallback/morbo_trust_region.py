@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
 from .turbo_utils import ScalarIncumbentMixin
 
-if TYPE_CHECKING:
-    from numpy.random import Generator
-    from scipy.stats._qmc import QMCEngine
 
-    from ..config.morbo_tr_config import MorboTRConfig
-    from ..config.rescalarize import Rescalarize
-
+from ..config.morbo_tr_config import MorboTRConfig
+from ..config.rescalarize import Rescalarize
 from ..config.candidate_rv import CandidateRV
 from ..config.raasp_driver import RAASPDriver
 
@@ -23,7 +19,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
         config: MorboTRConfig,
         num_dim: int,
         *,
-        rng: Generator,
+        rng: Any,
         candidate_rv: CandidateRV = CandidateRV.SOBOL,
     ) -> None:
         from .components.incumbent_selector import ChebyshevIncumbentSelector
@@ -74,7 +70,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
     def rescalarize(self) -> Rescalarize:
         return self._rescalarize
 
-    def resample_weights(self, rng: Generator) -> None:
+    def resample_weights(self, rng: Any) -> None:
         self.incumbent_selector.reset(rng)
         self._weights = self.incumbent_selector.weights
 
@@ -162,7 +158,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
     def needs_restart(self) -> bool:
         return self._tr.needs_restart()
 
-    def restart(self, rng: Generator | None = None) -> None:
+    def restart(self, rng: Any | None = None) -> None:
         from ..config.rescalarize import Rescalarize
 
         self._y_min, self._y_max, self._incumbent_y_raw = None, None, None
@@ -183,8 +179,8 @@ class MorboTrustRegion(ScalarIncumbentMixin):
         x_center: np.ndarray,
         lengthscales: np.ndarray | None,
         num_candidates: int,
-        rng: Generator,
-        sobol_engine: QMCEngine,
+        rng: Any,
+        sobol_engine: Any,
         raasp_driver: RAASPDriver = RAASPDriver.ORIG,
         num_pert: int = 20,
     ) -> np.ndarray:
@@ -205,7 +201,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
     def get_incumbent_indices(
         self,
         y: np.ndarray | Any,
-        rng: Generator,
+        rng: Any,
     ) -> np.ndarray:
         import numpy as np
 
@@ -223,7 +219,7 @@ class MorboTrustRegion(ScalarIncumbentMixin):
     def get_incumbent_value(
         self,
         y_obs: np.ndarray | Any,
-        rng: Generator,
+        rng: Any,
         mu_obs: np.ndarray | None = None,
     ) -> np.ndarray:
         import numpy as np

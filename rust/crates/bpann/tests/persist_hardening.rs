@@ -69,7 +69,7 @@ fn persist_rewrites_corrupt_pages_with_matching_header() {
 
 #[test]
 fn soft_sync_search_metamorphic_matches_hard_persist() {
-    // Soft-synced RAM index must agree with post-persist search (same rows).
+
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
     let mut soft = BpannBackend::new_empty(path.clone(), 3, 1)
@@ -193,10 +193,10 @@ fn soft_sync_keeps_disk_dirty_until_hard_persist() {
     b.append_rows(&x.view(), &y.view(), None).unwrap();
     b.ensure_index_sync().unwrap();
     assert_eq!(b.indexed_rows(), 20);
-    // Soft-only catch-up must still require a hard rewrite (pages lag).
+
     b.persist_index_to_disk().unwrap();
     assert!(path.join("index/pages.bin").exists());
-    // Idempotent second persist after hard write.
+
     let pages = std::fs::read(path.join("index/pages.bin")).unwrap();
     b.persist_index_to_disk().unwrap();
     assert_eq!(pages, std::fs::read(path.join("index/pages.bin")).unwrap());

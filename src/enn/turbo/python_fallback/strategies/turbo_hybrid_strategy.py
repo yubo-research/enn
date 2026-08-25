@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
 from ..sampling import draw_lhd
 from ...types.appendable_array import AppendableArray
 from .optimization_strategy import OptimizationStrategy
-
-if TYPE_CHECKING:
-    from ...types import TellInputs
 
 
 @dataclass
@@ -101,7 +98,7 @@ class TurboHybridStrategy(OptimizationStrategy):
     def init_progress(self) -> tuple[int, int] | None:
         return (int(self._init_idx), int(self._num_init))
 
-    def tell(self, opt: Any, inputs: TellInputs, *, x_unit: np.ndarray) -> np.ndarray:
+    def tell(self, opt: Any, inputs: Any, *, x_unit: np.ndarray) -> np.ndarray:
         x_all = opt._x_obs.view()
         y_all = opt._y_obs.view()
         y_var_all = opt._yvar_obs.view() if len(opt._yvar_obs) > 0 else None

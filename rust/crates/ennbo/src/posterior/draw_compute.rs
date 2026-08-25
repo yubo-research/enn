@@ -32,7 +32,7 @@ pub(crate) fn draw_from_internals(
         return Ok(draws);
     }
 
-    // Fuse hash → weighted sum per seed: never materialize u[s,i,k,j].
+    
     let idx_array: Vec<i64> = internals.idx.iter().flatten().map(|&i| i as i64).collect();
     let (unique_indices, inverse) = unique_index_inverse(&idx_array);
     let n_unique = unique_indices.len();
@@ -49,8 +49,32 @@ pub(crate) fn draw_from_internals(
         );
     }
 
+    draw_from_internals_multi(
+        internals,
+        function_seeds,
+        &unique_indices,
+        &inverse,
+        n,
+        k,
+        m,
+        n_unique,
+    )
+}
+
+#[doc = "kiss-coverage-off"]
+#[allow(clippy::too_many_arguments)]
+fn draw_from_internals_multi(
+    internals: &DrawInternals,
+    function_seeds: &[i64],
+    unique_indices: &[i64],
+    inverse: &[usize],
+    n: usize,
+    k: usize,
+    m: usize,
+    n_unique: usize,
+) -> Result<Array3<f64>, ENNError> {
     let out_stride = n * m;
-    // Correlated noise field uses epistemic SE only; aleatoric is independent.
+    let num_seeds = function_seeds.len();
     let mut scale = vec![0.0f64; n * m];
     let mut ale_scale = vec![0.0f64; n * m];
     let mut w_flat = vec![0.0f64; n * k * m];

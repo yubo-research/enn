@@ -591,7 +591,7 @@ mod kiss_coverage_tests {
         use crate::tuning::{clear_tuning_provider, set_tuning_provider, BpannTuning};
 
         clear_tuning_provider();
-        // Defaults: 100 rows is exhaustive → no skip edges.
+
         assert!(!needs_skip_edges(100));
 
         set_tuning_provider(Box::new(|| BpannTuning {

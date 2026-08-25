@@ -142,8 +142,8 @@ pub(crate) fn exact_f64_batch_topk(
     let mut dist2s = Array2::from_elem((n_query, search_k), f64::INFINITY);
     let mut idx = Array2::from_elem((n_query, search_k), -1i64);
 
-    // Full exact ranking by (distance, train index). Avoids FAISS f32 / batch-vs-single
-    // pool disagreements that previously needed tie_break_neighbors.
+
+
     let all_indices: Vec<usize> = (0..n_train).collect();
     let (train_x, _, _) = model.rows().train_rows_at(&all_indices)?;
     let dist_mat = pairwise_sq_l2(
@@ -253,9 +253,9 @@ pub(crate) fn get_neighbor_data(
     let (dist2s_full, idx_full) =
         super::index_search(model, x, search_k as i32, exclude_nearest)?;
 
-    // After exclude, novel queries may keep all fetched columns while self rows
-    // pad with -1. Cap k to the shortest run of valid (>= 0) indices so mixed
-    // batches never cast sentinel -1 into usize::MAX for row_y.
+
+
+
     let available_k = idx_full.ncols();
     let min_valid = (0..idx_full.nrows())
         .map(|r| {
@@ -405,7 +405,7 @@ pub(crate) fn get_conditional_neighbor_data(
             if is_self {
                 combined[1..sel_end].to_vec()
             } else {
-                // Novel query: keep true NN; search_k includes +1 extra for LOO.
+
                 combined[..sel_end].to_vec()
             }
         } else {
@@ -540,13 +540,13 @@ mod tests {
         let dist2s = array![[0.0, 1.0], [2.0, 3.0]];
         let idx = array![[0i64, 1], [1, 0]];
         let (d, i) = apply_exclude_nearest(dist2s.clone(), idx.clone(), true);
-        // Mixed batch: self row pads; novel keeps both columns → width 2.
+
         assert_eq!(d.shape(), [2, 2]);
-        // Row 0: self-match (dist 0) → drop col 0, keep idx 1, pad -1.
+
         assert_eq!(i[[0, 0]], 1);
         assert_eq!(d[[0, 0]], 1.0);
         assert_eq!(i[[0, 1]], -1);
-        // Row 1: novel (dist 2) → keep true NN and the second column.
+
         assert_eq!(i[[1, 0]], 1);
         assert_eq!(d[[1, 0]], 2.0);
         assert_eq!(i[[1, 1]], 0);
@@ -567,7 +567,7 @@ mod tests {
         use crate::params::ENNParams;
         use ndarray::concatenate;
 
-        // k == n so a self-row pads with -1 while a novel row keeps all columns.
+
         let train_x = Array2::from_shape_fn((10, 2), |(i, j)| (i as f64) + 0.1 * (j as f64));
         let train_y = Array2::from_shape_fn((10, 1), |(i, _)| i as f64);
         let train_yvar = Array2::from_elem((10, 1), 0.01);
@@ -601,7 +601,7 @@ mod tests {
         let model =
             EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
                 .unwrap();
-        // Novel query near train row 3 (index 3); must not drop that true NN.
+
         let query = array![[10.1, 10.1]];
         let (dist2s, idx) = exact_f64_batch_topk(&model, &query.view(), 3, true).unwrap();
         assert_eq!(dist2s.shape(), [1, 3]);

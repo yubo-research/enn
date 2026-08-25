@@ -44,7 +44,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        // Trait path stays warped for crate-internal UFCS callers.
+
         self.posterior_warped(x, params, flags)
     }
 
@@ -273,7 +273,7 @@ pub fn compute_weighted_posterior(
         Some(ov.clone())
     } else if model.has_yvar() {
         let n_query = data.dist2s.nrows();
-        // Handle empty query case (n_query == 0 or data.idx is empty)
+
         let k = if data.idx.is_empty() {
             0
         } else {
@@ -289,7 +289,7 @@ pub fn compute_weighted_posterior(
                         yvar_neighbors[[i * k + j, m]] = yvar_row[m];
                     }
                 }
-                // else: whatif point, keep 0
+
             }
         }
         Some(yvar_neighbors)
@@ -398,12 +398,12 @@ pub fn compute_weighted_stats_impl(
     let k = dist2s.ncols();
     let num_metrics = y_scale.len();
 
-    // Hoist constants outside loops
+
     let epistemic_scale = params.epistemic_variance_scale;
     let aleatoric_scale = params.aleatoric_variance_scale;
     let y_scale_sq: Vec<f64> = y_scale.iter().map(|&v| v * v).collect();
 
-    // Pre-compute var_epi using iterator-based zip for better cache efficiency
+
     let mut var_epi = Array2::zeros((n_query, k));
     for (i, mut row) in var_epi.rows_mut().into_iter().enumerate() {
         let dist_row = dist2s.row(i);
@@ -412,7 +412,7 @@ pub fn compute_weighted_stats_impl(
         }
     }
 
-    // Compute weights w with hoisted constants and pre-allocated storage
+
     let mut w = Array2::zeros((n_query * k, num_metrics));
     let yvar_ref = yvar_neighbors.as_ref();
 

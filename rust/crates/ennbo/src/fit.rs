@@ -53,7 +53,7 @@ fn compute_single_loglik(
     mu_i: &ArrayView2<f64>,
     se_i: &ArrayView2<f64>,
 ) -> f64 {
-    // Invalid moments must lose argmax over real (large negative) log-likelihoods.
+
     if !mu_i.iter().all(|v| v.is_finite()) || !se_i.iter().all(|v| v.is_finite()) {
         return f64::NEG_INFINITY;
     }
@@ -69,7 +69,7 @@ fn compute_single_loglik(
             let se_ij = se_i[[i, j]];
             let var_scaled = se_ij * se_ij;
 
-            // Gaussian log-likelihood: -0.5 * (log(2*pi*var) + (y-mu)^2/var)
+
             loglik += -0.5 * (2.0 * std::f64::consts::PI * var_scaled).ln()
                 - 0.5 * (y_ij - mu_ij).powi(2) / var_scaled;
         }
@@ -78,7 +78,7 @@ fn compute_single_loglik(
     if loglik.is_finite() {
         loglik
     } else {
-        // Overflowing sums must lose argmax (not tie at 0.0 against real negatives).
+
         f64::NEG_INFINITY
     }
 }
@@ -114,7 +114,7 @@ pub fn subsample_loglik_model<R: Rng>(
     } else {
         sample(rng, n, p_actual).into_iter().collect()
     };
-    // Natural-unit targets: matches public batch_posterior (naturalized μ/σ).
+
     let (x, y, _) = model.train_rows_at(&indices)?;
     subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
 }
@@ -135,7 +135,7 @@ pub fn subsample_loglik<R: Rng>(
         return Ok(vec![0.0; paramss.len()]);
     }
 
-    // Non-finite targets must not look better than real negative log-likelihoods.
+
     if !y.iter().all(|v| v.is_finite()) {
         return Ok(vec![f64::NEG_INFINITY; paramss.len()]);
     }
@@ -148,7 +148,7 @@ pub fn subsample_loglik<R: Rng>(
         sample(rng, n, p_actual).into_iter().collect()
     };
 
-    // Select subsampled data
+
     let num_metrics = y.ncols();
     let num_dim = x.ncols();
     let mut x_sel = Array2::zeros((p_actual, num_dim));
@@ -166,7 +166,7 @@ pub fn subsample_loglik<R: Rng>(
     let num_params = paramss.len();
     let num_outputs = y_sel.ncols();
 
-    // Validate shapes
+
     let expected_shape = vec![num_params, p_actual, num_outputs];
     let mu_shape = post.mu.shape().to_vec();
     let se_shape = post.se.shape().to_vec();
@@ -177,7 +177,7 @@ pub fn subsample_loglik<R: Rng>(
         });
     }
 
-    // Compute y_std for standardization
+
     let y_std_computed: Array1<f64> = if let Some(ys) = y_std {
         ys.to_owned()
     } else {
@@ -188,9 +188,9 @@ pub fn subsample_loglik<R: Rng>(
         .map(|&v| if v.is_finite() && v > 0.0 { v } else { 1.0 })
         .collect();
 
-    // Scale data
+
     let mut y_scaled = Array2::zeros(y_sel.raw_dim());
-    // mu_scaled and se_scaled are 3D: (num_params, p_actual, num_outputs)
+
     let mut mu_scaled = Array2::zeros((num_params * p_actual, num_outputs));
     let mut se_scaled = Array2::zeros((num_params * p_actual, num_outputs));
 
@@ -206,10 +206,10 @@ pub fn subsample_loglik<R: Rng>(
         }
     }
 
-    // Compute log-likelihoods
+
     let mut logliks = Vec::with_capacity(num_params);
     for pi in 0..num_params {
-        // Extract the pi-th parameter's predictions (p_actual x num_outputs)
+
         let start_idx = pi * p_actual;
         let mu_i = mu_scaled.slice(ndarray::s![start_idx..start_idx + p_actual, ..]);
         let se_i = se_scaled.slice(ndarray::s![start_idx..start_idx + p_actual, ..]);
@@ -370,8 +370,8 @@ mod tests {
     #[test]
     fn test_subsample_loglik_mismatched_xy() {
         let model = create_test_model();
-        let x = array![[0.5, 0.5], [0.2, 0.8]]; // 2 rows
-        let y = array![[1.0]]; // 1 row
+        let x = array![[0.5, 0.5], [0.2, 0.8]];
+        let y = array![[1.0]];
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let paramss = vec![params];
         let mut rng = StdRng::seed_from_u64(42);
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_compute_single_loglik_overflow_sum_is_neg_infinity() {
-        // Finite μ/σ but enormous residual → non-finite sum must lose argmax.
+
         let y = array![[1e308]];
         let mu = array![[-1e308]];
         let se = array![[1e-308]];

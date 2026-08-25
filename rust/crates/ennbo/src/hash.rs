@@ -164,7 +164,7 @@ pub fn normal_hash_batch_multi_seed_fast(
 
     let (unique_indices, inverse) = unique_index_inverse(data_indices);
 
-    // Flat buffer (num_seeds, num_indices, num_metrics) in C order; fill by seed in parallel.
+
     let mut flat = vec![0.0f64; num_seeds * row_len];
     flat.par_chunks_mut(row_len)
         .zip(function_seeds.par_iter())
@@ -201,8 +201,8 @@ pub fn normal_hash_batch_multi_seed(
     data_indices: &[i64],
     num_metrics: i64,
 ) -> Result<ArrayD<f64>, HashError> {
-    // For parity testing, we'd implement the Philox version here
-    // For now, delegate to fast version
+
+
     normal_hash_batch_multi_seed_fast(function_seeds, data_indices, num_metrics)
 }
 
@@ -212,17 +212,17 @@ mod tests {
 
     #[test]
     fn test_splitmix64_known_value() {
-        // Known test value from SplitMix64 reference
+
         let x = 0x123456789ABCDEF0u64;
         let result = splitmix64(x);
-        // Just verify it doesn't panic and produces deterministic output
+
         let result2 = splitmix64(x);
         assert_eq!(result, result2);
     }
 
     #[test]
     fn test_u64_to_f53_range() {
-        // u64_to_f53 should produce values in [0, 1)
+
         for x in [0u64, u64::MAX, 0x123456789ABCDEF0] {
             let f = u64_to_f53(x);
             assert!(
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_box_muller_finite() {
-        // Box-Muller should produce finite values for valid inputs
+
         let n = box_muller(0.5, 0.5);
         assert!(n.is_finite());
     }
@@ -282,8 +282,8 @@ mod tests {
 
     #[test]
     fn test_output_shape() {
-        let seeds = vec![1i64, 2i64]; // 2 seeds
-        let indices = vec![0i64, 1i64, 2i64]; // 3 indices
+        let seeds = vec![1i64, 2i64];
+        let indices = vec![0i64, 1i64, 2i64];
         let num_metrics = 4;
 
         let result = normal_hash_batch_multi_seed_fast(&seeds, &indices, num_metrics).unwrap();
@@ -308,7 +308,7 @@ mod tests {
         data_indices: &[i64],
         num_metrics: i64,
     ) -> Result<ArrayD<f64>, HashError> {
-        // Serial reference matching the pre-rayon algorithm (for parity checks).
+
         if num_metrics <= 0 {
             return Err(HashError::InvalidNumMetrics(num_metrics));
         }

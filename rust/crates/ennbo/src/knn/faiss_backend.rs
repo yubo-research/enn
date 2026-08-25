@@ -227,8 +227,8 @@ impl MmapColumnStore {
         let n = rows.nrows() * self.ncols;
         let byte_len = n * std::mem::size_of::<f64>();
         let dst = &mut self.mmap[offset..offset + byte_len];
-        // Always materialize C-order first, then one memcpy. Correct for Fortran /
-        // strided views without sharing bpann's as_slice + axis_iter dual path.
+
+
         let contiguous = rows.as_standard_layout();
         let src = contiguous
             .as_slice()

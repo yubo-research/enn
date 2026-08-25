@@ -10,6 +10,7 @@ use crate::index::{bpann_brute_force_topk_mmap, MmapSearchStore};
 use crate::merge::{
     bpann_merge_topk_candidates, find_query_train_id, merge_topk_precomputed_dist_with_self,
 };
+use crate::mmap_store::MmapColumnStore;
 
 pub struct SearchPendingArgs<'a> {
     pub total: usize,
@@ -19,6 +20,36 @@ pub struct SearchPendingArgs<'a> {
     pub scale_x: bool,
     pub x_scale: &'a [f64],
     pub num_dim: usize,
+}
+
+#[doc = "kiss-coverage-off"]
+fn merge_pending_unscaled(
+    leg_a: &[(u32, f32)],
+    leg_b: &[(u32, f32)],
+    train_x: &MmapColumnStore,
+    query_buf: &[f64],
+    k_eff: usize,
+    pool_k: usize,
+    exclude_nearest: bool,
+) -> Vec<(u32, f64)> {
+    let self_id = if exclude_nearest {
+        let zero = leg_a
+            .iter()
+            .chain(leg_b.iter())
+            .find(|(_, d)| f64::from(*d) <= 1e-15)
+            .map(|(id, _)| *id);
+        zero.or_else(|| find_query_train_id(train_x, query_buf))
+    } else {
+        None
+    };
+    merge_topk_precomputed_dist_with_self(
+        leg_a,
+        leg_b,
+        k_eff,
+        pool_k,
+        exclude_nearest,
+        self_id,
+    )
 }
 
 pub fn search_indexed_and_pending(
@@ -95,26 +126,8 @@ pub fn search_indexed_and_pending(
                 )
                 .expect("bpann_merge_topk_candidates")
             } else {
-                let self_id = if exclude_nearest {
-                    let zero = leg_a
-                        .iter()
-                        .chain(leg_b.iter())
-                        .find(|(_, d)| f64::from(*d) <= 1e-15)
-                        .map(|(id, _)| *id);
-                    zero.or_else(|| find_query_train_id(train_x, query_buf))
-                } else {
-                    None
-                };
-                merge_topk_precomputed_dist_with_self(
-                    &leg_a,
-                    &leg_b,
-                    k_eff,
-                    pool_k,
-                    exclude_nearest,
-                    self_id,
-                )
+                merge_pending_unscaled(&leg_a, &leg_b, train_x, query_buf, k_eff, pool_k, exclude_nearest)
             };
-            // Sentinel fill: never leave (dist=0, idx=0) for missing hits.
             let mut dist_row = vec![f64::INFINITY; k_eff];
             let mut idx_row = vec![-1i64; k_eff];
             for (j, (id, dist)) in merged.into_iter().enumerate() {

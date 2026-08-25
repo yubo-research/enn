@@ -142,7 +142,7 @@ fn fallback_observations_without_surrogate() {
     let ya = optimizer.y_obs().unwrap();
     assert_eq!(ya.shape(), &[1, 2]);
     assert!((optimizer.obs_access().obs_row_x(0).unwrap()[[0]] - 1.0).abs() < 1e-12);
-    // Cover fallback branch of y_obs_warped (no surrogate).
+
     let yw = optimizer.obs_access().y_obs_warped().unwrap();
     assert_eq!(yw.shape(), &[1, 2]);
     assert!((yw[[0, 0]] - 0.5).abs() < 1e-12);
@@ -174,8 +174,8 @@ fn test_noise_aware_config_and_incumbent_after_tell() {
 
 #[test]
 fn reset_incumbent_tracker_desyncs_count_from_obs() {
-    // Regression lock: tell_turbo must not reset the tracker on TR restart, because
-    // a zeroed observation_count forces update_incumbent to load full y_obs (Θ(N)).
+
+
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(56);
     let overrides = ConfigOverrides {
@@ -203,10 +203,10 @@ fn turbo_length_restart_keeps_incumbent_tracker_synced() {
     };
     let mut opt =
         create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
-    // Drive failure counter to force a turbo length restart.
+
     for i in 0..64 {
         let x = array![[0.1 + 0.01 * (i as f64), 0.2]];
-        let y = array![[-(i as f64)]]; // never improve incumbent
+        let y = array![[-(i as f64)]];
         opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
         assert_eq!(
             opt.incumbent_tracker.observation_count(),

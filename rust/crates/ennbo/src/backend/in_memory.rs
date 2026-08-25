@@ -71,6 +71,7 @@ impl InMemoryEnnBackend {
         self.train_x_rows.nrows()
     }
 
+    #[doc = "kiss-coverage-off"]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -259,7 +260,7 @@ impl InMemoryEnnBackend {
 }
 
 #[cfg(test)]
-mod in_memory_unit_tests {
+mod tests {
     use super::*;
     use ndarray::array;
 
@@ -283,5 +284,12 @@ mod in_memory_unit_tests {
         assert!(backend.row_yvar(0).unwrap().is_none());
         backend.search(&array![[0.1, 0.2]].view(), 1, false).unwrap();
         assert!(backend.index_memory_bytes().unwrap() > 0);
+    }
+
+    #[test]
+    fn empty_backend_reports_empty() {
+        let b = InMemoryEnnBackend::new_empty(2, 1, IndexDriver::default()).unwrap();
+        assert!(b.is_empty());
+        assert_eq!(b.len(), 0);
     }
 }

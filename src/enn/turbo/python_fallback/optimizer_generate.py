@@ -1,27 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
 from . import turbo_optimizer_utils, turbo_utils
 from ..config.candidate_rv import CandidateRV
 
-if TYPE_CHECKING:
-    from numpy.random import Generator
-
-    from ..config.optimizer_config import OptimizerConfig
 
 
 @dataclass(frozen=True)
 class _CandidateGenContext:
-    config: OptimizerConfig
+    config: Any
     tr_state: Any
     num_dim: int
     sobol_seed_base: int
     restart_generation: int
-    rng: Generator
+    rng: Any
 
 
 def generate_optimizer_candidates(

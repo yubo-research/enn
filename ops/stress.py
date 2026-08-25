@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ DRAW_OBS_NOISE_STD = 0.1
 DRAW_F_CENTER = 0.3
 DRAW_FLAGS = PosteriorFlags(observation_noise=True)
 DRAW_FLAGS_NO_OBS = PosteriorFlags(observation_noise=False)
-# Printed duration fields (*_s) use fixed four fractional digits.
+
 DURATION_S_FMT = ".4f"
 STRESS_PARAMS = ENNParams(
     k_num_neighbors=STRESS_QUERY_K,
@@ -60,8 +60,8 @@ TURBO_ENN_ACKLEY_NOISE = 0.1
 TURBO_ENN_SEED = 0
 TURBO_ENN_K = 10
 TURBO_ENN_NUM_FIT_SAMPLES = 100
-# Larger than proposal-scale chunk: turbo-enn large gaps pay per-tell fit/TR cost.
-# Fewer, larger tells cut soft-sync overhead on bpann_disk empty-leaf drains.
+
+
 TURBO_ENN_SEED_CHUNK = 100_000
 TURBO_ENN_SEED_CHUNK_FLAT = 200_000
 PROPOSAL_SCALE_NS: tuple[int, ...] = (
@@ -428,9 +428,9 @@ def run_enn_add_stress(
         model_kwargs["work_dir"] = cfg.work_dir
         model_kwargs["enn_storage"] = "disk"
     model = EpistemicNearestNeighbors(**model_kwargs)
-    # Zero-row warmup: warms the Python validation/binding path only (the
-    # library short-circuits on zero rows), so checkpoint 1 excludes
-    # interpreter warmup but still pays first-touch library costs.
+
+
+
     model.add(empty_x, empty_y)
 
     if cfg.batch_size < 1:
@@ -438,8 +438,8 @@ def run_enn_add_stress(
     checkpoint_list = sorted(checkpoints)
     next_checkpoint_i = 0
     last_heartbeat_t = time.perf_counter()
-    # Library-only time (model.add + flush scheduling) accumulated since the
-    # previous checkpoint; excludes synthetic-data generation and loop overhead.
+
+
     segment_lib_s = 0.0
 
     def emit_checkpoints(current_n: int) -> Iterator[tuple[int, float, float]]:
@@ -449,11 +449,11 @@ def run_enn_add_stress(
             and checkpoint_list[next_checkpoint_i] <= current_n
         ):
             cp = checkpoint_list[next_checkpoint_i]
-            # Index sync is library work, so it counts toward the segment.
-            # Disk mode (batch or single-row) defers indexing to
-            # schedule_background_flush inside the add loop, matching the
-            # baseline; forcing a sync here would build tiny index fragments
-            # the baseline never built.
+
+
+
+
+
             if index_driver not in DISK_DEFER_SYNC_DRIVERS:
                 t_sync = time.perf_counter()
                 model.ensure_index_sync()
@@ -774,10 +774,10 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     fit_s = time.perf_counter() - t0
 
     t1 = time.perf_counter()
-    # Likelihood path: observation_noise=True (posterior lik is analytic).
+
     post_lik = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS)
     avg_lik_post = average_likelihood(y_test, post_lik.mu, post_lik.se)
-    # Argmin-RMS path: observation_noise=False joint draws.
+
     post_rms = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS_NO_OBS)
     post_rms_draws = post_rms.sample(config.num_draws, sample_rng)
     post_argmin_rms = argmin_rms(x_test, post_rms_draws)
@@ -794,8 +794,8 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     )
 
     t2 = time.perf_counter()
-    # One ON=False joint draw serves both empirical lik and argmin metrics.
-    # (A second ON=True draw nearly doubled eval_s without helping argmin quality.)
+
+
     function_seeds = function_seeds_for_sample(config.seed + 4, config.num_draws)
     fn_draws, _idx = model.posterior_function_draw(
         x_test,
@@ -1152,7 +1152,7 @@ def run_turbo_enn_stress(
         )
         tell_s = time.perf_counter() - t0
         t_ask0 = time.perf_counter()
-        _ = opt.ask(num_arms=1)  # discard arms; timing only
+        _ = opt.ask(num_arms=1)
         ask_s = time.perf_counter() - t_ask0
         iter_s = ask_s + tell_s
         yield TurboEnnRoundResult(n=stop, iter_s=iter_s, ask_s=ask_s, tell_s=tell_s)
@@ -1196,8 +1196,8 @@ def seed_turbo_enn_to_n(
     lo = bounds[:, 0]
     hi = bounds[:, 1]
     assert np.all(hi > lo), "bounds require hi > lo per dimension"
-    # Generate per chunk so peak RAM stays O(chunk·D), not O(n·D). Full-N
-    # materialization made turbo-enn bpann_disk exceed 1 GiB well below n=1e8.
+
+
     for start in range(0, n, chunk):
         end = min(start + chunk, n)
         take = end - start

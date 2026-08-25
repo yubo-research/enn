@@ -14,7 +14,7 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
-# Matches bpann `DEFAULT_STRUCTURED_BUILD_ROW_LIMIT` / `build_batch` cutoff.
+
 STRUCTURED_BUILD_ROW_LIMIT = 1024
 DUPLICATE_X = [1.0, 2.0, 3.0]
 QUERY = np.array([[1.0, 2.0, 3.0]])

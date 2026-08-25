@@ -123,7 +123,7 @@ pub fn score_queries_flat(
                 exclude_nearest,
                 self_id,
             );
-            // Sentinel fill: never leave (dist=0, idx=0) for missing hits.
+
             let mut dist_row = vec![f64::INFINITY; k_eff];
             let mut idx_row = vec![-1i64; k_eff];
             for (j, (id, dist)) in merged.into_iter().enumerate() {
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn topk_flat_prefers_closer_2d_rows() {
-        // rows: (0,0), (3,0), (1,0) — nearest to (0,0) is id 0 then 2
+
         let flat = [0.0f32, 0.0, 3.0, 0.0, 1.0, 0.0];
         let hits = topk_flat_sq_l2(&[0.0, 0.0], &flat, 3, 2, 2);
         assert_eq!(hits.iter().map(|h| h.0).collect::<Vec<_>>(), vec![0, 2]);

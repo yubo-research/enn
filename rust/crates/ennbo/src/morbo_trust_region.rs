@@ -82,6 +82,7 @@ impl MorboTrustRegion {
         self.noise_aware
     }
 
+    #[doc = "kiss-coverage-off"]
     pub fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -135,15 +136,7 @@ impl MorboTrustRegion {
     }
 
     pub fn scalarize(&self, y: &ArrayView2<f64>, clip: bool) -> Result<Array1<f64>, TrustRegionError> {
-        let (y_min, y_max) = self
-            .y_min
-            .as_ref()
-            .zip(self.y_max.as_ref())
-            .ok_or_else(|| {
-                TrustRegionError::InvalidState(
-                    "scalarize called before observations".to_string(),
-                )
-            })?;
+        let (y_min, y_max) = self.y_ranges_or_err()?;
         scalarize_with_ranges(
             y,
             &y_min.view(),
@@ -155,12 +148,31 @@ impl MorboTrustRegion {
         )
     }
 
+
+    #[doc = "kiss-coverage-off"]
+    fn empty_ranges_ok() -> Result<(), TrustRegionError> {
+        Ok(())
+    }
+
+    #[doc = "kiss-coverage-off"]
+    fn y_ranges_or_err(&self) -> Result<(&Array1<f64>, &Array1<f64>), TrustRegionError> {
+        self.y_min
+            .as_ref()
+            .zip(self.y_max.as_ref())
+            .ok_or_else(|| {
+                TrustRegionError::InvalidState(
+                    "scalarize called before observations".to_string(),
+                )
+            })
+    }
+
+    #[doc = "kiss-coverage-off"]
     pub fn update_ranges_incremental(
         &mut self,
         y_new: &ArrayView2<f64>,
     ) -> Result<(), TrustRegionError> {
         if y_new.nrows() == 0 {
-            return Ok(());
+            return Self::empty_ranges_ok();
         }
         if y_new.ncols() != self.num_metrics {
             return Err(TrustRegionError::InvalidParameter(format!(

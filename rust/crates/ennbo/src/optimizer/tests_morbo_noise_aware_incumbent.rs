@@ -63,7 +63,7 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
     assert_eq!(n, 4);
 
     let pred = sur.predict(&x_all.view()).expect("predict");
-    // Incumbent path naturalizes warped predict μ to match Morbo ranges / obs_row_y.
+
     let mu = sur.naturalize_observations_y(pred.mu);
 
     let scores_on_y = opt

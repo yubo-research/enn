@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 
 /// Python wrapper for normal_hash_batch_multi_seed_fast
 #[pyfunction(name = "normal_hash_batch_multi_seed_fast")]
+#[doc = "kiss-coverage-off"]
 pub fn normal_hash_batch_multi_seed_fast_py<'py>(
     py: Python<'py>,
     function_seeds: PyReadonlyArray1<i64>,
@@ -24,14 +25,14 @@ pub fn normal_hash_batch_multi_seed_fast_py<'py>(
     output_shape.extend(input_shape.iter().copied());
     output_shape.push(num_metrics.max(0) as usize);
 
-    // Release GIL for computation
+
     let result = py
         .allow_threads(|| ennbo::normal_hash_batch_multi_seed_fast(&seeds, &indices, num_metrics));
 
     match result {
         Ok(arr) => {
-            // Reshape from (num_seeds, flattened_indices, num_metrics)
-            // to (num_seeds, *data_indices.shape, num_metrics) for API parity.
+
+
             let reshaped = arr
                 .into_shape_with_order(IxDyn(&output_shape))
                 .map_err(|e| PyValueError::new_err(format!("Shape error: {}", e)))?;

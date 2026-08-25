@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .acquisition import ThompsonAcqOptimizer, UCBAcqOptimizer
 
-if TYPE_CHECKING:
-    from .protocols import AcquisitionOptimizer, Surrogate
 
-
-def build_surrogate(cfg: Any) -> Surrogate:
+def build_surrogate(cfg: Any) -> Any:
     from .gp_surrogate import GPSurrogate
 
     if type(cfg).__name__ == "OptimizerConfig":
@@ -24,7 +21,7 @@ def build_surrogate(cfg: Any) -> Surrogate:
     raise ValueError(f"Unknown surrogate config type: {name}")
 
 
-def build_acquisition_optimizer(cfg: Any) -> AcquisitionOptimizer:
+def build_acquisition_optimizer(cfg: Any) -> Any:
     from .acquisition import ParetoAcqOptimizer, RandomAcqOptimizer
 
     if type(cfg).__name__ == "OptimizerConfig":
