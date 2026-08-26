@@ -5,6 +5,7 @@ mod draw_compute;
 mod light;
 mod neighbor;
 pub mod neighbor_dist;
+pub(crate) use neighbor::index_search;
 
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 
@@ -13,7 +14,6 @@ use self::light::idx_nested_to_array2;
 use self::neighbor::{get_conditional_neighbor_data, get_neighbor_data};
 use crate::draw::DrawInternals;
 use crate::error::{ENNError, EPS_VAR};
-use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::stats::WeightedStats;
@@ -147,24 +147,6 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         let mut draws = draw_from_internals(self, &internals, function_seeds)?;
         self.naturalize_draws_3d(&mut draws);
         Ok((draws, internals.idx))
-    }
-}
-
-pub(crate) fn index_search(
-    model: &EpistemicNearestNeighbors,
-    x: &ArrayView2<f64>,
-    search_k: i32,
-    exclude_nearest: bool,
-) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-    if !model.backend.defer_index_sync_for_search() {
-        model.ensure_index_sync()?;
-    }
-    if model.backend_driver() == IndexDriver::Exact {
-        neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest)
-    } else {
-        let (_, idx) = model.backend_search(x, search_k, exclude_nearest)?;
-        let dist2s = neighbor::dist2s_for_neighbor_indices(model, x, &idx);
-        Ok((dist2s, idx))
     }
 }
 

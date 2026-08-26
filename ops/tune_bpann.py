@@ -58,10 +58,10 @@ def run_stress(*, num_obs: int, config_path: Path) -> tuple[float, float]:
         capture_output=True,
         text=True,
     )
+    from ops.stress import parse_stress_row
+
     lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
-    last = lines[-1].split()
-    query_s = float(last[-2])
-    segment_s = float(last[-1])
+    _n, query_s, segment_s = parse_stress_row(lines[-1])
     return query_s, segment_s
 
 

@@ -4,6 +4,7 @@ use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
 
 use crate::draw::NeighborData;
 use crate::error::ENNError;
+use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 
@@ -95,6 +96,53 @@ pub(crate) fn dist2s_for_neighbor_indices(
     out
 }
 
+/// Re-sort each query row by refined f64 distance (then index) for stable top-k.
+pub(crate) fn sort_neighbors_by_dist2(dist2s: &mut Array2<f64>, idx: &mut Array2<i64>) {
+    let n_query = dist2s.nrows();
+    let k = dist2s.ncols();
+    for i in 0..n_query {
+        let mut pairs: Vec<(f64, i64)> = (0..k).map(|j| (dist2s[[i, j]], idx[[i, j]])).collect();
+        pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        for (j, (d, t)) in pairs.iter().enumerate() {
+            dist2s[[i, j]] = *d;
+            idx[[i, j]] = *t;
+        }
+    }
+}
+
+pub(crate) fn index_search(
+    model: &EpistemicNearestNeighbors,
+    x: &ArrayView2<f64>,
+    search_k: i32,
+    exclude_nearest: bool,
+) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
+    if !model.backend.defer_index_sync_for_search() {
+        model.ensure_index_sync()?;
+    }
+    const FAISS_F64_OVERSAMPLE: i32 = 32;
+    let fetch_k = if model.backend_driver() == IndexDriver::Exact {
+        search_k
+            .saturating_add(FAISS_F64_OVERSAMPLE)
+            .min(model.num_obs() as i32)
+            .max(search_k)
+    } else {
+        search_k
+    };
+    let (_, mut idx) = model.backend_search(x, fetch_k, exclude_nearest)?;
+    let mut dist2s = dist2s_for_neighbor_indices(model, x, &idx);
+    sort_neighbors_by_dist2(&mut dist2s, &mut idx);
+    let k_out = search_k as usize;
+    if dist2s.ncols() > k_out {
+        dist2s = dist2s
+            .slice_axis(Axis(1), ndarray::Slice::from(..k_out))
+            .to_owned();
+        idx = idx
+            .slice_axis(Axis(1), ndarray::Slice::from(..k_out))
+            .to_owned();
+    }
+    Ok((dist2s, idx))
+}
+
 #[cfg(test)]
 fn faiss_pairs_from_row(
     dist2s_faiss: &Array2<f64>,
@@ -122,6 +170,7 @@ pub(crate) fn use_matrix_topk_batch(n_query: usize, escalate_count: usize) -> bo
     false
 }
 
+#[cfg(test)]
 pub(crate) fn exact_f64_batch_topk(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -175,6 +224,7 @@ const SELF_DIST_EPS: f64 = 1e-15;
 ///
 /// Self-match rows drop column 0 and pad with `(-1, inf)`; novel rows keep every
 /// fetched column. Trailing columns unused in every row are trimmed.
+#[cfg(test)]
 fn apply_exclude_nearest(
     dist2s: Array2<f64>,
     idx: Array2<i64>,
@@ -251,7 +301,7 @@ pub(crate) fn get_neighbor_data(
     }
 
     let (dist2s_full, idx_full) =
-        super::index_search(model, x, search_k as i32, exclude_nearest)?;
+        index_search(model, x, search_k as i32, exclude_nearest)?;
 
 
 
@@ -358,7 +408,7 @@ pub(crate) fn get_conditional_neighbor_data(
 
     let train_search_k = search_k.min(n_train);
     let (dist2_train, idx_train) = if train_search_k > 0 {
-        super::index_search(model, x, train_search_k as i32, false)?
+        index_search(model, x, train_search_k as i32, false)?
     } else {
         (
             Array2::zeros((batch_size, 0)),
@@ -623,7 +673,7 @@ mod tests {
 
     #[test]
     fn index_search_exact_refines_distances() {
-        use super::super::index_search;
+        use super::index_search;
 
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0]];

@@ -382,6 +382,10 @@ def load_num_obs_existing(work_dir: str) -> int:
     return 0
 
 
+def format_kv(key: str, value: object) -> str:
+    return f"{key} = {value}"
+
+
 def format_config_header(
     *,
     num_dim: int,
@@ -390,12 +394,12 @@ def format_config_header(
     num_obs_existing: int | None = None,
 ) -> str:
     prefix = "restarting " if num_obs_existing else ""
-    header = f"{prefix}num_dim={num_dim} num_obs={num_obs}"
+    parts = [format_kv("num_dim", num_dim), format_kv("num_obs", num_obs)]
     if num_obs_existing:
-        header = f"{header} num_obs_existing={num_obs_existing}"
+        parts.append(format_kv("num_obs_existing", num_obs_existing))
     if work_dir is not None:
-        header = f"{header} work_dir={work_dir}"
-    return header
+        parts.append(format_kv("work_dir", work_dir))
+    return prefix + " ".join(parts)
 
 
 def _time_query_s(model: EpistemicNearestNeighbors, x_query: np.ndarray) -> float:
@@ -482,11 +486,11 @@ def run_enn_add_stress(
                     model.schedule_background_flush()
                 segment_lib_s += time.perf_counter() - t_add
                 if cfg.progress_every and (n % cfg.progress_every == 0):
-                    click.echo(f"progress n={n}", err=True)
+                    click.echo(format_kv("progress n", n), err=True)
                 if cfg.heartbeat_seconds and (
                     time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
                 ):
-                    click.echo(f"heartbeat n={n}", err=True)
+                    click.echo(format_kv("heartbeat n", n), err=True)
                     last_heartbeat_t = time.perf_counter()
                 yield from emit_checkpoints(n)
         else:
@@ -504,11 +508,11 @@ def run_enn_add_stress(
                 segment_lib_s += time.perf_counter() - t_add
                 n += x_batch.shape[0]
                 if cfg.progress_every and (n % cfg.progress_every == 0):
-                    click.echo(f"progress n={n}", err=True)
+                    click.echo(format_kv("progress n", n), err=True)
                 if cfg.heartbeat_seconds and (
                     time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
                 ):
-                    click.echo(f"heartbeat n={n}", err=True)
+                    click.echo(format_kv("heartbeat n", n), err=True)
                     last_heartbeat_t = time.perf_counter()
                 yield from emit_checkpoints(n)
     finally:
@@ -516,15 +520,28 @@ def run_enn_add_stress(
             model.persist_index_to_disk()
 
 
-def stress_row_n_width(num_obs: int) -> int:
-    """Character width for the N column; sized for the largest checkpoint (num_obs)."""
-    if num_obs < 1:
-        raise ValueError("num_obs must be >= 1")
-    return len(str(num_obs))
+def format_stress_row(n: int, query_s: float, segment_s: float) -> str:
+    return (
+        f"{format_kv('n', n)} {format_kv('query_s', f'{query_s:{DURATION_S_FMT}}')} "
+        f"{format_kv('segment_s', f'{segment_s:{DURATION_S_FMT}}')}"
+    )
 
 
-def format_stress_row(n: int, query_s: float, segment_s: float, *, n_width: int) -> str:
-    return f"{n:>{n_width}} {query_s:{DURATION_S_FMT}} {segment_s:{DURATION_S_FMT}}"
+def parse_stress_row(line: str) -> tuple[int, float, float]:
+    """Parse a ``format_stress_row`` line; return ``(n, query_s, segment_s)``."""
+    kv: dict[str, str] = {}
+    tokens = line.split()
+    i = 0
+    while i + 2 < len(tokens):
+        if tokens[i + 1] == "=":
+            kv[tokens[i]] = tokens[i + 2]
+            i += 3
+        else:
+            i += 1
+    try:
+        return int(kv["n"]), float(kv["query_s"]), float(kv["segment_s"])
+    except KeyError as exc:
+        raise ValueError(f"missing key in stress row: {line!r}") from exc
 
 
 @dataclass(frozen=True)
@@ -1374,14 +1391,14 @@ def cli() -> None:
             type=int,
             default=0,
             show_default=True,
-            help="Emit `progress n=<N>` to stderr every N additions (0 disables).",
+            help="Emit `progress n = <N>` to stderr every N additions (0 disables).",
         ),
         click.Option(
             ["--heartbeat-seconds"],
             type=float,
             default=DEFAULT_HEARTBEAT_SECONDS,
             show_default=True,
-            help="Emit `heartbeat n=<N>` to stderr at most this often (0 disables).",
+            help="Emit `heartbeat n = <N>` to stderr at most this often (0 disables).",
         ),
         click.Option(
             ["--work-dir"],
@@ -1445,7 +1462,6 @@ def enn(
             num_obs_existing=num_obs_existing if num_obs_existing else None,
         )
     )
-    n_width = stress_row_n_width(num_obs)
     batch_size = ENN_ADD_STRESS_BATCH_SIZE if batch else 1
     for n, query_s, segment_s in run_enn_add_stress(
         index_driver=driver,
@@ -1458,7 +1474,7 @@ def enn(
             work_dir=work_dir,
         ),
     ):
-        click.echo(format_stress_row(n, query_s, segment_s, n_width=n_width))
+        click.echo(format_stress_row(n, query_s, segment_s))
 
 
 @cli.command(
