@@ -48,6 +48,16 @@ fn search_fragment_budget(fragment_count: usize, indexed_rows: usize) -> usize {
         .min(t.search_fragment_budget_max)
 }
 
+fn search_fragment_budget_for_indices(indices: &[BpannIndex], indexed_rows: usize) -> usize {
+    if indices.is_empty() {
+        return 0;
+    }
+    if indices.iter().any(|index| index.is_flat_forest()) {
+        return indices.len();
+    }
+    search_fragment_budget(indices.len(), indexed_rows)
+}
+
 fn search_beam_width(_indexed_rows: usize) -> usize {
     current_tuning().search_beam_width
 }
@@ -240,6 +250,9 @@ impl IncrementalIndex {
 
     /// RAM amalgamation only: no `persist()`, no metadata rewrite.
     fn maybe_compact(&mut self, ctx: &IndexBuildContext<'_>) -> Result<(), BpannError> {
+        if !self.indices.is_empty() && self.indices.iter().all(|i| i.is_flat_forest()) {
+            return Ok(());
+        }
         let max_fragments = index_compact_threshold(self.indexed_rows);
         let compact_limit = max_fragments.saturating_mul(2).max(max_fragments + 1);
         if self.indices.len() > compact_limit {
@@ -257,7 +270,11 @@ impl IncrementalIndex {
         while self.indices.len() > max_fragments {
             let over = self.indices.len() - max_fragments;
             let merge_n = over.clamp(2, 4).min(self.indices.len());
+            let before = self.indices.len();
             self.amalgamate_smallest_run(ctx, merge_n)?;
+            if self.indices.len() == before {
+                break;
+            }
         }
         Ok(())
     }
@@ -276,6 +293,9 @@ impl IncrementalIndex {
         let small_limit = current_tuning().small_fragment_merge_rows;
         for i in 0..=self.indices.len().saturating_sub(merge_n) {
             let slice = &self.indices[i..i + merge_n];
+            if slice.iter().any(|index| index.is_flat_forest()) {
+                continue;
+            }
             let rows: usize = slice.iter().map(|index| index.header.indexed_rows).sum();
             let all_small = slice
                 .windows(2)
@@ -288,6 +308,9 @@ impl IncrementalIndex {
                 best_rows = rank;
                 best_i = i;
             }
+        }
+        if best_rows == usize::MAX {
+            return Ok(());
         }
         let removed: Vec<BpannIndex> = self.indices.drain(best_i..best_i + merge_n).collect();
         let merged = BpannIndex::concat_merge(removed, self.index_dir.clone(), false)?;
@@ -391,7 +414,7 @@ impl IncrementalIndex {
         k: usize,
         store: Option<&MmapSearchStore<'_>>,
     ) -> Result<Vec<(u32, f32)>, BpannError> {
-        let budget = search_fragment_budget(self.indices.len(), self.indexed_rows);
+        let budget = search_fragment_budget_for_indices(&self.indices, self.indexed_rows);
         let indices_to_search: Vec<&BpannIndex> = if self.indices.len() <= budget {
             self.indices.iter().collect()
         } else {
@@ -448,7 +471,7 @@ fn search_index_candidates(
 
 
     let t = current_tuning();
-    if t.use_exhaustive_search(rows) {
+    if t.use_exhaustive_search(rows) || index.requires_exhaustive_leaf_scan() {
         search_exhaustive_leaves_with_store(index, query, k, store)
     } else {
         let beam = search_beam_width(rows);

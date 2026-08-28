@@ -391,6 +391,48 @@ impl BpannIndex {
             .unwrap_or_default()
     }
 
+    /// True when any leaf uses mmap row-range scoring (empty-leaf soft-sync pages).
+    /// Survives `concat_merge` and requires exhaustive scan with a mmap store.
+    pub fn has_mmap_range_leaves(&self) -> bool {
+        self.pages.iter().any(|page| {
+            matches!(
+                page,
+                Page::Leaf {
+                    row_range: Some(_),
+                    ..
+                }
+            )
+        })
+    }
+
+    /// Greedy beam search is invalid for these topologies; scan all leaves.
+    pub fn requires_exhaustive_leaf_scan(&self) -> bool {
+        self.is_flat_forest() || self.has_mmap_range_leaves()
+    }
+
+    /// True when the index is a star-shaped soft-sync forest: exactly one internal
+    /// page (the root) whose children are all leaves. Greedy beam search cannot
+    /// navigate this topology; callers must scan all leaves exhaustively.
+    pub fn is_flat_forest(&self) -> bool {
+        let internal_count = self
+            .pages
+            .iter()
+            .filter(|page| matches!(page, Page::Internal { .. }))
+            .count();
+        if internal_count != 1 {
+            return false;
+        }
+        let Some(Page::Internal { child_page_ids, .. }) =
+            self.page_by_id(self.header.root_page_id)
+        else {
+            return false;
+        };
+        !child_page_ids.is_empty()
+            && child_page_ids.iter().all(|&child_id| {
+                matches!(self.page_by_id(child_id), Some(Page::Leaf { .. }))
+            })
+    }
+
     pub fn leaf_row_ids(&self) -> Vec<u32> {
         let mut row_ids = Vec::new();
         for page in &self.pages {
@@ -610,5 +652,56 @@ mod kiss_coverage_tests {
 
         clear_tuning_provider();
         assert!(!needs_skip_edges(100));
+    }
+
+    #[test]
+    fn is_flat_forest_detects_star_topology() {
+        let dir = TempDir::new().unwrap();
+        let kmeans = BpannIndex::build_from_vectors(
+            &[
+                vec![0.0, 0.0],
+                vec![1.0, 0.0],
+                vec![0.0, 1.0],
+                vec![1.0, 1.0],
+            ],
+            2,
+            2,
+            0,
+            dir.path().join("kmeans"),
+        )
+        .unwrap();
+        assert!(!kmeans.is_flat_forest());
+
+        let flat = BpannIndex::from_pages_unpersisted(
+            2,
+            4,
+            2,
+            vec![
+                Page::Leaf {
+                    page_id: 1,
+                    row_ids: vec![0, 1],
+                    row_range: None,
+                    vectors: vec![vec![0.0, 0.0], vec![1.0, 0.0]],
+                    stored_centroid: None,
+                },
+                Page::Leaf {
+                    page_id: 2,
+                    row_ids: vec![2, 3],
+                    row_range: None,
+                    vectors: vec![vec![0.0, 1.0], vec![1.0, 1.0]],
+                    stored_centroid: None,
+                },
+                Page::Internal {
+                    page_id: 0,
+                    centroids: vec![vec![0.5, 0.0], vec![0.5, 1.0]],
+                    child_page_ids: vec![1, 2],
+                },
+            ],
+            dir.path().join("flat"),
+        )
+        .unwrap();
+        assert!(flat.is_flat_forest());
+        assert!(flat.requires_exhaustive_leaf_scan());
+        assert!(!flat.has_mmap_range_leaves());
     }
 }

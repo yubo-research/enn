@@ -337,6 +337,121 @@ mod acceptance_tests {
         }
     }
 
+    /// Regression: soft-sync builds a flat star forest (one internal root, many
+    /// sibling leaves). Greedy beam search with width 1 visits only one leaf.
+    #[test]
+    fn test_flat_forest_recall_after_ensure_index_sync() {
+        let n = 15_000usize;
+        let d = 10usize;
+        let k = 9usize;
+        let batch = 200usize;
+        let num_queries = 20usize;
+        let dir = TempDir::new().unwrap();
+        let (x, y) = synthetic_train(n, d, DATA_SEED);
+        let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), d, 1)
+            .unwrap()
+            .with_pending_flush_threshold(n)
+            .with_pending_hard_flush_threshold(n)
+            .with_defer_append_indexing(true);
+        let mut start = 0usize;
+        while start < n {
+            let end = (start + batch).min(n);
+            b.append_rows(
+                &x.slice(ndarray::s![start..end, ..]),
+                &y.slice(ndarray::s![start..end, ..]),
+                None,
+            )
+            .unwrap();
+            start = end;
+        }
+        b.ensure_index_sync().unwrap();
+        assert_eq!(b.indexed_rows(), n);
+        assert!(n > SMALL_N_INCORE_SEARCH_LIMIT);
+        let index = b.index_snapshot().expect("indexed snapshot");
+        assert!(
+            index.is_flat_forest(),
+            "large soft-sync span should produce a flat forest index"
+        );
+        let mut total_recall = 0.0;
+        for q in 0..num_queries {
+            let query = x.row(q).to_owned();
+            let (_, idx) = b
+                .search(&query.view().insert_axis(ndarray::Axis(0)), k, false)
+                .unwrap();
+            let got: Vec<i64> = idx.row(0).iter().copied().collect();
+            let expected = brute_force_oracle(&b, query.as_slice().unwrap(), k);
+            let hits = got
+                .iter()
+                .filter(|id| expected.contains(id))
+                .count();
+            total_recall += hits as f64 / k as f64;
+        }
+        let recall = total_recall / num_queries as f64;
+        assert!(
+            recall >= 0.90,
+            "recall@{k} after batched add + ensure_index_sync = {recall}"
+        );
+    }
+
+    #[test]
+    fn test_large_scale_batched_recall_default_flush() {
+        let n = 100_000usize;
+        let d = 10usize;
+        let k = 9usize;
+        let batch = 200usize;
+        let num_queries = 10usize;
+        let dir = TempDir::new().unwrap();
+        let (x, y) = synthetic_train(n, d, DATA_SEED);
+        let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), d, 1)
+            .unwrap()
+            .with_defer_append_indexing(true);
+        let mut start = 0usize;
+        while start < n {
+            let end = (start + batch).min(n);
+            b.append_rows(
+                &x.slice(ndarray::s![start..end, ..]),
+                &y.slice(ndarray::s![start..end, ..]),
+                None,
+            )
+            .unwrap();
+            start = end;
+        }
+        b.ensure_index_sync().unwrap();
+        assert_eq!(b.indexed_rows(), n);
+        let flat_fragments = b
+            .index
+            .indices
+            .iter()
+            .filter(|index| index.is_flat_forest())
+            .count();
+        assert!(
+            flat_fragments > 0,
+            "expected flat-forest fragments, got {} total fragments",
+            b.index.indices.len()
+        );
+        let mut total_recall = 0.0;
+        for q in 0..num_queries {
+            let query = x.row(q).to_owned();
+            let (_, idx) = b
+                .search(&query.view().insert_axis(ndarray::Axis(0)), k, false)
+                .unwrap();
+            let got: Vec<i64> = idx.row(0).iter().copied().collect();
+            let expected = brute_force_oracle(&b, query.as_slice().unwrap(), k);
+            let hits = got
+                .iter()
+                .filter(|id| expected.contains(id))
+                .count();
+            total_recall += hits as f64 / k as f64;
+        }
+        let recall = total_recall / num_queries as f64;
+        assert!(
+            recall >= 0.90,
+            "recall@{k} with default flush ({} frags, {} flat) = {recall}",
+            b.index.indices.len(),
+            flat_fragments
+        );
+    }
+
     #[test]
     fn test_cp0_bpann_ram_recall() {
         let vectors = synthetic_f32(N, D, DATA_SEED);
