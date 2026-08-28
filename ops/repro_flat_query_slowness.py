@@ -8,13 +8,20 @@ This script builds FLAT and BPANN_DISK models on the same random data, syncs
 indexes, then times a batched ``posterior()`` call. Hyperparameter fitting is
 skipped so wall time isolates index query cost.
 
-Measured on one host (N=100_000, Q=10_000, D=100, k=9):
+Measured on one host (N=100_000, Q=10_000, D=100, k=9), before Flat Faiss
+SIMD+OpenMP tuning:
 
     FLAT       query_sec ≈ 95.6
     BPANN_DISK query_sec ≈ 9.1
     ratio                ≈ 10.5×
 
-At N=20_000 / Q=2_000 / D=100 the same pattern appears (~4.0s vs ~0.4s).
+After preferring Faiss SIMD distances and enabling OpenMP for Flat search:
+
+    FLAT       query_sec ≈ 2.7
+    (mid-scale N=20_000 / Q=2_000: ≈ 0.11 vs prior ≈ 3.8)
+
+At N=20_000 / Q=2_000 / D=100 the same pattern appeared before the fix
+(~4.0s vs ~0.4s).
 
 Example
 -------

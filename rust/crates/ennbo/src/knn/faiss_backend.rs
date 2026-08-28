@@ -5,6 +5,7 @@ use memmap2::MmapMut;
 use ndarray::{Array2, ArrayView2};
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
+use std::sync::Once;
 
 use super::{arr2_rows_to_f32, pad_neighbor_cols_to_search_k, unpack_batch_search};
 use crate::error::ENNError;
@@ -14,6 +15,42 @@ pub(crate) struct FaissBackend {
     inner: IndexImpl,
     num_dim: usize,
     driver: IndexDriver,
+}
+
+extern "C" {
+    fn faiss_set_distance_compute_blas_threshold(value: i32);
+    fn omp_set_num_threads(num_threads: i32);
+}
+
+#[cfg(test)]
+extern "C" {
+    fn faiss_get_distance_compute_blas_threshold() -> i32;
+}
+
+/// Prefer Faiss's SIMD Flat distance loop over its BLAS GEMM path, and allow
+/// OpenMP to parallelize Flat queries.
+///
+/// Faiss switches to BLAS when `d >= distance_compute_blas_threshold` (default 20).
+/// With the OpenBLAS linked into this build, that GEMM path is ~30–40× slower than
+/// the SIMD loop for typical ENN shapes (e.g. N=20k, Q=2k, D=100). Raise the
+/// threshold once so Exact/`Flat` queries stay on the fast path.
+///
+/// The Python extension sets `OMP_NUM_THREADS=1` to quiet BLAS oversubscription.
+/// Flat SIMD search needs multiple OpenMP threads; restore parallelism here via
+/// `omp_set_num_threads` (overrides the env default for subsequent regions).
+fn prefer_faiss_simd_distances() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        const SIMD_PREFERRED_DIM_CEILING: i32 = 65536;
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .clamp(1, 255) as i32;
+        unsafe {
+            faiss_set_distance_compute_blas_threshold(SIMD_PREFERRED_DIM_CEILING);
+            omp_set_num_threads(threads);
+        }
+    });
 }
 
 fn faiss_spec(driver: IndexDriver) -> &'static str {
@@ -35,6 +72,7 @@ impl FaissBackend {
         driver: IndexDriver,
         train_scaled: &ArrayView2<f64>,
     ) -> Result<Self, IndexError> {
+        prefer_faiss_simd_distances();
         let inner = Self::make_index(num_dim, driver, train_scaled)?;
         Ok(Self {
             inner,
@@ -452,4 +490,46 @@ mod faiss_backend_tests {
         assert!(backend.memory_usage_bytes() > 0);
         let _ = faiss_map_err_for_test(faiss::error::Error::IndexDescription);
     }
+}
+
+#[cfg(test)]
+mod flat_speed_bench {
+    use super::*;
+    use ndarray::Array2;
+    use std::time::Instant;
+
+    #[test]
+    fn prefer_faiss_simd_distances_raises_blas_threshold() {
+        prefer_faiss_simd_distances();
+        let thr = unsafe { faiss_get_distance_compute_blas_threshold() };
+        assert!(
+            thr > 100,
+            "Exact Flat must keep D<=100 on the SIMD path; thr={thr}"
+        );
+    }
+
+    #[test]
+    fn faiss_flat_search_beats_blas_baseline_scale() {
+        prefer_faiss_simd_distances();
+        let n = 20_000usize;
+        let q = 2_000usize;
+        let d = 100usize;
+        let train = Array2::from_shape_fn((n, d), |(i, j)| (i * d + j) as f64 * 1e-4);
+        let queries = Array2::from_shape_fn((q, d), |(i, j)| (i * d + j) as f64 * 2e-4);
+        let mut backend = FaissBackend::new(d, IndexDriver::Exact, &train.view()).unwrap();
+        let _ = backend.search(&queries.view(), 9, 9).unwrap();
+        let t0 = Instant::now();
+        let _ = backend.search(&queries.view(), 9, 9).unwrap();
+        let sec = t0.elapsed().as_secs_f64();
+        assert!(
+            sec < 0.5,
+            "Faiss Flat search too slow ({sec:.3}s); expected SIMD+OpenMP path <0.5s"
+        );
+    }
+
+
+
+
+
+
 }
