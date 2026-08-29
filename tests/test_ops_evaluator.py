@@ -15,6 +15,7 @@ def test_list_eval_names_includes_known_evals() -> None:
     assert "bpann_sphere_d10" in names
     assert "bpann_sphere_d100" in names
     assert "bpann_sphere_d1000" in names
+    assert "y_bounds" in names
     assert names == sorted(names)
     assert all(not name.startswith("stress") for name in names)
 
