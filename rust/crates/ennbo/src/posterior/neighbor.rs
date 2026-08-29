@@ -119,19 +119,36 @@ pub(crate) fn index_search(
     if !model.backend.defer_index_sync_for_search() {
         model.ensure_index_sync()?;
     }
+    let n_query = x.nrows();
+    let k_out = search_k.max(0) as usize;
+    let n_obs = model.num_obs();
+    if k_out == 0 {
+        return Ok((
+            Array2::zeros((n_query, 0)),
+            Array2::zeros((n_query, 0)),
+        ));
+    }
+    if n_obs == 0 {
+        return Ok((
+            Array2::from_elem((n_query, k_out), f64::INFINITY),
+            Array2::from_elem((n_query, k_out), -1i64),
+        ));
+    }
     const FAISS_F64_OVERSAMPLE: i32 = 32;
+    let n_obs_i = n_obs as i32;
+    // Never request more than n_obs: Faiss padding repeats the last id, but the
+    // index API pads missing slots with (-1, inf).
     let fetch_k = if model.backend_driver() == IndexDriver::Exact {
         search_k
             .saturating_add(FAISS_F64_OVERSAMPLE)
-            .min(model.num_obs() as i32)
-            .max(search_k)
+            .min(n_obs_i)
+            .max(search_k.min(n_obs_i))
     } else {
-        search_k
+        search_k.min(n_obs_i)
     };
     let (_, mut idx) = model.backend_search(x, fetch_k, exclude_nearest)?;
     let mut dist2s = dist2s_for_neighbor_indices(model, x, &idx);
     sort_neighbors_by_dist2(&mut dist2s, &mut idx);
-    let k_out = search_k as usize;
     if dist2s.ncols() > k_out {
         dist2s = dist2s
             .slice_axis(Axis(1), ndarray::Slice::from(..k_out))
@@ -139,6 +156,12 @@ pub(crate) fn index_search(
         idx = idx
             .slice_axis(Axis(1), ndarray::Slice::from(..k_out))
             .to_owned();
+    } else if dist2s.ncols() < k_out {
+        let pad_w = k_out - dist2s.ncols();
+        let pad_dist = Array2::from_elem((n_query, pad_w), f64::INFINITY);
+        let pad_idx = Array2::from_elem((n_query, pad_w), -1i64);
+        dist2s = ndarray::concatenate![Axis(1), dist2s.view(), pad_dist.view()];
+        idx = ndarray::concatenate![Axis(1), idx.view(), pad_idx.view()];
     }
     Ok((dist2s, idx))
 }
