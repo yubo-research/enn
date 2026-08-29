@@ -134,10 +134,9 @@ pub(crate) fn index_search(
             Array2::from_elem((n_query, k_out), -1i64),
         ));
     }
+    /// Cap Faiss oversample at `n_obs` (Faiss repeats the last id; the index API pads with (-1, inf)).
     const FAISS_F64_OVERSAMPLE: i32 = 32;
     let n_obs_i = n_obs as i32;
-    // Never request more than n_obs: Faiss padding repeats the last id, but the
-    // index API pads missing slots with (-1, inf).
     let fetch_k = if model.backend_driver() == IndexDriver::Exact {
         search_k
             .saturating_add(FAISS_F64_OVERSAMPLE)

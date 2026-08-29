@@ -67,11 +67,7 @@ impl MmapColumnStore {
             .len();
         let row_bytes = ncols * std::mem::size_of::<f64>();
         let nrows = known_nrows.unwrap_or_else(|| {
-            if row_bytes > 0 {
-                (len as usize) / row_bytes
-            } else {
-                0
-            }
+            (len as usize).checked_div(row_bytes).unwrap_or(0)
         });
         if known_nrows.is_some() && nrows * row_bytes > len as usize {
             return Err(BpannError::InvalidParameter(format!(
