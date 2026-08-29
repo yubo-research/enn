@@ -724,6 +724,8 @@ class DrawStressConfig:
     num_fit_candidates: int = DEFAULT_DRAW_NUM_FIT_CANDIDATES
     num_fit_samples: int = DEFAULT_DRAW_NUM_FIT_SAMPLES
     num_draws: int = DEFAULT_DRAW_NUM_DRAWS
+    index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
+    work_dir: str | None = None
 
 
 @dataclass(frozen=True)
@@ -778,7 +780,20 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     x_test, y_test = make_draw_observations(
         config.num_test, num_dim=config.num_dim, rng=data_rng
     )
-    model = EpistemicNearestNeighbors(x, y, scale_x=False)
+    model_kwargs: dict[str, object] = {
+        "train_x": x,
+        "train_y": y,
+        "scale_x": False,
+        "index_driver": config.index_driver,
+    }
+    if config.index_driver == ENNIndexDriver.BPANN_DISK:
+        if config.work_dir is None:
+            raise ValueError("bpann_disk requires work_dir")
+        model_kwargs["work_dir"] = config.work_dir
+        model_kwargs["enn_storage"] = "disk"
+    elif config.work_dir is not None:
+        raise ValueError("work_dir requires bpann_disk")
+    model = EpistemicNearestNeighbors(**model_kwargs)
 
     t0 = time.perf_counter()
     fitted = enn_fit(
@@ -920,21 +935,28 @@ def run_draw_stress_over_seeds(
     """Run ``run_draw_stress`` for ``seed .. seed+num_seeds-1`` and aggregate metrics."""
     if num_seeds < 1:
         raise ValueError("num_seeds must be >= 1")
-    results = [
-        run_draw_stress(
-            DrawStressConfig(
-                num_obs=config.num_obs,
-                num_test=config.num_test,
-                num_dim=config.num_dim,
-                seed=config.seed + i,
-                k=config.k,
-                num_fit_candidates=config.num_fit_candidates,
-                num_fit_samples=config.num_fit_samples,
-                num_draws=config.num_draws,
+    results = []
+    for i in range(num_seeds):
+        seed_work_dir = config.work_dir
+        if config.work_dir is not None:
+            seed_work_dir = str(Path(config.work_dir) / f"seed{config.seed + i}")
+            Path(seed_work_dir).mkdir(parents=True, exist_ok=True)
+        results.append(
+            run_draw_stress(
+                DrawStressConfig(
+                    num_obs=config.num_obs,
+                    num_test=config.num_test,
+                    num_dim=config.num_dim,
+                    seed=config.seed + i,
+                    k=config.k,
+                    num_fit_candidates=config.num_fit_candidates,
+                    num_fit_samples=config.num_fit_samples,
+                    num_draws=config.num_draws,
+                    index_driver=config.index_driver,
+                    work_dir=seed_work_dir,
+                )
             )
         )
-        for i in range(num_seeds)
-    ]
     return DrawStressAggregate(
         num_obs=config.num_obs,
         num_test=config.num_test,
@@ -1003,6 +1025,7 @@ class TurboEnnRoundResult:
     iter_s: float
     ask_s: float
     tell_s: float
+    y_best: float
 
 
 def turbo_enn_ask_stops(num_obs: int, num_ask: int) -> tuple[int, ...]:
@@ -1155,11 +1178,12 @@ def run_turbo_enn_stress(
 
     dgp_rng = np.random.default_rng(seed + 17)
     prev = 0
+    y_best = float("-inf")
     for stop in stops:
         gap = stop - prev
         assert gap >= 1, f"empty group at stop={stop} prev={prev}"
         t0 = time.perf_counter()
-        seed_turbo_enn_to_n(
+        batch_y_best = seed_turbo_enn_to_n(
             opt,
             ackley,
             bounds_arr,
@@ -1168,11 +1192,14 @@ def run_turbo_enn_stress(
             chunk=seed_chunk,
         )
         tell_s = time.perf_counter() - t0
+        y_best = max(y_best, batch_y_best)
         t_ask0 = time.perf_counter()
         _ = opt.ask(num_arms=1)
         ask_s = time.perf_counter() - t_ask0
         iter_s = ask_s + tell_s
-        yield TurboEnnRoundResult(n=stop, iter_s=iter_s, ask_s=ask_s, tell_s=tell_s)
+        yield TurboEnnRoundResult(
+            n=stop, iter_s=iter_s, ask_s=ask_s, tell_s=tell_s, y_best=y_best
+        )
         prev = stop
 
 
@@ -1199,8 +1226,11 @@ def seed_turbo_enn_to_n(
     *,
     rng: np.random.Generator,
     chunk: int = PROPOSAL_SCALE_SEED_CHUNK,
-) -> None:
-    """Bulk-seed optimizer with N synthetic Ackley points via chunked ``tell``."""
+) -> float:
+    """Bulk-seed optimizer with N synthetic Ackley points via chunked ``tell``.
+
+    Returns the maximum observed y in this seeding call.
+    """
     if n < 1:
         raise ValueError("n must be >= 1")
     if chunk < 1:
@@ -1214,7 +1244,7 @@ def seed_turbo_enn_to_n(
     hi = bounds[:, 1]
     assert np.all(hi > lo), "bounds require hi > lo per dimension"
 
-
+    y_best = float("-inf")
     for start in range(0, n, chunk):
         end = min(start + chunk, n)
         take = end - start
@@ -1223,7 +1253,9 @@ def seed_turbo_enn_to_n(
         if y.ndim == 1:
             y = y.reshape(-1, 1)
         assert y.shape == (take, 1), f"expected y shape ({take}, 1), got {y.shape}"
+        y_best = max(y_best, float(np.max(y)))
         opt.tell(x, y)
+    return y_best
 
 
 def _timed_ask_tell_round(opt, objective) -> tuple[float, float]:
@@ -1567,6 +1599,19 @@ def sample(work_dir: str, num_samples: int, seed: int) -> None:
             show_default=True,
             help="Repeat full draw stress over seed..seed+num_seeds-1; report mean ± SE.",
         ),
+        click.Option(
+            ["--index-type"],
+            type=click.Choice(INDEX_TYPE_CHOICES),
+            default="flat",
+            show_default=True,
+            help="ENN index backend for draw stress.",
+        ),
+        click.Option(
+            ["--work-dir"],
+            type=click.Path(file_okay=False, dir_okay=True, path_type=str),
+            default=None,
+            help="Disk-backed ENN work directory (requires bpann_disk).",
+        ),
     ],
 )
 def draw(
@@ -1579,6 +1624,8 @@ def draw(
     num_fit_samples: int,
     num_draws: int,
     num_seeds: int,
+    index_type: str,
+    work_dir: str | None,
 ) -> None:
     """Fit ENN on synthetic data; report avg likelihood for two draw methods."""
     if num_obs < 1:
@@ -1597,6 +1644,12 @@ def draw(
         raise click.ClickException("num_draws must be >= 2")
     if num_seeds < 1:
         raise click.ClickException("num_seeds must be >= 1")
+    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
+        raise click.ClickException(
+            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
+        )
+    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
+        raise click.ClickException(f"{index_type} requires --work-dir")
     config = DrawStressConfig(
         num_obs=num_obs,
         num_test=num_test,
@@ -1606,6 +1659,8 @@ def draw(
         num_fit_candidates=num_fit_candidates,
         num_fit_samples=num_fit_samples,
         num_draws=num_draws,
+        index_driver=parse_index_driver(index_type),
+        work_dir=work_dir,
     )
     try:
         agg = run_draw_stress_over_seeds(config, num_seeds=num_seeds)
@@ -1684,6 +1739,7 @@ def turbo_enn(
         )
     )
     n_width = len(str(num_obs))
+    y_best = float("-inf")
     try:
         for row in run_turbo_enn_stress(
             index_driver=driver,
@@ -1693,6 +1749,7 @@ def turbo_enn(
             work_dir=work_dir,
             tell_all=tell_all,
         ):
+            y_best = row.y_best
             click.echo(
                 format_turbo_enn_row(
                     row.n,
@@ -1704,6 +1761,7 @@ def turbo_enn(
             )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+    click.echo(f"y_best={y_best}")
 
 
 @cli.command(

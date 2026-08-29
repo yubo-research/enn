@@ -100,7 +100,8 @@ def run_turbo_enn_ackley(
         seconds_since_start_of_run = time.perf_counter() - t_start
         click.echo(
             f"EVAL: iter = {i_iter} arms = {cumulative_num_arms} "
-            f"dt = {seconds_since_start_of_run:.02f} y_best = {y_best:.04f}"
+            f"SMALLER(dt) = {seconds_since_start_of_run:.02f} "
+            f"LARGER(y_best) = {y_best:.04f}"
         )
 
 
@@ -346,11 +347,13 @@ def compare_unbounded_vs_bounded(
 
 def echo_y_bounds_metrics(metrics: YBoundsMetrics) -> None:
     click.echo(
-        f"EVAL: model = {metrics.name} rmse = {metrics.rmse:.04f} "
-        f"mae = {metrics.mae:.04f} nll = {metrics.nll:.04f} "
-        f"frac_nonpos_mu = {metrics.frac_nonpos_mu:.04f} "
-        f"frac_nonpos_samples = {metrics.frac_nonpos_samples:.04f} "
-        f"frac_oob_samples = {metrics.frac_oob_samples:.04f}"
+        f"EVAL: model = {metrics.name} "
+        f"SMALLER(rmse) = {metrics.rmse:.04f} "
+        f"SMALLER(mae) = {metrics.mae:.04f} "
+        f"SMALLER(nll) = {metrics.nll:.04f} "
+        f"SMALLER(frac_nonpos_mu) = {metrics.frac_nonpos_mu:.04f} "
+        f"SMALLER(frac_nonpos_samples) = {metrics.frac_nonpos_samples:.04f} "
+        f"SMALLER(frac_oob_samples) = {metrics.frac_oob_samples:.04f}"
     )
 
 

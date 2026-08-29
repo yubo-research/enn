@@ -18,9 +18,11 @@ _FAST_KWARGS = dict(
 
 _EVAL_RE = re.compile(
     r"EVAL: model = (unbounded|y_bounds_\([^)]+\)) "
-    r"rmse = \d+\.\d{4} mae = \d+\.\d{4} nll = -?\d+\.\d{4} "
-    r"frac_nonpos_mu = \d+\.\d{4} frac_nonpos_samples = \d+\.\d{4} "
-    r"frac_oob_samples = \d+\.\d{4}"
+    r"SMALLER\(rmse\) = \d+\.\d{4} SMALLER\(mae\) = \d+\.\d{4} "
+    r"SMALLER\(nll\) = -?\d+\.\d{4} "
+    r"SMALLER\(frac_nonpos_mu\) = \d+\.\d{4} "
+    r"SMALLER\(frac_nonpos_samples\) = \d+\.\d{4} "
+    r"SMALLER\(frac_oob_samples\) = \d+\.\d{4}"
 )
 
 

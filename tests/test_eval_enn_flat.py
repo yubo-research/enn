@@ -40,7 +40,9 @@ def test_emit_and_pythonpath(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Cap
     out = capsys.readouterr().out
     assert "EVAL: num_dim" not in out
     assert "num_dim = 10 num_obs = 3" in out
-    assert "EVAL: n = 3 query_s = 0.1 segment_s = 0.2" in out
+    assert (
+        "EVAL: n = 3 SMALLER(query_s) = 0.1 SMALLER(segment_s) = 0.2" in out
+    )
 
 
 def test_evaluate_streams_and_exit(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -56,7 +58,7 @@ def test_evaluate_streams_and_exit(monkeypatch: pytest.MonkeyPatch, capsys: pyte
     monkeypatch.setattr(shared.subprocess, "Popen", fake_popen)
     mod.evaluate()
     out = capsys.readouterr().out
-    assert "EVAL: n = 1" in out
+    assert "EVAL: n = 1 SMALLER(query_s) = 0.01 SMALLER(segment_s) = 0.02" in out
     assert calls and "10000000" in calls[0].args[0]
     assert "flat" in calls[0].args[0]
 

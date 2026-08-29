@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals import eval_ts as mod
+from evals import eval_ts_bpann as mod
 from evals import stress_eval as shared
 
 
@@ -24,36 +24,7 @@ class _FakePopen:
         return self._rc
 
 
-def test_emit_eval_ts_line(capsys: pytest.CaptureFixture[str]) -> None:
-    shared.emit_eval_ts_line(
-        "num_dim=10 num_obs=100 num_test=100 seed=0",
-        100,
-    )
-    shared.emit_eval_ts_line(
-        "posterior avg_likelihood=0.8 argmin_rms=0.7 argmin_hit_rate=0.0100 eval_s=0.01",
-        100,
-    )
-    shared.emit_eval_ts_line(
-        "posterior_function_draw avg_likelihood=0.9 argmin_rms=0.6 "
-        "argmin_hit_rate=0.0200 eval_s=0.02",
-        1000,
-    )
-    out = capsys.readouterr().out
-    assert "EVAL: " not in out.splitlines()[0]
-    assert "num_dim=10 num_obs=100" in out
-    assert (
-        "EVAL: n = 100 method = posterior LARGER(avg_likelihood) = 0.8 "
-        "SMALLER(argmin_rms) = 0.7 LARGER(argmin_hit_rate) = 0.0100 "
-        "SMALLER(eval_s) = 0.01"
-    ) in out
-    assert (
-        "EVAL: n = 1000 method = posterior_function_draw "
-        "LARGER(avg_likelihood) = 0.9 SMALLER(argmin_rms) = 0.6 "
-        "LARGER(argmin_hit_rate) = 0.0200 SMALLER(eval_s) = 0.02"
-    ) in out
-
-
-def test_evaluate_sweeps_and_exit(
+def test_evaluate_sweeps_bpann_and_exit(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -86,6 +57,11 @@ def test_evaluate_sweeps_and_exit(
         assert cmd[draw_i + 1] == str(num_obs)
         assert cmd[draw_i + 2] == "100"
         assert "--num-seeds=100" in cmd
+        assert "--index-type=bpann_disk" in cmd
+        assert "--work-dir" in cmd
+        work_dir_idx = cmd.index("--work-dir")
+        assert work_dir_idx + 1 < len(cmd)
+        assert cmd[work_dir_idx + 1]
         assert (
             f"EVAL: n = {num_obs} method = posterior LARGER(avg_likelihood) = 0.1"
             in out
