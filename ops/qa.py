@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import tempfile
 import time
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import click
 import numpy as np
 
-from dataclasses import dataclass
-
-from enn import create_optimizer, turbo_enn_config
+from enn import create_optimizer, turbo_enn_config, turbo_zero_config
 from enn.benchmarks import Ackley
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
-from enn.enn.enn_params import ENNParams
+from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config import (
     AcqType,
     CandidateGenConfig,
@@ -38,6 +38,30 @@ Y_BOUNDS_NUM_FIT_CANDIDATES = 30
 Y_BOUNDS_NUM_FIT_SAMPLES = 20
 Y_BOUNDS_NUM_DRAWS = 64
 Y_BOUNDS_LOG_NOISE = 0.15
+
+TURBO_ACQ_NUM_DIM = 5
+TURBO_ACQ_NUM_ROUNDS = 15
+TURBO_ACQ_NUM_ARMS = 5
+TURBO_ACQ_NUM_INIT = 5
+TURBO_ACQ_NUM_SEEDS = 3
+TURBO_ACQ_K = 5
+TURBO_ACQ_NUM_FIT_SAMPLES = 20
+TURBO_ACQ_NOISELESS_ACQS: tuple[AcqType, ...] = (
+    AcqType.UCB,
+    AcqType.THOMPSON,
+    AcqType.PARETO,
+)
+TURBO_ACQ_NOISY_ACQS: tuple[AcqType, ...] = (AcqType.UCB, AcqType.THOMPSON)
+TURBO_ACQ_NOISY_NOISE = 0.1
+
+Y_VAR_N_TRAIN = 80
+Y_VAR_N_TEST = 200
+Y_VAR_K = 10
+Y_VAR_NUM_FIT_CANDIDATES = 30
+Y_VAR_NUM_FIT_SAMPLES = 20
+Y_VAR_SIGMA = 0.3
+Y_VAR_WRONG_SCALE = 0.01
+Y_VAR_SWEEP: tuple[float, ...] = (0.01, 0.09, 0.25, 1.0)
 
 
 def parse_index_driver(name: str) -> ENNIndexDriver:
@@ -419,6 +443,548 @@ def y_bounds_cmd(
         num_fit_candidates=num_fit_candidates,
         num_fit_samples=num_fit_samples,
         seed=seed,
+    )
+
+
+@dataclass(frozen=True)
+class TurboAcqSeedResult:
+    y_best: float
+    time_seconds: float
+    auc_y_best: float
+    trajectory: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class TurboAcqMetrics:
+    problem: str
+    method: str
+    y_best_mean: float
+    y_best_se: float
+    time_seconds: float
+    auc_y_best: float
+
+
+def auc_of_y_best_trajectory(trajectory: Sequence[float]) -> float:
+    """Normalized trapezoidal AUC of the running y_best curve."""
+    if not trajectory:
+        return float("nan")
+    ys = np.asarray(trajectory, dtype=float)
+    if len(ys) == 1:
+        return float(ys[0])
+    xs = np.arange(len(ys), dtype=float)
+    trapz = getattr(np, "trapezoid", None)
+    if trapz is None:
+        trapz = np.trapz
+    return float(trapz(ys, xs) / xs[-1])
+
+
+def build_turbo_acq_config(
+    *,
+    acq_type: AcqType | None,
+    noise: float,
+    num_init: int = TURBO_ACQ_NUM_INIT,
+    k: int = TURBO_ACQ_K,
+    num_fit_samples: int = TURBO_ACQ_NUM_FIT_SAMPLES,
+    turbo_zero: bool = False,
+):
+    """Build TuRBO-ENN or TuRBO-ZERO config for the acquisition sweep."""
+    noise_aware = float(noise) > 0.0
+    trust = TurboTRConfig(noise_aware=noise_aware)
+    if turbo_zero:
+        return turbo_zero_config(
+            num_init=num_init,
+            trust_region=trust,
+            candidate_rv=CandidateRV.UNIFORM,
+        )
+    if acq_type is None:
+        raise ValueError("acq_type is required unless turbo_zero=True")
+    return turbo_enn_config(
+        enn=ENNSurrogateConfig(
+            k=k,
+            fit=ENNFitConfig(num_fit_samples=num_fit_samples),
+        ),
+        candidates=CandidateGenConfig(candidate_rv=CandidateRV.UNIFORM),
+        trust_region=trust,
+        acq_type=acq_type,
+        num_init=num_init,
+    )
+
+
+def run_turbo_acq_seed(
+    *,
+    acq_type: AcqType | None,
+    noise: float,
+    seed: int,
+    num_dim: int = TURBO_ACQ_NUM_DIM,
+    num_rounds: int = TURBO_ACQ_NUM_ROUNDS,
+    num_arms: int = TURBO_ACQ_NUM_ARMS,
+    num_init: int = TURBO_ACQ_NUM_INIT,
+    k: int = TURBO_ACQ_K,
+    num_fit_samples: int = TURBO_ACQ_NUM_FIT_SAMPLES,
+    turbo_zero: bool = False,
+) -> TurboAcqSeedResult:
+    """One seed of TuRBO ask/tell on Ackley; returns y_best, time, and AUC."""
+    obj_rng = np.random.default_rng(seed)
+    objective = Ackley(noise=noise, rng=obj_rng)
+    bounds = np.array([objective.bounds] * num_dim, dtype=float)
+    config = build_turbo_acq_config(
+        acq_type=acq_type,
+        noise=noise,
+        num_init=num_init,
+        k=k,
+        num_fit_samples=num_fit_samples,
+        turbo_zero=turbo_zero,
+    )
+    optimizer = create_optimizer(
+        bounds=bounds,
+        config=config,
+        rng=np.random.default_rng(seed),
+    )
+    y_var_scale = float(noise) ** 2
+    y_best = -np.inf
+    trajectory: list[float] = []
+    t0 = time.perf_counter()
+    for _ in range(num_rounds):
+        x_arms = optimizer.ask(num_arms=num_arms)
+        y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
+        if noise > 0.0:
+            optimizer.tell(x_arms, y_obs, y_var=y_var_scale * np.ones_like(y_obs))
+        else:
+            optimizer.tell(x_arms, y_obs)
+        y_best = max(y_best, float(np.max(y_obs)))
+        trajectory.append(y_best)
+    return TurboAcqSeedResult(
+        y_best=y_best,
+        time_seconds=time.perf_counter() - t0,
+        auc_y_best=auc_of_y_best_trajectory(trajectory),
+        trajectory=tuple(trajectory),
+    )
+
+
+def aggregate_turbo_acq_seeds(
+    results: Sequence[TurboAcqSeedResult],
+    *,
+    problem: str,
+    method: str,
+) -> TurboAcqMetrics:
+    y_bests = np.asarray([r.y_best for r in results], dtype=float)
+    times = np.asarray([r.time_seconds for r in results], dtype=float)
+    aucs = np.asarray([r.auc_y_best for r in results], dtype=float)
+    n = len(results)
+    se = float(np.std(y_bests, ddof=1) / np.sqrt(n)) if n > 1 else 0.0
+    return TurboAcqMetrics(
+        problem=problem,
+        method=method,
+        y_best_mean=float(np.mean(y_bests)),
+        y_best_se=se,
+        time_seconds=float(np.mean(times)),
+        auc_y_best=float(np.mean(aucs)),
+    )
+
+
+def echo_turbo_acq_metrics(metrics: TurboAcqMetrics) -> None:
+    click.echo(
+        f"EVAL: problem = {metrics.problem} method = {metrics.method} "
+        f"LARGER(y_best_mean) = {metrics.y_best_mean:.04f} "
+        f"SMALLER(y_best_se) = {metrics.y_best_se:.04f} "
+        f"SMALLER(time_seconds) = {metrics.time_seconds:.04f} "
+        f"LARGER(auc_y_best) = {metrics.auc_y_best:.04f}"
+    )
+
+
+def _method_label(acq_type: AcqType | None, *, turbo_zero: bool) -> str:
+    if turbo_zero:
+        return "turbo_zero"
+    assert acq_type is not None
+    return acq_type.value
+
+
+def sweep_turbo_acq(
+    *,
+    problem: str,
+    noise: float,
+    acq_types: Sequence[AcqType],
+    include_turbo_zero: bool,
+    num_dim: int,
+    num_rounds: int,
+    num_arms: int,
+    num_init: int,
+    num_seeds: int,
+    seed: int,
+    k: int,
+    num_fit_samples: int,
+) -> list[TurboAcqMetrics]:
+    """Run acquisition methods over seeds; return aggregated metrics."""
+    methods: list[tuple[AcqType | None, bool]] = [
+        (acq, False) for acq in acq_types
+    ]
+    if include_turbo_zero:
+        methods.append((None, True))
+    out: list[TurboAcqMetrics] = []
+    for acq_type, turbo_zero in methods:
+        seed_results = [
+            run_turbo_acq_seed(
+                acq_type=acq_type,
+                noise=noise,
+                seed=seed + i,
+                num_dim=num_dim,
+                num_rounds=num_rounds,
+                num_arms=num_arms,
+                num_init=num_init,
+                k=k,
+                num_fit_samples=num_fit_samples,
+                turbo_zero=turbo_zero,
+            )
+            for i in range(num_seeds)
+        ]
+        metrics = aggregate_turbo_acq_seeds(
+            seed_results,
+            problem=problem,
+            method=_method_label(acq_type, turbo_zero=turbo_zero),
+        )
+        out.append(metrics)
+    return out
+
+
+def run_turbo_acq(
+    *,
+    num_dim: int = TURBO_ACQ_NUM_DIM,
+    num_rounds: int = TURBO_ACQ_NUM_ROUNDS,
+    num_arms: int = TURBO_ACQ_NUM_ARMS,
+    num_init: int = TURBO_ACQ_NUM_INIT,
+    num_seeds: int = TURBO_ACQ_NUM_SEEDS,
+    seed: int = SEED,
+    k: int = TURBO_ACQ_K,
+    num_fit_samples: int = TURBO_ACQ_NUM_FIT_SAMPLES,
+    include_noisy: bool = True,
+    include_turbo_zero: bool = True,
+    noisy_noise: float = TURBO_ACQ_NOISY_NOISE,
+) -> list[TurboAcqMetrics]:
+    """Sweep acquisition types on noiseless Ackley; optional noisy + TuRBO-ZERO."""
+    click.echo(
+        f"num_dim={num_dim} num_rounds={num_rounds} num_arms={num_arms} "
+        f"num_seeds={num_seeds} include_noisy={include_noisy} "
+        f"include_turbo_zero={include_turbo_zero}"
+    )
+    results = sweep_turbo_acq(
+        problem="noiseless",
+        noise=0.0,
+        acq_types=TURBO_ACQ_NOISELESS_ACQS,
+        include_turbo_zero=include_turbo_zero,
+        num_dim=num_dim,
+        num_rounds=num_rounds,
+        num_arms=num_arms,
+        num_init=num_init,
+        num_seeds=num_seeds,
+        seed=seed,
+        k=k,
+        num_fit_samples=num_fit_samples,
+    )
+    if include_noisy:
+        results.extend(
+            sweep_turbo_acq(
+                problem="noisy",
+                noise=noisy_noise,
+                acq_types=TURBO_ACQ_NOISY_ACQS,
+                include_turbo_zero=False,
+                num_dim=num_dim,
+                num_rounds=num_rounds,
+                num_arms=num_arms,
+                num_init=num_init,
+                num_seeds=num_seeds,
+                seed=seed + 1000,
+                k=k,
+                num_fit_samples=num_fit_samples,
+            )
+        )
+    for metrics in results:
+        echo_turbo_acq_metrics(metrics)
+    return results
+
+
+@cli.command("turbo-acq")
+@click.option("--num-dim", type=int, default=TURBO_ACQ_NUM_DIM, show_default=True)
+@click.option("--num-rounds", type=int, default=TURBO_ACQ_NUM_ROUNDS, show_default=True)
+@click.option("--num-arms", type=int, default=TURBO_ACQ_NUM_ARMS, show_default=True)
+@click.option("--num-init", type=int, default=TURBO_ACQ_NUM_INIT, show_default=True)
+@click.option("--num-seeds", type=int, default=TURBO_ACQ_NUM_SEEDS, show_default=True)
+@click.option("--seed", type=int, default=SEED, show_default=True)
+@click.option("--no-noisy", "include_noisy", is_flag=True, flag_value=False, default=True)
+@click.option(
+    "--no-turbo-zero",
+    "include_turbo_zero",
+    is_flag=True,
+    flag_value=False,
+    default=True,
+)
+def turbo_acq_cmd(
+    num_dim: int,
+    num_rounds: int,
+    num_arms: int,
+    num_init: int,
+    num_seeds: int,
+    seed: int,
+    include_noisy: bool,
+    include_turbo_zero: bool,
+) -> None:
+    """Compare TuRBO acquisition types on Ackley (noiseless primary)."""
+    run_turbo_acq(
+        num_dim=num_dim,
+        num_rounds=num_rounds,
+        num_arms=num_arms,
+        num_init=num_init,
+        num_seeds=num_seeds,
+        seed=seed,
+        include_noisy=include_noisy,
+        include_turbo_zero=include_turbo_zero,
+    )
+
+
+@dataclass(frozen=True)
+class YVarNoiseMetrics:
+    name: str
+    nll: float
+    calib_1se: float
+    mean_se: float
+    mean_se_ale: float
+
+
+def make_noisy_1d_regression(
+    n: int,
+    rng: np.random.Generator,
+    *,
+    sigma: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """1-d x on [-1, 1]; noisy sine observations; returns x, y, f(x)."""
+    x = rng.uniform(-1.0, 1.0, size=(n, 1))
+    f = np.sin(2.0 * np.pi * x)
+    y = f + sigma * rng.standard_normal(size=(n, 1))
+    return x, y, f
+
+
+def evaluate_y_var_fit(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+    *,
+    name: str,
+    train_yvar: np.ndarray | None,
+    k: int,
+    num_fit_candidates: int,
+    num_fit_samples: int,
+    rng: np.random.Generator,
+) -> YVarNoiseMetrics:
+    model = EpistemicNearestNeighbors(x_train, y_train, train_yvar=train_yvar)
+    params = enn_fit(
+        model,
+        k=k,
+        num_fit_candidates=num_fit_candidates,
+        num_fit_samples=num_fit_samples,
+        rng=rng,
+    )
+    flags = PosteriorFlags(observation_noise=True)
+    post = model.posterior(x_test, params=params, flags=flags)
+    mu = np.asarray(post.mu, dtype=float).ravel()
+    se = np.asarray(post.se, dtype=float).ravel()
+    se_ale = np.asarray(post.se_ale, dtype=float).ravel()
+    y = np.asarray(y_test, dtype=float).ravel()
+    return YVarNoiseMetrics(
+        name=name,
+        nll=gaussian_nll(y, mu, se),
+        calib_1se=float(np.mean(np.abs(y - mu) <= se)),
+        mean_se=float(np.mean(se)),
+        mean_se_ale=float(np.mean(se_ale)),
+    )
+
+
+def compare_y_var_noise(
+    *,
+    n_train: int = Y_VAR_N_TRAIN,
+    n_test: int = Y_VAR_N_TEST,
+    k: int = Y_VAR_K,
+    num_fit_candidates: int = Y_VAR_NUM_FIT_CANDIDATES,
+    num_fit_samples: int = Y_VAR_NUM_FIT_SAMPLES,
+    seed: int = SEED,
+    sigma: float = Y_VAR_SIGMA,
+    wrong_scale: float = Y_VAR_WRONG_SCALE,
+) -> tuple[YVarNoiseMetrics, YVarNoiseMetrics, YVarNoiseMetrics]:
+    """Fit matched / none / wrong yvar models on the same noisy split."""
+    data_rng = np.random.default_rng(seed)
+    x_train, y_train, _ = make_noisy_1d_regression(n_train, data_rng, sigma=sigma)
+    x_test, y_test, _ = make_noisy_1d_regression(n_test, data_rng, sigma=sigma)
+    matched_yvar = (sigma**2) * np.ones_like(y_train)
+    wrong_yvar = wrong_scale * np.ones_like(y_train)
+    fit_seed = seed + 1
+    matched = evaluate_y_var_fit(
+        x_train,
+        y_train,
+        x_test,
+        y_test,
+        name="matched",
+        train_yvar=matched_yvar,
+        k=k,
+        num_fit_candidates=num_fit_candidates,
+        num_fit_samples=num_fit_samples,
+        rng=np.random.default_rng(fit_seed),
+    )
+    none_m = evaluate_y_var_fit(
+        x_train,
+        y_train,
+        x_test,
+        y_test,
+        name="none",
+        train_yvar=None,
+        k=k,
+        num_fit_candidates=num_fit_candidates,
+        num_fit_samples=num_fit_samples,
+        rng=np.random.default_rng(fit_seed),
+    )
+    wrong = evaluate_y_var_fit(
+        x_train,
+        y_train,
+        x_test,
+        y_test,
+        name="wrong",
+        train_yvar=wrong_yvar,
+        k=k,
+        num_fit_candidates=num_fit_candidates,
+        num_fit_samples=num_fit_samples,
+        rng=np.random.default_rng(fit_seed),
+    )
+    return matched, none_m, wrong
+
+
+def sweep_y_var_se_ale(
+    *,
+    n_train: int = Y_VAR_N_TRAIN,
+    n_test: int = Y_VAR_N_TEST,
+    k: int = Y_VAR_K,
+    num_fit_candidates: int = Y_VAR_NUM_FIT_CANDIDATES,
+    num_fit_samples: int = Y_VAR_NUM_FIT_SAMPLES,
+    seed: int = SEED,
+    sigma: float = Y_VAR_SIGMA,
+    yvar_scales: Sequence[float] = Y_VAR_SWEEP,
+) -> list[tuple[float, float]]:
+    """Mean se_ale vs supplied constant yvar scale (monotonicity probe)."""
+    data_rng = np.random.default_rng(seed)
+    x_train, y_train, _ = make_noisy_1d_regression(n_train, data_rng, sigma=sigma)
+    x_test, y_test, _ = make_noisy_1d_regression(n_test, data_rng, sigma=sigma)
+    out: list[tuple[float, float]] = []
+    for scale in yvar_scales:
+        metrics = evaluate_y_var_fit(
+            x_train,
+            y_train,
+            x_test,
+            y_test,
+            name=f"yvar_{scale:g}",
+            train_yvar=float(scale) * np.ones_like(y_train),
+            k=k,
+            num_fit_candidates=num_fit_candidates,
+            num_fit_samples=num_fit_samples,
+            rng=np.random.default_rng(seed + 1),
+        )
+        out.append((float(scale), metrics.mean_se_ale))
+    return out
+
+
+def echo_y_var_noise_metrics(metrics: YVarNoiseMetrics) -> None:
+    click.echo(
+        f"EVAL: model = {metrics.name} "
+        f"SMALLER(nll) = {metrics.nll:.04f} "
+        f"LARGER(calib_1se) = {metrics.calib_1se:.04f} "
+        f"mean_se = {metrics.mean_se:.04f} "
+        f"mean_se_ale = {metrics.mean_se_ale:.04f}"
+    )
+
+
+def echo_y_var_se_ale_point(scale: float, mean_se_ale: float) -> None:
+    click.echo(
+        f"EVAL: yvar_scale = {scale:.04f} "
+        f"LARGER(mean_se_ale) = {mean_se_ale:.04f}"
+    )
+
+
+def run_y_var_noise(
+    *,
+    n_train: int = Y_VAR_N_TRAIN,
+    n_test: int = Y_VAR_N_TEST,
+    k: int = Y_VAR_K,
+    num_fit_candidates: int = Y_VAR_NUM_FIT_CANDIDATES,
+    num_fit_samples: int = Y_VAR_NUM_FIT_SAMPLES,
+    seed: int = SEED,
+    sigma: float = Y_VAR_SIGMA,
+    wrong_scale: float = Y_VAR_WRONG_SCALE,
+    yvar_scales: Sequence[float] = Y_VAR_SWEEP,
+) -> tuple[list[YVarNoiseMetrics], list[tuple[float, float]]]:
+    """Compare matched vs mismatched train_yvar; probe se_ale vs yvar scale."""
+    click.echo(
+        f"num_train={n_train} num_test={n_test} k={k} sigma={sigma:.04f}"
+    )
+    matched, none_m, wrong = compare_y_var_noise(
+        n_train=n_train,
+        n_test=n_test,
+        k=k,
+        num_fit_candidates=num_fit_candidates,
+        num_fit_samples=num_fit_samples,
+        seed=seed,
+        sigma=sigma,
+        wrong_scale=wrong_scale,
+    )
+    models = [matched, none_m, wrong]
+    for metrics in models:
+        echo_y_var_noise_metrics(metrics)
+    sweep = sweep_y_var_se_ale(
+        n_train=n_train,
+        n_test=n_test,
+        k=k,
+        num_fit_candidates=num_fit_candidates,
+        num_fit_samples=num_fit_samples,
+        seed=seed,
+        sigma=sigma,
+        yvar_scales=yvar_scales,
+    )
+    for scale, mean_se_ale in sweep:
+        echo_y_var_se_ale_point(scale, mean_se_ale)
+    return models, sweep
+
+
+@cli.command("y-var-noise")
+@click.option("--n-train", type=int, default=Y_VAR_N_TRAIN, show_default=True)
+@click.option("--n-test", type=int, default=Y_VAR_N_TEST, show_default=True)
+@click.option("--k", type=int, default=Y_VAR_K, show_default=True)
+@click.option(
+    "--num-fit-candidates",
+    type=int,
+    default=Y_VAR_NUM_FIT_CANDIDATES,
+    show_default=True,
+)
+@click.option(
+    "--num-fit-samples",
+    type=int,
+    default=Y_VAR_NUM_FIT_SAMPLES,
+    show_default=True,
+)
+@click.option("--seed", type=int, default=SEED, show_default=True)
+@click.option("--sigma", type=float, default=Y_VAR_SIGMA, show_default=True)
+def y_var_noise_cmd(
+    n_train: int,
+    n_test: int,
+    k: int,
+    num_fit_candidates: int,
+    num_fit_samples: int,
+    seed: int,
+    sigma: float,
+) -> None:
+    """Compare matched vs mismatched observation noise (train_yvar)."""
+    run_y_var_noise(
+        n_train=n_train,
+        n_test=n_test,
+        k=k,
+        num_fit_candidates=num_fit_candidates,
+        num_fit_samples=num_fit_samples,
+        seed=seed,
+        sigma=sigma,
     )
 
 
