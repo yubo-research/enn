@@ -324,7 +324,7 @@ pub fn load_y_bounds_from_metadata_text(
             "y_bounds in metadata is not an array".to_string(),
         ));
     }
-    // Find matching outer bracket content
+
     let mut depth = 0i32;
     let mut end = None;
     for (i, c) in after.char_indices() {
@@ -343,7 +343,7 @@ pub fn load_y_bounds_from_metadata_text(
     let end = end.ok_or_else(|| {
         ENNError::InvalidParameter("y_bounds array not closed".to_string())
     })?;
-    let inner = &after[1..end]; // inside outer []
+    let inner = &after[1..end];
     let mut bounds = Array2::zeros((num_metrics, 2));
     let mut metric = 0usize;
     let mut rest = inner.trim();
@@ -462,7 +462,7 @@ mod tests {
         let b = array![[0.0, f64::INFINITY]];
         let y = array![[2.0]];
         let yvar = array![[0.25]];
-        // φ=log(y-0), φ'=1/y → yvar_z = 0.25 / 4 = 0.0625
+
         let zv = warp_yvar(y.view(), yvar.view(), &b).unwrap();
         assert!((zv[[0, 0]] - 0.0625).abs() < 1e-15);
     }
@@ -502,23 +502,23 @@ mod tests {
 
     #[test]
     fn d_inv_dz_matches_inverse_of_d_warp_dy() {
-        // Identity
+
         assert!((d_inv_dz(1.5, f64::NEG_INFINITY, f64::INFINITY) - 1.0).abs() < 1e-15);
-        // Log / exp: φ=ln(y-a), φ'=1/(y-a), dinv=exp(z)=y-a
+
         let y = 3.0_f64;
         let a = 1.0_f64;
         let z = (y - a).ln();
         let dinv = d_inv_dz(z, a, f64::INFINITY);
         let dwarp = d_warp_dy(y, a, f64::INFINITY).unwrap();
         assert!((dinv * dwarp - 1.0).abs() < 1e-12, "dinv={dinv} dwarp={dwarp}");
-        // Neg-log
+
         let b = 5.0_f64;
         let y = 2.0_f64;
         let z = -(b - y).ln();
         let dinv = d_inv_dz(z, f64::NEG_INFINITY, b);
         let dwarp = d_warp_dy(y, f64::NEG_INFINITY, b).unwrap();
         assert!((dinv * dwarp - 1.0).abs() < 1e-12);
-        // Logit on (0,1)
+
         let y = 0.25_f64;
         let z = (y / (1.0 - y)).ln();
         let dinv = d_inv_dz(z, 0.0, 1.0);
@@ -529,17 +529,17 @@ mod tests {
     #[test]
     fn naturalize_mu_se_applies_inv_and_jacobian() {
         let bounds = array![[0.0, 1.0]];
-        let mut mu = array![[0.0]]; // logit(0.5)=0
+        let mut mu = array![[0.0]];
         let mut se = array![[0.2]];
         let mut se_epi = array![[0.1]];
         let mut se_ale = array![[0.1]];
         naturalize_mu_se(&mut mu, &mut se, &mut se_epi, &mut se_ale, &bounds);
         assert!((mu[[0, 0]] - 0.5).abs() < 1e-12);
-        // dinv at z=0 for logit(0,1) is 0.25
+
         assert!((se[[0, 0]] - 0.05).abs() < 1e-12);
         assert!((se_epi[[0, 0]] - 0.025).abs() < 1e-12);
         assert!((se_ale[[0, 0]] - 0.025).abs() < 1e-12);
-        // Identity bounds are a no-op
+
         let b = unbounded_bounds(1);
         let mut mu2 = array![[1.0]];
         let mut se2 = array![[2.0]];
@@ -560,7 +560,7 @@ mod tests {
         for (a, c) in y.iter().zip(z_mut.iter()) {
             assert!((a - c).abs() < 1e-12, "{a} vs {c}");
         }
-        // Identity no-op
+
         let id = unbounded_bounds(2);
         let mut vals = array![[9.0, -1.0]];
         inv_last_axis(&mut vals, &id);

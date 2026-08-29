@@ -42,7 +42,7 @@ def _finalize_function_draw(
             f"function draws must be 3D (num_samples, batch, metrics), "
             f"got shape {draws_arr.shape}"
         )
-    # Rust returns (num_samples, batch, metrics); match posterior().sample().
+
     draws_arr = np.transpose(draws_arr, (1, 2, 0))
     idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0), dtype=int)
     return draws_arr, idx_arr
@@ -112,7 +112,6 @@ class EpistemicNearestNeighbors:
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
-        self._tie_break_neighbors: bool = True
         self._y_bounds = y_bounds
 
     def add(
@@ -200,9 +199,6 @@ class EpistemicNearestNeighbors:
         from .enn_normal import ENNNormal
 
         flags = _posterior_flags_coerced(flags)
-        if self._tie_break_neighbors != flags.tie_break_neighbors:
-            self._rust_model.set_tie_break_neighbors(flags.tie_break_neighbors)
-            self._tie_break_neighbors = flags.tie_break_neighbors
 
         mu, se, se_epi, se_ale, idx = self._rust_model.posterior(
             x,
@@ -228,9 +224,8 @@ class EpistemicNearestNeighbors:
         from .enn_normal import ENNNormal
 
         flags = _posterior_flags_coerced(flags)
-        self._rust_model.set_tie_break_neighbors(flags.tie_break_neighbors)
 
-        mu, se, se_epi, se_ale, _ = self._rust_model.conditional_posterior(
+        mu, se, se_epi, se_ale, idx = self._rust_model.conditional_posterior(
             x_whatif,
             y_whatif,
             x,
@@ -240,8 +235,9 @@ class EpistemicNearestNeighbors:
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
+        idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
         yb = np.asarray(self._rust_model.y_bounds, dtype=float)
-        return ENNNormal(mu, se, se_epi, se_ale, y_bounds=yb)
+        return ENNNormal(mu, se, se_epi, se_ale, idx=idx_arr, y_bounds=yb)
 
     def batch_posterior(
         self,
@@ -253,7 +249,6 @@ class EpistemicNearestNeighbors:
         from .enn_normal import ENNNormal
 
         flags = _posterior_flags_coerced(flags)
-        self._rust_model.set_tie_break_neighbors(flags.tie_break_neighbors)
         x = np.asarray(x, dtype=float)
         if x.ndim != 2 or x.shape[1] != self._num_dim:
             raise ValueError(x.shape)
@@ -263,7 +258,7 @@ class EpistemicNearestNeighbors:
         k_values = [p.k_num_neighbors for p in paramss]
         epistemic_scales = [p.epistemic_variance_scale for p in paramss]
         aleatoric_scales = [p.aleatoric_variance_scale for p in paramss]
-        mu_all, se_all, se_epi_all, se_ale_all = self._rust_model.batch_posterior(
+        mu_all, se_all, se_epi_all, se_ale_all, idx = self._rust_model.batch_posterior(
             x,
             k_values=k_values,
             epistemic_scales=epistemic_scales,
@@ -271,8 +266,11 @@ class EpistemicNearestNeighbors:
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
+        idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
         yb = np.asarray(self._rust_model.y_bounds, dtype=float)
-        return ENNNormal(mu_all, se_all, se_epi_all, se_ale_all, y_bounds=yb)
+        return ENNNormal(
+            mu_all, se_all, se_epi_all, se_ale_all, idx=idx_arr, y_bounds=yb
+        )
 
     def neighbors(
         self, x: np.ndarray, k: int, *, exclude_nearest: bool = False
@@ -306,7 +304,6 @@ class EpistemicNearestNeighbors:
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         flags = _posterior_flags_coerced(flags)
-        self._rust_model.set_tie_break_neighbors(flags.tie_break_neighbors)
         seeds = _to_rust_seeds(function_seeds)
         kw = _rust_function_draw_kwargs(params, flags, seeds)
         draws, idx = self._rust_model.posterior_function_draw(x, **kw)
@@ -323,7 +320,6 @@ class EpistemicNearestNeighbors:
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         flags = _posterior_flags_coerced(flags)
-        self._rust_model.set_tie_break_neighbors(flags.tie_break_neighbors)
         x_whatif = np.asarray(x_whatif, dtype=float)
         if x_whatif.ndim != 2 or x_whatif.shape[1] != self._num_dim:
             raise ValueError(x_whatif.shape)

@@ -5,15 +5,15 @@ mod draw_compute;
 mod light;
 mod neighbor;
 pub mod neighbor_dist;
-mod tie_break;
+pub(crate) use neighbor::index_search;
 
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 
 use self::draw_compute::draw_from_internals;
+use self::light::idx_nested_to_array2;
 use self::neighbor::{get_conditional_neighbor_data, get_neighbor_data};
 use crate::draw::DrawInternals;
 use crate::error::{ENNError, EPS_VAR};
-use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::stats::WeightedStats;
@@ -44,7 +44,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        // Trait path stays warped for crate-internal UFCS callers.
+
         self.posterior_warped(x, params, flags)
     }
 
@@ -71,7 +71,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         let k_values: std::collections::HashSet<i32> =
             paramss.iter().map(|p| p.k_num_neighbors).collect();
 
-        if k_values.len() == 1 && self.num_obs() > 0 {
+        let idx = if k_values.len() == 1 && self.num_obs() > 0 {
             compute_batch_with_shared_neighbors(
                 self,
                 x,
@@ -81,7 +81,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
                 &mut se_all,
                 &mut se_epi_all,
                 &mut se_ale_all,
-            )?;
+            )?
         } else {
             compute_batch_separate_neighbors(
                 self,
@@ -93,14 +93,15 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
                 &mut se_epi_all,
                 &mut se_ale_all,
             )?;
-        }
+            None
+        };
 
         Ok(ENNNormal::new(
             mu_all.into_dyn(),
             se_all.into_dyn(),
             se_epi_all.into_dyn(),
             se_ale_all.into_dyn(),
-            None,
+            idx,
         ))
     }
 
@@ -143,27 +144,9 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
             params,
             flags,
         )?;
-        let draws = draw_from_internals(self, &internals, function_seeds)?;
+        let mut draws = draw_from_internals(self, &internals, function_seeds)?;
+        self.naturalize_draws_3d(&mut draws);
         Ok((draws, internals.idx))
-    }
-}
-
-pub(crate) fn index_search(
-    model: &EpistemicNearestNeighbors,
-    x: &ArrayView2<f64>,
-    search_k: i32,
-    exclude_nearest: bool,
-    tie_break_neighbors: bool,
-) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-    if !model.backend.defer_index_sync_for_search() {
-        model.ensure_index_sync()?;
-    }
-    if model.backend_driver() == IndexDriver::Exact {
-        neighbor::exact_f64_batch_topk(model, x, search_k, exclude_nearest, tie_break_neighbors)
-    } else {
-        let (_, idx) = model.backend_search(x, search_k, exclude_nearest)?;
-        let dist2s = neighbor::dist2s_for_neighbor_indices(model, x, &idx);
-        Ok((dist2s, idx))
     }
 }
 
@@ -177,11 +160,11 @@ fn compute_batch_with_shared_neighbors(
     se_all: &mut Array3<f64>,
     se_epi_all: &mut Array3<f64>,
     se_ale_all: &mut Array3<f64>,
-) -> Result<(), ENNError> {
-    let neighbor_data =
-        get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest, flags.tie_break_neighbors)?;
+) -> Result<Option<Array2<i64>>, ENNError> {
+    let neighbor_data = get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest)?;
 
     if let Some(data) = neighbor_data {
+        let idx = idx_nested_to_array2(&data.idx);
         let wp_data = WeightedPosteriorData {
             dist2s: &data.dist2s.view(),
             idx: &data.idx,
@@ -196,14 +179,15 @@ fn compute_batch_with_shared_neighbors(
             let internals = compute_weighted_posterior(model, data_with_params, None)?;
             assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
         }
+        Ok(Some(idx))
     } else {
         let batch_size = x.nrows();
         let internals = empty_posterior_internals(model, batch_size);
         for i in 0..paramss.len() {
             assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
         }
+        Ok(Some(idx_nested_to_array2(&internals.idx)))
     }
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -271,7 +255,7 @@ pub fn compute_weighted_posterior(
         Some(ov.clone())
     } else if model.has_yvar() {
         let n_query = data.dist2s.nrows();
-        // Handle empty query case (n_query == 0 or data.idx is empty)
+
         let k = if data.idx.is_empty() {
             0
         } else {
@@ -287,7 +271,7 @@ pub fn compute_weighted_posterior(
                         yvar_neighbors[[i * k + j, m]] = yvar_row[m];
                     }
                 }
-                // else: whatif point, keep 0
+
             }
         }
         Some(yvar_neighbors)
@@ -396,12 +380,12 @@ pub fn compute_weighted_stats_impl(
     let k = dist2s.ncols();
     let num_metrics = y_scale.len();
 
-    // Hoist constants outside loops
+
     let epistemic_scale = params.epistemic_variance_scale;
     let aleatoric_scale = params.aleatoric_variance_scale;
     let y_scale_sq: Vec<f64> = y_scale.iter().map(|&v| v * v).collect();
 
-    // Pre-compute var_epi using iterator-based zip for better cache efficiency
+
     let mut var_epi = Array2::zeros((n_query, k));
     for (i, mut row) in var_epi.rows_mut().into_iter().enumerate() {
         let dist_row = dist2s.row(i);
@@ -410,7 +394,7 @@ pub fn compute_weighted_stats_impl(
         }
     }
 
-    // Compute weights w with hoisted constants and pre-allocated storage
+
     let mut w = Array2::zeros((n_query * k, num_metrics));
     let yvar_ref = yvar_neighbors.as_ref();
 
@@ -466,8 +450,7 @@ pub fn compute_posterior_internals(
         return Ok(empty_posterior_internals(model, batch_size));
     }
 
-    let neighbor_data =
-        get_neighbor_data(model, x, params, flags.exclude_nearest, flags.tie_break_neighbors)?;
+    let neighbor_data = get_neighbor_data(model, x, params, flags.exclude_nearest)?;
 
     if let Some(data) = neighbor_data {
         let wp_data = WeightedPosteriorData {
@@ -596,6 +579,10 @@ pub fn empty_posterior_internals(
 #[cfg(test)]
 #[path = "posterior/tests_core.rs"]
 mod tests_core;
+
+#[cfg(test)]
+#[path = "posterior/tests_draw_noise.rs"]
+mod tests_draw_noise;
 
 #[cfg(test)]
 #[path = "posterior/tests_conditional.rs"]

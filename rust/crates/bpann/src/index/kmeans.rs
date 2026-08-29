@@ -198,6 +198,19 @@ fn partition_recursive_with_vectors(
     for (i, &a) in assignments.iter().enumerate() {
         cluster_vectors[a].push(points[i].clone());
     }
+    let non_empty_clusters = clusters.iter().filter(|c| !c.is_empty()).count();
+    let max_cluster_len = clusters.iter().map(|c| c.len()).max().unwrap_or(0);
+    if non_empty_clusters <= 1 || max_cluster_len >= row_ids.len() {
+
+
+        clusters = vec![Vec::new(); k];
+        cluster_vectors = vec![Vec::new(); k];
+        for (i, (&id, pt)) in row_ids.iter().zip(points.iter()).enumerate() {
+            let a = i % k;
+            clusters[a].push(id);
+            cluster_vectors[a].push(pt.clone());
+        }
+    }
     let children: Vec<PartitionNode> = clusters
         .into_iter()
         .zip(cluster_vectors)
@@ -245,5 +258,19 @@ mod tests {
         let row_ids: Vec<u32> = (0..64).collect();
         let tree = PartitionTree::build(&row_ids, &vectors, leaf_capacity, 42);
         assert!(max_leaf_size(&tree.root) <= leaf_capacity);
+    }
+
+    #[test]
+    fn kmeans_partition_handles_identical_points() {
+        let leaf_capacity = 32;
+        let n = 1025;
+        let duplicate = vec![1.0f32, 2.0, 3.0];
+        let vectors: Vec<Vec<f32>> = vec![duplicate.clone(); n];
+        let row_ids: Vec<u32> = (0..n as u32).collect();
+        let tree = PartitionTree::build(&row_ids, &vectors, leaf_capacity, 7);
+        assert!(max_leaf_size(&tree.root) <= leaf_capacity);
+        let leaves = tree.all_leaves();
+        let total: usize = leaves.iter().map(|(ids, _)| ids.len()).sum();
+        assert_eq!(total, n);
     }
 }

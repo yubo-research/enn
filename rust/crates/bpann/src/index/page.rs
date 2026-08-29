@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use crate::distance::l2_sq_f32;
 
-pub const PAGE_MAGIC: u32 = 0x4250_414E; // "BPAN"
+pub const PAGE_MAGIC: u32 = 0x4250_414E;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Page {
@@ -115,7 +115,7 @@ impl Page {
                 stored_centroid,
             } => {
                 if let Some((start, end)) = row_range {
-                    // Kind 3: contiguous empty range leaf (no per-row id list).
+
                     buf.push(3u8);
                     buf.extend_from_slice(&page_id.to_le_bytes());
                     buf.extend_from_slice(&(num_dim as u32).to_le_bytes());
@@ -383,7 +383,7 @@ mod tests {
             }
             _ => panic!("expected leaf"),
         }
-        // Kind byte is 3 (after magic).
+
         assert_eq!(bytes[4], 3);
     }
 }

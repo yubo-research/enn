@@ -48,6 +48,16 @@ fn search_fragment_budget(fragment_count: usize, indexed_rows: usize) -> usize {
         .min(t.search_fragment_budget_max)
 }
 
+fn search_fragment_budget_for_indices(indices: &[BpannIndex], indexed_rows: usize) -> usize {
+    if indices.is_empty() {
+        return 0;
+    }
+    if indices.iter().any(|index| index.is_flat_forest()) {
+        return indices.len();
+    }
+    search_fragment_budget(indices.len(), indexed_rows)
+}
+
 fn search_beam_width(_indexed_rows: usize) -> usize {
     current_tuning().search_beam_width
 }
@@ -211,11 +221,11 @@ impl IncrementalIndex {
         }
         let limit = current_tuning().structured_build_row_limit;
         let pending = end - self.indexed_rows;
-        // Soft-sync spans just above `limit` used to take one structured
-        // `build_from_rows` tree (better ask, slower tell). Very large spans
-        // become one empty-leaf forest (Internal → row-id leaves of `limit`).
-        // Mid-band spans become one in-RAM vector-leaf forest so ask prunes
-        // without k-means tell.
+
+
+
+
+
         let chunk_large_spans = pending > limit.saturating_mul(2);
         if chunk_large_spans && pending > MID_BAND_SHALLOW_MAX {
             let _ = self.take_pending_centroid(ctx.num_dim);
@@ -240,6 +250,9 @@ impl IncrementalIndex {
 
     /// RAM amalgamation only: no `persist()`, no metadata rewrite.
     fn maybe_compact(&mut self, ctx: &IndexBuildContext<'_>) -> Result<(), BpannError> {
+        if !self.indices.is_empty() && self.indices.iter().all(|i| i.is_flat_forest()) {
+            return Ok(());
+        }
         let max_fragments = index_compact_threshold(self.indexed_rows);
         let compact_limit = max_fragments.saturating_mul(2).max(max_fragments + 1);
         if self.indices.len() > compact_limit {
@@ -257,7 +270,11 @@ impl IncrementalIndex {
         while self.indices.len() > max_fragments {
             let over = self.indices.len() - max_fragments;
             let merge_n = over.clamp(2, 4).min(self.indices.len());
+            let before = self.indices.len();
             self.amalgamate_smallest_run(ctx, merge_n)?;
+            if self.indices.len() == before {
+                break;
+            }
         }
         Ok(())
     }
@@ -276,6 +293,9 @@ impl IncrementalIndex {
         let small_limit = current_tuning().small_fragment_merge_rows;
         for i in 0..=self.indices.len().saturating_sub(merge_n) {
             let slice = &self.indices[i..i + merge_n];
+            if slice.iter().any(|index| index.is_flat_forest()) {
+                continue;
+            }
             let rows: usize = slice.iter().map(|index| index.header.indexed_rows).sum();
             let all_small = slice
                 .windows(2)
@@ -288,6 +308,9 @@ impl IncrementalIndex {
                 best_rows = rank;
                 best_i = i;
             }
+        }
+        if best_rows == usize::MAX {
+            return Ok(());
         }
         let removed: Vec<BpannIndex> = self.indices.drain(best_i..best_i + merge_n).collect();
         let merged = BpannIndex::concat_merge(removed, self.index_dir.clone(), false)?;
@@ -365,9 +388,9 @@ impl IncrementalIndex {
                 false,
             )?
         } else {
-            // Structured leaf path takes pending for placement; the large path
-            // builds its own tree from rows but must still drain the accumulator
-            // so the next small sync is not poisoned by already-indexed mass.
+
+
+
             let _ = self.take_pending_centroid(ctx.num_dim);
             let vectors = load_vectors_from_mmap(ctx, start, end)?;
             BpannIndex::build_from_rows_with_persist(
@@ -391,7 +414,7 @@ impl IncrementalIndex {
         k: usize,
         store: Option<&MmapSearchStore<'_>>,
     ) -> Result<Vec<(u32, f32)>, BpannError> {
-        let budget = search_fragment_budget(self.indices.len(), self.indexed_rows);
+        let budget = search_fragment_budget_for_indices(&self.indices, self.indexed_rows);
         let indices_to_search: Vec<&BpannIndex> = if self.indices.len() <= budget {
             self.indices.iter().collect()
         } else {
@@ -445,10 +468,10 @@ fn search_index_candidates(
     store: Option<&MmapSearchStore<'_>>,
 ) -> Result<Vec<(u32, f32)>, BpannError> {
     let rows = index.header.indexed_rows;
-    // Mode cliffs are call-time tuning. On-disk skip edges reflect build-time limits
-    // and may be empty if limits changed since the fragment was built.
+
+
     let t = current_tuning();
-    if t.use_exhaustive_search(rows) {
+    if t.use_exhaustive_search(rows) || index.requires_exhaustive_leaf_scan() {
         search_exhaustive_leaves_with_store(index, query, k, store)
     } else {
         let beam = search_beam_width(rows);
@@ -582,7 +605,7 @@ mod kiss_coverage_tests {
 
     #[test]
     fn search_fragment_budget_respects_default_max_of_one() {
-        // Default search_fragment_budget_max=1: with many fragments, search only one.
+
         assert_eq!(search_fragment_budget(1, 100_000), 1);
         assert_eq!(search_fragment_budget(2, 100_000), 2);
         assert_eq!(search_fragment_budget(8, 100_000), 1);
@@ -650,7 +673,7 @@ mod kiss_coverage_tests {
         let _ = results;
         assert_eq!(idx.indexed_rows, 2);
         assert!(!idx.indices.is_empty());
-        // Soft sync leaves pages on disk unwritten; hard persist materializes files.
+
         assert_eq!(idx.index_memory_bytes(), 0);
         idx.persist_to_disk_for_backend(&store, 2, false, &[1.0, 1.0], dir.path(), 1)
             .unwrap();
@@ -682,7 +705,7 @@ mod kiss_coverage_tests {
     #[test]
     fn large_soft_sync_clears_pending_centroid() {
         let limit = current_tuning().structured_build_row_limit;
-        let n = limit + 76; // force multi-chunk soft-sync
+        let n = limit + 76;
         let dir = TempDir::new().unwrap();
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
         let x_path = dir.path().join("train_x.bin");
@@ -708,8 +731,8 @@ mod kiss_coverage_tests {
             "large soft-sync batch must leave no pending centroid to take"
         );
 
-        // Metamorphic: next singleton fragment must place at the new row, not a blend
-        // with the already-indexed large batch.
+
+
         let far = array![[10_000.0, 0.0]];
         store.mmap_append(&far.view()).unwrap();
         idx.note_pending_rows(&far.view(), false, &scale);
@@ -729,7 +752,7 @@ mod kiss_coverage_tests {
     #[test]
     fn large_soft_sync_uses_chunked_leaf_builds() {
         let limit = current_tuning().structured_build_row_limit;
-        // Must exceed MID_BAND_SHALLOW_MAX to take the empty-leaf chunk path.
+
         let n = MID_BAND_SHALLOW_MAX + limit + 10;
         let dir = TempDir::new().unwrap();
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
@@ -785,7 +808,7 @@ mod kiss_coverage_tests {
     #[test]
     fn midsize_soft_sync_stays_single_fragment() {
         let limit = current_tuning().structured_build_row_limit;
-        // Between limit and 2*limit: structured single-build path.
+
         let n = limit + limit / 2;
         assert!(n > limit && n <= limit * 2);
         let dir = TempDir::new().unwrap();

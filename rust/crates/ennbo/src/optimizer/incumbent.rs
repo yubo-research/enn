@@ -17,11 +17,12 @@ impl Optimizer {
             }
         }
         let pred = surrogate.predict(&x_cand.view())?;
+        let mu = surrogate.naturalize_observations_y(pred.mu);
         let mut best = candidate_indices[0];
-        let mut best_mu = pred.mu[[0, 0]];
+        let mut best_mu = mu[[0, 0]];
         for (r, &idx) in candidate_indices.iter().enumerate().skip(1) {
-            if pred.mu[[r, 0]] > best_mu {
-                best_mu = pred.mu[[r, 0]];
+            if mu[[r, 0]] > best_mu {
+                best_mu = mu[[r, 0]];
                 best = idx;
             }
         }
@@ -31,7 +32,7 @@ impl Optimizer {
         Ok(())
     }
 
-    #[allow(dead_code)] // retained for tests / morbo callers; tell_turbo must not use it
+    #[allow(dead_code)]
     pub(crate) fn reset_incumbent_tracker(&mut self) {
         self.incumbent_tracker.reset();
     }
@@ -45,8 +46,9 @@ impl Optimizer {
         }
 
         if self.incumbent_tracker.observation_count() != self.obs_count() {
-            if let Some(y_obs) = self.obs_access().y_obs_warped() {
-                self.incumbent_tracker.rebuild(&y_obs.view());
+
+            if let Some(y_nat) = self.y_obs() {
+                self.incumbent_tracker.rebuild(&y_nat.view());
             }
         }
         let candidate_indices = self.incumbent_tracker.ask();
@@ -76,7 +78,9 @@ impl Optimizer {
                             x_cand[[r, d]] = x_row[d];
                         }
                     }
-                    y_rows = surrogate.predict(&x_cand.view())?.mu;
+
+                    y_rows = surrogate
+                        .naturalize_observations_y(surrogate.predict(&x_cand.view())?.mu);
                 }
             }
             let scores = self

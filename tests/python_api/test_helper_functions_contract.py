@@ -22,7 +22,7 @@ class TestHypervolumeContract:
         sig = inspect.signature(hypervolume_2d_max)
         params = list(sig.parameters.keys())
         assert params == ["y", "ref_point"]
-        # Note: return_annotation may be string 'float' due to future annotations
+
         assert str(sig.return_annotation) in ("float", "<class 'float'>")
 
     def test_valid_input_returns_float(self):
@@ -48,7 +48,7 @@ class TestHypervolumeContract:
         """When no points dominate ref_point, returns 0.0."""
         from enn.turbo.hypervolume import hypervolume_2d_max
 
-        y = np.array([[-1.0, -1.0], [-0.5, -0.5]])  # All below ref
+        y = np.array([[-1.0, -1.0], [-0.5, -0.5]])
         ref = np.array([0.0, 0.0])
         result = hypervolume_2d_max(y, ref)
         assert result == 0.0
@@ -66,7 +66,7 @@ class TestHypervolumeContract:
         """y with wrong second dimension raises ValueError."""
         from enn.turbo.hypervolume import hypervolume_2d_max
 
-        y = np.array([[1.0, 0.5, 0.3]])  # 3D instead of 2D
+        y = np.array([[1.0, 0.5, 0.3]])
         ref = np.array([0.0, 0.0])
         with pytest.raises(ValueError):
             hypervolume_2d_max(y, ref)
@@ -76,7 +76,7 @@ class TestHypervolumeContract:
         from enn.turbo.hypervolume import hypervolume_2d_max
 
         y = np.array([[1.0, 0.5]])
-        ref = np.array([0.0])  # Wrong shape
+        ref = np.array([0.0])
         with pytest.raises(ValueError):
             hypervolume_2d_max(y, ref)
 
@@ -124,8 +124,8 @@ class TestEnnHashContract:
         """Output shape is (num_seeds, *data_indices.shape, num_metrics)."""
         from enn.enn.enn_hash import normal_hash_batch_multi_seed_fast
 
-        seeds = np.array([1, 2], dtype=np.int64)  # 2 seeds
-        indices = np.array([[0, 1, 2], [3, 4, 5]])  # shape (2, 3)
+        seeds = np.array([1, 2], dtype=np.int64)
+        indices = np.array([[0, 1, 2], [3, 4, 5]])
         num_metrics = 4
 
         result = normal_hash_batch_multi_seed_fast(seeds, indices, num_metrics)
@@ -172,7 +172,7 @@ class TestWeightedStatsContract:
         """WeightedStats has expected fields."""
         from enn.enn.weighted_stats import WeightedStats
 
-        # Create instance with dummy data
+
         ws = WeightedStats(
             w_normalized=np.array([0.5, 0.5]),
             l2=np.array([1.0, 2.0]),
@@ -202,7 +202,7 @@ class TestWeightedStatsContract:
             se_ale=np.array([0.0]),
         )
 
-        # Attempting to modify should raise
+
         with pytest.raises((AttributeError, TypeError)):
             ws.mu = np.array([1.0])
 

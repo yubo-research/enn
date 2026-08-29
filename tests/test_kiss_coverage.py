@@ -8,6 +8,19 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
+
+def _load_tests_script(name: str):
+    import importlib.util
+    import sys
+    from pathlib import Path
+    path = Path(__file__).resolve().parent / "scripts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
 def _morbo_tr_config():
     from enn.turbo.config import MorboTRConfig, MultiObjectiveConfig
 
@@ -214,7 +227,8 @@ def test_incumbent_selector_protocol():
         IncumbentSelector,
     )
 
-    assert hasattr(IncumbentSelector, "select")
+    assert "select" in getattr(IncumbentSelector, "__annotations__", {})
+    assert "reset" in getattr(IncumbentSelector, "__annotations__", {})
 
 
 def test_thompson_acq_optimizer_class():
@@ -407,121 +421,3 @@ def test_lazy_getattr_missing():
         )
 
 
-# ---------------------------------------------------------------------------
-# Scripts
-# ---------------------------------------------------------------------------
-
-
-def test_bench_result():
-    from scripts.bench_raasp_time import BenchResult
-
-    r = BenchResult(num_candidates=100, times_s=[0.1, 0.2])
-    assert r.num_candidates == 100
-    assert r.error is None
-
-
-def test_bench_raasp():
-    from scripts.bench_raasp_time import bench_raasp
-
-    results = bench_raasp(num_dim=3, num_candidates_list=[10], repeats=1, seed=42)
-    assert len(results) == 1
-    assert results[0].error is None
-
-
-def test_bench_raasp_main(monkeypatch):
-    from scripts.bench_raasp_time import main
-
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "bench_raasp_time",
-            "--num-dim",
-            "3",
-            "--candidates",
-            "10",
-            "--repeats",
-            "1",
-            "--seed",
-            "0",
-        ],
-    )
-    main()
-
-
-@pytest.mark.slow
-def test_benchmark_d_scaling(monkeypatch):
-    from scripts.bench_d_scaling import benchmark_d_scaling
-
-    benchmark_d_scaling(ds=[10, 20], n=10, num_candidates=20)
-
-
-def test_profile_config():
-    from scripts.profile_turbo_enn import ProfileConfig
-
-    cfg = ProfileConfig(
-        num_dim=2,
-        num_obs=10,
-        num_arms=2,
-        num_candidates=20,
-        num_fit_samples=5,
-        num_fit_candidates=10,
-        seed=0,
-    )
-    assert cfg.num_dim == 2
-
-
-@pytest.mark.slow
-def test_run_profile():
-    from scripts.profile_turbo_enn import ProfileConfig, run_profile
-
-    cfg = ProfileConfig(
-        num_dim=2,
-        num_obs=10,
-        num_arms=2,
-        num_candidates=50,
-        num_fit_samples=5,
-        num_fit_candidates=10,
-        seed=0,
-    )
-    run_profile(cfg, profile=False, profile_center=False)
-
-
-def test_run_sweep():
-    from scripts.profile_turbo_enn import ProfileConfig, run_sweep
-
-    cfg = ProfileConfig(
-        num_dim=2,
-        num_obs=10,
-        num_arms=2,
-        num_candidates=50,
-        num_fit_samples=5,
-        num_fit_candidates=10,
-        seed=0,
-    )
-    run_sweep(cfg, num_obs_values=[5, 10])
-
-
-def test_profile_main(monkeypatch):
-    from scripts.profile_turbo_enn import main
-
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "profile_turbo_enn",
-            "--num-dim",
-            "2",
-            "--num-obs",
-            "10",
-            "--num-arms",
-            "2",
-            "--num-candidates",
-            "50",
-            "--num-fit-samples",
-            "5",
-            "--num-fit_candidates",
-            "10",
-            "--seed",
-            "0",
-        ],
-    )
-    main()

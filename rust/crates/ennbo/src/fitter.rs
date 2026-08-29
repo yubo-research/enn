@@ -16,6 +16,8 @@ pub struct ENNFitter {
     y_sumsq: Array1<f64>,
     y_count: usize,
     num_metrics: usize,
+    /// Feature width from the first `tell`; must match the model at `ask`.
+    num_dim: Option<usize>,
 }
 
 impl ENNFitter {
@@ -28,6 +30,7 @@ impl ENNFitter {
             y_sumsq: Array1::zeros(0),
             y_count: 0,
             num_metrics: 0,
+            num_dim: None,
         }
     }
 
@@ -65,49 +68,64 @@ impl ENNFitter {
         }
     }
 
+    fn tell_input_error(
+        x: &ArrayView2<f64>,
+        y: &ArrayView2<f64>,
+        yvar: Option<&ArrayView2<f64>>,
+        expected_num_dim: Option<usize>,
+    ) -> Option<String> {
+        if x.iter().any(|v| !v.is_finite()) {
+            return Some("x must contain only finite values".to_string());
+        }
+        if y.iter().any(|v| !v.is_finite()) {
+            return Some("y must contain only finite values".to_string());
+        }
+        if x.nrows() != y.nrows() {
+            return Some(format!(
+                "x and y must have same number of rows: {} vs {}",
+                x.nrows(),
+                y.nrows()
+            ));
+        }
+        if let Some(dim) = expected_num_dim {
+            if x.ncols() != dim {
+                return Some(format!(
+                    "x has {} columns but fitter expects {} feature dimensions",
+                    x.ncols(),
+                    dim
+                ));
+            }
+        }
+        if let Some(yv) = yvar {
+            if yv.iter().any(|v| !v.is_finite()) {
+                return Some("yvar must contain only finite values".to_string());
+            }
+            if yv.iter().any(|&v| v < 0.0) || yv.shape() != y.shape() {
+                return Some(if yv.iter().any(|&v| v < 0.0) {
+                    "yvar must be non-negative".to_string()
+                } else {
+                    format!(
+                        "yvar shape {:?} must match y shape {:?}",
+                        yv.shape(),
+                        y.shape()
+                    )
+                });
+            }
+        }
+        None
+    }
+
     pub fn tell(
         &mut self,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        if x.iter().any(|v| !v.is_finite()) {
-            return Err(ENNError::InvalidParameter(
-                "x must contain only finite values".to_string(),
-            ));
+        if let Some(msg) = Self::tell_input_error(x, y, yvar, self.num_dim) {
+            return Err(ENNError::InvalidParameter(msg));
         }
-        if y.iter().any(|v| !v.is_finite()) {
-            return Err(ENNError::InvalidParameter(
-                "y must contain only finite values".to_string(),
-            ));
-        }
-        if x.nrows() != y.nrows() {
-            return Err(ENNError::InvalidParameter(format!(
-                "x and y must have same number of rows: {} vs {}",
-                x.nrows(),
-                y.nrows()
-            )));
-        }
-        if let Some(yv) = yvar {
-            if yv.iter().any(|v| !v.is_finite()) {
-                return Err(ENNError::InvalidParameter(
-                    "yvar must contain only finite values".to_string(),
-                ));
-            }
-            if yv.nrows() != y.nrows() {
-                return Err(ENNError::InvalidParameter(format!(
-                    "yvar and y must have same number of rows: {} vs {}",
-                    yv.nrows(),
-                    y.nrows()
-                )));
-            }
-            if yv.ncols() != y.ncols() {
-                return Err(ENNError::InvalidParameter(format!(
-                    "yvar and y must have same number of columns: {} vs {}",
-                    yv.ncols(),
-                    y.ncols()
-                )));
-            }
+        if self.num_dim.is_none() {
+            self.num_dim = Some(x.ncols());
         }
         self.update_y(y);
         Ok(())
@@ -170,6 +188,15 @@ impl ENNFitter {
         params_warm_start: Option<&ENNParams>,
         rng: &mut R,
     ) -> Result<ENNParams, ENNError> {
+        if let Some(dim) = self.num_dim {
+            if dim != model.num_dim() {
+                return Err(ENNError::InvalidParameter(format!(
+                    "x has {} columns but model expects {} feature dimensions",
+                    dim,
+                    model.num_dim()
+                )));
+            }
+        }
         if model.num_obs() < 2 {
             let best = ENNParams::new(self.k, 1.0, 0.0).map_err(|e| {
                 ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
@@ -210,7 +237,8 @@ impl ENNFitter {
                 sample(rng, n, p_actual).into_iter().collect()
             }
         };
-        let (train_x, train_y, _) = model.rows().train_rows_at(&indices)?;
+
+        let (train_x, train_y, _) = model.train_rows_at(&indices)?;
         let y_std = self.y_std();
         let logliks = crate::fit::subsample_loglik(
             model,
@@ -267,6 +295,37 @@ mod tests {
         assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar.view())).is_err());
         let yvar_bad = array![[f64::INFINITY]];
         assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_bad.view())).is_err());
+        let yvar_neg = array![[-0.1], [-0.1]];
+        assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_neg.view())).is_err());
+    }
+
+    #[test]
+    fn ask_rejects_x_ncols_mismatch_vs_model() {
+        let train_x = array![[0.0, 0.0], [1.0, 1.0]];
+        let train_y = array![[0.0], [1.0]];
+        let model =
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+                .unwrap();
+        let mut fitter = ENNFitter::new(2, true);
+        let x_bad = array![[0.0], [1.0]];
+        let y = array![[0.0], [1.0]];
+        fitter.tell(&x_bad.view(), &y.view(), None).unwrap();
+        let mut rng = StdRng::seed_from_u64(0);
+        let err = fitter.ask(&model, 5, 3, None, &mut rng).unwrap_err();
+        assert!(
+            err.to_string().contains("feature dimensions"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn tell_rejects_inconsistent_x_ncols() {
+        let mut fitter = ENNFitter::new(2, true);
+        let x2 = array![[0.0, 0.0]];
+        let y = array![[0.0]];
+        fitter.tell(&x2.view(), &y.view(), None).unwrap();
+        let x1 = array![[1.0]];
+        assert!(fitter.tell(&x1.view(), &y.view(), None).is_err());
     }
 
     #[test]

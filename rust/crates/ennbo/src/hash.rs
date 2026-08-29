@@ -79,6 +79,29 @@ pub fn normal_for_seed_index_metric(seed_u64: u64, unique_idx: i64, metric: usiz
     box_muller(u1, u2)
 }
 
+/// Independent standard normal for aleatoric noise at a query/metric.
+///
+/// Uses a distinct salt from [`normal_for_seed_index_metric`] so query-local
+/// aleatoric draws do not collide with neighbor-indexed noise-field normals.
+#[inline(always)]
+pub fn normal_for_seed_query_metric(seed_u64: u64, query_idx: usize, metric: usize) -> f64 {
+    const QUERY_SALT: u64 = 0xC0FF_EE00_D15C_A11E;
+    let base = seed_u64
+        .wrapping_mul(SEED_PRIME)
+        .wrapping_add(query_idx as u64)
+        .wrapping_mul(SEED_PRIME)
+        .wrapping_add(QUERY_SALT);
+    let metric_u64 = metric as u64;
+    let combined1 = base.wrapping_add(metric_u64);
+    let r1 = splitmix64(combined1);
+    let combined2 = combined1 ^ SM64_XOR_OFFSET;
+    let r2 = splitmix64(combined2);
+    let mut u1 = u64_to_f53(r1);
+    let u2 = u64_to_f53(r2);
+    u1 = u1.clamp(CLIP_MIN, CLIP_MAX);
+    box_muller(u1, u2)
+}
+
 /// Build sorted-unique neighbor indices and an inverse map for `data_indices`.
 pub fn unique_index_inverse(data_indices: &[i64]) -> (Vec<i64>, Vec<usize>) {
     let unique_indices: Vec<i64> = {
@@ -141,7 +164,7 @@ pub fn normal_hash_batch_multi_seed_fast(
 
     let (unique_indices, inverse) = unique_index_inverse(data_indices);
 
-    // Flat buffer (num_seeds, num_indices, num_metrics) in C order; fill by seed in parallel.
+
     let mut flat = vec![0.0f64; num_seeds * row_len];
     flat.par_chunks_mut(row_len)
         .zip(function_seeds.par_iter())
@@ -178,8 +201,8 @@ pub fn normal_hash_batch_multi_seed(
     data_indices: &[i64],
     num_metrics: i64,
 ) -> Result<ArrayD<f64>, HashError> {
-    // For parity testing, we'd implement the Philox version here
-    // For now, delegate to fast version
+
+
     normal_hash_batch_multi_seed_fast(function_seeds, data_indices, num_metrics)
 }
 
@@ -189,17 +212,17 @@ mod tests {
 
     #[test]
     fn test_splitmix64_known_value() {
-        // Known test value from SplitMix64 reference
+
         let x = 0x123456789ABCDEF0u64;
         let result = splitmix64(x);
-        // Just verify it doesn't panic and produces deterministic output
+
         let result2 = splitmix64(x);
         assert_eq!(result, result2);
     }
 
     #[test]
     fn test_u64_to_f53_range() {
-        // u64_to_f53 should produce values in [0, 1)
+
         for x in [0u64, u64::MAX, 0x123456789ABCDEF0] {
             let f = u64_to_f53(x);
             assert!(
@@ -213,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_box_muller_finite() {
-        // Box-Muller should produce finite values for valid inputs
+
         let n = box_muller(0.5, 0.5);
         assert!(n.is_finite());
     }
@@ -259,8 +282,8 @@ mod tests {
 
     #[test]
     fn test_output_shape() {
-        let seeds = vec![1i64, 2i64]; // 2 seeds
-        let indices = vec![0i64, 1i64, 2i64]; // 3 indices
+        let seeds = vec![1i64, 2i64];
+        let indices = vec![0i64, 1i64, 2i64];
         let num_metrics = 4;
 
         let result = normal_hash_batch_multi_seed_fast(&seeds, &indices, num_metrics).unwrap();
@@ -285,7 +308,7 @@ mod tests {
         data_indices: &[i64],
         num_metrics: i64,
     ) -> Result<ArrayD<f64>, HashError> {
-        // Serial reference matching the pre-rayon algorithm (for parity checks).
+
         if num_metrics <= 0 {
             return Err(HashError::InvalidNumMetrics(num_metrics));
         }

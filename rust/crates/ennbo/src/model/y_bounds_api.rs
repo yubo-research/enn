@@ -235,7 +235,7 @@ mod tests {
         let y1 = model.row_y_natural(1).unwrap();
         assert!((y0[0] - 0.2).abs() < 1e-12);
         assert!((y1[0] - 0.8).abs() < 1e-12);
-        // Storage row differs from natural under logit.
+
         let stored = model.rows().row_y(0).unwrap();
         assert!((stored[0] - y0[0]).abs() > 1e-6);
     }

@@ -25,6 +25,7 @@ def mk_enn(
     index_driver: ENNIndexDriver | None = None,
     rng: Generator | None = None,
     params_warm_start: ENNParams | None = None,
+    y_bounds: np.ndarray | None = None,
 ) -> tuple[EpistemicNearestNeighbors | None, ENNParams | None]:
     from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_params import ENNParams
@@ -52,6 +53,7 @@ def mk_enn(
         yvar,
         scale_x=scale_x,
         index_driver=index_driver,
+        y_bounds=y_bounds,
     )
     if len(enn_model) == 0:
         return None, None

@@ -121,10 +121,10 @@ fn tell_rejects_changing_num_metrics() {
     let mut opt = Optimizer::new(bounds, cfg, &mut rng).unwrap();
     let x0 = array![[0.2, 0.3]];
     let y0 = array![[1.0]];
-    opt.tell(&x0.view(), &y0.view(), &mut rng).unwrap();
+    opt.tell(&x0.view(), &y0.view(), None, &mut rng).unwrap();
     let x1 = array![[0.4, 0.5], [0.6, 0.7]];
     let y1 = array![[2.0, 3.0], [4.0, 5.0]];
-    let err = opt.tell(&x1.view(), &y1.view(), &mut rng);
+    let err = opt.tell(&x1.view(), &y1.view(), None, &mut rng);
     assert!(err.is_err());
     let msg = err.unwrap_err().to_string();
     assert!(
@@ -149,7 +149,7 @@ fn morbo_ask_without_tell_preserves_y_ranges() {
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
     let x0 = array![[0.1, 0.2], [0.3, 0.4]];
     let y0 = array![[1.0, 0.5], [0.2, 0.9]];
-    opt.tell(&x0.view(), &y0.view(), &mut rng).unwrap();
+    opt.tell(&x0.view(), &y0.view(), None, &mut rng).unwrap();
     let morbo = opt.trust_region().morbo().expect("morbo");
     let ymin_before = morbo.y_min().expect("y_min").to_owned();
     let ymax_before = morbo.y_max().expect("y_max").to_owned();

@@ -33,6 +33,7 @@ fn test_private_strategy_helpers_directly() {
         &mut optimizer,
         &x_init_h.view(),
         &y_init.view(),
+        None,
         &mut rng,
     )
     .unwrap();
@@ -45,6 +46,7 @@ fn test_private_strategy_helpers_directly() {
         &mut optimizer,
         &x_turbo.view(),
         &y_turbo.view(),
+        None,
         &mut telemetry,
         &mut rng,
     )
@@ -64,7 +66,7 @@ fn test_thompson_sampling_uses_posterior_sample() {
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.8, 0.2], [0.5, 0.5]];
     let y_fit = array![[0.0], [1.0], [0.5], [0.4], [0.6]];
     optimizer
-        .tell(&x_fit.view(), &y_fit.view(), &mut rng)
+        .tell(&x_fit.view(), &y_fit.view(), None, &mut rng)
         .unwrap();
 
     let tel_after_tell = optimizer.telemetry();
@@ -92,7 +94,7 @@ fn test_thompson_sampling_uses_posterior_sample() {
     )
     .unwrap();
     optimizer2
-        .tell(&x_fit.view(), &y_fit.view(), &mut rng2)
+        .tell(&x_fit.view(), &y_fit.view(), None, &mut rng2)
         .unwrap();
 
     let _candidates1 = optimizer.ask(2, &mut rng).unwrap();
@@ -112,7 +114,7 @@ fn test_hybrid_init_respects_strategy_type_random() {
     assert_eq!(x1.nrows(), 2);
 
     let y1 = array![[0.1], [0.2]];
-    optimizer.tell(&x1.view(), &y1.view(), &mut rng).unwrap();
+    optimizer.tell(&x1.view(), &y1.view(), None, &mut rng).unwrap();
 
     let progress = optimizer.init_progress();
     assert!(progress.is_some(), "Should be in init phase");
@@ -122,7 +124,7 @@ fn test_hybrid_init_respects_strategy_type_random() {
 
     let x2 = optimizer.ask(2, &mut rng).unwrap();
     let y2 = array![[0.3], [0.4]];
-    optimizer.tell(&x2.view(), &y2.view(), &mut rng).unwrap();
+    optimizer.tell(&x2.view(), &y2.view(), None, &mut rng).unwrap();
 
     assert!(
         optimizer.init_progress().is_none(),
@@ -150,7 +152,7 @@ fn test_telemetry_populated_after_operations() {
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.5, 0.5]];
     let y_fit = array![[0.0], [1.0], [0.5]];
     optimizer
-        .tell(&x_fit.view(), &y_fit.view(), &mut rng)
+        .tell(&x_fit.view(), &y_fit.view(), None, &mut rng)
         .unwrap();
 
     let tel1 = optimizer.telemetry();
@@ -185,7 +187,7 @@ fn turbo_strategy_state_default_and_tell_common_paths() {
     .unwrap();
     let x = array![[0.2, 0.3]];
     let y = array![[0.1]];
-    tell_common(&mut opt_no_sur, &x.view(), &y.view(), None, &mut rng).unwrap();
+    tell_common(&mut opt_no_sur, &x.view(), &y.view(), None, None, &mut rng).unwrap();
 
     let mut opt_enn =
         Optimizer::new_with_strategy(bounds, turbo_enn_config(), Strategy::turbo(), &mut rng)
@@ -197,6 +199,7 @@ fn turbo_strategy_state_default_and_tell_common_paths() {
         &mut opt_enn,
         &x2.view(),
         &y2.view(),
+        None,
         Some(&mut tel),
         &mut rng,
     )
@@ -218,7 +221,7 @@ fn ask_scores_full_configured_candidate_pool() {
         Optimizer::new_with_strategy(bounds, config, Strategy::turbo(), &mut rng).unwrap();
     let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8]];
     let yf = array![[0.0], [1.0], [0.5]];
-    opt.tell(&xf.view(), &yf.view(), &mut rng).unwrap();
+    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
     let _ = opt.ask(num_arms, &mut rng).unwrap();
     assert_eq!(
         opt.telemetry().num_candidates, expected_pool,
@@ -245,7 +248,7 @@ fn select_with_functions_direct_smoke() {
             .unwrap();
     let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8]];
     let yf = array![[0.0], [1.0], [0.5]];
-    opt.tell(&xf.view(), &yf.view(), &mut rng).unwrap();
+    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
     let sur = opt.surrogate().expect("enn surrogate");
 
     let out_ts = select_with_thompson(&opt, sur, &x_cand.view(), 2, &mut rng).unwrap();
@@ -256,4 +259,92 @@ fn select_with_functions_direct_smoke() {
 
     let out_pf = select_with_pareto(sur, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_pf.nrows(), 2);
+}
+
+#[test]
+fn select_with_pareto_scores_naturalized_under_y_bounds() {
+    use crate::acquisition::ParetoAcquisition;
+    use crate::config::{ConfigOverrides, SurrogateConfig};
+    use crate::optimizer_factory::create_optimizer_enn_with_overrides;
+
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(303);
+    let overrides = ConfigOverrides {
+        y_bounds: Some(array![[0.0, 1.0]]),
+        acquisition: Some(AcquisitionConfig::Pareto),
+        ..Default::default()
+    };
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+    if let SurrogateConfig::ENN(enn) = &opt.config().surrogate {
+        assert!(enn.y_bounds.is_some());
+    }
+    let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.7, 0.3]];
+    let yf = array![[0.1], [0.9], [0.4], [0.6]];
+    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
+    let sur = opt.surrogate().expect("enn surrogate");
+    let x_cand = array![
+        [0.1, 0.2],
+        [0.3, 0.4],
+        [0.5, 0.6],
+        [0.7, 0.8],
+        [0.15, 0.85],
+        [0.55, 0.25]
+    ];
+    let mut rng_a = StdRng::seed_from_u64(404);
+    let mut rng_b = StdRng::seed_from_u64(404);
+    let out = select_with_pareto(sur, &x_cand.view(), 2, &mut rng_a).unwrap();
+    let pred_nat = sur.naturalize_prediction(sur.predict(&x_cand.view()).unwrap());
+    let idx = ParetoAcquisition::new()
+        .select(&pred_nat.mu.view(), &pred_nat.se.view(), 2, &mut rng_b)
+        .unwrap();
+    let expected = x_cand.select(ndarray::Axis(0), &idx);
+    assert_eq!(out, expected, "Pareto must rank naturalized μ/σ under y_bounds");
+}
+
+#[test]
+fn select_with_thompson_scores_naturalized_under_y_bounds() {
+    use crate::config::ConfigOverrides;
+    use crate::optimizer_factory::create_optimizer_enn_with_overrides;
+
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(505);
+    let overrides = ConfigOverrides {
+        y_bounds: Some(array![[0.0, 1.0]]),
+        acquisition: Some(AcquisitionConfig::Thompson),
+        ..Default::default()
+    };
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+    let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.7, 0.3]];
+    let yf = array![[0.1], [0.9], [0.4], [0.6]];
+    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
+    let sur = opt.surrogate().expect("enn surrogate");
+    let x_cand = array![[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]];
+    let mut rng_sel = StdRng::seed_from_u64(606);
+    let out = select_with_thompson(&opt, sur, &x_cand.view(), 2, &mut rng_sel).unwrap();
+    assert_eq!(out.nrows(), 2);
+
+
+
+    let n_cand = x_cand.nrows();
+    let mut rng_full = StdRng::seed_from_u64(606);
+    let samples = sur.sample(&x_cand.view(), 2, &mut rng_full).unwrap();
+    let mut flat = ndarray::Array2::zeros((2 * n_cand, 1));
+    for arm in 0..2 {
+        for i in 0..n_cand {
+            flat[[arm * n_cand + i, 0]] = samples[[arm, i, 0]];
+        }
+    }
+    let nat = sur.naturalize_observations_y(flat);
+    let mut expected_idx = Vec::with_capacity(2);
+    for arm in 0..2 {
+        let arm_scores: Vec<f64> = (0..n_cand).map(|i| nat[[arm * n_cand + i, 0]]).collect();
+        expected_idx.push(crate::util::argmax_random_tie(&arm_scores, &mut rng_full));
+    }
+    let expected = x_cand.select(ndarray::Axis(0), &expected_idx);
+    assert_eq!(
+        out, expected,
+        "scalar Thompson must per-draw-argmax naturalized samples; idx={expected_idx:?}"
+    );
 }

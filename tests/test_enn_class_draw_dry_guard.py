@@ -89,8 +89,8 @@ def test_function_draw_golden_values_fixed_seed_arrays():
     draws, _idx = model.posterior_function_draw(
         x, params, function_seeds=seeds, flags=PosteriorFlags()
     )
-    # Expected from enn EpistemicNearestNeighbors + Rust draw path (fixed data/seeds).
-    # Shape is (batch, metrics, num_samples) to match posterior().sample().
+
+
     expected = np.array(
         [[[-0.71338448, -0.40793862]]],
         dtype=np.float64,

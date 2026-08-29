@@ -7,7 +7,7 @@ fn mmap_append_fortran_order_preserves_rows() {
     let dir = TempDir::new().unwrap();
     let mut store =
         mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 3, None).unwrap();
-    // Column-major (Fortran) layout: each logical row is strided in memory.
+
     let mut f = Array2::<f64>::zeros((2, 3).f());
     f[[0, 0]] = 1.0;
     f[[0, 1]] = 2.0;
@@ -37,7 +37,7 @@ fn mmap_append_strided_column_view_preserves_rows() {
     let dir = TempDir::new().unwrap();
     let mut store =
         mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
-    // Take every other column of a wider C-order matrix: rows are no longer contiguous.
+
     let wide = array![[1.0, 9.0, 2.0, 8.0], [3.0, 7.0, 4.0, 6.0]];
     let view = wide.slice(ndarray::s![.., ..;2]);
     assert_eq!(view.nrows(), 2);

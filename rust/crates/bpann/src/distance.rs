@@ -26,11 +26,11 @@ pub fn row_sq_l2(
 }
 
 pub fn l2_sq_f32(a: &[f32], b: &[f32]) -> f32 {
-    // Squared-L2 reduction with independent lane accumulators. A single `.sum()`
-    // accumulator serializes D dependent FP adds and blocks auto-vectorization
-    // (FP add is non-associative). Summing into `LANES` independent lanes breaks
-    // that dependency chain so LLVM emits SIMD adds; the lanes are combined once
-    // at the end. The tail (len not a multiple of LANES) is handled scalar.
+
+
+
+
+
     const LANES: usize = 8;
     let mut acc = [0.0f32; LANES];
     let mut a_chunks = a.chunks_exact(LANES);

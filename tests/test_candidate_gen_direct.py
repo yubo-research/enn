@@ -43,4 +43,4 @@ def test_fixed_and_per_arm_uses_max():
 
 def test_candidate_gen_config_rejects_callable_num_candidates():
     with pytest.raises(TypeError):
-        CandidateGenConfig(num_candidates=const_num_candidates(5))  # type: ignore[arg-type]
+        CandidateGenConfig(num_candidates=const_num_candidates(5))

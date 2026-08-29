@@ -54,7 +54,7 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
         [1.0, 50.0],
         [3.0, 3.0],
     ];
-    opt.tell(&x.view(), &y.view(), &mut rng).unwrap();
+    opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
 
     let sur = opt.surrogate().expect("enn surrogate");
     let y_all = opt.y_obs().expect("y observations");
@@ -63,7 +63,8 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
     assert_eq!(n, 4);
 
     let pred = sur.predict(&x_all.view()).expect("predict");
-    let mu = pred.mu;
+
+    let mu = sur.naturalize_observations_y(pred.mu);
 
     let scores_on_y = opt
         .trust_region()

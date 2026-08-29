@@ -31,8 +31,8 @@ impl MmapColumnStore {
         }
         let grow_rows = (need_rows - self.nrows).max(MMAP_GROW_ROWS);
         let new_len = self.bytes_for_rows(self.nrows + grow_rows);
-        // No flush before remapping: dirty pages live in the page cache and
-        // survive remapping the same file; msync is only needed for durability.
+
+
         self.file
             .set_len(new_len as u64)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
@@ -67,11 +67,7 @@ impl MmapColumnStore {
             .len();
         let row_bytes = ncols * std::mem::size_of::<f64>();
         let nrows = known_nrows.unwrap_or_else(|| {
-            if row_bytes > 0 {
-                (len as usize) / row_bytes
-            } else {
-                0
-            }
+            (len as usize).checked_div(row_bytes).unwrap_or(0)
         });
         if known_nrows.is_some() && nrows * row_bytes > len as usize {
             return Err(BpannError::InvalidParameter(format!(
@@ -118,9 +114,9 @@ impl MmapColumnStore {
         let offset = self.nrows * row_bytes;
         let n = rows.nrows() * self.ncols;
         let dst = &mut self.mmap[offset..offset + n * std::mem::size_of::<f64>()];
-        // Bulk memcpy only when the source is C-contiguous. Non-standard layouts
-        // (e.g. Fortran order) have strided rows; copying `row_bytes` from
-        // `row.as_ptr()` would silently write the wrong values.
+
+
+
         if let Some(src) = rows.as_slice() {
             let src_bytes = unsafe {
                 std::slice::from_raw_parts(src.as_ptr() as *const u8, n * std::mem::size_of::<f64>())

@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from enn_helpers import enn_all_train_rows
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
-
-from enn_helpers import enn_all_train_rows
 
 
 def _params(
@@ -182,6 +181,28 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
     assert np.all(np.isfinite(post.se))
 
 
+def test_batch_posterior_exclude_nearest_mixed_self_novel_k_equals_n():
+    """Mixed LOO/novel batch must not cast padded -1 neighbor ids into row_y."""
+    rng = np.random.default_rng(0)
+    n = d = k = 10
+    train_x = rng.standard_normal((n, d)) * 10.0
+    train_y = rng.standard_normal((n, 1))
+    train_yvar = 0.01 * np.ones_like(train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar, scale_x=True)
+    x_query = np.vstack([train_x[:5], rng.standard_normal((5, d)) * 10.0])
+    params = ENNParams(
+        k_num_neighbors=k, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
+    )
+    post = model.batch_posterior(
+        x_query,
+        [params],
+        flags=PosteriorFlags(exclude_nearest=True, observation_noise=True),
+    )
+    assert post.mu.shape == (1, 10, 1)
+    assert np.all(np.isfinite(post.mu))
+    assert np.all(np.isfinite(post.se))
+
+
 def test_epistemic_nearest_neighbors_with_yvar_none():
     rng = np.random.default_rng(42)
     n = 20
@@ -264,23 +285,23 @@ def test_add_updates_y_scale_for_posterior_se():
     rng = np.random.default_rng(42)
     d = 3
 
-    # Create initial model with small y values
+
     x_init = rng.random((5, d))
-    y_init = rng.random((5, 1)) * 0.1  # y values in [0, 0.1]
+    y_init = rng.random((5, 1)) * 0.1
 
     model_incremental = EpistemicNearestNeighbors(x_init, y_init)
 
-    # Add data with much larger y values
+
     x_new = rng.random((3, d))
-    y_new = rng.random((3, 1)) * 100  # y values in [0, 100]
+    y_new = rng.random((3, 1)) * 100
     model_incremental.add(x_new, y_new)
 
-    # Create fresh model with all data at once
+
     all_x = np.vstack([x_init, x_new])
     all_y = np.vstack([y_init, y_new])
     model_fresh = EpistemicNearestNeighbors(all_x, all_y)
 
-    # Compare posteriors - they should be equivalent
+
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
     )
@@ -289,11 +310,11 @@ def test_add_updates_y_scale_for_posterior_se():
     post_incremental = model_incremental.posterior(x_test, params=params)
     post_fresh = model_fresh.posterior(x_test, params=params)
 
-    # mu values should match (they're based on weighted neighbor values)
+
     np.testing.assert_allclose(post_incremental.mu, post_fresh.mu, rtol=1e-6)
 
-    # se values should also match - this is where the bug manifests
-    # Without the fix, se values differ by ~1000x
+
+
     np.testing.assert_allclose(post_incremental.se, post_fresh.se, rtol=0.01)
 
 

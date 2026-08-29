@@ -60,7 +60,7 @@ impl Default for BpannTuning {
             build_seed: None,
             pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
             pending_hard_flush_threshold: DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
-            // Batches ≤ this limit use row-id-only leaves (mmap score path).
+
             structured_build_row_limit: DEFAULT_STRUCTURED_BUILD_ROW_LIMIT,
             search_beam_width: 1,
             exhaustive_search_row_limit: DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT,
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn default_pending_hard_flush_threshold_is_3000() {
         assert_eq!(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, 3000);
-        // hard >= soft is enforced by BpannTuning::validate (see default_tuning_is_valid).
+
         assert_eq!(
             BpannTuning::default().pending_hard_flush_threshold,
             DEFAULT_PENDING_HARD_FLUSH_THRESHOLD
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn metamorphic_default_threshold_independent_of_other_fields() {
-        // Changing unrelated fields must not change the pending_flush default.
+
         let base = BpannTuning::default();
         let variants = [
             BpannTuning {
@@ -249,7 +249,7 @@ mod tests {
     fn fuzz_pending_flush_threshold_validation_all_seeds() {
         use rand::{Rng, SeedableRng};
         use rand_chacha::ChaCha8Rng;
-        let seed = 0x5045_4e44_u64; // "PEND"
+        let seed = 0x5045_4e44_u64;
         println!("fuzz_pending_flush_threshold_validation seed={seed}");
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         for _ in 0..64 {
@@ -338,7 +338,7 @@ mod tests {
         assert_eq!(DEFAULT_SKIP_REFINEMENT_ROW_LIMIT, 150_000);
         assert_eq!(t.structured_build_row_limit, DEFAULT_STRUCTURED_BUILD_ROW_LIMIT);
         assert_eq!(DEFAULT_STRUCTURED_BUILD_ROW_LIMIT, 1024);
-        // Latency default: search at most one fragment when many exist (proposal scout).
+
         assert_eq!(t.search_fragment_budget_max, 1);
     }
 
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn metamorphic_search_mode_matches_needs_skip_edges() {
-        // For every valid limit pair and row count, skip-edge build iff skip-refine search.
+
         let base = BpannTuning::default();
         let pairs = [
             (1usize, 1usize),
@@ -424,7 +424,7 @@ mod tests {
     fn fuzz_search_row_limit_validation_all_seeds() {
         use rand::{Rng, SeedableRng};
         use rand_chacha::ChaCha8Rng;
-        let seed = 0x524f_5753_u64; // "ROWS"
+        let seed = 0x524f_5753_u64;
         println!("fuzz_search_row_limit_validation seed={seed}");
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         for _ in 0..128 {
@@ -448,7 +448,7 @@ mod tests {
     fn tuning_provider_switches_search_mode_at_fixed_rows() {
         clear_tuning_provider();
         let rows = 3_000usize;
-        // Defaults: 3000 is in the skip-refinement band.
+
         assert!(current_tuning().rows_need_skip_edges(rows));
         assert!(current_tuning().use_skip_refinement_search(rows));
 

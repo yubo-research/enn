@@ -7,4 +7,3 @@ from dataclasses import dataclass
 class PosteriorFlags:
     exclude_nearest: bool = False
     observation_noise: bool = False
-    tie_break_neighbors: bool = True

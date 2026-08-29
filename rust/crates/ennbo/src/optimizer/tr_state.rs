@@ -130,10 +130,10 @@ impl TrustRegionState {
 
     pub fn morbo_update_ranges_only(&mut self, y_new: &ArrayView2<f64>) -> Result<(), ENNError> {
         match self {
-            TrustRegionState::Morbo(m) => {
-                m.as_mut().update_ranges_incremental(y_new);
-                Ok(())
-            }
+            TrustRegionState::Morbo(m) => m
+                .as_mut()
+                .update_ranges_incremental(y_new)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string())),
             _ => Err(ENNError::InvalidParameter(
                 "morbo_update_ranges_only requires Morbo".to_string(),
             )),

@@ -215,7 +215,7 @@ mod kiss_coverage_tests {
         });
         assert!(has_vectors);
 
-        // Scaled path for centroid_from_mmap_rows / first_row
+
         let ctx_s = IndexBuildContext {
             train_x: &store,
             num_dim: 2,
@@ -259,7 +259,7 @@ mod kiss_coverage_tests {
                 vector_elems += vectors.iter().map(|v| v.len()).sum::<usize>();
             }
         }
-        // Contiguous empty forests must not materialize Θ(N) identities.
+
         assert_eq!(row_id_bytes, 0);
         assert_eq!(range_leaf_count, 4096 / 64);
         assert_eq!(vector_elems, 0, "empty-leaf forest must not store vectors");

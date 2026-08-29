@@ -28,13 +28,21 @@ class ParetoAcqOptimizer:
         if mu.ndim == 2 and mu.shape[1] > 1:
             from nds import ndomsort
 
-            n = mu.shape[0]
+
+
+            m = mu.shape[1]
+            objectives = np.empty((mu.shape[0], m * 2), dtype=mu.dtype)
+            objectives[:, 0::2] = mu
+            objectives[:, 1::2] = se
+            n = objectives.shape[0]
             i_keep: list[int] = []
             remaining_mask = np.ones(n, dtype=bool)
             while len(i_keep) < num_arms and np.any(remaining_mask):
                 remaining_indices = np.where(remaining_mask)[0]
-                fronts = ndomsort.non_domin_sort(
-                    -mu[remaining_indices], only_front_indices=True
+                fronts = np.asarray(
+                    ndomsort.non_domin_sort(
+                        -objectives[remaining_indices], only_front_indices=True
+                    )
                 )
                 front_indices = remaining_indices[np.where(fronts == 0)[0]]
                 if len(i_keep) + len(front_indices) <= num_arms:

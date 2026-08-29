@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enn.turbo.optimizer_fixtures import (
+from optimizer_fixtures import (
     assert_fixture_contracts,
     assert_fixture_json_invariants,
     build_fixture,
@@ -14,7 +14,7 @@ from enn.turbo.optimizer_fixtures import (
     separable_unimodal_objective,
     sphere_centered_objective,
 )
-from enn.turbo.optimizer_fixtures.catalog import FixtureGeneratorEntry, FixtureRunSpec
+from optimizer_fixtures.catalog import FixtureGeneratorEntry, FixtureRunSpec
 
 
 def test_optimizer_fixtures_kiss_symbols_referenced():

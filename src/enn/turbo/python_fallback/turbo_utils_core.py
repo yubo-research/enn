@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, Iterator
-
-if TYPE_CHECKING:
-    import torch
+from typing import Any, Callable, Iterator
 
 __all__ = ["record_duration", "torch_seed_context", "get_gp_posterior_suppress_warning"]
 
@@ -13,7 +10,7 @@ __all__ = ["record_duration", "torch_seed_context", "get_gp_posterior_suppress_w
 def record_duration(set_dt: Callable[[float], None]) -> Iterator[None]:
     import time
 
-    t0 = time.perf_counter()  # testmon
+    t0 = time.perf_counter()
     try:
         yield
     finally:
@@ -22,7 +19,7 @@ def record_duration(set_dt: Callable[[float], None]) -> Iterator[None]:
 
 @contextlib.contextmanager
 def torch_seed_context(
-    seed: int, device: torch.device | Any | None = None
+    seed: int, device: Any | None = None
 ) -> Iterator[None]:
     import torch
 

@@ -149,11 +149,12 @@ impl Optimizer {
         result
     }
 
-    /// Tell observations.
+    /// Tell observations with optional observation noise (`yvar`).
     pub fn tell(
         &mut self,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
+        yvar: Option<&ArrayView2<f64>>,
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError> {
         let start = std::time::Instant::now();
@@ -164,20 +165,14 @@ impl Optimizer {
 
         let mut strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
-        let result = strategy.tell(self, x, y, &mut telemetry, rng);
+        let result = strategy.tell(self, x, y, yvar, &mut telemetry, rng);
         self.strategy = strategy;
         self.telemetry = telemetry;
 
         self.telemetry.dt_tell = start.elapsed().as_secs_f64();
-        if result.is_ok() {
-            // Soft-threshold drain for disk: tell-all never reaches ask between
-            // rows, so schedule here (ask already schedules after propose).
-            // Skip after bulk seed chunks: overlapping soft-sync with the next
-            // ask regresses ask@1e6; bulk fit_append already ensure_index_sync'd.
-            if x.nrows() < 64 {
-                if let Some(surrogate) = self.surrogate.as_ref() {
-                    surrogate.schedule_background_flush()?;
-                }
+        if result.is_ok() && x.nrows() < 64 {
+            if let Some(surrogate) = self.surrogate.as_ref() {
+                surrogate.schedule_background_flush()?;
             }
         }
         result
@@ -256,7 +251,8 @@ impl Optimizer {
         Some(y_z)
     }
 
-    /// Add observations (internal). `y` is natural-unit; incumbent gets a warped copy.
+    /// Add observations (internal). `y` is natural-unit; incumbent stores natural units
+    /// so trust-region updates compare batch `y` and incumbent in the same space.
     pub fn add_observations(
         &mut self,
         x: &ArrayView2<f64>,
@@ -269,13 +265,8 @@ impl Optimizer {
             });
         }
         let old_n = self.obs_count();
-        let y_for_incumbent = if let Some(surrogate) = self.surrogate.as_ref() {
-            surrogate.warp_observations_y(y)?
-        } else {
-            y.to_owned()
-        };
         for i in 0..x.nrows() {
-            let y_row: Array1<f64> = y_for_incumbent.row(i).to_owned();
+            let y_row: Array1<f64> = y.row(i).to_owned();
             self.incumbent_tracker.tell(old_n + i, &y_row);
             if self.surrogate.is_none() {
                 self.fallback_x.push(x.row(i).to_owned());

@@ -53,12 +53,12 @@ fn compute_single_loglik(
     mu_i: &ArrayView2<f64>,
     se_i: &ArrayView2<f64>,
 ) -> f64 {
-    // Check for non-finite values
+
     if !mu_i.iter().all(|v| v.is_finite()) || !se_i.iter().all(|v| v.is_finite()) {
-        return 0.0;
+        return f64::NEG_INFINITY;
     }
     if se_i.iter().any(|&v| v <= 0.0) {
-        return 0.0;
+        return f64::NEG_INFINITY;
     }
 
     let mut loglik = 0.0;
@@ -69,7 +69,7 @@ fn compute_single_loglik(
             let se_ij = se_i[[i, j]];
             let var_scaled = se_ij * se_ij;
 
-            // Gaussian log-likelihood: -0.5 * (log(2*pi*var) + (y-mu)^2/var)
+
             loglik += -0.5 * (2.0 * std::f64::consts::PI * var_scaled).ln()
                 - 0.5 * (y_ij - mu_ij).powi(2) / var_scaled;
         }
@@ -78,7 +78,8 @@ fn compute_single_loglik(
     if loglik.is_finite() {
         loglik
     } else {
-        0.0
+
+        f64::NEG_INFINITY
     }
 }
 
@@ -113,7 +114,8 @@ pub fn subsample_loglik_model<R: Rng>(
     } else {
         sample(rng, n, p_actual).into_iter().collect()
     };
-    let (x, y, _) = model.rows().train_rows_at(&indices)?;
+
+    let (x, y, _) = model.train_rows_at(&indices)?;
     subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
 }
 
@@ -133,9 +135,9 @@ pub fn subsample_loglik<R: Rng>(
         return Ok(vec![0.0; paramss.len()]);
     }
 
-    // Check for non-finite y values
+
     if !y.iter().all(|v| v.is_finite()) {
-        return Ok(vec![0.0; paramss.len()]);
+        return Ok(vec![f64::NEG_INFINITY; paramss.len()]);
     }
 
     let p_actual = p.min(n);
@@ -146,7 +148,7 @@ pub fn subsample_loglik<R: Rng>(
         sample(rng, n, p_actual).into_iter().collect()
     };
 
-    // Select subsampled data
+
     let num_metrics = y.ncols();
     let num_dim = x.ncols();
     let mut x_sel = Array2::zeros((p_actual, num_dim));
@@ -156,19 +158,15 @@ pub fn subsample_loglik<R: Rng>(
         y_sel.row_mut(new_i).assign(&y.row(old_i));
     }
 
-    // Fit hyperparameter search must not escalate to a full-train distance scan
-    // (tie_break_neighbors default). That path is Θ(N) RAM/time and blows the
-    // 1 GiB bound on large bpann_disk turbo-enn seeds.
     let flags = PosteriorFlags::new()
         .with_exclude_nearest(true)
-        .with_observation_noise(true)
-        .with_tie_break_neighbors(false);
+        .with_observation_noise(true);
     let post = model.batch_posterior(&x_sel.view(), paramss, &flags)?;
 
     let num_params = paramss.len();
     let num_outputs = y_sel.ncols();
 
-    // Validate shapes
+
     let expected_shape = vec![num_params, p_actual, num_outputs];
     let mu_shape = post.mu.shape().to_vec();
     let se_shape = post.se.shape().to_vec();
@@ -179,7 +177,7 @@ pub fn subsample_loglik<R: Rng>(
         });
     }
 
-    // Compute y_std for standardization
+
     let y_std_computed: Array1<f64> = if let Some(ys) = y_std {
         ys.to_owned()
     } else {
@@ -190,9 +188,9 @@ pub fn subsample_loglik<R: Rng>(
         .map(|&v| if v.is_finite() && v > 0.0 { v } else { 1.0 })
         .collect();
 
-    // Scale data
+
     let mut y_scaled = Array2::zeros(y_sel.raw_dim());
-    // mu_scaled and se_scaled are 3D: (num_params, p_actual, num_outputs)
+
     let mut mu_scaled = Array2::zeros((num_params * p_actual, num_outputs));
     let mut se_scaled = Array2::zeros((num_params * p_actual, num_outputs));
 
@@ -208,10 +206,10 @@ pub fn subsample_loglik<R: Rng>(
         }
     }
 
-    // Compute log-likelihoods
+
     let mut logliks = Vec::with_capacity(num_params);
     for pi in 0..num_params {
-        // Extract the pi-th parameter's predictions (p_actual x num_outputs)
+
         let start_idx = pi * p_actual;
         let mu_i = mu_scaled.slice(ndarray::s![start_idx..start_idx + p_actual, ..]);
         let se_i = se_scaled.slice(ndarray::s![start_idx..start_idx + p_actual, ..]);
@@ -257,7 +255,7 @@ mod tests {
         let via_model = subsample_loglik_model(&model, &paramss, 2, &mut rng, None).unwrap();
         let mut rng2 = StdRng::seed_from_u64(99);
         let all: Vec<usize> = (0..model.len()).collect();
-        let (full_x, full_y, _) = model.rows().train_rows_at(&all).unwrap();
+        let (full_x, full_y, _) = model.train_rows_at(&all).unwrap();
         let via_views =
             subsample_loglik(&model, &full_x.view(), &full_y.view(), &paramss, 2, &mut rng2, None)
                 .unwrap();
@@ -372,8 +370,8 @@ mod tests {
     #[test]
     fn test_subsample_loglik_mismatched_xy() {
         let model = create_test_model();
-        let x = array![[0.5, 0.5], [0.2, 0.8]]; // 2 rows
-        let y = array![[1.0]]; // 1 row
+        let x = array![[0.5, 0.5], [0.2, 0.8]];
+        let y = array![[1.0]];
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let paramss = vec![params];
         let mut rng = StdRng::seed_from_u64(42);
@@ -441,14 +439,40 @@ mod tests {
         let se_ok = array![[1.0]];
         assert_eq!(
             compute_single_loglik(&y.view(), &mu_bad.view(), &se_ok.view()),
-            0.0
+            f64::NEG_INFINITY
         );
 
         let mu_ok = array![[1.0]];
         let se_bad = array![[0.0]];
         assert_eq!(
             compute_single_loglik(&y.view(), &mu_ok.view(), &se_bad.view()),
-            0.0
+            f64::NEG_INFINITY
         );
     }
+
+    #[test]
+    fn test_compute_single_loglik_overflow_sum_is_neg_infinity() {
+
+        let y = array![[1e308]];
+        let mu = array![[-1e308]];
+        let se = array![[1e-308]];
+        assert_eq!(
+            compute_single_loglik(&y.view(), &mu.view(), &se.view()),
+            f64::NEG_INFINITY
+        );
+    }
+
+    #[test]
+    fn test_subsample_loglik_nonfinite_y_scores_neg_infinity() {
+        let model = create_test_model();
+        let x = array![[0.0, 0.0], [1.0, 1.0]];
+        let y = array![[1.0], [f64::NAN]];
+        let params = ENNParams::new(2, 1.0, 0.1).unwrap();
+        let paramss = vec![params, params];
+        let mut rng = StdRng::seed_from_u64(0);
+        let logliks =
+            subsample_loglik(&model, &x.view(), &y.view(), &paramss, 2, &mut rng, None).unwrap();
+        assert_eq!(logliks, vec![f64::NEG_INFINITY, f64::NEG_INFINITY]);
+    }
+
 }

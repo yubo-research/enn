@@ -45,7 +45,7 @@ DRAW_OBS_NOISE_STD = 0.1
 DRAW_F_CENTER = 0.3
 DRAW_FLAGS = PosteriorFlags(observation_noise=True)
 DRAW_FLAGS_NO_OBS = PosteriorFlags(observation_noise=False)
-# Printed duration fields (*_s) use fixed four fractional digits.
+
 DURATION_S_FMT = ".4f"
 STRESS_PARAMS = ENNParams(
     k_num_neighbors=STRESS_QUERY_K,
@@ -60,8 +60,8 @@ TURBO_ENN_ACKLEY_NOISE = 0.1
 TURBO_ENN_SEED = 0
 TURBO_ENN_K = 10
 TURBO_ENN_NUM_FIT_SAMPLES = 100
-# Larger than proposal-scale chunk: turbo-enn large gaps pay per-tell fit/TR cost.
-# Fewer, larger tells cut soft-sync overhead on bpann_disk empty-leaf drains.
+
+
 TURBO_ENN_SEED_CHUNK = 100_000
 TURBO_ENN_SEED_CHUNK_FLAT = 200_000
 PROPOSAL_SCALE_NS: tuple[int, ...] = (
@@ -382,6 +382,10 @@ def load_num_obs_existing(work_dir: str) -> int:
     return 0
 
 
+def format_kv(key: str, value: object) -> str:
+    return f"{key} = {value}"
+
+
 def format_config_header(
     *,
     num_dim: int,
@@ -390,12 +394,12 @@ def format_config_header(
     num_obs_existing: int | None = None,
 ) -> str:
     prefix = "restarting " if num_obs_existing else ""
-    header = f"{prefix}num_dim={num_dim} num_obs={num_obs}"
+    parts = [format_kv("num_dim", num_dim), format_kv("num_obs", num_obs)]
     if num_obs_existing:
-        header = f"{header} num_obs_existing={num_obs_existing}"
+        parts.append(format_kv("num_obs_existing", num_obs_existing))
     if work_dir is not None:
-        header = f"{header} work_dir={work_dir}"
-    return header
+        parts.append(format_kv("work_dir", work_dir))
+    return prefix + " ".join(parts)
 
 
 def _time_query_s(model: EpistemicNearestNeighbors, x_query: np.ndarray) -> float:
@@ -428,9 +432,9 @@ def run_enn_add_stress(
         model_kwargs["work_dir"] = cfg.work_dir
         model_kwargs["enn_storage"] = "disk"
     model = EpistemicNearestNeighbors(**model_kwargs)
-    # Zero-row warmup: warms the Python validation/binding path only (the
-    # library short-circuits on zero rows), so checkpoint 1 excludes
-    # interpreter warmup but still pays first-touch library costs.
+
+
+
     model.add(empty_x, empty_y)
 
     if cfg.batch_size < 1:
@@ -438,8 +442,8 @@ def run_enn_add_stress(
     checkpoint_list = sorted(checkpoints)
     next_checkpoint_i = 0
     last_heartbeat_t = time.perf_counter()
-    # Library-only time (model.add + flush scheduling) accumulated since the
-    # previous checkpoint; excludes synthetic-data generation and loop overhead.
+
+
     segment_lib_s = 0.0
 
     def emit_checkpoints(current_n: int) -> Iterator[tuple[int, float, float]]:
@@ -449,11 +453,11 @@ def run_enn_add_stress(
             and checkpoint_list[next_checkpoint_i] <= current_n
         ):
             cp = checkpoint_list[next_checkpoint_i]
-            # Index sync is library work, so it counts toward the segment.
-            # Disk mode (batch or single-row) defers indexing to
-            # schedule_background_flush inside the add loop, matching the
-            # baseline; forcing a sync here would build tiny index fragments
-            # the baseline never built.
+
+
+
+
+
             if index_driver not in DISK_DEFER_SYNC_DRIVERS:
                 t_sync = time.perf_counter()
                 model.ensure_index_sync()
@@ -482,11 +486,11 @@ def run_enn_add_stress(
                     model.schedule_background_flush()
                 segment_lib_s += time.perf_counter() - t_add
                 if cfg.progress_every and (n % cfg.progress_every == 0):
-                    click.echo(f"progress n={n}", err=True)
+                    click.echo(format_kv("progress n", n), err=True)
                 if cfg.heartbeat_seconds and (
                     time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
                 ):
-                    click.echo(f"heartbeat n={n}", err=True)
+                    click.echo(format_kv("heartbeat n", n), err=True)
                     last_heartbeat_t = time.perf_counter()
                 yield from emit_checkpoints(n)
         else:
@@ -504,11 +508,11 @@ def run_enn_add_stress(
                 segment_lib_s += time.perf_counter() - t_add
                 n += x_batch.shape[0]
                 if cfg.progress_every and (n % cfg.progress_every == 0):
-                    click.echo(f"progress n={n}", err=True)
+                    click.echo(format_kv("progress n", n), err=True)
                 if cfg.heartbeat_seconds and (
                     time.perf_counter() - last_heartbeat_t >= cfg.heartbeat_seconds
                 ):
-                    click.echo(f"heartbeat n={n}", err=True)
+                    click.echo(format_kv("heartbeat n", n), err=True)
                     last_heartbeat_t = time.perf_counter()
                 yield from emit_checkpoints(n)
     finally:
@@ -516,15 +520,28 @@ def run_enn_add_stress(
             model.persist_index_to_disk()
 
 
-def stress_row_n_width(num_obs: int) -> int:
-    """Character width for the N column; sized for the largest checkpoint (num_obs)."""
-    if num_obs < 1:
-        raise ValueError("num_obs must be >= 1")
-    return len(str(num_obs))
+def format_stress_row(n: int, query_s: float, segment_s: float) -> str:
+    return (
+        f"{format_kv('n', n)} {format_kv('query_s', f'{query_s:{DURATION_S_FMT}}')} "
+        f"{format_kv('segment_s', f'{segment_s:{DURATION_S_FMT}}')}"
+    )
 
 
-def format_stress_row(n: int, query_s: float, segment_s: float, *, n_width: int) -> str:
-    return f"{n:>{n_width}} {query_s:{DURATION_S_FMT}} {segment_s:{DURATION_S_FMT}}"
+def parse_stress_row(line: str) -> tuple[int, float, float]:
+    """Parse a ``format_stress_row`` line; return ``(n, query_s, segment_s)``."""
+    kv: dict[str, str] = {}
+    tokens = line.split()
+    i = 0
+    while i + 2 < len(tokens):
+        if tokens[i + 1] == "=":
+            kv[tokens[i]] = tokens[i + 2]
+            i += 3
+        else:
+            i += 1
+    try:
+        return int(kv["n"]), float(kv["query_s"]), float(kv["segment_s"])
+    except KeyError as exc:
+        raise ValueError(f"missing key in stress row: {line!r}") from exc
 
 
 @dataclass(frozen=True)
@@ -707,6 +724,8 @@ class DrawStressConfig:
     num_fit_candidates: int = DEFAULT_DRAW_NUM_FIT_CANDIDATES
     num_fit_samples: int = DEFAULT_DRAW_NUM_FIT_SAMPLES
     num_draws: int = DEFAULT_DRAW_NUM_DRAWS
+    index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
+    work_dir: str | None = None
 
 
 @dataclass(frozen=True)
@@ -761,7 +780,20 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     x_test, y_test = make_draw_observations(
         config.num_test, num_dim=config.num_dim, rng=data_rng
     )
-    model = EpistemicNearestNeighbors(x, y, scale_x=False)
+    model_kwargs: dict[str, object] = {
+        "train_x": x,
+        "train_y": y,
+        "scale_x": False,
+        "index_driver": config.index_driver,
+    }
+    if config.index_driver == ENNIndexDriver.BPANN_DISK:
+        if config.work_dir is None:
+            raise ValueError("bpann_disk requires work_dir")
+        model_kwargs["work_dir"] = config.work_dir
+        model_kwargs["enn_storage"] = "disk"
+    elif config.work_dir is not None:
+        raise ValueError("work_dir requires bpann_disk")
+    model = EpistemicNearestNeighbors(**model_kwargs)
 
     t0 = time.perf_counter()
     fitted = enn_fit(
@@ -774,10 +806,10 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     fit_s = time.perf_counter() - t0
 
     t1 = time.perf_counter()
-    # Likelihood path: observation_noise=True (posterior lik is analytic).
+
     post_lik = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS)
     avg_lik_post = average_likelihood(y_test, post_lik.mu, post_lik.se)
-    # Argmin-RMS path: observation_noise=False joint draws.
+
     post_rms = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS_NO_OBS)
     post_rms_draws = post_rms.sample(config.num_draws, sample_rng)
     post_argmin_rms = argmin_rms(x_test, post_rms_draws)
@@ -794,8 +826,8 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     )
 
     t2 = time.perf_counter()
-    # One ON=False joint draw serves both empirical lik and argmin metrics.
-    # (A second ON=True draw nearly doubled eval_s without helping argmin quality.)
+
+
     function_seeds = function_seeds_for_sample(config.seed + 4, config.num_draws)
     fn_draws, _idx = model.posterior_function_draw(
         x_test,
@@ -903,21 +935,28 @@ def run_draw_stress_over_seeds(
     """Run ``run_draw_stress`` for ``seed .. seed+num_seeds-1`` and aggregate metrics."""
     if num_seeds < 1:
         raise ValueError("num_seeds must be >= 1")
-    results = [
-        run_draw_stress(
-            DrawStressConfig(
-                num_obs=config.num_obs,
-                num_test=config.num_test,
-                num_dim=config.num_dim,
-                seed=config.seed + i,
-                k=config.k,
-                num_fit_candidates=config.num_fit_candidates,
-                num_fit_samples=config.num_fit_samples,
-                num_draws=config.num_draws,
+    results = []
+    for i in range(num_seeds):
+        seed_work_dir = config.work_dir
+        if config.work_dir is not None:
+            seed_work_dir = str(Path(config.work_dir) / f"seed{config.seed + i}")
+            Path(seed_work_dir).mkdir(parents=True, exist_ok=True)
+        results.append(
+            run_draw_stress(
+                DrawStressConfig(
+                    num_obs=config.num_obs,
+                    num_test=config.num_test,
+                    num_dim=config.num_dim,
+                    seed=config.seed + i,
+                    k=config.k,
+                    num_fit_candidates=config.num_fit_candidates,
+                    num_fit_samples=config.num_fit_samples,
+                    num_draws=config.num_draws,
+                    index_driver=config.index_driver,
+                    work_dir=seed_work_dir,
+                )
             )
         )
-        for i in range(num_seeds)
-    ]
     return DrawStressAggregate(
         num_obs=config.num_obs,
         num_test=config.num_test,
@@ -986,6 +1025,7 @@ class TurboEnnRoundResult:
     iter_s: float
     ask_s: float
     tell_s: float
+    y_best: float
 
 
 def turbo_enn_ask_stops(num_obs: int, num_ask: int) -> tuple[int, ...]:
@@ -1138,11 +1178,12 @@ def run_turbo_enn_stress(
 
     dgp_rng = np.random.default_rng(seed + 17)
     prev = 0
+    y_best = float("-inf")
     for stop in stops:
         gap = stop - prev
         assert gap >= 1, f"empty group at stop={stop} prev={prev}"
         t0 = time.perf_counter()
-        seed_turbo_enn_to_n(
+        batch_y_best = seed_turbo_enn_to_n(
             opt,
             ackley,
             bounds_arr,
@@ -1151,11 +1192,14 @@ def run_turbo_enn_stress(
             chunk=seed_chunk,
         )
         tell_s = time.perf_counter() - t0
+        y_best = max(y_best, batch_y_best)
         t_ask0 = time.perf_counter()
-        _ = opt.ask(num_arms=1)  # discard arms; timing only
+        _ = opt.ask(num_arms=1)
         ask_s = time.perf_counter() - t_ask0
         iter_s = ask_s + tell_s
-        yield TurboEnnRoundResult(n=stop, iter_s=iter_s, ask_s=ask_s, tell_s=tell_s)
+        yield TurboEnnRoundResult(
+            n=stop, iter_s=iter_s, ask_s=ask_s, tell_s=tell_s, y_best=y_best
+        )
         prev = stop
 
 
@@ -1182,8 +1226,11 @@ def seed_turbo_enn_to_n(
     *,
     rng: np.random.Generator,
     chunk: int = PROPOSAL_SCALE_SEED_CHUNK,
-) -> None:
-    """Bulk-seed optimizer with N synthetic Ackley points via chunked ``tell``."""
+) -> float:
+    """Bulk-seed optimizer with N synthetic Ackley points via chunked ``tell``.
+
+    Returns the maximum observed y in this seeding call.
+    """
     if n < 1:
         raise ValueError("n must be >= 1")
     if chunk < 1:
@@ -1196,8 +1243,8 @@ def seed_turbo_enn_to_n(
     lo = bounds[:, 0]
     hi = bounds[:, 1]
     assert np.all(hi > lo), "bounds require hi > lo per dimension"
-    # Generate per chunk so peak RAM stays O(chunk·D), not O(n·D). Full-N
-    # materialization made turbo-enn bpann_disk exceed 1 GiB well below n=1e8.
+
+    y_best = float("-inf")
     for start in range(0, n, chunk):
         end = min(start + chunk, n)
         take = end - start
@@ -1206,7 +1253,9 @@ def seed_turbo_enn_to_n(
         if y.ndim == 1:
             y = y.reshape(-1, 1)
         assert y.shape == (take, 1), f"expected y shape ({take}, 1), got {y.shape}"
+        y_best = max(y_best, float(np.max(y)))
         opt.tell(x, y)
+    return y_best
 
 
 def _timed_ask_tell_round(opt, objective) -> tuple[float, float]:
@@ -1374,14 +1423,14 @@ def cli() -> None:
             type=int,
             default=0,
             show_default=True,
-            help="Emit `progress n=<N>` to stderr every N additions (0 disables).",
+            help="Emit `progress n = <N>` to stderr every N additions (0 disables).",
         ),
         click.Option(
             ["--heartbeat-seconds"],
             type=float,
             default=DEFAULT_HEARTBEAT_SECONDS,
             show_default=True,
-            help="Emit `heartbeat n=<N>` to stderr at most this often (0 disables).",
+            help="Emit `heartbeat n = <N>` to stderr at most this often (0 disables).",
         ),
         click.Option(
             ["--work-dir"],
@@ -1445,7 +1494,6 @@ def enn(
             num_obs_existing=num_obs_existing if num_obs_existing else None,
         )
     )
-    n_width = stress_row_n_width(num_obs)
     batch_size = ENN_ADD_STRESS_BATCH_SIZE if batch else 1
     for n, query_s, segment_s in run_enn_add_stress(
         index_driver=driver,
@@ -1458,7 +1506,7 @@ def enn(
             work_dir=work_dir,
         ),
     ):
-        click.echo(format_stress_row(n, query_s, segment_s, n_width=n_width))
+        click.echo(format_stress_row(n, query_s, segment_s))
 
 
 @cli.command(
@@ -1551,6 +1599,19 @@ def sample(work_dir: str, num_samples: int, seed: int) -> None:
             show_default=True,
             help="Repeat full draw stress over seed..seed+num_seeds-1; report mean ± SE.",
         ),
+        click.Option(
+            ["--index-type"],
+            type=click.Choice(INDEX_TYPE_CHOICES),
+            default="flat",
+            show_default=True,
+            help="ENN index backend for draw stress.",
+        ),
+        click.Option(
+            ["--work-dir"],
+            type=click.Path(file_okay=False, dir_okay=True, path_type=str),
+            default=None,
+            help="Disk-backed ENN work directory (requires bpann_disk).",
+        ),
     ],
 )
 def draw(
@@ -1563,6 +1624,8 @@ def draw(
     num_fit_samples: int,
     num_draws: int,
     num_seeds: int,
+    index_type: str,
+    work_dir: str | None,
 ) -> None:
     """Fit ENN on synthetic data; report avg likelihood for two draw methods."""
     if num_obs < 1:
@@ -1581,6 +1644,12 @@ def draw(
         raise click.ClickException("num_draws must be >= 2")
     if num_seeds < 1:
         raise click.ClickException("num_seeds must be >= 1")
+    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
+        raise click.ClickException(
+            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
+        )
+    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
+        raise click.ClickException(f"{index_type} requires --work-dir")
     config = DrawStressConfig(
         num_obs=num_obs,
         num_test=num_test,
@@ -1590,6 +1659,8 @@ def draw(
         num_fit_candidates=num_fit_candidates,
         num_fit_samples=num_fit_samples,
         num_draws=num_draws,
+        index_driver=parse_index_driver(index_type),
+        work_dir=work_dir,
     )
     try:
         agg = run_draw_stress_over_seeds(config, num_seeds=num_seeds)
@@ -1668,6 +1739,7 @@ def turbo_enn(
         )
     )
     n_width = len(str(num_obs))
+    y_best = float("-inf")
     try:
         for row in run_turbo_enn_stress(
             index_driver=driver,
@@ -1677,6 +1749,7 @@ def turbo_enn(
             work_dir=work_dir,
             tell_all=tell_all,
         ):
+            y_best = row.y_best
             click.echo(
                 format_turbo_enn_row(
                     row.n,
@@ -1688,6 +1761,7 @@ def turbo_enn(
             )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+    click.echo(f"y_best={y_best}")
 
 
 @cli.command(

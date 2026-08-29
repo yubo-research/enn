@@ -148,11 +148,125 @@ pub fn bpann_write_metadata(
     scale_x: bool,
     indexed_rows: usize,
 ) -> Result<(), BpannError> {
-    let json = format!(
-        "{{\"format_version\":{FORMAT_VERSION},\"num_obs\":{num_obs},\"num_dim\":{num_dim},\"num_metrics\":{num_metrics},\"scale_x\":{scale_x},\"index_backend\":\"{INDEX_BACKEND}\",\"indexed_rows\":{indexed_rows}}}"
-    );
-    fs::write(work_dir.join("metadata.json"), json)
-        .map_err(|e| BpannError::InvalidParameter(e.to_string()))
+    let meta_path = work_dir.join("metadata.json");
+
+
+    let preserved = fs::read_to_string(&meta_path)
+        .ok()
+        .and_then(|text| preserve_metadata_extension_fields(&text));
+    let json = match preserved.as_deref() {
+        Some(extra) if !extra.is_empty() => format!(
+            "{{\"format_version\":{FORMAT_VERSION},\"num_obs\":{num_obs},\"num_dim\":{num_dim},\"num_metrics\":{num_metrics},\"scale_x\":{scale_x},\"index_backend\":\"{INDEX_BACKEND}\",\"indexed_rows\":{indexed_rows},{extra}}}"
+        ),
+        _ => format!(
+            "{{\"format_version\":{FORMAT_VERSION},\"num_obs\":{num_obs},\"num_dim\":{num_dim},\"num_metrics\":{num_metrics},\"scale_x\":{scale_x},\"index_backend\":\"{INDEX_BACKEND}\",\"indexed_rows\":{indexed_rows}}}"
+        ),
+    };
+    fs::write(meta_path, json).map_err(|e| BpannError::InvalidParameter(e.to_string()))
+}
+
+/// Keep non-core metadata keys (e.g. `"y_bounds":[...]`) across BPANN rewrites.
+fn preserve_metadata_extension_fields(text: &str) -> Option<String> {
+    const CORE: &[&str] = &[
+        "format_version",
+        "num_obs",
+        "num_dim",
+        "num_metrics",
+        "scale_x",
+        "index_backend",
+        "indexed_rows",
+    ];
+    let mut extras = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        let key_start = i + 1;
+        let Some(rel_end) = text[key_start..].find('"') else {
+            break;
+        };
+        let key_end = key_start + rel_end;
+        let key = &text[key_start..key_end];
+        i = key_end + 1;
+        i = skip_ws(bytes, i);
+        if i >= bytes.len() || bytes[i] != b':' {
+            continue;
+        }
+        i = skip_ws(bytes, i + 1);
+        if i >= bytes.len() {
+            break;
+        }
+        let val_start = i;
+        let val_end = json_value_end(bytes, i);
+        i = val_end;
+        if CORE.contains(&key) {
+            continue;
+        }
+        extras.push(format!("\"{key}\":{}", &text[val_start..val_end]));
+    }
+    if extras.is_empty() {
+        None
+    } else {
+        Some(extras.join(","))
+    }
+}
+
+fn skip_ws(bytes: &[u8], mut i: usize) -> usize {
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    i
+}
+
+fn json_value_end(bytes: &[u8], i: usize) -> usize {
+    match bytes[i] {
+        b'[' | b'{' => json_bracket_end(bytes, i),
+        b'"' => json_string_end(bytes, i),
+        _ => {
+            let mut j = i;
+            while j < bytes.len() && bytes[j] != b',' && bytes[j] != b'}' {
+                j += 1;
+            }
+            j
+        }
+    }
+}
+
+fn json_bracket_end(bytes: &[u8], i: usize) -> usize {
+    let open = bytes[i];
+    let close = if open == b'[' { b']' } else { b'}' };
+    let mut depth = 0i32;
+    let mut j = i;
+    while j < bytes.len() {
+        if bytes[j] == open {
+            depth += 1;
+        } else if bytes[j] == close {
+            depth -= 1;
+            if depth == 0 {
+                return j + 1;
+            }
+        }
+        j += 1;
+    }
+    j
+}
+
+fn json_string_end(bytes: &[u8], i: usize) -> usize {
+    let mut j = i + 1;
+    while j < bytes.len() {
+        if bytes[j] == b'\\' {
+            j += 2;
+            continue;
+        }
+        if bytes[j] == b'"' {
+            return j + 1;
+        }
+        j += 1;
+    }
+    j
 }
 
 pub fn bpann_open_or_append_yvar(
@@ -160,13 +274,18 @@ pub fn bpann_open_or_append_yvar(
     num_metrics: usize,
     train_yvar: Option<&Array2<f64>>,
 ) -> Result<Option<MmapColumnStore>, BpannError> {
+    let yv_path = work_dir.join("train_yvar.bin");
     if let Some(yv) = train_yvar {
-        let yv_path = work_dir.join("train_yvar.bin");
         let known_nrows = bpann_load_num_obs(work_dir);
         let mut store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics, known_nrows)?;
         if store.nrows == 0 {
             store.mmap_append(&yv.view())?;
         }
+        Ok(Some(store))
+    } else if yv_path.exists() {
+
+        let known_nrows = bpann_load_num_obs(work_dir);
+        let store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics, known_nrows)?;
         Ok(Some(store))
     } else {
         Ok(None)

@@ -8,7 +8,7 @@ class ENNIndexDriver(Enum):
     BPANN_DISK = auto()
 
 
-# Canonical strings for Rust (model and optimizer both accept lowercase)
+
 ENN_INDEX_DRIVER_TO_RUST: dict[ENNIndexDriver, str] = {
     ENNIndexDriver.FLAT: "exact",
     ENNIndexDriver.BPANN_DISK: "bpann_disk",

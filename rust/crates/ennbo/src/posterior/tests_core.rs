@@ -160,7 +160,7 @@ fn test_get_neighbor_data() {
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let query = array![[0.5, 0.5]];
 
-    let result = get_neighbor_data(&model, &query.view(), &params, false, true);
+    let result = get_neighbor_data(&model, &query.view(), &params, false);
     assert!(result.is_ok());
     assert!(result.unwrap().is_some());
 }
@@ -226,7 +226,7 @@ fn test_compute_weighted_posterior() {
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let query = array![[0.5, 0.5]];
 
-    let neighbor_data = get_neighbor_data(&model, &query.view(), &params, false, true)
+    let neighbor_data = get_neighbor_data(&model, &query.view(), &params, false)
         .unwrap()
         .unwrap();
 
@@ -249,11 +249,11 @@ fn test_get_neighbor_data_exclude_nearest() {
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let query = array![[0.5, 0.5]];
 
-    let result = get_neighbor_data(&model, &query.view(), &params, true, true);
+    let result = get_neighbor_data(&model, &query.view(), &params, true);
     assert!(result.is_ok());
 }
 
-// Tests for helper functions to achieve 100% coverage
+
 
 #[test]
 fn test_compute_batch_with_shared_neighbors_direct() {
@@ -262,7 +262,7 @@ fn test_compute_batch_with_shared_neighbors_direct() {
     let params2 = ENNParams::new(2, 2.0, 0.2).unwrap();
     let paramss = vec![params1, params2];
     assert_batch_neighbor_fill(&model, paramss, |m, q, p, f, mu, se, se_epi, se_ale| {
-        compute_batch_with_shared_neighbors(m, q, p, f, mu, se, se_epi, se_ale)
+        compute_batch_with_shared_neighbors(m, q, p, f, mu, se, se_epi, se_ale).map(|_| ())
     });
 }
 
@@ -270,7 +270,7 @@ fn test_compute_batch_with_shared_neighbors_direct() {
 fn test_compute_batch_separate_neighbors_direct() {
     let model = create_test_model();
     let params1 = ENNParams::new(2, 1.0, 0.1).unwrap();
-    let params2 = ENNParams::new(3, 2.0, 0.2).unwrap(); // Different k values
+    let params2 = ENNParams::new(3, 2.0, 0.2).unwrap();
     let paramss = vec![params1, params2];
     assert_batch_neighbor_fill(&model, paramss, |m, q, p, f, mu, se, se_epi, se_ale| {
         compute_batch_separate_neighbors(m, q, p, f, mu, se, se_epi, se_ale)
@@ -292,12 +292,12 @@ fn test_assign_posterior_results_direct() {
     let mut se_epi_all = Array3::zeros((3, 1, 1));
     let mut se_ale_all = Array3::zeros((3, 1, 1));
 
-    // Test assigning to different indices
+
     assign_posterior_results(&internals, &mut mu_all, &mut se_all, &mut se_epi_all, &mut se_ale_all, 0);
     assign_posterior_results(&internals, &mut mu_all, &mut se_all, &mut se_epi_all, &mut se_ale_all, 1);
     assign_posterior_results(&internals, &mut mu_all, &mut se_all, &mut se_epi_all, &mut se_ale_all, 2);
 
-    // Verify the assignments were made (values should be non-zero from the computation)
+
     assert!(mu_all[[0, 0, 0]].is_finite());
     assert!(se_all[[0, 0, 0]].is_finite());
     assert!(se_epi_all[[0, 0, 0]].is_finite());

@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
-
-if TYPE_CHECKING:
-    from numpy.random import Generator
 
 __all__ = [
     "compute_full_box_bounds_1d",
@@ -27,7 +24,7 @@ def compute_full_box_bounds_1d(
 def get_single_incumbent_index(
     selector: Any,
     y: np.ndarray,
-    rng: Generator,
+    rng: Any,
     mu: np.ndarray | None = None,
 ) -> np.ndarray:
     y = np.asarray(y, dtype=float)
@@ -40,7 +37,7 @@ def get_single_incumbent_index(
 def get_incumbent_index(
     selector: Any,
     y: np.ndarray,
-    rng: Generator,
+    rng: Any,
     mu: np.ndarray | None = None,
 ) -> int:
     y = np.asarray(y, dtype=float)
@@ -52,7 +49,7 @@ def get_incumbent_index(
 def get_scalar_incumbent_value(
     selector: Any,
     y_obs: np.ndarray,
-    rng: Generator,
+    rng: Any,
     *,
     mu_obs: np.ndarray | None = None,
 ) -> np.ndarray:
@@ -80,7 +77,7 @@ class ScalarIncumbentMixin:
     def get_incumbent_index(
         self,
         y: np.ndarray | Any,
-        rng: Generator,
+        rng: Any,
         mu: np.ndarray | None = None,
     ) -> int:
         return get_incumbent_index(self.incumbent_selector, y, rng, mu=mu)
@@ -88,7 +85,7 @@ class ScalarIncumbentMixin:
     def get_incumbent_value(
         self,
         y_obs: np.ndarray | Any,
-        rng: Generator,
+        rng: Any,
         mu_obs: np.ndarray | None = None,
     ) -> np.ndarray:
         return get_scalar_incumbent_value(

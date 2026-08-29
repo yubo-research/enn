@@ -29,7 +29,7 @@ fn test_strategy_init_ask_tell_progress() {
     assert_eq!(x.nrows(), 2);
     assert!(optimizer.init_progress().is_some());
     let y = array![[1.0], [0.5]];
-    optimizer.tell(&x.view(), &y.view(), &mut rng).unwrap();
+    optimizer.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
     let (done, total) = optimizer.init_progress().unwrap();
     assert_eq!(done, 2);
     assert_eq!(total, 4);
@@ -44,12 +44,12 @@ fn test_strategy_hybrid_switches_to_turbo() {
         Optimizer::new_with_strategy(bounds, turbo_zero_config(), strategy, &mut rng).unwrap();
     let x0 = optimizer.ask(2, &mut rng).unwrap();
     let y0 = array![[0.1], [0.2]];
-    optimizer.tell(&x0.view(), &y0.view(), &mut rng).unwrap();
+    optimizer.tell(&x0.view(), &y0.view(), None, &mut rng).unwrap();
     assert!(optimizer.init_progress().is_none());
     let x1 = optimizer.ask(2, &mut rng).unwrap();
     assert_eq!(x1.nrows(), 2);
     let y1 = array![[0.3], [0.4]];
-    optimizer.tell(&x1.view(), &y1.view(), &mut rng).unwrap();
+    optimizer.tell(&x1.view(), &y1.view(), None, &mut rng).unwrap();
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn test_strategy_turbo_path_updates_trust_region() {
 
     let x = optimizer.ask(2, &mut rng).unwrap();
     let y = array![[1.0], [1.1]];
-    optimizer.tell(&x.view(), &y.view(), &mut rng).unwrap();
+    optimizer.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
     assert!(optimizer.tr_length() > 0.0);
 }
 
@@ -75,7 +75,7 @@ fn test_strategy_init_lhd_path() {
         Optimizer::new_with_strategy(bounds, turbo_zero_config(), strategy, &mut rng).unwrap();
     let x = optimizer.ask(2, &mut rng).unwrap();
     let y = array![[0.2], [0.1]];
-    optimizer.tell(&x.view(), &y.view(), &mut rng).unwrap();
+    optimizer.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
     assert_eq!(optimizer.init_progress().unwrap(), (2, 3));
 }
 
@@ -100,7 +100,7 @@ fn test_select_arms_acquisition_branches() {
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.8, 0.2]];
     let y_fit = array![[0.0], [1.0], [0.5], [0.4]];
     opt_ucb
-        .tell(&x_fit.view(), &y_fit.view(), &mut rng)
+        .tell(&x_fit.view(), &y_fit.view(), None, &mut rng)
         .unwrap();
     let out_ucb = select_arms(&opt_ucb, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_ucb.nrows(), 2);
@@ -109,7 +109,7 @@ fn test_select_arms_acquisition_branches() {
     cfg_ts.acquisition = AcquisitionConfig::Thompson;
     let mut opt_ts =
         Optimizer::new_with_strategy(bounds.clone(), cfg_ts, Strategy::turbo(), &mut rng).unwrap();
-    opt_ts.tell(&x_fit.view(), &y_fit.view(), &mut rng).unwrap();
+    opt_ts.tell(&x_fit.view(), &y_fit.view(), None, &mut rng).unwrap();
     let out_ts = select_arms(&opt_ts, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_ts.nrows(), 2);
 
@@ -118,7 +118,7 @@ fn test_select_arms_acquisition_branches() {
     let mut opt_pareto =
         Optimizer::new_with_strategy(bounds, cfg_pareto, Strategy::turbo(), &mut rng).unwrap();
     opt_pareto
-        .tell(&x_fit.view(), &y_fit.view(), &mut rng)
+        .tell(&x_fit.view(), &y_fit.view(), None, &mut rng)
         .unwrap();
     let out_pareto = select_arms(&opt_pareto, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_pareto.nrows(), 2);

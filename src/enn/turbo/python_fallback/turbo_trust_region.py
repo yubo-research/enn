@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import numpy as np
+
+from ..config.turbo_tr_config import TurboTRConfig
+from .components.incumbent_selector import IncumbentSelector
 
 from .turbo_utils import ScalarIncumbentMixin
-
-if TYPE_CHECKING:
-    import numpy as np
-    from numpy.random import Generator
-
-    from .components.incumbent_selector import IncumbentSelector
-    from ..config.turbo_tr_config import TurboTRConfig
 
 
 @dataclass
@@ -146,7 +144,6 @@ class TurboTrustRegion(ScalarIncumbentMixin):
         return self.length < self.length_min
 
     def restart(self, rng: Any | None = None) -> None:
-        # Keep _num_arms / _failure_tolerance: update() may run before validate_request (TR restart path).
         (
             self.length,
             self.failure_counter,
@@ -181,7 +178,7 @@ class TurboTrustRegion(ScalarIncumbentMixin):
     def get_incumbent_indices(
         self,
         y: np.ndarray | Any,
-        rng: Generator,
+        rng: Any,
         mu: np.ndarray | None = None,
     ) -> np.ndarray:
         import numpy as np

@@ -60,6 +60,8 @@ impl EpistemicNearestNeighbors {
                 });
             }
         }
+        let yvar_view = train_yvar.map(|v| v.view());
+        validate_finite_xy(&train_x.view(), &train_y.view(), yvar_view.as_ref())?;
         Ok(())
     }
 
@@ -128,7 +130,7 @@ impl EpistemicNearestNeighbors {
             ));
         }
         let num_dim = train_x.ncols();
-        let num_metrics = train_y.ncols();
+        let mut num_metrics = train_y.ncols();
         let disk_work_dir = work_dir.clone().or_else(EnnStorage::work_dir_from_env);
         let disk_reopen = matches!(storage, EnnStorage::Disk)
             && train_x.nrows() == 0
@@ -144,13 +146,24 @@ impl EpistemicNearestNeighbors {
         } else {
             None
         };
+
+
+        if disk_reopen {
+            if let Some(text) = meta_text.as_deref() {
+                if let Some(persisted) =
+                    crate::backend::disk_observation::parse_json_usize_field(text, "num_metrics")
+                {
+                    num_metrics = persisted;
+                }
+            }
+        }
         let y_bounds = resolve_y_bounds(
             y_bounds.as_ref(),
             num_metrics,
             meta_text.as_deref(),
         )?;
 
-        // On disk reopen, stored rows are already warped; skip ingress warp.
+
         let (train_y, train_yvar) = if disk_reopen {
             (train_y, train_yvar)
         } else {
@@ -254,6 +267,9 @@ impl EpistemicNearestNeighbors {
                 y.ncols(),
                 self.num_metrics
             )));
+        }
+        if let Err(e) = validate_finite_xy(x, y, yvar) {
+            return Some(e);
         }
         match (yvar, self.rows().row_yvar(0).ok().flatten().is_some()) {
             (Some(yv), _) if yv.shape() != y.shape() => Some(ENNError::InvalidShape {
@@ -386,7 +402,20 @@ impl EpistemicNearestNeighbors {
     }
 
     pub fn y_scale_row(&self) -> Array2<f64> {
-        self.y_scale.clone().insert_axis(ndarray::Axis(0))
+
+
+        if crate::y_bounds::is_identity_bounds(&self.y_bounds) || self.num_obs == 0 {
+            return self.y_scale.clone().insert_axis(ndarray::Axis(0));
+        }
+        let indices: Vec<usize> = (0..self.num_obs).collect();
+        match self.train_rows_at(&indices) {
+            Ok((_, y_nat, _)) => {
+                let (y_sum, y_sumsq) = column_sums_and_sumsq(y_nat.view());
+                scale_from_moments(self.num_obs, self.num_metrics, &y_sum, &y_sumsq, 0.0)
+                    .insert_axis(ndarray::Axis(0))
+            }
+            Err(_) => self.y_scale.clone().insert_axis(ndarray::Axis(0)),
+        }
     }
 
     pub(crate) fn num_obs(&self) -> usize {
@@ -428,6 +457,36 @@ impl EpistemicNearestNeighbors {
         }
         self.backend.search(x, search_k, exclude_nearest)
     }
+}
+
+fn validate_finite_xy(
+    x: &ArrayView2<f64>,
+    y: &ArrayView2<f64>,
+    yvar: Option<&ArrayView2<f64>>,
+) -> Result<(), ENNError> {
+    if x.iter().any(|v| !v.is_finite()) {
+        return Err(ENNError::InvalidParameter(
+            "x must contain only finite values".to_string(),
+        ));
+    }
+    if y.iter().any(|v| !v.is_finite()) {
+        return Err(ENNError::InvalidParameter(
+            "y must contain only finite values".to_string(),
+        ));
+    }
+    if let Some(yv) = yvar {
+        if yv.iter().any(|v| !v.is_finite()) {
+            return Err(ENNError::InvalidParameter(
+                "yvar must contain only finite values".to_string(),
+            ));
+        }
+        if yv.iter().any(|&v| v < 0.0) {
+            return Err(ENNError::InvalidParameter(
+                "yvar must be non-negative".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Rebuild observation count and scale moments from persisted backend rows (disk reopen).

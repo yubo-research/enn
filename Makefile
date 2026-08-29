@@ -1,4 +1,4 @@
-.PHONY: all install clean test build-ext rust-test python-test python-test-body python-slow-test lint wheels wheelsl \
+.PHONY: all install clean test build-ext rust-test python-test python-test-body lint wheels wheelsl \
 	pypi-build pypi-publish pypi-auth-check
 
 UNAME_S := $(shell uname -s)
@@ -34,77 +34,11 @@ test: build-ext rust-test python-test-body
 rust-test:
 	cd rust && $(RUST_TEST_ENV) cargo nextest run --test-threads=8
 
-# Run Python tests only (fast gate: skips modules collected only for slow/integration coverage).
-PYTHON_FAST_PLUGINS = \
-	-p no:nbmake -p no:hypothesis -p no:aiohttp -p no:examples
-PYTHON_SLOW_IGNORE = \
-	--ignore=tests/test_turbo_gp.py \
-	--ignore=tests/test_turbo_adversarial.py \
-	--ignore=tests/test_ops_stress.py \
-	--ignore=tests/test_ops_disk_rss_stress.py \
-	--ignore=tests/test_enn_index_driver.py \
-	--ignore=tests/test_kiss_coverage.py \
-	--ignore=tests/test_kiss_fullrepo_symbol_registry.py \
-	--ignore=tests/parity \
-	--ignore=tests/test_compare_ennbo_versions.py \
-	--ignore=tests/test_notebooks.py \
-	--ignore=tests/test_turbo_invariance.py \
-	--ignore=tests/test_turbo_optimizer.py \
-	--ignore=tests/test_components.py \
-	--ignore=tests/test_enn_perf.py \
-	--ignore=tests/test_python_fallback_surface.py \
-	--ignore=tests/test_morbo_turbo_one.py \
-	--ignore=tests/test_turbo_utils_funcs.py \
-	--ignore=tests/test_turbo_optimizer_utils.py \
-	--ignore=tests/test_enn_fit.py \
-	--ignore=tests/test_candidate_gen_stats.py \
-	--ignore=tests/test_morbo_separable_unimodal.py \
-	--ignore=tests/test_enn_batch_posterior_train_regression.py \
-	--ignore=tests/test_weak_mathy_golden.py \
-	--ignore=tests/test_fallback_registry.py \
-	--ignore=tests/test_turbo_strategies.py \
-	--ignore=tests/python_api/test_create_optimizer_contract.py \
-	--ignore=tests/test_optimizer_generate_smoke.py \
-	--ignore=tests/test_tr_helpers_direct.py \
-	--ignore=tests/test_raasp_candidates.py \
-	--ignore=tests/test_trust_region.py \
-	--ignore=tests/test_turbo_tr.py \
-	--ignore=tests/test_protocols.py \
-	--ignore=tests/test_incumbent_tracker.py \
-	--ignore=tests/test_morbo_tr_direct.py \
-	--ignore=tests/test_incumbent_selector.py \
-	--ignore=tests/test_impl_helpers.py \
-	--ignore=tests/test_rust_optimizer_kiss_tokens.py \
-	--ignore=tests/test_rust_wrapper_coverage.py
+# Run Python tests only
 python-test: build-ext python-test-body
 
 python-test-body:
-	PYTHONPATH=src pytest tests --tb=short -m "not slow" -q $(PYTHON_FAST_PLUGINS) $(PYTHON_SLOW_IGNORE)
-
-# Slow/integration Python tests (not part of the default gate).
-python-slow-test:
-	PYTHONPATH=src pytest tests --tb=short -m "slow" -q
-	PYTHONPATH=src pytest tests/test_turbo_gp.py tests/test_turbo_adversarial.py \
-		tests/test_ops_stress.py tests/test_ops_disk_rss_stress.py \
-		tests/test_enn_index_driver.py \
-		tests/test_kiss_coverage.py tests/test_kiss_fullrepo_symbol_registry.py \
-		tests/parity tests/test_compare_ennbo_versions.py tests/test_notebooks.py \
-		tests/test_turbo_invariance.py tests/test_turbo_optimizer.py tests/test_components.py \
-		tests/test_enn_perf.py tests/test_python_fallback_surface.py \
-		tests/test_morbo_turbo_one.py \
-		tests/test_turbo_utils_funcs.py tests/test_turbo_optimizer_utils.py \
-		tests/test_enn_fit.py tests/test_candidate_gen_stats.py \
-		tests/test_morbo_separable_unimodal.py \
-		tests/test_enn_batch_posterior_train_regression.py tests/test_weak_mathy_golden.py \
-		tests/test_fallback_registry.py tests/test_turbo_strategies.py \
-		tests/python_api/test_create_optimizer_contract.py \
-		tests/test_optimizer_generate_smoke.py tests/test_tr_helpers_direct.py \
-		tests/test_raasp_candidates.py tests/test_trust_region.py \
-		tests/test_turbo_tr.py tests/test_protocols.py \
-		tests/test_incumbent_tracker.py tests/test_morbo_tr_direct.py \
-		tests/test_incumbent_selector.py tests/test_impl_helpers.py \
-		tests/test_rust_optimizer_kiss_tokens.py tests/test_rust_wrapper_coverage.py \
-		--tb=short -q
+	PYTHONPATH=src pytest tests --tb=short -q
 
 # Run linters
 lint:

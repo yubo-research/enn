@@ -1,28 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
 
 from enn._rust import subsample_loglik as _rust_subsample_loglik
 
-if TYPE_CHECKING:
-    from numpy.random import Generator
-
-    from .enn_class import EpistemicNearestNeighbors
-    from .enn_fitter import ENNStatefulFitter
-    from .enn_params import ENNParams
-
 
 def subsample_loglik(
-    model: EpistemicNearestNeighbors,
+    model: Any,
     x: np.ndarray,
     y: np.ndarray,
     *,
-    paramss: list[ENNParams],
+    paramss: list[Any],
     P: int = 10,
-    rng: Generator,
+    rng: Any,
     y_std: np.ndarray | None = None,
 ) -> list[float]:
     """Compute subsample log-likelihood using Rust backend."""
@@ -63,22 +56,22 @@ def subsample_loglik(
 class ENNIncrementalDelta:
     """Rows just appended via ``model.add`` plus the fitter tracking y_std."""
 
-    fitter: ENNStatefulFitter
+    fitter: Any
     x: np.ndarray
     y: np.ndarray
     yvar: np.ndarray | None = None
 
 
 def enn_fit(
-    model: EpistemicNearestNeighbors,
+    model: Any,
     *,
     k: int,
     num_fit_candidates: int,
     num_fit_samples: int = 10,
-    rng: Generator,
-    params_warm_start: ENNParams | None = None,
+    rng: Any,
+    params_warm_start: Any | None = None,
     incremental: ENNIncrementalDelta | None = None,
-) -> ENNParams:
+) -> Any:
     """Fit ENN hyperparameters via ENNStatefulFitter tell/ask.
 
     Batch mode (``incremental`` is None): tell the full model and ask once.

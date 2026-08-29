@@ -25,6 +25,64 @@ pub fn is_disk_index_driver(driver: IndexDriver) -> bool {
 
 use std::sync::Mutex;
 
+/// Squared-distance threshold treated as an exact self hit (LOO identity).
+const SELF_DIST_EPS: f64 = 1e-15;
+
+/// Drop the query's own training row when present; keep the true NN otherwise.
+///
+/// Callers that set `exclude_nearest` often fetch `k+1` neighbors. Self-match
+/// rows drop column 0 and pad with `(-1, inf)`; novel rows keep every fetched
+/// column (including when `k == n` so no extra slot was available). Trailing
+/// columns that are unused in every row are trimmed.
+fn apply_exclude_nearest_identity(
+    dist2s: Array2<f64>,
+    idx: Array2<i64>,
+) -> (Array2<f64>, Array2<i64>) {
+    let n_query = dist2s.nrows();
+    let nc = dist2s.ncols();
+    if nc == 0 {
+        return (dist2s, idx);
+    }
+    let mut out_d = Array2::from_elem((n_query, nc), f64::INFINITY);
+    let mut out_i = Array2::from_elem((n_query, nc), -1i64);
+    for r in 0..n_query {
+        let nearest_d = dist2s[[r, 0]];
+        let is_self = nearest_d.is_finite() && nearest_d <= SELF_DIST_EPS;
+        if is_self {
+            for c in 0..(nc - 1) {
+                out_d[[r, c]] = dist2s[[r, c + 1]];
+                out_i[[r, c]] = idx[[r, c + 1]];
+            }
+        } else {
+            for c in 0..nc {
+                out_d[[r, c]] = dist2s[[r, c]];
+                out_i[[r, c]] = idx[[r, c]];
+            }
+        }
+    }
+    let mut width = nc;
+    while width > 0 && (0..n_query).all(|r| out_i[[r, width - 1]] < 0) {
+        width -= 1;
+    }
+    if width == nc {
+        (out_d, out_i)
+    } else if width == 0 {
+        (
+            Array2::zeros((n_query, 0)),
+            Array2::zeros((n_query, 0)),
+        )
+    } else {
+        (
+            out_d
+                .slice_axis(ndarray::Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+            out_i
+                .slice_axis(ndarray::Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+        )
+    }
+}
+
 pub struct ENNIndex {
     inner: KnnBackend,
     num_dim: usize,
@@ -134,18 +192,7 @@ impl ENNIndex {
         };
 
         if exclude_nearest {
-            let nc = dist2s.ncols();
-            if nc <= 1 {
-                dist2s = Array2::zeros((n_query, nc.saturating_sub(1)));
-                indices = Array2::zeros((n_query, nc.saturating_sub(1)));
-            } else {
-                dist2s = dist2s
-                    .slice_axis(Axis(1), ndarray::Slice::from(1..))
-                    .to_owned();
-                indices = indices
-                    .slice_axis(Axis(1), ndarray::Slice::from(1..))
-                    .to_owned();
-            }
+            (dist2s, indices) = apply_exclude_nearest_identity(dist2s, indices);
         }
 
         Ok((dist2s, indices))
@@ -227,6 +274,17 @@ mod tests {
         let (dist2s, indices) = index.search(&query.view(), 2, true).unwrap();
         assert_eq!(dist2s.ncols(), 1);
         assert_ne!(indices[[0, 0]], 0);
+    }
+
+    #[test]
+    fn test_index_search_exclude_nearest_keeps_nn_for_novel_query() {
+        let train_x = array![[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]];
+        let index = index_unit(train_x, IndexDriver::Exact);
+        let query = array![[10.1, 0.0]];
+        let (dist2s, indices) = index.search(&query.view(), 3, true).unwrap();
+
+        assert_eq!(dist2s.ncols(), 3);
+        assert_eq!(indices[[0, 0]], 1);
     }
 
     #[test]

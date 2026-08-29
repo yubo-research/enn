@@ -67,13 +67,20 @@ impl BpannBackend {
             num_metrics,
             known_nrows,
         )?;
+        if train_x_store.nrows > 0 && train_x.nrows() > 0 {
+            return Err(BpannError::InvalidParameter(format!(
+                "work_dir already has {} persisted rows; refusing to ignore nonempty train_x/train_y (nrows={}). Reopen with empty arrays to resume, or use a fresh work_dir",
+                train_x_store.nrows,
+                train_x.nrows()
+            )));
+        }
         if train_x_store.nrows == 0 && train_x.nrows() > 0 {
             train_x_store.mmap_append(&train_x.view())?;
             train_y_store.mmap_append(&train_y.view())?;
         }
         if train_x_store.nrows == 0 {
-            // Pre-grow and pre-touch fresh stores so the first append pays no
-            // file-resize, page-fault, or block-allocation cost.
+
+
             train_x_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
             train_y_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
             train_x_store.pretouch();
@@ -254,8 +261,8 @@ impl BpannBackend {
         *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.num_obs_counter.set(self.len());
         let pending = self.pending_rows();
-        // Hard cap: soft-sync on the caller when pending reaches the hard threshold
-        // (deferred or not). Soft threshold syncs only on the non-deferred path.
+
+
         if pending >= self.pending_hard_flush_threshold
             || (!self.defer_append_indexing && pending >= self.pending_flush_threshold)
         {
@@ -287,7 +294,7 @@ impl BpannBackend {
             end,
         )?;
         self.pending_unindexed.store(0, Ordering::Relaxed);
-        // Soft-sync and centroid builds fault train pages; drop them from RSS.
+
         self.release_observation_pages()?;
         Ok(())
     }
@@ -346,14 +353,24 @@ impl BpannBackend {
         if total == 0 {
             return Ok((Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0))));
         }
-        let k_eff = search_k.min(total);
+        let k_req = search_k.min(total);
+
+
+        let k_eff = k_req;
         let pool_k = if exclude_nearest {
-            (search_k + 1).min(total)
+            (k_eff + 1).min(total)
         } else {
             k_eff
         };
-        let mut dist2s = Array2::zeros((n_query, k_eff));
-        let mut indices = Array2::zeros((n_query, k_eff));
+        if k_eff == 0 {
+            return Ok((
+                Array2::zeros((n_query, 0)),
+                Array2::zeros((n_query, 0)),
+            ));
+        }
+
+        let mut dist2s = Array2::from_elem((n_query, k_eff), f64::INFINITY);
+        let mut indices = Array2::from_elem((n_query, k_eff), -1i64);
         let scale_x = self.scale_x;
         let x_scale_vec = self.x_scale.as_slice().unwrap().to_vec();
         let num_dim = self.num_dim;
@@ -361,7 +378,7 @@ impl BpannBackend {
             .map(|q| queries.row(q).to_vec())
             .collect();
 
-        // Small-N: resident flat f32 cache + heap top-k (shared across queries).
+
         if total <= SMALL_N_INCORE_SEARCH_LIMIT {
             let flat = crate::small_n_search::load_or_build_small_n_cache(self, total)?;
             let per_query = score_queries_flat(
@@ -383,7 +400,7 @@ impl BpannBackend {
                     indices[[q, j]] = idx_row[j];
                 }
             }
-            return Ok((dist2s, indices));
+            return Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices));
         }
 
         search_indexed_and_pending(
@@ -401,7 +418,7 @@ impl BpannBackend {
                 num_dim,
             },
         )?;
-        Ok((dist2s, indices))
+        Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices))
     }
 
     pub fn index_snapshot(&self) -> Option<&BpannIndex> {
@@ -487,6 +504,35 @@ impl BpannBackend {
     }
 }
 
+/// Drop trailing neighbor columns that are invalid (`idx < 0`) in every query row.
+fn trim_trailing_invalid_neighbor_cols(
+    dist2s: Array2<f64>,
+    indices: Array2<i64>,
+) -> (Array2<f64>, Array2<i64>) {
+    let n_query = indices.nrows();
+    let mut width = indices.ncols();
+    while width > 0 && (0..n_query).all(|r| indices[[r, width - 1]] < 0) {
+        width -= 1;
+    }
+    if width == indices.ncols() {
+        (dist2s, indices)
+    } else if width == 0 {
+        (
+            Array2::zeros((n_query, 0)),
+            Array2::zeros((n_query, 0)),
+        )
+    } else {
+        (
+            dist2s
+                .slice_axis(ndarray::Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+            indices
+                .slice_axis(ndarray::Axis(1), ndarray::Slice::from(..width))
+                .to_owned(),
+        )
+    }
+}
+
 /// Build a soft-sync result under a shared borrow (no publish).
 /// Readers may search the live index concurrently while this runs.
 pub fn soft_sync_build(backend: &BpannBackend) -> Result<Option<IncrementalIndex>, BpannError> {
@@ -533,3 +579,4 @@ pub fn open_rejects_record_stride(num_dim: usize) -> Result<(), BpannError> {
     }
     Ok(())
 }
+

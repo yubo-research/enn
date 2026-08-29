@@ -48,3 +48,14 @@ def test_mk_enn_with_fit_config_runs_fitter():
         abs(params_fitted.epistemic_variance_scale - 1.0) > 1e-12
         or abs(params_fitted.aleatoric_variance_scale - 0.0) > 1e-12
     )
+
+
+def test_mk_enn_forwards_y_bounds():
+    x_obs = np.array([[0.0, 0.0], [1.0, 1.0], [0.25, 0.75]], dtype=float)
+    y_obs = np.array([[0.2], [0.8], [0.5]], dtype=float)
+    y_bounds = np.array([[0.0, 1.0]], dtype=float)
+    model, params = mk_enn(x_obs, y_obs, k=3, y_bounds=y_bounds)
+    assert model is not None and params is not None
+    got = np.asarray(model._rust_model.y_bounds, dtype=float)
+    assert got.shape == (1, 2)
+    np.testing.assert_allclose(got, y_bounds)

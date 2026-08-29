@@ -15,6 +15,10 @@ pub use backend::{
 };
 pub use error::BpannError;
 pub use index::{BpannIndex, IncrementalIndex};
+pub use merge::{
+    bpann_apply_exclude_nearest, bpann_merge_topk_candidates, merge_topk_precomputed_dist,
+    merge_topk_precomputed_dist_with_self,
+};
 pub use observation::{MAX_NUM_DIM, MAX_RECORD_STRIDE};
 pub use large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 pub use small_n_search::{
@@ -247,14 +251,14 @@ mod acceptance_tests {
         assert_eq!(idx[[0, 0]], 1);
     }
 
-    /// Regression: with pending (unindexed) rows, exclude_nearest must still
-    /// surface the true second-nearest pending neighbor, not a far indexed decoy.
+    /// Regression: with pending (unindexed) rows, exclude_nearest on a novel query
+    /// must keep the true NN from pending (Exact LOO), not a far indexed decoy.
     /// Requires the pending brute-force leg to fetch pool_k (= search_k+1), not k_eff.
     #[test]
-    fn test_search_exclude_nearest_pending_returns_second_nearest() {
+    fn test_search_exclude_nearest_pending_keeps_novel_nn() {
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1).unwrap();
-        // Far indexed decoys.
+
         b.append_rows(
             &array![[1000.0], [1001.0], [1002.0]].view(),
             &array![[0.0], [0.0], [0.0]].view(),
@@ -263,7 +267,7 @@ mod acceptance_tests {
         .unwrap();
         b.ensure_index_sync().unwrap();
         assert_eq!(b.indexed_rows(), 3);
-        // Pending: nearest (row 3) and second-nearest (row 4) to query at 0.
+
         b.append_rows(
             &array![[1.0], [2.0]].view(),
             &array![[0.0], [0.0]].view(),
@@ -276,14 +280,14 @@ mod acceptance_tests {
             .unwrap();
         assert_eq!(
             idx[[0, 0]],
-            4,
-            "exclude_nearest with pending top-2 must return second-nearest pending (4), got {}",
+            3,
+            "exclude_nearest novel+pending must keep true NN pending (3), got {}",
             idx[[0, 0]]
         );
     }
 
-    /// Same pending under-fetch bug at search_k > 1: last returned slot must stay
-    /// on the pending distance ladder, not promote a far indexed decoy.
+    /// Same pending path at search_k > 1: novel exclude keeps the pending distance
+    /// ladder (ranks 1..k), not promote a far indexed decoy.
     #[test]
     fn test_search_exclude_nearest_pending_ladder_topk() {
         let dir = TempDir::new().unwrap();
@@ -295,7 +299,7 @@ mod acceptance_tests {
         )
         .unwrap();
         b.ensure_index_sync().unwrap();
-        // Pending ladder at 1,2,3,4,5 (nearest..5th); query at 0 needs ranks 2..5 after exclude.
+
         b.append_rows(
             &array![[1.0], [2.0], [3.0], [4.0], [5.0]].view(),
             &array![[0.0], [0.0], [0.0], [0.0], [0.0]].view(),
@@ -309,8 +313,8 @@ mod acceptance_tests {
         let got: Vec<i64> = idx.row(0).iter().copied().collect();
         assert_eq!(
             got,
-            vec![4, 5, 6, 7],
-            "exclude_nearest pending ladder must return pending ranks 2..5, got {got:?}"
+            vec![3, 4, 5, 6],
+            "exclude_nearest novel pending ladder must return pending ranks 1..4, got {got:?}"
         );
     }
 
@@ -331,6 +335,121 @@ mod acceptance_tests {
                 assert!((bd[[r, c]] - sd[[0, c]]).abs() < 1e-9);
             }
         }
+    }
+
+    /// Regression: soft-sync builds a flat star forest (one internal root, many
+    /// sibling leaves). Greedy beam search with width 1 visits only one leaf.
+    #[test]
+    fn test_flat_forest_recall_after_ensure_index_sync() {
+        let n = 15_000usize;
+        let d = 10usize;
+        let k = 9usize;
+        let batch = 200usize;
+        let num_queries = 20usize;
+        let dir = TempDir::new().unwrap();
+        let (x, y) = synthetic_train(n, d, DATA_SEED);
+        let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), d, 1)
+            .unwrap()
+            .with_pending_flush_threshold(n)
+            .with_pending_hard_flush_threshold(n)
+            .with_defer_append_indexing(true);
+        let mut start = 0usize;
+        while start < n {
+            let end = (start + batch).min(n);
+            b.append_rows(
+                &x.slice(ndarray::s![start..end, ..]),
+                &y.slice(ndarray::s![start..end, ..]),
+                None,
+            )
+            .unwrap();
+            start = end;
+        }
+        b.ensure_index_sync().unwrap();
+        assert_eq!(b.indexed_rows(), n);
+        assert!(n > SMALL_N_INCORE_SEARCH_LIMIT);
+        let index = b.index_snapshot().expect("indexed snapshot");
+        assert!(
+            index.is_flat_forest(),
+            "large soft-sync span should produce a flat forest index"
+        );
+        let mut total_recall = 0.0;
+        for q in 0..num_queries {
+            let query = x.row(q).to_owned();
+            let (_, idx) = b
+                .search(&query.view().insert_axis(ndarray::Axis(0)), k, false)
+                .unwrap();
+            let got: Vec<i64> = idx.row(0).iter().copied().collect();
+            let expected = brute_force_oracle(&b, query.as_slice().unwrap(), k);
+            let hits = got
+                .iter()
+                .filter(|id| expected.contains(id))
+                .count();
+            total_recall += hits as f64 / k as f64;
+        }
+        let recall = total_recall / num_queries as f64;
+        assert!(
+            recall >= 0.90,
+            "recall@{k} after batched add + ensure_index_sync = {recall}"
+        );
+    }
+
+    #[test]
+    fn test_large_scale_batched_recall_default_flush() {
+        let n = 100_000usize;
+        let d = 10usize;
+        let k = 9usize;
+        let batch = 200usize;
+        let num_queries = 10usize;
+        let dir = TempDir::new().unwrap();
+        let (x, y) = synthetic_train(n, d, DATA_SEED);
+        let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), d, 1)
+            .unwrap()
+            .with_defer_append_indexing(true);
+        let mut start = 0usize;
+        while start < n {
+            let end = (start + batch).min(n);
+            b.append_rows(
+                &x.slice(ndarray::s![start..end, ..]),
+                &y.slice(ndarray::s![start..end, ..]),
+                None,
+            )
+            .unwrap();
+            start = end;
+        }
+        b.ensure_index_sync().unwrap();
+        assert_eq!(b.indexed_rows(), n);
+        let flat_fragments = b
+            .index
+            .indices
+            .iter()
+            .filter(|index| index.is_flat_forest())
+            .count();
+        assert!(
+            flat_fragments > 0,
+            "expected flat-forest fragments, got {} total fragments",
+            b.index.indices.len()
+        );
+        let mut total_recall = 0.0;
+        for q in 0..num_queries {
+            let query = x.row(q).to_owned();
+            let (_, idx) = b
+                .search(&query.view().insert_axis(ndarray::Axis(0)), k, false)
+                .unwrap();
+            let got: Vec<i64> = idx.row(0).iter().copied().collect();
+            let expected = brute_force_oracle(&b, query.as_slice().unwrap(), k);
+            let hits = got
+                .iter()
+                .filter(|id| expected.contains(id))
+                .count();
+            total_recall += hits as f64 / k as f64;
+        }
+        let recall = total_recall / num_queries as f64;
+        assert!(
+            recall >= 0.90,
+            "recall@{k} with default flush ({} frags, {} flat) = {recall}",
+            b.index.indices.len(),
+            flat_fragments
+        );
     }
 
     #[test]
@@ -399,8 +518,8 @@ mod acceptance_tests {
         )
         .unwrap();
         b.ensure_index_sync().unwrap();
-        // Pending row 2 is the true nearest for query [0, 4]; row 3 ranks higher only
-        // when bpann_brute_force_topk_mmap double-applies x_scale, so k=1 leg_b drops row 2.
+
+
         b.append_rows(
             &array![[2.0, 4.0], [4.0, 8.0]].view(),
             &array![[2.0], [3.0]].view(),
@@ -578,13 +697,13 @@ mod acceptance_tests {
         b.append_rows(&x.view(), &y.view(), None).unwrap();
         assert_eq!(b.pending_rows(), 0);
         assert_eq!(b.indexed_rows(), 5);
-        // Soft sync does not write pages.bin.
+
         assert!(!dir.path().join("index/pages.bin").exists());
     }
 
     #[test]
     fn ensure_index_sync_in_place_drains_pending_and_is_idempotent() {
-        // Caller soft-sync mutates the live index (no publish swap required).
+
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1)
             .unwrap()
@@ -626,7 +745,7 @@ mod acceptance_tests {
 
     #[test]
     fn metamorphic_hard_cap_clears_all_pending_not_trim() {
-        // Soft sync on hard hit must drain pending to 0, not leave hard-1.
+
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 3, 1)
             .unwrap()
@@ -645,7 +764,7 @@ mod acceptance_tests {
     fn fuzz_hard_cap_boundary_all_seeds() {
         use rand::{Rng, SeedableRng};
         use rand_chacha::ChaCha8Rng;
-        let seed = 0x4841_5244_u64; // "HARD"
+        let seed = 0x4841_5244_u64;
         println!("fuzz_hard_cap_boundary_all_seeds seed={seed}");
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         for trial in 0..16 {
@@ -771,8 +890,8 @@ mod acceptance_tests {
         assert_eq!(got, expected);
     }
 
-    #[test]
-    #[ignore = "Run manually: cargo test -p ennbo-bpann test_scale_recall_ignored -- --ignored --nocapture"]
+    /// Manual scale-recall check (not a unit test; run by temporarily adding `#[test]`).
+    #[allow(dead_code)]
     fn test_scale_recall_ignored() {
         let n = 1000usize;
         let d = 32usize;
@@ -797,8 +916,8 @@ mod acceptance_tests {
         assert!(recall >= 0.90, "N={n} recall={recall}");
     }
 
-    #[test]
-    #[ignore = "Run manually: cargo test -p ennbo-bpann test_scale_10m_ignored -- --ignored --nocapture"]
+    /// Manual 10M append stress check (not a unit test; run by temporarily adding `#[test]`).
+    #[allow(dead_code)]
     fn test_scale_10m_ignored() {
         let n = 10_000_000usize;
         let d = 8usize;
