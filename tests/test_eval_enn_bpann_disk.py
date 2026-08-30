@@ -40,7 +40,7 @@ def test_evaluate_streams_and_exit(monkeypatch: pytest.MonkeyPatch, capsys: pyte
     assert "EVAL: n = 1 SMALLER(query_s) = 0.01 SMALLER(segment_s) = 0.02" in out
     assert calls
     cmd = calls[0].args[0]
-    assert "10000000" in cmd
+    assert str(shared.NUM_OBS) in cmd
     assert "bpann_disk" in cmd
     assert "--work-dir" in cmd
     work_dir_idx = cmd.index("--work-dir")

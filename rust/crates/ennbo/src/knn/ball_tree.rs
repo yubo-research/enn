@@ -3,33 +3,40 @@
 use ndarray::{Array2, ArrayView2};
 use rayon::prelude::*;
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 
 use super::pad_neighbor_cols_to_search_k;
 use crate::index::IndexError;
 
 const LEAF_SIZE: usize = 16;
+pub(super) const AABB_MODE_MIN_N: usize = 5000;
 
-#[derive(Clone)]
-struct BallNode {
-    center: Vec<f64>,
-    /// Ball radius (not squared). Stored so search can prune without per-node `sqrt`.
-    radius: f64,
-    left: usize,
-    right: usize,
-    leaf_start: usize,
-    leaf_end: usize,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SearchMode {
+    Ball,
+    Aabb,
 }
 
-/// Exact in-memory ball tree over L2 distance.
+#[derive(Clone)]
+pub(crate) struct BallNode {
+    pub(crate) center: Vec<f64>,
+    pub(crate) radius: f64,
+    pub(crate) bbox_min: Vec<f64>,
+    pub(crate) bbox_max: Vec<f64>,
+    pub(crate) left: usize,
+    pub(crate) right: usize,
+    pub(crate) leaf_start: usize,
+    pub(crate) leaf_end: usize,
+}
+
 pub(crate) struct BallTreeBackend {
     num_dim: usize,
     data: Vec<f64>,
     n: usize,
-    nodes: Vec<BallNode>,
-    leaf_ids: Vec<usize>,
-    root: usize,
+    pub(crate) nodes: Vec<BallNode>,
+    pub(crate) leaf_ids: Vec<usize>,
+    pub(crate) root: usize,
     dirty: bool,
+    pub(super) search_mode: SearchMode,
 }
 
 impl BallTreeBackend {
@@ -42,6 +49,7 @@ impl BallTreeBackend {
             leaf_ids: Vec::new(),
             root: 0,
             dirty: true,
+            search_mode: SearchMode::Ball,
         };
         backend.rebuild(train_scaled)?;
         Ok(backend)
@@ -122,7 +130,9 @@ impl BallTreeBackend {
         let mut dist2s = Array2::from_elem((n_query, k_eff), f64::INFINITY);
         let mut indices = Array2::zeros((n_query, k_eff));
         const PARALLEL_MIN_N: usize = 128;
-        if self.n >= PARALLEL_MIN_N && n_query > 1 {
+        let use_parallel =
+            self.n >= PARALLEL_MIN_N && n_query > 1 && rayon::current_num_threads() > 1;
+        if use_parallel {
             let hits: Vec<Vec<(f64, usize)>> = (0..n_query)
                 .into_par_iter()
                 .map(|qi| {
@@ -155,34 +165,63 @@ impl BallTreeBackend {
         self.dirty = false;
         self.root = 0;
         if self.n == 0 {
+            self.search_mode = SearchMode::Ball;
             return;
         }
+        self.search_mode = if self.n >= AABB_MODE_MIN_N {
+            SearchMode::Aabb
+        } else {
+            SearchMode::Ball
+        };
         let mut ids: Vec<usize> = (0..self.n).collect();
         self.root = self.build_node(&mut ids);
     }
 
-    fn point(&self, id: usize) -> &[f64] {
+    pub(crate) fn point(&self, id: usize) -> &[f64] {
         let start = id * self.num_dim;
         &self.data[start..start + self.num_dim]
     }
 
-    fn dist2(a: &[f64], b: &[f64]) -> f64 {
-        a.iter()
-            .zip(b.iter())
-            .map(|(x, y)| {
-                let d = x - y;
-                d * d
-            })
-            .sum()
+    #[inline]
+    pub(crate) fn dist2(a: &[f64], b: &[f64]) -> f64 {
+        let mut s = 0.0_f64;
+        for (x, y) in a.iter().zip(b.iter()) {
+            let d = x - y;
+            s += d * d;
+        }
+        s
+    }
+
+    #[inline]
+    pub(crate) fn aabb_dist2(query: &[f64], bbox_min: &[f64], bbox_max: &[f64]) -> f64 {
+        let mut s = 0.0_f64;
+        for i in 0..query.len() {
+            let q = query[i];
+            let v = if q < bbox_min[i] {
+                bbox_min[i] - q
+            } else if q > bbox_max[i] {
+                q - bbox_max[i]
+            } else {
+                0.0
+            };
+            s += v * v;
+        }
+        s
     }
 
     fn build_node(&mut self, ids: &mut [usize]) -> usize {
-        let center = self.centroid(ids);
-        let radius2 = ids
-            .iter()
-            .map(|&id| Self::dist2(&center, self.point(id)))
-            .fold(0.0_f64, f64::max);
-        let radius = radius2.sqrt();
+        let aabb_mode = self.search_mode == SearchMode::Aabb;
+        let (center, radius, bbox_min, bbox_max) = if aabb_mode {
+            let (bbox_min, bbox_max) = self.bbox_of(ids);
+            (Vec::new(), 0.0_f64, bbox_min, bbox_max)
+        } else {
+            let center = self.centroid(ids);
+            let radius2 = ids
+                .iter()
+                .map(|&id| Self::dist2(&center, self.point(id)))
+                .fold(0.0_f64, f64::max);
+            (center, radius2.sqrt(), Vec::new(), Vec::new())
+        };
         if ids.len() <= LEAF_SIZE {
             let leaf_start = self.leaf_ids.len();
             self.leaf_ids.extend_from_slice(ids);
@@ -190,6 +229,8 @@ impl BallTreeBackend {
             self.nodes.push(BallNode {
                 center,
                 radius,
+                bbox_min,
+                bbox_max,
                 left: usize::MAX,
                 right: usize::MAX,
                 leaf_start,
@@ -197,12 +238,18 @@ impl BallTreeBackend {
             });
             return self.nodes.len() - 1;
         }
-        let (mut left_ids, mut right_ids) = self.split_ids(ids, &center);
+        let (mut left_ids, mut right_ids) = if aabb_mode {
+            self.split_ids_median(ids)
+        } else {
+            self.split_ids_farthest(ids, &center)
+        };
         let left = self.build_node(&mut left_ids);
         let right = self.build_node(&mut right_ids);
         self.nodes.push(BallNode {
             center,
             radius,
+            bbox_min,
+            bbox_max,
             left,
             right,
             leaf_start: 0,
@@ -226,7 +273,62 @@ impl BallTreeBackend {
         c
     }
 
-    fn split_ids(&self, ids: &[usize], center: &[f64]) -> (Vec<usize>, Vec<usize>) {
+    fn bbox_of(&self, ids: &[usize]) -> (Vec<f64>, Vec<f64>) {
+        let mut bmin = vec![f64::INFINITY; self.num_dim];
+        let mut bmax = vec![f64::NEG_INFINITY; self.num_dim];
+        for &id in ids {
+            let p = self.point(id);
+            for d in 0..self.num_dim {
+                if p[d] < bmin[d] {
+                    bmin[d] = p[d];
+                }
+                if p[d] > bmax[d] {
+                    bmax[d] = p[d];
+                }
+            }
+        }
+        (bmin, bmax)
+    }
+
+    fn split_ids_median(&self, ids: &[usize]) -> (Vec<usize>, Vec<usize>) {
+        let mut best_dim = 0usize;
+        let mut best_range = -1.0_f64;
+        for d in 0..self.num_dim {
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            for &id in ids {
+                let v = self.point(id)[d];
+                if v < lo {
+                    lo = v;
+                }
+                if v > hi {
+                    hi = v;
+                }
+            }
+            let range = hi - lo;
+            if range > best_range {
+                best_range = range;
+                best_dim = d;
+            }
+        }
+        let mid = ids.len() / 2;
+        if mid == 0 || mid >= ids.len() {
+            return (ids[..mid].to_vec(), ids[mid..].to_vec());
+        }
+        let mut order = ids.to_vec();
+        order.select_nth_unstable_by(mid, |&a, &b| {
+            self.point(a)[best_dim]
+                .partial_cmp(&self.point(b)[best_dim])
+                .unwrap_or(Ordering::Equal)
+        });
+        let (left, right) = order.split_at(mid);
+        if left.is_empty() || right.is_empty() {
+            return (ids[..mid].to_vec(), ids[mid..].to_vec());
+        }
+        (left.to_vec(), right.to_vec())
+    }
+
+    fn split_ids_farthest(&self, ids: &[usize], center: &[f64]) -> (Vec<usize>, Vec<usize>) {
         let mut p1 = ids[0];
         let mut best = -1.0_f64;
         for &id in ids {
@@ -245,8 +347,8 @@ impl BallTreeBackend {
                 p2 = id;
             }
         }
-        let mut left = Vec::new();
-        let mut right = Vec::new();
+        let mut left = Vec::with_capacity(ids.len() / 2 + 1);
+        let mut right = Vec::with_capacity(ids.len() / 2 + 1);
         for &id in ids {
             let d1 = Self::dist2(self.point(p1), self.point(id));
             let d2 = Self::dist2(self.point(p2), self.point(id));
@@ -264,181 +366,13 @@ impl BallTreeBackend {
     }
 
     fn search_one(&self, query: &[f64], k: usize) -> Vec<(f64, usize)> {
-        #[derive(PartialEq)]
-        struct HeapItem {
-            dist2: f64,
-            id: usize,
+        match self.search_mode {
+            SearchMode::Ball => self.search_one_ball(query, k),
+            SearchMode::Aabb => self.search_one_aabb(query, k),
         }
-        impl Eq for HeapItem {}
-        impl PartialOrd for HeapItem {
-            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-        impl Ord for HeapItem {
-            fn cmp(&self, other: &Self) -> Ordering {
-                self.dist2
-                    .partial_cmp(&other.dist2)
-                    .unwrap_or(Ordering::Equal)
-                    .then_with(|| self.id.cmp(&other.id))
-            }
-        }
-
-        let mut best: BinaryHeap<HeapItem> = BinaryHeap::with_capacity(k + 1);
-        let mut tau = f64::INFINITY;
-        let mut sqrt_tau = f64::INFINITY;
-        let mut stack = Vec::with_capacity(64);
-        stack.push(self.root);
-        while let Some(ni) = stack.pop() {
-            let node = &self.nodes[ni];
-            let dc = Self::dist2(query, &node.center);
-            if best.len() == k {
-                let r = node.radius;
-                let thresh = tau + r * r + 2.0 * r * sqrt_tau;
-                if dc >= thresh {
-                    continue;
-                }
-            }
-            if node.left == usize::MAX {
-                for &id in &self.leaf_ids[node.leaf_start..node.leaf_end] {
-                    let dist2 = Self::dist2(query, self.point(id));
-                    if best.len() < k {
-                        best.push(HeapItem { dist2, id });
-                        if best.len() == k {
-                            tau = best.peek().unwrap().dist2;
-                            sqrt_tau = tau.sqrt();
-                        }
-                    } else if dist2 < tau {
-                        best.pop();
-                        best.push(HeapItem { dist2, id });
-                        tau = best.peek().unwrap().dist2;
-                        sqrt_tau = tau.sqrt();
-                    }
-                }
-            } else {
-                let left = node.left;
-                let right = node.right;
-                let left_d = Self::dist2(query, &self.nodes[left].center);
-                let right_d = Self::dist2(query, &self.nodes[right].center);
-                if left_d <= right_d {
-                    stack.push(right);
-                    stack.push(left);
-                } else {
-                    stack.push(left);
-                    stack.push(right);
-                }
-            }
-        }
-        let mut out: Vec<(f64, usize)> = best.into_iter().map(|h| (h.dist2, h.id)).collect();
-        out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
-        while out.len() < k {
-            out.push((f64::INFINITY, 0));
-        }
-        out
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ndarray::{array, Array2};
-
-    #[test]
-    fn ball_tree_search_matches_bruteforce_nn() {
-        let train = array![
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [0.5, 0.5],
-        ];
-        let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
-        assert_eq!(backend.len(), 5);
-        let (d, i) = backend
-            .search(&array![[0.1, 0.1]].view(), 2, 2)
-            .unwrap();
-        assert_eq!(i[[0, 0]], 0);
-        assert!(d[[0, 0]] < d[[0, 1]]);
-    }
-
-    #[test]
-    fn ball_tree_add_rebuilds_lazily() {
-        let train = array![[0.0, 0.0]];
-        let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
-        backend.add(&array![[1.0, 0.0]].view(), 1).unwrap();
-        assert_eq!(backend.len(), 2);
-        let (_d, i) = backend
-            .search(&array![[0.9, 0.0]].view(), 1, 1)
-            .unwrap();
-        assert_eq!(i[[0, 0]], 1);
-        assert!(backend.memory_usage_bytes() > 0);
-        backend.rebuild(&train.view()).unwrap();
-        assert_eq!(backend.len(), 1);
-    }
-
-    #[test]
-    fn ball_tree_empty_and_zero_k() {
-        let empty = Array2::<f64>::zeros((0, 2));
-        let mut backend = BallTreeBackend::new(2, &empty.view()).unwrap();
-        assert_eq!(backend.len(), 0);
-        let (d, i) = backend
-            .search(&array![[0.0, 0.0]].view(), 0, 3)
-            .unwrap();
-        assert_eq!(d.ncols(), 3);
-        assert_eq!(i.ncols(), 3);
-        assert!(d.iter().all(|v| v.is_infinite()));
-        backend.add(&Array2::<f64>::zeros((0, 2)).view(), 0).unwrap();
-        assert_eq!(backend.len(), 0);
-    }
-
-    #[test]
-    fn ball_tree_shape_errors() {
-        let train = array![[0.0, 0.0]];
-        let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
-        let bad = array![[0.0, 0.0, 0.0]];
-        assert!(matches!(
-            backend.rebuild(&bad.view()),
-            Err(IndexError::InvalidShape { expected: 2, got: 3 })
-        ));
-        assert!(matches!(
-            backend.add(&bad.view(), 1),
-            Err(IndexError::InvalidShape { expected: 2, got: 3 })
-        ));
-        assert!(matches!(
-            backend.search(&bad.view(), 1, 1),
-            Err(IndexError::InvalidShape { expected: 2, got: 3 })
-        ));
-    }
-
-    #[test]
-    fn ball_tree_identical_points_and_pad() {
-        // Force degenerate split path via identical coordinates.
-        let train = Array2::from_elem((20, 2), 1.0);
-        let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
-        assert_eq!(backend.len(), 20);
-        let (d, i) = backend
-            .search(&array![[1.0, 1.0]].view(), 3, 5)
-            .unwrap();
-        assert_eq!(d.ncols(), 5);
-        assert_eq!(i.ncols(), 5);
-        assert!(d[[0, 0]] < 1e-12);
-        assert!(d[[0, 4]].is_infinite() || d[[0, 4]] >= d[[0, 2]]);
-    }
-
-    #[test]
-    fn ball_tree_k_equals_n_and_multi_query() {
-        let train = array![
-            [0.0, 0.0],
-            [2.0, 0.0],
-            [0.0, 2.0],
-            [2.0, 2.0],
-        ];
-        let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
-        let queries = array![[0.1, 0.1], [1.9, 1.9]];
-        let (d, i) = backend.search(&queries.view(), 4, 4).unwrap();
-        assert_eq!(i[[0, 0]], 0);
-        assert_eq!(i[[1, 0]], 3);
-        assert!(d[[0, 0]] <= d[[0, 3]]);
-        assert!(d[[1, 0]] <= d[[1, 3]]);
-    }
-}
+#[path = "ball_tree_tests.rs"]
+mod ball_tree_tests;

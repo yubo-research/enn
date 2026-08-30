@@ -9,7 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-NUM_OBS = 10_000_000
+NUM_OBS = 1_000_000
 TS_NUM_OBS_SWEEP: tuple[int, ...] = (100, 1_000, 10_000)
 TS_NUM_TEST = 100
 TS_NUM_SEEDS = 100

@@ -1,7 +1,9 @@
 //! KNN backends behind [`crate::index::ENNIndex`] (Faiss in-memory only).
 
 pub(crate) mod ball_tree;
+pub(crate) mod ball_search;
 pub(crate) mod faiss_backend;
+
 pub use faiss_backend::MmapColumnStore;
 
 use ndarray::{Array2, ArrayView2};

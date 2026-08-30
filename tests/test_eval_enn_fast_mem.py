@@ -59,7 +59,7 @@ def test_evaluate_streams_and_exit(monkeypatch: pytest.MonkeyPatch, capsys: pyte
     mod.evaluate()
     out = capsys.readouterr().out
     assert "EVAL: n = 1 SMALLER(query_s) = 0.01 SMALLER(segment_s) = 0.02" in out
-    assert calls and "10000000" in calls[0].args[0]
+    assert calls and str(shared.NUM_OBS) in calls[0].args[0]
     assert "fast_mem" in calls[0].args[0]
 
     def fake_fail(*args: object, **kwargs: object) -> _FakePopen:
