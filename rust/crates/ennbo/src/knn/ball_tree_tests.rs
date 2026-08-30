@@ -1,4 +1,4 @@
-use super::{BallTreeBackend, SearchMode, AABB_MODE_MIN_N};
+use super::{BallTreeBackend, SearchMode, AABB_MODE_MIN_N, TREE_SEARCH_MIN_N};
 use crate::index::IndexError;
 use ndarray::{array, Array2};
 
@@ -13,6 +13,7 @@ fn ball_tree_search_matches_bruteforce_nn() {
     ];
     let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
     assert_eq!(backend.len(), 5);
+    assert_eq!(backend.search_mode, SearchMode::Brute);
     let (d, i) = backend.search(&array![[0.1, 0.1]].view(), 2, 2).unwrap();
     assert_eq!(i[[0, 0]], 0);
     assert!(d[[0, 0]] < d[[0, 1]]);
@@ -90,7 +91,47 @@ fn ball_tree_k_equals_n_and_multi_query() {
 }
 
 #[test]
-fn ball_tree_aabb_mode_matches_bruteforce_at_large_n() {
+fn ball_tree_mid_n_uses_brute_not_tree() {
+    let n = TREE_SEARCH_MIN_N - 1;
+    let train = Array2::<f64>::zeros((n, 2));
+    let backend = BallTreeBackend::new(2, &train.view()).unwrap();
+    assert_eq!(backend.search_mode, SearchMode::Brute);
+    assert!(backend.nodes.is_empty());
+}
+
+#[test]
+fn ball_tree_ball_mode_search_matches_bruteforce() {
+    let n = TREE_SEARCH_MIN_N;
+    assert!(n < AABB_MODE_MIN_N);
+    let mut train = Array2::<f64>::zeros((n, 2));
+    for i in 0..n {
+        train[[i, 0]] = (i as f64) * 0.01;
+        train[[i, 1]] = ((i * 7) % n) as f64 * 0.01;
+    }
+    let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
+    assert_eq!(backend.search_mode, SearchMode::Ball);
+    let q = [1.0, 2.0];
+    let hits = {
+        backend.search(&array![[1.0, 2.0]].view(), 3, 3).unwrap();
+        assert!(!backend.nodes.is_empty());
+        backend.search_one_ball(&q, 3)
+    };
+    let mut best = (f64::INFINITY, 0usize);
+    for i in 0..n {
+        let dx = train[[i, 0]] - 1.0;
+        let dy = train[[i, 1]] - 2.0;
+        let dist = dx * dx + dy * dy;
+        if dist < best.0 {
+            best = (dist, i);
+        }
+    }
+    assert_eq!(hits[0].1, best.1);
+    let brute = backend.search_one_brute(&q, 3);
+    assert_eq!(brute[0].1, best.1);
+}
+
+#[test]
+fn ball_tree_aabb_mode_search_matches_bruteforce() {
     let n = AABB_MODE_MIN_N;
     let mut train = Array2::<f64>::zeros((n, 2));
     for i in 0..n {
@@ -99,8 +140,11 @@ fn ball_tree_aabb_mode_matches_bruteforce_at_large_n() {
     }
     let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
     assert_eq!(backend.search_mode, SearchMode::Aabb);
-    let q = array![[1.0, 2.0]];
-    let (d, idx) = backend.search(&q.view(), 3, 3).unwrap();
+    let q = [1.0, 2.0];
+    let (d, idx) = backend.search(&array![[1.0, 2.0]].view(), 3, 3).unwrap();
+    assert!(!backend.nodes.is_empty());
+    let hits = backend.search_one_aabb(&q, 5);
+    assert!(hits.len() >= 3);
     let mut best = (f64::INFINITY, 0usize);
     for i in 0..n {
         let dx = train[[i, 0]] - 1.0;
@@ -112,4 +156,29 @@ fn ball_tree_aabb_mode_matches_bruteforce_at_large_n() {
     }
     assert_eq!(idx[[0, 0]], best.1 as i64);
     assert!((d[[0, 0]] - best.0).abs() < 1e-9);
+    assert_eq!(hits[0].1, best.1);
+}
+
+#[test]
+fn ball_tree_add_crosses_into_tree_mode() {
+    let n0 = TREE_SEARCH_MIN_N - 1;
+    let train = Array2::<f64>::zeros((n0, 2));
+    let mut backend = BallTreeBackend::new(2, &train.view()).unwrap();
+    assert_eq!(backend.search_mode, SearchMode::Brute);
+    backend.add(&array![[0.0, 0.0]].view(), n0 as u64).unwrap();
+    assert!(backend.len() >= TREE_SEARCH_MIN_N);
+    assert_eq!(backend.search_mode, SearchMode::Ball);
+    let (_d, i) = backend.search(&array![[0.0, 0.0]].view(), 1, 1).unwrap();
+    assert!(i[[0, 0]] >= 0);
+}
+
+#[test]
+fn ball_tree_brute_fallback_and_empty_k() {
+    let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+    let backend = BallTreeBackend::new(2, &train.view()).unwrap();
+    let empty = backend.search_one_brute(&[0.0, 0.0], 0);
+    assert!(empty.is_empty());
+    let hits = backend.search_one_brute(&[0.1, 0.0], 2);
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].1, 0);
 }

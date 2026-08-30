@@ -23,6 +23,59 @@ impl Ord for HeapItem {
 }
 
 impl BallTreeBackend {
+    /// Contiguous exact top-k fallback (mid-N normally uses Faiss Flat).
+    pub(crate) fn search_one_brute(&self, query: &[f64], k: usize) -> Vec<(f64, usize)> {
+        if k == 0 || self.len() == 0 {
+            return Vec::new();
+        }
+        let n = self.len();
+        let mut best_d = vec![f64::INFINITY; k];
+        let mut best_id = vec![0usize; k];
+        let mut filled = 0usize;
+        let mut tau = f64::INFINITY;
+        for id in 0..n {
+            let dist2 = Self::dist2(query, self.point(id));
+            if filled < k {
+                best_d[filled] = dist2;
+                best_id[filled] = id;
+                filled += 1;
+                if filled == k {
+                    let mut max_i = 0usize;
+                    for i in 1..k {
+                        if best_d[i] > best_d[max_i] {
+                            max_i = i;
+                        }
+                    }
+                    if max_i != k - 1 {
+                        best_d.swap(max_i, k - 1);
+                        best_id.swap(max_i, k - 1);
+                    }
+                    tau = best_d[k - 1];
+                }
+            } else if dist2 < tau {
+                best_d[k - 1] = dist2;
+                best_id[k - 1] = id;
+                let mut max_i = 0usize;
+                for i in 1..k {
+                    if best_d[i] > best_d[max_i] {
+                        max_i = i;
+                    }
+                }
+                if max_i != k - 1 {
+                    best_d.swap(max_i, k - 1);
+                    best_id.swap(max_i, k - 1);
+                }
+                tau = best_d[k - 1];
+            }
+        }
+        let mut out: Vec<(f64, usize)> = (0..filled).map(|i| (best_d[i], best_id[i])).collect();
+        out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+        while out.len() < k {
+            out.push((f64::INFINITY, 0));
+        }
+        out
+    }
+
     pub(crate) fn search_one_ball(&self, query: &[f64], k: usize) -> Vec<(f64, usize)> {
         let mut best: BinaryHeap<HeapItem> = BinaryHeap::with_capacity(k + 1);
         let mut tau = f64::INFINITY;

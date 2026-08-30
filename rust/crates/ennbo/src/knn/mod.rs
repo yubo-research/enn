@@ -2,6 +2,7 @@
 
 pub(crate) mod ball_tree;
 pub(crate) mod ball_search;
+pub(crate) mod ball_build;
 pub(crate) mod faiss_backend;
 
 pub use faiss_backend::MmapColumnStore;
@@ -13,7 +14,7 @@ use crate::index::{IndexDriver, IndexError};
 
 pub(crate) use faiss_backend::FaissBackend;
 
-/// In-memory KNN storage (Faiss Flat or ball tree).
+/// In-memory KNN storage (Faiss Flat or FastMem hybrid brute/tree).
 pub(crate) enum KnnBackend {
     Faiss(Mutex<FaissBackend>),
     BallTree(Mutex<ball_tree::BallTreeBackend>),
