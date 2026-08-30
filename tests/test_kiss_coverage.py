@@ -133,6 +133,7 @@ def test_enn_index_driver_enum():
     from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
     assert ENNIndexDriver.FLAT != ENNIndexDriver.BPANN_DISK
+    assert ENNIndexDriver.FAST_MEM != ENNIndexDriver.FLAT
 
 
 def test_num_candidates_fn_protocol():

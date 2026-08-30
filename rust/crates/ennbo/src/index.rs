@@ -15,6 +15,8 @@ pub enum IndexError {
 pub enum IndexDriver {
     #[default]
     Exact,
+    /// In-memory ball tree (exact NN).
+    FastMem,
     /// B+ANN disk index (`EnnStorage::Disk` + `work_dir`).
     BpAnnDisk,
 }

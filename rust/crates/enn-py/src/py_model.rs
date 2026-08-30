@@ -54,6 +54,7 @@ impl PyEpistemicNearestNeighbors {
     ) -> PyResult<Self> {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
+            "FAST_MEM" | "fast_mem" => ennbo::IndexDriver::FastMem,
             "BPANN_DISK" | "bpann_disk" => ennbo::IndexDriver::BpAnnDisk,
             _ => {
                 return Err(PyValueError::new_err(format!(

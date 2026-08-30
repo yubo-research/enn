@@ -19,7 +19,7 @@ from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "bpann_disk")
+INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "fast_mem", "bpann_disk")
 DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"bpann_disk"})
 DISK_DEFER_SYNC_DRIVERS: frozenset[ENNIndexDriver] = frozenset(
     {ENNIndexDriver.BPANN_DISK}
@@ -197,6 +197,7 @@ class EnnAddStressConfig:
 def parse_index_driver(name: str) -> ENNIndexDriver:
     mapping = {
         "flat": ENNIndexDriver.FLAT,
+        "fast_mem": ENNIndexDriver.FAST_MEM,
         "bpann_disk": ENNIndexDriver.BPANN_DISK,
     }
     if name not in mapping:
@@ -206,7 +207,7 @@ def parse_index_driver(name: str) -> ENNIndexDriver:
 
 def turbo_enn_default_seed_chunk(index_driver: ENNIndexDriver) -> int:
     """Return turbo-enn bulk-seed chunk sized for the index backend."""
-    if index_driver == ENNIndexDriver.FLAT:
+    if index_driver in (ENNIndexDriver.FLAT, ENNIndexDriver.FAST_MEM):
         return TURBO_ENN_SEED_CHUNK_FLAT
     return TURBO_ENN_SEED_CHUNK
 

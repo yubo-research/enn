@@ -30,7 +30,7 @@ NUM_ROUNDS = 101
 NUM_ARMS = 100
 ACKLEY_NOISE = 0.1
 SEED = 0
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "bpann_disk")
+INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "fast_mem", "bpann_disk")
 Y_BOUNDS_N_TRAIN = 80
 Y_BOUNDS_N_TEST = 200
 Y_BOUNDS_K = 10
@@ -67,6 +67,7 @@ Y_VAR_SWEEP: tuple[float, ...] = (0.01, 0.09, 0.25, 1.0)
 def parse_index_driver(name: str) -> ENNIndexDriver:
     mapping = {
         "flat": ENNIndexDriver.FLAT,
+        "fast_mem": ENNIndexDriver.FAST_MEM,
         "bpann_disk": ENNIndexDriver.BPANN_DISK,
     }
     if name not in mapping:

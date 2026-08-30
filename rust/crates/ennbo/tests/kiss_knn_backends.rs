@@ -3,6 +3,7 @@
 const DISK_BPANN_SRC: &str = include_str!("../src/disk_bpann/enn_backend.rs");
 const DISK_OBSERVATION_SRC: &str = include_str!("../src/backend/disk_observation.rs");
 const FAISS_BACKEND_SRC: &str = include_str!("../src/knn/faiss_backend.rs");
+const BALL_TREE_SRC: &str = include_str!("../src/knn/ball_tree.rs");
 const ROW_STORAGE_SRC: &str = include_str!("../src/backend/row_storage.rs");
 const KNN_MOD_SRC: &str = include_str!("../src/knn/mod.rs");
 
@@ -77,6 +78,24 @@ fn kiss_disk_bpann_helper_names_in_source() {
         assert!(
             DISK_BPANN_SRC.contains(name) || DISK_OBSERVATION_SRC.contains(name),
             "missing {name} in disk bpann/observation sources"
+        );
+    }
+}
+
+#[test]
+fn kiss_ball_tree_helper_names_in_source() {
+    for name in [
+        "BallTreeBackend",
+        "rebuild_tree",
+        "build_node",
+        "search_one",
+        "split_ids",
+        "centroid",
+        "memory_usage_bytes",
+    ] {
+        assert!(
+            BALL_TREE_SRC.contains(name),
+            "missing {name} in ball_tree.rs"
         );
     }
 }

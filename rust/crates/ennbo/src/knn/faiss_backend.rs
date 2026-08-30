@@ -56,6 +56,9 @@ fn prefer_faiss_simd_distances() {
 fn faiss_spec(driver: IndexDriver) -> &'static str {
     match driver {
         IndexDriver::Exact => "Flat",
+        IndexDriver::FastMem => {
+            panic!("FastMem must not be routed to FaissBackend")
+        }
         IndexDriver::BpAnnDisk => {
             panic!("BpAnnDisk must not be routed to FaissBackend")
         }

@@ -12,6 +12,11 @@ def test_list_eval_names_includes_known_evals() -> None:
     assert "flat_sphere_d10" in names
     assert "flat_sphere_d100" in names
     assert "flat_sphere_d1000" in names
+    assert "fast_mem_sphere_d10" in names
+    assert "fast_mem_sphere_d100" in names
+    assert "fast_mem_sphere_d1000" in names
+    assert "enn_fast_mem" in names
+    assert "ts_fast_mem" in names
     assert "bpann_sphere_d10" in names
     assert "bpann_sphere_d100" in names
     assert "bpann_sphere_d1000" in names

@@ -1,5 +1,6 @@
 //! KNN backends behind [`crate::index::ENNIndex`] (Faiss in-memory only).
 
+pub(crate) mod ball_tree;
 pub(crate) mod faiss_backend;
 pub use faiss_backend::MmapColumnStore;
 
@@ -10,9 +11,10 @@ use crate::index::{IndexDriver, IndexError};
 
 pub(crate) use faiss_backend::FaissBackend;
 
-/// In-memory Faiss KNN storage (Exact only).
+/// In-memory KNN storage (Faiss Flat or ball tree).
 pub(crate) enum KnnBackend {
     Faiss(Mutex<FaissBackend>),
+    BallTree(Mutex<ball_tree::BallTreeBackend>),
 }
 
 impl KnnBackend {
@@ -27,6 +29,9 @@ impl KnnBackend {
                 driver,
                 train_scaled,
             )?))),
+            IndexDriver::FastMem => Ok(Self::BallTree(Mutex::new(
+                ball_tree::BallTreeBackend::new(num_dim, train_scaled)?,
+            ))),
             IndexDriver::BpAnnDisk => Err(IndexError::InvalidParameter(
                 "IndexDriver::BpAnnDisk is disk-only; use DiskBpannEnnBackend".to_string(),
             )),
@@ -36,12 +41,17 @@ impl KnnBackend {
     pub(crate) fn len(&self) -> usize {
         match self {
             Self::Faiss(inner) => inner.lock().expect("knn mutex poisoned").len(),
+            Self::BallTree(inner) => inner.lock().expect("knn mutex poisoned").len(),
         }
     }
 
     pub(crate) fn memory_usage_bytes(&self) -> usize {
         match self {
             Self::Faiss(inner) => inner
+                .lock()
+                .expect("knn mutex poisoned")
+                .memory_usage_bytes(),
+            Self::BallTree(inner) => inner
                 .lock()
                 .expect("knn mutex poisoned")
                 .memory_usage_bytes(),
@@ -54,12 +64,20 @@ impl KnnBackend {
                 .lock()
                 .expect("knn mutex poisoned")
                 .rebuild(train_scaled),
+            Self::BallTree(inner) => inner
+                .lock()
+                .expect("knn mutex poisoned")
+                .rebuild(train_scaled),
         }
     }
 
     pub(crate) fn add(&self, rows_scaled: &ArrayView2<f64>, start_key: u64) -> Result<(), IndexError> {
         match self {
             Self::Faiss(inner) => inner
+                .lock()
+                .expect("knn mutex poisoned")
+                .add(rows_scaled, start_key),
+            Self::BallTree(inner) => inner
                 .lock()
                 .expect("knn mutex poisoned")
                 .add(rows_scaled, start_key),
@@ -74,6 +92,10 @@ impl KnnBackend {
     ) -> Result<(Array2<f64>, Array2<i64>), IndexError> {
         match self {
             Self::Faiss(inner) => inner
+                .lock()
+                .expect("knn mutex poisoned")
+                .search(queries_scaled, k_eff, search_k),
+            Self::BallTree(inner) => inner
                 .lock()
                 .expect("knn mutex poisoned")
                 .search(queries_scaled, k_eff, search_k),
@@ -151,6 +173,21 @@ mod knn_backend_tests {
             .unwrap();
         assert_eq!(i[[0, 0]], 0);
         backend.rebuild(&train.view()).unwrap();
+    }
+
+    #[test]
+    fn knn_backend_ball_tree_fast_mem() {
+        let train = array![[0.0, 0.0], [1.0, 1.0]];
+        let backend = KnnBackend::new(2, IndexDriver::FastMem, &train.view()).unwrap();
+        assert_eq!(backend.len(), 2);
+        backend.add(&array![[2.0, 2.0]].view(), 2).unwrap();
+        assert_eq!(backend.len(), 3);
+        let (_d, i) = backend
+            .search(&array![[0.0, 0.0]].view(), 2, 2)
+            .unwrap();
+        assert_eq!(i[[0, 0]], 0);
+        backend.rebuild(&train.view()).unwrap();
+        assert!(backend.memory_usage_bytes() > 0);
     }
 
     #[test]
