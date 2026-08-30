@@ -13,7 +13,8 @@ const LEAF_SIZE: usize = 16;
 #[derive(Clone)]
 struct BallNode {
     center: Vec<f64>,
-    radius2: f64,
+    /// Ball radius (not squared). Stored so search can prune without per-node `sqrt`.
+    radius: f64,
     left: usize,
     right: usize,
     leaf_start: usize,
@@ -181,13 +182,14 @@ impl BallTreeBackend {
             .iter()
             .map(|&id| Self::dist2(&center, self.point(id)))
             .fold(0.0_f64, f64::max);
+        let radius = radius2.sqrt();
         if ids.len() <= LEAF_SIZE {
             let leaf_start = self.leaf_ids.len();
             self.leaf_ids.extend_from_slice(ids);
             let leaf_end = self.leaf_ids.len();
             self.nodes.push(BallNode {
                 center,
-                radius2,
+                radius,
                 left: usize::MAX,
                 right: usize::MAX,
                 leaf_start,
@@ -200,7 +202,7 @@ impl BallTreeBackend {
         let right = self.build_node(&mut right_ids);
         self.nodes.push(BallNode {
             center,
-            radius2,
+            radius,
             left,
             right,
             leaf_start: 0,
@@ -282,17 +284,19 @@ impl BallTreeBackend {
             }
         }
 
-        let mut best: BinaryHeap<HeapItem> = BinaryHeap::new();
-        let mut stack = vec![self.root];
+        let mut best: BinaryHeap<HeapItem> = BinaryHeap::with_capacity(k + 1);
+        let mut tau = f64::INFINITY;
+        let mut sqrt_tau = f64::INFINITY;
+        let mut stack = Vec::with_capacity(64);
+        stack.push(self.root);
         while let Some(ni) = stack.pop() {
             let node = &self.nodes[ni];
             let dc = Self::dist2(query, &node.center);
-            let lower = (dc.sqrt() - node.radius2.sqrt()).max(0.0).powi(2);
             if best.len() == k {
-                if let Some(worst) = best.peek() {
-                    if lower >= worst.dist2 {
-                        continue;
-                    }
+                let r = node.radius;
+                let thresh = tau + r * r + 2.0 * r * sqrt_tau;
+                if dc >= thresh {
+                    continue;
                 }
             }
             if node.left == usize::MAX {
@@ -300,9 +304,15 @@ impl BallTreeBackend {
                     let dist2 = Self::dist2(query, self.point(id));
                     if best.len() < k {
                         best.push(HeapItem { dist2, id });
-                    } else if dist2 < best.peek().unwrap().dist2 {
+                        if best.len() == k {
+                            tau = best.peek().unwrap().dist2;
+                            sqrt_tau = tau.sqrt();
+                        }
+                    } else if dist2 < tau {
                         best.pop();
                         best.push(HeapItem { dist2, id });
+                        tau = best.peek().unwrap().dist2;
+                        sqrt_tau = tau.sqrt();
                     }
                 }
             } else {
