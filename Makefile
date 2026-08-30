@@ -18,14 +18,15 @@ all:
 	maturin build --release $(MATURIN_AUDITWHEEL)
 
 # Install the mixed Python/Rust package in editable mode (USearch always on; see pyproject [tool.maturin]).
+# PIP_QUIET=1 drops pip's "Ignoring … markers 'extra == …'" INFO lines for unselected extras.
 install:
 	@echo "Building and installing Python/Rust package (see pyproject [tool.maturin])..."
-	maturin develop --release
+	PIP_QUIET=1 maturin develop --release
 	@echo "Installation complete!"
 
 # Build the PyO3 extension into src/enn/ for PYTHONPATH=src pytest runs.
 build-ext:
-	maturin develop --release
+	PIP_QUIET=1 maturin develop --release
 
 # Run all tests (Rust then Python; build-ext once — parallel rust-test + maturin races cargo).
 test: build-ext rust-test python-test-body
