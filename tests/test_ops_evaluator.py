@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import resource
+
 from click.testing import CliRunner
 
 
@@ -41,7 +44,7 @@ def test_run_unknown_eval_fails() -> None:
 
     result = CliRunner().invoke(cli, ["run", "does_not_exist_xyz"])
     assert result.exit_code != 0
-    assert "missing eval module" in result.output
+    assert "missing eval module" in result.stderr or "missing eval module" in result.output
 
 
 def test_run_invokes_evaluate(monkeypatch) -> None:
@@ -55,10 +58,48 @@ def test_run_invokes_evaluate(monkeypatch) -> None:
 
         return evaluate
 
+    monkeypatch.setenv(evaluator._EVAL_INLINE_ENV, "1")
     monkeypatch.setattr(evaluator, "load_evaluate", fake_load)
+    monkeypatch.setattr(evaluator, "prepare_eval_process", lambda **_: None)
     result = CliRunner().invoke(evaluator.cli, ["run", "turbo_enn"])
     assert result.exit_code == 0, result.output
     assert called == ["turbo_enn"]
+
+
+def test_apply_eval_thread_limits_sets_env(monkeypatch) -> None:
+    from ops import evaluator
+
+    for key in evaluator._THREAD_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    evaluator.apply_eval_thread_limits(1)
+    for key in evaluator._THREAD_ENV_KEYS:
+        assert os.environ[key] == "1"
+
+
+def test_apply_eval_memory_limit_sets_rlimit_as(monkeypatch) -> None:
+    from ops import evaluator
+
+    calls: list[tuple[int, tuple[int, int]]] = []
+
+    monkeypatch.setattr(
+        resource,
+        "getrlimit",
+        lambda _which: (resource.RLIM_INFINITY, resource.RLIM_INFINITY),
+    )
+
+    def fake_setrlimit(which: int, limits: tuple[int, int]) -> None:
+        calls.append((which, limits))
+
+    monkeypatch.setattr(resource, "setrlimit", fake_setrlimit)
+    limit = 3 * 1024**3
+    evaluator.apply_eval_memory_limit(limit)
+    assert calls == [(resource.RLIMIT_AS, (limit, limit))]
+
+
+def test_default_eval_memory_limit_is_3gib() -> None:
+    from ops.evaluator import DEFAULT_EVAL_MEMORY_LIMIT_BYTES
+
+    assert DEFAULT_EVAL_MEMORY_LIMIT_BYTES == 3 * 1024**3
 
 
 def test_ensure_repo_on_sys_path_adds_repo_root(monkeypatch) -> None:

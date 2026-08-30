@@ -27,6 +27,24 @@ extern "C" {
     fn faiss_get_distance_compute_blas_threshold() -> i32;
 }
 
+/// OpenMP thread count for Faiss Flat SIMD search.
+///
+/// `ENNBO_OMP_NUM_THREADS` wins when set (eval harness forces `1`). Otherwise use
+/// hardware parallelism: the Python extension sets `OMP_NUM_THREADS=1` to quiet BLAS
+/// oversubscription, and Flat SIMD still wants multiple OpenMP threads by default.
+fn faiss_omp_num_threads() -> i32 {
+    const ENV: &str = "ENNBO_OMP_NUM_THREADS";
+    if let Ok(raw) = std::env::var(ENV) {
+        if let Ok(n) = raw.parse::<usize>() {
+            return n.clamp(1, 255) as i32;
+        }
+    }
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .clamp(1, 255) as i32
+}
+
 /// Prefer Faiss's SIMD Flat distance loop over its BLAS GEMM path, and allow
 /// OpenMP to parallelize Flat queries.
 ///
@@ -37,15 +55,13 @@ extern "C" {
 ///
 /// The Python extension sets `OMP_NUM_THREADS=1` to quiet BLAS oversubscription.
 /// Flat SIMD search needs multiple OpenMP threads; restore parallelism here via
-/// `omp_set_num_threads` (overrides the env default for subsequent regions).
+/// `omp_set_num_threads` (overrides the env default for subsequent regions),
+/// unless `ENNBO_OMP_NUM_THREADS` requests a tighter cap.
 fn prefer_faiss_simd_distances() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         const SIMD_PREFERRED_DIM_CEILING: i32 = 65536;
-        let threads = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1)
-            .clamp(1, 255) as i32;
+        let threads = faiss_omp_num_threads();
         unsafe {
             faiss_set_distance_compute_blas_threshold(SIMD_PREFERRED_DIM_CEILING);
             omp_set_num_threads(threads);

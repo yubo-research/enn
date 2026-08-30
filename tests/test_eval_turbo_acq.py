@@ -63,6 +63,7 @@ def test_evaluate_prints_acq_metrics(
 
 
 def test_evaluator_run_turbo_acq(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ops import evaluator
     from ops.evaluator import cli
 
     def fake_run(**kwargs: object) -> list[object]:
@@ -75,6 +76,8 @@ def test_evaluator_run_turbo_acq(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         return []
 
+    monkeypatch.setenv(evaluator._EVAL_INLINE_ENV, "1")
+    monkeypatch.setattr(evaluator, "prepare_eval_process", lambda **_: None)
     monkeypatch.setattr(mod, "run_turbo_acq", fake_run)
     # load_evaluate imports a fresh module object; patch the runner it will bind.
     monkeypatch.setattr("ops.qa.run_turbo_acq", fake_run)

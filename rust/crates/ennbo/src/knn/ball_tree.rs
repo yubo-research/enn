@@ -1,6 +1,7 @@
 //! In-memory ball-tree KNN backend for [`crate::index::IndexDriver::FastMem`].
 
 use ndarray::{Array2, ArrayView2};
+use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
@@ -119,12 +120,29 @@ impl BallTreeBackend {
         }
         let mut dist2s = Array2::from_elem((n_query, k_eff), f64::INFINITY);
         let mut indices = Array2::zeros((n_query, k_eff));
-        for qi in 0..n_query {
-            let q = queries_scaled.row(qi);
-            let hits = self.search_one(q.as_slice().unwrap(), k_eff);
-            for (j, (dist2, id)) in hits.into_iter().enumerate() {
-                dist2s[[qi, j]] = dist2;
-                indices[[qi, j]] = id as i64;
+        const PARALLEL_MIN_N: usize = 128;
+        if self.n >= PARALLEL_MIN_N && n_query > 1 {
+            let hits: Vec<Vec<(f64, usize)>> = (0..n_query)
+                .into_par_iter()
+                .map(|qi| {
+                    let q = queries_scaled.row(qi);
+                    self.search_one(q.as_slice().unwrap(), k_eff)
+                })
+                .collect();
+            for (qi, row_hits) in hits.into_iter().enumerate() {
+                for (j, (dist2, id)) in row_hits.into_iter().enumerate() {
+                    dist2s[[qi, j]] = dist2;
+                    indices[[qi, j]] = id as i64;
+                }
+            }
+        } else {
+            for qi in 0..n_query {
+                let q = queries_scaled.row(qi);
+                let hits = self.search_one(q.as_slice().unwrap(), k_eff);
+                for (j, (dist2, id)) in hits.into_iter().enumerate() {
+                    dist2s[[qi, j]] = dist2;
+                    indices[[qi, j]] = id as i64;
+                }
             }
         }
         Ok(pad_neighbor_cols_to_search_k(dist2s, indices, search_k))
