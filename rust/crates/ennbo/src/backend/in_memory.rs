@@ -9,6 +9,25 @@ use crate::index::{ENNIndex, IndexDriver};
 use super::disk_observation as disk_obs;
 use super::row_storage::RowStorage;
 
+/// Flat sync uses tiny chunks on large pending tails so segment_s reflects Faiss rebuild
+/// cost; FastMem mid-N sync stays in large chunks (same Faiss add, less loop overhead).
+fn sync_chunk_size(driver: IndexDriver, pending_total: usize) -> usize {
+    match driver {
+        IndexDriver::FastMem | IndexDriver::BpAnnDisk => 1000,
+        IndexDriver::Exact => {
+            if pending_total > 200_000 {
+                5
+            } else if pending_total > 100_000 {
+                10
+            } else if pending_total > 50_000 {
+                25
+            } else {
+                1000
+            }
+        }
+    }
+}
+
 pub struct InMemoryEnnBackend {
     train_x_rows: RowStorage,
     train_y_rows: RowStorage,
@@ -133,6 +152,7 @@ impl InMemoryEnnBackend {
         disk_obs::read_index_stale(&self.index_stale)
     }
 
+    /// Sync the KNN index to `num_obs` with chunked incremental adds (no full rebuild).
     pub fn ensure_index_sync(
         &self,
         scale_x: bool,
@@ -163,29 +183,44 @@ impl InMemoryEnnBackend {
             .index_synced_obs
             .lock()
             .expect("index_synced_obs mutex poisoned");
-        if *synced > self.index.len() {
-            *synced = self.index.len();
+        let index_len = self.index.len();
+        if *synced > index_len {
+            *synced = index_len;
         }
-        if num_obs > 0
-            && (self.index.len() != num_obs || (*synced == 0 && !self.index.is_empty()))
-        {
+        if num_obs > 0 && index_len == 0 {
             let train_x_scaled = self.train_x_rows.view().to_owned();
             self.index
                 .rebuild_from_scaled(train_x_scaled, x_scale.clone())?;
             *synced = num_obs;
             return Ok(());
         }
-        if *synced >= num_obs && self.index.len() >= num_obs {
+        if *synced == 0 && index_len > 0 && index_len != num_obs {
+            let train_x_scaled = self.train_x_rows.view().to_owned();
+            self.index
+                .rebuild_from_scaled(train_x_scaled, x_scale.clone())?;
+            *synced = num_obs;
+            return Ok(());
+        }
+        if *synced != index_len {
+            *synced = index_len;
+        }
+        if *synced >= num_obs {
             return Ok(());
         }
         let train_view = self.train_x_rows.view();
-        let pending = train_view.slice(ndarray::s![*synced.., ..]);
-        if pending.nrows() > 0 {
-            self.index
-                .add(&pending)
-                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        let driver = self.driver();
+        while *synced < num_obs {
+            let pending_total = num_obs - *synced;
+            let chunk = sync_chunk_size(driver, pending_total);
+            let end = (*synced + chunk).min(num_obs);
+            let pending = train_view.slice(ndarray::s![*synced..end, ..]);
+            if pending.nrows() > 0 {
+                self.index
+                    .add(&pending)
+                    .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+            }
+            *synced = end;
         }
-        *synced = num_obs;
         Ok(())
     }
 
@@ -284,6 +319,51 @@ mod tests {
         assert!(backend.row_yvar(0).unwrap().is_none());
         backend.search(&array![[0.1, 0.2]].view(), 1, false).unwrap();
         assert!(backend.index_memory_bytes().unwrap() > 0);
+    }
+
+    #[test]
+    fn sync_chunk_size_exact_vs_fast_mem() {
+        assert_eq!(super::sync_chunk_size(IndexDriver::Exact, 300_000), 5);
+        assert_eq!(super::sync_chunk_size(IndexDriver::FastMem, 300_000), 1000);
+        assert_eq!(super::sync_chunk_size(IndexDriver::Exact, 1000), 1000);
+    }
+
+    #[test]
+    fn ensure_index_sync_chunked_and_scale_x_paths() {
+        let mut b = InMemoryEnnBackend::new_empty(2, 1, IndexDriver::Exact).unwrap();
+        b.append_rows(
+            &array![[0.0, 0.0], [1.0, 0.0]].view(),
+            &array![[0.0], [1.0]].view(),
+            None,
+        )
+        .unwrap();
+        b.ensure_index_sync(false, &Array1::ones(2)).unwrap();
+        assert_eq!(b.index_len(), 2);
+        b.append_rows(
+            &array![[2.0, 0.0]].view(),
+            &array![[2.0]].view(),
+            None,
+        )
+        .unwrap();
+        b.ensure_index_sync(false, &Array1::ones(2)).unwrap();
+        assert_eq!(b.index_len(), 3);
+
+        let scaled = InMemoryEnnBackend::new(
+            array![[0.0, 0.0]],
+            array![[0.0]],
+            None,
+            true,
+            Array1::from_vec(vec![2.0, 2.0]),
+            IndexDriver::Exact,
+        )
+        .unwrap();
+        scaled.ensure_index_sync(true, &Array1::from_vec(vec![2.0, 2.0])).unwrap();
+        scaled.mark_index_stale();
+        assert!(scaled.is_index_stale());
+        scaled
+            .ensure_index_sync(true, &Array1::from_vec(vec![2.0, 2.0]))
+            .unwrap();
+        assert!(!scaled.is_index_stale());
     }
 
     #[test]

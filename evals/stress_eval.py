@@ -37,6 +37,14 @@ def pythonpath_env() -> dict[str, str]:
     env = os.environ.copy()
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = src if not existing else f"{src}{os.pathsep}{existing}"
+    for key in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "RAYON_NUM_THREADS",
+        "ENNBO_OMP_NUM_THREADS",
+    ):
+        env.setdefault(key, "1")
     return env
 
 

@@ -35,6 +35,18 @@ def test_emit_and_pythonpath(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Cap
     assert env2["PYTHONPATH"].startswith(str(shared.REPO_ROOT / "src"))
     assert env2["PYTHONPATH"].endswith(f"{os.pathsep}/prior")
 
+    for key in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "RAYON_NUM_THREADS",
+        "ENNBO_OMP_NUM_THREADS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    env3 = shared.pythonpath_env()
+    assert env3["OMP_NUM_THREADS"] == "1"
+    assert env3["ENNBO_OMP_NUM_THREADS"] == "1"
+
     shared.emit_eval_line("num_dim = 10 num_obs = 3")
     shared.emit_eval_line("n = 3 query_s = 0.1 segment_s = 0.2")
     out = capsys.readouterr().out

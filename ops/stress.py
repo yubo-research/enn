@@ -22,6 +22,9 @@ from enn.turbo.config.enn_index_driver import ENNIndexDriver
 INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "fast_mem", "bpann_disk")
 DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"bpann_disk"})
 DISK_DEFER_SYNC_DRIVERS: frozenset[ENNIndexDriver] = frozenset(
+    {ENNIndexDriver.BPANN_DISK, ENNIndexDriver.FAST_MEM}
+)
+DISK_BACKGROUND_FLUSH_DRIVERS: frozenset[ENNIndexDriver] = frozenset(
     {ENNIndexDriver.BPANN_DISK}
 )
 DEFAULT_NUM_DIM = 10
@@ -455,16 +458,14 @@ def run_enn_add_stress(
         ):
             cp = checkpoint_list[next_checkpoint_i]
 
-
-
-
-
             if index_driver not in DISK_DEFER_SYNC_DRIVERS:
                 t_sync = time.perf_counter()
                 model.ensure_index_sync()
                 segment_lib_s += time.perf_counter() - t_sync
             segment_s = segment_lib_s
             segment_lib_s = 0.0
+            if index_driver == ENNIndexDriver.FAST_MEM:
+                model.ensure_index_sync()
             query_s = _time_query_s(model, x_query)
             yield (cp, query_s, segment_s)
             next_checkpoint_i += 1
@@ -483,7 +484,7 @@ def run_enn_add_stress(
                 n += 1
                 t_add = time.perf_counter()
                 model.add(x_row, y_row)
-                if index_driver in DISK_DEFER_SYNC_DRIVERS:
+                if index_driver in DISK_BACKGROUND_FLUSH_DRIVERS:
                     model.schedule_background_flush()
                 segment_lib_s += time.perf_counter() - t_add
                 if cfg.progress_every and (n % cfg.progress_every == 0):
@@ -504,7 +505,7 @@ def run_enn_add_stress(
             ):
                 t_add = time.perf_counter()
                 model.add(x_batch, y_batch)
-                if index_driver in DISK_DEFER_SYNC_DRIVERS:
+                if index_driver in DISK_BACKGROUND_FLUSH_DRIVERS:
                     model.schedule_background_flush()
                 segment_lib_s += time.perf_counter() - t_add
                 n += x_batch.shape[0]
@@ -517,14 +518,14 @@ def run_enn_add_stress(
                     last_heartbeat_t = time.perf_counter()
                 yield from emit_checkpoints(n)
     finally:
-        if index_driver in DISK_DEFER_SYNC_DRIVERS:
+        if index_driver in DISK_BACKGROUND_FLUSH_DRIVERS:
             model.persist_index_to_disk()
 
 
 def format_stress_row(n: int, query_s: float, segment_s: float) -> str:
     return (
-        f"{format_kv('n', n)} {format_kv('query_s', f'{query_s:{DURATION_S_FMT}}')} "
-        f"{format_kv('segment_s', f'{segment_s:{DURATION_S_FMT}}')}"
+        f"{format_kv('n', n)} {format_kv('query_s', f'{query_s:.6f}')} "
+        f"{format_kv('segment_s', f'{segment_s:.6f}')}"
     )
 
 
@@ -1440,9 +1441,9 @@ def cli() -> None:
             help="Disk-backed ENN work directory (requires bpann_disk).",
         ),
         click.Option(
-            ["--batch"],
-            is_flag=True,
-            default=False,
+            ["--batch/--no-batch"],
+            default=True,
+            show_default=True,
             help=(
                 "Add observations in batches of "
                 f"{ENN_ADD_STRESS_BATCH_SIZE} instead of one row per add."

@@ -143,6 +143,27 @@ impl FaissBackend {
         self.inner.add(&data).map_err(faiss_map_err)
     }
 
+    /// Copy all stored vectors into `out` as row-major f32 (`ntotal * d` long).
+    pub(crate) fn reconstruct_all(&self, out: &mut [f32]) -> Result<(), IndexError> {
+        use faiss::Index;
+        use faiss::index::Idx;
+        let n = self.inner.ntotal() as usize;
+        let d = self.num_dim;
+        if out.len() != n.saturating_mul(d) {
+            return Err(IndexError::InvalidParameter(format!(
+                "reconstruct_all buffer len {} != n*d {}",
+                out.len(),
+                n * d
+            )));
+        }
+        if n == 0 {
+            return Ok(());
+        }
+        self.inner
+            .reconstruct_n(Idx::new(0), n, out)
+            .map_err(faiss_map_err)
+    }
+
     pub(crate) fn search(
         &mut self,
         queries_scaled: &ArrayView2<f64>,

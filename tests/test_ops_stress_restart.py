@@ -7,7 +7,7 @@ import struct
 import pytest
 
 _STRESS_ROW_RE = re.compile(
-    r"n = \d+ query_s = \d+\.\d{4} segment_s = \d+\.\d{4}"
+    r"n = \d+ query_s = \d+\.\d+ segment_s = \d+\.\d+"
 )
 
 
