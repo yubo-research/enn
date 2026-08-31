@@ -15,9 +15,20 @@ import click
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+
+def affine_option() -> click.Option:
+    return click.Option(
+        ["--affine/--no-affine"],
+        default=False,
+        show_default=True,
+        help=(
+            "Opt in to post-hoc affine calibration after ENN hyperparameter fit "
+            "(mu' = a + b*mu with residual SE scale c)."
+        ),
+    )
 
 INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "fast_mem", "bpann_disk")
 DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"bpann_disk"})
@@ -396,9 +407,14 @@ def format_config_header(
     num_obs: int,
     work_dir: str | None = None,
     num_obs_existing: int | None = None,
+    affine_calibrate: bool = False,
 ) -> str:
     prefix = "restarting " if num_obs_existing else ""
-    parts = [format_kv("num_dim", num_dim), format_kv("num_obs", num_obs)]
+    parts = [
+        format_kv("num_dim", num_dim),
+        format_kv("num_obs", num_obs),
+        format_kv("affine", str(affine_calibrate).lower()),
+    ]
     if num_obs_existing:
         parts.append(format_kv("num_obs_existing", num_obs_existing))
     if work_dir is not None:
@@ -608,10 +624,11 @@ def run_sample_stress(
     )
 
 
-def format_sample_config_header(*, result: SampleStressResult, work_dir: str) -> str:
+def format_sample_config_header(*, result: SampleStressResult, work_dir: str, affine_calibrate: bool = False) -> str:
     return (
         f"num_dim={result.num_dim} num_obs={result.num_obs} "
-        f"work_dir={work_dir} num_samples={result.num_samples} seed={result.seed}"
+        f"work_dir={work_dir} num_samples={result.num_samples} seed={result.seed} "
+        f"affine={str(affine_calibrate).lower()}"
     )
 
 
@@ -728,6 +745,7 @@ class DrawStressConfig:
     num_draws: int = DEFAULT_DRAW_NUM_DRAWS
     index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
     work_dir: str | None = None
+    affine_calibrate: bool = False
 
 
 @dataclass(frozen=True)
@@ -756,6 +774,7 @@ class DrawStressResult:
     fit_s: float
     posterior: DrawMethodResult
     posterior_function_draw: DrawMethodResult
+    affine_calibrate: bool = False
 
 
 def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
@@ -798,21 +817,30 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     model = EpistemicNearestNeighbors(**model_kwargs)
 
     t0 = time.perf_counter()
-    fitted = enn_fit(
-        model,
+    fitter = ENNStatefulFitter(
         k=config.k,
+        rng=fit_rng,
+        affine_calibrate=config.affine_calibrate,
+    )
+    fitter.tell(x, y)
+    fitted = fitter.ask(
+        model,
         num_fit_candidates=config.num_fit_candidates,
         num_fit_samples=config.num_fit_samples,
-        rng=fit_rng,
     )
+    cal = fitter.affine_calibrator
     fit_s = time.perf_counter() - t0
 
     t1 = time.perf_counter()
 
     post_lik = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS)
+    if cal is not None:
+        post_lik = cal.apply(post_lik)
     avg_lik_post = average_likelihood(y_test, post_lik.mu, post_lik.se)
 
     post_rms = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS_NO_OBS)
+    if cal is not None:
+        post_rms = cal.apply(post_rms)
     post_rms_draws = post_rms.sample(config.num_draws, sample_rng)
     post_argmin_rms = argmin_rms(x_test, post_rms_draws)
     post_argmin_hit_rate = argmin_hit_rate(x_test, post_rms_draws)
@@ -837,6 +865,10 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         function_seeds=function_seeds,
         flags=DRAW_FLAGS_NO_OBS,
     )
+    if cal is not None:
+        a = np.asarray(cal.a, dtype=float).reshape(1, -1, 1)
+        b = np.asarray(cal.b, dtype=float).reshape(1, -1, 1)
+        fn_draws = a + b * fn_draws
     avg_lik_fn = average_likelihood_from_draws(y_test, fn_draws)
     fn_argmin_rms = argmin_rms(x_test, fn_draws)
     fn_argmin_hit_rate = argmin_hit_rate(x_test, fn_draws)
@@ -865,6 +897,7 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         fit_s=fit_s,
         posterior=posterior_result,
         posterior_function_draw=function_result,
+        affine_calibrate=config.affine_calibrate,
     )
 
 
@@ -899,6 +932,7 @@ class DrawStressAggregate:
     fit_s: MeanSE
     posterior: DrawMethodAggregate
     posterior_function_draw: DrawMethodAggregate
+    affine_calibrate: bool = False
 
 
 def mean_se(values: np.ndarray | list[float]) -> MeanSE:
@@ -956,6 +990,7 @@ def run_draw_stress_over_seeds(
                     num_draws=config.num_draws,
                     index_driver=config.index_driver,
                     work_dir=seed_work_dir,
+                    affine_calibrate=config.affine_calibrate,
                 )
             )
         )
@@ -976,6 +1011,7 @@ def run_draw_stress_over_seeds(
         posterior_function_draw=_aggregate_draw_method(
             "posterior_function_draw", [r.posterior_function_draw for r in results]
         ),
+        affine_calibrate=config.affine_calibrate,
     )
 
 
@@ -984,6 +1020,7 @@ def format_draw_config_header(result: DrawStressResult) -> str:
         f"num_dim={result.num_dim} num_obs={result.num_obs} "
         f"num_test={result.num_test} seed={result.seed} k={result.k} "
         f"num_draws={result.num_draws} "
+        f"affine={str(result.affine_calibrate).lower()} "
         f"epistemic_variance_scale={result.epistemic_variance_scale:.6g} "
         f"aleatoric_variance_scale={result.aleatoric_variance_scale:.6g} "
         f"fit_s={result.fit_s:{DURATION_S_FMT}}"
@@ -1005,6 +1042,7 @@ def format_draw_config_header_aggregate(result: DrawStressAggregate) -> str:
         f"num_test={result.num_test} seed={result.seed} "
         f"num_seeds={result.num_seeds} k={result.k} "
         f"num_draws={result.num_draws} "
+        f"affine={str(result.affine_calibrate).lower()} "
         f"epistemic_variance_scale={format_mean_se(result.epistemic_variance_scale)} "
         f"aleatoric_variance_scale={format_mean_se(result.aleatoric_variance_scale)} "
         f"fit_s={format_mean_se(result.fit_s, fmt=DURATION_S_FMT)}"
@@ -1066,6 +1104,7 @@ def build_turbo_enn_optimizer_config(
     index_driver: ENNIndexDriver,
     work_dir: str | None = None,
     num_init: int = TURBO_ENN_NUM_INIT,
+    affine_calibrate: bool = False,
 ):
     """Build turbo_enn config matching compare's single-metric Ackley path.
 
@@ -1084,7 +1123,10 @@ def build_turbo_enn_optimizer_config(
         raise ValueError("num_init must be >= 1")
     enn_kwargs: dict[str, object] = {
         "k": TURBO_ENN_K,
-        "fit": ENNFitConfig(num_fit_samples=TURBO_ENN_NUM_FIT_SAMPLES),
+        "fit": ENNFitConfig(
+            num_fit_samples=TURBO_ENN_NUM_FIT_SAMPLES,
+            affine_calibrate=affine_calibrate,
+        ),
         "index_driver": index_driver,
     }
     if index_driver == ENNIndexDriver.BPANN_DISK:
@@ -1110,9 +1152,11 @@ def format_turbo_enn_config_header(
     index_type: str,
     work_dir: str | None = None,
     tell_all: bool = False,
+    affine_calibrate: bool = False,
 ) -> str:
     header = (
-        f"num_dim={num_dim} num_obs={num_obs} num_ask={num_ask} index_type={index_type}"
+        f"num_dim={num_dim} num_obs={num_obs} num_ask={num_ask} index_type={index_type} "
+        f"affine={str(affine_calibrate).lower()}"
     )
     if work_dir is not None:
         header = f"{header} work_dir={work_dir}"
@@ -1140,6 +1184,7 @@ def run_turbo_enn_stress(
     seed: int = TURBO_ENN_SEED,
     seed_chunk: int | None = None,
     tell_all: bool = False,
+    affine_calibrate: bool = False,
     optimizer=None,
     objective=None,
     bounds: np.ndarray | None = None,
@@ -1171,6 +1216,7 @@ def run_turbo_enn_stress(
             index_driver=index_driver,
             work_dir=work_dir,
             num_init=TURBO_ENN_NUM_INIT,
+            affine_calibrate=affine_calibrate,
         )
         opt = create_optimizer(
             bounds=bounds_arr, config=config, rng=np.random.default_rng(seed)
@@ -1311,10 +1357,11 @@ def format_proposal_scale_config_header(
     num_probes: int,
     index_type: str,
     work_dir: str | None = None,
+    affine_calibrate: bool = False,
 ) -> str:
     header = (
         f"num_dim={num_dim} max_n={max_n} num_probes={num_probes} "
-        f"index_type={index_type}"
+        f"index_type={index_type} affine={str(affine_calibrate).lower()}"
     )
     if work_dir is not None:
         header = f"{header} work_dir={work_dir}"
@@ -1340,6 +1387,7 @@ def run_proposal_scale_stress(
     warmup: int = PROPOSAL_SCALE_WARMUP,
     seed_chunk: int = PROPOSAL_SCALE_SEED_CHUNK,
     seed: int = TURBO_ENN_SEED,
+    affine_calibrate: bool = False,
     optimizer_factory=None,
     objective=None,
 ) -> Iterator[ProposalScaleResult]:
@@ -1377,6 +1425,7 @@ def run_proposal_scale_stress(
                 index_driver=index_driver,
                 work_dir=n_work_dir,
                 num_init=TURBO_ENN_NUM_INIT,
+                affine_calibrate=affine_calibrate,
             )
             opt = create_optimizer(
                 bounds=bounds, config=config, rng=np.random.default_rng(seed + n)
@@ -1455,6 +1504,7 @@ def cli() -> None:
             default=None,
             help="Path to ennbo config.toml (overrides ~/.ennbo/config.toml).",
         ),
+        affine_option(),
     ],
 )
 def enn(
@@ -1466,6 +1516,7 @@ def enn(
     work_dir: str | None,
     batch: bool,
     ennbo_config: str | None,
+    affine: bool,
 ) -> None:
     """Time 1000-point ENN queries at sparse checkpoints while streaming adds."""
     if ennbo_config is not None:
@@ -1494,6 +1545,7 @@ def enn(
             num_obs=num_obs,
             work_dir=work_dir,
             num_obs_existing=num_obs_existing if num_obs_existing else None,
+            affine_calibrate=affine,
         )
     )
     batch_size = ENN_ADD_STRESS_BATCH_SIZE if batch else 1
@@ -1526,9 +1578,10 @@ def enn(
             show_default=True,
             help="RNG seed for query points and function draw.",
         ),
+        affine_option(),
     ],
 )
-def sample(work_dir: str, num_samples: int, seed: int) -> None:
+def sample(work_dir: str, num_samples: int, seed: int, affine: bool) -> None:
     """Draw posterior function samples at uniform random x on a persisted bpann store."""
     if num_samples < 1:
         raise click.ClickException("num_samples must be >= 1")
@@ -1543,7 +1596,11 @@ def sample(work_dir: str, num_samples: int, seed: int) -> None:
         raise click.ClickException(str(exc)) from exc
     if not result.all_finite:
         raise click.ClickException("posterior_function_draw returned non-finite values")
-    click.echo(format_sample_config_header(result=result, work_dir=work_dir))
+    click.echo(
+        format_sample_config_header(
+            result=result, work_dir=work_dir, affine_calibrate=affine
+        )
+    )
     click.echo(format_sample_summary(result))
 
 
@@ -1614,6 +1671,7 @@ def sample(work_dir: str, num_samples: int, seed: int) -> None:
             default=None,
             help="Disk-backed ENN work directory (requires bpann_disk).",
         ),
+        affine_option(),
     ],
 )
 def draw(
@@ -1628,6 +1686,7 @@ def draw(
     num_seeds: int,
     index_type: str,
     work_dir: str | None,
+    affine: bool,
 ) -> None:
     """Fit ENN on synthetic data; report avg likelihood for two draw methods."""
     if num_obs < 1:
@@ -1663,6 +1722,7 @@ def draw(
         num_draws=num_draws,
         index_driver=parse_index_driver(index_type),
         work_dir=work_dir,
+        affine_calibrate=affine,
     )
     try:
         agg = run_draw_stress_over_seeds(config, num_seeds=num_seeds)
@@ -1704,6 +1764,7 @@ def draw(
                 "(intended for small-N fidelity; large N is much slower)."
             ),
         ),
+        affine_option(),
     ],
 )
 def turbo_enn(
@@ -1713,6 +1774,7 @@ def turbo_enn(
     num_dim: int,
     work_dir: str | None,
     tell_all: bool,
+    affine: bool,
 ) -> None:
     """Time TuRBO-ENN ask at exponentially spaced DGP observation checkpoints."""
     if num_dim < 1:
@@ -1738,6 +1800,7 @@ def turbo_enn(
             index_type=index_type,
             work_dir=work_dir,
             tell_all=tell_all,
+            affine_calibrate=affine,
         )
     )
     n_width = len(str(num_obs))
@@ -1750,6 +1813,7 @@ def turbo_enn(
             num_ask=num_ask,
             work_dir=work_dir,
             tell_all=tell_all,
+            affine_calibrate=affine,
         ):
             y_best = row.y_best
             click.echo(
@@ -1800,6 +1864,7 @@ def turbo_enn(
             default=None,
             help="Disk-backed ENN work directory (requires bpann_disk).",
         ),
+        affine_option(),
     ],
 )
 def proposal_scale(
@@ -1808,6 +1873,7 @@ def proposal_scale(
     max_n: int,
     num_probes: int,
     work_dir: str | None,
+    affine: bool,
 ) -> None:
     """Time mean TuRBO-ENN proposal cost at log-spaced N (seed then probe)."""
     if num_dim < 1:
@@ -1832,6 +1898,7 @@ def proposal_scale(
             num_probes=num_probes,
             index_type=index_type,
             work_dir=work_dir,
+            affine_calibrate=affine,
         )
     )
     n_width = len(str(max_n))
@@ -1842,6 +1909,7 @@ def proposal_scale(
             max_n,
             work_dir=work_dir,
             num_probes=num_probes,
+            affine_calibrate=affine,
         ):
             click.echo(
                 format_proposal_scale_row(

@@ -7,6 +7,8 @@ import numpy as np
 from enn._rust import ENNParams as RustENNParams
 from enn._rust import ENNStatefulFitter as _RustENNStatefulFitter
 
+from .affine_calibrator import AffineCalibrator
+
 
 class ENNStatefulFitter:
     def __init__(
@@ -15,13 +17,22 @@ class ENNStatefulFitter:
         rng: Any,
         *,
         infer_aleatoric_variance_scale: bool = True,
+        affine_calibrate: bool = False,
     ) -> None:
         seed = int(rng.integers(0, 2**63 - 1))
+        self._rng = np.random.default_rng(seed)
         self._rust = _RustENNStatefulFitter(
             k,
             seed,
             infer_aleatoric_variance_scale,
         )
+        self._affine_calibrate = bool(affine_calibrate)
+        self._affine_calibrator: AffineCalibrator | None = None
+
+    @property
+    def affine_calibrator(self) -> AffineCalibrator | None:
+        """Fitted calibrator when ``affine_calibrate=True``; else None."""
+        return self._affine_calibrator
 
     def tell(
         self,
@@ -74,8 +85,38 @@ class ENNStatefulFitter:
             rust_warm_start,
         )
 
-        return PyENNParams(
+        result = PyENNParams(
             k_num_neighbors=rust_result.k_num_neighbors,
             epistemic_variance_scale=rust_result.epistemic_variance_scale,
             aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
         )
+        if self._affine_calibrate:
+            self._affine_calibrator = _fit_loo_affine(
+                model, result, num_fit_samples, self._rng
+            )
+        else:
+            self._affine_calibrator = None
+        return result
+
+
+def _fit_loo_affine(
+    model: Any,
+    params: Any,
+    num_fit_samples: int,
+    rng: np.random.Generator,
+) -> AffineCalibrator:
+    from .enn_params import PosteriorFlags
+
+    n = len(model)
+    m = int(model.num_outputs)
+    if n < 2:
+        return AffineCalibrator.identity(m)
+    p = min(int(num_fit_samples), n)
+    indices = rng.choice(n, size=p, replace=False)
+    x_loo, y_loo, _ = model.train_rows_at(indices)
+    flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
+    post = model.posterior(x_loo, params=params, flags=flags)
+    cal = AffineCalibrator.identity(m)
+    cal.fit(post.mu, y_loo)
+    cal.fit_residual_scale(post.mu, post.se, y_loo)
+    return cal

@@ -65,6 +65,7 @@ def mk_enn(
             k=k,
             rng=rng,
             infer_aleatoric_variance_scale=fit.infer_aleatoric_variance_scale,
+            affine_calibrate=fit.affine_calibrate,
         )
         fitter.tell(x_obs_array, y, yvar)
         fitted_params = fitter.ask(

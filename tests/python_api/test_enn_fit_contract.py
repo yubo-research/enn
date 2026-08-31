@@ -17,6 +17,8 @@ class TestENNStatefulFitterContract:
         assert "k" in params
         assert "rng" in params
         assert "infer_aleatoric_variance_scale" in params
+        assert "affine_calibrate" in params
+        assert sig.parameters["affine_calibrate"].default is False
 
     def test_tell_and_ask_signatures(self):
         assert "tell" in dir(ENNStatefulFitter)

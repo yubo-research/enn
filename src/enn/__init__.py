@@ -5,6 +5,7 @@ from ._lazy import lazy_getattr
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "EpistemicNearestNeighbors": (".enn.enn_class", "EpistemicNearestNeighbors"),
     "ENNStatefulFitter": (".enn.enn_fitter", "ENNStatefulFitter"),
+    "AffineCalibrator": (".enn.affine_calibrator", "AffineCalibrator"),
     "create_optimizer": (".turbo.rust_optimizer", "create_optimizer"),
     "create_optimizer_enn": ("._rust", "create_optimizer_enn"),
     "create_optimizer_zero": ("._rust", "create_optimizer_zero"),

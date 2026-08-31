@@ -66,7 +66,7 @@ def test_sample_stress_cli_on_disk_store(tmp_path):
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
     assert lines[0] == (
-        f"num_dim=4 num_obs=10 work_dir={work_dir} num_samples=5 seed=1"
+        f"num_dim=4 num_obs=10 work_dir={work_dir} num_samples=5 seed=1 affine=false"
     )
     assert lines[1].startswith(
         "draws_shape=(5, 1, 1) function_seeds=1 all_finite=true init_s="

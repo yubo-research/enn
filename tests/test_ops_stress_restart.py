@@ -21,7 +21,7 @@ def test_format_config_header_restart():
             work_dir="_bpann",
             num_obs_existing=3_000_000,
         )
-        == "restarting num_dim = 10 num_obs = 100000000 num_obs_existing = 3000000 work_dir = _bpann"
+        == "restarting num_dim = 10 num_obs = 100000000 affine = false num_obs_existing = 3000000 work_dir = _bpann"
     )
 
 
@@ -70,7 +70,7 @@ def test_enn_stress_cli_disk_restart_header(tmp_path, index_type, subdir):
     lines = second.output.strip().splitlines()
     assert (
         lines[0]
-        == f"restarting num_dim = 10 num_obs = 10 num_obs_existing = 3 work_dir = {work_dir}"
+        == f"restarting num_dim = 10 num_obs = 10 affine = false num_obs_existing = 3 work_dir = {work_dir}"
     )
     for line in lines[1:]:
         assert _STRESS_ROW_RE.fullmatch(line)
