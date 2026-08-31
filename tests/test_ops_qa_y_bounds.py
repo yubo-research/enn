@@ -18,7 +18,8 @@ _FAST_KWARGS = dict(
 
 _EVAL_RE = re.compile(
     r"EVAL: model = (unbounded|y_bounds_\([^)]+\)) "
-    r"SMALLER\(rmse\) = \d+\.\d{4} SMALLER\(mae\) = \d+\.\d{4} "
+    r"SMALLER\(nrmse\) = \d+\.\d{4} LARGER\(rcorr\) = -?\d+\.\d{4} "
+    r"SMALLER\(mae\) = \d+\.\d{4} "
     r"SMALLER\(nll\) = -?\d+\.\d{4} "
     r"SMALLER\(frac_nonpos_mu\) = \d+\.\d{4} "
     r"SMALLER\(frac_nonpos_samples\) = \d+\.\d{4} "
@@ -27,7 +28,8 @@ _EVAL_RE = re.compile(
 
 
 def _assert_finite_metrics(metrics) -> None:
-    assert np.isfinite(metrics.rmse)
+    assert np.isfinite(metrics.nrmse)
+    assert np.isfinite(metrics.rcorr)
     assert np.isfinite(metrics.mae)
     assert np.isfinite(metrics.nll)
 
@@ -41,7 +43,7 @@ def _assert_bounded_support(bounded, lo: float, hi: float) -> None:
 def _assert_matched_seed_reproducible(compare_fn, *args, **kwargs) -> None:
     first = compare_fn(*args, **kwargs)
     second = compare_fn(*args, **kwargs)
-    for field in ("rmse", "mae", "nll"):
+    for field in ("nrmse", "rcorr", "mae", "nll"):
         assert getattr(first[0], field) == getattr(second[0], field)
         assert getattr(first[1], field) == getattr(second[1], field)
 

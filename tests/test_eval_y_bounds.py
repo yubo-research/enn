@@ -9,7 +9,8 @@ from evals import eval_y_bounds as mod
 
 _EVAL_RE = re.compile(
     r"EVAL: model = (unbounded|y_bounds_\([^)]+\)) "
-    r"SMALLER\(rmse\) = \d+\.\d{4} SMALLER\(mae\) = \d+\.\d{4} "
+    r"SMALLER\(nrmse\) = \d+\.\d{4} LARGER\(rcorr\) = -?\d+\.\d{4} "
+    r"SMALLER\(mae\) = \d+\.\d{4} "
     r"SMALLER\(nll\) = -?\d+\.\d{4} "
     r"SMALLER\(frac_nonpos_mu\) = \d+\.\d{4} "
     r"SMALLER\(frac_nonpos_samples\) = \d+\.\d{4} "

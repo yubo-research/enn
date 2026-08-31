@@ -10,13 +10,18 @@ from evals import flat_sphere as fs
 from ops.stress import MeanSE
 
 
-def test_gaussian_loglik_and_rmse() -> None:
+def test_gaussian_loglik_nrmse_and_rcorr() -> None:
+    from ops.qa import nrmse, rcorr
+
     y = np.array([[0.0], [1.0]])
     mu = np.array([[0.0], [1.0]])
     se = np.array([[1.0], [1.0]])
     assert fs.gaussian_loglik(y, mu, se) == pytest.approx(-0.5 * np.log(2.0 * np.pi))
-    assert fs.rmse(y, mu) == pytest.approx(0.0)
-    assert fs.rmse(y, np.array([[1.0], [0.0]])) == pytest.approx(1.0)
+    assert nrmse(y, mu) == pytest.approx(0.0)
+    # RMSE of swapped predictions is 1; std(y)=0.5 → nrmse=2
+    assert nrmse(y, np.array([[1.0], [0.0]])) == pytest.approx(2.0)
+    assert rcorr(y, mu) == pytest.approx(1.0)
+    assert rcorr(y, np.array([[1.0], [0.0]])) == pytest.approx(-1.0)
 
 
 def test_format_flat_sphere_eval_line() -> None:
@@ -28,12 +33,14 @@ def test_format_flat_sphere_eval_line() -> None:
             num_seeds=30,
             seed=0,
             loglik=MeanSE(mean=-1.25, se=0.05),
-            rmse=MeanSE(mean=0.8732, se=0.0123),
+            nrmse=MeanSE(mean=0.8732, se=0.0123),
+            rcorr=MeanSE(mean=0.6543, se=0.0210),
         )
     )
     assert line.startswith("EVAL: n = 10 ")
     assert "LARGER(loglik) = -1.25 ± 0.05" in line
-    assert "SMALLER(rmse) = 0.8732 ± 0.0123" in line
+    assert "SMALLER(nrmse) = 0.8732 ± 0.0123" in line
+    assert "LARGER(rcorr) = 0.6543 ± 0.021" in line
 
 
 def test_run_flat_sphere_seed_shapes() -> None:
@@ -41,8 +48,10 @@ def test_run_flat_sphere_seed_shapes() -> None:
         fs.FlatSphereConfig(num_dim=3, num_obs=3, num_test=5, seed=0, k=2)
     )
     assert np.isfinite(result.loglik)
-    assert np.isfinite(result.rmse)
-    assert result.rmse >= 0.0
+    assert np.isfinite(result.nrmse)
+    assert result.nrmse >= 0.0
+    assert np.isfinite(result.rcorr)
+    assert -1.0 <= result.rcorr <= 1.0
 
 
 def test_run_flat_sphere_over_seeds_aggregates() -> None:
@@ -62,8 +71,10 @@ def test_run_flat_sphere_over_seeds_aggregates() -> None:
     assert agg.num_obs == 3
     assert np.isfinite(agg.loglik.mean)
     assert np.isfinite(agg.loglik.se)
-    assert np.isfinite(agg.rmse.mean)
-    assert np.isfinite(agg.rmse.se)
+    assert np.isfinite(agg.nrmse.mean)
+    assert np.isfinite(agg.nrmse.se)
+    assert np.isfinite(agg.rcorr.mean)
+    assert np.isfinite(agg.rcorr.se)
 
 
 def test_evaluate_uses_d10_defaults(
@@ -81,7 +92,8 @@ def test_evaluate_uses_d10_defaults(
             num_seeds=30,
             seed=0,
             loglik=MeanSE(mean=-1.2, se=0.1),
-            rmse=MeanSE(mean=0.5, se=0.02),
+            nrmse=MeanSE(mean=0.5, se=0.02),
+            rcorr=MeanSE(mean=0.9, se=0.01),
         )
 
     monkeypatch.setattr(fs, "run_flat_sphere_over_seeds", fake_run)
@@ -95,4 +107,4 @@ def test_evaluate_uses_d10_defaults(
     assert cfg.num_seeds == 30
     assert "num_dim=10 num_obs=100 num_test=100" in out
     assert "index_driver=FLAT" in out
-    assert "EVAL: n = 100 LARGER(loglik) = -1.2 ± 0.1 SMALLER(rmse) = 0.5 ± 0.02" in out
+    assert "EVAL: n = 100 LARGER(loglik) = -1.2 ± 0.1 SMALLER(nrmse) = 0.5 ± 0.02 LARGER(rcorr) = 0.9 ± 0.01" in out

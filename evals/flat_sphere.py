@@ -9,7 +9,7 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from evals.stress_eval import format_larger, format_plain, format_smaller
-from ops.qa import gaussian_nll
+from ops.qa import gaussian_nll, nrmse, rcorr
 from ops.stress import (
     DEFAULT_DRAW_K,
     DEFAULT_DRAW_NUM_FIT_CANDIDATES,
@@ -46,7 +46,8 @@ class FlatSphereConfig:
 @dataclass(frozen=True)
 class FlatSphereSeedResult:
     loglik: float
-    rmse: float
+    nrmse: float
+    rcorr: float
 
 
 @dataclass(frozen=True)
@@ -57,17 +58,13 @@ class FlatSphereAggregate:
     num_seeds: int
     seed: int
     loglik: MeanSE
-    rmse: MeanSE
+    nrmse: MeanSE
+    rcorr: MeanSE
 
 
 def gaussian_loglik(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> float:
     """Mean Gaussian predictive log-likelihood (larger is better)."""
     return float(-gaussian_nll(y, mu, se))
-
-
-def rmse(y: np.ndarray, mu: np.ndarray) -> float:
-    err = np.asarray(mu, dtype=float).ravel() - np.asarray(y, dtype=float).ravel()
-    return float(np.sqrt(np.mean(err**2)))
 
 
 def _build_sphere_enn(
@@ -97,7 +94,7 @@ def _build_sphere_enn(
 
 
 def run_flat_sphere_seed(config: FlatSphereConfig) -> FlatSphereSeedResult:
-    """Fit ENN on sphere DGP; score loglik and rmse on a held-out test set."""
+    """Fit ENN on sphere DGP; score loglik, nrmse, and rcorr on a held-out test set."""
     if config.num_obs < 1:
         raise ValueError("num_obs must be >= 1")
     if config.num_test < 1:
@@ -132,7 +129,8 @@ def run_flat_sphere_seed(config: FlatSphereConfig) -> FlatSphereSeedResult:
     post = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS)
     return FlatSphereSeedResult(
         loglik=gaussian_loglik(y_test, post.mu, post.se),
-        rmse=rmse(y_test, post.mu),
+        nrmse=nrmse(y_test, post.mu),
+        rcorr=rcorr(y_test, post.mu),
     )
 
 
@@ -164,7 +162,8 @@ def run_flat_sphere_over_seeds(config: FlatSphereConfig) -> FlatSphereAggregate:
         num_seeds=config.num_seeds,
         seed=config.seed,
         loglik=mean_se([r.loglik for r in results]),
-        rmse=mean_se([r.rmse for r in results]),
+        nrmse=mean_se([r.nrmse for r in results]),
+        rcorr=mean_se([r.rcorr for r in results]),
     )
 
 
@@ -173,7 +172,8 @@ def format_flat_sphere_eval_line(result: FlatSphereAggregate) -> str:
         "EVAL: "
         f"{format_plain('n', result.num_obs)} "
         f"{format_larger('loglik', format_mean_se(result.loglik))} "
-        f"{format_smaller('rmse', format_mean_se(result.rmse))}"
+        f"{format_smaller('nrmse', format_mean_se(result.nrmse))} "
+        f"{format_larger('rcorr', format_mean_se(result.rcorr))}"
     )
 
 

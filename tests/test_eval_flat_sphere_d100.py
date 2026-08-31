@@ -24,7 +24,8 @@ def test_evaluate_uses_d100_defaults(
             num_seeds=30,
             seed=0,
             loglik=MeanSE(mean=-1.2, se=0.1),
-            rmse=MeanSE(mean=0.5, se=0.02),
+            nrmse=MeanSE(mean=0.5, se=0.02),
+            rcorr=MeanSE(mean=0.9, se=0.01),
         )
 
     monkeypatch.setattr(fs, "run_flat_sphere_over_seeds", fake_run)
@@ -38,4 +39,4 @@ def test_evaluate_uses_d100_defaults(
     assert cfg.num_seeds == 30
     assert "num_dim=100 num_obs=1000 num_test=100" in out
     assert "index_driver=FLAT" in out
-    assert "EVAL: n = 1000 LARGER(loglik) = -1.2 ± 0.1 SMALLER(rmse) = 0.5 ± 0.02" in out
+    assert "EVAL: n = 1000 LARGER(loglik) = -1.2 ± 0.1 SMALLER(nrmse) = 0.5 ± 0.02 LARGER(rcorr) = 0.9 ± 0.01" in out

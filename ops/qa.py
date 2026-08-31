@@ -145,7 +145,8 @@ def ackley_99(index_type: str) -> None:
 @dataclass(frozen=True)
 class YBoundsMetrics:
     name: str
-    rmse: float
+    nrmse: float
+    rcorr: float
     mae: float
     nll: float
     frac_nonpos_mu: float
@@ -239,6 +240,53 @@ def gaussian_nll(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> float:
     return float(0.5 * np.mean(np.log(2.0 * np.pi * var) + (y_arr - mu_arr) ** 2 / var))
 
 
+def nrmse(y: np.ndarray, y_hat: np.ndarray) -> float:
+    """Normalized RMSE: RMSE(y_hat, y) / std(y). Smaller is better."""
+    y_arr = np.asarray(y, dtype=float).ravel()
+    hat = np.asarray(y_hat, dtype=float).ravel()
+    rmse = float(np.sqrt(np.mean((hat - y_arr) ** 2)))
+    scale = float(np.std(y_arr))
+    if scale <= 1e-12:
+        return 0.0 if rmse <= 1e-12 else float("nan")
+    return rmse / scale
+
+
+def _average_ranks(values: np.ndarray) -> np.ndarray:
+    """1-based average ranks for ties (matches scipy.stats.rankdata method='average')."""
+    x = np.asarray(values, dtype=float).ravel()
+    n = x.size
+    order = np.argsort(x, kind="mergesort")
+    ranks = np.empty(n, dtype=float)
+    i = 0
+    while i < n:
+        j = i + 1
+        while j < n and x[order[j]] == x[order[i]]:
+            j += 1
+        avg = 0.5 * (i + 1 + j)
+        ranks[order[i:j]] = avg
+        i = j
+    return ranks
+
+
+def rcorr(y: np.ndarray, y_hat: np.ndarray) -> float:
+    """Spearman rank correlation between y_hat and y. Larger is better."""
+    y_arr = np.asarray(y, dtype=float).ravel()
+    hat = np.asarray(y_hat, dtype=float).ravel()
+    if y_arr.size < 2:
+        return float("nan")
+    ry = _average_ranks(y_arr)
+    rh = _average_ranks(hat)
+    ry = ry - ry.mean()
+    rh = rh - rh.mean()
+    denom = float(np.sqrt(np.sum(ry**2) * np.sum(rh**2)))
+    if denom == 0.0:
+        # Degenerate ranks (constant series): treat mutual constants as perfect agreement.
+        if float(np.std(y_arr)) <= 1e-12 and float(np.std(hat)) <= 1e-12:
+            return 1.0
+        return float("nan")
+    return float(np.sum(ry * rh) / denom)
+
+
 def frac_out_of_open_interval(
     values: np.ndarray, lo: float, hi: float
 ) -> float:
@@ -271,7 +319,8 @@ def evaluate_natural_y(
     lo, hi = interval if interval is not None else (-np.inf, np.inf)
     return YBoundsMetrics(
         name=name,
-        rmse=float(np.sqrt(np.mean(err**2))),
+        nrmse=nrmse(y, mu),
+        rcorr=rcorr(y, mu),
         mae=float(np.mean(np.abs(err))),
         nll=gaussian_nll(y, mu, se),
         frac_nonpos_mu=float(np.mean(mu <= 0.0)),
@@ -373,7 +422,8 @@ def compare_unbounded_vs_bounded(
 def echo_y_bounds_metrics(metrics: YBoundsMetrics) -> None:
     click.echo(
         f"EVAL: model = {metrics.name} "
-        f"SMALLER(rmse) = {metrics.rmse:.04f} "
+        f"SMALLER(nrmse) = {metrics.nrmse:.04f} "
+        f"LARGER(rcorr) = {metrics.rcorr:.04f} "
         f"SMALLER(mae) = {metrics.mae:.04f} "
         f"SMALLER(nll) = {metrics.nll:.04f} "
         f"SMALLER(frac_nonpos_mu) = {metrics.frac_nonpos_mu:.04f} "
