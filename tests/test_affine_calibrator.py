@@ -53,6 +53,52 @@ def test_affine_calibrator_rls_matches_batch():
     np.testing.assert_allclose(online.b, batch.b, rtol=1e-10, atol=1e-10)
 
 
+def test_affine_calibrator_incremental_c_matches_batch():
+    """Claim: with se in update(), online c matches batch fit_residual_scale (moments)."""
+    rng = np.random.default_rng(2)
+    mu = rng.normal(size=(60, 2))
+    y = -0.2 + 1.3 * mu + rng.normal(scale=0.08, size=mu.shape)
+    se = np.abs(rng.normal(size=mu.shape)) + 0.05
+    batch = AffineCalibrator.identity(2)
+    batch.fit(mu, y)
+    batch.fit_residual_scale(mu, se, y)
+    online = AffineCalibrator.identity(2)
+    for i in range(mu.shape[0]):
+        online.update(mu[i : i + 1], y[i : i + 1], se=se[i : i + 1])
+    np.testing.assert_allclose(online.a, batch.a, rtol=1e-10, atol=1e-10)
+    np.testing.assert_allclose(online.b, batch.b, rtol=1e-10, atol=1e-10)
+    np.testing.assert_allclose(online.c, batch.c, rtol=1e-10, atol=1e-10)
+
+
+def test_fit_residual_scale_without_prior_fit():
+    mu = np.array([[0.0], [1.0], [2.0]], dtype=float)
+    y = np.array([[0.0], [2.0], [4.0]], dtype=float)
+    se = np.ones_like(mu)
+    cal = AffineCalibrator.identity(1)
+    c = cal.fit_residual_scale(mu, se, y)
+    assert cal._n == 3.0
+    assert abs(float(cal.b[0]) - 2.0) < 1e-8
+    assert float(c[0]) < 1e-8
+
+
+def test_update_expands_metric_width_and_singular_mu():
+    cal = AffineCalibrator.identity(1)
+    cal.update(
+        np.array([[0.1, -0.2]], dtype=float),
+        np.array([[0.3, 0.4]], dtype=float),
+        se=np.array([[0.5, 0.6]], dtype=float),
+    )
+    assert cal.a.shape == (2,)
+    cal2 = AffineCalibrator.identity(1)
+    mu = np.ones((6, 1), dtype=float)
+    y = np.linspace(0.0, 1.0, 6).reshape(-1, 1)
+    se = np.full_like(mu, 0.2)
+    for i in range(mu.shape[0]):
+        cal2.update(mu[i : i + 1], y[i : i + 1], se=se[i : i + 1])
+    assert float(cal2.b[0]) == 1.0
+    assert np.isfinite(float(cal2.c[0]))
+
+
 def test_fitter_affine_calibrate_optional_default_off():
     train_x = np.array(
         [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5]],
