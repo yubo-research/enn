@@ -42,7 +42,8 @@ impl<'a> ObsAccess<'a> {
     /// Observation values in warped storage units.
     pub(crate) fn y_obs_warped(&self) -> Option<Array2<f64>> {
         if let Some(surrogate) = self.opt.surrogate() {
-            return surrogate.observations_y().ok().flatten();
+            let y_nat = surrogate.observations_y().ok().flatten()?;
+            return surrogate.warp_observations_y(&y_nat.view()).ok();
         }
         if self.opt.fallback_y.is_empty() {
             return None;

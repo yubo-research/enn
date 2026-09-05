@@ -401,21 +401,9 @@ impl EpistemicNearestNeighbors {
         self.x_scale.clone().insert_axis(ndarray::Axis(0))
     }
 
+    /// Row view of the fit/posterior `y_scale` (warped storage units under y_bounds).
     pub fn y_scale_row(&self) -> Array2<f64> {
-
-
-        if crate::y_bounds::is_identity_bounds(&self.y_bounds) || self.num_obs == 0 {
-            return self.y_scale.clone().insert_axis(ndarray::Axis(0));
-        }
-        let indices: Vec<usize> = (0..self.num_obs).collect();
-        match self.train_rows_at(&indices) {
-            Ok((_, y_nat, _)) => {
-                let (y_sum, y_sumsq) = column_sums_and_sumsq(y_nat.view());
-                scale_from_moments(self.num_obs, self.num_metrics, &y_sum, &y_sumsq, 0.0)
-                    .insert_axis(ndarray::Axis(0))
-            }
-            Err(_) => self.y_scale.clone().insert_axis(ndarray::Axis(0)),
-        }
+        self.y_scale.clone().insert_axis(ndarray::Axis(0))
     }
 
     pub(crate) fn num_obs(&self) -> usize {

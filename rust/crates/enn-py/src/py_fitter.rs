@@ -26,17 +26,24 @@ impl PyENNStatefulFitter {
         }
     }
 
-    #[pyo3(signature = (x, y, yvar=None))]
+    #[pyo3(signature = (x, y, yvar=None, y_bounds=None))]
     #[doc = "kiss-coverage-off"]
     fn tell(
         &mut self,
         x: PyReadonlyArray2<f64>,
         y: PyReadonlyArray2<f64>,
         yvar: Option<PyReadonlyArray2<f64>>,
+        y_bounds: Option<PyReadonlyArray2<f64>>,
     ) -> PyResult<()> {
         let yvar_arr = yvar.as_ref().map(|v| v.as_array());
+        let y_bounds_owned = y_bounds.as_ref().map(|v| v.as_array().to_owned());
         self.inner
-            .tell(&x.as_array(), &y.as_array(), yvar_arr.as_ref())
+            .tell(
+                &x.as_array(),
+                &y.as_array(),
+                yvar_arr.as_ref(),
+                y_bounds_owned.as_ref(),
+            )
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 

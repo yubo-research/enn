@@ -88,10 +88,12 @@ def enn_fit(
     if incremental is None:
         fitter = ENNStatefulFitter(k=k, rng=rng)
         x_all, y_all, yvar_all = model.train_rows_at(list(range(len(model))))
-        fitter.tell(x_all, y_all, yvar_all)
+        y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
+        fitter.tell(x_all, y_all, yvar_all, y_bounds=y_bounds)
     else:
         fitter = incremental.fitter
-        fitter.tell(incremental.x, incremental.y, incremental.yvar)
+        y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
+        fitter.tell(incremental.x, incremental.y, incremental.yvar, y_bounds=y_bounds)
 
     return fitter.ask(
         model,

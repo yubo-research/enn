@@ -66,7 +66,7 @@ def mk_enn(
             rng=rng,
             infer_aleatoric_variance_scale=fit.infer_aleatoric_variance_scale,
         )
-        fitter.tell(x_obs_array, y, yvar)
+        fitter.tell(x_obs_array, y, yvar, y_bounds=y_bounds)
         fitted_params = fitter.ask(
             enn_model,
             num_fit_candidates=(
