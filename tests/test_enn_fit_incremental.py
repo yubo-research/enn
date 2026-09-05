@@ -72,7 +72,8 @@ def test_enn_fit_incremental_metamorphic_matches_manual_tell_ask():
         )
 
         via_manual.add(row_x, row_y)
-        fitter_b.tell(row_x, row_y)
+        y_bounds = np.asarray(via_manual.rust_backend.y_bounds, dtype=float)
+        fitter_b.tell(row_x, row_y, y_bounds=y_bounds)
         params_b = fitter_b.ask(
             via_manual,
             num_fit_candidates=1,
@@ -90,3 +91,36 @@ def test_enn_fit_incremental_metamorphic_matches_manual_tell_ask():
         abs(params_a.aleatoric_variance_scale - params_b.aleatoric_variance_scale)
         < 1e-12
     )
+
+
+def test_tell_with_y_bounds_tracks_warped_y_std():
+    import numpy as np
+
+    from enn.enn.enn_fitter import ENNStatefulFitter
+
+    rng = np.random.default_rng(0)
+    x = rng.standard_normal((12, 2))
+    y = 0.05 + 0.9 * rng.random((12, 1))
+    bounds = np.array([[0.0, 1.0]], dtype=float)
+    z = np.log(y / (1.0 - y))
+    want = float(z.std(ddof=0))
+
+    fitter = ENNStatefulFitter(k=3, rng=np.random.default_rng(0))
+    fitter.tell(x, y, y_bounds=bounds)
+    got = float(fitter.y_std()[0])
+    assert abs(got - want) < 1e-12, f"warped y_std: got {got} want {want}"
+    assert got > 1.0, f"expected warped std >> natural, got {got}"
+
+
+def test_tell_rejects_y_outside_y_bounds():
+    import numpy as np
+    import pytest
+
+    from enn.enn.enn_fitter import ENNStatefulFitter
+
+    fitter = ENNStatefulFitter(k=2, rng=np.random.default_rng(0))
+    x = np.array([[0.0, 0.0]], dtype=float)
+    y = np.array([[1.5]], dtype=float)
+    bounds = np.array([[0.0, 1.0]], dtype=float)
+    with pytest.raises(ValueError, match="bound"):
+        fitter.tell(x, y, y_bounds=bounds)

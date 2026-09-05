@@ -152,6 +152,7 @@ impl ENNSurrogate {
                 &train_x.view(),
                 &train_y.view(),
                 yvar_view.as_ref(),
+                Some(model.y_bounds()),
             )?;
             if let Some(p) = self.params {
                 fitter.set_params(p);
@@ -187,7 +188,7 @@ impl ENNSurrogate {
             model.add(x_new, y_new, yvar_new)?;
             if let Some(fitter) = self.fitter.as_mut() {
                 
-                fitter.tell(x_new, y_new, yvar_new)?;
+                fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
             }
             let is_disk = model.backend_driver() == IndexDriver::BpAnnDisk;
             let bulk_disk = is_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
@@ -212,7 +213,7 @@ impl ENNSurrogate {
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
         
         let model = self.construct_model(x_new, y_new, yvar_new)?;
-        fitter.tell(x_new, y_new, yvar_new)?;
+        fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
         self.model = Some(model);
         self.fitter = Some(fitter);
         let skip_fit = self.config.index_driver == IndexDriver::BpAnnDisk
@@ -270,11 +271,9 @@ impl Surrogate for ENNSurrogate {
         if n == 0 {
             return Ok(None);
         }
-        
-        
         let mut y = Array2::zeros((n, model.num_metrics()));
         for i in 0..n {
-            y.row_mut(i).assign(&model.rows().row_y(i)?);
+            y.row_mut(i).assign(&model.row_y_natural(i)?);
         }
         Ok(Some(y))
     }
@@ -289,23 +288,7 @@ impl Surrogate for ENNSurrogate {
         crate::y_bounds::inv_y(y_warped.view(), model.y_bounds())
     }
 
-    fn naturalize_prediction(&self, mut pred: SurrogatePrediction) -> SurrogatePrediction {
-        let Some(model) = self.model.as_ref() else {
-            return pred;
-        };
-        let bounds = model.y_bounds();
-        if crate::y_bounds::is_identity_bounds(bounds) {
-            return pred;
-        }
-        let mut se_epi = pred.se.clone();
-        let mut se_ale = pred.se.clone();
-        crate::y_bounds::naturalize_mu_se(
-            &mut pred.mu,
-            &mut pred.se,
-            &mut se_epi,
-            &mut se_ale,
-            bounds,
-        );
+    fn naturalize_prediction(&self, pred: SurrogatePrediction) -> SurrogatePrediction {
         pred
     }
 
@@ -352,7 +335,7 @@ impl Surrogate for ENNSurrogate {
         let model = self.construct_model(x, y, yvar)?;
 
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
-        fitter.tell(x, y, yvar)?;
+        fitter.tell(x, y, yvar, self.config.y_bounds.as_ref())?;
         if let Some(p) = self.params {
             fitter.set_params(p);
         }
@@ -427,9 +410,8 @@ impl Surrogate for ENNSurrogate {
         };
 
         let flags = PosteriorFlags::new();
-        let posterior = model.posterior_warped(x, &params, &flags)?;
+        let posterior = model.posterior(x, &params, &flags)?;
 
-        
         let mu = posterior
             .mu
             .into_dimensionality::<ndarray::Ix2>()
@@ -596,24 +578,38 @@ mod tests {
     }
 
     #[test]
-    fn fit_tells_fitter_natural_y_under_y_bounds() {
-        
+    fn fit_tells_fitter_warped_y_under_y_bounds() {
+        // Fit stays in warped z: tell(natural y, bounds) must accumulate z moments.
         let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
         let y = array![[0.1], [0.2], [0.8], [0.9]];
         let bounds = array![[0.0, 1.0]];
         let mut fit_nat = crate::fitter::ENNFitter::new(2, true);
-        fit_nat.tell(&x.view(), &y.view(), None).unwrap();
+        fit_nat
+            .tell(&x.view(), &y.view(), None, None)
+            .unwrap();
         let nat_std = fit_nat.y_std()[0];
         let y_z = crate::y_bounds::warp_y(y.view(), &bounds).unwrap();
         let mut fit_z = crate::fitter::ENNFitter::new(2, true);
-        fit_z.tell(&x.view(), &y_z.view(), None).unwrap();
+        fit_z
+            .tell(&x.view(), &y_z.view(), None, None)
+            .unwrap();
         let z_std = fit_z.y_std()[0];
-        
+
         assert!(
             (nat_std - 0.35355).abs() < 0.01,
             "natural y_std={nat_std}"
         );
         assert!(z_std > 1.5, "warped y_std={z_std}");
+
+        let mut fit_bounded = crate::fitter::ENNFitter::new(2, true);
+        fit_bounded
+            .tell(&x.view(), &y.view(), None, Some(&bounds))
+            .unwrap();
+        let bounded_std = fit_bounded.y_std()[0];
+        assert!(
+            (bounded_std - z_std).abs() < 1e-9,
+            "tell with y_bounds must warp: got {bounded_std} want {z_std} (natural would be {nat_std})"
+        );
 
         let config = ENNSurrogateConfig {
             k: 2,
@@ -627,8 +623,8 @@ mod tests {
         sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
         let fitter_std = sur.fitter.as_ref().expect("fitter").y_std()[0];
         assert!(
-            (fitter_std - nat_std).abs() < 1e-9,
-            "surrogate fitter must be told natural y: got {fitter_std} want {nat_std} (warped would be {z_std})"
+            (fitter_std - z_std).abs() < 1e-9,
+            "surrogate fitter must track warped y: got {fitter_std} want {z_std} (natural would be {nat_std})"
         );
     }
 
@@ -732,5 +728,88 @@ mod tests {
             before, after_wait,
             "wait_for_background_flush must not force ensure_index_sync"
         );
+    }
+
+    /// Under non-identity `y_bounds`, public `Surrogate::predict` returns natural-unit μ
+    /// (open interval), idempotent under `naturalize_prediction`.
+    #[test]
+    fn regression_surrogate_predict_natural_under_y_bounds() {
+        let bounds = array![[0.0, 1.0]];
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 4,
+            num_fit_samples: 3,
+            y_bounds: Some(bounds),
+            ..Default::default()
+        };
+        let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+        let y = array![[0.1], [0.9], [0.3], [0.7]];
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(3);
+        sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
+
+        let x_query = array![[0.5, 0.5]];
+        let pred = sur.predict(&x_query.view()).unwrap();
+        let naturalized = Surrogate::naturalize_prediction(&sur, pred.clone());
+        let mu = pred.mu[[0, 0]];
+        let mu_nat = naturalized.mu[[0, 0]];
+        assert!(
+            (mu - mu_nat).abs() < 1e-12,
+            "Surrogate::predict under y_bounds must return natural-unit mu (idempotent under naturalize_prediction); got {mu} vs naturalized {mu_nat}"
+        );
+        assert!(
+            mu_nat > 0.0 && mu_nat < 1.0,
+            "naturalized mu must lie in open (0,1); got {mu_nat}"
+        );
+    }
+
+    #[test]
+    fn surrogate_observation_row_and_batch_agree_natural_under_y_bounds() {
+        let bounds = array![[0.0, 1.0]];
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 4,
+            num_fit_samples: 3,
+            y_bounds: Some(bounds),
+            ..Default::default()
+        };
+        let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+        let y = array![[0.1], [0.9], [0.3], [0.7]];
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(3);
+        sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
+
+        let batch = Surrogate::observations_y(&sur).unwrap().expect("observations");
+        assert_eq!(batch.shape(), &[4, 1]);
+        for i in 0..4 {
+            let row = Surrogate::observation_row_y(&sur, i).unwrap();
+            assert!(
+                (row[[0]] - batch[[i, 0]]).abs() < 1e-12,
+                "row {i}: row={} batch={}",
+                row[[0]],
+                batch[[i, 0]]
+            );
+            assert!(
+                batch[[i, 0]] > 0.0 && batch[[i, 0]] < 1.0,
+                "public observation y must be natural in (0,1), got {}",
+                batch[[i, 0]]
+            );
+            assert!((batch[[i, 0]] - y[[i, 0]]).abs() < 1e-12);
+        }
+
+        let y_z = Surrogate::warp_observations_y(&sur, &batch.view()).unwrap();
+        let max_diff = batch
+            .iter()
+            .zip(y_z.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f64, f64::max);
+        assert!(
+            max_diff > 0.1,
+            "warped storage must differ from natural under logit bounds"
+        );
+        let back = Surrogate::naturalize_observations_y(&sur, y_z);
+        for (a, b) in batch.iter().zip(back.iter()) {
+            assert!((a - b).abs() < 1e-12);
+        }
     }
 }

@@ -28,8 +28,13 @@ class ENNStatefulFitter:
         x: np.ndarray,
         y: np.ndarray,
         yvar: np.ndarray | None = None,
+        y_bounds: np.ndarray | None = None,
     ) -> None:
-        """Register a batch for incremental y_std; must match rows added to the model."""
+        """Register a batch for incremental y_std; must match rows added to the model.
+
+        Pass natural-unit ``y``. When ``y_bounds`` is set, moments are accumulated in
+        warped-z space (hyperparameter fit stays in z).
+        """
         x_array = np.asarray(x, dtype=float)
         y_array = np.asarray(y, dtype=float)
         if y_array.ndim == 1:
@@ -39,7 +44,10 @@ class ENNStatefulFitter:
             yvar_array = np.asarray(yvar, dtype=float)
             if yvar_array.ndim == 1:
                 yvar_array = yvar_array.reshape(-1, 1)
-        self._rust.tell(x_array, y_array, yvar_array)
+        y_bounds_array = None
+        if y_bounds is not None:
+            y_bounds_array = np.asarray(y_bounds, dtype=float)
+        self._rust.tell(x_array, y_array, yvar_array, y_bounds_array)
 
     def y_std(self) -> np.ndarray:
         return np.asarray(self._rust.y_std(), dtype=float)

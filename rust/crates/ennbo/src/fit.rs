@@ -7,6 +7,7 @@ use rand::Rng;
 use crate::error::ENNError;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
+use crate::traits::PosteriorComputation;
 
 /// Validates subsample log-likelihood inputs.
 fn validate_subsample_inputs(
@@ -115,7 +116,7 @@ pub fn subsample_loglik_model<R: Rng>(
         sample(rng, n, p_actual).into_iter().collect()
     };
 
-    let (x, y, _) = model.train_rows_at(&indices)?;
+    let (x, y, _) = model.rows().train_rows_at(&indices)?;
     subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
 }
 
@@ -161,7 +162,7 @@ pub fn subsample_loglik<R: Rng>(
     let flags = PosteriorFlags::new()
         .with_exclude_nearest(true)
         .with_observation_noise(true);
-    let post = model.batch_posterior(&x_sel.view(), paramss, &flags)?;
+    let post = PosteriorComputation::batch_posterior(model, &x_sel.view(), paramss, &flags)?;
 
     let num_params = paramss.len();
     let num_outputs = y_sel.ncols();
@@ -255,12 +256,13 @@ mod tests {
         let via_model = subsample_loglik_model(&model, &paramss, 2, &mut rng, None).unwrap();
         let mut rng2 = StdRng::seed_from_u64(99);
         let all: Vec<usize> = (0..model.len()).collect();
-        let (full_x, full_y, _) = model.train_rows_at(&all).unwrap();
+        let (full_x, full_y, _) = model.rows().train_rows_at(&all).unwrap();
         let via_views =
             subsample_loglik(&model, &full_x.view(), &full_y.view(), &paramss, 2, &mut rng2, None)
                 .unwrap();
         assert_eq!(via_model.len(), via_views.len());
         assert!(via_model[0].is_finite());
+        assert!(via_views[0].is_finite());
     }
 
     #[test]
@@ -473,6 +475,55 @@ mod tests {
         let logliks =
             subsample_loglik(&model, &x.view(), &y.view(), &paramss, 2, &mut rng, None).unwrap();
         assert_eq!(logliks, vec![f64::NEG_INFINITY, f64::NEG_INFINITY]);
+    }
+
+    #[test]
+    fn subsample_loglik_model_scores_warped_y_under_y_bounds() {
+        use crate::backend::EnnStorage;
+
+        let train_x = array![[0.0], [1.0], [0.5], [0.25], [0.75]];
+        let train_y = array![[0.1], [0.9], [0.5], [0.3], [0.7]];
+        let bounds = array![[0.0, 1.0]];
+        let model = EpistemicNearestNeighbors::new_with_storage(
+            train_x,
+            train_y,
+            None,
+            false,
+            IndexDriver::Exact,
+            EnnStorage::InMemory,
+            None,
+            Some(bounds),
+        )
+        .unwrap();
+        let params = ENNParams::new(2, 1.0, 0.1).unwrap();
+        let paramss = vec![params];
+        let mut rng = StdRng::seed_from_u64(7);
+        let via_model = subsample_loglik_model(&model, &paramss, 5, &mut rng, None).unwrap();
+
+        let all: Vec<usize> = (0..model.len()).collect();
+        let (x_z, y_z, _) = model.rows().train_rows_at(&all).unwrap();
+        let (_, y_nat, _) = model.train_rows_at(&all).unwrap();
+        let mut rng_z = StdRng::seed_from_u64(7);
+        let via_warped =
+            subsample_loglik(&model, &x_z.view(), &y_z.view(), &paramss, 5, &mut rng_z, None)
+                .unwrap();
+        let mut rng_nat = StdRng::seed_from_u64(7);
+        let via_natural =
+            subsample_loglik(&model, &x_z.view(), &y_nat.view(), &paramss, 5, &mut rng_nat, None)
+                .unwrap();
+
+        assert!(
+            (via_model[0] - via_warped[0]).abs() < 1e-9,
+            "model path must match warped storage LOO: {} vs {}",
+            via_model[0],
+            via_warped[0]
+        );
+        assert!(
+            (via_model[0] - via_natural[0]).abs() > 1.0,
+            "natural-y LOO must disagree under bounds: model={} natural={}",
+            via_model[0],
+            via_natural[0]
+        );
     }
 
 }
