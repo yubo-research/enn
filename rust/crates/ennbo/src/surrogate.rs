@@ -288,23 +288,7 @@ impl Surrogate for ENNSurrogate {
         crate::y_bounds::inv_y(y_warped.view(), model.y_bounds())
     }
 
-    fn naturalize_prediction(&self, mut pred: SurrogatePrediction) -> SurrogatePrediction {
-        let Some(model) = self.model.as_ref() else {
-            return pred;
-        };
-        let bounds = model.y_bounds();
-        if crate::y_bounds::is_identity_bounds(bounds) {
-            return pred;
-        }
-        let mut se_epi = pred.se.clone();
-        let mut se_ale = pred.se.clone();
-        crate::y_bounds::naturalize_mu_se(
-            &mut pred.mu,
-            &mut pred.se,
-            &mut se_epi,
-            &mut se_ale,
-            bounds,
-        );
+    fn naturalize_prediction(&self, pred: SurrogatePrediction) -> SurrogatePrediction {
         pred
     }
 
@@ -426,9 +410,8 @@ impl Surrogate for ENNSurrogate {
         };
 
         let flags = PosteriorFlags::new();
-        let posterior = model.posterior_warped(x, &params, &flags)?;
+        let posterior = model.posterior(x, &params, &flags)?;
 
-        
         let mu = posterior
             .mu
             .into_dimensionality::<ndarray::Ix2>()
@@ -744,6 +727,39 @@ mod tests {
         assert_eq!(
             before, after_wait,
             "wait_for_background_flush must not force ensure_index_sync"
+        );
+    }
+
+    /// Under non-identity `y_bounds`, public `Surrogate::predict` returns natural-unit μ
+    /// (open interval), idempotent under `naturalize_prediction`.
+    #[test]
+    fn regression_surrogate_predict_natural_under_y_bounds() {
+        let bounds = array![[0.0, 1.0]];
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 4,
+            num_fit_samples: 3,
+            y_bounds: Some(bounds),
+            ..Default::default()
+        };
+        let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+        let y = array![[0.1], [0.9], [0.3], [0.7]];
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(3);
+        sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
+
+        let x_query = array![[0.5, 0.5]];
+        let pred = sur.predict(&x_query.view()).unwrap();
+        let naturalized = Surrogate::naturalize_prediction(&sur, pred.clone());
+        let mu = pred.mu[[0, 0]];
+        let mu_nat = naturalized.mu[[0, 0]];
+        assert!(
+            (mu - mu_nat).abs() < 1e-12,
+            "Surrogate::predict under y_bounds must return natural-unit mu (idempotent under naturalize_prediction); got {mu} vs naturalized {mu_nat}"
+        );
+        assert!(
+            mu_nat > 0.0 && mu_nat < 1.0,
+            "naturalized mu must lie in open (0,1); got {mu_nat}"
         );
     }
 

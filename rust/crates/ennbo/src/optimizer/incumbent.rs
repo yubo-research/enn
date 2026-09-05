@@ -17,7 +17,7 @@ impl Optimizer {
             }
         }
         let pred = surrogate.predict(&x_cand.view())?;
-        let mu = surrogate.naturalize_observations_y(pred.mu);
+        let mu = pred.mu;
         let mut best = candidate_indices[0];
         let mut best_mu = mu[[0, 0]];
         for (r, &idx) in candidate_indices.iter().enumerate().skip(1) {
@@ -79,8 +79,7 @@ impl Optimizer {
                         }
                     }
 
-                    y_rows = surrogate
-                        .naturalize_observations_y(surrogate.predict(&x_cand.view())?.mu);
+                    y_rows = surrogate.predict(&x_cand.view())?.mu;
                 }
             }
             let scores = self
