@@ -4,12 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals import eval_flat_sphere_d100 as mod
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from evals.short import eval_bpann_sphere_d100 as mod
 from evals import flat_sphere as fs
 from ops.stress import MeanSE
 
 
-def test_evaluate_uses_d100_defaults(
+def test_evaluate_uses_bpann_d100_defaults(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -36,6 +37,7 @@ def test_evaluate_uses_d100_defaults(
     assert cfg.num_obs == 1000
     assert cfg.num_test == 100
     assert cfg.num_seeds == 30
-    assert "num_dim=100 num_obs=1000 num_test=100" in out
-    assert "index_driver=FLAT" in out
+    assert cfg.index_driver == ENNIndexDriver.BPANN_DISK
+    assert cfg.work_dir is not None
+    assert "index_driver=BPANN_DISK" in out
     assert "EVAL: n = 1000 LARGER(loglik) = -1.2 ± 0.1 SMALLER(rmse) = 0.5 ± 0.02" in out

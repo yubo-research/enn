@@ -1,19 +1,18 @@
 //! Regression tests for Morbo acquisition / incumbent RNG contracts.
 
 use super::{select_with_thompson, select_with_ucb};
-use crate::config::{turbo_enn_config, AcquisitionConfig, InitStrategy, SurrogateConfig};
+use crate::config::{turbo_enn_config, InitStrategy, SurrogateConfig};
 use approx::relative_eq;
 use crate::error::ENNError;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
-use crate::surrogate::{ENNSurrogateConfig, Surrogate, SurrogatePrediction};
+use crate::surrogate::{Surrogate, SurrogatePrediction};
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::TrustRegionConfig;
 use ndarray::{array, Array1, Array2, Array3, ArrayView2};
 use rand::rngs::StdRng;
-use rand::RngCore;
-use rand::SeedableRng;
+use rand::{RngCore, SeedableRng};
 
 struct TieSurrogate {
     sample_value: f64,
@@ -166,7 +165,7 @@ fn morbo_pareto_ask_after_multiobjective_tell() {
     let bounds = array![[-1.0, 1.0], [-1.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(14);
     let mut cfg = turbo_enn_config();
-    cfg.acquisition = AcquisitionConfig::Pareto;
+    cfg.acquisition = crate::config::AcquisitionConfig::Pareto;
     cfg.candidates.min_candidates = 32;
     cfg.candidates.num_candidates_factor = 1.0;
     cfg.candidates.num_candidates_per_arm = Some(32);
@@ -333,7 +332,7 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(4242);
     let mut cfg = turbo_enn_config();
-    cfg.surrogate = SurrogateConfig::ENN(ENNSurrogateConfig {
+    cfg.surrogate = SurrogateConfig::ENN(crate::surrogate::ENNSurrogateConfig {
         k: 3,
         num_fit_samples: 4,
         num_fit_candidates: 4,

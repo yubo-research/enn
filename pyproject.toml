@@ -77,7 +77,7 @@ exclude = [
 # Omit --testmon here so `pytest -sv tests` (malvin gates, CI) always runs the full suite.
 # Rust/native edits are invisible to testmon; use `pytest --testmon` for incremental local runs.
 addopts = ""
-pythonpath = ["src", "."]
+pythonpath = ["src", ".", "tests"]
 testpaths = ["tests"]
 markers = [
     "slow: optional long-running stress tests (deselect with '-m \"not slow\"')",

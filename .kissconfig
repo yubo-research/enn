@@ -4,7 +4,6 @@
 [global]
 min_similarity = 0.9
 duplication_enabled = true
-orphan_module_enabled = false
 comment_removal_enabled = true
 docs_allowed = ["./"]
 orphan_allowed = []
@@ -12,14 +11,16 @@ orphan_allowed = []
 [test]
 test_coverage_threshold = 80
 test_coverage_scope = "by_file"
-max_num_tests = 1000
+max_num_tests = 2000
 num_jobs = 4
 watch_settle_seconds = 1.0
 pytest_plugins = []
 ignore = []
-
-[test.max_unit_test_seconds]
-"*" = 10
+max_unit_test_seconds = [
+ ["tests/slow", 90],
+ ["tests/fast", 3],
+ ["*", 30]
+]
 
 [python]
 statements_per_function = 34

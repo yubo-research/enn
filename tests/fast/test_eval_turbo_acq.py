@@ -5,7 +5,7 @@ import re
 import pytest
 from click.testing import CliRunner
 
-from evals import eval_turbo_acq as mod
+from evals.short import eval_turbo_acq as mod
 
 _EVAL_RE = re.compile(
     r"EVAL: problem = (noiseless|noisy) method = (ucb|thompson|pareto|turbo_zero) "
@@ -63,7 +63,7 @@ def test_evaluate_prints_acq_metrics(
 
 
 def test_evaluator_run_turbo_acq(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ops.evaluator import cli
+    from ops.evaluate import cli
 
     def fake_run(**kwargs: object) -> list[object]:
         print(
@@ -78,7 +78,7 @@ def test_evaluator_run_turbo_acq(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mod, "run_turbo_acq", fake_run)
     # load_evaluate imports a fresh module object; patch the runner it will bind.
     monkeypatch.setattr("ops.qa.run_turbo_acq", fake_run)
-    result = CliRunner().invoke(cli, ["run", "turbo_acq"])
+    result = CliRunner().invoke(cli, ["run", "short/turbo_acq"])
     assert result.exit_code == 0, result.output
     assert "method = ucb" in result.output
     assert "LARGER(y_best_mean)" in result.output
