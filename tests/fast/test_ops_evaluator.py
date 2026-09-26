@@ -53,7 +53,7 @@ def test_run_unknown_eval_fails() -> None:
 
     result = CliRunner().invoke(cli, ["run", "does_not_exist_xyz"])
     assert result.exit_code != 0
-    assert "missing eval module" in result.output
+    assert "no evals match" in result.output
 
 
 def test_run_invokes_evaluate(monkeypatch) -> None:
@@ -71,6 +71,33 @@ def test_run_invokes_evaluate(monkeypatch) -> None:
     result = CliRunner().invoke(evaluate.cli, ["run", "short/turbo_enn"])
     assert result.exit_code == 0, result.output
     assert called == ["short/turbo_enn"]
+
+
+def test_run_prefix_runs_all_selected(monkeypatch) -> None:
+    from ops import evaluate
+
+    called: list[str] = []
+
+    def fake_load(name: str):
+        def evaluate_fn() -> None:
+            called.append(name)
+
+        return evaluate_fn
+
+    monkeypatch.setattr(evaluate, "load_evaluate", fake_load)
+    for prefix in ("short/", "sh"):
+        called.clear()
+        result = CliRunner().invoke(evaluate.cli, ["run", prefix])
+        assert result.exit_code == 0, result.output
+        assert called == evaluate.list_eval_names(prefix)
+        assert called
+        assert all(name.startswith("short/") for name in called)
+
+    called.clear()
+    result = CliRunner().invoke(evaluate.cli, ["run", "short/bpann_sphere_d10"])
+    assert result.exit_code == 0, result.output
+    assert called == evaluate.list_eval_names("short/bpann_sphere_d10")
+    assert len(called) == 3
 
 
 def test_ensure_repo_on_sys_path_adds_repo_root(monkeypatch) -> None:

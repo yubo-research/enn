@@ -96,10 +96,15 @@ def list_cmd(prefix: str | None) -> None:
 
 
 @cli.command("run")
-@click.argument("eval_id")
-def run_cmd(eval_id: str) -> None:
-    """Run ``evals/<bucket>/eval_NAME.py::evaluate()`` for id ``bucket/name``."""
-    load_evaluate(eval_id)()
+@click.argument("prefix", required=False, default=None)
+def run_cmd(prefix: str | None) -> None:
+    """Run ``evaluate()`` for every eval id selected by PREFIX (same filter as list)."""
+    names = list_eval_names(prefix)
+    if not names:
+        label = "prefix" if prefix is not None else "selection"
+        raise click.ClickException(f"no evals match {label}: {prefix!r}")
+    for eval_id in names:
+        load_evaluate(eval_id)()
 
 
 def main() -> None:
