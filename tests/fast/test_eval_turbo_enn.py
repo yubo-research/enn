@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals import eval_turbo_enn as mod
+from evals.short import eval_turbo_enn as mod
 from evals import stress_eval as shared
 
 

@@ -5,7 +5,7 @@ import re
 import pytest
 from click.testing import CliRunner
 
-from evals import eval_y_var_noise as mod
+from evals.short import eval_y_var_noise as mod
 
 _MODEL_RE = re.compile(
     r"EVAL: model = (matched|none|wrong) "
@@ -49,9 +49,9 @@ def test_evaluate_prints_y_var_metrics(
 
 
 def test_evaluator_run_y_var_noise() -> None:
-    from ops.evaluator import cli
+    from ops.evaluate import cli
 
-    result = CliRunner().invoke(cli, ["run", "y_var_noise"])
+    result = CliRunner().invoke(cli, ["run", "short/y_var_noise"])
     assert result.exit_code == 0, result.output
     assert "model = matched" in result.output
     assert "yvar_scale =" in result.output

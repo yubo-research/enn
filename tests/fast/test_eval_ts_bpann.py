@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals import eval_ts_bpann as mod
+from evals.short import eval_ts_bpann as mod
 from evals import stress_eval as shared
 
 

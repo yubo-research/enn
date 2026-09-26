@@ -7,7 +7,7 @@ import pytest
 
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from evals import bpann_persist_stability as mod
-from evals import eval_bpann_persist_stability as entry
+from evals.short import eval_bpann_persist_stability as entry
 
 
 def test_make_synthetic_shapes() -> None:

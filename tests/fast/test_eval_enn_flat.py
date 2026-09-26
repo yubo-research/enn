@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals import eval_enn_flat as mod
+from evals.short import eval_enn_flat as mod
 from evals import stress_eval as shared
 
 
