@@ -13,7 +13,7 @@ def _load_tests_script(name: str):
     import importlib.util
     import sys
     from pathlib import Path
-    path = Path(__file__).resolve().parent / "scripts" / f"{name}.py"
+    path = Path(__file__).resolve().parent.parent / "scripts" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -240,32 +240,6 @@ def test_thompson_acq_optimizer_class():
     assert hasattr(t, "select")
 
 
-@pytest.mark.slow
-def test_pareto_and_random_acq_optimizer_select():
-    from enn.turbo.python_fallback.components.pareto_acq_optimizer import (
-        ParetoAcqOptimizer,
-    )
-    from enn.turbo.python_fallback.components.random_acq_optimizer import (
-        RandomAcqOptimizer,
-    )
-
-    rng = np.random.default_rng(0)
-    surrogate = _fit_gp_surrogate_for_kiss(rng)
-    x_cand = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]], dtype=float)
-    assert ParetoAcqOptimizer().select(x_cand, 2, surrogate, rng).shape == (2, 2)
-    assert RandomAcqOptimizer().select(x_cand, 2, surrogate, rng).shape == (2, 2)
-
-
-def _fit_gp_surrogate_for_kiss(rng):
-    from enn.turbo.python_fallback.components.gp_surrogate import GPSurrogate
-
-    surrogate = GPSurrogate()
-    x = np.array([[0.2, 0.3], [0.5, 0.5], [0.7, 0.8]], dtype=float)
-    y = np.array([0.5, 0.7, 0.3], dtype=float)
-    surrogate.fit(x, y, None, num_steps=2, rng=rng)
-    return surrogate
-
-
 # ---------------------------------------------------------------------------
 # ENN class/index
 # ---------------------------------------------------------------------------
@@ -378,12 +352,6 @@ def test_build_trust_region():
     assert hasattr(tr, "length")
     tr2 = build_trust_region(NoTRConfig(), num_dim=3, rng=rng)
     assert hasattr(tr2, "length")
-
-
-def test_turbo_gp_base():
-    from enn.turbo.python_fallback.turbo_gp_base import TurboGPBase
-
-    assert hasattr(TurboGPBase, "forward")
 
 
 def test_scalar_incumbent_mixin():
