@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals import eval_flat_sphere_d100 as mod
+from evals.short import eval_flat_sphere_d100 as mod
 from evals import flat_sphere as fs
 from ops.stress import MeanSE
 

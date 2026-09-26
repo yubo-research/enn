@@ -5,7 +5,7 @@ import re
 import pytest
 from click.testing import CliRunner
 
-from evals import eval_y_bounds as mod
+from evals.short import eval_y_bounds as mod
 
 _EVAL_RE = re.compile(
     r"EVAL: model = (unbounded|y_bounds_\([^)]+\)) "
@@ -45,9 +45,9 @@ def test_evaluate_prints_constraint_fraction_metrics(
 
 
 def test_evaluator_run_y_bounds() -> None:
-    from ops.evaluator import cli
+    from ops.evaluate import cli
 
-    result = CliRunner().invoke(cli, ["run", "y_bounds"])
+    result = CliRunner().invoke(cli, ["run", "short/y_bounds"])
     assert result.exit_code == 0, result.output
     assert "model = unbounded" in result.output
     assert "model = y_bounds_(0,inf)" in result.output

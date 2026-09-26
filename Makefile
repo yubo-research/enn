@@ -1,5 +1,5 @@
 .PHONY: all install clean test build-ext rust-test python-test python-test-body lint wheels wheelsl \
-	pypi-build pypi-publish pypi-auth-check
+	pypi-build pypi-publish pypi-auth-check publish-rust
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
@@ -64,6 +64,13 @@ pypi-publish:
 # Hits PyPI with your credentials but skips files already on the index (good auth smoke test).
 pypi-auth-check: pypi-build
 	maturin publish --non-interactive --skip-existing
+
+# --- crates.io: dependency order (ennbo-bpann → ennbo → ennbo-py) ---
+# Requires crates.io credentials (e.g. `cargo login`). Does not bump versions.
+publish-rust:
+	cd rust && cargo publish -p ennbo-bpann
+	cd rust && cargo publish -p ennbo
+	cd rust && cargo publish -p ennbo-py
 
 # Clean build artifacts
 clean:

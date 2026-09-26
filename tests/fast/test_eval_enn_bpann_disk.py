@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals import eval_enn_bpann_disk as mod
+from evals.long import eval_enn_bpann_disk as mod
 from evals import stress_eval as shared
 
 

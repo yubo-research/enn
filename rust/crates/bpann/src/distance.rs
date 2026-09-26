@@ -26,27 +26,18 @@ pub fn row_sq_l2(
 }
 
 pub fn l2_sq_f32(a: &[f32], b: &[f32]) -> f32 {
-
-
-
-
-
     const LANES: usize = 8;
     let mut acc = [0.0f32; LANES];
-    let mut a_chunks = a.chunks_exact(LANES);
-    let mut b_chunks = b.chunks_exact(LANES);
-    for (ca, cb) in a_chunks.by_ref().zip(b_chunks.by_ref()) {
+    let (a_chunks, a_rem) = a.as_chunks::<LANES>();
+    let (b_chunks, b_rem) = b.as_chunks::<LANES>();
+    for (ca, cb) in a_chunks.iter().zip(b_chunks.iter()) {
         for ((lane, &x), &y) in acc.iter_mut().zip(ca).zip(cb) {
             let d = x - y;
             *lane += d * d;
         }
     }
     let mut sum: f32 = acc.iter().sum();
-    for (&x, &y) in a_chunks
-        .remainder()
-        .iter()
-        .zip(b_chunks.remainder().iter())
-    {
+    for (&x, &y) in a_rem.iter().zip(b_rem.iter()) {
         let d = x - y;
         sum += d * d;
     }

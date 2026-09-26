@@ -16,10 +16,10 @@ name = "enn_rust"
 crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]
-ennbo = { path = "../ennbo", version = "0.2" }
+ennbo = { workspace = true }
 
 [dependencies]
-ennbo = { path = "../ennbo", version = "0.2" }
+ennbo = { workspace = true }
 ndarray = { workspace = true }
 numpy = { workspace = true }
 pyo3 = { workspace = true }
