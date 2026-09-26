@@ -1,0 +1,35 @@
+# Second view of rust/Cargo.toml so `cargo` works from the repo root.
+# kiss test calls `cargo locate-project` here. `cd rust && cargo ...` is unchanged.
+# Member paths are prefixed. Package fields match rust/Cargo.toml.
+[workspace]
+resolver = "2"
+members = [
+    "rust/crates/bpann",
+    "rust/crates/ennbo",
+    "rust/crates/enn-py",
+]
+
+[workspace.package]
+version = "0.2.10"
+edition = "2021"
+license = "MIT"
+authors = ["YUBO Lab <david.sweet@yu.edu>"]
+repository = "https://github.com/yubo-research/enn"
+keywords = ["bayesian", "optimization", "ENN", "turbo", "turbo-enn"]
+categories = ["science", "simulation"]
+
+[workspace.dependencies]
+# Internal crates are pinned with `=` to [workspace.package] version; tests/fast/test_cargo_version_lockstep.py enforces it.
+ennbo = { path = "rust/crates/ennbo", version = "=0.2.10" }
+ennbo-bpann = { path = "rust/crates/bpann", version = "=0.2.10" }
+ndarray = "0.16"
+ndarray-linalg = "0.17"
+numpy = "0.22"
+pyo3 = { version = "0.22", features = ["extension-module"] }
+rand = "0.8"
+thiserror = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
