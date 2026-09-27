@@ -483,7 +483,9 @@ impl BpannIndex {
 }
 
 fn partition_to_pages(node: &PartitionNode) -> (Vec<Page>, u32) {
-    partition_to_pages_id(node, 0)
+    let (pages, _) = partition_to_pages_id(node, 0);
+    let root_page_id = pages.first().map_or(0, Page::page_id);
+    (pages, root_page_id)
 }
 
 fn partition_to_pages_id(node: &PartitionNode, next_id: u32) -> (Vec<Page>, u32) {
@@ -657,13 +659,11 @@ mod kiss_coverage_tests {
     #[test]
     fn is_flat_forest_detects_star_topology() {
         let dir = TempDir::new().unwrap();
+        let grid: Vec<Vec<f32>> = (0..64)
+            .map(|i| vec![(i % 8) as f32, (i / 8) as f32])
+            .collect();
         let kmeans = BpannIndex::build_from_vectors(
-            &[
-                vec![0.0, 0.0],
-                vec![1.0, 0.0],
-                vec![0.0, 1.0],
-                vec![1.0, 1.0],
-            ],
+            &grid,
             2,
             2,
             0,

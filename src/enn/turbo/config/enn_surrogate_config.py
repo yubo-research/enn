@@ -22,6 +22,8 @@ class ENNSurrogateConfig:
     def __post_init__(self) -> None:
         if self.scale_x and self.index_driver == ENNIndexDriver.BPANN_DISK:
             raise ValueError("scale_x=True is not compatible with BPANN_DISK")
+        if self.index_driver == ENNIndexDriver.MBPANN_DISK:
+            raise ValueError("MBPANN_DISK is an ENN-model mode; the optimizer supports FLAT and BPANN_DISK")
         if self.y_bounds is not None:
             yb = np.asarray(self.y_bounds, dtype=float)
             if yb.ndim != 2 or yb.shape[1] != 2:

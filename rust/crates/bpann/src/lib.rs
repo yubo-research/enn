@@ -4,6 +4,7 @@ pub mod error;
 pub mod index;
 pub mod large_n_search;
 pub mod merge;
+pub mod metric;
 pub mod mmap_store;
 pub mod observation;
 pub mod small_n_search;

@@ -67,7 +67,7 @@ pub struct IncrementalIndex {
     pub indices: Vec<BpannIndex>,
     pub indexed_rows: usize,
     pub index_dir: PathBuf,
-    pending_centroid_sum: Vec<f64>,
+    pub(crate) pending_centroid_sum: Vec<f64>,
     pending_row_count: usize,
 }
 

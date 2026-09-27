@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from enn._rust import EpistemicNearestNeighbors as _RustENN
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_index_driver import DISK_INDEX_DRIVERS, ENNIndexDriver
 
 from .enn_class_support import _rust_index_driver_name, _to_rust_seeds
 
@@ -84,8 +84,8 @@ class EpistemicNearestNeighbors:
         train_x, train_y, train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
         )
-        if scale_x and index_driver == ENNIndexDriver.BPANN_DISK:
-            raise ValueError("scale_x=True is not compatible with BPANN_DISK")
+        if scale_x and index_driver in DISK_INDEX_DRIVERS:
+            raise ValueError(f"scale_x=True is not compatible with {index_driver.name}")
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
             if y_bounds.ndim != 2 or y_bounds.shape[1] != 2:

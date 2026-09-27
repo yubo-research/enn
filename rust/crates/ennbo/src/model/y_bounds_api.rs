@@ -43,6 +43,7 @@ impl EpistemicNearestNeighbors {
             num_metrics,
             scale_x: false,
             x_scale: Array1::ones(num_dim),
+            metric_fixed: false,
             y_scale: Array1::ones(num_metrics),
             y_bounds,
             y_sum: Array1::zeros(num_metrics),

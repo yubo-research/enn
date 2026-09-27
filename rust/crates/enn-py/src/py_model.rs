@@ -1,7 +1,7 @@
 //! ENN model Python bindings.
 
 use ennbo::traits::PosteriorComputation;
-use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -34,6 +34,8 @@ fn py_posterior_flags(
 #[pyclass(name = "EpistemicNearestNeighbors")]
 pub struct PyEpistemicNearestNeighbors {
     pub(crate) inner: ennbo::EpistemicNearestNeighbors,
+    /// Opened as MBPANN_DISK: BPANN_DISK storage that accepts metric updates.
+    metric_mode: bool,
 }
 
 #[pymethods]
@@ -52,9 +54,12 @@ impl PyEpistemicNearestNeighbors {
         enn_storage: Option<&str>,
         y_bounds: Option<PyReadonlyArray2<f64>>,
     ) -> PyResult<Self> {
+        let metric_mode = matches!(index_driver, "MBPANN_DISK" | "mbpann_disk");
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
-            "BPANN_DISK" | "bpann_disk" => ennbo::IndexDriver::BpAnnDisk,
+            "BPANN_DISK" | "bpann_disk" | "MBPANN_DISK" | "mbpann_disk" => {
+                ennbo::IndexDriver::BpAnnDisk
+            }
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {index_driver}"
@@ -85,7 +90,23 @@ impl PyEpistemicNearestNeighbors {
             y_bounds,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self { inner: model })
+        Ok(Self {
+            inner: model,
+            metric_mode,
+        })
+    }
+
+    #[pyo3(signature = (x_scale, rebuild=false))]
+    #[doc = "kiss-coverage-off"]
+    fn set_metric_scale(&mut self, x_scale: PyReadonlyArray1<f64>, rebuild: bool) -> PyResult<()> {
+        if !self.metric_mode {
+            return Err(PyValueError::new_err(
+                "set_metric_scale requires index_driver=MBPANN_DISK",
+            ));
+        }
+        self.inner
+            .set_metric_scale(x_scale.as_array().to_owned(), rebuild)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[pyo3(signature = (x, y, yvar=None))]
@@ -545,6 +566,7 @@ mod kiss_coverage_tests {
         let _ = (
             PyEpistemicNearestNeighbors::new,
             PyEpistemicNearestNeighbors::add,
+            PyEpistemicNearestNeighbors::set_metric_scale,
             PyEpistemicNearestNeighbors::ensure_index_sync,
             PyEpistemicNearestNeighbors::schedule_background_flush,
             PyEpistemicNearestNeighbors::persist_index_to_disk,

@@ -243,6 +243,16 @@ impl EnnBackend {
         }
     }
 
+    pub fn set_metric_scale(&self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
+        self.wait_for_flush()?;
+        match self {
+            Self::InMemory(_) => Err(ENNError::InvalidParameter(
+                "metric updates require disk BPANN storage".to_string(),
+            )),
+            Self::Disk(h) => disk_write(h.data())?.set_metric_scale(x_scale, rebuild),
+        }
+    }
+
     pub fn train_rows_at(
         &self,
         indices: &[usize],

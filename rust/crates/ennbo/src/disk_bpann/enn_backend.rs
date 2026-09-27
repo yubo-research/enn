@@ -50,7 +50,9 @@ impl DiskBpannEnnBackend {
             && train_y.nrows() == 0
             && work_dir.join("metadata.json").exists()
         {
-            BpannBackend::reopen(work_dir.clone()).map_err(bpann_err)?
+            let mut reopened = BpannBackend::reopen(work_dir.clone()).map_err(bpann_err)?;
+            reopened.discard_metric_index_on_reopen().map_err(bpann_err)?;
+            reopened
         } else {
             BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
                 .map_err(bpann_err)?
@@ -126,6 +128,16 @@ impl DiskBpannEnnBackend {
         self.inner
             .ensure_index_sync_with_scale(scale_x, x_scale)
             .map_err(bpann_err)
+    }
+
+    /// MBPANN_DISK metric change: rescale the index in place, or re-index all rows.
+    pub fn set_metric_scale(&mut self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
+        let result = if rebuild {
+            self.inner.rebuild_metric(x_scale)
+        } else {
+            self.inner.rescale_metric(x_scale)
+        };
+        result.map_err(bpann_err)
     }
 
     pub fn release_observation_pages(&mut self) -> Result<(), ENNError> {

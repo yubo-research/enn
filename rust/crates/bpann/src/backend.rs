@@ -20,7 +20,7 @@ pub const PAPER_TEX_PATH: &str = "papers/bpann_2511.15557v1.tex";
 pub use crate::tuning::{DEFAULT_PENDING_FLUSH_THRESHOLD, DEFAULT_PENDING_HARD_FLUSH_THRESHOLD};
 
 pub struct BpannBackend {
-    work_dir: PathBuf,
+    pub(crate) work_dir: PathBuf,
     pub(crate) train_x: MmapColumnStore,
     train_y: MmapColumnStore,
     train_yvar: Option<MmapColumnStore>,

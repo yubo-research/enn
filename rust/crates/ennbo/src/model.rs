@@ -18,6 +18,7 @@ type InitStats = (
 );
 
 mod access;
+mod metric;
 mod y_bounds_api;
 pub use access::{EnnIndexAccess, EnnRowAccess};
 
@@ -29,6 +30,8 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) num_metrics: usize,
     pub(crate) scale_x: bool,
     pub(crate) x_scale: Array1<f64>,
+    /// True once a caller-set metric owns `x_scale` (MBPANN_DISK).
+    pub(crate) metric_fixed: bool,
     pub(crate) y_scale: Array1<f64>,
     /// Per-metric `(lo, hi)` in natural units; open sides are `±∞`.
     pub(crate) y_bounds: Array2<f64>,
@@ -215,6 +218,7 @@ impl EpistemicNearestNeighbors {
             num_metrics,
             scale_x,
             x_scale,
+            metric_fixed: false,
             y_scale,
             y_bounds,
             y_sum,
@@ -305,7 +309,7 @@ impl EpistemicNearestNeighbors {
             let n = self.backend.len();
             self.y_scale = scale_from_moments(n, self.num_metrics, &self.y_sum, &self.y_sumsq, 0.0);
 
-            if self.scale_x {
+            if self.scale_x && !self.metric_fixed {
                 accumulate_columns(&mut self.x_sum, &mut self.x_sumsq, x.view());
                 self.x_scale =
                     scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
