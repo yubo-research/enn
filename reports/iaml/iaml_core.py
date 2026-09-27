@@ -169,15 +169,17 @@ class Adam:
 def _fit_from(metric, theta0, x, y, select, outer):
     """Alternate (select neighbors, fit with them fixed); accept a round only if true LOOCV improves."""
     metric.theta = theta0.copy()
-    best = mean_ll(x, y, x, y, select(metric.a), metric.a, metric.c)
+    nbr = select(metric.a)
+    best = mean_ll(x, y, x, y, nbr, metric.a, metric.c)
     for _ in range(outer):
         keep = metric.theta.copy()
-        metric.fit_fixed(x, y, x, y, select(metric.a))
-        now = mean_ll(x, y, x, y, select(metric.a), metric.a, metric.c)
+        metric.fit_fixed(x, y, x, y, nbr)
+        new_nbr = select(metric.a)
+        now = mean_ll(x, y, x, y, new_nbr, metric.a, metric.c)
         if now <= best + 1e-6:
             metric.theta = keep
             break
-        best = now
+        best, nbr = now, new_nbr
     return metric.theta.copy(), best
 
 

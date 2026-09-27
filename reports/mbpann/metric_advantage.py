@@ -1,4 +1,4 @@
-"""A test problem on which MBPANN_DISK predicts out of sample better than BPANN_DISK
+"""A test problem on which BPANN_DISK + metric learning predicts out of sample better than BPANN_DISK
 because of metric learning.
 
 Problem ("two_of_twelve"): x ~ U[0,1]^12, y = sin(6 pi x0) + sin(6 pi x1) + 0.1 eps.
@@ -7,14 +7,14 @@ query's neighbors are close in the irrelevant inputs and far in x0, x1.
 
 Stream: 20,000 rows in batches of 500, `ensure_index_sync` after each batch. At this
 batch size BPANN searches every leaf (recall 1.0), so index approximation cannot
-explain a difference. Every 2,000 rows, MBPANN_DISK refits diagonal metric weights by
+explain a difference. Every 2,000 rows, BPANN_DISK + metric learning refits diagonal metric weights by
 safeguarded LOOCV (reports/iaml/iaml_core.fit_exact) on a 1,000-row subsample of the rows
 seen so far and applies them with MBPANNMetric.set_weights.
 
 Models (all use the ENN posterior from batch_posterior, k = 10):
 - bpann_disk: BPANN_DISK, identity metric (it cannot change its metric in place).
-- mbpann_identity: MBPANN_DISK, never given weights (control: the mode alone).
-- mbpann_learned: MBPANN_DISK with the learned weights.
+- mbpann_identity: BPANN_DISK + metric learning, never given weights (control: the mode alone).
+- mbpann_learned: BPANN_DISK + metric learning with the learned weights.
 
 ENN variance scales are chosen per model on 1,000 validation rows (grid), then the mean
 Gaussian log-likelihood and RMSE are reported on 2,000 separate test rows.
@@ -34,6 +34,7 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_x_scaling import ENNXScaling
 
 D, K = 12, 10
 N_TRAIN, N_VAL, N_TEST = 20000, 1000, 2000
@@ -56,9 +57,9 @@ def make_data(seed):
     return [(x[lo:hi], y[lo:hi]) for lo, hi in zip(s[:-1], s[1:])], rng
 
 
-def new_model(x, y, driver):
+def new_model(x, y, x_scaling):
     return EpistemicNearestNeighbors(
-        x, y.reshape(-1, 1), index_driver=driver, work_dir=tempfile.mkdtemp(prefix="madv_")
+        x, y.reshape(-1, 1), x_scaling=x_scaling, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="madv_")
     )
 
 
@@ -90,9 +91,9 @@ def run(seed):
     (train, val, test), rng = make_data(seed)
     x, y = train
     models = {
-        "bpann_disk": new_model(x[:BATCH], y[:BATCH], ENNIndexDriver.BPANN_DISK),
-        "mbpann_identity": new_model(x[:BATCH], y[:BATCH], ENNIndexDriver.MBPANN_DISK),
-        "mbpann_learned": new_model(x[:BATCH], y[:BATCH], ENNIndexDriver.MBPANN_DISK),
+        "bpann_disk": new_model(x[:BATCH], y[:BATCH], ENNXScaling.NONE),
+        "mbpann_identity": new_model(x[:BATCH], y[:BATCH], ENNXScaling.METRIC_LEARNING),
+        "mbpann_learned": new_model(x[:BATCH], y[:BATCH], ENNXScaling.METRIC_LEARNING),
     }
     helper = MBPANNMetric(models["mbpann_learned"])
     metric = Metric(D)

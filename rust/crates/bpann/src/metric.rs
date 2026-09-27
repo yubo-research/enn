@@ -1,4 +1,4 @@
-//! Metric changes for a live BPANN index (the MBPANN_DISK mode).
+//! Metric changes for a live BPANN index (metric learning mode).
 //!
 //! Every coordinate the index stores is `x_d / x_scale_d` or a mean of such
 //! values, so a new diagonal metric maps each stored value by

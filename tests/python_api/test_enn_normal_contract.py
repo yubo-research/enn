@@ -50,7 +50,7 @@ class TestENNNormalContract:
             [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=float
         )
         train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
-        model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
+        model = EpistemicNearestNeighbors(train_x, train_y)
         params = ENNParams(
             k_num_neighbors=2,
             epistemic_variance_scale=1.0,

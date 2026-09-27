@@ -16,7 +16,6 @@ def _make_small_disk_bpann_store(work_dir, *, num_obs: int = 10, num_dim: int = 
     EpistemicNearestNeighbors(
         train_x,
         train_y,
-        scale_x=False,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
         enn_storage="disk",
@@ -113,7 +112,6 @@ def test_disk_persisted_store_reopens_fast(tmp_path):
     model = EpistemicNearestNeighbors(
         np.empty((0, num_dim)),
         np.empty((0, 1)),
-        scale_x=False,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
         enn_storage="disk",
@@ -132,7 +130,6 @@ def test_disk_persisted_store_reopens_fast(tmp_path):
     EpistemicNearestNeighbors(
         np.empty((0, num_dim)),
         np.empty((0, 1)),
-        scale_x=False,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
         enn_storage="disk",

@@ -29,7 +29,7 @@ def test_se_decomposition_no_observation_noise():
     train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
     query = np.array([[0.5, 0.5]], dtype=float)
     flags = PosteriorFlags(observation_noise=False)
-    model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
+    model = EpistemicNearestNeighbors(train_x, train_y)
     post = model.posterior(query, params=_params(), flags=flags)
 
     np.testing.assert_allclose(post.se_epi, post.se, rtol=1e-12, atol=1e-12)
@@ -41,7 +41,7 @@ def test_se_decomposition_observation_noise_hypot():
     train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
     query = np.array([[0.5, 0.5]], dtype=float)
     flags = PosteriorFlags(observation_noise=True)
-    model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
+    model = EpistemicNearestNeighbors(train_x, train_y)
     post = model.posterior(query, params=_params(aleatoric=0.1), flags=flags)
 
     recomposed = np.hypot(post.se_epi, post.se_ale)
@@ -58,9 +58,9 @@ def test_se_decomposition_yvar_without_observation_noise():
     params = _params()
 
     model_yvar = EpistemicNearestNeighbors(
-        train_x, train_y, train_yvar=train_yvar, scale_x=False
+        train_x, train_y, train_yvar=train_yvar
     )
-    model_plain = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
+    model_plain = EpistemicNearestNeighbors(train_x, train_y)
 
     post_yvar = model_yvar.posterior(query, params=params, flags=flags)
     post_plain = model_plain.posterior(query, params=params, flags=flags)
@@ -76,7 +76,7 @@ def test_batch_posterior_se_components_match_posterior():
     query = np.array([[0.5, 0.5], [0.2, 0.8]], dtype=float)
     flags = PosteriorFlags(observation_noise=True)
     params = _params(aleatoric=0.1)
-    model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
+    model = EpistemicNearestNeighbors(train_x, train_y)
 
     batch = model.batch_posterior(query, paramss=[params], flags=flags)
     single = model.posterior(query, params=params, flags=flags)
@@ -93,7 +93,7 @@ def test_conditional_posterior_se_components_match_posterior_empty_whatif():
     query = np.array([[0.5, 0.5]], dtype=float)
     flags = PosteriorFlags(observation_noise=True)
     params = _params(aleatoric=0.1)
-    model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
+    model = EpistemicNearestNeighbors(train_x, train_y)
 
     post = model.posterior(query, params=params, flags=flags)
     cond = model.conditional_posterior(
@@ -112,7 +112,6 @@ def test_empty_model_se_decomposition():
     model = EpistemicNearestNeighbors(
         np.zeros((0, 2), dtype=float),
         np.zeros((0, 1), dtype=float),
-        scale_x=False,
     )
     query = np.array([[0.5, 0.5]], dtype=float)
     post = model.posterior(query, params=_params())

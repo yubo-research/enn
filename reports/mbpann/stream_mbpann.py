@@ -20,6 +20,7 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_x_scaling import ENNXScaling
 
 K = 10
 BATCH = int(os.environ.get("MBPANN_BATCH", "2000"))
@@ -61,9 +62,9 @@ def query_idx(model, xq, exclude_self):
     return np.asarray(model.batch_posterior(xq, [p], flags=flags).idx, dtype=np.int64)
 
 
-def new_model(x, y, driver):
+def new_model(x, y, x_scaling):
     return EpistemicNearestNeighbors(
-        x, y.reshape(-1, 1), index_driver=driver, work_dir=tempfile.mkdtemp(prefix="mbpann_")
+        x, y.reshape(-1, 1), x_scaling=x_scaling, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="mbpann_")
     )
 
 
@@ -75,14 +76,14 @@ class BpannCopy:
 
     def add(self, lo, hi):
         if self.model is None:
-            self.model = new_model(self.x[:hi] * self.s, self.y[:hi], ENNIndexDriver.BPANN_DISK)
+            self.model = new_model(self.x[:hi] * self.s, self.y[:hi], ENNXScaling.NONE)
         else:
             self.model.add(self.x[lo:hi] * self.s, self.y[lo:hi].reshape(-1, 1))
         self.model.ensure_index_sync()
 
     def set_metric(self, a, n):
         self.s = np.sqrt(a)
-        self.model = new_model(self.x[:n] * self.s, self.y[:n], ENNIndexDriver.BPANN_DISK)
+        self.model = new_model(self.x[:n] * self.s, self.y[:n], ENNXScaling.NONE)
         self.model.ensure_index_sync()
 
     def query(self, xq, exclude_self):
@@ -95,7 +96,7 @@ class Mbpann:
 
     def add(self, lo, hi):
         if self.model is None:
-            self.model = new_model(self.x[:hi], self.y[:hi], ENNIndexDriver.MBPANN_DISK)
+            self.model = new_model(self.x[:hi], self.y[:hi], ENNXScaling.METRIC_LEARNING)
             self.metric = MBPANNMetric(self.model, rebuild_drift=self.drift)
         else:
             self.model.add(self.x[lo:hi], self.y[lo:hi].reshape(-1, 1))

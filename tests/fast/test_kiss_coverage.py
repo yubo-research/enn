@@ -49,7 +49,7 @@ def _enn_model():
 
     x = np.array([[0.1, 0.2], [0.3, 0.4]])
     y = np.array([[1.0], [2.0]])
-    return EpistemicNearestNeighbors(x, y, scale_x=False)
+    return EpistemicNearestNeighbors(x, y)
 
 
 def _optimizer():

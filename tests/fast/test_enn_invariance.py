@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.turbo.config.enn_x_scaling import ENNXScaling
 from enn.enn.enn_params import ENNParams
 
 
@@ -67,10 +68,10 @@ def test_epistemic_nearest_neighbors_x_rescaling_is_invariant_when_scale_x_enabl
         k_num_neighbors=7, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     model = EpistemicNearestNeighbors(
-        train_x, train_y, 0.1 * np.ones_like(train_y), scale_x=True
+        train_x, train_y, 0.1 * np.ones_like(train_y), x_scaling=ENNXScaling.SCALE_X
     )
     model_scaled = EpistemicNearestNeighbors(
-        train_x * scale, train_y, 0.1 * np.ones_like(train_y), scale_x=True
+        train_x * scale, train_y, 0.1 * np.ones_like(train_y), x_scaling=ENNXScaling.SCALE_X
     )
     post = model.posterior(x_test, params=params)
     post_scaled = model_scaled.posterior(x_test * scale, params=params)

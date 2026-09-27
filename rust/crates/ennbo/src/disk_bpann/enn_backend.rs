@@ -130,7 +130,7 @@ impl DiskBpannEnnBackend {
             .map_err(bpann_err)
     }
 
-    /// MBPANN_DISK metric change: rescale the index in place, or re-index all rows.
+    /// Metric learning change: rescale the index in place, or re-index all rows.
     pub fn set_metric_scale(&mut self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
         let result = if rebuild {
             self.inner.rebuild_metric(x_scale)

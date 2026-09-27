@@ -34,7 +34,6 @@ def _bpann_with_duplicates(n: int, work_dir: str) -> EpistemicNearestNeighbors:
     return EpistemicNearestNeighbors(
         train_x,
         train_y,
-        scale_x=False,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=work_dir,
         enn_storage="disk",

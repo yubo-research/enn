@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from enn._rust import EpistemicNearestNeighbors as _RustENN
-from enn.turbo.config.enn_index_driver import DISK_INDEX_DRIVERS, ENNIndexDriver
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_x_scaling import ENNXScaling, validate_x_scaling
 
 from .enn_class_support import _rust_index_driver_name, _to_rust_seeds
 
@@ -75,7 +76,7 @@ class EpistemicNearestNeighbors:
         train_y: np.ndarray,
         train_yvar: np.ndarray | None = None,
         *,
-        scale_x: bool = False,
+        x_scaling: ENNXScaling = ENNXScaling.NONE,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
         work_dir: str | os.PathLike[str] | None = None,
         enn_storage: str | None = None,
@@ -84,8 +85,7 @@ class EpistemicNearestNeighbors:
         train_x, train_y, train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
         )
-        if scale_x and index_driver in DISK_INDEX_DRIVERS:
-            raise ValueError(f"scale_x=True is not compatible with {index_driver.name}")
+        validate_x_scaling(x_scaling, index_driver)
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
             if y_bounds.ndim != 2 or y_bounds.shape[1] != 2:
@@ -97,13 +97,15 @@ class EpistemicNearestNeighbors:
                     f"y_bounds rows {y_bounds.shape[0]} != num_metrics {train_y.shape[1]}"
                 )
         self._index_driver = index_driver
+        self._x_scaling = x_scaling
         idx_driver = _rust_index_driver_name(index_driver)
         rust_kwargs: dict[str, Any] = {
             "train_x": train_x,
             "train_y": train_y,
             "train_yvar": train_yvar,
-            "scale_x": scale_x,
+            "scale_x": x_scaling == ENNXScaling.SCALE_X,
             "index_driver": idx_driver,
+            "metric_learning": x_scaling == ENNXScaling.METRIC_LEARNING,
         }
         if work_dir is not None:
             rust_kwargs["work_dir"] = os.fspath(work_dir)
@@ -171,8 +173,8 @@ class EpistemicNearestNeighbors:
         return np.asarray(self._rust_model.y_scale_row, dtype=float)
 
     @property
-    def _scale_x(self) -> bool:
-        return bool(self._rust_model.scale_x)
+    def x_scaling(self) -> ENNXScaling:
+        return self._x_scaling
 
     @property
     def _train_y(self) -> np.ndarray:

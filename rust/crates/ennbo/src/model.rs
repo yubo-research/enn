@@ -30,7 +30,7 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) num_metrics: usize,
     pub(crate) scale_x: bool,
     pub(crate) x_scale: Array1<f64>,
-    /// True once a caller-set metric owns `x_scale` (MBPANN_DISK).
+    /// True once a caller-set metric owns `x_scale` (BPANN_DISK with metric learning).
     pub(crate) metric_fixed: bool,
     pub(crate) y_scale: Array1<f64>,
     /// Per-metric `(lo, hi)` in natural units; open sides are `±∞`.

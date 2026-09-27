@@ -1,4 +1,4 @@
-//! Caller-set diagonal metric for disk BPANN models (the MBPANN_DISK mode).
+//! Caller-set diagonal metric for disk BPANN models (metric learning mode).
 
 use ndarray::Array1;
 

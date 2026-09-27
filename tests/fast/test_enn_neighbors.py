@@ -27,7 +27,7 @@ def test_neighbors_flat_index_driver_returns_valid_indices():
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True).astype(float)
     model = EpistemicNearestNeighbors(
-        train_x, train_y, scale_x=False, index_driver=ENNIndexDriver.FLAT
+        train_x, train_y, index_driver=ENNIndexDriver.FLAT
     )
     x_query = rng.standard_normal(d)
     neighbors = model.neighbors(x_query, k=6, exclude_nearest=False)

@@ -33,7 +33,7 @@ class TestENNStatefulFitterContract:
             dtype=float,
         )
         train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
-        model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
+        model = EpistemicNearestNeighbors(train_x, train_y)
         rng = np.random.default_rng(42)
 
         fitter = ENNStatefulFitter(k=2, rng=rng)
