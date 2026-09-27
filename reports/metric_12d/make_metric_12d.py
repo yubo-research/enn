@@ -16,11 +16,10 @@ LINE = re.compile(
     r"SMALLER\(add_s\) = (\S+) SMALLER\(query_s\) = (\S+)"
 )
 MODELS = [
-    ("flat", "FLAT, \\texttt{scale\\_x=False}"),
-    ("flat_scale_x", "FLAT, \\texttt{scale\\_x=True}"),
-    ("bpann_disk", "BPANN\\_DISK"),
-    ("mbpann_disk", "MBPANN\\_DISK + metric learning"),
-    ("mbpann_disk_metric_off", "MBPANN\\_DISK, \\texttt{MetricLearning.OFF}"),
+    ("flat", "FLAT, \\texttt{NONE}"),
+    ("flat_scale_x", "FLAT, \\texttt{SCALE\\_X}"),
+    ("bpann_disk", "BPANN\\_DISK, \\texttt{NONE}"),
+    ("bpann_disk_metric_learning", "BPANN\\_DISK, \\texttt{METRIC\\_LEARNING}"),
 ]
 
 
