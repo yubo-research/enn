@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from evals import metric_small_n as mod
-from evals.metric_12d import Metric12dConfig
+from evals.metric_12d import LEARNED_METRIC_MODELS, Metric12dConfig
 from evals.short import eval_metric_small_n as entry
 
 TINY = mod.SmallNConfig(
@@ -48,7 +48,7 @@ def test_run_eval_tiny(capsys: pytest.CaptureFixture[str]) -> None:
     ]
     for r in results:
         assert np.isfinite(r.loglik) and np.isfinite(r.nrmse)
-        learned = r.model != "bpann_disk"
+        learned = r.model in LEARNED_METRIC_MODELS
         assert (r.loo_in is not None) == (learned and (r.on is not False))
         assert (r.gain is not None) == (r.model == "bpann_disk_auto")
     assert out.count("EVAL: function = ") == len(results)

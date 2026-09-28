@@ -92,7 +92,7 @@ class EpistemicNearestNeighbors:
             train_x, train_y, train_yvar
         )
         validate_scale_x(scale_x, index_driver)
-        validate_metric_learning(metric_learning, index_driver)
+        validate_metric_learning(metric_learning, index_driver, scale_x)
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
             if y_bounds.ndim != 2 or y_bounds.shape[1] != 2:

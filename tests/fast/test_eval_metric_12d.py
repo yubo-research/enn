@@ -9,6 +9,7 @@ from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from evals import metric_12d as mod
+from evals.metric_stream_models import STREAM_METRIC_MODELS
 from evals.short import eval_metric_12d as entry
 from ops.stress import MeanSE
 
@@ -45,6 +46,11 @@ def test_build_model_drivers_scale_x_and_metric_learning() -> None:
         scaled = mod.build_model("flat_scale_x", x, y, work_dir)
         bpann = mod.build_model("bpann_disk", x, y, work_dir)
         learned = mod.build_model("bpann_disk_metric_learning", x, y, work_dir)
+        bpann_scaled = mod.build_model("bpann_disk_scale_x", x, y, work_dir)
+        assert bpann_scaled._index_driver == ENNIndexDriver.BPANN_DISK
+        assert bpann_scaled.scale_x == ENNScaleX.ON
+        assert bpann_scaled.metric_learning == ENNMetricLearning.OFF
+        assert bpann.scale_x == ENNScaleX.OFF
         assert flat._index_driver == ENNIndexDriver.FLAT and flat.scale_x == ENNScaleX.OFF
         assert flat.metric_learning == ENNMetricLearning.OFF
         assert scaled._index_driver == ENNIndexDriver.FLAT and scaled.scale_x == ENNScaleX.ON
@@ -202,8 +208,11 @@ def test_only_learned_metric_models_get_metric_helper() -> None:
         "bpann_disk": ENNMetricLearning.OFF,
         "bpann_disk_metric_learning": ENNMetricLearning.ON,
         "bpann_disk_auto": ENNMetricLearning.AUTO,
+        **{name: ENNMetricLearning.ON for name in STREAM_METRIC_MODELS},
     }
-    assert mod.LEARNED_METRIC_MODELS == {"bpann_disk_metric_learning", "bpann_disk_auto"}
+    assert mod.LEARNED_METRIC_MODELS == {
+        "bpann_disk_metric_learning", "bpann_disk_auto", *STREAM_METRIC_MODELS
+    }
     x, y = mod.make_data(12, np.random.default_rng(5))
     with tempfile.TemporaryDirectory() as work_dir:
         helpers = {}

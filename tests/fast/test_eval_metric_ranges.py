@@ -49,10 +49,13 @@ def test_run_eval_uses_ranges_data(capsys: pytest.CaptureFixture[str]) -> None:
 def test_run_eval_passes_ranges_data_to_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = []
     monkeypatch.setattr(
-        mod, "run_stream_eval", lambda config, data: seen.append((config, data)) or []
+        mod,
+        "run_stream_eval",
+        lambda config, models, data: seen.append((config, models, data)) or [],
     )
     assert mod.run_eval(TINY) == []
-    assert seen == [(TINY, mod.make_data)]
+    assert mod.run_eval(TINY, models=("bpann_disk",)) == []
+    assert seen == [(TINY, metric_12d.MODELS, mod.make_data), (TINY, ("bpann_disk",), mod.make_data)]
 
 
 def test_evaluate_entry_invokes_run_eval(monkeypatch: pytest.MonkeyPatch) -> None:

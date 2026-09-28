@@ -32,6 +32,8 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) x_scale: Array1<f64>,
     /// True once a caller-set metric owns `x_scale` (BPANN_DISK with metric learning).
     pub(crate) metric_fixed: bool,
+    /// Disk `scale_x`: the `x_scale` the BPANN partition was last built under.
+    pub(crate) built_x_scale: Array1<f64>,
     pub(crate) y_scale: Array1<f64>,
     /// Per-metric `(lo, hi)` in natural units; open sides are `±∞`.
     pub(crate) y_bounds: Array2<f64>,
@@ -127,11 +129,6 @@ impl EpistemicNearestNeighbors {
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
-        if scale_x && is_disk_index_driver(driver) {
-            return Err(ENNError::InvalidParameter(
-                "scale_x=True is not compatible with BPANN_DISK".to_string(),
-            ));
-        }
         let num_dim = train_x.ncols();
         let mut num_metrics = train_y.ncols();
         let disk_work_dir = work_dir.clone().or_else(EnnStorage::work_dir_from_env);
@@ -217,6 +214,7 @@ impl EpistemicNearestNeighbors {
             num_dim,
             num_metrics,
             scale_x,
+            built_x_scale: x_scale.clone(),
             x_scale,
             metric_fixed: false,
             y_scale,
@@ -311,9 +309,14 @@ impl EpistemicNearestNeighbors {
 
             if self.scale_x && !self.metric_fixed {
                 accumulate_columns(&mut self.x_sum, &mut self.x_sumsq, x.view());
-                self.x_scale =
+                let x_scale =
                     scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
-                self.backend.mark_index_stale();
+                if is_disk_index_driver(self.backend.driver()) {
+                    self.apply_incremental_x_scale(x_scale)?;
+                } else {
+                    self.x_scale = x_scale;
+                    self.backend.mark_index_stale();
+                }
             }
 
             self.num_obs = n;
@@ -502,6 +505,7 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
         model.x_sumsq = x_sumsq;
         model.x_scale =
             scale_from_moments(n, model.num_dim, &model.x_sum, &model.x_sumsq, 1e-12);
+        model.built_x_scale = model.x_scale.clone();
     }
     model.backend
         .ensure_index_sync(model.scale_x, &model.x_scale)?;

@@ -10,7 +10,13 @@ subsample, the metric fit is warm-started from the previous checkpoint's metric
 (``metric_warm_start``); earlier fits start cold, since a warm start from a fit on a
 few dozen rows stays stuck at the identity-metric level. ``bpann_disk_auto`` applies the
 learned metric only when ``heldout_metric_gain`` validates it
-(``ENNMetricLearning.AUTO``); see ``evals/metric_small_n.py``.
+(``ENNMetricLearning.AUTO``); see ``evals/metric_small_n.py``. ``bpann_disk_scale_x`` divides
+each input by its running standard deviation, updated incrementally on every ``add``
+(``ENNScaleX.ON`` with BPANN_DISK); it fits no metric. The models in ``STREAM_METRIC_MODELS``
+(``evals/metric_stream_models.py``) see every added row and supply their weights at each checkpoint
+without the subsample fit: a reservoir-sampled L-BFGS-B fit, dependence-measure weights, and a
+perturbation (SPSA) learner, called once per row or once per batch. The slow per-row SPSA models
+are not in the default ``MODELS``.
 
 ``add_s`` is wall time from the previous checkpoint to this one: adds, syncs, metric
 fit, and hyperparameter fit. ``query_s`` is one posterior call on the test set.
@@ -38,6 +44,7 @@ from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from evals.flat_sphere import gaussian_loglik, rmse
+from evals.metric_stream_models import FAST_STREAM_METRIC_MODELS, STREAM_METRIC_MODELS, make_source
 from evals.metric_12d_results import (
     CheckpointResult,
     CheckpointSummary,
@@ -63,13 +70,16 @@ MODELS: tuple[str, ...] = (
     "flat",
     "flat_scale_x",
     "bpann_disk",
+    "bpann_disk_scale_x",
     "bpann_disk_metric_learning",
     "bpann_disk_auto",
+    *FAST_STREAM_METRIC_MODELS,
 )
 BPANN_METRIC_LEARNING: dict[str, ENNMetricLearning] = {
     "bpann_disk": ENNMetricLearning.OFF,
     "bpann_disk_metric_learning": ENNMetricLearning.ON,
     "bpann_disk_auto": ENNMetricLearning.AUTO,
+    **{name: ENNMetricLearning.ON for name in STREAM_METRIC_MODELS},
 }
 LEARNED_METRIC_MODELS = frozenset(
     name for name, mode in BPANN_METRIC_LEARNING.items() if mode != ENNMetricLearning.OFF
@@ -119,14 +129,15 @@ def build_model(
         return EpistemicNearestNeighbors(x, y)
     if name == "flat_scale_x":
         return EpistemicNearestNeighbors(x, y, scale_x=ENNScaleX.ON)
-    if name not in BPANN_METRIC_LEARNING:
+    if name != "bpann_disk_scale_x" and name not in BPANN_METRIC_LEARNING:
         raise ValueError(f"unknown model {name!r}")
     model_dir = os.path.join(work_dir, name)
     os.makedirs(model_dir, exist_ok=True)
     return EpistemicNearestNeighbors(
         x,
         y,
-        metric_learning=BPANN_METRIC_LEARNING[name],
+        scale_x=ENNScaleX.ON if name == "bpann_disk_scale_x" else ENNScaleX.OFF,
+        metric_learning=BPANN_METRIC_LEARNING.get(name, ENNMetricLearning.OFF),
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=model_dir,
     )
@@ -225,10 +236,18 @@ class StreamedModel:
         self.params: object = None
         self.metric_fit: MetricFit | None = None
         self.fit_rng = np.random.default_rng(config.seed + 1)
+        self.source = None
         if name in LEARNED_METRIC_MODELS:
             load_iaml_core()
+        if name in STREAM_METRIC_MODELS:
+            self.source = make_source(
+                name, load_iaml_core(), NUM_DIM, config.metric_fit_subsample, config.k,
+                np.random.default_rng(config.seed + 2),
+            )
 
     def _add_rows(self, x: np.ndarray, y: np.ndarray) -> None:
+        if self.source is not None:
+            self.source.observe(x, y[:, 0])
         if self.model is None:
             self.model = build_model(self.name, x, y, self.work_dir)
             if self.model.metric_learning != ENNMetricLearning.OFF:
@@ -244,7 +263,9 @@ class StreamedModel:
             stop = min(hi, start + self.config.batch)
             self._add_rows(x[start:stop], y[start:stop])
         assert self.model is not None
-        if self.helper is not None:
+        if self.source is not None and self.helper is not None:
+            self.helper.set_weights(self.source.weights())
+        elif self.helper is not None:
             warm = self.config.metric_warm_start and lo >= self.config.metric_fit_subsample
             prev = self.metric_fit.theta if warm and self.metric_fit is not None else None
             self.metric_fit = fit_metric(

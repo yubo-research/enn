@@ -7,9 +7,10 @@ Four 12-d targets on x ~ U[0,1]^12 with noise 0.1 N(0,1):
 - ``sphere``: -4 |x - 0.5|^2 (all 12 inputs matter equally)
 - ``lin3``: x0 + 2 x1 - x2 (3 of 12 inputs matter)
 
-For each target and seed, rows stream to each n in ``n_grid`` through three BPANN_DISK
-models: ``bpann_disk`` (NONE), ``bpann_disk_metric_learning`` (always apply the LOOCV-fit
-metric) and ``bpann_disk_auto`` (apply it only if ``heldout_metric_gain > 0``). At small n the
+For each target and seed, rows stream to each n in ``n_grid`` through four BPANN_DISK
+models: ``bpann_disk`` (NONE), ``bpann_disk_scale_x`` (divide inputs by their running standard
+deviations), ``bpann_disk_metric_learning`` (always apply the LOOCV-fit metric) and
+``bpann_disk_auto`` (apply it only if ``heldout_metric_gain > 0``). At small n the
 LOOCV fit of 13 parameters overfits: its in-sample score is optimistic, it can up-weight
 irrelevant inputs and shrink the noise term, so predictions become noisy and overconfident.
 ``loo_in`` (the in-sample LOOCV score of the fitted metric) next to the test ``loglik`` shows
@@ -31,7 +32,12 @@ from evals.stress_eval import format_larger, format_plain, format_smaller
 NOISE_STD = 0.1
 N_GRID: tuple[int, ...] = (10, 30, 100, 300)
 SEEDS: tuple[int, ...] = (0, 1, 2, 3, 4)
-MODELS: tuple[str, ...] = ("bpann_disk", "bpann_disk_metric_learning", "bpann_disk_auto")
+MODELS: tuple[str, ...] = (
+    "bpann_disk",
+    "bpann_disk_scale_x",
+    "bpann_disk_metric_learning",
+    "bpann_disk_auto",
+)
 WORK_DIR_PREFIX = "enn_metric_small_n_"
 
 
