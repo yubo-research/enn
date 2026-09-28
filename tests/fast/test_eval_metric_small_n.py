@@ -4,20 +4,19 @@ import numpy as np
 import pytest
 
 from evals import metric_small_n as mod
-from evals.metric_12d import LEARNED_METRIC_MODELS, Metric12dConfig
+from evals.metric_12d import Metric12dConfig
 from evals.short import eval_metric_small_n as entry
 
 TINY = mod.SmallNConfig(
     functions=("lin3", "sphere"),
     seeds=(0,),
     stream=Metric12dConfig(
-        n_grid=(10, 30),
+        n_grid=(10, 120),
         num_test=20,
-        batch=8,
+        batch=40,
         k=4,
         num_fit_candidates=6,
         num_fit_samples=4,
-        metric_fit_subsample=25,
     ),
 )
 
@@ -33,10 +32,10 @@ def test_make_data_functions() -> None:
 
 
 def test_format_eval_line() -> None:
-    r = mod.SmallNResult("lin3", 2, "bpann_disk_auto", 30, -1.25, 0.5, None, 0.125, True)
+    r = mod.SmallNResult("lin3", 2, "bpann_disk_auto", 30, -1.25, 0.5, 0.125, True)
     assert mod.format_eval_line(r) == (
         "EVAL: function = lin3 seed = 2 model = bpann_disk_auto n = 30 LARGER(loglik) = -1.2500 "
-        "SMALLER(nrmse) = 0.5000 loo_in = na gain = 0.1250 on = 1"
+        "SMALLER(nrmse) = 0.5000 gain = 0.1250 on = 1"
     )
 
 
@@ -48,9 +47,8 @@ def test_run_eval_tiny(capsys: pytest.CaptureFixture[str]) -> None:
     ]
     for r in results:
         assert np.isfinite(r.loglik) and np.isfinite(r.nrmse)
-        learned = r.model in LEARNED_METRIC_MODELS
-        assert (r.loo_in is not None) == (learned and (r.on is not False))
-        assert (r.gain is not None) == (r.model == "bpann_disk_auto")
+        refit = r.model == "bpann_disk_auto" and r.num_obs >= 100
+        assert (r.gain is not None) == refit and (r.on is not None) == refit
     assert out.count("EVAL: function = ") == len(results)
     assert out.count("SUMMARY: ") == len(TINY.functions) * len(TINY.stream.n_grid)
     assert "auto_on=" in out
@@ -58,10 +56,10 @@ def test_run_eval_tiny(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_summarize_means_and_on_fraction() -> None:
     rows = [
-        mod.SmallNResult("lin3", 0, "bpann_disk", 10, -1.0, 1.0, None, None, None),
-        mod.SmallNResult("lin3", 1, "bpann_disk", 10, -2.0, 1.0, None, None, None),
-        mod.SmallNResult("lin3", 0, "bpann_disk_auto", 10, 0.0, 1.0, 0.1, 0.2, True),
-        mod.SmallNResult("lin3", 1, "bpann_disk_auto", 10, -1.0, 1.0, None, -0.2, False),
+        mod.SmallNResult("lin3", 0, "bpann_disk", 10, -1.0, 1.0, None, None),
+        mod.SmallNResult("lin3", 1, "bpann_disk", 10, -2.0, 1.0, None, None),
+        mod.SmallNResult("lin3", 0, "bpann_disk_auto", 10, 0.0, 1.0, 0.2, True),
+        mod.SmallNResult("lin3", 1, "bpann_disk_auto", 10, -1.0, 1.0, -0.2, False),
     ]
     assert mod.summarize(rows) == [
         "SUMMARY: function=lin3 n=10 mean_loglik bpann_disk=-1.500 bpann_disk_auto=-0.500 auto_on=1/2"

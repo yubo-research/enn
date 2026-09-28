@@ -14,7 +14,6 @@ TINY = metric_12d.Metric12dConfig(
     k=4,
     num_fit_candidates=6,
     num_fit_samples=4,
-    metric_fit_subsample=25,
     num_seeds=1,
 )
 

@@ -7,14 +7,11 @@ Four 12-d targets on x ~ U[0,1]^12 with noise 0.1 N(0,1):
 - ``sphere``: -4 |x - 0.5|^2 (all 12 inputs matter equally)
 - ``lin3``: x0 + 2 x1 - x2 (3 of 12 inputs matter)
 
-For each target and seed, rows stream to each n in ``n_grid`` through four BPANN_DISK
+For each target and seed, rows stream to each n in ``n_grid`` through three BPANN_DISK
 models: ``bpann_disk`` (NONE), ``bpann_disk_scale_x`` (divide inputs by their running standard
-deviations), ``bpann_disk_metric_learning`` (always apply the LOOCV-fit metric) and
-``bpann_disk_auto`` (apply it only if ``heldout_metric_gain > 0``). At small n the
-LOOCV fit of 13 parameters overfits: its in-sample score is optimistic, it can up-weight
-irrelevant inputs and shrink the noise term, so predictions become noisy and overconfident.
-``loo_in`` (the in-sample LOOCV score of the fitted metric) next to the test ``loglik`` shows
-that optimism; ``gain`` is AUTO's held-out gain and ``on`` whether AUTO used the learned metric.
+deviations) and ``bpann_disk_auto`` (Sobol/Var(x) weights, applied only if their leave-one-out
+gain over the best isotropic metric is positive). ``gain`` is AUTO's latest gain (``na`` before
+its first refit at 100 rows) and ``on`` whether AUTO used the learned metric.
 """
 
 from __future__ import annotations
@@ -26,7 +23,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from evals.flat_sphere import gaussian_loglik, rmse
-from evals.metric_12d import NUM_DIM, Metric12dConfig, StreamedModel, load_iaml_core
+from evals.metric_12d import NUM_DIM, Metric12dConfig, StreamedModel
 from evals.stress_eval import format_larger, format_plain, format_smaller
 
 NOISE_STD = 0.1
@@ -35,7 +32,6 @@ SEEDS: tuple[int, ...] = (0, 1, 2, 3, 4)
 MODELS: tuple[str, ...] = (
     "bpann_disk",
     "bpann_disk_scale_x",
-    "bpann_disk_metric_learning",
     "bpann_disk_auto",
 )
 WORK_DIR_PREFIX = "enn_metric_small_n_"
@@ -81,7 +77,6 @@ class SmallNResult:
     num_obs: int
     loglik: float
     nrmse: float
-    loo_in: float | None
     gain: float | None
     on: bool | None
 
@@ -92,19 +87,6 @@ def make_data(
     x = rng.random((num_obs, NUM_DIM))
     y = FUNCTIONS[function](x) + NOISE_STD * rng.standard_normal(num_obs)
     return x, y.reshape(-1, 1)
-
-
-def in_sample_loo(streamed: StreamedModel, x: np.ndarray, y: np.ndarray) -> float | None:
-    """In-sample LOOCV loglik of the applied learned metric on rows ``x``, or None if none applied."""
-    fit = streamed.metric_fit
-    if fit is None or fit.theta is None:
-        return None
-    core = load_iaml_core()
-    metric = core.Metric(x.shape[1])
-    metric.theta = fit.theta.copy()
-    k = min(streamed.config.k, len(x) - 1)
-    nbr = core.knn(x, x, k, metric.a, self_offset=0)
-    return core.mean_ll(x, y[:, 0], x, y[:, 0], nbr, metric.a, metric.c)
 
 
 def _format_optional(value: float | None) -> str:
@@ -121,7 +103,6 @@ def format_eval_line(r: SmallNResult) -> str:
         f"{format_plain('n', r.num_obs)} "
         f"{format_larger('loglik', f'{r.loglik:.4f}')} "
         f"{format_smaller('nrmse', f'{r.nrmse:.4f}')} "
-        f"{format_plain('loo_in', _format_optional(r.loo_in))} "
         f"{format_plain('gain', _format_optional(r.gain))} "
         f"{format_plain('on', on)}"
     )
@@ -142,8 +123,8 @@ def run_stream(
     for hi in stream.n_grid:
         streamed.advance(x, y, lo, hi)
         mu, se, _ = streamed.query(x_test)
-        fit = streamed.metric_fit
-        gain = None if fit is None else fit.heldout_gain
+        metric = None if streamed.model is None else streamed.model.metric
+        gain = None if metric is None else metric.heldout_gain
         results.append(
             SmallNResult(
                 function=function,
@@ -152,9 +133,8 @@ def run_stream(
                 num_obs=hi,
                 loglik=gaussian_loglik(y_test, mu, se),
                 nrmse=rmse(y_test, mu) / y_test_std,
-                loo_in=in_sample_loo(streamed, x[:hi], y[:hi]),
                 gain=gain,
-                on=None if gain is None else fit.theta is not None,
+                on=None if metric is None or gain is None else metric.uses_learned_metric,
             )
         )
         lo = hi

@@ -104,7 +104,7 @@ impl PyEpistemicNearestNeighbors {
     fn set_metric_scale(&mut self, x_scale: PyReadonlyArray1<f64>, rebuild: bool) -> PyResult<()> {
         if !self.metric_learning {
             return Err(PyValueError::new_err(
-                "set_metric_scale requires metric_learning=ON or AUTO",
+                "set_metric_scale requires metric_learning=AUTO",
             ));
         }
         self.inner

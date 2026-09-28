@@ -21,15 +21,14 @@ class ENNScaleX(Enum):
 class ENNMetricLearning(Enum):
     """Whether ENN distances use a learned diagonal metric (BPANN_DISK only).
 
-    - ``OFF``: raw ``x``.
-    - ``ON``: caller-set diagonal metric via ``MBPANNMetric``.
-    - ``AUTO``: like ``ON``, but a fitted metric is applied only when held-out validation shows
-      it beats the best isotropic metric; otherwise distances are those of ``OFF``
-      (``MBPANNMetric.set_weights_if_validated``).
+    - ``NONE``: raw ``x``.
+    - ``AUTO``: the model keeps a reservoir sample of the added rows and, as the data grow,
+      refits weights ``Sobol index / Var(x)`` per input. They are applied only when
+      leave-one-out validation shows they beat the best isotropic metric; otherwise distances
+      are those of ``NONE`` (``MBPANNMetric``).
     """
 
-    OFF = auto()
-    ON = auto()
+    NONE = auto()
     AUTO = auto()
 
 
@@ -47,7 +46,7 @@ def validate_metric_learning(
 ) -> None:
     if not isinstance(metric_learning, ENNMetricLearning):
         raise ValueError(f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}")
-    if metric_learning == ENNMetricLearning.OFF:
+    if metric_learning == ENNMetricLearning.NONE:
         return
     if index_driver != ENNIndexDriver.BPANN_DISK:
         raise ValueError(

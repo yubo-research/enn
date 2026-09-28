@@ -15,6 +15,7 @@ from enn.turbo.config.enn_x_scaling import (
 )
 
 from .enn_class_support import _rust_index_driver_name, _to_rust_seeds
+from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
     from .enn_normal import ENNNormal
@@ -82,7 +83,7 @@ class EpistemicNearestNeighbors:
         train_yvar: np.ndarray | None = None,
         *,
         scale_x: ENNScaleX = ENNScaleX.OFF,
-        metric_learning: ENNMetricLearning = ENNMetricLearning.OFF,
+        metric_learning: ENNMetricLearning = ENNMetricLearning.NONE,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
         work_dir: str | os.PathLike[str] | None = None,
         enn_storage: str | None = None,
@@ -113,7 +114,7 @@ class EpistemicNearestNeighbors:
             "train_yvar": train_yvar,
             "scale_x": scale_x == ENNScaleX.ON,
             "index_driver": idx_driver,
-            "metric_learning": metric_learning != ENNMetricLearning.OFF,
+            "metric_learning": metric_learning != ENNMetricLearning.NONE,
         }
         if work_dir is not None:
             rust_kwargs["work_dir"] = os.fspath(work_dir)
@@ -123,6 +124,10 @@ class EpistemicNearestNeighbors:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
         self._y_bounds = y_bounds
+        self.metric: MBPANNMetric | None = None
+        if metric_learning == ENNMetricLearning.AUTO:
+            self.metric = MBPANNMetric(self)
+            self.metric.observe(train_x, train_y)
 
     def add(
         self,
@@ -132,6 +137,8 @@ class EpistemicNearestNeighbors:
     ) -> None:
         x, y, yvar = self._validate_inputs(x, y, yvar)
         self._rust_model.add(x, y, yvar)
+        if self.metric is not None:
+            self.metric.observe(x, y)
 
     def ensure_index_sync(self) -> None:
         self._rust_model.ensure_index_sync()
@@ -187,6 +194,7 @@ class EpistemicNearestNeighbors:
     @property
     def metric_learning(self) -> ENNMetricLearning:
         return self._metric_learning
+
 
     @property
     def _train_y(self) -> np.ndarray:

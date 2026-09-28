@@ -3,23 +3,14 @@
 x ~ U[0,1]^12, y = sin(6 pi x0) + sin(6 pi x1) + 0.1 eps, so ten inputs are irrelevant
 (reports/mbpann/metric_advantage.py). Rows stream in batches with ``ensure_index_sync``
 after each batch. At every checkpoint each model refits its ENN hyperparameters with
-``enn_fit``; ``bpann_disk_metric_learning`` first refits diagonal metric weights by LOOCV
-(reports/iaml/iaml_core.fit_exact) on a subsample and applies them with
-``MBPANNMetric.set_weights``. Once the previous checkpoint already filled the fit
-subsample, the metric fit is warm-started from the previous checkpoint's metric
-(``metric_warm_start``); earlier fits start cold, since a warm start from a fit on a
-few dozen rows stays stuck at the identity-metric level. ``bpann_disk_auto`` applies the
-learned metric only when ``heldout_metric_gain`` validates it
-(``ENNMetricLearning.AUTO``); see ``evals/metric_small_n.py``. ``bpann_disk_scale_x`` divides
-each input by its running standard deviation, updated incrementally on every ``add``
-(``ENNScaleX.ON`` with BPANN_DISK); it fits no metric. The models in ``STREAM_METRIC_MODELS``
-(``evals/metric_stream_models.py``) see every added row and supply their weights at each checkpoint
-without the subsample fit: a reservoir-sampled L-BFGS-B fit, dependence-measure weights, and a
-perturbation (SPSA) learner, called once per row or once per batch. The slow per-row SPSA models
-are not in the default ``MODELS``.
+``enn_fit``. ``bpann_disk`` uses raw distances (``ENNMetricLearning.NONE``);
+``bpann_disk_auto`` (``ENNMetricLearning.AUTO``) refits Sobol/Var(x) metric weights on a
+reservoir sample inside ``add`` and applies them only when leave-one-out validation prefers
+them to the best isotropic metric. ``bpann_disk_scale_x`` divides each input by its running
+standard deviation, updated incrementally on every ``add`` (``ENNScaleX.ON`` with BPANN_DISK).
 
-``add_s`` is wall time from the previous checkpoint to this one: adds, syncs, metric
-fit, and hyperparameter fit. ``query_s`` is one posterior call on the test set.
+``add_s`` is wall time from the previous checkpoint to this one: adds (including AUTO's metric
+refits), syncs, and hyperparameter fit. ``query_s`` is one posterior call on the test set.
 
 The whole stream is repeated for seeds ``seed .. seed+num_seeds-1`` (data drawn from
 ``seed``, fits from ``seed + 1``); each EVAL line reports mean ± standard error over seeds.
@@ -27,24 +18,19 @@ The whole stream is repeated for seeds ``seed .. seed+num_seeds-1`` (data drawn 
 
 from __future__ import annotations
 
-import functools
-import importlib.util
 import os
 import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from types import ModuleType
 
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
-from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from evals.flat_sphere import gaussian_loglik, rmse
-from evals.metric_stream_models import FAST_STREAM_METRIC_MODELS, STREAM_METRIC_MODELS, make_source
 from evals.metric_12d_results import (
     CheckpointResult,
     CheckpointSummary,
@@ -52,7 +38,6 @@ from evals.metric_12d_results import (
     format_seed_line,
     summarize,
 )
-from evals.stress_eval import REPO_ROOT
 from ops.stress import DRAW_FLAGS
 
 NUM_DIM = 12
@@ -63,7 +48,6 @@ BATCH = 500
 K = 10
 NUM_FIT_CANDIDATES = 100
 NUM_FIT_SAMPLES = 100
-METRIC_FIT_SUBSAMPLE = 1000
 SEED = 0
 NUM_SEEDS = 10
 MODELS: tuple[str, ...] = (
@@ -71,21 +55,14 @@ MODELS: tuple[str, ...] = (
     "flat_scale_x",
     "bpann_disk",
     "bpann_disk_scale_x",
-    "bpann_disk_metric_learning",
     "bpann_disk_auto",
-    *FAST_STREAM_METRIC_MODELS,
 )
 BPANN_METRIC_LEARNING: dict[str, ENNMetricLearning] = {
-    "bpann_disk": ENNMetricLearning.OFF,
-    "bpann_disk_metric_learning": ENNMetricLearning.ON,
+    "bpann_disk": ENNMetricLearning.NONE,
+    "bpann_disk_scale_x": ENNMetricLearning.NONE,
     "bpann_disk_auto": ENNMetricLearning.AUTO,
-    **{name: ENNMetricLearning.ON for name in STREAM_METRIC_MODELS},
 }
-LEARNED_METRIC_MODELS = frozenset(
-    name for name, mode in BPANN_METRIC_LEARNING.items() if mode != ENNMetricLearning.OFF
-)
 WORK_DIR_PREFIX = "enn_metric_12d_"
-IAML_CORE_PATH = REPO_ROOT / "reports" / "iaml" / "iaml_core.py"
 
 
 @dataclass(frozen=True)
@@ -96,20 +73,8 @@ class Metric12dConfig:
     k: int = K
     num_fit_candidates: int = NUM_FIT_CANDIDATES
     num_fit_samples: int = NUM_FIT_SAMPLES
-    metric_fit_subsample: int = METRIC_FIT_SUBSAMPLE
-    metric_warm_start: bool = True
     seed: int = SEED
     num_seeds: int = NUM_SEEDS
-
-
-@functools.cache
-def load_iaml_core() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("iaml_core", IAML_CORE_PATH)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load {IAML_CORE_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 DataFn = Callable[[int, np.random.Generator], tuple[np.ndarray, np.ndarray]]
@@ -129,7 +94,7 @@ def build_model(
         return EpistemicNearestNeighbors(x, y)
     if name == "flat_scale_x":
         return EpistemicNearestNeighbors(x, y, scale_x=ENNScaleX.ON)
-    if name != "bpann_disk_scale_x" and name not in BPANN_METRIC_LEARNING:
+    if name not in BPANN_METRIC_LEARNING:
         raise ValueError(f"unknown model {name!r}")
     model_dir = os.path.join(work_dir, name)
     os.makedirs(model_dir, exist_ok=True)
@@ -137,91 +102,10 @@ def build_model(
         x,
         y,
         scale_x=ENNScaleX.ON if name == "bpann_disk_scale_x" else ENNScaleX.OFF,
-        metric_learning=BPANN_METRIC_LEARNING.get(name, ENNMetricLearning.OFF),
+        metric_learning=BPANN_METRIC_LEARNING[name],
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=model_dir,
     )
-
-
-@dataclass(frozen=True)
-class MetricFit:
-    """``theta`` of the applied learned metric (None if AUTO kept the identity metric) and, in
-    AUTO mode, the held-out gain that decided it."""
-
-    theta: np.ndarray | None
-    heldout_gain: float | None = None
-
-
-def _heldout_ll_diff(
-    core: ModuleType, x_fit: np.ndarray, y_fit: np.ndarray, x_val: np.ndarray, y_val: np.ndarray, k: int
-) -> np.ndarray:
-    k_fit = min(k, len(x_fit) - 1)
-    full = core.Metric(x_fit.shape[1])
-    core.fit_exact(full, x_fit, y_fit, k_fit)
-    iso = core.Metric(x_fit.shape[1], isotropic=True)
-    core.fit_exact(iso, x_fit, y_fit, k_fit)
-    k_val = min(k, len(x_fit))
-    ll_full, ll_iso = (
-        core.loglik_grad(x_val, y_val, x_fit, y_fit, core.knn(x_val, x_fit, k_val, m.a), m.a, m.c)[0]
-        for m in (full, iso)
-    )
-    return ll_full - ll_iso
-
-
-def heldout_metric_gain(x: np.ndarray, y: np.ndarray, k: int, rng: np.random.Generator) -> float:
-    """2-fold held-out gain of a LOOCV-fit diagonal metric over the best isotropic metric.
-
-    Rows are split in half; both metrics are fit on one half and scored (mean Gaussian
-    log-likelihood, neighbors from the fitting half) on the other, then the halves swap.
-    Returns the mean per-row difference, or ``-inf`` with fewer than 4 rows.
-    """
-    if len(x) < 4:
-        return float("-inf")
-    core = load_iaml_core()
-    perm = rng.permutation(len(x))
-    halves = (perm[: len(x) // 2], perm[len(x) // 2 :])
-    diffs = [
-        _heldout_ll_diff(core, x[fit], y[fit], x[val], y[val], k)
-        for fit, val in (halves, halves[::-1])
-    ]
-    return float(np.concatenate(diffs).mean())
-
-
-def fit_metric(
-    helper: MBPANNMetric,
-    x: np.ndarray,
-    y: np.ndarray,
-    config: Metric12dConfig,
-    rng: np.random.Generator,
-    prev_theta: np.ndarray | None = None,
-) -> MetricFit:
-    """LOOCV-fit diagonal metric weights on a subsample and apply them to the index.
-
-    With ``prev_theta`` the fit is warm-started there: one outer round, no isotropic restart.
-    In AUTO mode the subsample's held-out gain is computed first; if it rejects metric
-    learning, the identity metric is applied and the full fit is skipped.
-    """
-    iaml_core = load_iaml_core()
-    num_obs = len(x)
-    sub = rng.choice(num_obs, size=min(num_obs, config.metric_fit_subsample), replace=False)
-    x_sub, y_sub = x[sub], y[sub, 0]
-    gain = None
-    if helper.metric_learning == ENNMetricLearning.AUTO:
-        gain = heldout_metric_gain(x_sub, y_sub, config.k, rng)
-        if not helper.set_weights_if_validated(helper.weights, gain):
-            return MetricFit(theta=None, heldout_gain=gain)
-    metric = iaml_core.Metric(x.shape[1])
-    k = min(config.k, len(sub) - 1)
-    if prev_theta is None:
-        iaml_core.fit_exact(metric, x_sub, y_sub, k)
-    else:
-        metric.theta = prev_theta.copy()
-        iaml_core.fit_exact(metric, x_sub, y_sub, k, outer=1, restart=False)
-    if gain is None:
-        helper.set_weights(metric.a)
-    else:
-        helper.set_weights_if_validated(metric.a, gain)
-    return MetricFit(theta=metric.theta.copy(), heldout_gain=gain)
 
 
 class StreamedModel:
@@ -232,26 +116,12 @@ class StreamedModel:
         self.work_dir = work_dir
         self.config = config
         self.model: EpistemicNearestNeighbors | None = None
-        self.helper: MBPANNMetric | None = None
         self.params: object = None
-        self.metric_fit: MetricFit | None = None
         self.fit_rng = np.random.default_rng(config.seed + 1)
-        self.source = None
-        if name in LEARNED_METRIC_MODELS:
-            load_iaml_core()
-        if name in STREAM_METRIC_MODELS:
-            self.source = make_source(
-                name, load_iaml_core(), NUM_DIM, config.metric_fit_subsample, config.k,
-                np.random.default_rng(config.seed + 2),
-            )
 
     def _add_rows(self, x: np.ndarray, y: np.ndarray) -> None:
-        if self.source is not None:
-            self.source.observe(x, y[:, 0])
         if self.model is None:
             self.model = build_model(self.name, x, y, self.work_dir)
-            if self.model.metric_learning != ENNMetricLearning.OFF:
-                self.helper = MBPANNMetric(self.model)
         else:
             self.model.add(x, y)
         self.model.ensure_index_sync()
@@ -263,14 +133,6 @@ class StreamedModel:
             stop = min(hi, start + self.config.batch)
             self._add_rows(x[start:stop], y[start:stop])
         assert self.model is not None
-        if self.source is not None and self.helper is not None:
-            self.helper.set_weights(self.source.weights())
-        elif self.helper is not None:
-            warm = self.config.metric_warm_start and lo >= self.config.metric_fit_subsample
-            prev = self.metric_fit.theta if warm and self.metric_fit is not None else None
-            self.metric_fit = fit_metric(
-                self.helper, x[:hi], y[:hi], self.config, self.fit_rng, prev
-            )
         self.params = enn_fit(
             self.model,
             k=self.config.k,
