@@ -1,5 +1,5 @@
 """Incremental metric updates for an ENN opened with ``index_driver=BPANN_DISK`` and
-``x_scaling=ENNXScaling.METRIC_LEARNING``.
+``metric_learning=ENNMetricLearning.ON`` or ``ENNMetricLearning.AUTO``.
 
 Metric weights ``w`` define the ENN distance ``sum_d w_d (x_d - x'_d)^2``. The
 BPANN index stores coordinates ``x_d * sqrt(w_d)``, so a new ``w`` can be applied
@@ -15,13 +15,26 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from enn.turbo.config.enn_x_scaling import ENNXScaling
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 if TYPE_CHECKING:
     from .enn_class import EpistemicNearestNeighbors
 
 DEFAULT_REBUILD_DRIFT = float(np.log(2.0))
 DRIFT_WEIGHT_FLOOR = float(np.log(1e4))
+AUTO_MIN_HELDOUT_GAIN = 0.0
+
+
+def auto_uses_learned_metric(heldout_gain: float) -> bool:
+    """The ``ENNMetricLearning.AUTO`` rule: use a learned metric only if it validated better.
+
+    ``heldout_gain`` is the mean per-row log-likelihood of the learned diagonal metric minus that
+    of the best isotropic metric, both fit on one part of the data and scored on rows held out
+    from the fit. With few rows a LOOCV-fit diagonal metric overfits (it can up-weight irrelevant
+    inputs and shrink the noise term) and its in-sample score is optimistic, so only a held-out
+    score is trusted.
+    """
+    return bool(np.isfinite(heldout_gain) and heldout_gain > AUTO_MIN_HELDOUT_GAIN)
 
 
 def _floored_log(w: np.ndarray) -> np.ndarray:
@@ -46,8 +59,8 @@ class MBPANNMetric:
         *,
         rebuild_drift: float = DEFAULT_REBUILD_DRIFT,
     ) -> None:
-        if model.x_scaling != ENNXScaling.METRIC_LEARNING:
-            raise ValueError("MBPANNMetric requires x_scaling=METRIC_LEARNING")
+        if model.metric_learning == ENNMetricLearning.OFF:
+            raise ValueError("MBPANNMetric requires metric_learning=ON or AUTO")
         if not rebuild_drift >= 0:
             raise ValueError(f"rebuild_drift must be >= 0, got {rebuild_drift}")
         num_dim = model._num_dim
@@ -57,6 +70,10 @@ class MBPANNMetric:
         self._built_weights = np.ones(num_dim)
         self.num_rescales = 0
         self.num_rebuilds = 0
+
+    @property
+    def metric_learning(self) -> ENNMetricLearning:
+        return self._model.metric_learning
 
     @property
     def weights(self) -> np.ndarray:
@@ -87,3 +104,14 @@ class MBPANNMetric:
         else:
             self.num_rescales += 1
         return rebuild
+
+    def set_weights_if_validated(self, weights: np.ndarray, heldout_gain: float) -> bool:
+        """AUTO mode: apply ``weights`` if ``auto_uses_learned_metric(heldout_gain)``, else the
+        identity metric (the distances of ``metric_learning=OFF``). Return whether ``weights`` were applied."""
+        if self.metric_learning != ENNMetricLearning.AUTO:
+            raise ValueError("set_weights_if_validated requires metric_learning=AUTO")
+        use = auto_uses_learned_metric(heldout_gain)
+        w = self._validated(weights) if use else np.ones_like(self._weights)
+        if not np.array_equal(w, self._weights):
+            self.set_weights(w)
+        return use

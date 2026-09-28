@@ -13,7 +13,7 @@ from .config.acquisition import (
 )
 from .config.candidate_gen_config import CandidateGenConfig
 from .config.candidate_rv import CandidateRV
-from .config.enn_x_scaling import ENNXScaling
+from .config.enn_x_scaling import ENNScaleX
 from .config.init_strategies import LHDOnlyInit
 from .config.morbo_tr_config import MorboTRConfig
 from .config.optimizer_config import OptimizerConfig
@@ -158,7 +158,7 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
         overrides["infer_aleatoric_variance"] = bool(
             surrogate.fit.infer_aleatoric_variance_scale
         )
-        if surrogate.x_scaling == ENNXScaling.SCALE_X:
+        if surrogate.scale_x == ENNScaleX.ON:
             overrides["scale_x"] = True
         if surrogate.y_bounds is not None:
             overrides["y_bounds"] = np.asarray(surrogate.y_bounds, dtype=float)

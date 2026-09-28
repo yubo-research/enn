@@ -5,7 +5,7 @@ import pandas as pd
 from scipy.stats import qmc
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_x_scaling import ENNXScaling
+from enn.turbo.config.enn_x_scaling import ENNScaleX
 from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
 from enn.enn.enn_params import ENNParams
 from enn.turbo.python_fallback.turbo_utils import (
@@ -36,7 +36,7 @@ def benchmark_d_scaling(ds=[100, 1000, 5000, 10000], n=1000, num_candidates=5000
 
 
         t0 = time.perf_counter()
-        model = EpistemicNearestNeighbors(train_x, train_y, x_scaling=ENNXScaling.SCALE_X)
+        model = EpistemicNearestNeighbors(train_x, train_y, scale_x=ENNScaleX.ON)
         row["ENN_Init (s)"] = time.perf_counter() - t0
 
 

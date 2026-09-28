@@ -34,7 +34,7 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_x_scaling import ENNXScaling
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 D, K = 12, 10
 N_TRAIN, N_VAL, N_TEST = 20000, 1000, 2000
@@ -57,9 +57,9 @@ def make_data(seed):
     return [(x[lo:hi], y[lo:hi]) for lo, hi in zip(s[:-1], s[1:])], rng
 
 
-def new_model(x, y, x_scaling):
+def new_model(x, y, metric_learning):
     return EpistemicNearestNeighbors(
-        x, y.reshape(-1, 1), x_scaling=x_scaling, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="madv_")
+        x, y.reshape(-1, 1), metric_learning=metric_learning, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="madv_")
     )
 
 
@@ -91,9 +91,9 @@ def run(seed):
     (train, val, test), rng = make_data(seed)
     x, y = train
     models = {
-        "bpann_disk": new_model(x[:BATCH], y[:BATCH], ENNXScaling.NONE),
-        "mbpann_identity": new_model(x[:BATCH], y[:BATCH], ENNXScaling.METRIC_LEARNING),
-        "mbpann_learned": new_model(x[:BATCH], y[:BATCH], ENNXScaling.METRIC_LEARNING),
+        "bpann_disk": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.OFF),
+        "mbpann_identity": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.ON),
+        "mbpann_learned": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.ON),
     }
     helper = MBPANNMetric(models["mbpann_learned"])
     metric = Metric(D)

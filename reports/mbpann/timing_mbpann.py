@@ -17,7 +17,7 @@ import numpy as np
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_x_scaling import ENNXScaling
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 D = 10
 K = 10
@@ -26,9 +26,9 @@ SIZES = (40_000, 160_000, 640_000)
 BATCHES = (500, 2000)
 
 
-def stream(x, y, batch, x_scaling):
+def stream(x, y, batch, metric_learning):
     model = EpistemicNearestNeighbors(
-        x[:batch], y[:batch], x_scaling=x_scaling, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="mbt_")
+        x[:batch], y[:batch], metric_learning=metric_learning, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="mbt_")
     )
     for lo in range(batch, len(x), batch):
         model.add(x[lo : lo + batch], y[lo : lo + batch])
@@ -58,11 +58,11 @@ def one(n, batch, rng):
     w = np.exp(rng.uniform(-2, 2, D))
     rows = []
     for how in ("rescale", "rebuild_in_place", "bpann_copy"):
-        x_scaling = ENNXScaling.NONE if how == "bpann_copy" else ENNXScaling.METRIC_LEARNING
-        model = stream(x, y, batch, x_scaling)
+        metric_learning = ENNMetricLearning.OFF if how == "bpann_copy" else ENNMetricLearning.ON
+        model = stream(x, y, batch, metric_learning)
         t0 = time.perf_counter()
         if how == "bpann_copy":
-            model = stream(x * np.sqrt(w), y, n, x_scaling)
+            model = stream(x * np.sqrt(w), y, n, metric_learning)
             q_scale = np.sqrt(w)
         else:
             model.rust_backend.set_metric_scale(1.0 / np.sqrt(w), rebuild=how != "rescale")

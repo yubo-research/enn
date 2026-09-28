@@ -16,15 +16,15 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_x_scaling import ENNXScaling
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 N, D, B, K = 15000, 6, 500, 10
 
 
-def recall(x_scaling, rebuild_drift=None, flush=True):
+def recall(metric_learning, rebuild_drift=None, flush=True):
     rng = np.random.default_rng(3)
     x, y, q = rng.random((N, D)), rng.random((N, 1)), rng.random((300, D))
-    m = EpistemicNearestNeighbors(x[:B], y[:B], x_scaling=x_scaling, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp())
+    m = EpistemicNearestNeighbors(x[:B], y[:B], metric_learning=metric_learning, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp())
     metric = None if rebuild_drift is None else MBPANNMetric(m, rebuild_drift=rebuild_drift)
     for i, lo in enumerate(range(B, N, B)):
         m.add(x[lo : lo + B], y[lo : lo + B])
@@ -41,7 +41,7 @@ def recall(x_scaling, rebuild_drift=None, flush=True):
 
 
 if __name__ == "__main__":
-    print("BPANN_DISK, no metric, background flush:", recall(ENNXScaling.NONE))
-    print("BPANN_DISK + metric learning, rescale, background flush:", recall(ENNXScaling.METRIC_LEARNING, np.inf))
-    print("BPANN_DISK + metric learning, rescale, no flush:", recall(ENNXScaling.METRIC_LEARNING, np.inf, flush=False))
-    print("BPANN_DISK + metric learning, re-index every change, background flush:", recall(ENNXScaling.METRIC_LEARNING, 0.0))
+    print("BPANN_DISK, no metric, background flush:", recall(ENNMetricLearning.OFF))
+    print("BPANN_DISK + metric learning, rescale, background flush:", recall(ENNMetricLearning.ON, np.inf))
+    print("BPANN_DISK + metric learning, rescale, no flush:", recall(ENNMetricLearning.ON, np.inf, flush=False))
+    print("BPANN_DISK + metric learning, re-index every change, background flush:", recall(ENNMetricLearning.ON, 0.0))
