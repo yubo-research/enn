@@ -9,22 +9,18 @@ Accuracy values are means ± standard errors over the 10 seeds. Times come from 
 add time per observation is ``add_s / num_added`` for each checkpoint's segment, fit is ``fit_s`` and query
 time per point is ``query_s / 1000``. The seed-0 timing run must reproduce seed 0 of the 10-seed run.
 
-Usage: python reports/tree_morph/make_report.py
+Usage: PYTHONPATH=. python reports/tree_morph/make_report.py
 """
 
 import glob
 import os
-import re
 
 import numpy as np
 
+from reports.bpann_disk_writeup.make_report import load, mean_se
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 OLD = os.path.join(HERE, "..", "bpann_disk_writeup")
-LINE = re.compile(
-    r"^seed = (\d+) model = (\w+) n = (\d+) num_added = (\d+) loglik = (\S+) nrmse = (\S+) "
-    r"add_s = (\S+) fit_s = (\S+) query_s = (\S+)(?: refits = (\d+) rescales = (\d+) rebuilds = (\d+) learned = (\d))?$",
-    re.MULTILINE,
-)
 MODELS = [
     ("flat", "FLAT"),
     ("flat_scale_x", "FLAT+\\code{scale\\_x}"),
@@ -37,30 +33,11 @@ NUM_TEST = 1000
 N_GRID = (10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 300000, 1000000)
 
 
-def mean_se(v):
-    v = np.asarray(v, dtype=float)
-    return float(v.mean()), float(v.std(ddof=1) / np.sqrt(v.size)) if v.size > 1 else float("nan")
-
-
-def load(paths):
-    """{(model, n): {seed: dict}}"""
-    rows = {}
-    for p in paths:
-        for m in LINE.finditer(open(p).read()):
-            seed, model, n, added, ll, nr, add, fit, q, refits, rescales, rebuilds, learned = m.groups()
-            rec = dict(added=int(added), loglik=float(ll), nrmse=float(nr), add=float(add), fit=float(fit), q=float(q))
-            if refits is not None:
-                rec.update(refits=int(refits), rescales=int(rescales), rebuilds=int(rebuilds), learned=int(learned))
-            rows.setdefault((model, int(n)), {})[int(seed)] = rec
-    return rows
-
-
-def check_complete(rows, tag, num_seeds, models):
-    for model, _ in models:
-        for n in N_GRID:
-            got = sorted(rows.get((model, n), {}))
-            if len(got) != num_seeds:
-                raise ValueError(f"{tag}: {model} n={n} has seeds {got}; is the run complete?")
+def seeds_of(rows, tag, num_seeds, models):
+    """The seeds of a complete run: every (model, n) must have ``num_seeds`` of them."""
+    short = [(m, n, sorted(rows.get((m, n), {}))) for m, _ in models for n in N_GRID if len(rows.get((m, n), {})) != num_seeds]
+    if short:
+        raise ValueError(f"{tag}: incomplete run, e.g. {short[0]}")
     return sorted(rows[("flat", N_GRID[0])])
 
 
@@ -153,15 +130,15 @@ def main():
     data_by_tag, timing_by_tag, old_by_tag, old_timing_by_tag = {}, {}, {}, {}
     for tag in TAGS:
         data = load(sorted(glob.glob(os.path.join(HERE, "runs", f"{tag}_s*.out"))))
-        seeds = check_complete(data, tag, 10, MODELS)
+        seeds = seeds_of(data, tag, 10, MODELS)
         timing = load([os.path.join(HERE, f"timing_{tag}.out")])
-        check_complete(timing, tag, 1, MODELS)
+        seeds_of(timing, tag, 1, MODELS)
         diff = max(abs(timing[k][0][c] - data[k][0][c]) for k in timing for c in ("loglik", "nrmse"))
         print(f"[{tag}] seeds={seeds}; timing run vs 10-seed run, seed 0: max |diff| loglik/nrmse = {diff:.2g}")
         old = load(sorted(glob.glob(os.path.join(OLD, "runs", f"{tag}_s*.out"))))
-        old_seeds = check_complete(old, tag, 10, OLD_MODELS)
+        old_seeds = seeds_of(old, tag, 10, OLD_MODELS)
         old_timing = load([os.path.join(OLD, f"timing_{tag}.out")])
-        check_complete(old_timing, tag, 1, OLD_MODELS)
+        seeds_of(old_timing, tag, 1, OLD_MODELS)
         if old_seeds != seeds:
             raise ValueError(f"{tag}: previous-code seeds {old_seeds} differ from {seeds}")
         write_data(tag, data, timing, MODELS)
