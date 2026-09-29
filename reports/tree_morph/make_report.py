@@ -1,7 +1,9 @@
 """Build data files, table and macros for tree_morph.tex.
 
 - runs/{12d,ranges}_s*.out: ``bench.py TAG SEED 2`` for seeds 0, 2, 4, 6, 8 (10 seeds, run side by side)
-- timing_{12d,ranges}.out: ``bench.py TAG 0 1``, run alone
+- timing_{12d,ranges}.out: ``bench.py TAG 0 1``, run alone. The FLAT lines come from the run on the heap-layout tree
+  (kept whole in timing_{12d,ranges}_heap.out); the BPANN_DISK lines from rerunning only bpann_disk and bpann_disk_auto
+  (``run_model`` with seed 0, alone) on the page-store tree, which reproduced seed 0's accuracy and events exactly
 - ../bpann_disk_writeup/{runs/*,timing_*.out}: the same protocol, seeds and data, run on the code before the morph
   (BPANN_DISK+AUTO re-partitioned by a background bulk build and swap). Used as the "previous AUTO" reference.
 

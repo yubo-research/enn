@@ -68,7 +68,7 @@ impl Bench {
         let q_s = t.elapsed().as_secs_f64();
         println!(
             "{label:>8} end={end:>7} pages={:>6} q300={q_s:.4}s recall={:.4} add_us/row={:.2} worst_batch={:.4}s morphing={}",
-            idx.indices[0].pages.len(),
+            idx.tree.as_ref().map_or(0, |t| t.num_pages()),
             self.recall(&got, end),
             add.0 * 1e6,
             add.1,
