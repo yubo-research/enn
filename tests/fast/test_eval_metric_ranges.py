@@ -5,7 +5,8 @@ import pytest
 
 from evals import metric_12d
 from evals import metric_ranges as mod
-from evals.short import eval_metric_ranges as entry
+from evals.long import eval_metric_ranges as entry
+from evals.short import eval_metric_ranges as short_entry
 
 TINY = metric_12d.Metric12dConfig(
     n_grid=(10, 30),
@@ -62,3 +63,14 @@ def test_evaluate_entry_invokes_run_eval(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(entry, "run_eval", lambda: called.append(1))
     entry.evaluate()
     assert called == [1]
+
+
+def test_short_entry_runs_long_config_up_to_1e5(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = []
+    monkeypatch.setattr(short_entry, "run_eval", seen.append)
+    short_entry.evaluate()
+    assert seen == [
+        metric_12d.Metric12dConfig(
+            n_grid=(10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000), num_rows=1000000
+        )
+    ]

@@ -75,6 +75,11 @@ class Metric12dConfig:
     num_fit_samples: int = NUM_FIT_SAMPLES
     seed: int = SEED
     num_seeds: int = NUM_SEEDS
+    num_rows: int | None = None
+
+    def stream_rows(self) -> int:
+        """Rows drawn per seed; a shorter ``n_grid`` with the same value streams a prefix of them."""
+        return max(self.n_grid) if self.num_rows is None else self.num_rows
 
 
 DataFn = Callable[[int, np.random.Generator], tuple[np.ndarray, np.ndarray]]
@@ -154,7 +159,7 @@ def run_model(
 ) -> list[CheckpointResult]:
     """Stream ``config.seed``'s data through one model; print and return one row per checkpoint."""
     rng = np.random.default_rng(config.seed)
-    x, y = data(max(config.n_grid), rng)
+    x, y = data(config.stream_rows(), rng)
     x_test, y_test = data(config.num_test, rng)
     y_test_std = float(np.std(y_test))
     streamed = StreamedModel(name, work_dir, config)
@@ -187,6 +192,8 @@ def run_eval(
         raise ValueError("n_grid must be strictly increasing and start at >= 2")
     if cfg.num_seeds < 1:
         raise ValueError("num_seeds must be >= 1")
+    if cfg.stream_rows() < max(cfg.n_grid):
+        raise ValueError("num_rows must be >= max(n_grid)")
     print(
         f"num_dim={NUM_DIM} num_test={cfg.num_test} batch={cfg.batch} k={cfg.k} "
         f"seed={cfg.seed} num_seeds={cfg.num_seeds} models={','.join(models)}",

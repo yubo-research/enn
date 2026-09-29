@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -9,7 +10,8 @@ from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from evals import metric_12d as mod
-from evals.short import eval_metric_12d as entry
+from evals.long import eval_metric_12d as entry
+from evals.short import eval_metric_12d as short_entry
 from ops.stress import MeanSE
 
 TINY = mod.Metric12dConfig(
@@ -170,6 +172,8 @@ def test_run_eval_rejects_bad_grid() -> None:
         mod.run_eval(mod.Metric12dConfig(n_grid=(1, 10)))
     with pytest.raises(ValueError, match="num_seeds"):
         mod.run_eval(mod.Metric12dConfig(num_seeds=0))
+    with pytest.raises(ValueError, match="num_rows"):
+        mod.run_eval(mod.Metric12dConfig(n_grid=(10, 30), num_rows=20))
 
 
 def test_evaluate_entry_invokes_run_eval(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -177,3 +181,22 @@ def test_evaluate_entry_invokes_run_eval(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(entry, "run_eval", lambda: called.append(1))
     entry.evaluate()
     assert called == [1]
+
+
+def test_short_entry_runs_long_config_up_to_1e5(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[mod.Metric12dConfig] = []
+    monkeypatch.setattr(short_entry, "run_eval", seen.append)
+    short_entry.evaluate()
+    assert seen == [
+        mod.Metric12dConfig(
+            n_grid=(10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000), num_rows=1000000
+        )
+    ]
+
+
+def test_truncated_grid_with_same_num_rows_reproduces_long_prefix() -> None:
+    short = mod.run_eval(replace(TINY, num_rows=100), models=("flat",))
+    long = mod.run_eval(replace(TINY, n_grid=(10, 30, 100)), models=("flat",))
+    assert [(r.num_obs, r.loglik, r.nrmse) for r in short] == [
+        (r.num_obs, r.loglik, r.nrmse) for r in long[:2]
+    ]
