@@ -7,7 +7,7 @@ use crate::index::build::{BpannIndex, IndexHeader};
 use crate::index::search::MmapSearchStore;
 use crate::index::tree::{insert_row, new_tree, TreeCounts};
 use crate::index::tree_bulk::{bulk_build, BULK_BUILD_MIN_ROWS};
-use crate::index::tree_rebuild::Rebuild;
+use crate::index::tree_morph::Morph;
 use crate::index::tree_search::{leaf_budget, search_tree};
 use crate::mmap_store::MmapColumnStore;
 use crate::observation as obs;
@@ -15,16 +15,16 @@ use crate::observation as obs;
 /// The live BPANN index: at most one incremental tree (see [`crate::index::tree`]).
 ///
 /// `indices` holds that tree (empty until the first row is indexed); rows
-/// `indexed_rows..` of the store are not yet in it. While `rebuild` is set, a
-/// re-partitioned tree is being built in the background and replaces the tree
-/// once it holds every indexed row.
+/// `indexed_rows..` of the store are not yet in it. After a metric change, `morph`
+/// re-partitions the tree in place by moving row and page references below one
+/// internal page per inserted row ([`crate::index::tree_morph`]).
 #[derive(Clone)]
 pub struct IncrementalIndex {
     pub indices: Vec<BpannIndex>,
     pub indexed_rows: usize,
     pub index_dir: PathBuf,
     pub(crate) counts: TreeCounts,
-    pub(crate) rebuild: Option<Rebuild>,
+    pub(crate) morph: Morph,
 }
 
 impl IncrementalIndex {
@@ -34,7 +34,7 @@ impl IncrementalIndex {
             indexed_rows: 0,
             index_dir,
             counts: TreeCounts::default(),
-            rebuild: None,
+            morph: Morph::default(),
         }
     }
 
@@ -55,23 +55,23 @@ impl IncrementalIndex {
         self.indices.clear();
         self.indexed_rows = 0;
         self.counts = TreeCounts::default();
-        self.rebuild = None;
+        self.morph = Morph::default();
     }
 
-    /// Start (or restart) re-partitioning the indexed rows under the current
-    /// coordinates; the current tree serves queries until the new one is done.
-    pub fn start_rebuild(&mut self) {
+    /// Re-partition the indexed rows under the current coordinates, in place,
+    /// during the next inserts.
+    pub fn start_morph(&mut self) {
         if let Some(index) = self.indices.first() {
-            self.rebuild = Some(Rebuild::start(index, &self.counts, self.indexed_rows, self.index_dir.clone()));
+            self.morph.schedule(index);
         }
     }
 
-    pub fn rebuilding(&self) -> bool {
-        self.rebuild.is_some()
+    pub fn morphing(&self) -> bool {
+        self.morph.active()
     }
 
-    /// Insert rows `indexed_rows..end` into the tree, one at a time, and advance
-    /// a re-partition in progress by as many rows.
+    /// Insert rows `indexed_rows..end` into the tree, one at a time, advancing a
+    /// re-partition in progress after each.
     pub fn ensure_sync_for_backend(
         &mut self,
         train_x: &MmapColumnStore,
@@ -81,7 +81,6 @@ impl IncrementalIndex {
         end: usize,
     ) -> Result<(), BpannError> {
         let mut v = Vec::with_capacity(num_dim);
-        let start = self.indexed_rows;
         if let Some(index) = self.indices.first().filter(|_| !self.counts.rows_cached()) {
             self.counts.fill_blocks(index, |row, buf| {
                 bpann_row_to_f32(train_x.mmap_row_slice(row as usize)?, scale_x, x_scale, buf);
@@ -103,7 +102,10 @@ impl IncrementalIndex {
         for row in self.indexed_rows..end {
             bpann_row_to_f32(train_x.mmap_row_slice(row)?, scale_x, x_scale, &mut v);
             match self.indices.first_mut() {
-                Some(index) => insert_row(index, &mut self.counts, row as u32, &v),
+                Some(index) => {
+                    insert_row(index, &mut self.counts, row as u32, &v);
+                    self.morph.advance(index, &mut self.counts);
+                }
                 None => {
                     let (index, counts) = new_tree(row as u32, &v, num_dim, self.index_dir.clone())?;
                     self.indices.push(index);
@@ -111,17 +113,6 @@ impl IncrementalIndex {
                 }
             }
             self.indexed_rows = row + 1;
-        }
-        let added = self.indexed_rows - start;
-        if let Some(rebuild) = self.rebuild.as_mut().filter(|_| added > 0) {
-            if let Some((index, counts)) = rebuild.advance(added, train_x, (scale_x, x_scale), self.indexed_rows)? {
-                self.indices = vec![index];
-                self.counts = counts;
-                self.rebuild = None;
-            }
-        }
-        if self.rebuild.as_ref().is_some_and(Rebuild::orphaned) {
-            self.start_rebuild();
         }
         Ok(())
     }

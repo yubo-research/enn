@@ -6,8 +6,9 @@ after each batch. At every checkpoint each model refits its ENN hyperparameters 
 ``enn_fit``. ``bpann_disk`` uses raw distances (``ENNMetricLearning.NONE``);
 ``bpann_disk_auto`` (``ENNMetricLearning.AUTO``) refits Sobol/Var(x) metric weights on a
 reservoir sample inside ``add`` and applies them only when leave-one-out validation prefers
-them to the best isotropic metric. ``bpann_disk_scale_x`` divides each input by its running
-standard deviation, updated incrementally on every ``add`` (``ENNScaleX.ON`` with BPANN_DISK).
+them to the best isotropic metric. ``build_model`` also accepts ``bpann_disk_scale_x``, which
+divides each input by its running standard deviation, updated incrementally on every ``add``
+(``ENNScaleX.ON`` with BPANN_DISK); it is not in the default ``MODELS``.
 
 ``add_s`` is wall time from the previous checkpoint to this one: adds (including AUTO's metric
 refits), syncs, and hyperparameter fit. ``query_s`` is one posterior call on the test set.
@@ -54,7 +55,6 @@ MODELS: tuple[str, ...] = (
     "flat",
     "flat_scale_x",
     "bpann_disk",
-    "bpann_disk_scale_x",
     "bpann_disk_auto",
 )
 BPANN_METRIC_LEARNING: dict[str, ENNMetricLearning] = {

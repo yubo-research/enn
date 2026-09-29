@@ -37,7 +37,7 @@ impl EpistemicNearestNeighbors {
     /// Set per-dimension distance scales: distances use `x / x_scale`.
     ///
     /// `rebuild=false` rescales the stored index in place (partition kept);
-    /// `rebuild=true` re-indexes every row under the new metric. Later `add`
+    /// `rebuild=true` also re-partitions it in place, a little on each later add. Later `add`
     /// calls keep this metric instead of re-deriving `x_scale` from data moments.
     pub fn set_metric_scale(&mut self, x_scale: Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
         if x_scale.len() != self.num_dim {

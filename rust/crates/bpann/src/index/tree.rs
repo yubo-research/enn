@@ -170,8 +170,12 @@ fn attach_sibling(
             child_page_ids: vec![old.0, new.0],
         });
         index.header.root_page_id = root;
+        counts.set_parent(root, None);
+        counts.set_parent(old.0, Some(root));
+        counts.set_parent(new.0, Some(root));
         return;
     };
+    counts.set_parent(new.0, Some(parent));
     let Some(Page::Internal {
         centroids,
         child_page_ids,
@@ -221,6 +225,7 @@ fn split_internal(index: &mut BpannIndex, counts: &mut TreeCounts, path: &mut Ve
     let new_id = counts.alloc();
     counts.set(new_id, kids_b.iter().map(|&c| counts.count(c)).sum());
     counts.set_radius(new_id, r_b);
+    kids_b.iter().for_each(|&kid| counts.set_parent(kid, Some(new_id)));
     if let Some(Page::Internal {
         centroids,
         child_page_ids,

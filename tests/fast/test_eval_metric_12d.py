@@ -157,7 +157,7 @@ def test_run_eval_streams_each_seed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_bpann_models_and_metric_learning_modes() -> None:
-    assert mod.MODELS == ("flat", "flat_scale_x", "bpann_disk", "bpann_disk_scale_x", "bpann_disk_auto")
+    assert mod.MODELS == ("flat", "flat_scale_x", "bpann_disk", "bpann_disk_auto")
     assert mod.BPANN_METRIC_LEARNING == {
         "bpann_disk": ENNMetricLearning.NONE,
         "bpann_disk_scale_x": ENNMetricLearning.NONE,

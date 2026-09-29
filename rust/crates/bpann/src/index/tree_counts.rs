@@ -13,16 +13,30 @@ pub fn dist(a: &[f32], b: &[f32]) -> f32 {
 /// page (a leaf's row coordinates in `row_ids` order, or an internal page's child
 /// centroids in `child_page_ids` order), and a radius per page: an upper bound on the
 /// distance from the page's centroid (its entry in the parent) to any row below it.
-/// All are indexed by page id; a missing radius is infinite.
+/// All are indexed by page id; a missing radius is infinite. Each page's parent is
+/// kept too.
 #[derive(Clone, Debug, Default)]
 pub struct TreeCounts {
     counts: Vec<usize>,
     blocks: Vec<Vec<f32>>,
     radii: Vec<f32>,
+    parents: Vec<u32>,
     rows_cached: bool,
 }
 
 impl TreeCounts {
+    pub fn parent(&self, page_id: u32) -> Option<u32> {
+        self.parents.get(page_id as usize).copied().filter(|&p| p != u32::MAX)
+    }
+
+    pub(crate) fn set_parent(&mut self, page_id: u32, parent: Option<u32>) {
+        let i = page_id as usize;
+        if i >= self.parents.len() {
+            self.parents.resize(i + 1, u32::MAX);
+        }
+        self.parents[i] = parent.unwrap_or(u32::MAX);
+    }
+
     pub fn count(&self, page_id: u32) -> usize {
         self.counts.get(page_id as usize).copied().unwrap_or(0)
     }
@@ -227,6 +241,7 @@ impl TreeCounts {
                 let mut sum = 0;
                 for &child in child_page_ids {
                     sum += self.count_subtree(index, child, depth + 1)?;
+                    self.set_parent(child, Some(page_id));
                 }
                 sum
             }

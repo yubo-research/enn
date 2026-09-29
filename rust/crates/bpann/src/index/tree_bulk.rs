@@ -144,6 +144,7 @@ fn push_internal(pages: &mut Vec<Page>, counts: &mut TreeCounts, kids: &[Emitted
     counts.set_centroid_block(page_id, &centroids);
     counts.set(page_id, count);
     counts.set_radius(page_id, radius);
+    kids.iter().for_each(|k| counts.set_parent(k.page_id, Some(page_id)));
     pages.push(Page::Internal {
         page_id,
         centroids,

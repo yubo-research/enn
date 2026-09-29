@@ -4,7 +4,8 @@
 //! values, so a new diagonal metric maps each stored value by
 //! `v_d * old_scale_d / new_scale_d` exactly. [`BpannBackend::rescale_metric`]
 //! applies that map in place and keeps the partition; [`BpannBackend::rebuild_metric`]
-//! also re-partitions every row under the new metric.
+//! also re-partitions every row under the new metric, in place, by moving page and
+//! row references a little per later insert ([`crate::index::tree_morph`]).
 
 use std::fs;
 use std::sync::Arc;
@@ -14,7 +15,6 @@ use ndarray::Array1;
 use crate::backend::BpannBackend;
 use crate::error::BpannError;
 use crate::index::page::Page;
-use crate::index::tree_bulk::BULK_BUILD_MIN_ROWS;
 use crate::index::{BpannIndex, IncrementalIndex};
 
 /// Present in `work_dir` while the index is expressed in a caller-set metric.
@@ -50,16 +50,13 @@ pub fn rescale_index_coords(index: &mut BpannIndex, ratio: &[f64]) {
 
 impl IncrementalIndex {
     /// Multiply every stored coordinate by `ratio`; a re-partition in progress
-    /// restarts under the new coordinates.
+    /// carries on under the new coordinates.
     pub fn rescale_coords(&mut self, ratio: &[f64]) {
         for index in &mut self.indices {
             self.counts.write_page_centroids(index);
             rescale_index_coords(index, ratio);
         }
         self.counts.scale_rows(ratio);
-        if self.rebuilding() {
-            self.start_rebuild();
-        }
     }
 }
 
@@ -119,22 +116,13 @@ impl BpannBackend {
         self.write_metric_marker()
     }
 
-    /// Switch to metric `x_scale` and re-partition every row under it. A large
-    /// index is rescaled in place and re-partitioned in the background
-    /// ([`crate::index::tree_rebuild`]); a small one is re-indexed at once.
+    /// Switch to metric `x_scale` by rescaling in place, then re-partition every
+    /// row under it, in place, during the following inserts. The index answers
+    /// queries under the new metric immediately.
     pub fn rebuild_metric(&mut self, x_scale: &Array1<f64>) -> Result<(), BpannError> {
-        self.validate_metric_scale(x_scale)?;
-        if self.index.indexed_rows >= BULK_BUILD_MIN_ROWS && self.index.counts.rows_cached() {
-            self.rescale_metric(x_scale)?;
-            self.index.start_rebuild();
-            return Ok(());
-        }
-        self.scale_x = true;
-        self.x_scale = x_scale.to_owned();
-        *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
-        self.mark_index_stale();
-        self.ensure_index_sync()?;
-        self.write_metric_marker()
+        self.rescale_metric(x_scale)?;
+        self.index.start_morph();
+        Ok(())
     }
 
     /// On reopen, an index persisted under a caller-set metric cannot be matched
@@ -264,19 +252,20 @@ mod tests {
     }
 
     #[test]
-    fn large_metric_change_gives_exact_neighbors_before_and_after_the_swap() {
-        let (n0, scale) = (BULK_BUILD_MIN_ROWS + 4_000, [0.3, 1.0, 2.5]);
+    fn large_metric_change_gives_exact_neighbors_during_and_after_the_morph() {
+        let (n0, scale) = (12_000, [0.3, 1.0, 2.5]);
         let x = random_rows(n0 + n0 / 8, 3, 21);
         let q = random_rows(10, 3, 22);
         let dir = TempDir::new().unwrap();
         let mut b = backend_with_rows(&dir, &x.slice(ndarray::s![..n0, ..]).to_owned());
         b.rebuild_metric(&Array1::from(scale.to_vec())).unwrap();
-        assert!(b.index.rebuilding());
+        assert!(b.index.morphing());
         assert_exact_top5(&mut b, &x, n0, &scale, &q);
         let y = Array2::zeros((500, 1));
         let mut n = n0;
-        while b.index.rebuilding() {
-            assert!(n + 500 <= x.nrows(), "rebuild still running at {n} rows");
+        while b.index.morphing() {
+            assert!(n + 500 <= x.nrows(), "morph still running at {n} rows");
+            assert_exact_top5(&mut b, &x, n, &scale, &q);
             b.append_rows(&x.slice(ndarray::s![n..n + 500, ..]), &y.view(), None).unwrap();
             b.ensure_index_sync().unwrap();
             n += 500;

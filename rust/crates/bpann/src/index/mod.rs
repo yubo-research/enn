@@ -7,8 +7,8 @@ pub mod split;
 pub mod sync;
 pub mod tree;
 pub mod tree_bulk;
-pub mod tree_rebuild;
 pub mod tree_counts;
+pub mod tree_morph;
 pub mod tree_search;
 
 pub use build::{BpannIndex, DEFAULT_LEAF_CAPACITY, IndexHeader};
