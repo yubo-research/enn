@@ -14,8 +14,7 @@ use ndarray::Array1;
 
 use crate::backend::BpannBackend;
 use crate::error::BpannError;
-use crate::index::page::Page;
-use crate::index::{BpannIndex, IncrementalIndex};
+use crate::index::IncrementalIndex;
 
 /// Present in `work_dir` while the index is expressed in a caller-set metric.
 pub const METRIC_MARKER_FILE: &str = "metric_x_scale.json";
@@ -26,37 +25,13 @@ fn scale_f32(values: &mut [f32], ratio: &[f64]) {
     }
 }
 
-fn rescale_page(page: &mut Page, ratio: &[f64]) {
-    match page {
-        Page::Internal { centroids, .. } => {
-            centroids.iter_mut().for_each(|c| scale_f32(c, ratio));
-        }
-        Page::Leaf {
-            vectors,
-            stored_centroid,
-            ..
-        } => {
-            vectors.iter_mut().for_each(|v| scale_f32(v, ratio));
-            if let Some(c) = stored_centroid.as_mut() {
-                scale_f32(c, ratio);
-            }
-        }
-    }
-}
-
-pub fn rescale_index_coords(index: &mut BpannIndex, ratio: &[f64]) {
-    index.pages.iter_mut().for_each(|p| rescale_page(p, ratio));
-}
-
 impl IncrementalIndex {
     /// Multiply every stored coordinate by `ratio`; a re-partition in progress
     /// carries on under the new coordinates.
     pub fn rescale_coords(&mut self, ratio: &[f64]) {
-        for index in &mut self.indices {
-            self.counts.write_page_centroids(index);
-            rescale_index_coords(index, ratio);
+        if let Some(tree) = self.tree.as_mut() {
+            tree.scale_rows(ratio);
         }
-        self.counts.scale_rows(ratio);
     }
 }
 
@@ -141,6 +116,7 @@ impl BpannBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::page::Page;
     use ndarray::Array2;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -179,11 +155,13 @@ mod tests {
     }
 
     fn all_coords(b: &BpannBackend) -> Vec<Vec<f32>> {
+        let tree = b.index.tree.as_ref().expect("tree");
         let mut out = Vec::new();
-        for index in &b.index.indices {
-            let mut index = index.clone();
-            b.index.counts.write_page_centroids(&mut index);
-            out.extend(index.pages.iter().flat_map(page_coords));
+        for id in 0..tree.num_pages() as u32 {
+            out.extend(page_coords(&tree.page(id)));
+            if tree.store.is_leaf(id) {
+                out.extend(tree.store.block(id).chunks_exact(tree.store.num_dim()).map(<[f32]>::to_vec));
+            }
         }
         out
     }

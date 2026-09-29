@@ -14,16 +14,25 @@ use rayon::prelude::*;
 
 use crate::distance::l2_sq_f32;
 use crate::error::BpannError;
-use crate::index::build::BpannIndex;
-use crate::index::page::Page;
 use crate::index::split::{median_split, weighted_mean};
-use crate::index::tree::{TreeCounts, TREE_FANOUT, TREE_LEAF_CAPACITY};
+use crate::index::tree::{Tree, TREE_FANOUT, TREE_LEAF_CAPACITY};
 use crate::index::tree_counts::dist;
+use crate::index::tree_store::Kind;
 use crate::small_n_search::OrderedF32;
 
 /// An empty tree indexes at least this many rows in one bulk build, not row by row.
 /// Fewer rows insert row by row in well under 0.1 s, so only large rebuilds use it.
 pub const BULK_BUILD_MIN_ROWS: usize = 65_536;
+
+/// Coordinate bytes a bulk build may hold at once; later rows insert one at a time,
+/// so a rebuild's memory does not grow with the number of rows.
+pub const BULK_BUILD_MAX_BYTES: usize = 256 << 20;
+
+/// Rows one bulk build takes: [`BULK_BUILD_MAX_BYTES`] of `f32` coordinates, and
+/// never fewer than [`BULK_BUILD_MIN_ROWS`].
+pub fn bulk_build_max_rows(num_dim: usize) -> usize {
+    (BULK_BUILD_MAX_BYTES / (4 * num_dim.max(1))).max(BULK_BUILD_MIN_ROWS)
+}
 
 enum Node {
     Leaf { start: usize, len: usize },
@@ -133,29 +142,26 @@ struct Emitted {
     count: usize,
 }
 
-/// Build the internal page over `kids` (holding `count` rows), append it to `pages`.
-fn push_internal(pages: &mut Vec<Page>, counts: &mut TreeCounts, kids: &[Emitted], count: usize) -> Emitted {
-    let centroids: Vec<Vec<f32>> = kids.iter().map(|k| k.centroid.clone()).collect();
+/// Build the internal page over `kids` (holding `count` rows) in `tree`.
+fn push_internal(tree: &mut Tree, kids: &[Emitted], count: usize) -> Result<Emitted, BpannError> {
+    let centroids: Vec<&[f32]> = kids.iter().map(|k| k.centroid.as_slice()).collect();
     let weights: Vec<f64> = kids.iter().map(|k| k.count as f64).collect();
     let all: Vec<usize> = (0..kids.len()).collect();
     let centroid = weighted_mean(&centroids, &weights, &all);
     let radius = kids.iter().map(|k| dist(&k.centroid, &centroid) + k.radius).fold(0.0, f32::max);
-    let page_id = counts.alloc();
-    counts.set_centroid_block(page_id, &centroids);
-    counts.set(page_id, count);
-    counts.set_radius(page_id, radius);
-    kids.iter().for_each(|k| counts.set_parent(k.page_id, Some(page_id)));
-    pages.push(Page::Internal {
-        page_id,
-        centroids,
-        child_page_ids: kids.iter().map(|k| k.page_id).collect(),
-    });
-    Emitted {
+    let s = &mut tree.store;
+    let page_id = s.alloc(Kind::Internal)?;
+    let ids: Vec<u32> = kids.iter().map(|k| k.page_id).collect();
+    s.set_entries(page_id, &ids, &centroids.concat());
+    s.set_count(page_id, count);
+    s.set_radius(page_id, radius);
+    kids.iter().for_each(|k| s.set_parent(k.page_id, Some(page_id)));
+    Ok(Emitted {
         page_id,
         centroid,
         radius,
         count,
-    }
+    })
 }
 
 struct Builder<'a> {
@@ -163,83 +169,45 @@ struct Builder<'a> {
     vs: &'a [f32],
     dim: usize,
     order: &'a [usize],
-    pages: Vec<Page>,
-    counts: TreeCounts,
+    tree: Tree,
 }
 
 impl Builder<'_> {
-    /// Emit `node`'s pages in post-order, so page ids are positions in `pages` and
-    /// page 0 is a leaf.
-    fn emit(&mut self, node: &Node) -> Emitted {
+    /// Emit `node`'s pages in post-order.
+    fn emit(&mut self, node: &Node) -> Result<Emitted, BpannError> {
         let Node::Leaf { start, len } = node else {
-            let kids: Vec<Emitted> = children(node).into_iter().map(|k| self.emit(k)).collect();
-            return push_internal(&mut self.pages, &mut self.counts, &kids, node.count());
+            let kids = children(node).into_iter().map(|k| self.emit(k)).collect::<Result<Vec<_>, _>>()?;
+            return push_internal(&mut self.tree, &kids, node.count());
         };
-        let full = TREE_LEAF_CAPACITY + 1;
-        let members = &self.order[*start..start + len];
-        let mut block = Vec::with_capacity(full * self.dim);
-        block.extend_from_slice(&self.vs[start * self.dim..(start + len) * self.dim]);
+        let block = &self.vs[start * self.dim..(start + len) * self.dim];
         let points: Vec<&[f32]> = block.chunks_exact(self.dim).collect();
         let all: Vec<usize> = (0..*len).collect();
         let centroid = weighted_mean(&points, &vec![1.0; *len], &all);
         let radius = points.iter().map(|p| dist(p, &centroid)).fold(0.0, f32::max);
-        let mut row_ids = Vec::with_capacity(full);
-        row_ids.extend(members.iter().map(|&i| self.rows[i]));
-        let page_id = self.counts.alloc();
-        *self.counts.block_mut(page_id) = block;
-        self.counts.set(page_id, *len);
-        self.counts.set_radius(page_id, radius);
-        self.pages.push(Page::Leaf {
-            page_id,
-            row_ids,
-            row_range: None,
-            vectors: Vec::new(),
-            stored_centroid: Some(centroid.clone()),
-        });
-        Emitted {
+        let row_ids: Vec<u32> = self.order[*start..start + len].iter().map(|&i| self.rows[i]).collect();
+        let s = &mut self.tree.store;
+        let page_id = s.alloc(Kind::Leaf)?;
+        s.set_entries(page_id, &row_ids, block);
+        s.set_count(page_id, *len);
+        s.set_radius(page_id, radius);
+        Ok(Emitted {
             page_id,
             centroid,
             radius,
             count: *len,
-        }
+        })
     }
 }
 
-/// Index over `pages` (page ids are positions; page 0 is a leaf) rooted at `root_id`.
-pub(crate) fn into_index(
-    pages: Vec<Page>,
-    mut counts: TreeCounts,
-    root_id: u32,
-    indexed_rows: usize,
-    num_dim: usize,
-    index_dir: std::path::PathBuf,
-) -> Result<(BpannIndex, TreeCounts), BpannError> {
-    let mut pages = pages.into_iter();
-    let Some(Page::Leaf {
-        row_ids,
-        stored_centroid: Some(centroid),
-        ..
-    }) = pages.next()
-    else {
-        unreachable!("the first page built is a leaf");
-    };
-    let mut index = BpannIndex::build_row_ids_leaf_with_persist(&row_ids, centroid, num_dim, index_dir, false)?;
-    pages.for_each(|page| index.push_page(page));
-    index.header.root_page_id = root_id;
-    index.header.indexed_rows = indexed_rows;
-    index.header.leaf_capacity = TREE_LEAF_CAPACITY;
-    counts.mark_rows_cached();
-    Ok((index, counts))
-}
-
 /// Tree over `rows` (row-major scaled coordinates `vs`, reordered in place), with
-/// every block filled.
+/// every block filled. Holds `vs` and a few words per row in memory, so callers
+/// bound the number of rows ([`bulk_build_max_rows`]).
 pub fn bulk_build(
     rows: &[u32],
     vs: &mut [f32],
     num_dim: usize,
     index_dir: std::path::PathBuf,
-) -> Result<(BpannIndex, TreeCounts), BpannError> {
+) -> Result<Tree, BpannError> {
     let dim = num_dim.max(1);
     let mut order: Vec<usize> = (0..rows.len()).collect();
     let root = partition(&mut order, vs, 0, dim);
@@ -248,11 +216,13 @@ pub fn bulk_build(
         vs: &*vs,
         dim,
         order: &order,
-        pages: Vec::new(),
-        counts: TreeCounts::default(),
+        tree: Tree::empty(num_dim, index_dir)?,
     };
-    let root_id = builder.emit(&root).page_id;
-    into_index(builder.pages, builder.counts, root_id, rows.len(), num_dim, index_dir)
+    let root_id = builder.emit(&root)?.page_id;
+    let mut tree = builder.tree;
+    tree.header.root_page_id = root_id;
+    tree.header.indexed_rows = rows.len();
+    Ok(tree)
 }
 
 #[cfg(test)]
@@ -282,34 +252,26 @@ mod tests {
         let vs: Vec<f32> = (0..n * dim).map(|_| rng.gen::<f32>()).collect();
         let rows: Vec<u32> = (0..n as u32).collect();
         let dir = tempfile::TempDir::new().unwrap();
-        let (mut index, mut counts) = bulk_build(&rows[..8000], &mut vs[..8000 * dim].to_vec(), dim, dir.path().join("i")).unwrap();
+        let mut tree = bulk_build(&rows[..8000], &mut vs[..8000 * dim].to_vec(), dim, dir.path().join("i")).unwrap();
+        assert_eq!(bulk_build_max_rows(1_000_000), BULK_BUILD_MIN_ROWS);
+        assert_eq!(bulk_build_max_rows(4), BULK_BUILD_MAX_BYTES / 16);
         for &row in &rows[8000..] {
             let r = row as usize;
-            crate::index::tree::insert_row(&mut index, &mut counts, row, &vs[r * dim..(r + 1) * dim]);
+            tree.insert_row(row, &vs[r * dim..(r + 1) * dim]).unwrap();
         }
-        counts.write_page_centroids(&mut index);
-        let mut ids = index.leaf_row_ids();
-        ids.sort_unstable();
-        assert_eq!(ids, rows);
-        let recount = TreeCounts::from_index(&index).expect("valid tree");
-        for page in &index.pages {
-            assert_eq!(counts.count(page.page_id()), recount.count(page.page_id()));
-            match page {
-                Page::Leaf { row_ids, .. } => assert!((32..=TREE_LEAF_CAPACITY).contains(&row_ids.len())),
-                Page::Internal {
-                    centroids,
-                    child_page_ids,
-                    ..
-                } => {
-                    assert!((2..=TREE_FANOUT).contains(&child_page_ids.len()));
-                    for (c, &child) in centroids.iter().zip(child_page_ids) {
-                        if let Some(Page::Leaf { row_ids, .. }) = index.page_by_id(child) {
-                            for &row in row_ids {
-                                let x = &vs[row as usize * dim..(row as usize + 1) * dim];
-                                assert!(dist(x, c) <= counts.radius(child) * 1.0001 + 1e-6);
-                            }
-                        }
-                    }
+        assert_eq!(tree.leaf_row_ids(), rows);
+        tree.assert_counts_consistent();
+        let s = &tree.store;
+        for page in 0..tree.num_pages() as u32 {
+            if s.is_leaf(page) {
+                assert!((32..=TREE_LEAF_CAPACITY).contains(&s.len(page)));
+                continue;
+            }
+            assert!((2..=TREE_FANOUT).contains(&s.len(page)));
+            for (c, &child) in s.block(page).chunks_exact(dim).zip(s.ids(page)) {
+                for &row in s.ids(child).iter().filter(|_| s.is_leaf(child)) {
+                    let x = &vs[row as usize * dim..(row as usize + 1) * dim];
+                    assert!(dist(x, c) <= s.radius(child) * 1.0001 + 1e-6);
                 }
             }
         }

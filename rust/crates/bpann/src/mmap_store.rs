@@ -4,6 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 
 use crate::error::BpannError;
+use crate::index::tree_residency::{Residency, DEFAULT_RESIDENT_BUDGET_BYTES};
 
 pub(crate) const MMAP_GROW_ROWS: usize = 64;
 
@@ -13,6 +14,7 @@ pub struct MmapColumnStore {
     pub nrows: usize,
     file: File,
     mmap: MmapMut,
+    residency: Residency,
 }
 
 impl MmapColumnStore {
@@ -39,7 +41,19 @@ impl MmapColumnStore {
         self.mmap = unsafe {
             MmapMut::map_mut(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
         };
+        self.residency.update_tracking(new_len, 0);
         Ok(())
+    }
+
+    /// Keep at most about `bytes` of this store's pages resident once the file is
+    /// larger than that; see [`crate::index::tree_residency`].
+    pub fn set_resident_budget(&mut self, bytes: usize) {
+        self.residency.set_budget(bytes);
+        self.residency.update_tracking(self.mmap.len(), 0);
+    }
+
+    fn touch(&self, offset: usize, len: usize) {
+        self.residency.touch(offset, len, &[&self.mmap]);
     }
 
     pub fn mmap_open_or_create(
@@ -77,12 +91,15 @@ impl MmapColumnStore {
         let mmap = unsafe {
             MmapMut::map_mut(&file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
         };
+        let mut residency = Residency::new(DEFAULT_RESIDENT_BUDGET_BYTES);
+        residency.update_tracking(mmap.len(), 0);
         Ok(Self {
             path,
             ncols,
             nrows,
             file,
             mmap,
+            residency,
         })
     }
 
@@ -113,6 +130,7 @@ impl MmapColumnStore {
         let row_bytes = self.row_bytes();
         let offset = self.nrows * row_bytes;
         let n = rows.nrows() * self.ncols;
+        self.touch(offset, n * std::mem::size_of::<f64>());
         let dst = &mut self.mmap[offset..offset + n * std::mem::size_of::<f64>()];
 
 
@@ -149,6 +167,7 @@ impl MmapColumnStore {
         self.mmap = unsafe {
             MmapMut::map_mut(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
         };
+        self.residency.forget();
         Ok(())
     }
 
@@ -161,6 +180,7 @@ impl MmapColumnStore {
         }
         let byte_start = i * self.row_bytes();
         let byte_end = byte_start + self.row_bytes();
+        self.touch(byte_start, self.row_bytes());
         let bytes = &self.mmap[byte_start..byte_end];
         let slice: &[f64] =
             unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const f64, self.ncols) };
@@ -229,5 +249,22 @@ mod tests {
             .unwrap();
         store.release_resident_pages().unwrap();
         assert_eq!(store.mmap_row_slice(3).unwrap(), &[7.0, 8.0]);
+    }
+
+    #[test]
+    fn a_small_budget_bounds_residency_and_keeps_rows() {
+        let dir = TempDir::new().unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        store.set_resident_budget(1 << 17);
+        let rows = Array2::from_shape_fn((40_000, 2), |(i, j)| (2 * i + j) as f64);
+        store.mmap_append(&rows.view()).unwrap();
+        assert!(store.residency.tracking());
+        for i in (0..40_000).step_by(97) {
+            assert_eq!(store.mmap_row_slice(i).unwrap(), &[(2 * i) as f64, (2 * i + 1) as f64]);
+            assert!(store.residency.estimate() <= 1 << 17);
+        }
+        store.release_resident_pages().unwrap();
+        assert_eq!(store.residency.estimate(), 0);
     }
 }

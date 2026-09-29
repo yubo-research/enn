@@ -12,10 +12,8 @@ use std::collections::BinaryHeap;
 
 use crate::distance::{bpann_row_to_f32, l2_sq_f32};
 use crate::error::BpannError;
-use crate::index::build::BpannIndex;
-use crate::index::page::Page;
 use crate::index::search::MmapSearchStore;
-use crate::index::tree::TreeCounts;
+use crate::index::tree::Tree;
 use crate::small_n_search::OrderedF32;
 
 /// Leaves scored per query per unit of `ln N`.
@@ -81,8 +79,7 @@ impl TopK {
 
 /// Approximate `k` nearest rows to `query` (scaled coordinates), ascending by distance.
 pub fn search_tree(
-    index: &BpannIndex,
-    counts: &TreeCounts,
+    tree: &Tree,
     query: &[f32],
     k: usize,
     leaf_budget: usize,
@@ -92,11 +89,13 @@ pub fn search_tree(
         k,
         heap: BinaryHeap::with_capacity(k + 1),
     };
-    if k == 0 || index.pages.is_empty() {
+    if k == 0 || tree.num_pages() == 0 {
         return Ok(Vec::new());
     }
+    let s = &tree.store;
+    let d = query.len().max(1);
     let mut frontier: BinaryHeap<Reverse<(OrderedF32, OrderedF32, u32)>> = BinaryHeap::new();
-    frontier.push(Reverse((OrderedF32(0.0), OrderedF32(0.0), index.header.root_page_id)));
+    frontier.push(Reverse((OrderedF32(0.0), OrderedF32(0.0), tree.header.root_page_id)));
     let mut leaves = 0usize;
     let mut buf = Vec::with_capacity(query.len());
     while let Some(Reverse((_, bound, page_id))) = frontier.pop() {
@@ -106,44 +105,28 @@ pub fn search_tree(
         if top.cannot_improve(bound.0) {
             continue;
         }
-        match index.page_by_id(page_id) {
-            Some(Page::Internal {
-                centroids,
-                child_page_ids,
-                ..
-            }) => {
-                let block = counts.block(page_id);
-                let flat = block.len() == child_page_ids.len() * query.len();
-                for (slot, &child) in child_page_ids.iter().enumerate() {
-                    let c = if flat {
-                        &block[slot * query.len()..(slot + 1) * query.len()]
-                    } else {
-                        centroids[slot].as_slice()
-                    };
-                    let d2 = l2_sq_f32(query, c);
-                    let radius = counts.radius(child);
-                    let bound = lower_bound(d2, radius);
-                    if !top.cannot_improve(bound) {
-                        frontier.push(Reverse((OrderedF32(priority(d2, radius)), OrderedF32(bound), child)));
-                    }
+        if !s.is_leaf(page_id) {
+            for (&child, c) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
+                let d2 = l2_sq_f32(query, c);
+                let radius = s.radius(child);
+                let bound = lower_bound(d2, radius);
+                if !top.cannot_improve(bound) {
+                    frontier.push(Reverse((OrderedF32(priority(d2, radius)), OrderedF32(bound), child)));
                 }
             }
-            Some(Page::Leaf { row_ids, .. }) => {
-                let block = counts.block(page_id);
-                if block.len() == row_ids.len() * query.len() {
-                    for (&row, x) in row_ids.iter().zip(block.chunks_exact(query.len().max(1))) {
-                        top.offer(row, l2_sq_f32(query, x));
-                    }
-                } else {
-                    for &row in row_ids {
-                        bpann_row_to_f32(store.train_x.mmap_row_slice(row as usize)?, store.scale_x, store.x_scale, &mut buf);
-                        top.offer(row, l2_sq_f32(query, &buf));
-                    }
-                }
-                leaves += 1;
-            }
-            None => {}
+            continue;
         }
+        if tree.rows_cached() {
+            for (&row, x) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
+                top.offer(row, l2_sq_f32(query, x));
+            }
+        } else {
+            for &row in s.ids(page_id) {
+                bpann_row_to_f32(store.train_x.mmap_row_slice(row as usize)?, store.scale_x, store.x_scale, &mut buf);
+                top.offer(row, l2_sq_f32(query, &buf));
+            }
+        }
+        leaves += 1;
     }
     Ok(top.into_sorted())
 }

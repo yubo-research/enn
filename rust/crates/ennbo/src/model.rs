@@ -9,6 +9,10 @@ use crate::error::ENNError;
 use crate::index::{IndexDriver, is_disk_index_driver};
 use crate::y_bounds::resolve_y_bounds;
 
+/// Rows read at a time when recomputing statistics from a reopened disk store, so
+/// the pass needs memory independent of the number of rows.
+const STATS_CHUNK_ROWS: usize = 1 << 16;
+
 type InitStats = (
     Array1<f64>,
     Array1<f64>,
@@ -498,14 +502,20 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
     if n == 0 {
         return Ok(());
     }
-    let indices: Vec<usize> = (0..n).collect();
-    let (x, y, _) = model.backend.train_rows_at(&indices)?;
-    let (y_sum, y_sumsq) = column_sums_and_sumsq(y.view());
+    let (mut y_sum, mut y_sumsq) = (Array1::zeros(model.num_metrics), Array1::zeros(model.num_metrics));
+    let (mut x_sum, mut x_sumsq) = (Array1::zeros(model.num_dim), Array1::zeros(model.num_dim));
+    for start in (0..n).step_by(STATS_CHUNK_ROWS) {
+        let indices: Vec<usize> = (start..(start + STATS_CHUNK_ROWS).min(n)).collect();
+        let (x, y, _) = model.backend.train_rows_at(&indices)?;
+        accumulate_columns(&mut y_sum, &mut y_sumsq, y.view());
+        if model.scale_x {
+            accumulate_columns(&mut x_sum, &mut x_sumsq, x.view());
+        }
+    }
     model.y_sum = y_sum;
     model.y_sumsq = y_sumsq;
     model.y_scale = scale_from_moments(n, model.num_metrics, &model.y_sum, &model.y_sumsq, 0.0);
     if model.scale_x {
-        let (x_sum, x_sumsq) = column_sums_and_sumsq(x.view());
         model.x_sum = x_sum;
         model.x_sumsq = x_sumsq;
         model.x_scale =
@@ -658,5 +668,28 @@ mod tests {
         model
             .add(&array![[0.5, 0.5]].view(), &array![[0.5]].view(), None)
             .unwrap();
+    }
+
+    #[test]
+    fn disk_reopen_recomputes_stats_across_chunks() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let n = STATS_CHUNK_ROWS + 1234;
+        let x = Array2::from_shape_fn((n, 2), |(i, j)| ((i * 7 + j * 3) % 101) as f64 * 0.01);
+        let y = Array2::from_shape_fn((n, 1), |(i, _)| ((i * 13) % 97) as f64 * 0.1);
+        let open = |x: Array2<f64>, y: Array2<f64>| {
+            let storage = EnnStorage::Disk;
+            let dir = Some(dir.path().to_path_buf());
+            EpistemicNearestNeighbors::new_with_storage(x, y, None, true, IndexDriver::BpAnnDisk, storage, dir, None)
+                .unwrap()
+        };
+        let built = open(x, y);
+        let stats = |m: &EpistemicNearestNeighbors| {
+            (m.num_obs, m.y_sum.clone(), m.y_sumsq.clone(), m.x_sum.clone(), m.x_sumsq.clone())
+        };
+        let expected = stats(&built);
+        drop(built);
+        let reopened = open(Array2::zeros((0, 2)), Array2::zeros((0, 1)));
+        assert_eq!(stats(&reopened), expected);
+        assert_eq!(reopened.x_scale, reopened.built_x_scale);
     }
 }

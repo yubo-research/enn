@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use ndarray::{Array1, Array2, ArrayView2};
 
 use crate::error::BpannError;
-use crate::index::{BpannIndex, IncrementalIndex};
+use crate::index::tree::Tree;
+use crate::index::IncrementalIndex;
 use crate::large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 use crate::mmap_store::MmapColumnStore;
 use crate::observation::{
@@ -99,7 +100,7 @@ impl BpannBackend {
         let indexed_rows = obs::bpann_load_indexed_rows(&work_dir).unwrap_or(0).min(n);
         let mut index = IncrementalIndex::new(index_dir.clone());
         if index_dir.join("header.json").exists() && indexed_rows > 0 {
-            let adopted = index.adopt_persisted(BpannIndex::open(index_dir)?);
+            let adopted = index.adopt_persisted()?;
             if !adopted || index.indexed_rows > indexed_rows {
                 index.reset();
             }
@@ -412,16 +413,12 @@ impl BpannBackend {
         Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices))
     }
 
-    pub fn index_snapshot(&self) -> Option<&BpannIndex> {
-        self.index.indices.first()
+    pub fn index_snapshot(&self) -> Option<&Tree> {
+        self.index.tree.as_ref()
     }
 
     pub fn page_bytes(&self) -> Vec<u8> {
-        self.index
-            .indices
-            .first()
-            .map(|i| i.page_bytes())
-            .unwrap_or_default()
+        self.index.tree.as_ref().map(Tree::page_bytes).unwrap_or_default()
     }
 
     pub fn mmap_row_slice(&self, i: usize) -> Result<&[f64], BpannError> {

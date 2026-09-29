@@ -21,10 +21,8 @@
 //! subtrees regroup between pages, so rows reach distant leaves over successive laps.
 
 use crate::distance::l2_sq_f32;
-use crate::index::build::BpannIndex;
-use crate::index::page::Page;
 use crate::index::split::weighted_mean;
-use crate::index::tree::{TreeCounts, TREE_FANOUT, TREE_LEAF_CAPACITY};
+use crate::index::tree::{Tree, TREE_FANOUT, TREE_LEAF_CAPACITY};
 use crate::index::tree_counts::dist;
 
 /// Sweeps over the page slots scheduled by one [`Morph::schedule`]. Uniform 12-d with
@@ -51,9 +49,9 @@ pub struct Morph {
 
 impl Morph {
     /// Sweep the page slots [`MORPH_LAPS`] times, starting from the cursor.
-    pub fn schedule(&mut self, index: &BpannIndex) {
+    pub fn schedule(&mut self, tree: &Tree) {
         self.laps_left = MORPH_LAPS;
-        self.slots_left = index.pages.len();
+        self.slots_left = tree.num_pages();
     }
 
     pub fn active(&self) -> bool {
@@ -62,18 +60,18 @@ impl Morph {
 
     /// During a sweep, re-partition below the internal pages under the cursor until
     /// [`MORPH_WORK_PER_ADD`] items (on average) have been regrouped.
-    pub fn advance(&mut self, index: &mut BpannIndex, counts: &mut TreeCounts) {
+    pub fn advance(&mut self, tree: &mut Tree) {
         if !self.active() {
             return;
         }
         self.credit += MORPH_WORK_PER_ADD as isize;
         while self.credit > 0 {
-            let Some(page) = self.next_internal(index) else { break };
-            let covered = counts.parent(page).is_some_and(|p| small_subtree_leaves(index, p).is_some());
+            let Some(page) = self.next_internal(tree) else { break };
+            let covered = tree.store.parent(page).is_some_and(|p| small_subtree_leaves(tree, p).is_some());
             let work = if covered {
                 0
             } else {
-                repartition_leaves(index, counts, page) + repartition_internal(index, counts, page)
+                repartition_leaves(tree, page) + repartition_internal(tree, page)
             };
             self.credit -= work.max(1) as isize;
         }
@@ -82,19 +80,20 @@ impl Morph {
         }
     }
 
-    fn next_internal(&mut self, index: &BpannIndex) -> Option<u32> {
-        while self.slots_left > 0 && !index.pages.is_empty() {
-            if self.cursor >= index.pages.len() {
+    fn next_internal(&mut self, tree: &Tree) -> Option<u32> {
+        let num_pages = tree.num_pages();
+        while self.slots_left > 0 && num_pages > 0 {
+            if self.cursor >= num_pages {
                 self.cursor = 0;
             }
-            let page_id = index.pages[self.cursor].page_id();
+            let page_id = self.cursor as u32;
             self.cursor += 1;
             self.slots_left -= 1;
             if self.slots_left == 0 {
                 self.laps_left -= 1;
-                self.slots_left = if self.laps_left > 0 { index.pages.len() } else { 0 };
+                self.slots_left = if self.laps_left > 0 { num_pages } else { 0 };
             }
-            if !is_leaf(index, page_id) {
+            if !tree.store.is_leaf(page_id) {
                 return Some(page_id);
             }
         }
@@ -102,31 +101,23 @@ impl Morph {
     }
 }
 
-fn is_leaf(index: &BpannIndex, page: u32) -> bool {
-    matches!(index.page_by_id(page), Some(Page::Leaf { .. }))
-}
-
-fn children(index: &BpannIndex, page: u32) -> &[u32] {
-    match index.page_by_id(page) {
-        Some(Page::Internal { child_page_ids, .. }) => child_page_ids,
-        _ => &[],
-    }
-}
-
 /// Slots and ids of the children of `page` that are leaves (`leaves`) or not.
-fn children_of_kind(index: &BpannIndex, page: u32, leaves: bool) -> Vec<(usize, u32)> {
-    children(index, page).iter().copied().enumerate().filter(|&(_, k)| is_leaf(index, k) == leaves).collect()
+fn children_of_kind(tree: &Tree, page: u32, leaves: bool) -> Vec<(usize, u32)> {
+    let s = &tree.store;
+    s.ids(page).iter().copied().enumerate().filter(|&(_, k)| s.is_leaf(k) == leaves).collect()
 }
 
 /// Every leaf below `page`, left to right, or `None` if there are more than
 /// [`MORPH_POOL_LEAVES`].
-fn small_subtree_leaves(index: &BpannIndex, page: u32) -> Option<Vec<u32>> {
+fn small_subtree_leaves(tree: &Tree, page: u32) -> Option<Vec<u32>> {
     let (mut out, mut stack) = (Vec::new(), vec![page]);
     while let Some(p) = stack.pop() {
-        match index.page_by_id(p) {
-            Some(Page::Internal { child_page_ids, .. }) => stack.extend(child_page_ids.iter().rev()),
-            _ if out.len() == MORPH_POOL_LEAVES => return None,
-            _ => out.push(p),
+        if !tree.store.is_leaf(p) {
+            stack.extend(tree.store.ids(p).iter().rev());
+        } else if out.len() == MORPH_POOL_LEAVES {
+            return None;
+        } else {
+            out.push(p);
         }
     }
     Some(out)
@@ -134,33 +125,26 @@ fn small_subtree_leaves(index: &BpannIndex, page: u32) -> Option<Vec<u32>> {
 
 /// Recompute the count, radius and centroid (in `parent`, at `slot`) of internal
 /// page `page` and of the internal pages below it from their children.
-fn refresh(index: &BpannIndex, counts: &mut TreeCounts, page: u32, (parent, slot): (u32, usize)) {
-    for (s, k) in children_of_kind(index, page, false) {
-        refresh(index, counts, k, (page, s));
+fn refresh(tree: &mut Tree, page: u32, (parent, slot): (u32, usize)) {
+    for (s, k) in children_of_kind(tree, page, false) {
+        refresh(tree, k, (page, s));
     }
-    let d = index.header.num_dim.max(1);
-    let kids = children(index, page);
-    let block = counts.block(page);
-    let cents: Vec<&[f32]> = block.chunks_exact(d).collect();
-    let weights: Vec<f64> = kids.iter().map(|&k| counts.count(k) as f64).collect();
+    let st = &tree.store;
+    let kids = st.ids(page);
+    let cents: Vec<&[f32]> = st.block(page).chunks_exact(st.num_dim()).collect();
+    let weights: Vec<f64> = kids.iter().map(|&k| st.count(k) as f64).collect();
     let c = weighted_mean(&cents, &weights, &(0..kids.len()).collect::<Vec<_>>());
-    let r = cents.iter().zip(kids).map(|(x, &k)| dist(x, &c) + counts.radius(k)).fold(0.0, f32::max);
-    let n = kids.iter().map(|&k| counts.count(k)).sum();
-    counts.set(page, n);
-    counts.set_radius(page, r);
-    counts.block_mut(parent)[slot * d..(slot + 1) * d].copy_from_slice(&c);
+    let r = cents.iter().zip(kids).map(|(x, &k)| dist(x, &c) + st.radius(k)).fold(0.0, f32::max);
+    let n = kids.iter().map(|&k| st.count(k)).sum();
+    let st = &mut tree.store;
+    st.set_count(page, n);
+    st.set_radius(page, r);
+    st.entry_mut(parent, slot).copy_from_slice(&c);
 }
 
-fn slot_in_parent(index: &BpannIndex, counts: &TreeCounts, page: u32) -> Option<(u32, usize)> {
-    let parent = counts.parent(page)?;
-    Some((parent, children(index, parent).iter().position(|&k| k == page)?))
-}
-
-fn leaf_rows(index: &BpannIndex, leaf: u32) -> &[u32] {
-    match index.page_by_id(leaf) {
-        Some(Page::Leaf { row_ids, .. }) => row_ids,
-        _ => &[],
-    }
+fn slot_in_parent(tree: &Tree, page: u32) -> Option<(u32, usize)> {
+    let parent = tree.store.parent(page)?;
+    Some((parent, tree.store.ids(parent).iter().position(|&k| k == page)?))
 }
 
 /// Split `members` (positions into `points`) into the `cut` with the lowest projection
@@ -224,43 +208,35 @@ fn runs(sizes: impl Iterator<Item = usize>) -> Vec<Vec<usize>> {
 /// Pool the rows of every leaf below `page` if there are at most
 /// [`MORPH_POOL_LEAVES`] (else of its leaf children) and deal them out again among
 /// those leaves; returns the number of rows regrouped.
-fn repartition_leaves(index: &mut BpannIndex, counts: &mut TreeCounts, page: u32) -> usize {
-    let d = index.header.num_dim.max(1);
-    let deep = small_subtree_leaves(index, page);
-    let leaves = deep.clone().unwrap_or_else(|| children_of_kind(index, page, true).iter().map(|l| l.1).collect());
-    let rows: Vec<u32> = leaves.iter().flat_map(|&l| leaf_rows(index, l).iter().copied()).collect();
-    let vs: Vec<f32> = leaves.iter().flat_map(|&l| counts.block(l).iter().copied()).collect();
-    if leaves.len() < 2 || rows.len() < leaves.len() || vs.len() != rows.len() * d {
+fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
+    let d = tree.store.num_dim();
+    let deep = small_subtree_leaves(tree, page);
+    let leaves = deep.clone().unwrap_or_else(|| children_of_kind(tree, page, true).iter().map(|l| l.1).collect());
+    let rows: Vec<u32> = leaves.iter().flat_map(|&l| tree.store.ids(l).to_vec()).collect();
+    let vs: Vec<f32> = leaves.iter().flat_map(|&l| tree.store.block(l).to_vec()).collect();
+    if leaves.len() < 2 || rows.len() < leaves.len() || !tree.rows_cached() {
         return 0;
     }
     let points: Vec<&[f32]> = vs.chunks_exact(d).collect();
     let ones = vec![1.0; points.len()];
     let groups = groups_of(&points, leaves.len());
-    let now = runs(leaves.iter().map(|&l| leaf_rows(index, l).len()));
+    let now = runs(leaves.iter().map(|&l| tree.store.len(l)));
     if scatter(&points, &ones, &groups) >= scatter(&points, &ones, &now) {
         return rows.len();
     }
     for (&id, group) in leaves.iter().zip(groups) {
-        let Some((parent, slot)) = slot_in_parent(index, counts, id) else { continue };
+        let Some((parent, slot)) = slot_in_parent(tree, id) else { continue };
         let mine: Vec<&[f32]> = group.iter().map(|&i| points[i]).collect();
         let c = weighted_mean(&mine, &vec![1.0; mine.len()], &(0..mine.len()).collect::<Vec<_>>());
-        counts.block_mut(parent)[slot * d..(slot + 1) * d].copy_from_slice(&c);
-        counts.set(id, mine.len());
-        counts.set_radius(id, mine.iter().map(|p| dist(p, &c)).fold(0.0, f32::max));
-        *counts.block_mut(id) = mine.concat();
-        if let Some(Page::Leaf {
-            row_ids,
-            stored_centroid,
-            ..
-        }) = index.page_by_id_mut(id)
-        {
-            *row_ids = group.iter().map(|&i| rows[i]).collect();
-            *stored_centroid = Some(c);
-        }
+        let s = &mut tree.store;
+        s.entry_mut(parent, slot).copy_from_slice(&c);
+        s.set_count(id, mine.len());
+        s.set_radius(id, mine.iter().map(|p| dist(p, &c)).fold(0.0, f32::max));
+        s.set_entries(id, &group.iter().map(|&i| rows[i]).collect::<Vec<_>>(), &mine.concat());
     }
     if deep.is_some() {
-        for (s, k) in children_of_kind(index, page, false) {
-            refresh(index, counts, k, (page, s));
+        for (s, k) in children_of_kind(tree, page, false) {
+            refresh(tree, k, (page, s));
         }
     }
     rows.len()
@@ -269,40 +245,33 @@ fn repartition_leaves(index: &mut BpannIndex, counts: &mut TreeCounts, page: u32
 /// Pool the children of the internal pages directly below `parent` and deal them
 /// out again among those pages, grouped by their centroids; returns the number of
 /// page references regrouped.
-fn repartition_internal(index: &mut BpannIndex, counts: &mut TreeCounts, parent: u32) -> usize {
-    let d = index.header.num_dim.max(1);
-    let members = children_of_kind(index, parent, false);
-    let kids: Vec<u32> = members.iter().flat_map(|m| children(index, m.1).iter().copied()).collect();
-    let flat: Vec<f32> = members.iter().flat_map(|m| counts.block(m.1).iter().copied()).collect();
-    if members.len() < 2 || flat.len() != kids.len() * d {
+fn repartition_internal(tree: &mut Tree, parent: u32) -> usize {
+    let d = tree.store.num_dim();
+    let members = children_of_kind(tree, parent, false);
+    let kids: Vec<u32> = members.iter().flat_map(|m| tree.store.ids(m.1).to_vec()).collect();
+    let flat: Vec<f32> = members.iter().flat_map(|m| tree.store.block(m.1).to_vec()).collect();
+    if members.len() < 2 {
         return 0;
     }
     let cents: Vec<&[f32]> = flat.chunks_exact(d).collect();
-    let weights: Vec<f64> = kids.iter().map(|&k| counts.count(k) as f64).collect();
+    let weights: Vec<f64> = kids.iter().map(|&k| tree.store.count(k) as f64).collect();
     let groups = groups_of(&cents, members.len());
-    let now = runs(members.iter().map(|m| children(index, m.1).len()));
+    let now = runs(members.iter().map(|m| tree.store.len(m.1)));
     if scatter(&cents, &weights, &groups) >= scatter(&cents, &weights, &now) {
         return kids.len();
     }
     for (&(slot, id), group) in members.iter().zip(groups) {
+        let s = &mut tree.store;
         let c = weighted_mean(&cents, &weights, &group);
-        let r = group.iter().map(|&i| dist(cents[i], &c) + counts.radius(kids[i])).fold(0.0, f32::max);
-        let group_cents: Vec<Vec<f32>> = group.iter().map(|&i| cents[i].to_vec()).collect();
+        let r = group.iter().map(|&i| dist(cents[i], &c) + s.radius(kids[i])).fold(0.0, f32::max);
+        let group_cents: Vec<f32> = group.iter().flat_map(|&i| cents[i].iter().copied()).collect();
         let group_kids: Vec<u32> = group.iter().map(|&i| kids[i]).collect();
-        counts.block_mut(parent)[slot * d..(slot + 1) * d].copy_from_slice(&c);
-        counts.set(id, group_kids.iter().map(|&k| counts.count(k)).sum());
-        counts.set_radius(id, r);
-        counts.set_centroid_block(id, &group_cents);
-        group_kids.iter().for_each(|&k| counts.set_parent(k, Some(id)));
-        if let Some(Page::Internal {
-            centroids,
-            child_page_ids,
-            ..
-        }) = index.page_by_id_mut(id)
-        {
-            *centroids = group_cents;
-            *child_page_ids = group_kids;
-        }
+        let n: usize = group_kids.iter().map(|&k| s.count(k)).sum();
+        s.entry_mut(parent, slot).copy_from_slice(&c);
+        s.set_count(id, n);
+        s.set_radius(id, r);
+        s.set_entries(id, &group_kids, &group_cents);
+        group_kids.iter().for_each(|&k| s.set_parent(k, Some(id)));
     }
     kids.len()
 }

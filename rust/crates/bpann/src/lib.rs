@@ -368,9 +368,8 @@ mod acceptance_tests {
         b.ensure_index_sync().unwrap();
         assert_eq!(b.indexed_rows(), n);
         assert!(n > SMALL_N_INCORE_SEARCH_LIMIT);
-        let index = b.index_snapshot().expect("indexed snapshot");
-        assert!(!index.requires_exhaustive_leaf_scan());
-        assert_eq!(b.index.indices.len(), 1);
+        let tree = b.index_snapshot().expect("indexed snapshot");
+        assert_eq!(tree.header.indexed_rows, n);
         let mut total_recall = 0.0;
         for q in 0..num_queries {
             let query = x.row(q).to_owned();
@@ -417,7 +416,7 @@ mod acceptance_tests {
         }
         b.ensure_index_sync().unwrap();
         assert_eq!(b.indexed_rows(), n);
-        assert_eq!(b.index.indices.len(), 1);
+        assert!(b.index.tree.is_some());
         let mut total_recall = 0.0;
         for q in 0..num_queries {
             let query = x.row(q).to_owned();
@@ -898,20 +897,14 @@ mod acceptance_tests {
         let (x, y) = synthetic_train(n, d, 42);
         let mut b = BpannBackend::new(dir.path().to_path_buf(), x.clone(), y, None, false, Array1::ones(d)).unwrap();
         b.ensure_index_sync().unwrap();
-        let vectors: Vec<Vec<f32>> = (0..b.len())
-            .map(|i| {
-                b.mmap_row_slice(i)
-                    .unwrap()
-                    .iter()
-                    .map(|&v| v as f32)
-                    .collect()
-            })
-            .collect();
-        let queries: Vec<Vec<f32>> = (0..3)
-            .map(|i| x.row(i).iter().map(|&v| v as f32).collect())
-            .collect();
-        let index = b.index_snapshot().unwrap();
-        let recall = bpann_mean_recall_at_k(&vectors, &queries, 10, index);
+        let mut hits = 0usize;
+        for i in 0..3 {
+            let q = x.row(i).to_owned();
+            let (_, idx) = b.search(&q.view().insert_axis(ndarray::Axis(0)), 10, false).unwrap();
+            let expected = brute_force_oracle(&b, q.as_slice().unwrap(), 10);
+            hits += idx.row(0).iter().filter(|id| expected.contains(id)).count();
+        }
+        let recall = hits as f64 / 30.0;
         assert!(recall >= 0.90, "N={n} recall={recall}");
     }
 
