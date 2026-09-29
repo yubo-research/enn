@@ -45,6 +45,7 @@ impl EpistemicNearestNeighbors {
             x_scale: Array1::ones(num_dim),
             metric_fixed: false,
             built_x_scale: Array1::ones(num_dim),
+            unscaled_dims: Vec::new(),
             y_scale: Array1::ones(num_metrics),
             y_bounds,
             y_sum: Array1::zeros(num_metrics),

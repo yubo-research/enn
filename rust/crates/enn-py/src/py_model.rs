@@ -504,6 +504,19 @@ pub(crate) fn train_rows_at_warped<'py>(
     ))
 }
 
+/// Dimensions `scale_x` leaves at scale 1; kept off the pyclass to satisfy methods_per_class.
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub(crate) fn set_unscaled_dims(
+    mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
+    dims: Vec<usize>,
+) -> PyResult<()> {
+    model
+        .inner
+        .set_unscaled_dims(dims)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Wrapper for ENNParams
 #[pyclass(name = "ENNParams")]
 #[derive(Clone, Copy)]
@@ -592,6 +605,7 @@ mod kiss_coverage_tests {
             PyEpistemicNearestNeighbors::y_scale_row,
             PyEpistemicNearestNeighbors::y_bounds,
             train_rows_at_warped,
+            set_unscaled_dims,
             PyENNParams::new,
             PyENNParams::k_num_neighbors,
             PyENNParams::epistemic_variance_scale,

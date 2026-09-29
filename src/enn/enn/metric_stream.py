@@ -5,11 +5,14 @@ The ENN distance is ``sum_d a_d (x_d - x'_d)^2``. The pieces used by ``ENNMetric
 - ``Reservoir``: a uniform random sample of fixed size of every row seen so far
   (Algorithm R), so the rows used for metric fitting represent the whole stream.
 - ``dependence_weights``: first-order Sobol index of ``y`` on each input (estimated by binning),
-  divided by the input's variance. No optimization.
+  divided by the input's variance. No optimization. A group of tied inputs (e.g. the one-hot
+  columns of one categorical variable) shares one weight from its joint Sobol index, unscaled.
 - ``auto_weights``: those weights and their leave-one-out gain over the best isotropic metric.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -100,31 +103,98 @@ def sobol_index(x: np.ndarray, y: np.ndarray, num_bins: int | None = None) -> np
     cells = (ranks * b // n + b * np.arange(d)).ravel()
     count = np.bincount(cells, minlength=b * d).reshape(d, b)
     total = np.bincount(cells, weights=np.repeat(yc[:, None], d, axis=1).ravel(), minlength=b * d).reshape(d, b)
-    ss_between = (total**2 / np.maximum(count, 1)).sum(axis=1)
+    return _between_share(count, total, ss_tot, n, b)
+
+
+def _between_share(count: np.ndarray, total: np.ndarray, ss_tot: float, n: int, b: int) -> np.ndarray:
+    ss_between = (total**2 / np.maximum(count, 1)).sum(axis=-1)
     ms_within = (ss_tot - ss_between) / (n - b)
     return np.maximum(ss_between - (b - 1) * ms_within, 0.0) / ss_tot
 
 
-def null_sd(n: int) -> float:
-    """Approximate standard deviation of the Sobol index of an input ``y`` does not depend on (``n`` rows)."""
+def _cells(x_group: np.ndarray) -> tuple[np.ndarray, int]:
+    _, cells = np.unique(x_group, axis=0, return_inverse=True)
+    cells = cells.ravel()
+    return cells, int(cells.max()) + 1 if len(cells) else 0
+
+
+def group_sobol_index(x_group: np.ndarray, y: np.ndarray) -> float:
+    """Joint first-order Sobol index ``Var(E[y | x_G]) / Var(y)`` of a group of discrete inputs (1-D ``y``).
+
+    Each distinct row of ``x_group`` (for one-hot columns, each category) is one cell, and the
+    between-cell share is corrected for noise as in ``sobol_index``. The index is 0 with one
+    cell or fewer than two rows per cell.
+    """
+    n = len(y)
+    cells, b = _cells(x_group)
+    yc = y - y.mean()
+    ss_tot = float(yc @ yc)
+    if b < 2 or n < 2 * b or ss_tot <= 0:
+        return 0.0
+    count = np.bincount(cells, minlength=b)
+    total = np.bincount(cells, weights=yc, minlength=b)
+    return float(_between_share(count, total, ss_tot, n, b))
+
+
+def null_sd(n: int, num_cells: int | None = None) -> float:
+    """Approximate standard deviation of the Sobol index of an input ``y`` does not depend on (``n`` rows).
+
+    ``num_cells`` is the number of bins or categories (default ``floor(sqrt(n))``, as in ``sobol_index``).
+    """
     if n < 3:
         return np.inf
-    return float(np.sqrt(2.0 * (max(2, int(np.sqrt(n))) - 1)) / n)
+    b = max(2, int(np.sqrt(n))) if num_cells is None else num_cells
+    return float(np.sqrt(2.0 * (b - 1)) / n)
 
 
-def dependence_weights(x: np.ndarray, y: np.ndarray, floor: float = DEPENDENCE_FLOOR) -> np.ndarray:
-    """Weights ``a_d = D * S_d / (sum S * Var(x_d))`` from the Sobol index ``S`` (``D`` inputs).
+def _passing(s: np.ndarray, n: int, num_cells: int | None = None) -> np.ndarray:
+    return np.where(s > DEPENDENCE_Z * null_sd(n, num_cells), s, 0.0)
 
-    With several ``y`` columns, ``S`` is the mean of their indices. ``S_d`` below
-    ``DEPENDENCE_Z`` null standard deviations counts as 0, then every ``S_d`` is raised to at
-    least ``floor * max(S)``. If no input passes, all ``S_d`` are equal and the weights are
-    ``1 / Var(x_d)`` (the ``SCALE_X`` distances).
+
+def _unit_indices(
+    x: np.ndarray, y: np.ndarray, tied: Sequence[Sequence[int]]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Passing Sobol index of each unit (an untied input or a tied group) and the unit of each input.
+
+    Untied inputs come first, in order, then the groups.
+    """
+    n, d = x.shape
+    unit = np.arange(d)
+    s = _passing(np.mean([sobol_index(x, col) for col in y.T], axis=0), n)
+    if not tied:
+        return s, unit
+    free = np.setdiff1d(unit, np.concatenate([list(g) for g in tied]))
+    unit[free] = np.arange(len(free))
+    joint = []
+    for i, g in enumerate(tied):
+        unit[list(g)] = len(free) + i
+        s_g = np.mean([group_sobol_index(x[:, list(g)], col) for col in y.T])
+        joint.append(_passing(s_g, n, _cells(x[:, list(g)])[1]))
+    return np.concatenate([s[free], joint]), unit
+
+
+def dependence_weights(
+    x: np.ndarray,
+    y: np.ndarray,
+    floor: float = DEPENDENCE_FLOOR,
+    tied: Sequence[Sequence[int]] = (),
+) -> np.ndarray:
+    """Weights ``a_d = U * S_u / (sum S * Var(x_d))`` from the Sobol index ``S`` of each of ``U`` units.
+
+    A unit is an input, or a group in ``tied`` (disjoint lists of input indices). A group's
+    ``S_u`` is its ``group_sobol_index``, and its inputs share one weight, not divided by
+    ``Var(x_d)``. With several ``y`` columns, ``S`` is the mean of their indices. ``S_u`` below
+    ``DEPENDENCE_Z`` null standard deviations counts as 0, then every ``S_u`` is raised to at
+    least ``floor * max(S)``. If no unit passes, all ``S_u`` are equal and the weights are
+    ``1 / Var(x_d)`` (the ``SCALE_X`` distances), and 1 for tied inputs.
     """
     x, y = _as_rows(x, y, np.shape(x)[-1])
-    s = np.mean([sobol_index(x, col) for col in y.T], axis=0)
-    s = np.where(s > DEPENDENCE_Z * null_sd(len(y)), s, 0.0)
+    s, unit = _unit_indices(x, y, tied)
     s = np.maximum(s, floor * s.max()) if s.max() > 0 else np.ones_like(s)
-    return len(s) * s / s.sum() / _spread(x)
+    spread = _spread(x)
+    for g in tied:
+        spread[list(g)] = 1.0
+    return (len(s) * s / s.sum())[unit] / spread
 
 
 def _sq_dists(xq: np.ndarray, xr: np.ndarray, a: np.ndarray) -> np.ndarray:
@@ -164,15 +234,18 @@ def loo_loglik(x: np.ndarray, y: np.ndarray, a: np.ndarray, k: int) -> float:
     )
 
 
-def auto_weights(x: np.ndarray, y: np.ndarray, k: int) -> tuple[np.ndarray, float]:
+def auto_weights(
+    x: np.ndarray, y: np.ndarray, k: int, tied: Sequence[Sequence[int]] = ()
+) -> tuple[np.ndarray, float]:
     """``(dependence_weights, gain)``: ``gain`` is their ``loo_loglik`` minus that of the identity metric.
 
     ``loo_loglik`` picks the common scale, so the identity metric stands for the best isotropic
     metric. With fewer than ``MIN_DEPENDENCE_ROWS`` rows the comparison is too noisy (a
-    one-input metric can win on 10 rows by chance), so the gain is ``-inf``.
+    one-input metric can win on 10 rows by chance), so the gain is ``-inf``. ``tied`` is passed
+    to ``dependence_weights``.
     """
     x, y = _as_rows(x, y, np.shape(x)[-1])
     if len(y) < MIN_DEPENDENCE_ROWS:
         return np.ones(x.shape[1]), float("-inf")
-    w = dependence_weights(x, y)
+    w = dependence_weights(x, y, tied=tied)
     return w, loo_loglik(x, y, w, k) - loo_loglik(x, y, np.ones(x.shape[1]), k)

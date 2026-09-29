@@ -2,8 +2,9 @@
 
 use ndarray::Array1;
 
-use super::EpistemicNearestNeighbors;
+use super::{EpistemicNearestNeighbors, scale_from_moments};
 use crate::error::ENNError;
+use crate::index::is_disk_index_driver;
 
 /// Disk `scale_x`: largest per-dimension `|log(new / applied)|` left unapplied after an `add`.
 pub const SCALE_X_RESCALE_TOL: f64 = 0.01;
@@ -19,6 +20,42 @@ fn max_log_ratio(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 }
 
 impl EpistemicNearestNeighbors {
+    /// `scale_x` scales from the running moments of `n` rows; `unscaled_dims` get 1.
+    pub(crate) fn data_x_scale(&self, n: usize) -> Array1<f64> {
+        let mut x_scale = scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
+        for &j in &self.unscaled_dims {
+            x_scale[j] = 1.0;
+        }
+        x_scale
+    }
+
+    /// Move `scale_x` to `data_x_scale(n)`: incrementally for disk BPANN, else by a lazy rebuild.
+    pub(crate) fn refresh_data_x_scale(&mut self, n: usize) -> Result<(), ENNError> {
+        let x_scale = self.data_x_scale(n);
+        if is_disk_index_driver(self.backend.driver()) {
+            return self.apply_incremental_x_scale(x_scale);
+        }
+        self.x_scale = x_scale;
+        self.backend.mark_index_stale();
+        Ok(())
+    }
+
+    /// Dimensions `scale_x` leaves unscaled (e.g. one-hot categories, already in `{0, 1}`):
+    /// their `x_scale` stays 1 while the other dimensions follow their standard deviations.
+    pub fn set_unscaled_dims(&mut self, dims: Vec<usize>) -> Result<(), ENNError> {
+        if let Some(j) = dims.iter().find(|&&j| j >= self.num_dim) {
+            return Err(ENNError::InvalidParameter(format!(
+                "unscaled dimension {j} is out of range for {} dimensions",
+                self.num_dim
+            )));
+        }
+        self.unscaled_dims = dims;
+        if !self.scale_x || self.metric_fixed {
+            return Ok(());
+        }
+        self.refresh_data_x_scale(self.num_obs)
+    }
+
     /// Incremental `scale_x` for disk BPANN: move the index to the data-moment scale
     /// `x_scale` without re-reading rows, unless it drifted far from the partition's scale.
     pub(crate) fn apply_incremental_x_scale(&mut self, x_scale: Array1<f64>) -> Result<(), ENNError> {
@@ -162,6 +199,49 @@ mod tests {
         let got = model.neighbors(&q.view(), 4, false).unwrap();
         for r in 0..q.nrows() {
             assert_eq!(got.row(r).to_vec(), exact_topk(&x, &q.row(r).to_vec(), &applied, 4));
+        }
+    }
+
+    #[test]
+    fn unscaled_dims_keep_scale_one_through_adds() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut x = rows(600, 3, 7);
+        for mut row in x.rows_mut() {
+            row[0] *= 10.0;
+            row[2] = (row[2] > 0.5) as i32 as f64;
+        }
+        let y = Array2::zeros((600, 1));
+        let open = |driver, storage, work_dir| {
+            EpistemicNearestNeighbors::new_with_storage(
+                x.slice(ndarray::s![..300, ..]).to_owned(),
+                y.slice(ndarray::s![..300, ..]).to_owned(),
+                None,
+                true,
+                driver,
+                storage,
+                work_dir,
+                None,
+            )
+            .unwrap()
+        };
+        let flat = open(IndexDriver::Exact, EnnStorage::InMemory, None);
+        let disk = open(IndexDriver::BpAnnDisk, EnnStorage::Disk, Some(dir.path().to_path_buf()));
+        for mut model in [flat, disk] {
+            assert!(model.set_unscaled_dims(vec![3]).is_err());
+            model.set_unscaled_dims(vec![2]).unwrap();
+            assert_eq!(model.x_scale[2], 1.0);
+            model
+                .add(&x.slice(ndarray::s![300.., ..]), &y.slice(ndarray::s![300.., ..]), None)
+                .unwrap();
+            let std = column_std(&x);
+            let applied = model.x_scale_row().row(0).to_owned();
+            assert_eq!(applied[2], 1.0);
+            assert!((applied[0] / std[0]).ln().abs() <= super::SCALE_X_RESCALE_TOL + 1e-9);
+            let q = rows(5, 3, 8);
+            let got = model.neighbors(&q.view(), 4, false).unwrap();
+            for r in 0..q.nrows() {
+                assert_eq!(got.row(r).to_vec(), exact_topk(&x, &q.row(r).to_vec(), &applied, 4));
+            }
         }
     }
 

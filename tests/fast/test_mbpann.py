@@ -208,20 +208,20 @@ def test_auto_refits_on_growth_schedule_and_applies_sobol_weights(tmp_path) -> N
 
 
 def test_auto_keeps_identity_metric_like_none_when_gain_is_not_positive(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k: (np.array([4.0, 1.0, 0.1]), -0.1))
+    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k, tied: (np.array([4.0, 1.0, 0.1]), -0.1))
     x, model, _ = _stream(tmp_path, lambda x: x[:, 0], 300)
     metric = model.metric
     assert metric.num_refits >= 1 and metric.heldout_gain == -0.1 and not metric.uses_learned_metric
     assert (metric.num_rebuilds, metric.num_rescales) == (0, 0)
     q = np.array([[0.3, 0.6, 0.9]])
     np.testing.assert_array_equal(model.neighbors(q, 5), _exact(x, q, np.ones(3), 5))
-    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k: (np.array([4.0, 1.0, 0.1]), 0.2))
+    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k, tied: (np.array([4.0, 1.0, 0.1]), 0.2))
     metric.refit()
     np.testing.assert_allclose(metric.weights, [4.0, 1.0, 0.1])
-    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k: (np.array([4.0, 1.0, 0.1004]), 0.2))
+    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k, tied: (np.array([4.0, 1.0, 0.1004]), 0.2))
     metric.refit()
     np.testing.assert_allclose(metric.weights, [4.0, 1.0, 0.1])
-    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k: (np.array([4.0, 1.0, 0.1]), -0.2))
+    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k, tied: (np.array([4.0, 1.0, 0.1]), -0.2))
     metric.refit()
     np.testing.assert_array_equal(metric.weights, np.ones(3))
     np.testing.assert_array_equal(model.neighbors(q, 5), _exact(x, q, np.ones(3), 5))

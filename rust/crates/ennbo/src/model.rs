@@ -39,6 +39,8 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) metric_fixed: bool,
     /// Disk `scale_x`: the `x_scale` the BPANN partition was last built under.
     pub(crate) built_x_scale: Array1<f64>,
+    /// Dimensions `scale_x` leaves at scale 1 (e.g. one-hot categories).
+    pub(crate) unscaled_dims: Vec<usize>,
     pub(crate) y_scale: Array1<f64>,
     /// Per-metric `(lo, hi)` in natural units; open sides are `±∞`.
     pub(crate) y_bounds: Array2<f64>,
@@ -225,6 +227,7 @@ impl EpistemicNearestNeighbors {
             built_x_scale: x_scale.clone(),
             x_scale,
             metric_fixed: false,
+            unscaled_dims: Vec::new(),
             y_scale,
             y_bounds,
             y_sum,
@@ -318,14 +321,7 @@ impl EpistemicNearestNeighbors {
 
             if self.scale_x && !self.metric_fixed {
                 accumulate_columns(&mut self.x_sum, &mut self.x_sumsq, x.view());
-                let x_scale =
-                    scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
-                if is_disk_index_driver(self.backend.driver()) {
-                    self.apply_incremental_x_scale(x_scale)?;
-                } else {
-                    self.x_scale = x_scale;
-                    self.backend.mark_index_stale();
-                }
+                self.refresh_data_x_scale(n)?;
             }
 
             self.num_obs = n;
@@ -518,8 +514,7 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
     if model.scale_x {
         model.x_sum = x_sum;
         model.x_sumsq = x_sumsq;
-        model.x_scale =
-            scale_from_moments(n, model.num_dim, &model.x_sum, &model.x_sumsq, 1e-12);
+        model.x_scale = model.data_x_scale(n);
         model.built_x_scale = model.x_scale.clone();
     }
     model.backend

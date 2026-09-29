@@ -75,6 +75,7 @@ class MBPANNMetric:
     by ``refit_growth`` since the last refit, ``refit`` computes ``auto_weights`` on the
     reservoir and applies them if ``auto_uses_learned_metric``, else the identity metric.
     A change smaller than ``AUTO_RESCALE_TOL`` in every distance scale is not applied.
+    ``tied_dims`` groups share one weight from their joint Sobol index (``auto_weights``).
     """
 
     def __init__(
@@ -85,6 +86,7 @@ class MBPANNMetric:
         reservoir_capacity: int = AUTO_RESERVOIR_CAPACITY,
         refit_growth: float = AUTO_REFIT_GROWTH,
         seed: int = 0,
+        tied_dims: tuple[tuple[int, ...], ...] = (),
     ) -> None:
         if model.metric_learning != ENNMetricLearning.AUTO:
             raise ValueError("MBPANNMetric requires metric_learning=AUTO")
@@ -96,6 +98,7 @@ class MBPANNMetric:
         self._model = model
         self._rebuild_drift = float(rebuild_drift)
         self._refit_growth = float(refit_growth)
+        self._tied_dims = tied_dims
         self._weights = np.ones(num_dim)
         self._built_weights = np.ones(num_dim)
         self.reservoir = Reservoir(
@@ -151,7 +154,7 @@ class MBPANNMetric:
             self.refit()
 
     def refit(self) -> None:
-        w, gain = auto_weights(self.reservoir.x, self.reservoir.y, AUTO_K)
+        w, gain = auto_weights(self.reservoir.x, self.reservoir.y, AUTO_K, tied=self._tied_dims)
         self.heldout_gain = gain
         self.num_refits += 1
         self._next_refit = max(MIN_DEPENDENCE_ROWS, math.ceil(self._refit_growth * self.reservoir.num_seen))
