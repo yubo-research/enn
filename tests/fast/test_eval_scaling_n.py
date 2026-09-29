@@ -6,28 +6,20 @@ import numpy as np
 import pytest
 
 from evals import scaling_n as mod
-from evals.short import eval_scaling_add, eval_scaling_memory, eval_scaling_query
+from evals.scaling_fit import TERMS, RegFit, TermTest
+from evals.short import eval_scaling
 from ops.stress import MeanSE
 
 TINY = mod.ScalingConfig(
-    n_grid=(20, 60, 120),
+    n_grid=(20, 40, 60, 80),
     num_test=10,
     batch=20,
     k=4,
     num_fit_candidates=4,
     num_fit_samples=4,
     num_seeds=2,
-    slope_min_n=60,
     isolate=False,
 )
-
-
-def test_loglog_slope() -> None:
-    ns = [10, 100, 1000]
-    assert mod.loglog_slope(ns, [1.0, 10.0, 100.0]) == pytest.approx(1.0)
-    assert mod.loglog_slope(ns, [5.0, 5.0, 5.0]) == pytest.approx(0.0)
-    assert math.isnan(mod.loglog_slope(ns, [-1.0, 0.0, 3.0]))
-    assert math.isnan(mod.loglog_slope(ns, [math.nan, 1.0, 0.0]))
 
 
 def test_memory_mib_and_reset_peak() -> None:
@@ -52,46 +44,62 @@ def test_dir_mib(tmp_path) -> None:
 
 def test_summarize_and_format_lines() -> None:
     rows = [
-        {"n": 10.0, "add_s": 1.0, "add_us": 2.0, "fit_s": 3.0},
-        {"n": 10.0, "add_s": 3.0, "add_us": 2.0, "fit_s": 3.0},
-        {"n": 100.0, "add_s": 5.0, "add_us": 2.0, "fit_s": 3.0},
+        {"n": 10.0, **{k: 1.0 for k in mod.METRICS}},
+        {"n": 10.0, **{k: 3.0 for k in mod.METRICS}},
+        {"n": 100.0, **{k: 5.0 for k in mod.METRICS}},
     ]
     summary = mod.summarize(rows)
     assert list(summary) == [10, 100]
     assert summary[10]["add_s"] == MeanSE(mean=2.0, se=1.0)
-    assert mod.format_eval_line("add", 10, summary[10]) == (
-        "EVAL: model = bpann_disk_auto_ols n = 10 SMALLER(add_s) = 2.0000 ± 1.0000 "
-        "SMALLER(add_us) = 2.0000 ± 0.0000 SMALLER(fit_s) = 3.0000 ± 0.0000"
-    )
-    assert mod.format_slope_line("add", summary, 10) == (
-        "EVAL: model = bpann_disk_auto_ols n = 10..100 SMALLER(slope_add_us) = 0.000"
-    )
-    assert mod.format_seed_line(3, rows[2]) == (
-        "seed = 3 n = 100 add_s = 5.0000 add_us = 2.0000 fit_s = 3.0000"
-    )
+    line = mod.format_eval_line(10, summary[10])
+    assert line.startswith("EVAL: model = bpann_disk_auto_ols n = 10 SMALLER(rss_mib) = 2.0000 ± 1.0000 ")
+    assert "LARGER(loglik) = 2.0000 ± 1.0000" in line and "SMALLER(nrmse)" in line
+    assert all(f"({k})" in line for k in mod.METRICS)
+    assert mod.format_seed_line(3, {"n": 100.0, "add_s": 5.0}) == "seed = 3 n = 100 add_s = 5.0000"
 
 
-@pytest.mark.parametrize("kind", sorted(mod.METRICS))
-def test_run_eval_tiny(kind: str, capsys: pytest.CaptureFixture[str]) -> None:
-    summary = mod.run_eval(kind, TINY)
+def test_format_reg_line() -> None:
+    fit = RegFit(1.5, {"N": TermTest(0.25, 4.0, 0.001)}, 0.9, 21)
+    assert mod.format_reg_line("rss_mib", "full", fit) == (
+        "EVAL: model = bpann_disk_auto_ols reg = rss_mib fit = full obs = 21 r2 = 0.9000 "
+        "b0 = 1.5 b_N = 0.25 t_N = 4 p_N = 0.001"
+    )
+    reduced = mod.format_reg_line("rss_mib", "reduced", fit)
+    assert "accepted = N rejected = lnN,N2 b0 = 1.5" in reduced
+    empty = mod.format_reg_line("q", "reduced", RegFit(2.0, {}, math.nan, 5))
+    assert "accepted = none rejected = lnN,N,N2 b0 = 2" in empty
+
+
+def test_regress_recovers_linear_memory() -> None:
+    rows = [{"n": float(n), **{m: 3.0 + 0.002 * n + 0.01 * s for m in mod.REG_METRICS}} for n in (100, 1000, 10000, 100000) for s in range(3)]
+    fits = mod.regress(rows, 0.05)
+    assert set(fits) == set(mod.REG_METRICS)
+    full, reduced = fits["rss_mib"]
+    assert set(full.tests) == set(TERMS) and full.obs == 12
+    assert list(reduced.tests) == ["N"]
+    assert reduced.tests["N"].coef == pytest.approx(2.0, rel=1e-3)
+
+
+def test_run_eval_tiny(capsys: pytest.CaptureFixture[str]) -> None:
+    summary, fits = mod.run_eval(TINY)
     out = capsys.readouterr().out
     assert list(summary) == list(TINY.n_grid)
     for stats in summary.values():
         assert stats["disk_mib"].mean > 0 and stats["add_s"].mean > 0
         assert stats["query_s"].mean > 0 and np.isfinite(stats["nrmse"].mean)
     assert out.count("seed = ") == TINY.num_seeds * len(TINY.n_grid)
-    assert out.count("EVAL: ") == len(TINY.n_grid) + 1
-    assert f"SMALLER({mod.METRICS[kind][0]})" in out
-    assert f"n = 60..120 SMALLER(slope_{mod.SLOPE_METRICS[kind][0]})" in out
+    assert out.count("EVAL: ") == len(TINY.n_grid) + 2 * len(mod.REG_METRICS)
+    assert all(f"reg = {m} fit = full obs = 8 " in out for m in mod.REG_METRICS)
+    assert set(fits) == set(mod.REG_METRICS)
 
 
 def test_run_eval_rejects_bad_config() -> None:
-    with pytest.raises(ValueError, match="kind"):
-        mod.run_eval("speed", TINY)
     with pytest.raises(ValueError, match="increasing"):
-        mod.run_eval("add", mod.ScalingConfig(n_grid=(100, 10)))
-    with pytest.raises(ValueError, match="slope_min_n"):
-        mod.run_eval("add", mod.ScalingConfig(n_grid=(10, 100), slope_min_n=50))
+        mod.run_eval(mod.ScalingConfig(n_grid=(100, 10)))
+    with pytest.raises(ValueError, match="checkpoints"):
+        mod.run_eval(mod.ScalingConfig(n_grid=(10, 100, 1000)))
+    with pytest.raises(ValueError, match="rows"):
+        mod.run_eval(mod.ScalingConfig(n_grid=(10, 20, 30, 40), num_seeds=1))
 
 
 def test_run_seed_isolated_matches_grid() -> None:
@@ -103,12 +111,8 @@ def test_run_seed_isolated_matches_grid() -> None:
     assert all(r["disk_mib"] > 0 for r in rows)
 
 
-@pytest.mark.parametrize(
-    ("entry", "kind"),
-    [(eval_scaling_memory, "memory"), (eval_scaling_add, "add"), (eval_scaling_query, "query")],
-)
-def test_entries_invoke_run_eval(entry, kind: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    called: list[str] = []
-    monkeypatch.setattr(entry, "run_eval", called.append)
-    entry.evaluate()
-    assert called == [kind]
+def test_entry_invokes_run_eval(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[int] = []
+    monkeypatch.setattr(eval_scaling, "run_eval", lambda: called.append(1))
+    eval_scaling.evaluate()
+    assert called == [1]

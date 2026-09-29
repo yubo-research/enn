@@ -18,10 +18,12 @@ Per checkpoint:
   AUTO's metric refits inside ``add``), ``add_us`` that time per added row, and ``fit_s`` the
   hyperparameter and calibrator fit.
 - query: ``query_s`` is the posterior call and ``query_us`` that time per test point.
+- accuracy on the test points: ``loglik`` and ``nrmse`` (RMSE over the std of ``y_test``).
 
-Each seed runs in its own process. Each value is mean ± standard error over seeds. ``slope`` lines give the least-squares slope of
-log(mean) against log(n) over checkpoints with ``n >= slope_min_n``: 0 means constant in N and
-1 means linear in N.
+Each seed runs in its own process. Each checkpoint line gives mean ± standard error over seeds.
+For each metric in ``REG_METRICS`` two ``reg`` lines follow (see ``evals.scaling_fit``): the OLS
+fit of the per-seed values on ln N, N and N^2 (N in thousands) with each term's t and p value,
+and the fit left after backward elimination at ``alpha``, naming accepted and rejected terms.
 """
 
 from __future__ import annotations
@@ -47,7 +49,8 @@ from evals.metric_12d import (
     build_model,
     make_data,
 )
-from evals.stress_eval import format_plain, format_smaller
+from evals.scaling_fit import ALPHA, TERMS, RegFit, backward_eliminate
+from evals.stress_eval import format_directed, format_plain
 from ops.stress import DRAW_FLAGS, MeanSE, format_mean_se, mean_se
 
 MODEL = "bpann_disk_auto"
@@ -56,16 +59,18 @@ N_GRID: tuple[int, ...] = (100, 300, 1000, 3000, 10000, 30000, 100000)
 MIB = 1024.0 * 1024.0
 WORK_DIR_PREFIX = "enn_scaling_n_"
 MEMORY_METRICS: tuple[str, ...] = ("rss_mib", "anon_mib", "file_mib", "peak_mib", "disk_mib")
-METRICS: dict[str, tuple[str, ...]] = {
-    "memory": MEMORY_METRICS,
-    "add": ("add_s", "add_us", "fit_s"),
-    "query": ("query_s", "query_us"),
-}
-SLOPE_METRICS: dict[str, tuple[str, ...]] = {
-    "memory": MEMORY_METRICS,
-    "add": ("add_us",),
-    "query": ("query_us",),
-}
+METRICS: tuple[str, ...] = (
+    *MEMORY_METRICS,
+    "add_s",
+    "add_us",
+    "fit_s",
+    "query_s",
+    "query_us",
+    "loglik",
+    "nrmse",
+)
+LARGER_METRICS = frozenset({"loglik"})
+REG_METRICS: tuple[str, ...] = (*MEMORY_METRICS, "add_us", "fit_s", "query_us")
 
 
 @dataclass(frozen=True)
@@ -78,7 +83,7 @@ class ScalingConfig:
     num_fit_samples: int = NUM_FIT_SAMPLES
     seed: int = 0
     num_seeds: int = 3
-    slope_min_n: int = 1000
+    alpha: float = ALPHA
     isolate: bool = True
 
 
@@ -215,41 +220,65 @@ def summarize(rows: list[dict[str, float]]) -> dict[int, dict[str, MeanSE]]:
     }
 
 
-def loglog_slope(ns: list[int], values: list[float]) -> float:
-    """Least-squares slope of log(value) vs log(n) over positive values; nan if < 2 points."""
-    pts = [(math.log(n), math.log(v)) for n, v in zip(ns, values) if v > 0 and math.isfinite(v)]
-    if len(pts) < 2:
-        return math.nan
-    lx, ly = np.array(pts).T
-    return float(np.polyfit(lx, ly, 1)[0])
-
-
-def format_eval_line(kind: str, n: int, stats: dict[str, MeanSE]) -> str:
-    vals = " ".join(format_smaller(k, format_mean_se(stats[k], fmt=".4f")) for k in METRICS[kind])
+def format_eval_line(n: int, stats: dict[str, MeanSE]) -> str:
+    vals = " ".join(
+        format_directed(
+            "LARGER" if k in LARGER_METRICS else "SMALLER", k, format_mean_se(stats[k], fmt=".4f")
+        )
+        for k in METRICS
+    )
     return f"EVAL: {format_plain('model', MODEL_LABEL)} {format_plain('n', n)} {vals}"
 
 
-def format_slope_line(kind: str, summary: dict[int, dict[str, MeanSE]], min_n: int) -> str:
-    ns = [n for n in summary if n >= min_n]
-    vals = " ".join(
-        format_smaller(f"slope_{k}", f"{loglog_slope(ns, [summary[n][k].mean for n in ns]):.3f}")
-        for k in SLOPE_METRICS[kind]
-    )
-    return f"EVAL: {format_plain('model', MODEL_LABEL)} {format_plain('n', f'{ns[0]}..{ns[-1]}')} {vals}"
+def _term_names(terms: object) -> str:
+    return ",".join(terms) or "none"
 
 
-def run_eval(kind: str, config: ScalingConfig | None = None) -> dict[int, dict[str, MeanSE]]:
-    """Run all seeds and print ``kind``'s EVAL lines (``memory``, ``add`` or ``query``)."""
+def format_reg_line(metric: str, label: str, fit: RegFit) -> str:
+    """One ``reg`` line: intercept, then coefficient, t and p value of each term in ``fit``."""
+    head = [
+        format_plain("model", MODEL_LABEL),
+        format_plain("reg", metric),
+        format_plain("fit", label),
+        format_plain("obs", fit.obs),
+        format_plain("r2", f"{fit.r2:.4f}"),
+    ]
+    if label != "full":
+        head += [
+            format_plain("accepted", _term_names(fit.tests)),
+            format_plain("rejected", _term_names(t for t in TERMS if t not in fit.tests)),
+        ]
+    head.append(format_plain("b0", f"{fit.intercept:.4g}"))
+    for term, tt in fit.tests.items():
+        head += [
+            format_plain(f"b_{term}", f"{tt.coef:.4g}"),
+            format_plain(f"t_{term}", f"{tt.t:.3g}"),
+            format_plain(f"p_{term}", f"{tt.p:.3g}"),
+        ]
+    return "EVAL: " + " ".join(head)
+
+
+def regress(rows: list[dict[str, float]], alpha: float) -> dict[str, tuple[RegFit, RegFit]]:
+    """Full and backward-eliminated fits of each ``REG_METRICS`` metric on per-seed rows."""
+    ns = [r["n"] for r in rows]
+    return {m: backward_eliminate(ns, [r[m] for r in rows], alpha) for m in REG_METRICS}
+
+
+def run_eval(
+    config: ScalingConfig | None = None,
+) -> tuple[dict[int, dict[str, MeanSE]], dict[str, tuple[RegFit, RegFit]]]:
+    """Run all seeds; print per-checkpoint EVAL lines and the regression lines."""
     cfg = ScalingConfig() if config is None else config
-    if kind not in METRICS:
-        raise ValueError(f"kind must be one of {sorted(METRICS)}, got {kind!r}")
     if list(cfg.n_grid) != sorted(set(cfg.n_grid)) or cfg.n_grid[0] < 2:
         raise ValueError("n_grid must be strictly increasing and start at >= 2")
-    if sum(n >= cfg.slope_min_n for n in cfg.n_grid) < 2:
-        raise ValueError("need at least two checkpoints with n >= slope_min_n")
+    if len(cfg.n_grid) < len(TERMS) + 1 or len(cfg.n_grid) * cfg.num_seeds < len(TERMS) + 2:
+        raise ValueError(
+            f"regression on {len(TERMS)} terms needs >= {len(TERMS) + 1} checkpoints "
+            f"and >= {len(TERMS) + 2} rows (checkpoints x seeds)"
+        )
     print(
-        f"kind={kind} model={MODEL_LABEL} n_grid={','.join(map(str, cfg.n_grid))} "
-        f"num_test={cfg.num_test} batch={cfg.batch} seeds={cfg.seed}..{cfg.seed + cfg.num_seeds - 1}",
+        f"model={MODEL_LABEL} n_grid={','.join(map(str, cfg.n_grid))} num_test={cfg.num_test} "
+        f"batch={cfg.batch} seeds={cfg.seed}..{cfg.seed + cfg.num_seeds - 1} alpha={cfg.alpha}",
         flush=True,
     )
     rows: list[dict[str, float]] = []
@@ -258,6 +287,9 @@ def run_eval(kind: str, config: ScalingConfig | None = None) -> dict[int, dict[s
         rows.extend(run_seed_isolated(seed_cfg) if cfg.isolate else run_seed(seed_cfg))
     summary = summarize(rows)
     for n, stats in summary.items():
-        print(format_eval_line(kind, n, stats), flush=True)
-    print(format_slope_line(kind, summary, cfg.slope_min_n), flush=True)
-    return summary
+        print(format_eval_line(n, stats), flush=True)
+    fits = regress(rows, cfg.alpha)
+    for metric, (full, reduced) in fits.items():
+        print(format_reg_line(metric, "full", full), flush=True)
+        print(format_reg_line(metric, "reduced", reduced), flush=True)
+    return summary, fits
