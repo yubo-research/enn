@@ -36,36 +36,6 @@ fn needs_skip_edges(row_count: usize) -> bool {
     current_tuning().rows_need_skip_edges(row_count)
 }
 
-fn remap_page(page: &Page, id_map: &HashMap<u32, u32>) -> Page {
-    match page {
-        Page::Internal {
-            page_id,
-            centroids,
-            child_page_ids,
-        } => Page::Internal {
-            page_id: id_map[page_id],
-            centroids: centroids.clone(),
-            child_page_ids: child_page_ids
-                .iter()
-                .map(|id| id_map[id])
-                .collect(),
-        },
-            Page::Leaf {
-                page_id,
-                row_ids,
-                row_range,
-                vectors,
-                stored_centroid,
-            } => Page::Leaf {
-                page_id: id_map[page_id],
-                row_ids: row_ids.clone(),
-                row_range: *row_range,
-                vectors: vectors.clone(),
-                stored_centroid: stored_centroid.clone(),
-            },
-    }
-}
-
 fn build_page_map(pages: &[Page]) -> HashMap<u32, usize> {
     pages
         .iter()
@@ -207,87 +177,6 @@ impl BpannIndex {
         Ok(index)
     }
 
-    pub fn concat_merge(
-        parts: Vec<BpannIndex>,
-        index_dir: PathBuf,
-        persist: bool,
-    ) -> Result<Self, BpannError> {
-        if parts.is_empty() {
-            return Err(BpannError::InvalidParameter(
-                "concat_merge requires at least one index".to_string(),
-            ));
-        }
-        if parts.len() == 1 {
-            let mut single = parts.into_iter().next().expect("one index");
-            single.index_dir = index_dir;
-            if persist {
-                single.persist()?;
-            }
-            return Ok(single);
-        }
-        let num_dim = parts[0].header.num_dim;
-        let leaf_capacity = parts[0].header.leaf_capacity;
-        let skip_neighbors = parts[0].header.skip_neighbors;
-        let mut pages = Vec::new();
-        let mut child_page_ids = Vec::new();
-        let mut child_centroids = Vec::new();
-        let mut skip_edges = HashMap::new();
-        let mut total_rows = 0usize;
-        let mut next_id = 1u32;
-        for part in &parts {
-            total_rows += part.header.indexed_rows;
-            let id_map: HashMap<u32, u32> = part
-                .pages
-                .iter()
-                .map(|page| {
-                    let new_id = next_id;
-                    next_id += 1;
-                    (page.page_id(), new_id)
-                })
-                .collect();
-            child_page_ids.push(id_map[&part.header.root_page_id]);
-            child_centroids.push(part.root_centroid());
-            for page in &part.pages {
-                pages.push(remap_page(page, &id_map));
-            }
-            for (&from, tos) in &part.skip_edges {
-                if let Some(&new_from) = id_map.get(&from) {
-                    let new_tos: Vec<u32> = tos
-                        .iter()
-                        .filter_map(|to| id_map.get(to).copied())
-                        .collect();
-                    if !new_tos.is_empty() {
-                        skip_edges.insert(new_from, new_tos);
-                    }
-                }
-            }
-        }
-        pages.push(Page::Internal {
-            page_id: 0,
-            centroids: child_centroids,
-            child_page_ids,
-        });
-        let page_map = build_page_map(&pages);
-        let header = IndexHeader {
-            num_dim,
-            indexed_rows: total_rows,
-            root_page_id: 0,
-            leaf_capacity,
-            skip_neighbors,
-        };
-        let index = Self {
-            header,
-            pages,
-            skip_edges,
-            page_map,
-            index_dir,
-        };
-        if persist {
-            index.persist()?;
-        }
-        Ok(index)
-    }
-
     pub fn build_from_rows_with_persist(
         row_ids: &[u32],
         vectors: &[Vec<f32>],
@@ -381,8 +270,25 @@ impl BpannIndex {
         Ok(on_disk_skip == skip_edges_bytes(&self.skip_edges))
     }
 
+    fn page_slot(&self, page_id: u32) -> Option<usize> {
+        match self.pages.get(page_id as usize) {
+            Some(p) if p.page_id() == page_id => Some(page_id as usize),
+            _ => self.page_map.get(&page_id).copied(),
+        }
+    }
+
     pub fn page_by_id(&self, page_id: u32) -> Option<&Page> {
-        self.page_map.get(&page_id).map(|&i| &self.pages[i])
+        self.page_slot(page_id).map(|i| &self.pages[i])
+    }
+
+    pub fn page_by_id_mut(&mut self, page_id: u32) -> Option<&mut Page> {
+        let i = self.page_slot(page_id)?;
+        Some(&mut self.pages[i])
+    }
+
+    pub fn push_page(&mut self, page: Page) {
+        self.page_map.insert(page.page_id(), self.pages.len());
+        self.pages.push(page);
     }
 
     pub fn root_centroid(&self) -> Vec<f32> {
@@ -594,9 +500,7 @@ mod kiss_coverage_tests {
     #[test]
     fn build_units_are_linked() {
         let _ = (
-            remap_page,
             BpannIndex::build_row_ids_leaf_with_persist,
-            BpannIndex::concat_merge,
             BpannIndex::root_centroid,
             BpannIndex::leaf_row_ids,
             BpannIndex::on_disk_index_matches,

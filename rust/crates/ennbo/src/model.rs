@@ -2,6 +2,7 @@
 
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use crate::backend::{EnnBackend, EnnStorage};
 use crate::error::ENNError;
@@ -43,6 +44,9 @@ pub struct EpistemicNearestNeighbors {
     x_sumsq: Array1<f64>,
     /// Disk work directory when using disk storage (for metadata patches).
     work_dir: Option<PathBuf>,
+    /// Whether `y_bounds` is in `metadata.json` (it never changes, and metadata
+    /// rewrites keep it, so it is written once).
+    y_bounds_persisted: AtomicBool,
 }
 
 impl EpistemicNearestNeighbors {
@@ -224,6 +228,7 @@ impl EpistemicNearestNeighbors {
             x_sum,
             x_sumsq,
             work_dir: stored_work_dir,
+            y_bounds_persisted: AtomicBool::new(false),
         };
         if disk_reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;

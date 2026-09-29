@@ -4,7 +4,7 @@
 //! values, so a new diagonal metric maps each stored value by
 //! `v_d * old_scale_d / new_scale_d` exactly. [`BpannBackend::rescale_metric`]
 //! applies that map in place and keeps the partition; [`BpannBackend::rebuild_metric`]
-//! discards the partition and re-indexes every row under the new metric.
+//! also re-partitions every row under the new metric.
 
 use std::fs;
 use std::sync::Arc;
@@ -14,6 +14,7 @@ use ndarray::Array1;
 use crate::backend::BpannBackend;
 use crate::error::BpannError;
 use crate::index::page::Page;
+use crate::index::tree_bulk::BULK_BUILD_MIN_ROWS;
 use crate::index::{BpannIndex, IncrementalIndex};
 
 /// Present in `work_dir` while the index is expressed in a caller-set metric.
@@ -48,13 +49,16 @@ pub fn rescale_index_coords(index: &mut BpannIndex, ratio: &[f64]) {
 }
 
 impl IncrementalIndex {
-    /// Multiply every stored coordinate (pages and pending centroid) by `ratio`.
+    /// Multiply every stored coordinate by `ratio`; a re-partition in progress
+    /// restarts under the new coordinates.
     pub fn rescale_coords(&mut self, ratio: &[f64]) {
-        self.indices
-            .iter_mut()
-            .for_each(|index| rescale_index_coords(index, ratio));
-        for (s, &r) in self.pending_centroid_sum.iter_mut().zip(ratio) {
-            *s *= r;
+        for index in &mut self.indices {
+            self.counts.write_page_centroids(index);
+            rescale_index_coords(index, ratio);
+        }
+        self.counts.scale_rows(ratio);
+        if self.rebuilding() {
+            self.start_rebuild();
         }
     }
 }
@@ -115,9 +119,16 @@ impl BpannBackend {
         self.write_metric_marker()
     }
 
-    /// Switch to metric `x_scale` by discarding the index and re-indexing all rows.
+    /// Switch to metric `x_scale` and re-partition every row under it. A large
+    /// index is rescaled in place and re-partitioned in the background
+    /// ([`crate::index::tree_rebuild`]); a small one is re-indexed at once.
     pub fn rebuild_metric(&mut self, x_scale: &Array1<f64>) -> Result<(), BpannError> {
         self.validate_metric_scale(x_scale)?;
+        if self.index.indexed_rows >= BULK_BUILD_MIN_ROWS && self.index.counts.rows_cached() {
+            self.rescale_metric(x_scale)?;
+            self.index.start_rebuild();
+            return Ok(());
+        }
         self.scale_x = true;
         self.x_scale = x_scale.to_owned();
         *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
@@ -180,11 +191,13 @@ mod tests {
     }
 
     fn all_coords(b: &BpannBackend) -> Vec<Vec<f32>> {
-        b.index
-            .indices
-            .iter()
-            .flat_map(|i| i.pages.iter().flat_map(page_coords))
-            .collect()
+        let mut out = Vec::new();
+        for index in &b.index.indices {
+            let mut index = index.clone();
+            b.index.counts.write_page_centroids(&mut index);
+            out.extend(index.pages.iter().flat_map(page_coords));
+        }
+        out
     }
 
     #[test]
@@ -234,6 +247,41 @@ mod tests {
             assert_eq!(ia.row(r).to_vec(), exact);
             assert_eq!(ib.row(r).to_vec(), exact);
         }
+    }
+
+    fn assert_exact_top5(b: &mut BpannBackend, x: &Array2<f64>, n: usize, scale: &[f64], q: &Array2<f64>) {
+        let (_, ids) = b.search(&q.view(), 5, false).unwrap();
+        for r in 0..q.nrows() {
+            let mut d: Vec<(f64, i64)> = (0..n)
+                .map(|i| {
+                    let s: f64 = (0..x.ncols()).map(|j| ((q[[r, j]] - x[[i, j]]) / scale[j]).powi(2)).sum();
+                    (s, i as i64)
+                })
+                .collect();
+            d.sort_by(|u, v| u.0.total_cmp(&v.0));
+            assert_eq!(ids.row(r).to_vec(), d.iter().take(5).map(|t| t.1).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn large_metric_change_gives_exact_neighbors_before_and_after_the_swap() {
+        let (n0, scale) = (BULK_BUILD_MIN_ROWS + 4_000, [0.3, 1.0, 2.5]);
+        let x = random_rows(n0 + n0 / 8, 3, 21);
+        let q = random_rows(10, 3, 22);
+        let dir = TempDir::new().unwrap();
+        let mut b = backend_with_rows(&dir, &x.slice(ndarray::s![..n0, ..]).to_owned());
+        b.rebuild_metric(&Array1::from(scale.to_vec())).unwrap();
+        assert!(b.index.rebuilding());
+        assert_exact_top5(&mut b, &x, n0, &scale, &q);
+        let y = Array2::zeros((500, 1));
+        let mut n = n0;
+        while b.index.rebuilding() {
+            assert!(n + 500 <= x.nrows(), "rebuild still running at {n} rows");
+            b.append_rows(&x.slice(ndarray::s![n..n + 500, ..]), &y.view(), None).unwrap();
+            b.ensure_index_sync().unwrap();
+            n += 500;
+        }
+        assert_exact_top5(&mut b, &x, n, &scale, &q);
     }
 
     #[test]

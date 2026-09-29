@@ -381,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_unindexed_count_after_append_without_sync() {
+    fn pending_unindexed_count_is_zero_after_append_until_reset() {
         let dir = TempDir::new().expect("tempdir");
         let mut backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
             dir.path().to_path_buf(),
@@ -397,6 +397,8 @@ mod tests {
                 None,
             )
             .expect("append");
+        assert_eq!(backend.pending_unindexed_count(), 0);
+        backend.mark_index_stale();
         assert!(backend.pending_unindexed_count() > 0);
     }
 
@@ -418,6 +420,7 @@ mod tests {
                 None,
             )
             .expect("append");
+        backend.mark_index_stale();
         assert!(backend.pending_unindexed_count() > 0);
         if let Some(built) = backend.soft_sync_build_detached().expect("build") {
             backend

@@ -236,6 +236,9 @@ mod tests {
         let x = Array2::from_shape_fn((n, dim), |(i, j)| (i + j) as f64);
         let y = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);
         model.add(&x.view(), &y.view(), None).expect("add");
+        if let crate::backend::EnnBackend::Disk(handle) = &model.backend {
+            write_backend(handle.data()).mark_index_stale();
+        }
         model
     }
 
@@ -501,6 +504,7 @@ mod tests {
         write_backend(handle.data())
             .append_rows(&x.view(), &y.view(), None)
             .expect("append");
+        write_backend(handle.data()).mark_index_stale();
         assert_eq!(
             disk_read(handle.data())
                 .expect("read")
@@ -550,6 +554,7 @@ mod tests {
         write_backend(handle.data())
             .append_rows(&x.view(), &y.view(), None)
             .expect("append");
+        write_backend(handle.data()).mark_index_stale();
         assert_eq!(
             disk_read(handle.data())
                 .expect("read")

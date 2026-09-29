@@ -52,6 +52,7 @@ impl EpistemicNearestNeighbors {
             x_sum: Array1::zeros(num_dim),
             x_sumsq: Array1::zeros(num_dim),
             work_dir: stored_work_dir,
+            y_bounds_persisted: std::sync::atomic::AtomicBool::new(false),
         };
         model.persist_y_bounds_metadata()?;
         Ok(model)
@@ -91,10 +92,16 @@ impl EpistemicNearestNeighbors {
     }
 
     pub(crate) fn persist_y_bounds_metadata(&self) -> Result<(), ENNError> {
+        use std::sync::atomic::Ordering;
         let Some(dir) = self.work_dir.as_ref() else {
             return Ok(());
         };
-        patch_metadata_y_bounds(dir, &self.y_bounds)
+        if self.y_bounds_persisted.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let written = patch_metadata_y_bounds(dir, &self.y_bounds)?;
+        self.y_bounds_persisted.store(written, Ordering::Relaxed);
+        Ok(())
     }
 
     /// Per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
@@ -144,11 +151,12 @@ impl EpistemicNearestNeighbors {
     }
 }
 
-fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<(), ENNError> {
+/// Write `bounds` into `metadata.json`; false if there is no metadata file yet.
+fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<bool, ENNError> {
     use crate::y_bounds::bounds_to_json;
     let meta_path = work_dir.join("metadata.json");
     if !meta_path.exists() {
-        return Ok(());
+        return Ok(false);
     }
     let text = std::fs::read_to_string(&meta_path)
         .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
@@ -191,7 +199,10 @@ fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<(), 
             "metadata.json missing closing brace".to_string(),
         ));
     };
-    std::fs::write(&meta_path, new_text).map_err(|e| ENNError::InvalidParameter(e.to_string()))
+    if new_text != text {
+        std::fs::write(&meta_path, new_text).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+    }
+    Ok(true)
 }
 
 #[cfg(test)]
