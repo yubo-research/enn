@@ -21,9 +21,10 @@ Per checkpoint:
 - accuracy on the test points: ``loglik`` and ``nrmse`` (RMSE over the std of ``y_test``).
 
 Each seed runs in its own process. Each checkpoint line gives mean ± standard error over seeds.
-For each metric in ``REG_METRICS`` two ``reg`` lines follow (see ``evals.scaling_fit``): the OLS
-fit of the per-seed values on ln N, N and N^2 (N in thousands) with each term's t and p value,
-and the fit left after backward elimination at ``alpha``, naming accepted and rejected terms.
+For each metric in ``REG_METRICS`` one ``reg`` line follows (see ``evals.scaling_fit``): the
+per-seed values are regressed on ln N, N and N^2 (N in thousands) in turn, each fit reported
+with its r^2, intercept, slope, t and p value, and ``best`` names the term with the largest r^2
+(``none`` if that slope is not significant at ``alpha``).
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ from evals.metric_12d import (
     build_model,
     make_data,
 )
-from evals.scaling_fit import ALPHA, TERMS, RegFit, backward_eliminate
+from evals.scaling_fit import ALPHA, RegFit, best_term, single_term_fits
 from evals.stress_eval import format_directed, format_plain
 from ops.stress import DRAW_FLAGS, MeanSE, format_mean_se, mean_se
 
@@ -230,52 +231,42 @@ def format_eval_line(n: int, stats: dict[str, MeanSE]) -> str:
     return f"EVAL: {format_plain('model', MODEL_LABEL)} {format_plain('n', n)} {vals}"
 
 
-def _term_names(terms: object) -> str:
-    return ",".join(terms) or "none"
-
-
-def format_reg_line(metric: str, label: str, fit: RegFit) -> str:
-    """One ``reg`` line: intercept, then coefficient, t and p value of each term in ``fit``."""
-    head = [
+def format_reg_line(metric: str, fits: dict[str, RegFit], alpha: float = ALPHA) -> str:
+    """One ``reg`` line: the best term, then r^2, intercept, slope, t and p of each simple fit."""
+    obs = next(iter(fits.values())).obs if fits else 0
+    parts = [
         format_plain("model", MODEL_LABEL),
         format_plain("reg", metric),
-        format_plain("fit", label),
-        format_plain("obs", fit.obs),
-        format_plain("r2", f"{fit.r2:.4f}"),
+        format_plain("obs", obs),
+        format_plain("best", best_term(fits, alpha)),
     ]
-    if label != "full":
-        head += [
-            format_plain("accepted", _term_names(fit.tests)),
-            format_plain("rejected", _term_names(t for t in TERMS if t not in fit.tests)),
-        ]
-    head.append(format_plain("b0", f"{fit.intercept:.4g}"))
-    for term, tt in fit.tests.items():
-        head += [
+    for term, fit in fits.items():
+        tt = fit.tests[term]
+        parts += [
+            format_plain(f"r2_{term}", f"{fit.r2:.4f}"),
+            format_plain(f"b0_{term}", f"{fit.intercept:.4g}"),
             format_plain(f"b_{term}", f"{tt.coef:.4g}"),
             format_plain(f"t_{term}", f"{tt.t:.3g}"),
             format_plain(f"p_{term}", f"{tt.p:.3g}"),
         ]
-    return "EVAL: " + " ".join(head)
+    return "EVAL: " + " ".join(parts)
 
 
-def regress(rows: list[dict[str, float]], alpha: float) -> dict[str, tuple[RegFit, RegFit]]:
-    """Full and backward-eliminated fits of each ``REG_METRICS`` metric on per-seed rows."""
+def regress(rows: list[dict[str, float]]) -> dict[str, dict[str, RegFit]]:
+    """Simple fits on each of ln N, N and N^2 for each ``REG_METRICS`` metric, on per-seed rows."""
     ns = [r["n"] for r in rows]
-    return {m: backward_eliminate(ns, [r[m] for r in rows], alpha) for m in REG_METRICS}
+    return {m: single_term_fits(ns, [r[m] for r in rows]) for m in REG_METRICS}
 
 
 def run_eval(
     config: ScalingConfig | None = None,
-) -> tuple[dict[int, dict[str, MeanSE]], dict[str, tuple[RegFit, RegFit]]]:
+) -> tuple[dict[int, dict[str, MeanSE]], dict[str, dict[str, RegFit]]]:
     """Run all seeds; print per-checkpoint EVAL lines and the regression lines."""
     cfg = ScalingConfig() if config is None else config
     if list(cfg.n_grid) != sorted(set(cfg.n_grid)) or cfg.n_grid[0] < 2:
         raise ValueError("n_grid must be strictly increasing and start at >= 2")
-    if len(cfg.n_grid) < len(TERMS) + 1 or len(cfg.n_grid) * cfg.num_seeds < len(TERMS) + 2:
-        raise ValueError(
-            f"regression on {len(TERMS)} terms needs >= {len(TERMS) + 1} checkpoints "
-            f"and >= {len(TERMS) + 2} rows (checkpoints x seeds)"
-        )
+    if len(cfg.n_grid) < 3:
+        raise ValueError("comparing ln N, N and N^2 fits needs >= 3 checkpoints")
     print(
         f"model={MODEL_LABEL} n_grid={','.join(map(str, cfg.n_grid))} num_test={cfg.num_test} "
         f"batch={cfg.batch} seeds={cfg.seed}..{cfg.seed + cfg.num_seeds - 1} alpha={cfg.alpha}",
@@ -288,8 +279,7 @@ def run_eval(
     summary = summarize(rows)
     for n, stats in summary.items():
         print(format_eval_line(n, stats), flush=True)
-    fits = regress(rows, cfg.alpha)
-    for metric, (full, reduced) in fits.items():
-        print(format_reg_line(metric, "full", full), flush=True)
-        print(format_reg_line(metric, "reduced", reduced), flush=True)
+    fits = regress(rows)
+    for metric, term_fits in fits.items():
+        print(format_reg_line(metric, term_fits, cfg.alpha), flush=True)
     return summary, fits

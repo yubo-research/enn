@@ -1,10 +1,10 @@
-"""Multiple linear regression of a metric on ln N, N and N^2, with backward elimination.
+"""Simple linear regressions of a metric on ln N, N and N^2 in turn, and the best of them.
 
-Model: ``y = b0 + b_lnN ln N + b_N N + b_N2 N^2`` fit by ordinary least squares, N in thousands
-of rows (``N_UNIT``). Each coefficient gets a two-sided t test on ``obs - num_terms - 1``
-residual degrees of freedom. Backward elimination starts from all three terms and drops the one
-with the largest p-value while that p-value exceeds ``alpha``; the terms left are accepted and
-the dropped ones rejected. The intercept is always kept.
+For each term ``f`` in ``TERMS`` the model ``y = b0 + b f(N)`` is fit by ordinary least squares,
+N in thousands of rows (``N_UNIT``), and ``b`` gets a two-sided t test on ``obs - 2`` residual
+degrees of freedom. Every model has the same two parameters, so the one with the largest r^2
+(equivalently the smallest residual sum of squares, or AIC) is the best fit. If even the best
+term's slope is not significant at ``alpha`` the best fit is reported as ``none`` (constant in N).
 """
 
 from __future__ import annotations
@@ -70,20 +70,16 @@ def ols(ns: list[float], ys: list[float], terms: tuple[str, ...] = TERMS) -> Reg
     return RegFit(float(beta[0]), tests, r2, len(y))
 
 
-def _worst_term(fit: RegFit) -> tuple[str, float]:
-    return max(
-        ((t, 1.0 if math.isnan(tt.p) else tt.p) for t, tt in fit.tests.items()),
-        key=lambda item: item[1],
-    )
+def single_term_fits(ns: list[float], ys: list[float]) -> dict[str, RegFit]:
+    """One simple regression ``y = b0 + b f(N)`` per term ``f`` in ``TERMS``."""
+    return {t: ols(ns, ys, (t,)) for t in TERMS}
 
 
-def backward_eliminate(ns: list[float], ys: list[float], alpha: float = ALPHA) -> tuple[RegFit, RegFit]:
-    """Full fit on ``TERMS`` and the reduced fit left after backward elimination at ``alpha``."""
-    full = ols(ns, ys, TERMS)
-    fit = full
-    while fit.tests:
-        term, p = _worst_term(fit)
-        if p <= alpha:
-            break
-        fit = ols(ns, ys, tuple(t for t in fit.tests if t != term))
-    return full, fit
+def best_term(fits: dict[str, RegFit], alpha: float = ALPHA) -> str:
+    """Term with the largest r^2, or ``"none"`` if its slope's p-value exceeds ``alpha`` (or is nan)."""
+    scored = [(t, f) for t, f in fits.items() if math.isfinite(f.r2)]
+    if not scored:
+        return "none"
+    term, fit = max(scored, key=lambda item: item[1].r2)
+    p = fit.tests[term].p
+    return term if math.isfinite(p) and p <= alpha else "none"

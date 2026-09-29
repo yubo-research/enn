@@ -44,16 +44,31 @@ def test_unknown_term_raises() -> None:
 
 
 @pytest.mark.parametrize(
-    ("fn", "accepted"),
+    ("fn", "best"),
     [
-        (lambda n: 5.0 + 0.3 * n / 1000, ["N"]),
-        (lambda n: 5.0 + 0.8 * math.log(n), ["lnN"]),
-        (lambda n: 5.0 + 0.002 * (n / 1000) ** 2, ["N2"]),
-        (lambda n: 5.0, []),
+        (lambda n: 5.0 + 0.3 * n / 1000, "N"),
+        (lambda n: 5.0 + 0.8 * math.log(n), "lnN"),
+        (lambda n: 5.0 + 0.002 * (n / 1000) ** 2, "N2"),
+        (lambda n: 5.0, "none"),
     ],
 )
-def test_backward_eliminate_finds_true_terms(fn, accepted: list[str]) -> None:
-    full, reduced = mod.backward_eliminate(NS, _noisy(fn))
-    assert set(full.tests) == set(mod.TERMS)
-    assert list(reduced.tests) == accepted
-    assert all(tt.p <= mod.ALPHA for tt in reduced.tests.values())
+def test_single_term_fits_pick_true_term(fn, best: str) -> None:
+    fits = mod.single_term_fits(NS, _noisy(fn))
+    assert list(fits) == list(mod.TERMS)
+    assert all(list(f.tests) == [t] and f.obs == len(NS) for t, f in fits.items())
+    assert mod.best_term(fits) == best
+
+
+def test_single_term_fit_coefficients() -> None:
+    fits = mod.single_term_fits(NS, [1.0 + 0.3 * n / 1000 for n in NS])
+    assert fits["N"].intercept == pytest.approx(1.0)
+    assert fits["N"].tests["N"].coef == pytest.approx(0.3)
+    assert fits["N"].r2 == pytest.approx(1.0)
+    assert fits["lnN"].r2 < fits["N"].r2 and fits["N2"].r2 < fits["N"].r2
+
+
+def test_best_term_degenerate_fits_are_none() -> None:
+    flat = mod.single_term_fits(NS, [2.0] * len(NS))
+    assert all(math.isnan(f.r2) for f in flat.values())
+    assert mod.best_term(flat) == "none"
+    assert mod.best_term({}) == "none"

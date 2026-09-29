@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from evals import scaling_n as mod
-from evals.scaling_fit import TERMS, RegFit, TermTest
+from evals.scaling_fit import TERMS, RegFit, TermTest, best_term
 from evals.short import eval_scaling
 from ops.stress import MeanSE
 
@@ -59,25 +59,26 @@ def test_summarize_and_format_lines() -> None:
 
 
 def test_format_reg_line() -> None:
-    fit = RegFit(1.5, {"N": TermTest(0.25, 4.0, 0.001)}, 0.9, 21)
-    assert mod.format_reg_line("rss_mib", "full", fit) == (
-        "EVAL: model = bpann_disk_auto_ols reg = rss_mib fit = full obs = 21 r2 = 0.9000 "
-        "b0 = 1.5 b_N = 0.25 t_N = 4 p_N = 0.001"
+    fits = {
+        "lnN": RegFit(1.0, {"lnN": TermTest(0.5, 2.0, 0.06)}, 0.5, 21),
+        "N": RegFit(1.5, {"N": TermTest(0.25, 4.0, 0.001)}, 0.9, 21),
+    }
+    assert mod.format_reg_line("rss_mib", fits) == (
+        "EVAL: model = bpann_disk_auto_ols reg = rss_mib obs = 21 best = N "
+        "r2_lnN = 0.5000 b0_lnN = 1 b_lnN = 0.5 t_lnN = 2 p_lnN = 0.06 "
+        "r2_N = 0.9000 b0_N = 1.5 b_N = 0.25 t_N = 4 p_N = 0.001"
     )
-    reduced = mod.format_reg_line("rss_mib", "reduced", fit)
-    assert "accepted = N rejected = lnN,N2 b0 = 1.5" in reduced
-    empty = mod.format_reg_line("q", "reduced", RegFit(2.0, {}, math.nan, 5))
-    assert "accepted = none rejected = lnN,N,N2 b0 = 2" in empty
+    assert "obs = 0 best = none" in mod.format_reg_line("q", {})
 
 
 def test_regress_recovers_linear_memory() -> None:
     rows = [{"n": float(n), **{m: 3.0 + 0.002 * n + 0.01 * s for m in mod.REG_METRICS}} for n in (100, 1000, 10000, 100000) for s in range(3)]
-    fits = mod.regress(rows, 0.05)
+    fits = mod.regress(rows)
     assert set(fits) == set(mod.REG_METRICS)
-    full, reduced = fits["rss_mib"]
-    assert set(full.tests) == set(TERMS) and full.obs == 12
-    assert list(reduced.tests) == ["N"]
-    assert reduced.tests["N"].coef == pytest.approx(2.0, rel=1e-3)
+    term_fits = fits["rss_mib"]
+    assert list(term_fits) == list(TERMS) and term_fits["N"].obs == 12
+    assert best_term(term_fits) == "N"
+    assert term_fits["N"].tests["N"].coef == pytest.approx(2.0, rel=1e-3)
 
 
 def test_run_eval_tiny(capsys: pytest.CaptureFixture[str]) -> None:
@@ -88,8 +89,8 @@ def test_run_eval_tiny(capsys: pytest.CaptureFixture[str]) -> None:
         assert stats["disk_mib"].mean > 0 and stats["add_s"].mean > 0
         assert stats["query_s"].mean > 0 and np.isfinite(stats["nrmse"].mean)
     assert out.count("seed = ") == TINY.num_seeds * len(TINY.n_grid)
-    assert out.count("EVAL: ") == len(TINY.n_grid) + 2 * len(mod.REG_METRICS)
-    assert all(f"reg = {m} fit = full obs = 8 " in out for m in mod.REG_METRICS)
+    assert out.count("EVAL: ") == len(TINY.n_grid) + len(mod.REG_METRICS)
+    assert all(f"reg = {m} obs = 8 best = " in out for m in mod.REG_METRICS)
     assert set(fits) == set(mod.REG_METRICS)
 
 
@@ -97,9 +98,7 @@ def test_run_eval_rejects_bad_config() -> None:
     with pytest.raises(ValueError, match="increasing"):
         mod.run_eval(mod.ScalingConfig(n_grid=(100, 10)))
     with pytest.raises(ValueError, match="checkpoints"):
-        mod.run_eval(mod.ScalingConfig(n_grid=(10, 100, 1000)))
-    with pytest.raises(ValueError, match="rows"):
-        mod.run_eval(mod.ScalingConfig(n_grid=(10, 20, 30, 40), num_seeds=1))
+        mod.run_eval(mod.ScalingConfig(n_grid=(10, 100)))
 
 
 def test_run_seed_isolated_matches_grid() -> None:
