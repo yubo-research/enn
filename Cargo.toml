@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.10"
+version = "0.2.11"
 edition = "2021"
 license = "MIT"
 authors = ["YUBO Lab <david.sweet@yu.edu>"]
@@ -20,8 +20,8 @@ categories = ["science", "simulation"]
 
 [workspace.dependencies]
 # Internal crates are pinned with `=` to [workspace.package] version; tests/fast/test_cargo_version_lockstep.py enforces it.
-ennbo = { path = "rust/crates/ennbo", version = "=0.2.10" }
-ennbo-bpann = { path = "rust/crates/bpann", version = "=0.2.10" }
+ennbo = { path = "rust/crates/ennbo", version = "=0.2.11" }
+ennbo-bpann = { path = "rust/crates/bpann", version = "=0.2.11" }
 ndarray = "0.16"
 ndarray-linalg = "0.17"
 numpy = "0.22"

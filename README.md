@@ -35,8 +35,6 @@ The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow Tu
 or
 `cargo add ennbo`
 
-PyPI wheels are **platform-specific** (they include the `enn.enn_rust` native extension). If `pip install ennbo` gives an import error about `enn.enn_rust`, install a matching wheel (same OS/arch/Python) or build from source (Rust + linkable [Faiss](https://github.com/facebookresearch/faiss) C API; see below).
-
 
 ## Demonstration
 [`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_enn.ipynb) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) to build and query an ENN model.
