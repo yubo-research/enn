@@ -141,7 +141,6 @@ def run_disk_rss_stress(
     model = EpistemicNearestNeighbors(
         empty_x,
         empty_y,
-        scale_x=False,
         index_driver=index_driver,
         work_dir=work_dir,
         enn_storage="disk",
@@ -352,11 +351,9 @@ def reopen_disk_bpann_enn(work_dir: str) -> tuple[EpistemicNearestNeighbors, dic
     meta = load_disk_metadata(work_dir)
     num_dim = int(meta["num_dim"])
     num_metrics = int(meta["num_metrics"])
-    scale_x = bool(meta.get("scale_x", False))
     model = EpistemicNearestNeighbors(
         np.empty((0, num_dim), dtype=float),
         np.empty((0, num_metrics), dtype=float),
-        scale_x=scale_x,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=work_dir,
         enn_storage="disk",
@@ -425,7 +422,6 @@ def run_enn_add_stress(
     model_kwargs: dict[str, object] = {
         "train_x": empty_x,
         "train_y": empty_y,
-        "scale_x": False,
         "index_driver": index_driver,
     }
     if cfg.work_dir is not None:
@@ -783,7 +779,6 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     model_kwargs: dict[str, object] = {
         "train_x": x,
         "train_y": y,
-        "scale_x": False,
         "index_driver": config.index_driver,
     }
     if config.index_driver == ENNIndexDriver.BPANN_DISK:

@@ -72,7 +72,6 @@ def build_model(
     return EpistemicNearestNeighbors(
         x,
         y,
-        scale_x=False,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=work_dir,
         enn_storage="disk",

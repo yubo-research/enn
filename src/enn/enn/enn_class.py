@@ -6,11 +6,22 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from enn._rust import EpistemicNearestNeighbors as _RustENN
+from enn._rust import set_unscaled_dims as _set_unscaled_dims
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_x_scaling import (
+    ENNMetricLearning,
+    ENNScaleX,
+    validate_metric_learning,
+    validate_scale_x,
+    validate_tied_dims,
+)
 
 from .enn_class_support import _rust_index_driver_name, _to_rust_seeds
+from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .enn_normal import ENNNormal
     from .enn_params import ENNParams, PosteriorFlags
 
@@ -74,8 +85,10 @@ class EpistemicNearestNeighbors:
         train_x: np.ndarray,
         train_y: np.ndarray,
         train_yvar: np.ndarray | None = None,
+        tied_dims: Sequence[Sequence[int]] | None = None,
         *,
-        scale_x: bool = False,
+        scale_x: ENNScaleX = ENNScaleX.OFF,
+        metric_learning: ENNMetricLearning = ENNMetricLearning.NONE,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
         work_dir: str | os.PathLike[str] | None = None,
         enn_storage: str | None = None,
@@ -84,8 +97,9 @@ class EpistemicNearestNeighbors:
         train_x, train_y, train_yvar = self._validate_inputs(
             train_x, train_y, train_yvar
         )
-        if scale_x and index_driver == ENNIndexDriver.BPANN_DISK:
-            raise ValueError("scale_x=True is not compatible with BPANN_DISK")
+        validate_scale_x(scale_x, index_driver)
+        validate_metric_learning(metric_learning, index_driver, scale_x)
+        self.tied_dims = validate_tied_dims(tied_dims, train_x.shape[1])
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
             if y_bounds.ndim != 2 or y_bounds.shape[1] != 2:
@@ -97,13 +111,16 @@ class EpistemicNearestNeighbors:
                     f"y_bounds rows {y_bounds.shape[0]} != num_metrics {train_y.shape[1]}"
                 )
         self._index_driver = index_driver
+        self._scale_x = scale_x
+        self._metric_learning = metric_learning
         idx_driver = _rust_index_driver_name(index_driver)
         rust_kwargs: dict[str, Any] = {
             "train_x": train_x,
             "train_y": train_y,
             "train_yvar": train_yvar,
-            "scale_x": scale_x,
+            "scale_x": scale_x == ENNScaleX.ON,
             "index_driver": idx_driver,
+            "metric_learning": metric_learning != ENNMetricLearning.NONE,
         }
         if work_dir is not None:
             rust_kwargs["work_dir"] = os.fspath(work_dir)
@@ -112,7 +129,13 @@ class EpistemicNearestNeighbors:
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
+        if self.tied_dims:
+            _set_unscaled_dims(self._rust_model, sorted(j for g in self.tied_dims for j in g))
         self._y_bounds = y_bounds
+        self.metric: MBPANNMetric | None = None
+        if metric_learning == ENNMetricLearning.AUTO:
+            self.metric = MBPANNMetric(self, tied_dims=self.tied_dims)
+            self.metric.observe(train_x, train_y)
 
     def add(
         self,
@@ -122,6 +145,8 @@ class EpistemicNearestNeighbors:
     ) -> None:
         x, y, yvar = self._validate_inputs(x, y, yvar)
         self._rust_model.add(x, y, yvar)
+        if self.metric is not None:
+            self.metric.observe(x, y)
 
     def ensure_index_sync(self) -> None:
         self._rust_model.ensure_index_sync()
@@ -171,20 +196,19 @@ class EpistemicNearestNeighbors:
         return np.asarray(self._rust_model.y_scale_row, dtype=float)
 
     @property
-    def _scale_x(self) -> bool:
-        return bool(self._rust_model.scale_x)
+    def scale_x(self) -> ENNScaleX:
+        return self._scale_x
+
+    @property
+    def metric_learning(self) -> ENNMetricLearning:
+        return self._metric_learning
+
 
     @property
     def _train_y(self) -> np.ndarray:
         n = len(self)
         _, y, _ = self.train_rows_at(list(range(n)))
         return y
-
-    @property
-    def _train_yvar(self) -> np.ndarray | None:
-        n = len(self)
-        _, _, yvar = self.train_rows_at(list(range(n)))
-        return yvar
 
     def __len__(self) -> int:
         return len(self._rust_model)

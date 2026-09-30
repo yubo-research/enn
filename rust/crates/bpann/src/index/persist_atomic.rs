@@ -59,27 +59,54 @@ pub(crate) fn persist_index_files(
     pages: &[Page],
     skip_edges: &HashMap<u32, Vec<u32>>,
 ) -> Result<(), BpannError> {
+    persist_index_files_with(index_dir, header, |w| write_pages_index(pages, header.num_dim, w), skip_edges)
+}
+
+/// Keep the current `path` (if any) as `backup` without reading it into memory: a
+/// hard link where the filesystem allows one, else a streamed copy.
+fn keep_backup(path: &Path, backup: &Path) -> Result<bool, BpannError> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let _ = fs::remove_file(backup);
+    fs::hard_link(path, backup)
+        .or_else(|_| fs::copy(path, backup).map(|_| ()))
+        .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+    Ok(true)
+}
+
+/// Restore `path` from `backup` if one was kept, else leave `path` alone; drop the backup.
+fn restore_backup(path: &Path, backup: &Path, kept: bool, failed: bool) {
+    if kept && failed {
+        let _ = fs::rename(backup, path);
+    }
+    let _ = fs::remove_file(backup);
+}
+
+/// Atomically replace `pages.bin` (written by `write_pages`), `skip_edges.bin` and
+/// `header.json`; on failure the previous files are put back. Nothing is buffered
+/// in memory beyond the writer's buffer.
+pub(crate) fn persist_index_files_with(
+    index_dir: &Path,
+    header: &IndexHeader,
+    write_pages: impl FnOnce(&mut BufWriter<File>) -> std::io::Result<()>,
+    skip_edges: &HashMap<u32, Vec<u32>>,
+) -> Result<(), BpannError> {
     fs::create_dir_all(index_dir).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
     let pages_path = index_dir.join("pages.bin");
     let pages_tmp = index_dir.join("pages.bin.tmp");
+    let pages_bak = index_dir.join("pages.bin.bak");
     let skip_path = index_dir.join("skip_edges.bin");
     let skip_tmp = index_dir.join("skip_edges.bin.tmp");
-    let pages_backup = pages_path
-        .exists()
-        .then(|| fs::read(&pages_path))
-        .transpose()
-        .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-    let skip_backup = skip_path
-        .exists()
-        .then(|| fs::read(&skip_path))
-        .transpose()
-        .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+    let skip_bak = index_dir.join("skip_edges.bin.bak");
+    let pages_kept = keep_backup(&pages_path, &pages_bak)?;
+    let skip_kept = keep_backup(&skip_path, &skip_bak)?;
     let persist_result = (|| {
         {
             let file = File::create(&pages_tmp)
                 .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
             let mut writer = BufWriter::new(file);
-            write_pages_index(pages, header.num_dim, &mut writer)
+            write_pages(&mut writer)
                 .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
             writer
                 .flush()
@@ -102,13 +129,10 @@ pub(crate) fn persist_index_files(
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
         Ok(())
     })();
-    if persist_result.is_err() {
-        if let Some(bytes) = pages_backup {
-            let _ = fs::write(&pages_path, bytes);
-        }
-        if let Some(bytes) = skip_backup {
-            let _ = fs::write(&skip_path, bytes);
-        }
+    let failed = persist_result.is_err();
+    restore_backup(&pages_path, &pages_bak, pages_kept, failed);
+    restore_backup(&skip_path, &skip_bak, skip_kept, failed);
+    if failed {
         let _ = fs::remove_file(&pages_tmp);
         let _ = fs::remove_file(&skip_tmp);
     }

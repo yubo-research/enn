@@ -1,7 +1,7 @@
 //! ENN model Python bindings.
 
 use ennbo::traits::PosteriorComputation;
-use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -34,12 +34,14 @@ fn py_posterior_flags(
 #[pyclass(name = "EpistemicNearestNeighbors")]
 pub struct PyEpistemicNearestNeighbors {
     pub(crate) inner: ennbo::EpistemicNearestNeighbors,
+    /// Opened with metric learning: BPANN_DISK storage that accepts metric updates.
+    metric_learning: bool,
 }
 
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None, metric_learning=false))]
     #[allow(clippy::too_many_arguments)]
     #[doc = "kiss-coverage-off"]
     fn new(
@@ -51,6 +53,7 @@ impl PyEpistemicNearestNeighbors {
         work_dir: Option<&str>,
         enn_storage: Option<&str>,
         y_bounds: Option<PyReadonlyArray2<f64>>,
+        metric_learning: bool,
     ) -> PyResult<Self> {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
@@ -61,6 +64,11 @@ impl PyEpistemicNearestNeighbors {
                 )))
             }
         };
+        if metric_learning && (scale_x || driver != ennbo::IndexDriver::BpAnnDisk) {
+            return Err(PyValueError::new_err(
+                "metric_learning requires index_driver=BPANN_DISK and scale_x=false",
+            ));
+        }
         let storage = match enn_storage {
             Some("disk" | "Disk") => ennbo::EnnStorage::Disk,
             Some("memory" | "in_memory" | "InMemory") => ennbo::EnnStorage::InMemory,
@@ -85,7 +93,23 @@ impl PyEpistemicNearestNeighbors {
             y_bounds,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self { inner: model })
+        Ok(Self {
+            inner: model,
+            metric_learning,
+        })
+    }
+
+    #[pyo3(signature = (x_scale, rebuild=false))]
+    #[doc = "kiss-coverage-off"]
+    fn set_metric_scale(&mut self, x_scale: PyReadonlyArray1<f64>, rebuild: bool) -> PyResult<()> {
+        if !self.metric_learning {
+            return Err(PyValueError::new_err(
+                "set_metric_scale requires metric_learning=AUTO",
+            ));
+        }
+        self.inner
+            .set_metric_scale(x_scale.as_array().to_owned(), rebuild)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[pyo3(signature = (x, y, yvar=None))]
@@ -480,6 +504,19 @@ pub(crate) fn train_rows_at_warped<'py>(
     ))
 }
 
+/// Dimensions `scale_x` leaves at scale 1; kept off the pyclass to satisfy methods_per_class.
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub(crate) fn set_unscaled_dims(
+    mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
+    dims: Vec<usize>,
+) -> PyResult<()> {
+    model
+        .inner
+        .set_unscaled_dims(dims)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Wrapper for ENNParams
 #[pyclass(name = "ENNParams")]
 #[derive(Clone, Copy)]
@@ -545,6 +582,7 @@ mod kiss_coverage_tests {
         let _ = (
             PyEpistemicNearestNeighbors::new,
             PyEpistemicNearestNeighbors::add,
+            PyEpistemicNearestNeighbors::set_metric_scale,
             PyEpistemicNearestNeighbors::ensure_index_sync,
             PyEpistemicNearestNeighbors::schedule_background_flush,
             PyEpistemicNearestNeighbors::persist_index_to_disk,
@@ -567,6 +605,7 @@ mod kiss_coverage_tests {
             PyEpistemicNearestNeighbors::y_scale_row,
             PyEpistemicNearestNeighbors::y_bounds,
             train_rows_at_warped,
+            set_unscaled_dims,
             PyENNParams::new,
             PyENNParams::k_num_neighbors,
             PyENNParams::epistemic_variance_scale,

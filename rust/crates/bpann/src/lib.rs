@@ -4,6 +4,7 @@ pub mod error;
 pub mod index;
 pub mod large_n_search;
 pub mod merge;
+pub mod metric;
 pub mod mmap_store;
 pub mod observation;
 pub mod small_n_search;
@@ -274,7 +275,7 @@ mod acceptance_tests {
             None,
         )
         .unwrap();
-        assert_eq!(b.pending_rows(), 2);
+        assert_eq!(b.pending_rows(), 0);
         let (_, idx) = b
             .search(&array![[0.0]].view(), 1, true)
             .unwrap();
@@ -306,7 +307,7 @@ mod acceptance_tests {
             None,
         )
         .unwrap();
-        assert_eq!(b.pending_rows(), 5);
+        assert_eq!(b.pending_rows(), 0);
         let (_, idx) = b
             .search(&array![[0.0]].view(), 4, true)
             .unwrap();
@@ -337,10 +338,10 @@ mod acceptance_tests {
         }
     }
 
-    /// Regression: soft-sync builds a flat star forest (one internal root, many
-    /// sibling leaves). Greedy beam search with width 1 visits only one leaf.
+    /// Regression: batched adds past the in-core limit must keep recall high
+    /// in the incremental tree.
     #[test]
-    fn test_flat_forest_recall_after_ensure_index_sync() {
+    fn test_tree_recall_after_ensure_index_sync() {
         let n = 15_000usize;
         let d = 10usize;
         let k = 9usize;
@@ -367,11 +368,8 @@ mod acceptance_tests {
         b.ensure_index_sync().unwrap();
         assert_eq!(b.indexed_rows(), n);
         assert!(n > SMALL_N_INCORE_SEARCH_LIMIT);
-        let index = b.index_snapshot().expect("indexed snapshot");
-        assert!(
-            index.is_flat_forest(),
-            "large soft-sync span should produce a flat forest index"
-        );
+        let tree = b.index_snapshot().expect("indexed snapshot");
+        assert_eq!(tree.header.indexed_rows, n);
         let mut total_recall = 0.0;
         for q in 0..num_queries {
             let query = x.row(q).to_owned();
@@ -418,17 +416,7 @@ mod acceptance_tests {
         }
         b.ensure_index_sync().unwrap();
         assert_eq!(b.indexed_rows(), n);
-        let flat_fragments = b
-            .index
-            .indices
-            .iter()
-            .filter(|index| index.is_flat_forest())
-            .count();
-        assert!(
-            flat_fragments > 0,
-            "expected flat-forest fragments, got {} total fragments",
-            b.index.indices.len()
-        );
+        assert!(b.index.tree.is_some());
         let mut total_recall = 0.0;
         for q in 0..num_queries {
             let query = x.row(q).to_owned();
@@ -444,12 +432,7 @@ mod acceptance_tests {
             total_recall += hits as f64 / k as f64;
         }
         let recall = total_recall / num_queries as f64;
-        assert!(
-            recall >= 0.90,
-            "recall@{k} with default flush ({} frags, {} flat) = {recall}",
-            b.index.indices.len(),
-            flat_fragments
-        );
+        assert!(recall >= 0.90, "recall@{k} with default flush = {recall}");
     }
 
     #[test]
@@ -552,7 +535,7 @@ mod acceptance_tests {
         .unwrap();
         let (_, idx) = b.search(&array![[100.0, 100.0]].view(), 1, false).unwrap();
         assert_eq!(idx[[0, 0]], 2);
-        assert_eq!(b.indexed_rows(), 2);
+        assert_eq!(b.indexed_rows(), 3);
     }
 
     #[test]
@@ -670,7 +653,7 @@ mod acceptance_tests {
     }
 
     #[test]
-    fn test_deferred_append_below_hard_keeps_pending() {
+    fn test_append_indexes_rows_below_hard_cap() {
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1)
             .unwrap()
@@ -680,8 +663,8 @@ mod acceptance_tests {
         let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let y = array![[0.0], [1.0], [2.0], [3.0]];
         b.append_rows(&x.view(), &y.view(), None).unwrap();
-        assert_eq!(b.pending_rows(), 4);
-        assert_eq!(b.indexed_rows(), 0);
+        assert_eq!(b.pending_rows(), 0);
+        assert_eq!(b.indexed_rows(), 4);
     }
 
     #[test]
@@ -713,6 +696,8 @@ mod acceptance_tests {
         let x = Array2::from_shape_fn((6, 2), |(i, j)| (i + j) as f64);
         let y = Array2::from_shape_fn((6, 1), |(i, _)| i as f64);
         b.append_rows(&x.view(), &y.view(), None).unwrap();
+        assert_eq!(b.pending_rows(), 0);
+        b.mark_index_stale();
         assert_eq!(b.pending_rows(), 6);
         assert_eq!(b.indexed_rows(), 0);
         b.ensure_index_sync().unwrap();
@@ -735,7 +720,8 @@ mod acceptance_tests {
         let x4 = Array2::from_shape_fn((4, 2), |(i, j)| (i + j) as f64);
         let y4 = Array2::from_shape_fn((4, 1), |(i, _)| i as f64);
         b.append_rows(&x4.view(), &y4.view(), None).unwrap();
-        assert_eq!(b.pending_rows(), 4);
+        assert_eq!(b.pending_rows(), 0);
+        assert_eq!(b.indexed_rows(), 4);
         let x1 = array![[4.0, 0.0]];
         let y1 = array![[4.0]];
         b.append_rows(&x1.view(), &y1.view(), None).unwrap();
@@ -780,19 +766,8 @@ mod acceptance_tests {
             let x = Array2::from_shape_fn((batch, 2), |(i, j)| ((trial + i) + j) as f64);
             let y = Array2::from_shape_fn((batch, 1), |(i, _)| i as f64);
             b.append_rows(&x.view(), &y.view(), None).unwrap();
-            if batch >= hard {
-                assert_eq!(
-                    b.pending_rows(),
-                    0,
-                    "trial={trial} soft={soft} hard={hard} batch={batch}"
-                );
-            } else {
-                assert_eq!(
-                    b.pending_rows(),
-                    batch,
-                    "trial={trial} soft={soft} hard={hard} batch={batch}"
-                );
-            }
+            assert_eq!(b.pending_rows(), 0, "trial={trial} soft={soft} hard={hard} batch={batch}");
+            assert_eq!(b.indexed_rows(), batch, "trial={trial}");
         }
     }
 
@@ -873,6 +848,29 @@ mod acceptance_tests {
     }
 
     #[test]
+    fn test_reopen_after_soft_syncs_past_hard_persist_indexes_every_row() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_path_buf();
+        let (x, y) = synthetic_train(124, 4, 5);
+        let (pre_d, pre_i) = {
+            let mut b = BpannBackend::new_empty(path.clone(), 4, 1).unwrap();
+            b.append_rows(&x.slice(ndarray::s![..24, ..]), &y.slice(ndarray::s![..24, ..]), None).unwrap();
+            b.persist_index_to_disk().unwrap();
+            for lo in (24..124).step_by(20) {
+                let rows = ndarray::s![lo..lo + 20, ..];
+                b.append_rows(&x.slice(rows), &y.slice(rows), None).unwrap();
+                b.ensure_index_sync().unwrap();
+            }
+            b.search(&x.slice(ndarray::s![0..3, ..]), 5, false).unwrap()
+        };
+        let b2 = BpannBackend::reopen(path).unwrap();
+        assert_eq!((b2.len(), b2.indexed_rows()), (124, 124));
+        let (post_d, post_i) = b2.search(&x.slice(ndarray::s![0..3, ..]), 5, false).unwrap();
+        assert_eq!(pre_i, post_i);
+        assert!(pre_d.iter().zip(post_d.iter()).all(|(a, b)| (a - b).abs() < 1e-6));
+    }
+
+    #[test]
     fn test_scale_checkpoints_ci() {
         let n = 128usize;
         let d = 32usize;
@@ -899,20 +897,14 @@ mod acceptance_tests {
         let (x, y) = synthetic_train(n, d, 42);
         let mut b = BpannBackend::new(dir.path().to_path_buf(), x.clone(), y, None, false, Array1::ones(d)).unwrap();
         b.ensure_index_sync().unwrap();
-        let vectors: Vec<Vec<f32>> = (0..b.len())
-            .map(|i| {
-                b.mmap_row_slice(i)
-                    .unwrap()
-                    .iter()
-                    .map(|&v| v as f32)
-                    .collect()
-            })
-            .collect();
-        let queries: Vec<Vec<f32>> = (0..3)
-            .map(|i| x.row(i).iter().map(|&v| v as f32).collect())
-            .collect();
-        let index = b.index_snapshot().unwrap();
-        let recall = bpann_mean_recall_at_k(&vectors, &queries, 10, index);
+        let mut hits = 0usize;
+        for i in 0..3 {
+            let q = x.row(i).to_owned();
+            let (_, idx) = b.search(&q.view().insert_axis(ndarray::Axis(0)), 10, false).unwrap();
+            let expected = brute_force_oracle(&b, q.as_slice().unwrap(), 10);
+            hits += idx.row(0).iter().filter(|id| expected.contains(id)).count();
+        }
+        let recall = hits as f64 / 30.0;
         assert!(recall >= 0.90, "N={n} recall={recall}");
     }
 

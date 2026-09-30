@@ -122,24 +122,21 @@ fn disk_storage_rejects_non_disk_driver() {
 }
 
 #[test]
-fn scale_x_rejects_bpann_disk() {
+fn scale_x_accepts_bpann_disk() {
     let dir = TempDir::new().expect("tempdir");
-    match EpistemicNearestNeighbors::new_with_storage(
-        array![[0.0, 0.0]],
-        array![[0.0]],
+    let model = EpistemicNearestNeighbors::new_with_storage(
+        array![[0.0, 0.0], [2.0, 20.0]],
+        array![[0.0], [1.0]],
         None,
         true,
         IndexDriver::BpAnnDisk,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
-            None,
-        ) {
-        Ok(_) => panic!("expected scale_x + BpAnnDisk to error"),
-        Err(e) => assert!(
-            e.to_string().contains("scale_x=True is not compatible with BPANN_DISK"),
-            "unexpected error: {e}"
-        ),
-    }
+        None,
+    )
+    .expect("scale_x + BpAnnDisk must succeed");
+    assert!(model.is_scale_x());
+    assert_eq!(model.x_scale_row().row(0).to_vec(), vec![1.0, 10.0]);
 }
 
 #[test]

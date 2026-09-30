@@ -15,7 +15,7 @@ from enn.enn.enn_params import ENNParams, PosteriorFlags
 def simple_model():
     train_x = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=float)
     train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
-    return EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
+    return EpistemicNearestNeighbors(train_x, train_y)
 
 
 @pytest.fixture

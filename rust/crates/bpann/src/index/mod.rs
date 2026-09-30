@@ -3,8 +3,16 @@ pub mod kmeans;
 pub mod page;
 pub mod persist_atomic;
 pub mod search;
+pub mod split;
 pub mod sync;
-pub mod sync_forest;
+pub mod tree;
+pub mod tree_bulk;
+pub mod tree_counts;
+pub mod tree_morph;
+pub mod tree_persist;
+pub mod tree_residency;
+pub mod tree_search;
+pub mod tree_store;
 
 pub use build::{BpannIndex, DEFAULT_LEAF_CAPACITY, IndexHeader};
 pub use sync::IncrementalIndex;

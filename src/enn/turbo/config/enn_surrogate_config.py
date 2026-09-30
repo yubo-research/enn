@@ -7,21 +7,21 @@ import numpy as np
 
 from .enn_fit_config import ENNFitConfig
 from .enn_index_driver import ENNIndexDriver
+from .enn_x_scaling import ENNScaleX, validate_scale_x
 
 
 @dataclass(frozen=True)
 class ENNSurrogateConfig:
     k: int | None = None
     fit: ENNFitConfig = ENNFitConfig()
-    scale_x: bool = False
+    scale_x: ENNScaleX = ENNScaleX.OFF
     index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
     enn_storage: str | None = None
     work_dir: str | os.PathLike[str] | None = None
     y_bounds: np.ndarray | None = None
 
     def __post_init__(self) -> None:
-        if self.scale_x and self.index_driver == ENNIndexDriver.BPANN_DISK:
-            raise ValueError("scale_x=True is not compatible with BPANN_DISK")
+        validate_scale_x(self.scale_x, self.index_driver)
         if self.y_bounds is not None:
             yb = np.asarray(self.y_bounds, dtype=float)
             if yb.ndim != 2 or yb.shape[1] != 2:

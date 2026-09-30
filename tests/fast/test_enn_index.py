@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.turbo.config.enn_x_scaling import ENNScaleX
 from enn.enn.enn_class_support import (
     enn_index_neighbor_distances_and_indices,
     enn_neighbor_distances_and_indices,
@@ -15,7 +16,7 @@ from enn.enn.enn_hash import (
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 
-def _enn(train_x, *, scale_x=False, index_driver=ENNIndexDriver.FLAT, train_y=None):
+def _enn(train_x, *, scale_x=ENNScaleX.OFF, index_driver=ENNIndexDriver.FLAT, train_y=None):
     if train_y is None:
         train_y = np.zeros((train_x.shape[0], 1), dtype=float)
     return EpistemicNearestNeighbors(
@@ -27,7 +28,7 @@ def test_enn_neighbor_search_k_larger_than_n_train_never_emits_invalid_neighbor_
     rng = np.random.default_rng(0)
     n_train = 3
     train_x = rng.standard_normal((n_train, 2))
-    enn = _enn(train_x, scale_x=False)
+    enn = _enn(train_x)
     query = rng.standard_normal((1, 2))
     search_k = 8
     _dist2s, idx = enn_neighbor_distances_and_indices(
@@ -40,7 +41,7 @@ def test_enn_neighbor_search_k_larger_than_n_train_never_emits_invalid_neighbor_
 
 def test_enn_neighbor_search_empty_train_sentinel_never_uses_negative_one():
     train_x = np.zeros((0, 2), dtype=float)
-    enn = _enn(train_x, scale_x=False)
+    enn = _enn(train_x)
     query = np.array([[1.0, 2.0], [-0.5, 0.25]], dtype=float)
     search_k = 4
     dist2s, idx = enn_neighbor_distances_and_indices(
@@ -62,7 +63,7 @@ def test_enn_neighbor_search_empty_train_sentinel_never_uses_negative_one():
 def test_enn_neighbor_search_k_one_exclude_nearest_keeps_novel_nn():
     rng = np.random.default_rng(7)
     train_x = rng.standard_normal((10, 2))
-    enn = _enn(train_x, scale_x=False)
+    enn = _enn(train_x)
     q = rng.standard_normal((3, 2))
     dist2s, idx = enn_neighbor_distances_and_indices(
         enn.rust_backend, q, search_k=1, exclude_nearest=True
@@ -76,7 +77,7 @@ def test_enn_neighbor_search_flat_valid_indices_and_shapes():
     rng = np.random.default_rng(11)
     n_train, dim = 40, 3
     train_x = rng.standard_normal((n_train, dim))
-    enn = _enn(train_x, scale_x=False, index_driver=ENNIndexDriver.FLAT)
+    enn = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
     query = rng.standard_normal((4, dim))
     search_k = 6
     dist2s, idx = enn_neighbor_distances_and_indices(
@@ -92,7 +93,7 @@ def test_enn_neighbor_search_flat_valid_indices_and_shapes():
 def test_enn_neighbor_search_init_and_search():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    enn = _enn(train_x, scale_x=False)
+    enn = _enn(train_x)
     query = rng.standard_normal((5, 3))
     dist2s, idx = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=False
@@ -101,7 +102,7 @@ def test_enn_neighbor_search_init_and_search():
     assert np.all(idx >= 0) and np.all(idx < 20)
 
 
-@pytest.mark.parametrize("scale_x", [False, True])
+@pytest.mark.parametrize("scale_x", [ENNScaleX.OFF, ENNScaleX.ON])
 def test_enn_index_neighbor_search_matches_faiss_when_no_ties(scale_x):
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
@@ -123,7 +124,7 @@ def test_enn_index_neighbor_search_exclude_nearest():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
     query = train_x[:3]
-    enn = _enn(train_x, scale_x=False, index_driver=ENNIndexDriver.FLAT)
+    enn = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
     dist2s, idx = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=True
     )
@@ -140,7 +141,7 @@ def test_enn_index_neighbor_search_exclude_nearest():
 def test_enn_index_neighbor_search_k_one_exclude_nearest_keeps_novel_nn():
     rng = np.random.default_rng(7)
     train_x = rng.standard_normal((10, 2))
-    enn = _enn(train_x, scale_x=False)
+    enn = _enn(train_x)
     q = rng.standard_normal((3, 2))
     dist2s, idx = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, q, search_k=1, exclude_nearest=True
@@ -152,7 +153,7 @@ def test_enn_index_neighbor_search_k_one_exclude_nearest_keeps_novel_nn():
 
 def test_exact_index_search_zero_k_and_k_exceeds_train():
     train_x = np.array([[0.0], [1.0], [2.0]], dtype=float)
-    enn = _enn(train_x, scale_x=False)
+    enn = _enn(train_x)
     query = np.array([[0.5], [1.5]], dtype=float)
     d0, i0 = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=0, exclude_nearest=False
@@ -169,7 +170,7 @@ def test_exact_index_search_zero_k_and_k_exceeds_train():
 def test_enn_neighbor_search_exclude_nearest():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    enn = _enn(train_x, scale_x=False)
+    enn = _enn(train_x)
     query = train_x[:3]
     dist2s_include, idx_include = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=False
@@ -188,7 +189,7 @@ def test_enn_neighbor_search_exclude_nearest():
 def test_enn_neighbor_search_with_scaling():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    enn = _enn(train_x, scale_x=True)
+    enn = _enn(train_x, scale_x=ENNScaleX.ON)
     query = rng.standard_normal((5, 3))
     dist2s, idx = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=False
@@ -200,7 +201,7 @@ def test_enn_neighbor_search_with_scaling():
 def test_enn_neighbor_search_invalid_inputs(query_shape, search_k):
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    enn = _enn(train_x, scale_x=False)
+    enn = _enn(train_x)
     with pytest.raises(ValueError):
         enn_neighbor_distances_and_indices(
             enn.rust_backend,

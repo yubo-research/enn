@@ -4,12 +4,13 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.turbo.config.enn_x_scaling import ENNScaleX
 from enn.enn.enn_params import ENNParams
 
 from enn_helpers import enn_all_train_rows
 
 
-@pytest.mark.parametrize("scale_x", [False, True])
+@pytest.mark.parametrize("scale_x", [ENNScaleX.OFF, ENNScaleX.ON])
 def test_add_rejects_wrong_output_width_without_mutating_model(scale_x):
     train_x = np.array([[0.0, 0.0], [10.0, 0.0]], dtype=float)
     train_y = np.array([[0.0], [10.0]], dtype=float)
@@ -23,7 +24,7 @@ def test_add_rejects_wrong_output_width_without_mutating_model(scale_x):
     np.testing.assert_allclose(x_at, train_x)
     np.testing.assert_allclose(y_at, train_y)
 
-    if scale_x:
+    if scale_x == ENNScaleX.ON:
         enn.add(np.array([[30.0, 0.0]], dtype=float), np.array([[30.0]], dtype=float))
         assert len(enn) == 3
         x_at, y_at, _ = enn_all_train_rows(enn)
@@ -52,7 +53,7 @@ def test_add_rejects_wrong_output_width_without_mutating_model(scale_x):
     np.testing.assert_allclose(out.mu, [[30.0]])
 
 
-@pytest.mark.parametrize("scale_x", [False, True])
+@pytest.mark.parametrize("scale_x", [ENNScaleX.OFF, ENNScaleX.ON])
 def test_add_first_observations_can_initialize_yvar_on_empty_model(scale_x):
     empty_x = np.empty((0, 2), dtype=float)
     empty_y = np.empty((0, 1), dtype=float)
@@ -72,7 +73,7 @@ def test_add_first_observations_can_initialize_yvar_on_empty_model(scale_x):
     np.testing.assert_allclose(inc_yvar, fresh_yvar)
 
 
-@pytest.mark.parametrize("scale_x", [False, True])
+@pytest.mark.parametrize("scale_x", [ENNScaleX.OFF, ENNScaleX.ON])
 def test_zero_row_add_does_not_change_empty_model_yvar_contract(scale_x):
     empty_x = np.empty((0, 2), dtype=float)
     empty_y = np.empty((0, 1), dtype=float)

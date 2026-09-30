@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
     from .config.enn_fit_config import ENNFitConfig
     from .config.enn_index_driver import ENNIndexDriver
+    from .config.enn_x_scaling import ENNScaleX
 
 
 def mk_enn(
@@ -21,7 +22,7 @@ def mk_enn(
     yvar_obs: np.ndarray | None = None,
     *,
     fit: ENNFitConfig | None = None,
-    scale_x: bool = False,
+    scale_x: ENNScaleX | None = None,
     index_driver: ENNIndexDriver | None = None,
     rng: Generator | None = None,
     params_warm_start: ENNParams | None = None,
@@ -31,9 +32,12 @@ def mk_enn(
     from enn.enn.enn_params import ENNParams
 
     from .config.enn_index_driver import ENNIndexDriver
+    from .config.enn_x_scaling import ENNScaleX
 
     if index_driver is None:
         index_driver = ENNIndexDriver.FLAT
+    if scale_x is None:
+        scale_x = ENNScaleX.OFF
 
     x_obs_array = np.asarray(x_obs, dtype=float)
     if x_obs_array.size == 0:

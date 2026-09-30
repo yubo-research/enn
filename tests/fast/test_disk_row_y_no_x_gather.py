@@ -31,7 +31,6 @@ def test_disk_row_y_iteration_does_not_fault_full_train_x():
         model = EpistemicNearestNeighbors(
             np.empty((0, d)),
             np.empty((0, 1)),
-            scale_x=False,
             index_driver=ENNIndexDriver.BPANN_DISK,
             work_dir=work,
             enn_storage="disk",

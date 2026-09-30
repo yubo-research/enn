@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use ndarray::{Array1, Array2, ArrayView2};
 
 use crate::error::BpannError;
-use crate::index::{BpannIndex, IncrementalIndex};
+use crate::index::tree::Tree;
+use crate::index::IncrementalIndex;
 use crate::large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 use crate::mmap_store::MmapColumnStore;
 use crate::observation::{
@@ -16,11 +17,14 @@ use crate::small_n_search::{
     score_queries_flat, ScoreQueriesFlat, SMALL_N_INCORE_SEARCH_LIMIT,
 };
 
+mod flush_thresholds;
+
 pub const PAPER_TEX_PATH: &str = "papers/bpann_2511.15557v1.tex";
+
 pub use crate::tuning::{DEFAULT_PENDING_FLUSH_THRESHOLD, DEFAULT_PENDING_HARD_FLUSH_THRESHOLD};
 
 pub struct BpannBackend {
-    work_dir: PathBuf,
+    pub(crate) work_dir: PathBuf,
     pub(crate) train_x: MmapColumnStore,
     train_y: MmapColumnStore,
     train_yvar: Option<MmapColumnStore>,
@@ -33,6 +37,8 @@ pub struct BpannBackend {
     pending_hard_flush_threshold: usize,
     defer_append_indexing: bool,
     pending_unindexed: AtomicUsize,
+    rows_since_release: usize,
+    indexed_rows_written: usize,
     index_dirty: Mutex<bool>,
     num_obs_counter: obs::NumObsCounter,
     /// Resident flat `N·D` f32 train cache for the small-N search path.
@@ -92,18 +98,13 @@ impl BpannBackend {
         let n = train_x_store.nrows;
         let index_dir = work_dir.join("index");
         let indexed_rows = obs::bpann_load_indexed_rows(&work_dir).unwrap_or(0).min(n);
-        let indices = if index_dir.join("header.json").exists() && indexed_rows > 0 {
-            vec![BpannIndex::open(index_dir.clone())?]
-        } else {
-            Vec::new()
-        };
-        let persisted_rows = indices
-            .first()
-            .map(|i| i.header.indexed_rows)
-            .unwrap_or(0);
-        let mut index = IncrementalIndex::new(index_dir);
-        index.indices = indices;
-        index.indexed_rows = persisted_rows.min(indexed_rows);
+        let mut index = IncrementalIndex::new(index_dir.clone());
+        if index_dir.join("header.json").exists() && indexed_rows > 0 {
+            let adopted = index.adopt_persisted()?;
+            if !adopted || index.indexed_rows > indexed_rows {
+                index.reset();
+            }
+        }
         let mut backend = Self {
             work_dir,
             train_x: train_x_store,
@@ -118,24 +119,14 @@ impl BpannBackend {
             pending_hard_flush_threshold: DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
             defer_append_indexing: true,
             pending_unindexed: AtomicUsize::new(n.saturating_sub(indexed_rows)),
+            rows_since_release: 0,
+            indexed_rows_written: indexed_rows,
             index_dirty: Mutex::new(indexed_rows < n),
             num_obs_counter,
             small_n_x_cache: Mutex::new(None),
         };
-        if persisted_rows < indexed_rows {
-            backend.index.ensure_sync_for_backend(
-                &backend.train_x,
-                backend.num_dim,
-                backend.scale_x,
-                backend.x_scale.as_slice().unwrap(),
-                &backend.work_dir,
-                backend.num_metrics,
-                indexed_rows,
-            )?;
-        }
-        backend.pending_unindexed
-            .store(n.saturating_sub(indexed_rows), Ordering::Relaxed);
-        backend.index.indexed_rows = indexed_rows;
+        backend.insert_unindexed_rows()?;
+        let indexed_rows = backend.index.indexed_rows;
         obs::bpann_write_metadata(
             &backend.work_dir,
             n,
@@ -253,54 +244,54 @@ impl BpannBackend {
             &mut self.train_yvar,
             yvar,
         )?;
-        self.index
-            .note_pending_rows(x, self.scale_x, self.x_scale.as_slice().unwrap());
-        self.pending_unindexed
-            .fetch_add(x.nrows(), Ordering::Relaxed);
         *self.index_dirty.lock().expect("index_dirty") = true;
         *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.num_obs_counter.set(self.len());
-        let pending = self.pending_rows();
-
-
-        if pending >= self.pending_hard_flush_threshold
-            || (!self.defer_append_indexing && pending >= self.pending_flush_threshold)
-        {
-            self.ensure_index_sync()?;
-        }
-        Ok(())
+        self.insert_unindexed_rows()
     }
 
-    /// Soft sync: build/compact fragments in memory and update pending counters.
-    /// May write `indexed_rows.bin`. Does not write `pages.bin` / `skip_edges.bin`
-    /// and does not clear `index_dirty` (hard persist alone clears disk-dirty).
-    ///
-    /// Mutates the live index in place. Background flush still uses
-    /// [`soft_sync_build`] / [`soft_sync_publish`] so readers can search the
-    /// previous snapshot while a detached build runs.
-    pub fn ensure_index_sync(&mut self) -> Result<(), BpannError> {
-        let end = self.len();
-        if self.index.indexed_rows >= end {
-            self.pending_unindexed.store(0, Ordering::Relaxed);
-            return Ok(());
-        }
+    /// Insert every not-yet-indexed row into the tree (`O(log N)` per row).
+    fn insert_unindexed_rows(&mut self) -> Result<(), BpannError> {
+        let x_rows_inserted = self.len().saturating_sub(self.index.indexed_rows);
         self.index.ensure_sync_for_backend(
             &self.train_x,
             self.num_dim,
             self.scale_x,
             self.x_scale.as_slice().unwrap(),
-            &self.work_dir,
-            self.num_metrics,
-            end,
+            self.len(),
         )?;
         self.pending_unindexed.store(0, Ordering::Relaxed);
+        self.rows_since_release += x_rows_inserted;
+        if self.rows_since_release >= self.pending_hard_flush_threshold {
+            self.release_observation_pages()?;
+        }
+        Ok(())
+    }
 
-        self.release_observation_pages()?;
+    /// Soft sync: insert any unindexed rows into the in-memory tree and write
+    /// `indexed_rows.bin`. Does not write `pages.bin` / `skip_edges.bin` and does
+    /// not clear `index_dirty` (hard persist alone clears disk-dirty).
+    ///
+    /// `append_rows` already inserts each new row, so rows are unindexed only after
+    /// an index reset (metric or scale change) or a reopen. Observation pages are
+    /// released, and `indexed_rows.bin` rewritten, once per
+    /// `pending_hard_flush_threshold` rows rather than per call; a hard persist
+    /// always writes it.
+    pub fn ensure_index_sync(&mut self) -> Result<(), BpannError> {
+        if self.index.indexed_rows < self.len() {
+            self.insert_unindexed_rows()?;
+        }
+        self.pending_unindexed.store(0, Ordering::Relaxed);
+        if self.index.indexed_rows.abs_diff(self.indexed_rows_written) >= self.pending_hard_flush_threshold {
+            obs::write_indexed_rows(&self.work_dir, self.index.indexed_rows)?;
+            self.indexed_rows_written = self.index.indexed_rows;
+        }
         Ok(())
     }
 
     /// Remap observation mmaps so faulted/dirty pages leave process RSS.
     pub fn release_observation_pages(&mut self) -> Result<(), BpannError> {
+        self.rows_since_release = 0;
         self.train_x.release_resident_pages()?;
         self.train_y.release_resident_pages()?;
         if let Some(store) = self.train_yvar.as_mut() {
@@ -327,6 +318,7 @@ impl BpannBackend {
             &self.work_dir,
             self.num_metrics,
         )?;
+        self.indexed_rows_written = self.index.indexed_rows;
         self.pending_unindexed.store(0, Ordering::Relaxed);
         *self.index_dirty.lock().expect("index_dirty") = false;
         Ok(())
@@ -421,16 +413,12 @@ impl BpannBackend {
         Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices))
     }
 
-    pub fn index_snapshot(&self) -> Option<&BpannIndex> {
-        self.index.indices.first()
+    pub fn index_snapshot(&self) -> Option<&Tree> {
+        self.index.tree.as_ref()
     }
 
     pub fn page_bytes(&self) -> Vec<u8> {
-        self.index
-            .indices
-            .first()
-            .map(|i| i.page_bytes())
-            .unwrap_or_default()
+        self.index.tree.as_ref().map(Tree::page_bytes).unwrap_or_default()
     }
 
     pub fn mmap_row_slice(&self, i: usize) -> Result<&[f64], BpannError> {
@@ -474,35 +462,6 @@ impl BpannBackend {
     }
 }
 
-impl BpannBackend {
-    pub fn with_pending_flush_threshold(mut self, threshold: usize) -> Self {
-        self.pending_flush_threshold = threshold;
-        if self.pending_hard_flush_threshold < threshold {
-            self.pending_hard_flush_threshold = threshold;
-        }
-        self
-    }
-
-    pub fn with_pending_hard_flush_threshold(mut self, threshold: usize) -> Self {
-        self.pending_hard_flush_threshold = threshold.max(self.pending_flush_threshold);
-        self
-    }
-
-    pub fn pending_flush_threshold(&self) -> usize {
-        self.pending_flush_threshold
-    }
-
-    pub fn pending_hard_flush_threshold(&self) -> usize {
-        self.pending_hard_flush_threshold
-    }
-
-    /// Update soft/hard pending flush thresholds (keeps `hard >= soft`).
-    pub fn reconfigure_flush_thresholds(&mut self, soft: usize, hard: usize) {
-        let soft = soft.max(1);
-        self.pending_flush_threshold = soft;
-        self.pending_hard_flush_threshold = hard.max(soft);
-    }
-}
 
 /// Drop trailing neighbor columns that are invalid (`idx < 0`) in every query row.
 fn trim_trailing_invalid_neighbor_cols(
@@ -546,8 +505,6 @@ pub fn soft_sync_build(backend: &BpannBackend) -> Result<Option<IncrementalIndex
         backend.num_dim,
         backend.scale_x,
         backend.x_scale.as_slice().unwrap(),
-        &backend.work_dir,
-        backend.num_metrics,
         end,
     )?;
     Ok(Some(working))

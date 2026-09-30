@@ -144,7 +144,7 @@ def test_posterior_function_draw_aleatoric_is_independent_of_noise_field():
     train_x = rng.standard_normal((40, 2))
     train_y = train_x.sum(axis=1, keepdims=True)
     train_yvar = 0.25 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar, scale_x=False)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
     x_test = rng.standard_normal((6, 2))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1

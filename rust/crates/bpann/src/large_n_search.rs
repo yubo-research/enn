@@ -88,7 +88,7 @@ pub fn search_indexed_and_pending(
                 x_scale: x_scale_vec,
             };
 
-            let leg_a = if indexed > 0 && !backend.index.indices.is_empty() {
+            let leg_a = if indexed > 0 && backend.index.tree.is_some() {
                 backend
                     .index
                     .search_candidates(&query_f32, index_k.max(1), Some(&store))

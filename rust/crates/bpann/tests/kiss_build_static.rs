@@ -13,7 +13,6 @@ fn kiss_build_module_names_in_source() {
         "build_skip_edges",
         "partition_to_pages",
         "partition_to_pages_id",
-        "remap_page",
     ] {
         assert!(BUILD_SRC.contains(name), "missing {name} in index/build.rs");
     }

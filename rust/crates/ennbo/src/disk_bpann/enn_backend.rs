@@ -50,7 +50,9 @@ impl DiskBpannEnnBackend {
             && train_y.nrows() == 0
             && work_dir.join("metadata.json").exists()
         {
-            BpannBackend::reopen(work_dir.clone()).map_err(bpann_err)?
+            let mut reopened = BpannBackend::reopen(work_dir.clone()).map_err(bpann_err)?;
+            reopened.discard_metric_index_on_reopen().map_err(bpann_err)?;
+            reopened
         } else {
             BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
                 .map_err(bpann_err)?
@@ -126,6 +128,17 @@ impl DiskBpannEnnBackend {
         self.inner
             .ensure_index_sync_with_scale(scale_x, x_scale)
             .map_err(bpann_err)
+    }
+
+    /// Metric learning change: rescale the index in place, and with `rebuild` also
+    /// re-partition it in place over the following adds.
+    pub fn set_metric_scale(&mut self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
+        let result = if rebuild {
+            self.inner.rebuild_metric(x_scale)
+        } else {
+            self.inner.rescale_metric(x_scale)
+        };
+        result.map_err(bpann_err)
     }
 
     pub fn release_observation_pages(&mut self) -> Result<(), ENNError> {
@@ -369,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_unindexed_count_after_append_without_sync() {
+    fn pending_unindexed_count_is_zero_after_append_until_reset() {
         let dir = TempDir::new().expect("tempdir");
         let mut backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
             dir.path().to_path_buf(),
@@ -385,6 +398,8 @@ mod tests {
                 None,
             )
             .expect("append");
+        assert_eq!(backend.pending_unindexed_count(), 0);
+        backend.mark_index_stale();
         assert!(backend.pending_unindexed_count() > 0);
     }
 
@@ -406,6 +421,7 @@ mod tests {
                 None,
             )
             .expect("append");
+        backend.mark_index_stale();
         assert!(backend.pending_unindexed_count() > 0);
         if let Some(built) = backend.soft_sync_build_detached().expect("build") {
             backend

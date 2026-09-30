@@ -17,7 +17,7 @@ def test_enn_reexport_and_fitter_surface():
     y = np.array([[0.0], [1.0]])
     fitter.tell(x, y)
     assert fitter.y_std().size >= 1
-    model = EpistemicNearestNeighbors(x, y, scale_x=False)
+    model = EpistemicNearestNeighbors(x, y)
     params = fitter.ask(model, num_fit_candidates=2, num_fit_samples=2)
     assert params.k_num_neighbors >= 1
 
@@ -217,12 +217,12 @@ def test_coverage_enn_fit_fast():
     rng = np.random.default_rng(8)
     x = np.array([[0.0, 0.0], [1.0, 1.0], [0.5, 0.5], [0.2, 0.8]])
     y = np.array([[0.0], [1.0], [0.5], [0.3]])
-    model = EpistemicNearestNeighbors(x, y, scale_x=False)
+    model = EpistemicNearestNeighbors(x, y)
     params = enn_fit(model, k=2, num_fit_candidates=2, num_fit_samples=2, rng=rng)
     assert params.k_num_neighbors >= 1
     fitter = ENNStatefulFitter(k=2, rng=np.random.default_rng(9))
     fitter.tell(x[:2], y[:2])
-    model2 = EpistemicNearestNeighbors(x[:2], y[:2], scale_x=False)
+    model2 = EpistemicNearestNeighbors(x[:2], y[:2])
     model2.add(x[2:3], y[2:3])
     params2 = enn_fit(
         model2,

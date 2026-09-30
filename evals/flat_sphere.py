@@ -81,7 +81,6 @@ def _build_sphere_enn(
     model_kwargs: dict[str, object] = {
         "train_x": x,
         "train_y": y,
-        "scale_x": False,
         "index_driver": index_driver,
     }
     if index_driver == ENNIndexDriver.BPANN_DISK:

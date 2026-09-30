@@ -26,6 +26,7 @@ set_config_path = _ext.util.set_config_path
 ensure_config_file = _ext.util.ensure_config_file
 EpistemicNearestNeighbors = _ext.model.EpistemicNearestNeighbors
 ENNParams = _ext.model.ENNParams
+set_unscaled_dims = _ext.model.set_unscaled_dims
 ENNStatefulFitter = _ext.fit.ENNStatefulFitter
 subsample_loglik = _ext.fit.subsample_loglik
 Optimizer = _ext.optimizer.Optimizer
@@ -46,6 +47,7 @@ __all__ = [
     "ensure_config_file",
     "EpistemicNearestNeighbors",
     "ENNParams",
+    "set_unscaled_dims",
     "ENNStatefulFitter",
     "subsample_loglik",
     "Optimizer",
