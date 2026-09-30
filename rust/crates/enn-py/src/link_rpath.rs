@@ -10,8 +10,7 @@ pub fn blas_libs_present(dir: &Path) -> bool {
 
 #[doc = "kiss-coverage-off"]
 pub fn install_patchelf_if_needed() {
-    let script =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../ennbo/cmake/install_patchelf_root.sh");
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/install_patchelf_root.sh");
     let status = Command::new("bash")
         .arg(script)
         .status()
