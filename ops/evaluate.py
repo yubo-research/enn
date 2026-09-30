@@ -82,6 +82,14 @@ def load_evaluate(eval_id: str) -> Callable[[], None]:
     return evaluate
 
 
+def select_eval_names(prefix: str | None) -> list[str]:
+    names = list_eval_names(prefix)
+    if not names:
+        label = "prefix" if prefix is not None else "selection"
+        raise click.ClickException(f"no evals match {label}: {prefix!r}")
+    return names
+
+
 @click.group()
 def cli() -> None:
     """Discover and run ``evals/{{short,long}}/eval_NAME.py`` modules."""
@@ -99,12 +107,27 @@ def list_cmd(prefix: str | None) -> None:
 @click.argument("prefix", required=False, default=None)
 def run_cmd(prefix: str | None) -> None:
     """Run ``evaluate()`` for every eval id selected by PREFIX (same filter as list)."""
-    names = list_eval_names(prefix)
-    if not names:
-        label = "prefix" if prefix is not None else "selection"
-        raise click.ClickException(f"no evals match {label}: {prefix!r}")
-    for eval_id in names:
+    for eval_id in select_eval_names(prefix):
         load_evaluate(eval_id)()
+
+
+@cli.command("run-model")
+@click.argument("prefix", required=False, default=None)
+def run_model_cmd(prefix: str | None) -> None:
+    """Run evals selected by PREFIX on Modal, one function call per eval.
+
+    Each eval's output is printed in one block when its call finishes.
+    """
+    names = select_eval_names(prefix)
+    ensure_repo_on_sys_path()
+    from ops.evaluate_modal import run_on_modal
+
+    failed = run_on_modal(names, click.echo)
+    if failed:
+        raise click.ClickException(f"evals failed: {', '.join(failed)}")
+
+
+cli.add_command(run_model_cmd, "rm")
 
 
 def main() -> None:
