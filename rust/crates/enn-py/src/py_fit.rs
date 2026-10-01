@@ -11,7 +11,7 @@ use crate::py_model::PyEpistemicNearestNeighbors;
 /// Python wrapper for subsample_loglik
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(name = "subsample_loglik")]
-#[pyo3(signature = (model, x, y, k_values, epistemic_scales, aleatoric_scales, p, seed, y_std=None))]
+#[pyo3(signature = (model, x, y, k_values, epistemic_scales, aleatoric_scales, p=None, seed=0, y_std=None))]
 #[doc = "kiss-coverage-off"]
 pub fn subsample_loglik_py(
     model: &PyEpistemicNearestNeighbors,
@@ -20,7 +20,7 @@ pub fn subsample_loglik_py(
     k_values: Vec<i32>,
     epistemic_scales: Vec<f64>,
     aleatoric_scales: Vec<f64>,
-    p: usize,
+    p: Option<usize>,
     seed: u64,
     y_std: Option<PyReadonlyArray1<f64>>,
 ) -> PyResult<Vec<f64>> {
@@ -43,6 +43,7 @@ pub fn subsample_loglik_py(
 
     let y_std_arr = y_std.as_ref().map(|v| v.as_array());
 
+    let p = p.unwrap_or(ennbo::fit::DEFAULT_SUBSAMPLE_P);
     let result = ennbo::subsample_loglik(
         &model.inner,
         &x.as_array(),

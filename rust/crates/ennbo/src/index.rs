@@ -11,12 +11,20 @@ pub enum IndexError {
     InvalidParameter(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IndexDriver {
+    /// Exact in-memory scan (`Faiss` Flat).
     #[default]
-    Exact,
+    Flat,
     /// B+ANN disk index (`EnnStorage::Disk` + `work_dir`).
     BpAnnDisk,
+}
+
+impl IndexDriver {
+    /// Deprecated name for [`IndexDriver::Flat`].
+    #[deprecated(since = "0.3.0", note = "renamed to IndexDriver::Flat")]
+    #[allow(non_upper_case_globals)]
+    pub const Exact: Self = Self::Flat;
 }
 
 pub fn is_disk_index_driver(driver: IndexDriver) -> bool {
@@ -250,7 +258,7 @@ mod tests {
     #[test]
     fn test_index_creation() {
         let train_x = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
-        let index = index_unit(train_x, IndexDriver::Exact);
+        let index = index_unit(train_x, IndexDriver::Flat);
         assert_eq!(index.len(), 3);
         assert!(!index.is_empty());
     }
@@ -258,7 +266,7 @@ mod tests {
     #[test]
     fn test_index_search() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
-        let index = index_unit(train_x, IndexDriver::Exact);
+        let index = index_unit(train_x, IndexDriver::Flat);
         let query = array![[0.0, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 2, false).unwrap();
         assert_eq!(indices[[0, 0]], 0);
@@ -269,7 +277,7 @@ mod tests {
     #[test]
     fn test_index_search_exclude_nearest() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
-        let index = index_unit(train_x, IndexDriver::Exact);
+        let index = index_unit(train_x, IndexDriver::Flat);
         let query = array![[0.0, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 2, true).unwrap();
         assert_eq!(dist2s.ncols(), 1);
@@ -279,7 +287,7 @@ mod tests {
     #[test]
     fn test_index_search_exclude_nearest_keeps_nn_for_novel_query() {
         let train_x = array![[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]];
-        let index = index_unit(train_x, IndexDriver::Exact);
+        let index = index_unit(train_x, IndexDriver::Flat);
         let query = array![[10.1, 0.0]];
         let (dist2s, indices) = index.search(&query.view(), 3, true).unwrap();
 
@@ -289,21 +297,21 @@ mod tests {
 
     #[test]
     fn test_index_add() {
-        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Exact);
+        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Flat);
         index.add(&array![[1.0, 1.0]].view()).unwrap();
         assert_eq!(index.len(), 2);
     }
 
     #[test]
     fn test_invalid_search_k() {
-        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Exact);
+        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Flat);
         let result = index.search(&array![[0.0, 0.0]].view(), 0, false);
         assert!(matches!(result, Err(IndexError::InvalidParameter(_))));
     }
 
     #[test]
     fn test_invalid_dimensions() {
-        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Exact);
+        let index = index_unit(array![[0.0, 0.0]], IndexDriver::Flat);
         let result = index.search(&array![[0.0, 0.0, 0.0]].view(), 1, false);
         assert!(matches!(
             result,
@@ -316,19 +324,19 @@ mod tests {
 
     #[test]
     fn test_exact_search_regression_all_indices_valid_for_k_equals_n() {
-        run_exact_regression_test(|train_x| index_unit(train_x, IndexDriver::Exact));
+        run_exact_regression_test(|train_x| index_unit(train_x, IndexDriver::Flat));
     }
 
     #[test]
     fn kiss_index_helper_unit_names() {
         use crate::knn::{arr2_rows_to_f32, pad_neighbor_cols_to_search_k, unpack_batch_search};
         use faiss::Index;
-        assert_eq!(faiss_spec_for_test(IndexDriver::Exact), "Flat");
+        assert_eq!(faiss_spec_for_test(IndexDriver::Flat), "Flat");
         let _ = faiss_map_err_for_test as fn(FaissError) -> IndexError;
         let rows = array![[1.0, 2.0], [3.0, 4.0]];
         let f32v = arr2_rows_to_f32(&rows.view());
         assert_eq!(f32v.len(), 4);
-        let index = make_faiss_for_test(2, IndexDriver::Exact, &rows.view()).unwrap();
+        let index = make_faiss_for_test(2, IndexDriver::Flat, &rows.view()).unwrap();
         assert_eq!(index.ntotal(), 2);
         let (d, _i) = pad_neighbor_cols_to_search_k(array![[1.0, 2.0]], array![[0i64, 1]], 3);
         assert_eq!(d.ncols(), 3);
@@ -345,7 +353,7 @@ mod tests {
             2,
             x_scale,
             true,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         let query = array![[2.0, 2.0]];
@@ -362,10 +370,10 @@ mod tests {
             2,
             array![1.0, 1.0],
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
-        assert_eq!(index.driver(), IndexDriver::Exact);
+        assert_eq!(index.driver(), IndexDriver::Flat);
         index
             .rebuild_from_scaled(
                 array![[0.0, 0.0], [1.0, 1.0]],

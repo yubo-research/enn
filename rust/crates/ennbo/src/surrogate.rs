@@ -101,7 +101,7 @@ impl Default for ENNSurrogateConfig {
             num_fit_candidates: 30,
             num_fit_samples: 10,
             infer_aleatoric_variance: true,
-            index_driver: IndexDriver::Exact,
+            index_driver: IndexDriver::Flat,
             storage: EnnStorage::InMemory,
             work_dir: None,
             y_bounds: None,
@@ -183,7 +183,7 @@ impl ENNSurrogate {
         let fitter = self.fitter.as_mut().expect("fitter");
         let p = fitter.ask(
             model,
-            self.config.num_fit_candidates,
+            Some(self.config.num_fit_candidates),
             self.config.num_fit_samples,
             self.params.as_ref(),
             rng,
@@ -365,7 +365,7 @@ impl Surrogate for ENNSurrogate {
         }
         let p = fitter.ask(
             &model,
-            self.config.num_fit_candidates,
+            Some(self.config.num_fit_candidates),
             self.config.num_fit_samples,
             self.params.as_ref(),
             &mut local_rng,

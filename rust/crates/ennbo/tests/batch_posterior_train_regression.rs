@@ -12,7 +12,7 @@ fn batch_posterior_on_train_matches_posterior_when_no_neighbors() {
         train_y,
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
     )
     .unwrap();
     let bad = ENNParams {
@@ -43,7 +43,7 @@ fn batch_posterior_on_train_row_matches_single_query_posterior() {
         train_y,
         Some(ndarray::Array2::zeros((20, 1))),
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
     )
     .unwrap();
     let params = ENNParams {

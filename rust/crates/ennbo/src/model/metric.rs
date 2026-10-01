@@ -4,7 +4,7 @@ use ndarray::Array1;
 
 use super::{EpistemicNearestNeighbors, scale_from_moments};
 use crate::error::ENNError;
-use crate::index::is_disk_index_driver;
+use crate::index::{is_disk_index_driver, IndexDriver};
 
 /// Disk `scale_x`: largest per-dimension `|log(new / applied)|` left unapplied after an `add`.
 pub const SCALE_X_RESCALE_TOL: f64 = 0.01;
@@ -20,6 +20,31 @@ fn max_log_ratio(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 }
 
 impl EpistemicNearestNeighbors {
+    /// Index used for neighbor search.
+    pub fn index_driver(&self) -> IndexDriver {
+        self.backend_driver()
+    }
+
+    /// `true` when AUTO metric learning has been enabled.
+    pub fn metric_learning_auto(&self) -> bool {
+        self.auto_metric.is_some()
+    }
+
+    /// Grouped columns that stay unscaled, or the AUTO tied groups.
+    pub fn set_tied_groups(&mut self, groups: Vec<Vec<usize>>) -> Result<(), ENNError> {
+        crate::metric_weights::validate_tied_dims(&groups, self.num_dim)?;
+        self.tied_groups = groups;
+        Ok(())
+    }
+
+    /// Tied groups stored on the model, or the groups owned by AUTO.
+    pub fn tied_groups(&self) -> &[Vec<usize>] {
+        if let Some(metric) = &self.auto_metric {
+            return metric.tied();
+        }
+        &self.tied_groups
+    }
+
     /// `scale_x` scales from the running moments of `n` rows; `unscaled_dims` get 1.
     pub(crate) fn data_x_scale(&self, n: usize) -> Array1<f64> {
         let mut x_scale = scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
@@ -77,6 +102,11 @@ impl EpistemicNearestNeighbors {
     /// `rebuild=true` also re-partitions it in place, a little on each later add. Later `add`
     /// calls keep this metric instead of re-deriving `x_scale` from data moments.
     pub fn set_metric_scale(&mut self, x_scale: Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
+        if self.auto_metric.is_none() {
+            return Err(ENNError::InvalidParameter(
+                "set_metric_scale requires metric_learning=AUTO".into(),
+            ));
+        }
         if x_scale.len() != self.num_dim {
             return Err(ENNError::InvalidShape {
                 expected: vec![self.num_dim],
@@ -138,6 +168,13 @@ mod tests {
         .unwrap();
         assert!(model.set_metric_scale(Array1::from(vec![1.0]), false).is_err());
         assert!(model.set_metric_scale(Array1::from(vec![1.0, -1.0, 1.0]), false).is_err());
+        model
+            .enable_auto_metric(
+                vec![],
+                &x.slice(ndarray::s![..300, ..]),
+                &y.slice(ndarray::s![..300, ..]),
+            )
+            .unwrap();
         let scale = Array1::from(vec![0.25, 1.0, 4.0]);
         model.set_metric_scale(scale.clone(), false).unwrap();
         model
@@ -224,7 +261,7 @@ mod tests {
             )
             .unwrap()
         };
-        let flat = open(IndexDriver::Exact, EnnStorage::InMemory, None);
+        let flat = open(IndexDriver::Flat, EnnStorage::InMemory, None);
         let disk = open(IndexDriver::BpAnnDisk, EnnStorage::Disk, Some(dir.path().to_path_buf()));
         for mut model in [flat, disk] {
             assert!(model.set_unscaled_dims(vec![3]).is_err());
@@ -252,7 +289,7 @@ mod tests {
             Array2::zeros((10, 1)),
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         assert!(model.set_metric_scale(Array1::from(vec![1.0, 1.0]), false).is_err());

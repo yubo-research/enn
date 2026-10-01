@@ -15,7 +15,7 @@ fn logit_unit_model() -> EpistemicNearestNeighbors {
         train_y,
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
         Some(bounds),
@@ -79,20 +79,19 @@ fn posterior_function_draw_warped_naturalize_draws_3d() {
         .posterior_function_draw(&query.view(), &params, &seeds, &flags)
         .unwrap();
 
-    assert_eq!(warped_draws.shape(), natural_draws.shape());
+    let (samples, batch, metrics) = warped_draws.dim();
+    assert_eq!(natural_draws.shape(), &[batch, metrics, samples]);
     assert!(natural_draws.iter().all(|&v| v > 0.0 && v < 1.0));
-
-    let max_diff = warped_draws
-        .iter()
-        .zip(natural_draws.iter())
-        .map(|(a, b)| (a - b).abs())
-        .fold(0.0_f64, f64::max);
-    assert!(max_diff > 1e-6);
 
     let mut manual = warped_draws.clone();
     model.naturalize_draws_3d(&mut manual);
-    for (a, b) in manual.iter().zip(natural_draws.iter()) {
-        assert!((a - b).abs() < 1e-12);
+    for s in 0..samples {
+        for b in 0..batch {
+            for m in 0..metrics {
+                assert!((manual[[s, b, m]] - natural_draws[[b, m, s]]).abs() < 1e-12);
+                assert!((manual[[s, b, m]] - warped_draws[[s, b, m]]).abs() > 1e-6 || metrics == 0);
+            }
+        }
     }
 }
 
@@ -159,7 +158,7 @@ fn y_bounds_edge_lower_only_log_warp_roundtrip_and_oob() {
         train_y.clone(),
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
         Some(bounds.clone()),
@@ -179,7 +178,7 @@ fn y_bounds_edge_lower_only_log_warp_roundtrip_and_oob() {
         array![[-0.1], [2.0], [1.0]],
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
         Some(bounds),
@@ -197,7 +196,7 @@ fn y_bounds_edge_upper_only_neglog_warp_and_samples_in_bounds() {
         train_y,
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
         Some(bounds),
@@ -224,7 +223,7 @@ fn y_bounds_edge_near_open_endpoints_logit() {
         train_y.clone(),
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
         Some(bounds),
@@ -245,7 +244,7 @@ fn y_bounds_edge_empty_model_y_scale_row_is_ones() {
     let model = EpistemicNearestNeighbors::new_empty_with_y_bounds(
         1,
         1,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
         None,
@@ -267,7 +266,7 @@ fn y_bounds_edge_identity_equals_storage() {
         train_y.clone(),
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
         None,

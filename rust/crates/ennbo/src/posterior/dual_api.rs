@@ -2,6 +2,20 @@
 
 use ndarray::{Array2, Array3, ArrayView2};
 
+/// `(num_samples, batch, metrics)` to `(batch, metrics, num_samples)`.
+pub(crate) fn transpose_num_samples_last(draws: Array3<f64>) -> Array3<f64> {
+    let (samples, batch, metrics) = draws.dim();
+    let mut out = Array3::zeros((batch, metrics, samples));
+    for s in 0..samples {
+        for b in 0..batch {
+            for m in 0..metrics {
+                out[[b, m, s]] = draws[[s, b, m]];
+            }
+        }
+    }
+    out
+}
+
 use super::draw_compute::draw_from_internals;
 use super::light::{compute_posterior_light, idx_nested_to_array2};
 use super::{compute_conditional_posterior_internals, compute_posterior_internals};
@@ -71,10 +85,20 @@ impl EpistemicNearestNeighbors {
         function_seeds: &[i64],
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
-        let (mut draws, idx) =
+        let (draws, idx) =
             self.posterior_function_draw_warped(x, params, function_seeds, flags)?;
+        Ok((self.publish_draws(draws), idx))
+    }
+
+    /// Naturalize sample-first draws, then move `num_samples` to the last axis.
+    pub(crate) fn publish_draws(&self, mut draws: Array3<f64>) -> Array3<f64> {
         self.naturalize_draws_3d(&mut draws);
-        Ok((draws, idx))
+        transpose_num_samples_last(draws)
+    }
+
+    /// Move `num_samples` from axis 0 to the last axis. Draws are already natural.
+    pub(crate) fn samples_last(draws: Array3<f64>) -> Array3<f64> {
+        transpose_num_samples_last(draws)
     }
 
     pub(crate) fn conditional_posterior_warped(

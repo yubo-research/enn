@@ -94,7 +94,7 @@ def test_mbpann_metric_validation(tmp_path) -> None:
     with pytest.raises(ValueError, match="refit_growth"):
         MBPANNMetric(model, refit_growth=1.0)
     metric = model.metric
-    with pytest.raises(ValueError, match="shape"):
+    with pytest.raises(ValueError, match="dimension"):
         metric.set_weights(np.ones(2))
     with pytest.raises(ValueError, match="finite"):
         metric.set_weights(np.array([1.0, 0.0, 1.0]))
@@ -118,11 +118,11 @@ def test_scale_x_and_metric_learning_require_matching_driver(tmp_path) -> None:
     for mode in (ENNMetricLearning.AUTO,):
         with pytest.raises(
             ValueError,
-            match=f"metric_learning={mode.name} requires index_driver=BPANN_DISK",
+            match="BpAnnDisk",
         ):
             EpistemicNearestNeighbors(x, y, metric_learning=mode)
         with pytest.raises(
-            ValueError, match=f"metric_learning={mode.name} requires scale_x=OFF"
+            ValueError, match="scale_x=false"
         ):
             EpistemicNearestNeighbors(
                 x,
@@ -136,7 +136,7 @@ def test_scale_x_and_metric_learning_require_matching_driver(tmp_path) -> None:
         EpistemicNearestNeighbors(x, y, scale_x=True)
     with pytest.raises(ValueError, match="ENNMetricLearning"):
         EpistemicNearestNeighbors(x, y, metric_learning=True)
-    with pytest.raises(ValueError, match="metric_learning requires"):
+    with pytest.raises(ValueError, match="BpAnnDisk"):
         RustENN(x, y, index_driver="exact", metric_learning="auto")
     with pytest.raises(ValueError, match="Unknown index_driver"):
         RustENN(x, y, index_driver="mbpann_disk", work_dir=str(tmp_path))

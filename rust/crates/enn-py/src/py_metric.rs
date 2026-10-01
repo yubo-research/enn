@@ -164,14 +164,34 @@ pub fn metric_tied(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> PyResult<Ve
 }
 
 #[pyfunction]
+#[pyo3(signature = (model, refit_growth=None, rebuild_drift=None, seed=None, reservoir_capacity=None, tied_dims=None))]
 #[doc = "kiss-coverage-off"]
 pub fn metric_configure(
     mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
-    refit_growth: f64,
-    rebuild_drift: f64,
-    seed: u64,
-    reservoir_capacity: usize,
+    refit_growth: Option<f64>,
+    rebuild_drift: Option<f64>,
+    seed: Option<i64>,
+    reservoir_capacity: Option<usize>,
+    tied_dims: Option<Vec<Vec<usize>>>,
 ) -> PyResult<()> {
+    if let Some(seed) = seed {
+        if seed < 0 {
+            return Err(PyValueError::new_err(format!("seed must be >= 0, got {seed}")));
+        }
+    }
+    if let Some(groups) = &tied_dims {
+        let stored = model.inner.metric_tied().map(|g| g.to_vec()).unwrap_or_default();
+        if groups != &stored {
+            return Err(PyValueError::new_err(format!(
+                "tied_dims {groups:?} do not match the model groups {stored:?}"
+            )));
+        }
+    }
+    let seed = seed.unwrap_or(0) as u64;
+    let refit_growth = refit_growth.unwrap_or(ennbo::metric_auto::AUTO_REFIT_GROWTH);
+    let rebuild_drift = rebuild_drift.unwrap_or(ennbo::metric_auto::DEFAULT_REBUILD_DRIFT);
+    let reservoir_capacity =
+        reservoir_capacity.unwrap_or(ennbo::metric_auto::AUTO_RESERVOIR_CAPACITY);
     model
         .inner
         .metric_configure(refit_growth, rebuild_drift, seed, reservoir_capacity)
@@ -234,36 +254,9 @@ impl PyReservoir {
     }
 
     fn add(&mut self, x: PyReadonlyArray2<f64>, y: PyReadonlyArray2<f64>) -> PyResult<()> {
-        let x = x.as_array();
-        let y = y.as_array();
-        if x.nrows() != y.nrows() {
-            return Err(PyValueError::new_err(format!(
-                "x has {} rows but y has {}",
-                x.nrows(),
-                y.nrows()
-            )));
-        }
-        if y.ncols() != self.inner.num_outputs() {
-            return Err(PyValueError::new_err(format!(
-                "y has {} columns, expected {}",
-                y.ncols(),
-                self.inner.num_outputs()
-            )));
-        }
-        let dim = self.inner.num_dim();
-        let outputs = self.inner.num_outputs();
-        for i in 0..x.nrows() {
-            let mut xr = vec![0.0; dim];
-            let mut yr = vec![0.0; outputs];
-            for j in 0..dim {
-                xr[j] = x[[i, j]];
-            }
-            for j in 0..outputs {
-                yr[j] = y[[i, j]];
-            }
-            self.inner.push_row(&xr, &yr);
-        }
-        Ok(())
+        self.inner
+            .push_rows(&x.as_array(), &y.as_array())
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[getter]

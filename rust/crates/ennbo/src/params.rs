@@ -150,6 +150,8 @@ pub struct ENNNormal {
     pub se_ale: ArrayD<f64>,
     /// Optional neighbor indices, shape `(n_query, k)`.
     pub idx: Option<Array2<i64>>,
+    /// Natural-unit `y` bounds used by [`Self::sample`] and [`Self::confidence_interval`].
+    pub y_bounds: Option<Array2<f64>>,
 }
 
 impl ENNNormal {
@@ -167,7 +169,44 @@ impl ENNNormal {
             se_epi,
             se_ale,
             idx,
+            y_bounds: None,
         }
+    }
+
+    /// Attach bounds used by sampling and intervals.
+    pub fn with_y_bounds(mut self, y_bounds: Array2<f64>) -> Self {
+        self.y_bounds = Some(y_bounds);
+        self
+    }
+
+    /// Draw `num_samples` along the last axis. `seed` is used as-is.
+    pub fn sample(
+        &self,
+        num_samples: usize,
+        seed: u64,
+        clip: Option<f64>,
+    ) -> Result<ArrayD<f64>, crate::error::ENNError> {
+        crate::normal_sample::sample_normal(
+            &self.mu,
+            &self.se,
+            self.y_bounds.as_ref(),
+            num_samples,
+            seed,
+            clip,
+        )
+    }
+
+    /// Gaussian interval `(lower, upper)` at `level`, same warp as [`Self::sample`].
+    pub fn confidence_interval(
+        &self,
+        level: f64,
+    ) -> Result<(ArrayD<f64>, ArrayD<f64>), crate::error::ENNError> {
+        crate::normal_sample::confidence_interval(
+            &self.mu,
+            &self.se,
+            self.y_bounds.as_ref(),
+            level,
+        )
     }
 
     /// Get the number of query points.

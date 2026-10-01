@@ -266,7 +266,7 @@ def evaluate_natural_y(
     se = np.asarray(post.se, dtype=float).ravel()
     y = np.asarray(y_test, dtype=float).ravel()
     err = mu - y
-    draws = post.sample(num_draws, rng)
+    draws = post.sample(num_draws, seed=0)
     lo, hi = interval if interval is not None else (-np.inf, np.inf)
     return YBoundsMetrics(
         name=name,

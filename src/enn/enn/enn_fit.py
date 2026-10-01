@@ -14,7 +14,7 @@ def subsample_loglik(
     y: np.ndarray,
     *,
     paramss: list[Any],
-    P: int = 10,
+    P: int | None = None,
     rng: Any,
     y_std: np.ndarray | None = None,
 ) -> list[float]:
@@ -67,7 +67,7 @@ def enn_fit(
     *,
     k: int,
     num_fit_candidates: int,
-    num_fit_samples: int = 10,
+    num_fit_samples: int | None = None,
     rng: Any,
     params_warm_start: Any | None = None,
     incremental: ENNIncrementalDelta | None = None,

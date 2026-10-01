@@ -194,11 +194,11 @@ fn morbo_pareto_ask_after_multiobjective_tell() {
         [0.5, 0.6],
     ];
     for i in 0..4 {
-        let x = opt.ask(2, &mut rng).unwrap();
+        let x = opt.ask(2).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None).unwrap();
     }
-    let x_arms = opt.ask(2, &mut rng).unwrap();
+    let x_arms = opt.ask(2).unwrap();
     assert_eq!(x_arms.nrows(), 2);
     assert!(opt.trust_region().is_morbo());
 }
@@ -235,9 +235,9 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
         [0.5, 0.6],
     ];
     for i in 0..4 {
-        let x = opt.ask(2, &mut rng).unwrap();
+        let x = opt.ask(2).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None).unwrap();
     }
     let w0 = opt
         .trust_region()
@@ -245,7 +245,7 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
         .expect("morbo tr")
         .weights()
         .to_owned();
-    let _ = opt.ask(2, &mut rng).unwrap();
+    let _ = opt.ask(2).unwrap();
     let w1 = opt
         .trust_region()
         .morbo()
@@ -295,9 +295,9 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
         [0.5, 0.6],
     ];
     for i in 0..4 {
-        let x = opt.ask(2, &mut rng).unwrap();
+        let x = opt.ask(2).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None).unwrap();
     }
     let w0 = opt
         .trust_region()
@@ -305,7 +305,7 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
         .expect("morbo tr")
         .weights()
         .to_owned();
-    let _ = opt.ask(2, &mut rng).unwrap();
+    let _ = opt.ask(2).unwrap();
     let w1 = opt
         .trust_region()
         .morbo()
@@ -360,7 +360,7 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
         [0.2, 0.8],
         [0.5, 0.5],
     ];
-    opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
+    opt.tell(&x.view(), &y.view(), None).unwrap();
 
     let morbo = opt.trust_region().morbo().expect("morbo");
     let ymin = morbo.y_min().expect("ymin").to_owned();

@@ -7,7 +7,7 @@ import numpy as np
 
 from .enn_fit_config import ENNFitConfig
 from .enn_index_driver import ENNIndexDriver
-from .enn_x_scaling import ENNMetricLearning, ENNScaleX, validate_metric_learning, validate_scale_x
+from .enn_x_scaling import ENNMetricLearning, ENNScaleX
 
 
 @dataclass(frozen=True)
@@ -23,15 +23,20 @@ class ENNSurrogateConfig:
     y_bounds: np.ndarray | None = None
 
     def __post_init__(self) -> None:
-        validate_scale_x(self.scale_x, self.index_driver)
-        validate_metric_learning(self.metric_learning, self.index_driver, self.scale_x)
+        if not isinstance(self.scale_x, ENNScaleX):
+            raise ValueError(f"scale_x must be an ENNScaleX, got {self.scale_x!r}")
+        if not isinstance(self.index_driver, ENNIndexDriver):
+            raise ValueError(
+                f"index_driver must be an ENNIndexDriver, got {self.index_driver!r}"
+            )
+        if not isinstance(self.metric_learning, ENNMetricLearning):
+            raise ValueError(
+                f"metric_learning must be an ENNMetricLearning, got {self.metric_learning!r}"
+            )
         if self.y_bounds is not None:
-            yb = np.asarray(self.y_bounds, dtype=float)
-            if yb.ndim != 2 or yb.shape[1] != 2:
-                raise ValueError(
-                    f"y_bounds must have shape (num_metrics, 2), got {yb.shape}"
-                )
-            object.__setattr__(self, "y_bounds", yb)
+            object.__setattr__(
+                self, "y_bounds", np.asarray(self.y_bounds, dtype=float)
+            )
 
     @property
     def num_fit_samples(self) -> int | None:

@@ -138,7 +138,7 @@ pub(crate) fn index_search(
     /// Cap Faiss oversample at `n_obs` (Faiss repeats the last id; the index API pads with (-1, inf)).
     const FAISS_F64_OVERSAMPLE: i32 = 32;
     let n_obs_i = n_obs as i32;
-    let fetch_k = if model.backend_driver() == IndexDriver::Exact {
+    let fetch_k = if model.backend_driver() == IndexDriver::Flat {
         search_k
             .saturating_add(FAISS_F64_OVERSAMPLE)
             .min(n_obs_i)
@@ -561,7 +561,7 @@ mod tests {
         ));
         let train_y = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);
         let model =
-            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let (dist2s, idx) =
             exact_f64_batch_topk(&model, &train_x.view(), k as i32, false).unwrap();
@@ -580,7 +580,7 @@ mod tests {
             ((i as f64 + 1.0) * 0.37 - 2.1) * 100.0
         });
         let model =
-            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let (dist2_batch, idx_batch) =
             exact_f64_batch_topk(&model, &train_x.view(), 10, false).unwrap();
@@ -598,7 +598,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let query = array![[0.0, 0.0]];
         let (dist2s, idx) = exact_f64_batch_topk(&model, &query.view(), 2, true).unwrap();
@@ -649,7 +649,7 @@ mod tests {
             train_y,
             Some(train_yvar),
             true,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         let novel = Array2::from_shape_fn((5, 2), |(i, j)| 100.0 + i as f64 + 0.1 * j as f64);
@@ -672,7 +672,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [10.0, 10.0]];
         let train_y = array![[0.0], [1.0], [1.0], [2.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
 
         let query = array![[10.1, 10.1]];
@@ -687,7 +687,7 @@ mod tests {
         let train_x = array![[0.0]];
         let train_y = array![[0.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let (dist2s, idx) = exact_f64_batch_topk(&model, &train_x.view(), 1, true).unwrap();
         assert_eq!(dist2s.shape(), [1, 0]);
@@ -701,7 +701,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let query = array![[0.0, 0.0]];
         let (dist2s, idx) = index_search(&model, &query.view(), 2, false).unwrap();
@@ -770,7 +770,7 @@ mod tests {
         let train_x = array![[0.0], [1.0], [2.0]];
         let train_y = array![[0.0], [1.0], [2.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let query = array![[0.5]];
         let idx = array![[0i64, 1]];

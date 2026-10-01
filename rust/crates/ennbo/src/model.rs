@@ -56,6 +56,7 @@ pub struct EpistemicNearestNeighbors {
     /// rewrites keep it, so it is written once).
     y_bounds_persisted: AtomicBool,
     pub(crate) auto_metric: Option<AutoMetric>,
+    tied_groups: Vec<Vec<usize>>,
 }
 
 impl EpistemicNearestNeighbors {
@@ -240,6 +241,7 @@ impl EpistemicNearestNeighbors {
             work_dir: stored_work_dir,
             y_bounds_persisted: AtomicBool::new(false),
             auto_metric: None,
+            tied_groups: Vec::new(),
         };
         if disk_reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;
@@ -360,6 +362,23 @@ impl EpistemicNearestNeighbors {
 
     pub fn is_scale_x(&self) -> bool {
         self.scale_x
+    }
+
+    /// Python `neighbors`: one query row, then the same checks as [`Self::neighbors`].
+    pub fn neighbors_one(
+        &self,
+        x: &ArrayView2<f64>,
+        k: i32,
+        exclude_nearest: bool,
+    ) -> Result<Array2<usize>, ENNError> {
+        if x.nrows() != 1 {
+            return Err(ENNError::InvalidParameter(format!(
+                "x must be single point with {} dims, got {:?}",
+                self.num_dim,
+                x.shape()
+            )));
+        }
+        self.neighbors(x, k, exclude_nearest)
     }
 
     pub fn neighbors(
@@ -586,7 +605,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0], [2.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         assert_eq!(model.len(), 4);
         assert_eq!(model.num_outputs(), 1);
@@ -597,7 +616,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0]];
         let train_y = array![[0.0], [1.0]];
         let mut model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         model
             .add(&array![[0.0, 1.0]].view(), &array![[1.0]].view(), None)
@@ -625,7 +644,7 @@ mod tests {
         let mut model = EpistemicNearestNeighbors::new_empty(
             2,
             1,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
             EnnStorage::InMemory,
             None,
             None,
@@ -645,7 +664,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0]];
         let train_y = array![[0.0], [1.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         assert!(model.train_x_view_opt().is_some());
         assert!(model.train_y_view_opt().is_some());
@@ -659,11 +678,11 @@ mod tests {
             array![[0.0], [1.0]],
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         assert!(!model.is_scale_x());
-        assert_eq!(model.backend_driver(), IndexDriver::Exact);
+        assert_eq!(model.backend_driver(), IndexDriver::Flat);
         let _ = model.x_scale_row();
         model
             .add(&array![[0.5, 0.5]].view(), &array![[0.5]].view(), None)

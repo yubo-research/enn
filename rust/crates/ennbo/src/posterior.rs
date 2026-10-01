@@ -112,7 +112,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         function_seeds: &[i64],
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
-        self.posterior_function_draw_warped(x, params, function_seeds, flags)
+        EpistemicNearestNeighbors::posterior_function_draw(self, x, params, function_seeds, flags)
     }
 
     fn conditional_posterior(
@@ -135,6 +135,15 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         function_seeds: &[i64],
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
+        if x_whatif.nrows() == 0 {
+            return EpistemicNearestNeighbors::posterior_function_draw(
+                self,
+                x,
+                params,
+                function_seeds,
+                flags,
+            );
+        }
         let (y_z, _) = self.warp_observations(y_whatif, None)?;
         let internals = compute_conditional_posterior_internals(
             self,
@@ -144,9 +153,8 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
             params,
             flags,
         )?;
-        let mut draws = draw_from_internals(self, &internals, function_seeds)?;
-        self.naturalize_draws_3d(&mut draws);
-        Ok((draws, internals.idx))
+        let draws = draw_from_internals(self, &internals, function_seeds)?;
+        Ok((self.publish_draws(draws), internals.idx))
     }
 }
 

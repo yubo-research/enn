@@ -104,27 +104,15 @@ pub fn calibrated_function_draw(
     flags: &PosteriorFlags,
     cal: Option<&AffineCalibrator>,
 ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
-    let (mut draws, idx) = model.posterior_function_draw(x, params, function_seeds, flags)?;
+    let (mut draws, idx) = model.posterior_function_draw_warped(x, params, function_seeds, flags)?;
+    model.naturalize_draws_3d(&mut draws);
     if let Some(cal) = cal {
         let post = model.posterior(x, params, flags)?;
         let mu = to_2d(&post.mu)?;
         let se = to_2d(&post.se)?;
         draws = apply_draws(cal, &draws, &mu, &se, model.y_bounds())?;
     }
-    Ok((to_batch_metric_sample(draws), idx))
-}
-
-fn to_batch_metric_sample(draws: Array3<f64>) -> Array3<f64> {
-    let (n_seed, n_batch, n_met) = draws.dim();
-    let mut out = Array3::zeros((n_batch, n_met, n_seed));
-    for s in 0..n_seed {
-        for b in 0..n_batch {
-            for m in 0..n_met {
-                out[[b, m, s]] = draws[[s, b, m]];
-            }
-        }
-    }
-    out
+    Ok((EpistemicNearestNeighbors::samples_last(draws), idx))
 }
 
 fn to_2d(arr: &ndarray::ArrayD<f64>) -> Result<Array2<f64>, ENNError> {
@@ -146,7 +134,8 @@ pub fn calibrated_sample(
     let base = u64::from_le_bytes(seed_bytes) as i64;
     let seeds: Vec<i64> = (0..num_samples as i64).map(|i| base + i).collect();
     let flags = PosteriorFlags::new();
-    let (draws, _) = model.posterior_function_draw(x, params, &seeds, &flags)?;
+    let (mut draws, _) = model.posterior_function_draw_warped(x, params, &seeds, &flags)?;
+    model.naturalize_draws_3d(&mut draws);
     let post = model.posterior(x, params, &flags)?;
     let mu = to_2d(&post.mu)?;
     let se = to_2d(&post.se)?;

@@ -114,6 +114,6 @@ def test_neighbors_exclude_nearest_requires_multiple_observations():
     model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
     x_query = np.zeros(d, dtype=float)
     with pytest.raises(
-        ValueError, match="exclude_nearest=True requires at least 2 observations"
+        ValueError, match="exclude_nearest=true requires at least 2 observations"
     ):
         model.neighbors(x_query, k=1, exclude_nearest=True)

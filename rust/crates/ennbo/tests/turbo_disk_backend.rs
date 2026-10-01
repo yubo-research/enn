@@ -26,7 +26,7 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
     if let SurrogateConfig::ENN(ref mut enn) = cfg.surrogate {
         let index_driver = match storage {
             EnnStorage::Disk => IndexDriver::BpAnnDisk,
-            EnnStorage::InMemory => IndexDriver::Exact,
+            EnnStorage::InMemory => IndexDriver::Flat,
         };
         *enn = ENNSurrogateConfig {
             k: 3,
@@ -80,17 +80,17 @@ fn record_tell_schedule(
     let mut ys = Vec::new();
 
     while opt.init_progress().is_some() {
-        let x = opt.ask(num_arms, &mut rng)?;
+        let x = opt.ask(num_arms)?;
         let y = synthetic_y(&x.view(), &mut rng);
-        opt.tell(&x.view(), &y.view(), None, &mut rng)?;
+        opt.tell(&x.view(), &y.view(), None)?;
         xs.push(x);
         ys.push(y);
     }
 
     for _ in 0..num_rounds {
-        let x = opt.ask(num_arms, &mut rng)?;
+        let x = opt.ask(num_arms)?;
         let y = synthetic_y(&x.view(), &mut rng);
-        opt.tell(&x.view(), &y.view(), None, &mut rng)?;
+        opt.tell(&x.view(), &y.view(), None)?;
         xs.push(x);
         ys.push(y);
     }
@@ -111,11 +111,11 @@ fn replay_tells(
     let mut opt = Optimizer::new_with_strategy(bounds, config, strategy, &mut rng)?;
 
     for (x, y) in xs.iter().zip(ys.iter()) {
-        opt.tell(&x.view(), &y.view(), None, &mut rng)?;
+        opt.tell(&x.view(), &y.view(), None)?;
     }
 
     let obs_count = opt.obs_count();
-    let x_inc = opt.incumbent_x_unit().map(|x| x.to_owned());
+    let x_inc = opt.incumbent_x();
     let y_inc = opt.incumbent_y_scalar().map(|y| y.to_owned());
     Ok((x_inc, y_inc, obs_count))
 }

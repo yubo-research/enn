@@ -160,7 +160,7 @@ mod access_tests {
             array![[0.0], [1.0]],
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         let query = array![[0.1, 0.1]];

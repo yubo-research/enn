@@ -6,5 +6,5 @@ pub(crate) fn test_epistemic_model_exact_unit_square() -> EpistemicNearestNeighb
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
 
-    EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap()
+    EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap()
 }

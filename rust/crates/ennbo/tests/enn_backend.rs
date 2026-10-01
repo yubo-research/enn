@@ -9,7 +9,7 @@ fn in_memory_backend_row_and_index_accessors() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
     let train_y = array![[0.0], [1.0], [2.0]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
     assert_eq!(model.index_access().len(), 3);
     assert_eq!(model.num_dim(), 2);
     let x0 = model.rows().row_x(0).unwrap();
@@ -31,7 +31,7 @@ fn new_empty_in_memory_accepts_incremental_add() {
     let mut model = EpistemicNearestNeighbors::new_empty(
         2,
         1,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
             None,
@@ -71,7 +71,7 @@ fn disk_backend_roundtrip_and_search() {
         array![[0.0], [1.0], [1.0], [2.0]],
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
     )
     .unwrap();
     let exact = mem.neighbors(&query.view(), 1, false).unwrap();
@@ -111,7 +111,7 @@ fn disk_storage_rejects_non_disk_driver() {
         array![[0.0]],
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::Disk,
         Some(dir.path().to_path_buf()),
             None,

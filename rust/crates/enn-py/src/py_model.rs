@@ -1,7 +1,8 @@
 //! ENN model Python bindings.
 
 use ennbo::traits::PosteriorComputation;
-use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
+use ndarray::Array2;
+use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -13,6 +14,19 @@ pub(crate) type PosteriorPyOut<'py> = (
     Bound<'py, PyArrayDyn<f64>>,
     Option<Bound<'py, PyArrayDyn<i64>>>,
 );
+
+fn owned_matrix(name: &str, arr: PyReadonlyArrayDyn<'_, f64>) -> PyResult<Array2<f64>> {
+    let view = arr.as_array();
+    if view.ndim() != 2 {
+        return Err(PyValueError::new_err(format!(
+            "{name} must be 2-dimensional, got shape {:?}",
+            view.shape()
+        )));
+    }
+    view.to_owned()
+        .into_dimensionality()
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
 
 pub(crate) type TrainRowsAtPyOut<'py> = (
     Bound<'py, PyArray2<f64>>,
@@ -34,8 +48,6 @@ fn py_posterior_flags(
 #[pyclass(name = "EpistemicNearestNeighbors")]
 pub struct PyEpistemicNearestNeighbors {
     pub(crate) inner: ennbo::EpistemicNearestNeighbors,
-    /// Opened with metric learning: BPANN_DISK storage that accepts metric updates.
-    metric_learning: ennbo::metric_auto::MetricLearning,
 }
 
 #[pymethods]
@@ -45,9 +57,9 @@ impl PyEpistemicNearestNeighbors {
     #[allow(clippy::too_many_arguments)]
     #[doc = "kiss-coverage-off"]
     fn new(
-        train_x: PyReadonlyArray2<f64>,
-        train_y: PyReadonlyArray2<f64>,
-        train_yvar: Option<PyReadonlyArray2<f64>>,
+        train_x: PyReadonlyArrayDyn<f64>,
+        train_y: PyReadonlyArrayDyn<f64>,
+        train_yvar: Option<PyReadonlyArrayDyn<f64>>,
         scale_x: bool,
         index_driver: &str,
         work_dir: Option<&str>,
@@ -57,7 +69,7 @@ impl PyEpistemicNearestNeighbors {
         tied_dims: Option<Vec<Vec<usize>>>,
     ) -> PyResult<Self> {
         let driver = match index_driver {
-            "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
+            "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Flat,
             "BPANN_DISK" | "bpann_disk" => ennbo::IndexDriver::BpAnnDisk,
             _ => {
                 return Err(PyValueError::new_err(format!(
@@ -70,18 +82,10 @@ impl PyEpistemicNearestNeighbors {
                 "metric_learning must be 'none' or 'auto', got {metric_learning}"
             ))
         })?;
-        if metric_learning == ennbo::metric_auto::MetricLearning::Auto
-            && (scale_x || driver != ennbo::IndexDriver::BpAnnDisk)
-        {
-            return Err(PyValueError::new_err(
-                "metric_learning requires index_driver=BPANN_DISK and scale_x=false",
-            ));
-        }
-        let storage = match enn_storage {
-            Some("disk" | "Disk") => ennbo::EnnStorage::Disk,
-            Some("memory" | "in_memory" | "InMemory") => ennbo::EnnStorage::InMemory,
-            None if work_dir.is_some() => ennbo::EnnStorage::Disk,
-            None => ennbo::EnnStorage::InMemory,
+        let explicit = match enn_storage {
+            Some("disk" | "Disk") => Some(ennbo::EnnStorage::Disk),
+            Some("memory" | "in_memory" | "InMemory") => Some(ennbo::EnnStorage::InMemory),
+            None => None,
             Some(other) => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown enn_storage: {other}"
@@ -89,11 +93,19 @@ impl PyEpistemicNearestNeighbors {
             }
         };
         let work_dir = work_dir.map(PathBuf::from);
+        let storage = ennbo::EnnStorage::resolve(explicit, work_dir.as_deref());
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
+        let train_x = owned_matrix("train_x", train_x)?;
+        let train_y = owned_matrix("train_y", train_y)?;
+        let train_yvar = match train_yvar {
+            Some(v) => Some(owned_matrix("train_yvar", v)?),
+            None => None,
+        };
+        let train_y_auto = train_y.clone();
         let mut model = ennbo::EpistemicNearestNeighbors::new_with_storage(
-            train_x.as_array().to_owned(),
-            train_y.as_array().to_owned(),
-            train_yvar.map(|v| v.as_array().to_owned()),
+            train_x.clone(),
+            train_y,
+            train_yvar,
             scale_x,
             driver,
             storage,
@@ -101,34 +113,30 @@ impl PyEpistemicNearestNeighbors {
             y_bounds,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let groups = tied_dims.unwrap_or_default();
         if metric_learning == ennbo::metric_auto::MetricLearning::Auto {
             model
                 .enable_auto_metric(
-                    tied_dims.unwrap_or_default(),
-                    &train_x.as_array(),
-                    &train_y.as_array(),
+                    groups.clone(),
+                    &train_x.view(),
+                    &train_y_auto.view(),
                 )
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        } else if let Some(groups) = tied_dims {
-            let dims: Vec<usize> = groups.into_iter().flatten().collect();
+        } else if !groups.is_empty() {
+            let dims: Vec<usize> = groups.iter().flatten().copied().collect();
             model
                 .set_unscaled_dims(dims)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
         }
-        Ok(Self {
-            inner: model,
-            metric_learning,
-        })
+        model
+            .set_tied_groups(groups)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner: model })
     }
 
     #[pyo3(signature = (x_scale, rebuild=false))]
     #[doc = "kiss-coverage-off"]
     fn set_metric_scale(&mut self, x_scale: PyReadonlyArray1<f64>, rebuild: bool) -> PyResult<()> {
-        if self.metric_learning != ennbo::metric_auto::MetricLearning::Auto {
-            return Err(PyValueError::new_err(
-                "set_metric_scale requires metric_learning=AUTO",
-            ));
-        }
         self.inner
             .set_metric_scale(x_scale.as_array().to_owned(), rebuild)
             .map_err(|e| PyValueError::new_err(e.to_string()))
@@ -377,7 +385,7 @@ impl PyEpistemicNearestNeighbors {
     ) -> PyResult<Bound<'py, PyArrayDyn<usize>>> {
         let result = self
             .inner
-            .neighbors(&x.as_array(), k, exclude_nearest)
+            .neighbors_one(&x.as_array(), k, exclude_nearest)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(result.into_dyn().into_pyarray_bound(py))
     }
@@ -449,6 +457,26 @@ impl PyEpistemicNearestNeighbors {
     #[doc = "kiss-coverage-off"]
     fn scale_x(&self) -> bool {
         self.inner.is_scale_x()
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn index_driver(&self) -> &'static str {
+        match self.inner.index_driver() {
+            ennbo::IndexDriver::Flat => "flat",
+            ennbo::IndexDriver::BpAnnDisk => "bpann_disk",
+        }
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn metric_learning_auto(&self) -> bool {
+        self.inner.metric_learning_auto()
+    }
+
+    #[doc = "kiss-coverage-off"]
+    fn tied_groups(&self) -> Vec<Vec<usize>> {
+        self.inner.tied_groups().to_vec()
     }
 
     #[doc = "kiss-coverage-off"]
@@ -539,60 +567,7 @@ pub(crate) fn set_unscaled_dims(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-/// Wrapper for ENNParams
-#[pyclass(name = "ENNParams")]
-#[derive(Clone, Copy)]
-pub struct PyENNParams {
-    pub(crate) inner: ennbo::ENNParams,
-}
-
-#[pymethods]
-impl PyENNParams {
-    #[new]
-    #[pyo3(signature = (k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale))]
-    #[doc = "kiss-coverage-off"]
-    fn new(
-        k_num_neighbors: i32,
-        epistemic_variance_scale: f64,
-        aleatoric_variance_scale: f64,
-    ) -> PyResult<Self> {
-        let inner = ennbo::ENNParams::new(
-            k_num_neighbors,
-            epistemic_variance_scale,
-            aleatoric_variance_scale,
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self { inner })
-    }
-
-    #[getter]
-    #[doc = "kiss-coverage-off"]
-    fn k_num_neighbors(&self) -> i32 {
-        self.inner.k_num_neighbors
-    }
-
-    #[getter]
-    #[doc = "kiss-coverage-off"]
-    fn epistemic_variance_scale(&self) -> f64 {
-        self.inner.epistemic_variance_scale
-    }
-
-    #[getter]
-    #[doc = "kiss-coverage-off"]
-    fn aleatoric_variance_scale(&self) -> f64 {
-        self.inner.aleatoric_variance_scale
-    }
-
-    #[doc = "kiss-coverage-off"]
-    fn __repr__(&self) -> String {
-        format!(
-            "ENNParams(k={}, epi={:.4}, ale={:.4})",
-            self.inner.k_num_neighbors,
-            self.inner.epistemic_variance_scale,
-            self.inner.aleatoric_variance_scale
-        )
-    }
-}
+pub use crate::py_params::PyENNParams;
 
 #[cfg(test)]
 mod kiss_coverage_tests {

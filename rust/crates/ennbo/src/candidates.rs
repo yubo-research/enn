@@ -2,8 +2,10 @@
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::distributions::{Bernoulli, Uniform};
+use rand::rngs::StdRng;
 use rand::Rng;
 use rand::RngCore;
+use rand::SeedableRng;
 use sobol::params::JoeKuoD6;
 use sobol::Sobol;
 use std::sync::OnceLock;
@@ -230,6 +232,20 @@ fn generate_raasp<R: Rng + ?Sized>(
     }
 
     Ok(candidates)
+}
+
+/// `n` Sobol points in `dim` dimensions, scrambled with `seed`.
+pub fn sobol_sequence(dim: usize, n: usize, seed: u64) -> Result<Array2<f64>, ENNError> {
+    let mut engine = SobolEngine::new(dim)?;
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut out = Array2::zeros((n, dim));
+    for i in 0..n {
+        let row = engine.sample(&mut rng)?;
+        for (j, value) in row.into_iter().enumerate() {
+            out[[i, j]] = value;
+        }
+    }
+    Ok(out)
 }
 
 /// Sobol quasi-random sequence generator.

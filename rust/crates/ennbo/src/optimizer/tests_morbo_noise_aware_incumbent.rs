@@ -20,7 +20,7 @@ fn argmax_scores(scores: &ndarray::Array1<f64>) -> usize {
 #[test]
 fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-    let mut rng = StdRng::seed_from_u64(9001);
+    let mut rng = StdRng::seed_from_u64(42);
     let mut cfg = OptimizerConfig {
         surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
             k: 3,
@@ -54,7 +54,7 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
         [1.0, 50.0],
         [3.0, 3.0],
     ];
-    opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
+    opt.tell(&x.view(), &y.view(), None).unwrap();
 
     let sur = opt.surrogate().expect("enn surrogate");
     let y_all = opt.y_obs().expect("y observations");

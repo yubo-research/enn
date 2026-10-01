@@ -88,7 +88,13 @@ pub fn pareto_front_2d_maximize(
     b: &ArrayView1<f64>,
     idx: Option<&[usize]>,
 ) -> Result<Vec<usize>, ENNError> {
-    assert_eq!(a.len(), b.len(), "a and b must have same length");
+    if a.len() != b.len() {
+        return Err(ENNError::InvalidParameter(format!(
+            "a and b must have same length, got {} and {}",
+            a.len(),
+            b.len()
+        )));
+    }
 
     let n = a.len();
     if n == 0 {
@@ -101,6 +107,11 @@ pub fn pareto_front_2d_maximize(
     };
 
     for &i in &indices {
+        if i >= n {
+            return Err(ENNError::InvalidParameter(format!(
+                "idx entry {i} is out of bounds for length {n}"
+            )));
+        }
         if !a[i].is_finite() || !b[i].is_finite() {
             return Err(ENNError::InvalidParameter(
                 "a and b must be finite".to_string(),
@@ -244,18 +255,24 @@ pub fn arms_from_pareto_fronts(
     se: &ArrayView1<f64>,
     num_arms: usize,
     seed: u64,
-) -> Vec<usize> {
+) -> Result<Vec<usize>, ENNError> {
+    if mu.len() != se.len() {
+        return Err(ENNError::InvalidParameter(format!(
+            "shape mismatch: mu {}, se {}",
+            mu.len(),
+            se.len()
+        )));
+    }
     let n = mu.len();
     if n == 0 || num_arms == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let mut i_keep: Vec<usize> = Vec::with_capacity(num_arms);
     let mut remaining: Vec<usize> = (0..n).collect();
 
     while !remaining.is_empty() && i_keep.len() < num_arms {
-        let front = pareto_front_2d_maximize(mu, se, Some(&remaining))
-            .expect("mu and se must be finite");
+        let front = pareto_front_2d_maximize(mu, se, Some(&remaining))?;
         if front.is_empty() {
             break;
         }
@@ -276,7 +293,7 @@ pub fn arms_from_pareto_fronts(
     }
 
     i_keep.sort_by(|&a, &b| mu[b].total_cmp(&mu[a]));
-    i_keep
+    Ok(i_keep)
 }
 
 /// Deterministic subset selection using seed (simple LCG).
@@ -403,7 +420,7 @@ mod tests {
         let mu = array![0.0, 1.0, 0.5];
         let se = array![0.1, 0.1, 0.1];
 
-        let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42);
+        let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42).unwrap();
 
         assert_eq!(arms.len(), 2);
         assert!(arms.contains(&1));
@@ -422,7 +439,7 @@ mod tests {
         let mu = array![5.0, 4.0, 3.0, 2.0, 1.0, 0.0];
         let se = array![0.10, 0.20, 0.15, 0.40, 0.05, 0.50];
 
-        let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 5, 0);
+        let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 5, 0).unwrap();
 
         assert_eq!(arms.len(), 5);
         assert!(arms.contains(&0));
@@ -434,9 +451,9 @@ mod tests {
         let x_cand = array![[0.0], [1.0], [2.0], [3.0], [4.0]];
         let mu = array![1.0, 1.0, 1.0, 0.0, 0.0];
         let se = array![0.0, 0.0, 0.0, 0.0, 0.0];
-        let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42);
+        let arms = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42).unwrap();
         assert_eq!(arms.len(), 2);
-        let arms2 = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42);
+        let arms2 = arms_from_pareto_fronts(&x_cand.view(), &mu.view(), &se.view(), 2, 42).unwrap();
         assert_eq!(arms, arms2);
     }
 

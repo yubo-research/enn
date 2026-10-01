@@ -22,7 +22,7 @@ impl KnnBackend {
         train_scaled: &ArrayView2<f64>,
     ) -> Result<Self, IndexError> {
         match driver {
-            IndexDriver::Exact => Ok(Self::Faiss(Mutex::new(FaissBackend::new(
+            IndexDriver::Flat => Ok(Self::Faiss(Mutex::new(FaissBackend::new(
                 num_dim,
                 driver,
                 train_scaled,
@@ -142,7 +142,7 @@ mod knn_backend_tests {
     #[test]
     fn knn_backend_faiss_exact() {
         let train = array![[0.0, 0.0], [1.0, 1.0]];
-        let backend = KnnBackend::new(2, IndexDriver::Exact, &train.view()).unwrap();
+        let backend = KnnBackend::new(2, IndexDriver::Flat, &train.view()).unwrap();
         assert_eq!(backend.len(), 2);
         backend.add(&array![[2.0, 2.0]].view(), 2).unwrap();
         assert_eq!(backend.len(), 3);

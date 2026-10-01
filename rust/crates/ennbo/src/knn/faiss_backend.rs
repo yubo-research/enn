@@ -55,7 +55,7 @@ fn prefer_faiss_simd_distances() {
 
 fn faiss_spec(driver: IndexDriver) -> &'static str {
     match driver {
-        IndexDriver::Exact => "Flat",
+        IndexDriver::Flat => "Flat",
         IndexDriver::BpAnnDisk => {
             panic!("BpAnnDisk must not be routed to FaissBackend")
         }
@@ -111,7 +111,7 @@ impl FaissBackend {
     }
 
     pub(crate) fn rebuild(&mut self, train_scaled: &ArrayView2<f64>) -> Result<(), IndexError> {
-        if train_scaled.ncols() != self.num_dim || !matches!(self.driver, IndexDriver::Exact) {
+        if train_scaled.ncols() != self.num_dim || !matches!(self.driver, IndexDriver::Flat) {
             return Err(IndexError::InvalidShape {
                 expected: self.num_dim,
                 got: train_scaled.ncols(),
@@ -354,7 +354,7 @@ mod faiss_backend_tests {
     #[test]
     fn faiss_backend_exact_roundtrip() {
         let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
-        let mut backend = FaissBackend::new(2, IndexDriver::Exact, &train.view()).unwrap();
+        let mut backend = FaissBackend::new(2, IndexDriver::Flat, &train.view()).unwrap();
         assert_eq!(backend.len(), 3);
         backend
             .add(&array![[1.0, 1.0]].view(), 3)
@@ -371,7 +371,7 @@ mod faiss_backend_tests {
 
     #[test]
     fn faiss_spec_and_map_err() {
-        assert_eq!(faiss_spec(IndexDriver::Exact), "Flat");
+        assert_eq!(faiss_spec(IndexDriver::Flat), "Flat");
         let err = faiss_map_err(faiss::error::Error::IndexDescription);
         assert!(matches!(err, IndexError::InvalidParameter(_)));
     }
@@ -379,7 +379,7 @@ mod faiss_backend_tests {
     #[test]
     fn make_index() {
         let train = array![[0.0, 0.0], [1.0, 0.0]];
-        let index = make_faiss_for_test(2, IndexDriver::Exact, &train.view()).unwrap();
+        let index = make_faiss_for_test(2, IndexDriver::Flat, &train.view()).unwrap();
         assert_eq!(index.ntotal(), 2);
     }
 
@@ -491,8 +491,8 @@ mod faiss_backend_tests {
     #[test]
     fn kiss_faiss_make_index_and_memory() {
         let train = array![[0.0, 0.0], [1.0, 0.0]];
-        let _index = FaissBackend::make_index(2, IndexDriver::Exact, &train.view()).unwrap();
-        let backend = FaissBackend::new(2, IndexDriver::Exact, &train.view()).unwrap();
+        let _index = FaissBackend::make_index(2, IndexDriver::Flat, &train.view()).unwrap();
+        let backend = FaissBackend::new(2, IndexDriver::Flat, &train.view()).unwrap();
         assert!(backend.memory_usage_bytes() > 0);
         let _ = faiss_map_err_for_test(faiss::error::Error::IndexDescription);
     }
@@ -522,7 +522,7 @@ mod flat_speed_bench {
         let d = 100usize;
         let train = Array2::from_shape_fn((n, d), |(i, j)| (i * d + j) as f64 * 1e-4);
         let queries = Array2::from_shape_fn((q, d), |(i, j)| (i * d + j) as f64 * 2e-4);
-        let mut backend = FaissBackend::new(d, IndexDriver::Exact, &train.view()).unwrap();
+        let mut backend = FaissBackend::new(d, IndexDriver::Flat, &train.view()).unwrap();
         let _ = backend.search(&queries.view(), 9, 9).unwrap();
         let t0 = Instant::now();
         let _ = backend.search(&queries.view(), 9, 9).unwrap();

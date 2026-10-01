@@ -48,6 +48,9 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_ports::separable_unimodal, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_ports::choose_indices, m)?)?;
     m.add_class::<crate::py_numpy_normal::PyNumpyNormal>()?;
+    m.add_class::<crate::py_ports::PyENNNormal>()?;
+    m.add_class::<crate::py_ports::PyAckley>()?;
+    m.add_class::<crate::py_ports::PyDoubleAckley>()?;
     Ok(())
 }
 
@@ -107,6 +110,8 @@ pub fn pymodule_optimizer(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_enn_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_zero_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_lhd_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_optimizer::require_num_fit_samples_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_optimizer::validate_optimizer_rules_py, m)?)?;
     Ok(())
 }
 

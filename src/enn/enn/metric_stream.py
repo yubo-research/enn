@@ -8,8 +8,6 @@ import numpy as np
 
 from enn import _rust
 
-MIN_DEPENDENCE_ROWS = 100
-
 
 def _y2(y: np.ndarray) -> np.ndarray:
     y = np.asarray(y, dtype=float)

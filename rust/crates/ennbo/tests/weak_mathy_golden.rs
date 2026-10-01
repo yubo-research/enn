@@ -11,7 +11,7 @@ use rand_chacha::ChaCha8Rng;
 fn unit_square_model() -> EpistemicNearestNeighbors {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
-    EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap()
+    EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap()
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn weak_conditional_neighbor_merge_includes_whatif() {
     let train_x = array![[0.0, 0.0], [10.0, 10.0]];
     let train_y = array![[0.0], [10.0]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
     let internals = compute_conditional_posterior_internals(

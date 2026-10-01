@@ -20,18 +20,6 @@ from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .config.trust_region import NoTRConfig, TurboTRConfig
 
-DEFAULT_ENN_K = 10
-_DEFAULT_NUM_CANDIDATES_FACTOR = 100.0
-_DEFAULT_MAX_CANDIDATES = 5000
-
-
-def resolve_enn_k(config: OptimizerConfig) -> int:
-    surrogate = config.surrogate
-    if not isinstance(surrogate, ENNSurrogateConfig):
-        raise TypeError(f"expected ENNSurrogateConfig, got {type(surrogate)!r}")
-    return DEFAULT_ENN_K if surrogate.k is None else int(surrogate.k)
-
-
 def _acquisition_to_override(config: OptimizerConfig) -> dict[str, Any]:
     acq = getattr(config, "acquisition", None)
     if acq is None:
@@ -66,18 +54,12 @@ def _candidate_count_override(config: OptimizerConfig) -> dict[str, Any]:
     if not isinstance(candidates, CandidateGenConfig):
         return {}
     out: dict[str, Any] = {}
-    if candidates.num_candidates is None and candidates.num_candidates_per_arm is None:
-        out["num_candidates_factor"] = _DEFAULT_NUM_CANDIDATES_FACTOR
-        out["max_candidates"] = _DEFAULT_MAX_CANDIDATES
-    elif candidates.num_candidates is not None:
+    if candidates.num_candidates is not None:
         n = int(candidates.num_candidates)
         out["num_candidates_factor"] = 1.0
         out["min_candidates"] = n
         if candidates.num_candidates_per_arm is None:
             out["max_candidates"] = n
-    elif candidates.num_candidates_per_arm is not None:
-        out["num_candidates_factor"] = _DEFAULT_NUM_CANDIDATES_FACTOR
-        out["max_candidates"] = _DEFAULT_MAX_CANDIDATES
     if candidates.num_candidates_per_arm is not None:
         out["num_candidates_per_arm"] = int(candidates.num_candidates_per_arm)
     return out

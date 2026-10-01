@@ -407,13 +407,14 @@ impl ParetoAcquisition {
         let num_arms = num_arms.min(n);
         let dummy_x = ndarray::Array2::<f64>::zeros((n, 1));
         let seed = rng.r#gen::<u64>();
-        Ok(crate::util::arms_from_pareto_fronts(
+        crate::util::arms_from_pareto_fronts(
             &dummy_x.view(),
             mu,
             sigma,
             num_arms,
             seed,
-        ))
+        )
+        .map_err(|e| AcquisitionError::InvalidParameter(e.to_string()))
     }
 }
 

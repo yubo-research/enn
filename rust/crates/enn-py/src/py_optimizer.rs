@@ -3,8 +3,6 @@
 use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
 use std::path::PathBuf;
 
 #[doc = "kiss-coverage-off"]
@@ -72,7 +70,7 @@ mod kiss_coverage_tests {
 fn parse_index_driver(s: &str) -> PyResult<ennbo::index::IndexDriver> {
     use ennbo::index::IndexDriver;
     match s.to_lowercase().as_str() {
-        "exact" | "flat" => Ok(IndexDriver::Exact),
+        "exact" | "flat" => Ok(IndexDriver::Flat),
         "bpann_disk" => Ok(IndexDriver::BpAnnDisk),
         _ => Err(PyValueError::new_err(format!("Unknown index_driver: {s}"))),
     }
@@ -193,45 +191,37 @@ pub struct PyOptimizer {
 
 #[pymethods]
 impl PyOptimizer {
-    /// Ask for candidate points
-    #[pyo3(signature = (num_arms, seed))]
+    /// Ask for candidate points in natural units.
     #[doc = "kiss-coverage-off"]
     fn ask<'py>(
         &mut self,
         py: Python<'py>,
         num_arms: usize,
-        seed: u64,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        let mut rng = StdRng::seed_from_u64(seed);
-
         let result = self
             .inner
-            .ask(num_arms, &mut rng)
+            .ask(num_arms)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let natural = ennbo::from_unit(&result.view(), &self.inner.bounds().view());
-        Ok(natural.into_dyn().into_pyarray_bound(py))
+        Ok(result.into_dyn().into_pyarray_bound(py))
     }
 
-    /// Tell observations
-    #[pyo3(signature = (x, y, seed, y_var=None))]
+    /// Tell observations in natural units.
+    #[pyo3(signature = (x, y, y_var=None))]
     #[doc = "kiss-coverage-off"]
     fn tell(
         &mut self,
         x: PyReadonlyArray2<f64>,
         y: PyReadonlyArray2<f64>,
-        seed: u64,
         y_var: Option<PyReadonlyArray2<f64>>,
     ) -> PyResult<()> {
-        let mut rng = StdRng::seed_from_u64(seed);
-        let x_unit = ennbo::to_unit(&x.as_array(), &self.inner.bounds().view());
+        let x_arr = x.as_array();
         let y_arr = y.as_array();
         let result = match y_var.as_ref() {
             Some(yv) => {
                 let yv_arr = yv.as_array();
-                self.inner
-                    .tell(&x_unit.view(), &y_arr, Some(&yv_arr), &mut rng)
+                self.inner.tell(&x_arr, &y_arr, Some(&yv_arr))
             }
-            None => self.inner.tell(&x_unit.view(), &y_arr, None, &mut rng),
+            None => self.inner.tell(&x_arr, &y_arr, None),
         };
         result.map_err(|e| PyValueError::new_err(e.to_string()))
     }
@@ -285,10 +275,10 @@ impl PyOptimizer {
 
     /// Get incumbent x in unit space (if any).
     #[doc = "kiss-coverage-off"]
-    fn incumbent_x_unit<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
+    fn incumbent_x<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
         self.inner
-            .incumbent_x_unit()
-            .map(|x| x.view().to_owned().into_dyn().into_pyarray_bound(py))
+            .incumbent_x()
+            .map(|x| x.into_dyn().into_pyarray_bound(py))
     }
 
     /// Get optimizer bounds.
@@ -319,20 +309,42 @@ pub struct PyTelemetry {
     pub num_candidates: usize,
 }
 
+#[pyfunction(name = "require_num_fit_samples", signature = (is_pareto, num_fit_samples=None))]
+#[doc = "kiss-coverage-off"]
+pub fn require_num_fit_samples_py(is_pareto: bool, num_fit_samples: Option<usize>) -> PyResult<()> {
+    ennbo::require_num_fit_samples(is_pareto, num_fit_samples)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+#[pyfunction(name = "validate_optimizer_rules")]
+#[doc = "kiss-coverage-off"]
+pub fn validate_optimizer_rules_py(flags: Vec<bool>, acquisition: &str) -> PyResult<()> {
+    if flags.len() != 3 {
+        return Err(PyValueError::new_err(
+            "validate_optimizer_rules expects [lhd_only, has_surrogate, nds]",
+        ));
+    }
+    let rules = ennbo::OptimizerRuleSet {
+        lhd_only: flags[0],
+        has_surrogate: flags[1],
+        nds: flags[2],
+    };
+    ennbo::validate_optimizer_rules(&rules, acquisition).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Create TuRBO-ENN optimizer
 #[pyfunction(name = "create_optimizer_enn")]
-#[pyo3(signature = (bounds, k=10, num_init=10, seed=42, config_overrides=None))]
+#[pyo3(signature = (bounds, k=None, num_init=None, seed=42, config_overrides=None))]
 #[doc = "kiss-coverage-off"]
 pub fn create_optimizer_enn_py(
     bounds: PyReadonlyArray2<f64>,
-    k: i32,
-    num_init: usize,
+    k: Option<i32>,
+    num_init: Option<usize>,
     seed: u64,
     config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
     use ennbo::optimizer_factory::create_optimizer_enn_with_overrides;
 
-    let mut rng = StdRng::seed_from_u64(seed);
     let overrides: Option<ennbo::ConfigOverrides> = config_overrides
         .as_ref()
         .map(|d| parse_config_overrides_from_dict(d))
@@ -342,7 +354,7 @@ pub fn create_optimizer_enn_py(
         bounds.as_array().to_owned(),
         k,
         num_init,
-        &mut rng,
+        seed,
         overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -352,17 +364,16 @@ pub fn create_optimizer_enn_py(
 
 /// Create TuRBO-ZERO optimizer
 #[pyfunction(name = "create_optimizer_zero")]
-#[pyo3(signature = (bounds, num_init=10, seed=42, config_overrides=None))]
+#[pyo3(signature = (bounds, num_init=None, seed=42, config_overrides=None))]
 #[doc = "kiss-coverage-off"]
 pub fn create_optimizer_zero_py(
     bounds: PyReadonlyArray2<f64>,
-    num_init: usize,
+    num_init: Option<usize>,
     seed: u64,
     config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
     use ennbo::optimizer_factory::create_optimizer_zero_with_overrides;
 
-    let mut rng = StdRng::seed_from_u64(seed);
     let overrides: Option<ennbo::ConfigOverrides> = config_overrides
         .as_ref()
         .map(|d| parse_config_overrides_from_dict(d))
@@ -371,7 +382,7 @@ pub fn create_optimizer_zero_py(
     let optimizer = create_optimizer_zero_with_overrides(
         bounds.as_array().to_owned(),
         num_init,
-        &mut rng,
+        seed,
         overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -381,17 +392,16 @@ pub fn create_optimizer_zero_py(
 
 /// Create LHD-only optimizer
 #[pyfunction(name = "create_optimizer_lhd")]
-#[pyo3(signature = (bounds, num_init=10, seed=42, config_overrides=None))]
+#[pyo3(signature = (bounds, num_init=None, seed=42, config_overrides=None))]
 #[doc = "kiss-coverage-off"]
 pub fn create_optimizer_lhd_py(
     bounds: PyReadonlyArray2<f64>,
-    num_init: usize,
+    num_init: Option<usize>,
     seed: u64,
     config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
     use ennbo::optimizer_factory::create_optimizer_lhd_with_overrides;
 
-    let mut rng = StdRng::seed_from_u64(seed);
     let overrides: Option<ennbo::ConfigOverrides> = config_overrides
         .as_ref()
         .map(|d| parse_config_overrides_from_dict(d))
@@ -400,7 +410,7 @@ pub fn create_optimizer_lhd_py(
     let optimizer = create_optimizer_lhd_with_overrides(
         bounds.as_array().to_owned(),
         num_init,
-        &mut rng,
+        seed,
         overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -423,7 +433,7 @@ mod kiss_pymethods_coverage {
             PyOptimizer::tr_length,
             PyOptimizer::x_obs,
             PyOptimizer::y_obs,
-            PyOptimizer::incumbent_x_unit,
+            PyOptimizer::incumbent_x,
             PyOptimizer::bounds,
             std::mem::size_of::<PyOptimizer>,
             std::mem::size_of::<PyTelemetry>,

@@ -55,6 +55,7 @@ impl EpistemicNearestNeighbors {
             work_dir: stored_work_dir,
             y_bounds_persisted: std::sync::atomic::AtomicBool::new(false),
             auto_metric: None,
+            tied_groups: Vec::new(),
         };
         model.persist_y_bounds_metadata()?;
         Ok(model)
@@ -219,7 +220,7 @@ mod tests {
         let model = EpistemicNearestNeighbors::new_empty_with_y_bounds(
             1,
             1,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
             EnnStorage::InMemory,
             None,
             None,
@@ -240,7 +241,7 @@ mod tests {
             train_y.clone(),
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
             EnnStorage::InMemory,
             None,
             Some(bounds),

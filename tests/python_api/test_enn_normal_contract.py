@@ -30,10 +30,10 @@ class TestENNNormalContract:
         assert hasattr(obj, "se_epi")
         assert hasattr(obj, "se_ale")
         assert hasattr(obj, "idx")
-        assert obj.mu is mu
-        assert obj.se is se
-        assert obj.se_epi is se_epi
-        assert obj.se_ale is se_ale
+        np.testing.assert_array_equal(obj.mu, mu)
+        np.testing.assert_array_equal(obj.se, se)
+        np.testing.assert_array_equal(obj.se_epi, se_epi)
+        np.testing.assert_array_equal(obj.se_ale, se_ale)
         assert obj.idx is None
 
     def test_idx_optional(self):
@@ -43,7 +43,7 @@ class TestENNNormalContract:
         se_ale = np.zeros_like(se)
         idx = np.array([[0, 1]], dtype=int)
         obj = ENNNormal(mu=mu, se=se, se_epi=se_epi, se_ale=se_ale, idx=idx)
-        assert obj.idx is idx
+        np.testing.assert_array_equal(obj.idx, idx)
 
     def test_posterior_returns_enn_normal(self):
         train_x = np.array(
@@ -84,17 +84,17 @@ class TestENNNormalContract:
         params = list(sig.parameters.keys())
         assert "self" in params
         assert "num_samples" in params
-        assert "rng" in params
+        assert "seed" in params
         assert "clip" in params
 
     def test_sample_returns_correct_shape(self):
-        rng = np.random.default_rng(42)
+        np.random.default_rng(42)
         mu = np.array([[1.0, 2.0]], dtype=float)
         se = np.array([[0.1, 0.2]], dtype=float)
         se_epi = se.copy()
         se_ale = np.zeros_like(se)
         obj = ENNNormal(mu=mu, se=se, se_epi=se_epi, se_ale=se_ale)
-        samples = obj.sample(num_samples=10, rng=rng)
+        samples = obj.sample(num_samples=10, seed=0)
 
         assert samples.shape == (1, 2, 10)
         assert np.all(np.isfinite(samples))

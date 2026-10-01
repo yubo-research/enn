@@ -14,6 +14,14 @@ pub fn set_config_path(path: Option<PathBuf>) {
     install_bpann_tuning_from_config();
 }
 
+/// Load `~/.ennbo/config.toml` (or the override), creating the BPANN section, and return the path.
+pub fn ensure_config_file() -> PathBuf {
+    install_bpann_tuning_from_config();
+    let cfg = Config::new();
+    let _ = cfg.load();
+    cfg.path().to_path_buf()
+}
+
 /// Default path: `~/.ennbo/config.toml`.
 pub fn default_config_path() -> PathBuf {
     home_dir().join(".ennbo").join("config.toml")

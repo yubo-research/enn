@@ -188,7 +188,7 @@ mod tests {
             train_y,
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         let params = ENNParams::new(5, 1.0, 0.1).unwrap();
@@ -214,7 +214,7 @@ mod tests {
             array![[1.0]],
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         let params = ENNParams::new(1, 1.0, 0.1).unwrap();
@@ -261,7 +261,7 @@ mod tests {
             Array2::zeros((0, 1)),
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
@@ -279,7 +279,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let train_y = array![[1.0], [2.0], [3.0], [4.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
@@ -306,7 +306,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let train_y = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();

@@ -274,7 +274,7 @@ mod tests {
             None,
             false,
             Array1::ones(2),
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         let (x, y, yv) = backend.train_rows_at(&[1]).unwrap();

@@ -17,13 +17,11 @@ class ENNStatefulFitter:
         infer_aleatoric_variance_scale: bool = True,
     ) -> None:
         seed = int(rng.integers(0, 2**63 - 1))
-        self._rng = rng
         self._rust = _RustENNStatefulFitter(
             k,
             seed,
             infer_aleatoric_variance_scale,
         )
-        self.affine_calibrator = None
 
     def tell(
         self,
@@ -32,7 +30,6 @@ class ENNStatefulFitter:
         yvar: np.ndarray | None = None,
         y_bounds: np.ndarray | None = None,
     ) -> None:
-        self.affine_calibrator = None
         x_array = np.asarray(x, dtype=float)
         y_array = np.asarray(y, dtype=float)
         if y_array.ndim == 1:
@@ -54,8 +51,8 @@ class ENNStatefulFitter:
         self,
         model: Any,
         *,
-        num_fit_candidates: int | None,
-        num_fit_samples: int,
+        num_fit_candidates: int | None = None,
+        num_fit_samples: int | None = None,
         params_warm_start: Any | None = None,
         affine_calibrate: bool = False,
     ) -> Any:
@@ -81,24 +78,35 @@ class ENNStatefulFitter:
             affine_calibrate,
         )
 
-        params = PyENNParams(
+        return PyENNParams(
             k_num_neighbors=rust_result.k_num_neighbors,
             epistemic_variance_scale=rust_result.epistemic_variance_scale,
             aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
         )
+
+    @property
+    def affine_calibrator(self):
         coeffs = self._rust.affine_coeffs()
         if coeffs is None:
-            self.affine_calibrator = None
-        else:
-            from .affine_calibrator import AffineCalibrator
+            return None
+        from .affine_calibrator import AffineCalibrator
 
-            a, b, c = coeffs
-            self.affine_calibrator = AffineCalibrator(
-                a=np.asarray(a, dtype=float),
-                b=np.asarray(b, dtype=float),
-                c=np.asarray(c, dtype=float),
-            )
-        return params
+        a, b, c = coeffs
+        return AffineCalibrator(
+            a=np.asarray(a, dtype=float),
+            b=np.asarray(b, dtype=float),
+            c=np.asarray(c, dtype=float),
+        )
+
+    @affine_calibrator.setter
+    def affine_calibrator(self, cal) -> None:
+        if cal is None:
+            return
+        self._rust.set_calibrator_abc(
+            np.asarray(cal.a, dtype=float),
+            np.asarray(cal.b, dtype=float),
+            np.asarray(cal.c, dtype=float),
+        )
 
     def calibrate(self, normal: Any) -> Any:
         if self.affine_calibrator is None:
@@ -113,18 +121,6 @@ class ENNStatefulFitter:
                 params.aleatoric_variance_scale,
             ],
             dtype=float,
-        )
-
-    def _calibrator_rows(self) -> np.ndarray | None:
-        cal = self.affine_calibrator
-        if cal is None:
-            return None
-        return np.vstack(
-            [
-                np.asarray(cal.a, dtype=float),
-                np.asarray(cal.b, dtype=float),
-                np.asarray(cal.c, dtype=float),
-            ]
         )
 
     def posterior(
@@ -142,7 +138,6 @@ class ENNStatefulFitter:
             model.rust_backend,
             np.asarray(x, dtype=float),
             self._fit_scales(params),
-            self._calibrator_rows(),
             flags.exclude_nearest,
             flags.observation_noise,
         )
@@ -168,7 +163,6 @@ class ENNStatefulFitter:
             np.asarray(x, dtype=float),
             self._fit_scales(params),
             _to_rust_seeds(function_seeds),
-            self._calibrator_rows(),
             flags.exclude_nearest,
             flags.observation_noise,
         )
@@ -187,4 +181,5 @@ class ENNStatefulFitter:
         clip: float | None = None,
     ) -> np.ndarray:
         post = self.posterior(model, x, params, flags=flags)
-        return post.sample(num_samples, rng=rng, clip=clip)
+        seed = int(rng.integers(0, 2**63 - 1))
+        return post.sample(num_samples, seed, clip=clip)

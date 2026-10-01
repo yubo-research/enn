@@ -1,7 +1,7 @@
 //! Bindings for calibrator, normal intervals, and benchmarks.
 
 use ndarray::{Array2, ArrayD};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -213,4 +213,188 @@ pub fn choose_indices(n: usize, p: usize, seed: u64) -> PyResult<Vec<usize>> {
 #[doc = "kiss-coverage-off"]
 pub fn separable_unimodal<'py>(py: Python<'py>, x: PyReadonlyArray2<f64>) -> Bound<'py, PyArray2<f64>> {
     ennbo::benchmarks::separable_unimodal(x.as_array().view()).into_pyarray_bound(py)
+}
+
+/// Rust posterior value exposed to Python.
+#[pyclass(name = "ENNNormal")]
+pub struct PyENNNormal {
+    inner: ennbo::ENNNormal,
+}
+
+#[pymethods]
+impl PyENNNormal {
+    #[new]
+    #[pyo3(signature = (mu, se, se_epi, se_ale, idx=None, y_bounds=None))]
+    #[doc = "kiss-coverage-off"]
+    fn new(
+        mu: PyReadonlyArrayDyn<f64>,
+        se: PyReadonlyArrayDyn<f64>,
+        se_epi: PyReadonlyArrayDyn<f64>,
+        se_ale: PyReadonlyArrayDyn<f64>,
+        idx: Option<PyReadonlyArray2<i64>>,
+        y_bounds: Option<PyReadonlyArray2<f64>>,
+    ) -> Self {
+        let mut inner = ennbo::ENNNormal::new(
+            mu.as_array().to_owned(),
+            se.as_array().to_owned(),
+            se_epi.as_array().to_owned(),
+            se_ale.as_array().to_owned(),
+            idx.map(|v| v.as_array().to_owned()),
+        );
+        if let Some(bounds) = y_bounds {
+            inner = inner.with_y_bounds(bounds.as_array().to_owned());
+        }
+        Self { inner }
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn mu<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
+        self.inner.mu.clone().into_pyarray_bound(py)
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn se<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
+        self.inner.se.clone().into_pyarray_bound(py)
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn se_epi<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
+        self.inner.se_epi.clone().into_pyarray_bound(py)
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn se_ale<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
+        self.inner.se_ale.clone().into_pyarray_bound(py)
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn idx<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<i64>>> {
+        self.inner
+            .idx
+            .as_ref()
+            .map(|v| v.clone().into_dyn().into_pyarray_bound(py))
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn y_bounds<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
+        self.inner
+            .y_bounds
+            .as_ref()
+            .map(|v| v.clone().into_dyn().into_pyarray_bound(py))
+    }
+
+    #[pyo3(signature = (num_samples, seed, clip=None))]
+    #[doc = "kiss-coverage-off"]
+    fn sample<'py>(
+        &self,
+        py: Python<'py>,
+        num_samples: usize,
+        seed: u64,
+        clip: Option<f64>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+        let draws = self
+            .inner
+            .sample(num_samples, seed, clip)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(draws.into_pyarray_bound(py))
+    }
+
+    #[pyo3(signature = (level=0.95))]
+    #[doc = "kiss-coverage-off"]
+    #[allow(clippy::type_complexity)]
+    fn confidence_interval<'py>(
+        &self,
+        py: Python<'py>,
+        level: f64,
+    ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArrayDyn<f64>>)> {
+        let (lo, hi) = self
+            .inner
+            .confidence_interval(level)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok((lo.into_pyarray_bound(py), hi.into_pyarray_bound(py)))
+    }
+}
+
+#[pyclass(name = "Ackley")]
+pub struct PyAckley {
+    inner: ennbo::Ackley,
+}
+
+#[pymethods]
+impl PyAckley {
+    #[new]
+    #[doc = "kiss-coverage-off"]
+    fn new(noise: f64, seed: u64) -> Self {
+        Self { inner: ennbo::Ackley::new(noise, seed) }
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    #[allow(clippy::let_and_return)]
+    fn noise(&self) -> f64 {
+        let noise = self.inner.noise();
+        noise
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    #[allow(clippy::let_and_return)]
+    fn bounds(&self) -> [f64; 2] {
+        let bounds = self.inner.bounds();
+        bounds
+    }
+
+    #[doc = "kiss-coverage-off"]
+    fn evaluate<'py>(
+        &mut self,
+        py: Python<'py>,
+        x: PyReadonlyArray2<f64>,
+    ) -> Bound<'py, PyArray1<f64>> {
+        self.inner.evaluate(x.as_array()).into_pyarray_bound(py)
+    }
+}
+
+#[pyclass(name = "DoubleAckley")]
+pub struct PyDoubleAckley {
+    inner: ennbo::DoubleAckley,
+}
+
+#[pymethods]
+impl PyDoubleAckley {
+    #[new]
+    #[doc = "kiss-coverage-off"]
+    fn new(noise: f64, seed: u64) -> Self {
+        Self { inner: ennbo::DoubleAckley::new(noise, seed) }
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn noise(&self) -> f64 {
+        self.inner.noise()
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
+    fn bounds(&self) -> [f64; 2] {
+        self.inner.bounds()
+    }
+
+    #[doc = "kiss-coverage-off"]
+    fn evaluate<'py>(
+        &mut self,
+        py: Python<'py>,
+        x: PyReadonlyArray2<f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let out = self
+            .inner
+            .evaluate(x.as_array())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(out.into_pyarray_bound(py))
+    }
 }

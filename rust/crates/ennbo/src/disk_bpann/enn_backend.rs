@@ -307,7 +307,7 @@ mod tests {
             None,
             false,
             array![1.0, 1.0],
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         );
         assert!(matches!(result, Err(ENNError::InvalidParameter(_))));
     }

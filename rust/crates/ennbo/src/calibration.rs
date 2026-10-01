@@ -18,6 +18,21 @@ pub struct AffineCalibrator {
 }
 
 impl AffineCalibrator {
+    /// Rows are `(a, b, c)`, shape `(3, num_metrics)`.
+    pub fn from_rows(rows: ArrayView2<f64>) -> Result<Self, ENNError> {
+        if rows.nrows() != 3 {
+            return Err(ENNError::InvalidShape {
+                expected: vec![3, rows.ncols()],
+                got: rows.shape().to_vec(),
+            });
+        }
+        Ok(Self {
+            a: rows.row(0).to_owned(),
+            b: rows.row(1).to_owned(),
+            c: rows.row(2).to_owned(),
+        })
+    }
+
     pub fn identity(num_metrics: usize) -> Self {
         Self {
             a: Array1::zeros(num_metrics),

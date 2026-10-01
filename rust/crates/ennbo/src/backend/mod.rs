@@ -26,6 +26,18 @@ pub enum EnnStorage {
 }
 
 impl EnnStorage {
+    /// `work_dir` without an explicit storage choice means disk.
+    pub fn resolve(explicit: Option<EnnStorage>, work_dir: Option<&std::path::Path>) -> Self {
+        if let Some(storage) = explicit {
+            return storage;
+        }
+        if work_dir.is_some() {
+            Self::Disk
+        } else {
+            Self::InMemory
+        }
+    }
+
     pub fn from_env() -> Self {
         if std::env::var("ENN_WORK_DIR").is_ok() {
             Self::Disk
@@ -361,11 +373,11 @@ mod backend_dispatch_tests {
             None,
             false,
             Array1::ones(2),
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         assert_eq!(backend.len(), 2);
-        assert_eq!(backend.driver(), IndexDriver::Exact);
+        assert_eq!(backend.driver(), IndexDriver::Flat);
         backend
             .search(&array![[0.1, 0.2]].view(), 1, false)
             .unwrap();
@@ -406,7 +418,7 @@ mod backend_dispatch_tests {
             None,
             false,
             Array1::ones(2),
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         assert_eq!(backend.index_len(), backend.len());

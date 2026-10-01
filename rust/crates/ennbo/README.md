@@ -8,13 +8,13 @@ ENN estimates a function's value and epistemic uncertainty using K-Nearest Neigh
 
 - **EpistemicNearestNeighbors** — ENN surrogate with posterior computation
 - **TuRBO-ENN optimizer** — Thompson sampling, UCB, RAASP candidate generation
-- Neighbor search via Faiss in-memory (`IndexDriver::Exact`)
+- Neighbor search via Faiss in-memory (`IndexDriver::Flat`)
 - Disk mode: mmap `train_*.bin` + B+ANN index under `work_dir`
   - `IndexDriver::BpAnnDisk` — disk-backed B+ANN index via the `ennbo-bpann` crate
 
 ### Disk layout (`bpann_disk`)
 
-```
+```text
 work_dir/
   metadata.json       # index_backend: "bpann_disk", indexed_rows, num_dim, …
   train_x.bin         # f64 column mmap (posterior source of truth)
@@ -43,7 +43,7 @@ ndarray = "0.16"
 
 ```rust
 use ndarray::array;
-use ennbo::{EpistemicNearestNeighbors, ENNParams, index::IndexDriver};
+use ennbo::{EpistemicNearestNeighbors, ENNParams, IndexDriver, PosteriorFlags};
 
 let train_x = array![[0.0, 0.0], [1.0, 1.0]];
 let train_y = array![[0.0], [1.0]];
@@ -52,11 +52,12 @@ let model = EpistemicNearestNeighbors::new(
     train_y,
     None,
     false,
-    IndexDriver::Exact,
-)?;
-
-let params = ENNParams::new(5, 1.0, 0.1)?;
-let out = model.posterior(&query_x.view(), &params, &Default::default())?;
+    IndexDriver::Flat,
+).unwrap();
+let query_x = array![[0.5, 0.5]];
+let params = ENNParams::new(2, 1.0, 0.1).unwrap();
+let out = model.posterior(&query_x.view(), &params, &PosteriorFlags::default()).unwrap();
+assert_eq!(out.mu.shape(), &[1, 1]);
 ```
 
 ## Python bindings

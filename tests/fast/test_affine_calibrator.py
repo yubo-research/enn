@@ -147,8 +147,8 @@ def test_affine_apply_projects_mu_into_open_y_bounds():
     out = cal.apply(raw)
     assert np.all(out.mu > 0.0)
     assert np.all(out.mu < 1.0)
-    rng = np.random.default_rng(0)
-    samples = out.sample(8, rng=rng)
+    np.random.default_rng(0)
+    samples = out.sample(8, seed=0)
     assert np.all(np.isfinite(samples))
     assert np.all(samples > 0.0)
     assert np.all(samples < 1.0)
@@ -306,9 +306,8 @@ def test_fitter_sample_uses_calibrated_posterior():
     )
     q = x[:3]
     s1 = fitter.sample(model, q, params, 8, rng=np.random.default_rng(99))
-    s2 = fitter.posterior(model, q, params).sample(
-        8, rng=np.random.default_rng(99)
-    )
+    seed = int(np.random.default_rng(99).integers(0, 2**63 - 1))
+    s2 = fitter.posterior(model, q, params).sample(8, seed=seed)
     assert np.allclose(s1, s2)
 
 

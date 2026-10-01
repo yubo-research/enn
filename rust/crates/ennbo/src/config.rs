@@ -10,6 +10,9 @@ use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::TrustRegionConfig;
 use std::path::PathBuf;
 
+mod rules;
+pub use rules::{OptimizerInitKind, OptimizerRuleSet, TurboEnnBuilder, validate_optimizer_rules};
+
 /// Optimizer configuration.
 #[derive(Debug, Clone)]
 pub struct OptimizerConfig {
@@ -366,6 +369,74 @@ pub fn turbo_zero_config() -> OptimizerConfig {
     }
 }
 
+impl OptimizerConfig {
+    /// Reject illegal acquisition, surrogate, and fit-sample combinations.
+    pub fn validate(&self) -> Result<(), ENNError> {
+        self.validate_kind(OptimizerInitKind::Hybrid, true)
+    }
+
+    /// `nds` is true when Pareto search uses the non-dominated-sort optimizer.
+    pub fn validate_kind(&self, kind: OptimizerInitKind, nds: bool) -> Result<(), ENNError> {
+        let has_surrogate = matches!(self.surrogate, SurrogateConfig::ENN(_));
+        if kind == OptimizerInitKind::LhdOnly && has_surrogate {
+            return Err(ENNError::InvalidParameter(
+                "init_strategy='lhd_only' requires NoSurrogateConfig surrogate".into(),
+            ));
+        }
+        if !has_surrogate {
+            match self.acquisition {
+                AcquisitionConfig::Thompson => {
+                    return Err(ENNError::InvalidParameter(
+                        "DrawAcquisitionConfig (Thompson sampling) requires a surrogate. NoSurrogateConfig is not compatible with DrawAcquisitionConfig.".into(),
+                    ));
+                }
+                AcquisitionConfig::UCB { .. } => {
+                    return Err(ENNError::InvalidParameter(
+                        "UCBAcquisitionConfig requires a surrogate. NoSurrogateConfig is not compatible with UCBAcquisitionConfig.".into(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        if matches!(self.acquisition, AcquisitionConfig::Pareto) && !nds {
+            return Err(ENNError::InvalidParameter(
+                "ParetoAcquisitionConfig requires NDSOptimizerConfig".into(),
+            ));
+        }
+        if let SurrogateConfig::ENN(enn) = &self.surrogate {
+            if !matches!(self.acquisition, AcquisitionConfig::Pareto | AcquisitionConfig::Random)
+                && enn.num_fit_samples == 0
+            {
+                return Err(ENNError::InvalidParameter(format!(
+                    "enn.num_fit_samples required for acq_type={:?}",
+                    self.acquisition
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Start a TuRBO-ENN builder. [`TurboEnnBuilder::build`] runs [`Self::validate`].
+    pub fn turbo_enn() -> TurboEnnBuilder {
+        TurboEnnBuilder {
+            config: turbo_enn_config(),
+            kind: OptimizerInitKind::Hybrid,
+            nds: true,
+            num_init: None,
+        }
+    }
+}
+
+/// Error when a non-Pareto TuRBO-ENN config omits `num_fit_samples`.
+pub fn require_num_fit_samples(is_pareto: bool, num_fit_samples: Option<usize>) -> Result<(), ENNError> {
+    if !is_pareto && num_fit_samples.is_none() {
+        return Err(ENNError::InvalidParameter(
+            "enn.num_fit_samples required for non-Pareto acquisition".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Create an LHD-only configuration.
 pub fn lhd_only_config() -> OptimizerConfig {
     OptimizerConfig {
@@ -493,7 +564,7 @@ mod tests {
         let overrides = ConfigOverrides {
             acquisition: Some(AcquisitionConfig::Thompson),
             candidate_rv: Some(CandidateRV::Sobol),
-            index_driver: Some(IndexDriver::Exact),
+            index_driver: Some(IndexDriver::Flat),
             num_fit_samples: Some(123),
             num_fit_candidates: Some(456),
             scale_x: Some(true),
@@ -506,7 +577,7 @@ mod tests {
         assert!(matches!(applied.acquisition, AcquisitionConfig::Thompson));
         assert_eq!(applied.candidates.candidate_rv, CandidateRV::Sobol);
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
-            assert_eq!(enn.index_driver, IndexDriver::Exact);
+            assert_eq!(enn.index_driver, IndexDriver::Flat);
             assert_eq!(enn.num_fit_samples, 123);
             assert_eq!(enn.num_fit_candidates, 456);
             assert!(enn.scale_x);

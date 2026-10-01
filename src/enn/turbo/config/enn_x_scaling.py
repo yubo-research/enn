@@ -6,8 +6,6 @@ from enum import Enum, auto
 
 from enn._rust import validate_tied_dims as _validate_tied_dims
 
-from .enn_index_driver import ENNIndexDriver
-
 
 class ENNScaleX(Enum):
     """Whether ENN divides ``x`` by per-dimension data scales (running standard deviations).
@@ -48,28 +46,3 @@ def validate_tied_dims(tied_dims: Sequence[Sequence[int]] | None, num_dim: int) 
     groups = tuple(tuple(operator.index(j) for j in g) for g in tied_dims)
     _validate_tied_dims([list(g) for g in groups], int(num_dim))
     return groups
-
-
-def validate_scale_x(scale_x: ENNScaleX, index_driver: ENNIndexDriver) -> None:
-    if not isinstance(scale_x, ENNScaleX):
-        raise ValueError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
-    if not isinstance(index_driver, ENNIndexDriver):
-        raise ValueError(f"index_driver must be an ENNIndexDriver, got {index_driver!r}")
-
-
-def validate_metric_learning(
-    metric_learning: ENNMetricLearning,
-    index_driver: ENNIndexDriver,
-    scale_x: ENNScaleX = ENNScaleX.OFF,
-) -> None:
-    if not isinstance(metric_learning, ENNMetricLearning):
-        raise ValueError(f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}")
-    if metric_learning == ENNMetricLearning.NONE:
-        return
-    if index_driver != ENNIndexDriver.BPANN_DISK:
-        raise ValueError(
-            f"metric_learning={metric_learning.name} requires index_driver=BPANN_DISK, "
-            f"got {index_driver.name}"
-        )
-    if scale_x == ENNScaleX.ON:
-        raise ValueError(f"metric_learning={metric_learning.name} requires scale_x=OFF")

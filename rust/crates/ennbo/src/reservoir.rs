@@ -1,5 +1,7 @@
 //! Algorithm R reservoir shared by the AUTO metric and the Python sampler.
 
+use ndarray::ArrayView2;
+
 use crate::error::ENNError;
 use crate::numpy_pcg::NumpyPcg64;
 
@@ -106,6 +108,36 @@ impl RowReservoir {
             self.xs = xs;
             self.ys = ys;
             self.capacity = capacity;
+        }
+        Ok(())
+    }
+
+    /// Append every row. `x` is `(n, num_dim)` and `y` is `(n, num_outputs)`.
+    pub fn push_rows(&mut self, x: &ArrayView2<f64>, y: &ArrayView2<f64>) -> Result<(), ENNError> {
+        if x.nrows() != y.nrows() {
+            return Err(ENNError::InvalidParameter(format!(
+                "x has {} rows but y has {}",
+                x.nrows(),
+                y.nrows()
+            )));
+        }
+        if x.ncols() != self.num_dim {
+            return Err(ENNError::InvalidShape {
+                expected: vec![x.nrows(), self.num_dim],
+                got: vec![x.nrows(), x.ncols()],
+            });
+        }
+        if y.ncols() != self.num_outputs {
+            return Err(ENNError::InvalidParameter(format!(
+                "y has {} columns, expected {}",
+                y.ncols(),
+                self.num_outputs
+            )));
+        }
+        for i in 0..x.nrows() {
+            let xr: Vec<f64> = x.row(i).iter().copied().collect();
+            let yr: Vec<f64> = y.row(i).iter().copied().collect();
+            self.push_row(&xr, &yr);
         }
         Ok(())
     }

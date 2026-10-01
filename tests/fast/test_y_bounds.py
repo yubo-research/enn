@@ -36,8 +36,8 @@ def test_public_posterior_and_train_y_natural_logit():
     post = model.posterior(train_x, params=params)
     assert np.all(post.mu > 0.0) and np.all(post.mu < 1.0)
 
-    rng = np.random.default_rng(0)
-    draws = post.sample(32, rng)
+    np.random.default_rng(0)
+    draws = post.sample(32, seed=0)
     assert draws.shape == (*post.mu.shape, 32)
     assert np.all(draws > 0.0) and np.all(draws < 1.0)
 
@@ -54,7 +54,7 @@ def test_oob_rejected():
 
 def test_shape_strict_no_broadcast():
     bounds = np.array([[0.0, 1.0]], dtype=float)
-    with pytest.raises(ValueError, match="num_metrics"):
+    with pytest.raises(ValueError, match=r"expected \[2, 2\]"):
         EpistemicNearestNeighbors(
             np.array([[0.0], [1.0]], dtype=float),
             np.array([[0.1, 0.2], [0.3, 0.4]], dtype=float),
@@ -72,8 +72,8 @@ def test_unbounded_default_matches_identity():
         aleatoric_variance_scale=0.0,
     )
     post = model.posterior(train_x, params=params)
-    rng = np.random.default_rng(1)
-    draws = post.sample(8, rng)
+    np.random.default_rng(1)
+    draws = post.sample(8, seed=1)
     assert np.isfinite(draws).all()
 
 

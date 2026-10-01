@@ -120,6 +120,9 @@ pub fn subsample_loglik_model<R: Rng>(
     subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
 }
 
+/// Subsample count used when the caller omits `P`.
+pub const DEFAULT_SUBSAMPLE_P: usize = 10;
+
 pub fn subsample_loglik<R: Rng>(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -270,7 +273,7 @@ mod tests {
         let train_x = array![[0.0, 0.0]];
         let train_y = array![[0.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
 
         let x = array![[0.5, 0.5]];
@@ -294,7 +297,7 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng, false).unwrap();
+        let result = fitter.ask(&model, Some(5), 3, None, &mut rng, false).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -313,7 +316,7 @@ mod tests {
         let warm_start = ENNParams::new(2, 1.5, 0.2).unwrap();
 
         let result = fitter
-            .ask(&model, 5, 3, Some(&warm_start), &mut rng, false)
+            .ask(&model, Some(5), 3, Some(&warm_start), &mut rng, false)
             .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
@@ -329,7 +332,7 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng, false).unwrap();
+        let result = fitter.ask(&model, Some(5), 3, None, &mut rng, false).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -341,7 +344,7 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5]];
         let train_y = array![[0.0, 1.0], [1.0, 2.0], [1.0, 0.0], [2.0, 1.0], [1.0, 1.5]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
 
         let mut rng = StdRng::seed_from_u64(42);
@@ -350,7 +353,7 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng, false).unwrap();
+        let result = fitter.ask(&model, Some(5), 3, None, &mut rng, false).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -489,7 +492,7 @@ mod tests {
             train_y,
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
             EnnStorage::InMemory,
             None,
             Some(bounds),

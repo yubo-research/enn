@@ -71,6 +71,10 @@ pub struct Optimizer {
     sobol_seed_base: u64,
     telemetry: Telemetry,
     incumbent_tracker: IncrementalIncumbentTracker,
+    /// RNG owned for the life of the optimizer. `ask` and `tell` draw from it.
+    rng: StdRng,
+    /// `Some(true)` after the first non-empty tell that included `yvar`.
+    yvar_on_tell: Option<bool>,
 }
 
 impl Optimizer {
@@ -120,6 +124,7 @@ impl Optimizer {
         let mut seed_bytes = [0u8; 8];
         rng.fill_bytes(&mut seed_bytes);
         let sobol_seed_base = u64::from_le_bytes(seed_bytes) % (1u64 << 31);
+        let owned_rng = StdRng::from_rng(rng).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
         let num_metrics = tr_state.num_metrics();
         let tracker_m = match &config.surrogate {
             SurrogateConfig::ENN(enn_config) => tracker_m_from_enn_k(enn_config.k),
@@ -150,18 +155,29 @@ impl Optimizer {
             sobol_seed_base,
             telemetry: Telemetry::default(),
             incumbent_tracker,
+            rng: owned_rng,
+            yvar_on_tell: None,
         })
     }
 
-    /// Ask for candidates.
-    pub fn ask(&mut self, num_arms: usize, rng: &mut dyn RngCore) -> Result<Array2<f64>, ENNError> {
+    /// Ask for `num_arms` points in natural units (inside `bounds`).
+    ///
+    /// Draws from the `StdRng` stored at construction. Rejects `num_arms == 0`.
+    pub fn ask(&mut self, num_arms: usize) -> Result<Array2<f64>, ENNError> {
+        if num_arms == 0 {
+            return Err(ENNError::InvalidParameter(format!(
+                "num_arms must be > 0, got {num_arms}"
+            )));
+        }
         let start = std::time::Instant::now();
+        let mut rng = self.rng.clone();
 
         let strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
-        let result = strategy.ask(self, num_arms, &mut telemetry, rng);
+        let result = strategy.ask(self, num_arms, &mut telemetry, &mut rng);
         self.strategy = strategy;
         self.telemetry = telemetry;
+        self.rng = rng;
 
         self.telemetry.dt_gen = start.elapsed().as_secs_f64();
         if result.is_ok() {
@@ -169,18 +185,50 @@ impl Optimizer {
                 surrogate.schedule_background_flush()?;
             }
         }
-        result
+        let unit = result?;
+        Ok(crate::candidates::from_unit(&unit.view(), &self.bounds.view()))
     }
 
-    /// Tell observations with optional observation noise (`yvar`).
+    /// Record observations in natural units. `x` is stored in the unit cube.
+    ///
+    /// The first non-empty tell fixes whether `yvar` is required. Later tells
+    /// must match. Zero rows return `Ok(())` and do not change that flag.
+    /// Draws from the owned `StdRng`.
     pub fn tell(
         &mut self,
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
-        rng: &mut dyn RngCore,
     ) -> Result<(), ENNError> {
+        if x.ncols() != self.num_dim {
+            return Err(ENNError::InvalidShape {
+                expected: vec![x.nrows(), self.num_dim],
+                got: vec![x.nrows(), x.ncols()],
+            });
+        }
+        if y.nrows() != x.nrows() {
+            return Err(ENNError::InvalidShape {
+                expected: vec![x.nrows(), y.ncols()],
+                got: vec![y.nrows(), y.ncols()],
+            });
+        }
+        if x.nrows() == 0 {
+            return Ok(());
+        }
+        let has_yvar = yvar.is_some();
+        match self.yvar_on_tell {
+            None => self.yvar_on_tell = Some(has_yvar),
+            Some(expected) if expected != has_yvar => {
+                return Err(ENNError::InvalidParameter(format!(
+                    "y_var must be {} on every tell()",
+                    if expected { "provided" } else { "omitted" }
+                )));
+            }
+            Some(_) => {}
+        }
+        let x_unit = crate::candidates::to_unit(x, &self.bounds.view());
         let start = std::time::Instant::now();
+        let mut rng = self.rng.clone();
 
         if let Some(surrogate) = self.surrogate.as_ref() {
             surrogate.wait_for_background_flush()?;
@@ -188,9 +236,10 @@ impl Optimizer {
 
         let mut strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
-        let result = strategy.tell(self, x, y, yvar, &mut telemetry, rng);
+        let result = strategy.tell(self, &x_unit.view(), y, yvar, &mut telemetry, &mut rng);
         self.strategy = strategy;
         self.telemetry = telemetry;
+        self.rng = rng;
 
         self.telemetry.dt_tell = start.elapsed().as_secs_f64();
         if result.is_ok() && x.nrows() < 64 {
@@ -254,8 +303,8 @@ impl Optimizer {
         }
     }
 
-    /// Get observations in unit space (ENN model or fallback store).
-    pub fn x_obs(&self) -> Option<Array2<f64>> {
+    /// Stored `x` in the unit cube (internal).
+    pub(crate) fn x_obs_unit(&self) -> Option<Array2<f64>> {
         if let Some(surrogate) = self.surrogate.as_ref() {
             return surrogate.observations_x().ok().flatten();
         }
@@ -263,6 +312,12 @@ impl Optimizer {
             return None;
         }
         Some(obs_access::build_obs_array2(&self.fallback_x))
+    }
+
+    /// Observations in natural units.
+    pub fn x_obs(&self) -> Option<Array2<f64>> {
+        let unit = self.x_obs_unit()?;
+        Some(crate::candidates::from_unit(&unit.view(), &self.bounds.view()))
     }
 
     /// Get observation values in natural units (ENN model or fallback store).
@@ -299,9 +354,17 @@ impl Optimizer {
         observation_delta::observation_delta_from_batch(old_n, x, y)
     }
 
-    /// Get incumbent x in unit space.
-    pub fn incumbent_x_unit(&self) -> Option<&Array1<f64>> {
+    /// Incumbent `x` in the unit cube. Internal; callers use [`Self::incumbent_x`].
+    pub(crate) fn incumbent_x_unit(&self) -> Option<&Array1<f64>> {
         self.incumbent_x_unit.as_ref()
+    }
+
+    /// Incumbent `x` in natural units.
+    pub fn incumbent_x(&self) -> Option<Array1<f64>> {
+        let unit = self.incumbent_x_unit.as_ref()?;
+        let row = unit.clone().insert_axis(ndarray::Axis(0));
+        let natural = crate::candidates::from_unit(&row.view(), &self.bounds.view());
+        Some(natural.row(0).to_owned())
     }
 
     /// Get incumbent y scalar.

@@ -4,6 +4,8 @@ from typing import Any
 
 
 def validate_optimizer_config(cfg: Any) -> None:
+    from enn._rust import validate_optimizer_rules
+
     from .acquisition import (
         DrawAcquisitionConfig,
         NDSOptimizerConfig,
@@ -12,22 +14,19 @@ def validate_optimizer_config(cfg: Any) -> None:
     )
     from .surrogate import NoSurrogateConfig
 
-    if type(cfg.init.init_strategy).__name__ == "LHDOnlyInit":
-        if not isinstance(cfg.surrogate, NoSurrogateConfig):
-            raise ValueError(
-                "init_strategy='lhd_only' requires NoSurrogateConfig surrogate"
-            )
-    if isinstance(cfg.surrogate, NoSurrogateConfig):
-        if isinstance(cfg.acquisition, DrawAcquisitionConfig):
-            raise ValueError(
-                "DrawAcquisitionConfig (Thompson sampling) requires a surrogate. "
-                "NoSurrogateConfig is not compatible with DrawAcquisitionConfig."
-            )
-        if isinstance(cfg.acquisition, UCBAcquisitionConfig):
-            raise ValueError(
-                "UCBAcquisitionConfig requires a surrogate. "
-                "NoSurrogateConfig is not compatible with UCBAcquisitionConfig."
-            )
-    if isinstance(cfg.acquisition, ParetoAcquisitionConfig):
-        if not isinstance(cfg.acq_optimizer, NDSOptimizerConfig):
-            raise ValueError("ParetoAcquisitionConfig requires NDSOptimizerConfig")
+    if isinstance(cfg.acquisition, UCBAcquisitionConfig):
+        acquisition = "ucb"
+    elif isinstance(cfg.acquisition, DrawAcquisitionConfig):
+        acquisition = "thompson"
+    elif isinstance(cfg.acquisition, ParetoAcquisitionConfig):
+        acquisition = "pareto"
+    else:
+        acquisition = "random"
+    validate_optimizer_rules(
+        [
+            type(cfg.init.init_strategy).__name__ == "LHDOnlyInit",
+            not isinstance(cfg.surrogate, NoSurrogateConfig),
+            isinstance(cfg.acq_optimizer, NDSOptimizerConfig),
+        ],
+        acquisition,
+    )

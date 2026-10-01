@@ -771,7 +771,7 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
 
     data_rng = np.random.default_rng(config.seed)
     fit_rng = np.random.default_rng(config.seed + 1)
-    sample_rng = np.random.default_rng(config.seed + 2)
+    np.random.default_rng(config.seed + 2)
     x, y = make_draw_observations(config.num_obs, num_dim=config.num_dim, rng=data_rng)
     x_test, y_test = make_draw_observations(
         config.num_test, num_dim=config.num_dim, rng=data_rng
@@ -806,7 +806,7 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     avg_lik_post = average_likelihood(y_test, post_lik.mu, post_lik.se)
 
     post_rms = model.posterior(x_test, params=fitted, flags=DRAW_FLAGS_NO_OBS)
-    post_rms_draws = post_rms.sample(config.num_draws, sample_rng)
+    post_rms_draws = post_rms.sample(config.num_draws, seed=0)
     post_argmin_rms = argmin_rms(x_test, post_rms_draws)
     post_argmin_hit_rate = argmin_hit_rate(x_test, post_rms_draws)
     eval_post_s = time.perf_counter() - t1

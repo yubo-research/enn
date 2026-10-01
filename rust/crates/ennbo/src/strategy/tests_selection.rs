@@ -66,7 +66,7 @@ fn test_thompson_sampling_uses_posterior_sample() {
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.8, 0.2], [0.5, 0.5]];
     let y_fit = array![[0.0], [1.0], [0.5], [0.4], [0.6]];
     optimizer
-        .tell(&x_fit.view(), &y_fit.view(), None, &mut rng)
+        .tell(&x_fit.view(), &y_fit.view(), None)
         .unwrap();
 
     let tel_after_tell = optimizer.telemetry();
@@ -76,7 +76,7 @@ fn test_thompson_sampling_uses_posterior_sample() {
     );
 
     let tel_before_ask = optimizer.telemetry().clone();
-    let _candidates = optimizer.ask(2, &mut rng).unwrap();
+    let _candidates = optimizer.ask(2).unwrap();
     let tel_after_ask = optimizer.telemetry();
     assert!(
         tel_after_ask.dt_sel > 0.0 || tel_after_ask.dt_sel != tel_before_ask.dt_sel,
@@ -94,11 +94,11 @@ fn test_thompson_sampling_uses_posterior_sample() {
     )
     .unwrap();
     optimizer2
-        .tell(&x_fit.view(), &y_fit.view(), None, &mut rng2)
+        .tell(&x_fit.view(), &y_fit.view(), None)
         .unwrap();
 
-    let _candidates1 = optimizer.ask(2, &mut rng).unwrap();
-    let _candidates2 = optimizer2.ask(2, &mut rng2).unwrap();
+    let _candidates1 = optimizer.ask(2).unwrap();
+    let _candidates2 = optimizer2.ask(2).unwrap();
 }
 
 #[test]
@@ -110,11 +110,11 @@ fn test_hybrid_init_respects_strategy_type_random() {
     let mut optimizer =
         Optimizer::new_with_strategy(bounds, turbo_zero_config(), strategy, &mut rng).unwrap();
 
-    let x1 = optimizer.ask(2, &mut rng).unwrap();
+    let x1 = optimizer.ask(2).unwrap();
     assert_eq!(x1.nrows(), 2);
 
     let y1 = array![[0.1], [0.2]];
-    optimizer.tell(&x1.view(), &y1.view(), None, &mut rng).unwrap();
+    optimizer.tell(&x1.view(), &y1.view(), None).unwrap();
 
     let progress = optimizer.init_progress();
     assert!(progress.is_some(), "Should be in init phase");
@@ -122,16 +122,16 @@ fn test_hybrid_init_respects_strategy_type_random() {
     assert_eq!(done, 2);
     assert_eq!(total, 4);
 
-    let x2 = optimizer.ask(2, &mut rng).unwrap();
+    let x2 = optimizer.ask(2).unwrap();
     let y2 = array![[0.3], [0.4]];
-    optimizer.tell(&x2.view(), &y2.view(), None, &mut rng).unwrap();
+    optimizer.tell(&x2.view(), &y2.view(), None).unwrap();
 
     assert!(
         optimizer.init_progress().is_none(),
         "Should have exited init phase"
     );
 
-    let x3 = optimizer.ask(2, &mut rng).unwrap();
+    let x3 = optimizer.ask(2).unwrap();
     assert_eq!(x3.nrows(), 2);
 }
 
@@ -152,7 +152,7 @@ fn test_telemetry_populated_after_operations() {
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.5, 0.5]];
     let y_fit = array![[0.0], [1.0], [0.5]];
     optimizer
-        .tell(&x_fit.view(), &y_fit.view(), None, &mut rng)
+        .tell(&x_fit.view(), &y_fit.view(), None)
         .unwrap();
 
     let tel1 = optimizer.telemetry();
@@ -162,7 +162,7 @@ fn test_telemetry_populated_after_operations() {
         tel1.dt_fit
     );
 
-    let _candidates = optimizer.ask(2, &mut rng).unwrap();
+    let _candidates = optimizer.ask(2).unwrap();
 
     let tel2 = optimizer.telemetry();
     assert!(
@@ -221,8 +221,8 @@ fn ask_scores_full_configured_candidate_pool() {
         Optimizer::new_with_strategy(bounds, config, Strategy::turbo(), &mut rng).unwrap();
     let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8]];
     let yf = array![[0.0], [1.0], [0.5]];
-    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
-    let _ = opt.ask(num_arms, &mut rng).unwrap();
+    opt.tell(&xf.view(), &yf.view(), None).unwrap();
+    let _ = opt.ask(num_arms).unwrap();
     assert_eq!(
         opt.telemetry().num_candidates, expected_pool,
         "ask must score the full configured RAASP pool (no silent cap)"
@@ -248,7 +248,7 @@ fn select_with_functions_direct_smoke() {
             .unwrap();
     let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8]];
     let yf = array![[0.0], [1.0], [0.5]];
-    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
+    opt.tell(&xf.view(), &yf.view(), None).unwrap();
     let sur = opt.surrogate().expect("enn surrogate");
 
     let out_ts = select_with_thompson(&opt, sur, &x_cand.view(), 2, &mut rng).unwrap();
@@ -268,20 +268,19 @@ fn select_with_pareto_scores_naturalized_under_y_bounds() {
     use crate::optimizer_factory::create_optimizer_enn_with_overrides;
 
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-    let mut rng = StdRng::seed_from_u64(303);
     let overrides = ConfigOverrides {
         y_bounds: Some(array![[0.0, 1.0]]),
         acquisition: Some(AcquisitionConfig::Pareto),
         ..Default::default()
     };
     let mut opt =
-        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+        create_optimizer_enn_with_overrides(bounds, Some(3), Some(0), 0, Some(&overrides)).unwrap();
     if let SurrogateConfig::ENN(enn) = &opt.config().surrogate {
         assert!(enn.y_bounds.is_some());
     }
     let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.7, 0.3]];
     let yf = array![[0.1], [0.9], [0.4], [0.6]];
-    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
+    opt.tell(&xf.view(), &yf.view(), None).unwrap();
     let sur = opt.surrogate().expect("enn surrogate");
     let x_cand = array![
         [0.1, 0.2],
@@ -308,17 +307,16 @@ fn select_with_thompson_scores_naturalized_under_y_bounds() {
     use crate::optimizer_factory::create_optimizer_enn_with_overrides;
 
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-    let mut rng = StdRng::seed_from_u64(505);
     let overrides = ConfigOverrides {
         y_bounds: Some(array![[0.0, 1.0]]),
         acquisition: Some(AcquisitionConfig::Thompson),
         ..Default::default()
     };
     let mut opt =
-        create_optimizer_enn_with_overrides(bounds, 3, 0, &mut rng, Some(&overrides)).unwrap();
+        create_optimizer_enn_with_overrides(bounds, Some(3), Some(0), 0, Some(&overrides)).unwrap();
     let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.7, 0.3]];
     let yf = array![[0.1], [0.9], [0.4], [0.6]];
-    opt.tell(&xf.view(), &yf.view(), None, &mut rng).unwrap();
+    opt.tell(&xf.view(), &yf.view(), None).unwrap();
     let sur = opt.surrogate().expect("enn surrogate");
     let x_cand = array![[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]];
     let mut rng_sel = StdRng::seed_from_u64(606);

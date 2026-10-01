@@ -60,6 +60,9 @@ ackley_core = _ext.util.ackley_core
 separable_unimodal = _ext.util.separable_unimodal
 choose_indices = _ext.util.choose_indices
 NumpyNormal = _ext.util.NumpyNormal
+ENNNormal = _ext.util.ENNNormal
+Ackley = _ext.util.Ackley
+DoubleAckley = _ext.util.DoubleAckley
 ENNParams = _ext.model.ENNParams
 set_unscaled_dims = _ext.model.set_unscaled_dims
 ENNStatefulFitter = _ext.fit.ENNStatefulFitter
@@ -68,6 +71,8 @@ Optimizer = _ext.optimizer.Optimizer
 create_optimizer_enn = _ext.optimizer.create_optimizer_enn
 create_optimizer_zero = _ext.optimizer.create_optimizer_zero
 create_optimizer_lhd = _ext.optimizer.create_optimizer_lhd
+require_num_fit_samples = _ext.optimizer.require_num_fit_samples
+validate_optimizer_rules = _ext.optimizer.validate_optimizer_rules
 
 
 __all__ = [

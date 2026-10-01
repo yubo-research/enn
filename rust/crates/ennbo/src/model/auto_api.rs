@@ -4,6 +4,7 @@ use ndarray::{Array1, ArrayView2};
 
 use super::EpistemicNearestNeighbors;
 use crate::error::ENNError;
+use crate::index::is_disk_index_driver;
 use crate::metric_auto::{AutoMetric, MetricSnapshot};
 use crate::metric_weights::validate_tied_dims;
 
@@ -32,6 +33,11 @@ impl EpistemicNearestNeighbors {
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
     ) -> Result<(), ENNError> {
+        if !is_disk_index_driver(self.backend_driver()) || self.scale_x {
+            return Err(ENNError::InvalidParameter(
+                "metric_learning=Auto requires BpAnnDisk and scale_x=false".into(),
+            ));
+        }
         validate_tied_dims(&tied, self.num_dim)?;
         let uniq: Vec<usize> = {
             let mut flat: Vec<usize> = tied.iter().flatten().copied().collect();
