@@ -201,18 +201,12 @@ pub fn affine_apply<'py>(
 #[doc = "kiss-coverage-off"]
 pub fn choose_indices(n: usize, p: usize, seed: u64) -> PyResult<Vec<usize>> {
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::SeedableRng;
     if p > n {
         return Err(PyValueError::new_err("p > n"));
     }
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut idx: Vec<usize> = (0..n).collect();
-    for i in 0..p {
-        let j = rng.gen_range(i..n);
-        idx.swap(i, j);
-    }
-    idx.truncate(p);
-    Ok(idx)
+    Ok(ennbo::calibration::sample_prefix(n, p, &mut rng))
 }
 
 #[pyfunction]

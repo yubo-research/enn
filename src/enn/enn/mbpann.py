@@ -7,13 +7,13 @@ import numpy as np
 from enn import _rust
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
-DEFAULT_REBUILD_DRIFT = float(np.log(2.0))
-DRIFT_WEIGHT_FLOOR = float(np.log(1e4))
-AUTO_MIN_HELDOUT_GAIN = 0.0
-AUTO_RESERVOIR_CAPACITY = 1000
-AUTO_K = 10
-AUTO_REFIT_GROWTH = 1.5
-AUTO_RESCALE_TOL = 0.01
+DEFAULT_REBUILD_DRIFT = float(_rust.DEFAULT_REBUILD_DRIFT)
+DRIFT_WEIGHT_FLOOR = float(_rust.DRIFT_WEIGHT_FLOOR)
+AUTO_MIN_HELDOUT_GAIN = float(_rust.AUTO_MIN_HELDOUT_GAIN)
+AUTO_RESERVOIR_CAPACITY = int(_rust.AUTO_RESERVOIR_CAPACITY)
+AUTO_K = int(_rust.AUTO_K)
+AUTO_REFIT_GROWTH = float(_rust.AUTO_REFIT_GROWTH)
+AUTO_RESCALE_TOL = float(_rust.AUTO_RESCALE_TOL)
 
 
 def auto_uses_learned_metric(heldout_gain: float) -> bool:
@@ -35,16 +35,8 @@ class MBPANNMetric:
     ) -> None:
         if model.metric_learning != ENNMetricLearning.AUTO:
             raise ValueError("MBPANNMetric requires metric_learning=AUTO")
-        if not rebuild_drift >= 0:
-            raise ValueError(f"rebuild_drift must be >= 0, got {rebuild_drift}")
-        if not refit_growth > 1:
-            raise ValueError(f"refit_growth must be > 1, got {refit_growth}")
         if seed < 0:
             raise ValueError(f"seed must be >= 0, got {seed}")
-        if reservoir_capacity < 1:
-            raise ValueError(
-                f"reservoir_capacity must be >= 1, got {reservoir_capacity}"
-            )
         groups = [list(map(int, g)) for g in tied_dims]
         stored = [list(map(int, g)) for g in _rust.metric_tied(model.rust_backend)]
         if groups != stored:
@@ -61,36 +53,23 @@ class MBPANNMetric:
         self._model = model
         self._rebuild_drift = float(rebuild_drift)
 
+    def _snapshot(self):
+        snap = _rust.metric_snapshot(self._model.rust_backend)
+        if snap is None:
+            raise RuntimeError("AUTO metric is missing")
+        return snap
+
+    def __getattr__(self, name: str):
+        try:
+            return getattr(self._snapshot(), name)
+        except AttributeError:
+            raise AttributeError(
+                f"MBPANNMetric has no attribute {name!r}"
+            ) from None
+
     @property
     def weights(self) -> np.ndarray:
-        w = _rust.metric_weights(self._model.rust_backend)
-        return (
-            np.ones(self._model._num_dim) if w is None else np.asarray(w, dtype=float)
-        )
-
-    @property
-    def heldout_gain(self):
-        return _rust.metric_heldout_gain(self._model.rust_backend)
-
-    @property
-    def num_seen(self) -> int:
-        return int(_rust.metric_num_seen(self._model.rust_backend))
-
-    @property
-    def num_refits(self) -> int:
-        return int(_rust.metric_num_refits(self._model.rust_backend))
-
-    @property
-    def num_rescales(self) -> int:
-        return int(_rust.metric_num_rescales(self._model.rust_backend))
-
-    @property
-    def num_rebuilds(self) -> int:
-        return int(_rust.metric_num_rebuilds(self._model.rust_backend))
-
-    @property
-    def uses_learned_metric(self) -> bool:
-        return bool(_rust.metric_uses_learned(self._model.rust_backend))
+        return np.asarray(self._snapshot().weights, dtype=float)
 
     def set_weights(self, weights: np.ndarray) -> bool:
         w = np.asarray(weights, dtype=float)
@@ -106,8 +85,7 @@ class MBPANNMetric:
 
     def drift(self, weights: np.ndarray) -> float:
         w = np.asarray(weights, dtype=float)
-        built_w = _rust.metric_built(self._model.rust_backend)
-        built = self.weights if built_w is None else np.asarray(built_w, dtype=float)
+        built = np.asarray(self._snapshot().built, dtype=float)
         if w.shape != built.shape:
             raise ValueError(f"weights shape {w.shape} != built shape {built.shape}")
         return float(_rust.weight_drift(w, built))

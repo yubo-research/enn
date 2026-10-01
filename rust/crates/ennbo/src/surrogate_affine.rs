@@ -13,21 +13,18 @@ pub fn fit_calibrator<R: Rng>(
     params: &ENNParams,
     num_fit_samples: usize,
     rng: &mut R,
+    observation_noise: bool,
 ) -> Result<AffineCalibrator, ENNError> {
     let n = model.len();
     let metrics = model.num_outputs();
     if n < 2 || num_fit_samples == 0 {
         return Ok(AffineCalibrator::identity(metrics));
     }
-    let p = num_fit_samples.min(n);
-    let mut order: Vec<usize> = (0..n).collect();
-    for i in 0..p {
-        let j = i + rng.gen_range(0..(n - i));
-        order.swap(i, j);
-    }
-    order.truncate(p);
+    let order = crate::calibration::sample_prefix(n, num_fit_samples.min(n), rng);
     let (x, y, _) = model.train_rows_at(&order)?;
-    let flags = PosteriorFlags::new().with_exclude_nearest(true);
+    let flags = PosteriorFlags::new()
+        .with_exclude_nearest(true)
+        .with_observation_noise(observation_noise);
     let post = model.posterior(&x.view(), params, &flags)?;
     let mu = to_2d(&post.mu)?;
     let se = to_2d(&post.se)?;
@@ -39,34 +36,34 @@ pub fn apply_prediction(
     mu: Array2<f64>,
     se: Array2<f64>,
     y_bounds: &Array2<f64>,
-) -> (Array2<f64>, Array2<f64>) {
-    let mut se_p = se;
-    for j in 0..se_p.ncols() {
-        for i in 0..se_p.nrows() {
-            se_p[[i, j]] *= cal.c[j];
-        }
-    }
-    let mu_p = cal.map_mu(&mu, Some(y_bounds), Some(&se_p));
-    (mu_p, se_p)
+) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
+    let se_p =
+        crate::calibration::scale_matrix_columns(&se, crate::calibration::coeff_slice(&cal.c)?)?;
+    let mu_p = cal.map_mu(&mu, Some(y_bounds), Some(&se_p))?;
+    Ok((mu_p, se_p))
 }
 
-pub fn apply_draws(cal: &AffineCalibrator, draws: &Array3<f64>, mu: &Array2<f64>, se: &Array2<f64>, y_bounds: &Array2<f64>) -> Array3<f64> {
+pub fn apply_draws(
+    cal: &AffineCalibrator,
+    draws: &Array3<f64>,
+    mu: &Array2<f64>,
+    se: &Array2<f64>,
+    y_bounds: &Array2<f64>,
+) -> Result<Array3<f64>, ENNError> {
     let mut out = draws.clone();
-    for s in 0..draws.shape()[0] {
-        for i in 0..draws.shape()[1] {
-            for j in 0..draws.shape()[2] {
-                out[[s, i, j]] = cal.a[j] + cal.b[j] * mu[[i, j]] + cal.c[j] * (draws[[s, i, j]] - mu[[i, j]]);
-            }
-        }
+    for seed in 0..draws.shape()[0] {
+        let mapped = crate::calibration::map_draws_with(
+            crate::calibration::coeff_slice(&cal.a)?,
+            crate::calibration::coeff_slice(&cal.b)?,
+            crate::calibration::coeff_slice(&cal.c)?,
+            draws.slice(ndarray::s![seed, .., ..]),
+            mu.view(),
+            Some(y_bounds),
+            Some(se),
+        )?;
+        out.slice_mut(ndarray::s![seed, .., ..]).assign(&mapped);
     }
-    for s in 0..out.shape()[0] {
-        let mut slice = out.slice_mut(ndarray::s![s, .., ..]);
-        let owned = slice.to_owned();
-        let mut projected = owned;
-        crate::calibration::project_mu(&mut projected, Some(y_bounds), Some(se));
-        slice.assign(&projected);
-    }
-    out
+    Ok(out)
 }
 
 pub fn calibrated_posterior(
@@ -84,9 +81,9 @@ pub fn calibrated_posterior(
     let se_epi = to_2d(&out.se_epi)?;
     let se_ale = to_2d(&out.se_ale)?;
     let (mu_p, se, epi, ale) = crate::calibration::apply_normal(
-        coeff_slice(&cal.a)?,
-        coeff_slice(&cal.b)?,
-        coeff_slice(&cal.c)?,
+        crate::calibration::coeff_slice(&cal.a)?,
+        crate::calibration::coeff_slice(&cal.b)?,
+        crate::calibration::coeff_slice(&cal.c)?,
         mu.view(),
         se_epi.view(),
         se_ale.view(),
@@ -112,54 +109,9 @@ pub fn calibrated_function_draw(
         let post = model.posterior(x, params, flags)?;
         let mu = to_2d(&post.mu)?;
         let se = to_2d(&post.se)?;
-        draws = map_function_draws(cal, &draws, &mu, &se, model.y_bounds())?;
+        draws = apply_draws(cal, &draws, &mu, &se, model.y_bounds())?;
     }
     Ok((to_batch_metric_sample(draws), idx))
-}
-
-fn map_function_draws(
-    cal: &AffineCalibrator,
-    draws: &Array3<f64>,
-    mu: &Array2<f64>,
-    se: &Array2<f64>,
-    y_bounds: &Array2<f64>,
-) -> Result<Array3<f64>, ENNError> {
-    let (n_seed, n_batch, n_met) = draws.dim();
-    let rows = n_batch * n_seed;
-    let mut flat = Array2::zeros((rows, n_met));
-    let mut mu_flat = Array2::zeros((rows, n_met));
-    let mut se_flat = Array2::zeros((rows, n_met));
-    let mut row = 0;
-    for b in 0..n_batch {
-        for s in 0..n_seed {
-            for m in 0..n_met {
-                flat[[row, m]] = draws[[s, b, m]];
-                mu_flat[[row, m]] = mu[[b, m]];
-                se_flat[[row, m]] = se[[b, m]];
-            }
-            row += 1;
-        }
-    }
-    let mapped = crate::calibration::map_draws_with(
-        coeff_slice(&cal.a)?,
-        coeff_slice(&cal.b)?,
-        coeff_slice(&cal.c)?,
-        flat.view(),
-        mu_flat.view(),
-        Some(y_bounds),
-        Some(&se_flat),
-    )?;
-    let mut out = draws.clone();
-    row = 0;
-    for b in 0..n_batch {
-        for s in 0..n_seed {
-            for m in 0..n_met {
-                out[[s, b, m]] = mapped[[row, m]];
-            }
-            row += 1;
-        }
-    }
-    Ok(out)
 }
 
 fn to_batch_metric_sample(draws: Array3<f64>) -> Array3<f64> {
@@ -173,11 +125,6 @@ fn to_batch_metric_sample(draws: Array3<f64>) -> Array3<f64> {
         }
     }
     out
-}
-
-fn coeff_slice(v: &ndarray::Array1<f64>) -> Result<&[f64], ENNError> {
-    v.as_slice()
-        .ok_or_else(|| ENNError::InvalidParameter("calibrator coefficient is not contiguous".to_string()))
 }
 
 fn to_2d(arr: &ndarray::ArrayD<f64>) -> Result<Array2<f64>, ENNError> {
@@ -203,6 +150,5 @@ pub fn calibrated_sample(
     let post = model.posterior(x, params, &flags)?;
     let mu = to_2d(&post.mu)?;
     let se = to_2d(&post.se)?;
-    let (_mu_p, se_p) = apply_prediction(cal, mu.clone(), se, model.y_bounds());
-    Ok(apply_draws(cal, &draws, &mu, &se_p, model.y_bounds()))
+    apply_draws(cal, &draws, &mu, &se, model.y_bounds())
 }

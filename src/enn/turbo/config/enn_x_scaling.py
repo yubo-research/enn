@@ -4,6 +4,8 @@ import operator
 from collections.abc import Sequence
 from enum import Enum, auto
 
+from enn._rust import validate_tied_dims as _validate_tied_dims
+
 from .enn_index_driver import ENNIndexDriver
 
 
@@ -44,13 +46,7 @@ def validate_tied_dims(tied_dims: Sequence[Sequence[int]] | None, num_dim: int) 
     if tied_dims is None:
         return ()
     groups = tuple(tuple(operator.index(j) for j in g) for g in tied_dims)
-    flat = [j for g in groups for j in g]
-    if any(len(g) == 0 for g in groups):
-        raise ValueError("tied_dims groups must be non-empty")
-    if any(j < 0 or j >= num_dim for j in flat):
-        raise ValueError(f"tied_dims entries must be in [0, {num_dim}), got {flat}")
-    if len(set(flat)) != len(flat):
-        raise ValueError(f"tied_dims groups must be disjoint, got {groups}")
+    _validate_tied_dims([list(g) for g in groups], int(num_dim))
     return groups
 
 

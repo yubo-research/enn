@@ -448,7 +448,7 @@ impl Surrogate for ENNSurrogate {
             .map_err(|e| ENNError::InvalidParameter(format!("Shape error: {}", e)))?;
 
         if let Some(cal) = &self.calibrator {
-            let (mu, se) = crate::surrogate_affine::apply_prediction(cal, mu, se, model.y_bounds());
+            let (mu, se) = crate::surrogate_affine::apply_prediction(cal, mu, se, model.y_bounds())?;
             return Ok(SurrogatePrediction { mu, se });
         }
         Ok(SurrogatePrediction { mu, se })
@@ -645,7 +645,6 @@ mod tests {
 
     #[test]
     fn fit_tells_fitter_warped_y_under_y_bounds() {
-        // Fit stays in warped z: tell(natural y, bounds) must accumulate z moments.
         let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
         let y = array![[0.1], [0.2], [0.8], [0.9]];
         let bounds = array![[0.0, 1.0]];

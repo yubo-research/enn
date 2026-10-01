@@ -192,6 +192,42 @@ fn owned_calibrator(
     }))
 }
 
+#[pyfunction]
+#[pyo3(signature = (model, k, epistemic, aleatoric, num_fit_samples, seed, observation_noise=false))]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+#[doc = "kiss-coverage-off"]
+pub fn fit_model_affine<'py>(
+    py: Python<'py>,
+    model: &PyEpistemicNearestNeighbors,
+    k: i32,
+    epistemic: f64,
+    aleatoric: f64,
+    num_fit_samples: usize,
+    seed: u64,
+    observation_noise: bool,
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+)> {
+    let params = ennbo::ENNParams::new(k, epistemic, aleatoric)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let mut rng = StdRng::seed_from_u64(seed);
+    let cal = ennbo::surrogate_affine::fit_calibrator(
+        &model.inner,
+        &params,
+        num_fit_samples,
+        &mut rng,
+        observation_noise,
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok((
+        cal.a.into_pyarray_bound(py),
+        cal.b.into_pyarray_bound(py),
+        cal.c.into_pyarray_bound(py),
+    ))
+}
+
 #[cfg(test)]
 mod kiss_coverage_tests {
     use super::*;

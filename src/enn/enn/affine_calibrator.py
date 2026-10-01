@@ -156,19 +156,23 @@ def fit_affine_calibrator(
     rng: Any,
     observation_noise: bool = False,
 ) -> AffineCalibrator:
-    from .enn_params import PosteriorFlags
+    from enn._rust import fit_model_affine
 
-    n = len(model)
-    num_metrics = int(model.num_outputs)
-    if n < 2 or num_samples <= 0:
-        return AffineCalibrator.identity(num_metrics)
-
-    p = min(int(num_samples), n)
-    from enn._rust import choose_indices
-
+    samples = int(num_samples)
+    if samples < 0:
+        samples = 0
     seed = int(rng.integers(0, 2**63 - 1))
-    idx = np.asarray(choose_indices(n, p, seed), dtype=int)
-    x_loo, y_loo, _yvar = model.train_rows_at(idx.tolist())
-    flags = PosteriorFlags(exclude_nearest=True, observation_noise=observation_noise)
-    post = model.posterior(x_loo, params=params, flags=flags)
-    return AffineCalibrator.fit(post.mu, y_loo, post.se, fit_residual_scale=True)
+    a, b, c = fit_model_affine(
+        model.rust_backend,
+        int(params.k_num_neighbors),
+        float(params.epistemic_variance_scale),
+        float(params.aleatoric_variance_scale),
+        samples,
+        seed,
+        bool(observation_noise),
+    )
+    return AffineCalibrator(
+        a=np.asarray(a, dtype=float),
+        b=np.asarray(b, dtype=float),
+        c=np.asarray(c, dtype=float),
+    )

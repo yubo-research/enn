@@ -48,6 +48,7 @@ pub mod optimizer;
 pub mod optimizer_factory;
 pub mod params;
 pub mod posterior;
+pub mod reservoir;
 pub mod stats;
 pub mod strategy;
 pub mod surrogate;

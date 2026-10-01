@@ -1,11 +1,57 @@
 //! Diagonal dependence weights from Sobol indices.
 
+use crate::error::ENNError;
 use crate::metric_sobol::{
     group_cell_count, group_sobol_index, null_sd, sobol_index, DEPENDENCE_Z, MIN_DEPENDENCE_ROWS,
 };
 
 const MIN_VAR: f64 = 1e-24;
 pub const DEPENDENCE_FLOOR: f64 = 1e-6;
+
+pub fn validate_tied_dims(tied: &[Vec<usize>], num_dim: usize) -> Result<(), ENNError> {
+    let mut flat = Vec::new();
+    for group in tied {
+        if group.is_empty() {
+            return Err(ENNError::InvalidParameter(
+                "tied_dims groups must be non-empty".into(),
+            ));
+        }
+        for &j in group {
+            if j >= num_dim {
+                return Err(ENNError::InvalidParameter(format!(
+                    "tied_dims entries must be in [0, {num_dim}), got {j}"
+                )));
+            }
+            flat.push(j);
+        }
+    }
+    let mut uniq = flat.clone();
+    uniq.sort_unstable();
+    uniq.dedup();
+    if uniq.len() != flat.len() {
+        return Err(ENNError::InvalidParameter(
+            "tied_dims groups must be disjoint".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_tied_dims_signed(tied: &[Vec<i64>], num_dim: usize) -> Result<(), ENNError> {
+    let mut converted = Vec::with_capacity(tied.len());
+    for group in tied {
+        let mut row = Vec::with_capacity(group.len());
+        for &j in group {
+            if j < 0 {
+                return Err(ENNError::InvalidParameter(format!(
+                    "tied_dims entries must be in [0, {num_dim}), got {j}"
+                )));
+            }
+            row.push(j as usize);
+        }
+        converted.push(row);
+    }
+    validate_tied_dims(&converted, num_dim)
+}
 
 fn column(y: &[f64], n: usize, m: usize, j: usize) -> Vec<f64> {
     (0..n).map(|i| y[i * m + j]).collect()
@@ -27,10 +73,21 @@ fn mean_sobol(x: &[f64], n: usize, d: usize, y: &[f64], m: usize) -> Vec<f64> {
 }
 
 fn passing(s: f64, n: usize, cells: Option<usize>) -> f64 {
-    if s > DEPENDENCE_Z * null_sd(n, cells) { s } else { 0.0 }
+    if s > DEPENDENCE_Z * null_sd(n, cells) {
+        s
+    } else {
+        0.0
+    }
 }
 
-fn unit_indices(x: &[f64], n: usize, d: usize, y: &[f64], m: usize, tied: &[Vec<usize>]) -> (Vec<f64>, Vec<usize>) {
+fn unit_indices(
+    x: &[f64],
+    n: usize,
+    d: usize,
+    y: &[f64],
+    m: usize,
+    tied: &[Vec<usize>],
+) -> (Vec<f64>, Vec<usize>) {
     let raw = mean_sobol(x, n, d, y, m);
     let s: Vec<f64> = raw.iter().copied().map(|v| passing(v, n, None)).collect();
     if tied.is_empty() {
@@ -97,7 +154,8 @@ pub fn dependence_weights(
     m: usize,
     tied: &[Vec<usize>],
     floor: f64,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, ENNError> {
+    validate_tied_dims(tied, d)?;
     let (mut s, unit) = unit_indices(x, n, d, y, m, tied);
     let s_max = s.iter().copied().fold(0.0_f64, f64::max);
     if s_max > 0.0 {
@@ -115,7 +173,7 @@ pub fn dependence_weights(
     }
     let s_sum = s.iter().sum::<f64>();
     let u = s.len() as f64;
-    (0..d).map(|j| (u * s[unit[j]] / s_sum) / spr[j]).collect()
+    Ok((0..d).map(|j| (u * s[unit[j]] / s_sum) / spr[j]).collect())
 }
 
 pub fn too_few_rows(n: usize) -> bool {

@@ -165,8 +165,6 @@ impl InMemoryEnnBackend {
         if *synced > self.index.len() {
             *synced = self.index.len();
         }
-        // A suffix of new rows (the streaming case) is appended. Rebuilding the
-        // whole index here made every batch copy all rows seen so far.
         let idx_len = self.index.len();
         let append_suffix = *synced == idx_len && idx_len < num_obs;
         if num_obs > 0

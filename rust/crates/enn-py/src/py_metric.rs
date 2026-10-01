@@ -7,58 +7,40 @@ use pyo3::prelude::*;
 
 use crate::py_model::PyEpistemicNearestNeighbors;
 
-#[pyfunction]
+#[pyclass]
 #[doc = "kiss-coverage-off"]
-pub fn metric_weights<'py>(
-    py: Python<'py>,
-    model: PyRef<'_, PyEpistemicNearestNeighbors>,
-) -> PyResult<Option<Bound<'py, PyArray1<f64>>>> {
-    Ok(model.inner.metric_weights().map(|w| w.into_pyarray_bound(py)))
+pub struct MetricSnapshot {
+    #[pyo3(get)]
+    pub num_seen: usize,
+    #[pyo3(get)]
+    pub num_refits: usize,
+    #[pyo3(get)]
+    pub num_rescales: usize,
+    #[pyo3(get)]
+    pub num_rebuilds: usize,
+    #[pyo3(get)]
+    pub heldout_gain: Option<f64>,
+    #[pyo3(get)]
+    pub uses_learned_metric: bool,
+    #[pyo3(get)]
+    pub weights: Vec<f64>,
+    #[pyo3(get)]
+    pub built: Vec<f64>,
 }
 
 #[pyfunction]
 #[doc = "kiss-coverage-off"]
-pub fn metric_built<'py>(
-    py: Python<'py>,
-    model: PyRef<'_, PyEpistemicNearestNeighbors>,
-) -> PyResult<Option<Bound<'py, PyArray1<f64>>>> {
-    Ok(model.inner.metric_built().map(|w| w.into_pyarray_bound(py)))
-}
-
-#[pyfunction]
-#[doc = "kiss-coverage-off"]
-pub fn metric_heldout_gain(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> Option<f64> {
-    model.inner.metric_heldout_gain()
-}
-
-#[pyfunction]
-#[doc = "kiss-coverage-off"]
-pub fn metric_num_seen(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> usize {
-    model.inner.metric_num_seen()
-}
-
-#[pyfunction]
-#[doc = "kiss-coverage-off"]
-pub fn metric_num_refits(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> usize {
-    model.inner.metric_num_refits()
-}
-
-#[pyfunction]
-#[doc = "kiss-coverage-off"]
-pub fn metric_num_rescales(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> usize {
-    model.inner.metric_num_rescales()
-}
-
-#[pyfunction]
-#[doc = "kiss-coverage-off"]
-pub fn metric_num_rebuilds(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> usize {
-    model.inner.metric_num_rebuilds()
-}
-
-#[pyfunction]
-#[doc = "kiss-coverage-off"]
-pub fn metric_uses_learned(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> bool {
-    model.inner.metric_uses_learned()
+pub fn metric_snapshot(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> Option<MetricSnapshot> {
+    model.inner.metric_snapshot().map(|snap| MetricSnapshot {
+        num_seen: snap.num_seen,
+        num_refits: snap.counters.num_refits,
+        num_rescales: snap.counters.num_rescales,
+        num_rebuilds: snap.counters.num_rebuilds,
+        heldout_gain: snap.heldout_gain,
+        uses_learned_metric: snap.uses_learned,
+        weights: snap.weights,
+        built: snap.built,
+    })
 }
 
 #[pyfunction]
@@ -88,19 +70,29 @@ fn flat_xy(x: &Array2<f64>, y: &Array2<f64>) -> (Vec<f64>, Vec<f64>, usize, usiz
 }
 
 #[pyfunction]
-#[pyo3(signature = (x, y, tied=None, floor=1e-6))]
+#[pyo3(signature = (x, y, tied=None, floor=None))]
 #[doc = "kiss-coverage-off"]
 pub fn dependence_weights<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
     y: PyReadonlyArray2<f64>,
     tied: Option<Vec<Vec<usize>>>,
-    floor: f64,
+    floor: Option<f64>,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let x = x.as_array();
     let y = y.as_array();
     let (xf, yf, n, d, m) = flat_xy(&x.to_owned(), &y.to_owned());
-    let w = ennbo::metric_weights::dependence_weights(&xf, n, d, &yf, m, &tied.unwrap_or_default(), floor);
+    let floor = floor.unwrap_or(ennbo::metric_weights::DEPENDENCE_FLOOR);
+    let w = ennbo::metric_weights::dependence_weights(
+        &xf,
+        n,
+        d,
+        &yf,
+        m,
+        &tied.unwrap_or_default(),
+        floor,
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
     Ok(PyArray1::from_vec_bound(py, w))
 }
 
@@ -117,7 +109,9 @@ pub fn auto_weights<'py>(
     let x = x.as_array().to_owned();
     let y = y.as_array().to_owned();
     let (xf, yf, n, d, m) = flat_xy(&x, &y);
-    let (w, gain) = ennbo::metric_auto::auto_weights(&xf, n, d, &yf, m, k, &tied.unwrap_or_default());
+    let (w, gain) =
+        ennbo::metric_auto::auto_weights(&xf, n, d, &yf, m, k, &tied.unwrap_or_default())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
     Ok((PyArray1::from_vec_bound(py, w), gain))
 }
 
@@ -204,7 +198,12 @@ pub fn group_sobol_index(x: PyReadonlyArray2<f64>, y: PyReadonlyArray1<f64>) -> 
 
 #[pyfunction]
 #[doc = "kiss-coverage-off"]
-pub fn loo_loglik(x: PyReadonlyArray2<f64>, y: PyReadonlyArray2<f64>, a: PyReadonlyArray1<f64>, k: usize) -> f64 {
+pub fn loo_loglik(
+    x: PyReadonlyArray2<f64>,
+    y: PyReadonlyArray2<f64>,
+    a: PyReadonlyArray1<f64>,
+    k: usize,
+) -> f64 {
     let x = x.as_array();
     let y = y.as_array();
     let (xf, yf, n, d, m) = flat_xy(&x.to_owned(), &y.to_owned());
@@ -212,103 +211,88 @@ pub fn loo_loglik(x: PyReadonlyArray2<f64>, y: PyReadonlyArray2<f64>, a: PyReado
     ennbo::metric_loo::loo_loglik(&xf, n, d, &yf, m, &weights, k)
 }
 
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub fn validate_tied_dims(tied: Vec<Vec<i64>>, num_dim: usize) -> PyResult<()> {
+    ennbo::metric_weights::validate_tied_dims_signed(&tied, num_dim)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 #[pyclass]
 #[doc = "kiss-coverage-off"]
 pub struct PyReservoir {
-    dim: usize,
-    outputs: usize,
-    capacity: usize,
-    rng: ennbo::numpy_pcg::NumpyPcg64,
-    xs: Vec<f64>,
-    ys: Vec<f64>,
-    len: usize,
-    num_seen: usize,
+    inner: ennbo::reservoir::RowReservoir,
 }
 
 #[pymethods]
 impl PyReservoir {
     #[new]
     fn new(capacity: usize, num_dim: usize, seed: u64, num_outputs: usize) -> PyResult<Self> {
-        if capacity < 1 {
-            return Err(PyValueError::new_err(format!("capacity must be >= 1, got {capacity}")));
-        }
-        Ok(Self {
-            dim: num_dim,
-            outputs: num_outputs,
-            capacity,
-            rng: ennbo::numpy_pcg::NumpyPcg64::from_seed(seed),
-            xs: vec![0.0; capacity * num_dim],
-            ys: vec![0.0; capacity * num_outputs],
-            len: 0,
-            num_seen: 0,
-        })
+        let inner = ennbo::reservoir::RowReservoir::new(capacity, num_dim, num_outputs, seed)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
     }
 
     fn add(&mut self, x: PyReadonlyArray2<f64>, y: PyReadonlyArray2<f64>) -> PyResult<()> {
         let x = x.as_array();
         let y = y.as_array();
         if x.nrows() != y.nrows() {
-            return Err(PyValueError::new_err(format!("x has {} rows but y has {}", x.nrows(), y.nrows())));
+            return Err(PyValueError::new_err(format!(
+                "x has {} rows but y has {}",
+                x.nrows(),
+                y.nrows()
+            )));
         }
-        if y.ncols() != self.outputs {
+        if y.ncols() != self.inner.num_outputs() {
             return Err(PyValueError::new_err(format!(
                 "y has {} columns, expected {}",
                 y.ncols(),
-                self.outputs
+                self.inner.num_outputs()
             )));
         }
+        let dim = self.inner.num_dim();
+        let outputs = self.inner.num_outputs();
         for i in 0..x.nrows() {
-            if self.len < self.capacity {
-                let slot = self.len;
-                for j in 0..self.dim {
-                    self.xs[slot * self.dim + j] = x[[i, j]];
-                }
-                for j in 0..self.outputs {
-                    self.ys[slot * self.outputs + j] = y[[i, j]];
-                }
-                self.len += 1;
-            } else {
-                let slot = self.rng.integers_high(self.num_seen as u64 + 1) as usize;
-                if slot < self.capacity {
-                    for j in 0..self.dim {
-                        self.xs[slot * self.dim + j] = x[[i, j]];
-                    }
-                    for j in 0..self.outputs {
-                        self.ys[slot * self.outputs + j] = y[[i, j]];
-                    }
-                }
+            let mut xr = vec![0.0; dim];
+            let mut yr = vec![0.0; outputs];
+            for j in 0..dim {
+                xr[j] = x[[i, j]];
             }
-            self.num_seen += 1;
+            for j in 0..outputs {
+                yr[j] = y[[i, j]];
+            }
+            self.inner.push_row(&xr, &yr);
         }
         Ok(())
     }
 
     #[getter]
     fn num_seen(&self) -> usize {
-        self.num_seen
+        self.inner.num_seen()
     }
 
     #[getter]
     fn capacity(&self) -> usize {
-        self.capacity
+        self.inner.capacity()
     }
 
     fn __len__(&self) -> usize {
-        self.len
+        self.inner.len()
     }
 
     fn x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        Array2::from_shape_vec((self.len, self.dim), self.xs[..self.len * self.dim].to_vec())
+        let len = self.inner.len();
+        let dim = self.inner.num_dim();
+        Array2::from_shape_vec((len, dim), self.inner.x().to_vec())
             .expect("shape")
             .into_pyarray_bound(py)
     }
 
     fn y<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        Array2::from_shape_vec(
-            (self.len, self.outputs),
-            self.ys[..self.len * self.outputs].to_vec(),
-        )
-        .expect("shape")
-        .into_pyarray_bound(py)
+        let len = self.inner.len();
+        let outputs = self.inner.num_outputs();
+        Array2::from_shape_vec((len, outputs), self.inner.y().to_vec())
+            .expect("shape")
+            .into_pyarray_bound(py)
     }
 }

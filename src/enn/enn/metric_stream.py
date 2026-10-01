@@ -81,13 +81,14 @@ def null_sd(n: int, num_cells: int | None = None) -> float:
 def dependence_weights(
     x: np.ndarray,
     y: np.ndarray,
-    floor: float = 1e-6,
+    floor: float | None = None,
     tied: Sequence[Sequence[int]] = (),
 ) -> np.ndarray:
     x = np.asarray(x, dtype=float)
     y = _y2(y)
     groups = [list(map(int, g)) for g in tied]
-    return np.asarray(_rust.dependence_weights(x, y, groups, float(floor)), dtype=float)
+    used = None if floor is None else float(floor)
+    return np.asarray(_rust.dependence_weights(x, y, groups, used), dtype=float)
 
 
 def loo_loglik(x: np.ndarray, y: np.ndarray, a: np.ndarray, k: int) -> float:

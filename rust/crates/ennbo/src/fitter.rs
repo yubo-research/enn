@@ -238,6 +238,7 @@ impl ENNFitter {
                 &best,
                 num_fit_samples,
                 rng,
+                false,
             )?)
         } else {
             None
