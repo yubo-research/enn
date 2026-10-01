@@ -73,9 +73,7 @@ def mk_enn(
         fitter.tell(x_obs_array, y, yvar, y_bounds=y_bounds)
         fitted_params = fitter.ask(
             enn_model,
-            num_fit_candidates=(
-                fit.num_fit_candidates if fit.num_fit_candidates is not None else 30
-            ),
+            num_fit_candidates=fit.num_fit_candidates,
             num_fit_samples=fit.num_fit_samples,
             params_warm_start=params_warm_start,
         )

@@ -69,6 +69,10 @@ pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_metric::metric_num_rebuilds, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_metric::metric_uses_learned, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_metric::metric_set_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_configure, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_tied, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::weight_drift, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::auto_uses_learned_metric, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_metric::dependence_weights, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_metric::auto_weights, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_metric::sobol_index, m)?)?;

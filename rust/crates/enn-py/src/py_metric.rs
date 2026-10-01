@@ -88,50 +88,100 @@ fn flat_xy(x: &Array2<f64>, y: &Array2<f64>) -> (Vec<f64>, Vec<f64>, usize, usiz
 }
 
 #[pyfunction]
-#[pyo3(signature = (x, y, tied=None))]
+#[pyo3(signature = (x, y, tied=None, floor=1e-6))]
 #[doc = "kiss-coverage-off"]
 pub fn dependence_weights<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
     y: PyReadonlyArray2<f64>,
     tied: Option<Vec<Vec<usize>>>,
+    floor: f64,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let x = x.as_array();
     let y = y.as_array();
     let (xf, yf, n, d, m) = flat_xy(&x.to_owned(), &y.to_owned());
-    let w = ennbo::metric_weights::dependence_weights(&xf, n, d, &yf, m, &tied.unwrap_or_default());
+    let w = ennbo::metric_weights::dependence_weights(&xf, n, d, &yf, m, &tied.unwrap_or_default(), floor);
     Ok(PyArray1::from_vec_bound(py, w))
 }
 
 #[pyfunction]
-#[pyo3(signature = (x, y, tied=None))]
+#[pyo3(signature = (x, y, k, tied=None))]
 #[doc = "kiss-coverage-off"]
 pub fn auto_weights<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
     y: PyReadonlyArray2<f64>,
+    k: usize,
     tied: Option<Vec<Vec<usize>>>,
 ) -> PyResult<(Bound<'py, PyArray1<f64>>, f64)> {
     let x = x.as_array().to_owned();
     let y = y.as_array().to_owned();
     let (xf, yf, n, d, m) = flat_xy(&x, &y);
-    let (w, gain) = ennbo::metric_auto::auto_weights(&xf, n, d, &yf, m, &tied.unwrap_or_default());
+    let (w, gain) = ennbo::metric_auto::auto_weights(&xf, n, d, &yf, m, k, &tied.unwrap_or_default());
     Ok((PyArray1::from_vec_bound(py, w), gain))
 }
 
 #[pyfunction]
+#[pyo3(signature = (x, y, num_bins=None))]
 #[doc = "kiss-coverage-off"]
 pub fn sobol_index<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
     y: PyReadonlyArray1<f64>,
+    num_bins: Option<usize>,
 ) -> Bound<'py, PyArray1<f64>> {
     let x = x.as_array();
     let y = y.as_array();
     let xf: Vec<f64> = x.iter().copied().collect();
     let yf: Vec<f64> = y.iter().copied().collect();
-    let s = ennbo::metric_sobol::sobol_index(&xf, x.nrows(), x.ncols(), &yf, None);
+    let s = ennbo::metric_sobol::sobol_index(&xf, x.nrows(), x.ncols(), &yf, num_bins);
     PyArray1::from_vec_bound(py, s)
+}
+
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub fn weight_drift(weights: PyReadonlyArray1<f64>, built: PyReadonlyArray1<f64>) -> PyResult<f64> {
+    let w: Vec<f64> = weights.as_array().iter().copied().collect();
+    let b: Vec<f64> = built.as_array().iter().copied().collect();
+    if w.len() != b.len() {
+        return Err(PyValueError::new_err(format!(
+            "weights length {} != built length {}",
+            w.len(),
+            b.len()
+        )));
+    }
+    Ok(ennbo::metric_auto::weight_drift(&w, &b))
+}
+
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub fn auto_uses_learned_metric(heldout_gain: f64) -> bool {
+    ennbo::metric_auto::auto_uses_learned_metric(heldout_gain)
+}
+
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub fn metric_tied(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> PyResult<Vec<Vec<usize>>> {
+    model
+        .inner
+        .metric_tied()
+        .map(|groups| groups.to_vec())
+        .ok_or_else(|| PyValueError::new_err("tied_dims require metric_learning=AUTO"))
+}
+
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub fn metric_configure(
+    mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
+    refit_growth: f64,
+    rebuild_drift: f64,
+    seed: u64,
+    reservoir_capacity: usize,
+) -> PyResult<()> {
+    model
+        .inner
+        .metric_configure(refit_growth, rebuild_drift, seed, reservoir_capacity)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 #[pyfunction]

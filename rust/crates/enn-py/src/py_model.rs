@@ -35,13 +35,13 @@ fn py_posterior_flags(
 pub struct PyEpistemicNearestNeighbors {
     pub(crate) inner: ennbo::EpistemicNearestNeighbors,
     /// Opened with metric learning: BPANN_DISK storage that accepts metric updates.
-    metric_learning: bool,
+    metric_learning: ennbo::metric_auto::MetricLearning,
 }
 
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None, metric_learning=false, tied_dims=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None, metric_learning="none", tied_dims=None))]
     #[allow(clippy::too_many_arguments)]
     #[doc = "kiss-coverage-off"]
     fn new(
@@ -53,7 +53,7 @@ impl PyEpistemicNearestNeighbors {
         work_dir: Option<&str>,
         enn_storage: Option<&str>,
         y_bounds: Option<PyReadonlyArray2<f64>>,
-        metric_learning: bool,
+        metric_learning: &str,
         tied_dims: Option<Vec<Vec<usize>>>,
     ) -> PyResult<Self> {
         let driver = match index_driver {
@@ -65,7 +65,14 @@ impl PyEpistemicNearestNeighbors {
                 )))
             }
         };
-        if metric_learning && (scale_x || driver != ennbo::IndexDriver::BpAnnDisk) {
+        let metric_learning = ennbo::metric_auto::MetricLearning::parse(metric_learning).ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "metric_learning must be 'none' or 'auto', got {metric_learning}"
+            ))
+        })?;
+        if metric_learning == ennbo::metric_auto::MetricLearning::Auto
+            && (scale_x || driver != ennbo::IndexDriver::BpAnnDisk)
+        {
             return Err(PyValueError::new_err(
                 "metric_learning requires index_driver=BPANN_DISK and scale_x=false",
             ));
@@ -94,7 +101,7 @@ impl PyEpistemicNearestNeighbors {
             y_bounds,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        if metric_learning {
+        if metric_learning == ennbo::metric_auto::MetricLearning::Auto {
             model
                 .enable_auto_metric(
                     tied_dims.unwrap_or_default(),
@@ -117,7 +124,7 @@ impl PyEpistemicNearestNeighbors {
     #[pyo3(signature = (x_scale, rebuild=false))]
     #[doc = "kiss-coverage-off"]
     fn set_metric_scale(&mut self, x_scale: PyReadonlyArray1<f64>, rebuild: bool) -> PyResult<()> {
-        if !self.metric_learning {
+        if self.metric_learning != ennbo::metric_auto::MetricLearning::Auto {
             return Err(PyValueError::new_err(
                 "set_metric_scale requires metric_learning=AUTO",
             ));

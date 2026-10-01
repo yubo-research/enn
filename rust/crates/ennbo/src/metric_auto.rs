@@ -14,6 +14,24 @@ pub const AUTO_K: usize = 10;
 pub const AUTO_REFIT_GROWTH: f64 = 1.5;
 pub const AUTO_RESCALE_TOL: f64 = 0.01;
 
+/// `None` leaves the metric fixed. `Auto` learns a diagonal metric from a reservoir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MetricLearning {
+    #[default]
+    None,
+    Auto,
+}
+
+impl MetricLearning {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "none" | "NONE" | "None" => Some(Self::None),
+            "auto" | "AUTO" | "Auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+}
+
 fn floored_log(w: &[f64]) -> Vec<f64> {
     let log_w: Vec<f64> = w.iter().map(|v| v.ln()).collect();
     let max = log_w.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -30,13 +48,21 @@ pub fn auto_uses_learned_metric(heldout_gain: f64) -> bool {
     heldout_gain.is_finite() && heldout_gain > AUTO_MIN_HELDOUT_GAIN
 }
 
-pub fn auto_weights(x: &[f64], n: usize, d: usize, y: &[f64], m: usize, tied: &[Vec<usize>]) -> (Vec<f64>, f64) {
+pub fn auto_weights(
+    x: &[f64],
+    n: usize,
+    d: usize,
+    y: &[f64],
+    m: usize,
+    k: usize,
+    tied: &[Vec<usize>],
+) -> (Vec<f64>, f64) {
     if too_few_rows(n) {
         return (vec![1.0; d], f64::NEG_INFINITY);
     }
-    let w = dependence_weights(x, n, d, y, m, tied);
+    let w = dependence_weights(x, n, d, y, m, tied, crate::metric_weights::DEPENDENCE_FLOOR);
     let ones = vec![1.0; d];
-    let gain = loo_loglik(x, n, d, y, m, &w, AUTO_K) - loo_loglik(x, n, d, y, m, &ones, AUTO_K);
+    let gain = loo_loglik(x, n, d, y, m, &w, k) - loo_loglik(x, n, d, y, m, &ones, k);
     (w, gain)
 }
 
@@ -50,6 +76,7 @@ pub struct AutoMetric {
     num_outputs: usize,
     tied: Vec<Vec<usize>>,
     capacity: usize,
+    seed: u64,
     rng: NumpyPcg64,
     xs: Vec<f64>,
     ys: Vec<f64>,
@@ -76,6 +103,7 @@ impl AutoMetric {
             num_outputs,
             tied,
             capacity: AUTO_RESERVOIR_CAPACITY,
+            seed,
             rng: NumpyPcg64::from_seed(seed),
             xs: vec![0.0; AUTO_RESERVOIR_CAPACITY * num_dim],
             ys: vec![0.0; AUTO_RESERVOIR_CAPACITY * num_outputs],
@@ -91,6 +119,62 @@ impl AutoMetric {
             num_rescales: 0,
             num_rebuilds: 0,
         })
+    }
+
+    pub fn tied(&self) -> &[Vec<usize>] {
+        &self.tied
+    }
+
+    pub fn configure(
+        &mut self,
+        refit_growth: f64,
+        rebuild_drift: f64,
+        seed: u64,
+        capacity: usize,
+    ) -> Result<(), ENNError> {
+        if refit_growth <= 1.0 {
+            return Err(ENNError::InvalidParameter(format!(
+                "refit_growth must be > 1, got {refit_growth}"
+            )));
+        }
+        if !(rebuild_drift >= 0.0) {
+            return Err(ENNError::InvalidParameter(format!(
+                "rebuild_drift must be >= 0, got {rebuild_drift}"
+            )));
+        }
+        if capacity < 1 {
+            return Err(ENNError::InvalidParameter(format!(
+                "reservoir_capacity must be >= 1, got {capacity}"
+            )));
+        }
+        if capacity < self.len {
+            return Err(ENNError::InvalidParameter(format!(
+                "reservoir_capacity {capacity} is below the {} rows already stored",
+                self.len
+            )));
+        }
+        if seed != self.seed && self.num_seen > self.capacity {
+            return Err(ENNError::InvalidParameter(
+                "seed is fixed once the reservoir starts replacing rows".into(),
+            ));
+        }
+        self.refit_growth = refit_growth;
+        self.rebuild_drift = rebuild_drift;
+        if seed != self.seed {
+            self.seed = seed;
+            self.rng = NumpyPcg64::from_seed(seed);
+        }
+        if capacity != self.capacity {
+            let mut xs = vec![0.0; capacity * self.num_dim];
+            let mut ys = vec![0.0; capacity * self.num_outputs];
+            let n = self.len;
+            xs[..n * self.num_dim].copy_from_slice(&self.xs[..n * self.num_dim]);
+            ys[..n * self.num_outputs].copy_from_slice(&self.ys[..n * self.num_outputs]);
+            self.xs = xs;
+            self.ys = ys;
+            self.capacity = capacity;
+        }
+        Ok(())
     }
 
     pub fn weights(&self) -> &[f64] {
@@ -151,6 +235,7 @@ impl AutoMetric {
             self.num_dim,
             &self.ys[..n * self.num_outputs],
             self.num_outputs,
+            AUTO_K,
             &self.tied,
         );
         self.heldout_gain = Some(gain);
@@ -180,5 +265,41 @@ impl AutoMetric {
             return self.refit();
         }
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configure_updates_growth_seed_and_capacity_before_replacement() {
+        let mut metric = AutoMetric::new(2, 1, vec![], 0).unwrap();
+        metric.configure(3.0, 0.25, 7, 4).unwrap();
+        assert_eq!(metric.refit_growth, 3.0);
+        assert_eq!(metric.rebuild_drift, 0.25);
+        assert_eq!(metric.seed, 7);
+        assert_eq!(metric.capacity, 4);
+        assert!(metric.configure(3.0, 0.25, 7, 0).is_err());
+        metric.observe(&[0.0, 1.0, 0.2, 0.3], &[0.0, 1.0], 2).unwrap();
+        assert!(metric.configure(3.0, 0.25, 7, 1).is_err());
+    }
+
+    #[test]
+    fn auto_weights_k_changes_heldout_gain_only() {
+        let n = 120;
+        let d = 3;
+        let mut x = vec![0.0; n * d];
+        let mut y = vec![0.0; n];
+        for i in 0..n {
+            for j in 0..d {
+                x[i * d + j] = ((i + 1) as f64 * (j + 3) as f64 * 0.017 + 0.001 * i as f64) % 1.0;
+            }
+            y[i] = (6.0 * std::f64::consts::PI * x[i * d]).sin() + 0.01 * x[i * d + 1];
+        }
+        let (w10, g10) = auto_weights(&x, n, d, &y, 1, 10, &[]);
+        let (w1, g1) = auto_weights(&x, n, d, &y, 1, 1, &[]);
+        assert_eq!(w10, w1);
+        assert_ne!(g10, g1);
     }
 }

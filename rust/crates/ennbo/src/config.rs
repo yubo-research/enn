@@ -140,7 +140,7 @@ pub struct ConfigOverrides {
     pub alpha: Option<f64>,
     pub rescalarize: Option<String>,
     pub raasp_fast: Option<bool>,
-    pub metric_learning_auto: Option<bool>,
+    pub metric_learning: Option<crate::metric_auto::MetricLearning>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
     pub affine_calibrate: Option<bool>,
 }
@@ -175,8 +175,8 @@ fn apply_enn_surrogate_fields(config: &mut OptimizerConfig, overrides: &ConfigOv
     if let Some(yb) = overrides.y_bounds.clone() {
         enn.y_bounds = Some(yb);
     }
-    if let Some(auto) = overrides.metric_learning_auto {
-        enn.metric_learning_auto = auto;
+    if let Some(mode) = overrides.metric_learning {
+        enn.metric_learning = mode;
     }
     if let Some(tied) = overrides.tied_dims.clone() {
         enn.tied_dims = tied;
@@ -283,7 +283,7 @@ impl ConfigOverrides {
             || self.enn_storage.is_some()
             || self.work_dir.is_some()
             || self.y_bounds.is_some()
-            || self.metric_learning_auto.is_some()
+            || self.metric_learning.is_some()
             || self.tied_dims.is_some()
             || self.affine_calibrate.is_some()
         {

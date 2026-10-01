@@ -67,7 +67,9 @@ def test_dependence_weights_scale_and_fallback() -> None:
     x = x * np.array([1.0, 10.0, 1, 1, 1, 1])
     w = ms.dependence_weights(x, y)
     assert w[2:].max() < 1e-3 * w[:2].min()
-    np.testing.assert_allclose(ms.dependence_weights(x, np.ones(2000)), 1.0 / x.var(axis=0))
+    np.testing.assert_allclose(
+        ms.dependence_weights(x, np.ones(2000)), 1.0 / x.var(axis=0)
+    )
 
 
 def test_dependence_weights_average_output_columns() -> None:
@@ -84,13 +86,28 @@ def test_loo_loglik_prefers_right_metric() -> None:
     assert ms.loo_loglik(x, y2, good, 5) == pytest.approx(ms.loo_loglik(x, y, good, 5))
 
 
+def test_bins_floor_and_k_change_the_rust_result() -> None:
+    rng = np.random.default_rng(0)
+    x = rng.random((200, 3))
+    y = x[:, 0] + 0.01 * rng.standard_normal(200)
+    assert not np.array_equal(ms.sobol_index(x, y), ms.sobol_index(x, y, num_bins=2))
+    assert not np.allclose(
+        ms.dependence_weights(x, y), ms.dependence_weights(x, y, floor=0.5)
+    )
+    _, gain_1 = ms.auto_weights(x, y, 1)
+    _, gain_10 = ms.auto_weights(x, y, 10)
+    assert gain_1 != gain_10
+
+
 def test_auto_weights_gain_sign_tracks_signal() -> None:
     x, y = _two_of_six(400)
     w, gain = ms.auto_weights(x, y, 5)
     np.testing.assert_allclose(w, ms.dependence_weights(x, y))
     assert gain > 0.3
     rng = np.random.default_rng(2)
-    w_sphere, gain_sphere = ms.auto_weights(x, ((x - 0.5) ** 2).sum(1) + 0.01 * rng.standard_normal(400), 5)
+    w_sphere, gain_sphere = ms.auto_weights(
+        x, ((x - 0.5) ** 2).sum(1) + 0.01 * rng.standard_normal(400), 5
+    )
     assert gain_sphere < 0.05
     w_small, gain_small = ms.auto_weights(x[:50], y[:50], 5)
     assert gain_small == float("-inf")

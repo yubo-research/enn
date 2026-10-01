@@ -25,8 +25,12 @@ def _seed_of(seed) -> int:
 class Reservoir:
     """Uniform sample of up to ``capacity`` rows. ``seed`` is a NumPy PCG64 seed."""
 
-    def __init__(self, capacity: int, num_dim: int, seed: int, num_outputs: int = 1) -> None:
-        self._inner = _rust.PyReservoir(int(capacity), int(num_dim), _seed_of(seed), int(num_outputs))
+    def __init__(
+        self, capacity: int, num_dim: int, seed: int, num_outputs: int = 1
+    ) -> None:
+        self._inner = _rust.PyReservoir(
+            int(capacity), int(num_dim), _seed_of(seed), int(num_outputs)
+        )
 
     @property
     def capacity(self) -> int:
@@ -53,15 +57,21 @@ class Reservoir:
         self._inner.add(x, y)
 
 
-def sobol_index(x: np.ndarray, y: np.ndarray, num_bins: int | None = None) -> np.ndarray:
-    del num_bins
+def sobol_index(
+    x: np.ndarray, y: np.ndarray, num_bins: int | None = None
+) -> np.ndarray:
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float).reshape(-1)
-    return np.asarray(_rust.sobol_index(x, y), dtype=float)
+    bins = None if num_bins is None else int(num_bins)
+    return np.asarray(_rust.sobol_index(x, y, bins), dtype=float)
 
 
 def group_sobol_index(x_group: np.ndarray, y: np.ndarray) -> float:
-    return float(_rust.group_sobol_index(np.asarray(x_group, dtype=float), np.asarray(y, dtype=float).reshape(-1)))
+    return float(
+        _rust.group_sobol_index(
+            np.asarray(x_group, dtype=float), np.asarray(y, dtype=float).reshape(-1)
+        )
+    )
 
 
 def null_sd(n: int, num_cells: int | None = None) -> float:
@@ -74,23 +84,25 @@ def dependence_weights(
     floor: float = 1e-6,
     tied: Sequence[Sequence[int]] = (),
 ) -> np.ndarray:
-    del floor
     x = np.asarray(x, dtype=float)
     y = _y2(y)
     groups = [list(map(int, g)) for g in tied]
-    return np.asarray(_rust.dependence_weights(x, y, groups), dtype=float)
+    return np.asarray(_rust.dependence_weights(x, y, groups, float(floor)), dtype=float)
 
 
 def loo_loglik(x: np.ndarray, y: np.ndarray, a: np.ndarray, k: int) -> float:
-    return float(_rust.loo_loglik(np.asarray(x, dtype=float), _y2(y), np.asarray(a, dtype=float), int(k)))
+    return float(
+        _rust.loo_loglik(
+            np.asarray(x, dtype=float), _y2(y), np.asarray(a, dtype=float), int(k)
+        )
+    )
 
 
 def auto_weights(
     x: np.ndarray, y: np.ndarray, k: int, tied: Sequence[Sequence[int]] = ()
 ) -> tuple[np.ndarray, float]:
-    del k
     x = np.asarray(x, dtype=float)
     y = _y2(y)
     groups = [list(map(int, g)) for g in tied]
-    w, gain = _rust.auto_weights(x, y, groups)
+    w, gain = _rust.auto_weights(x, y, int(k), groups)
     return np.asarray(w, dtype=float), float(gain)

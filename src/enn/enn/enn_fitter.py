@@ -54,7 +54,7 @@ class ENNStatefulFitter:
         self,
         model: Any,
         *,
-        num_fit_candidates: int,
+        num_fit_candidates: int | None,
         num_fit_samples: int,
         params_warm_start: Any | None = None,
         affine_calibrate: bool = False,
@@ -75,7 +75,7 @@ class ENNStatefulFitter:
 
         rust_result = self._rust.ask(
             model.rust_backend,
-            num_fit_candidates,
+            None if num_fit_candidates is None else int(num_fit_candidates),
             num_fit_samples,
             rust_warm_start,
             affine_calibrate,

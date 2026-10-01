@@ -89,6 +89,23 @@ impl EpistemicNearestNeighbors {
         self.auto_metric.as_ref().is_some_and(|m| m.uses_learned_metric())
     }
 
+    pub fn metric_tied(&self) -> Option<&[Vec<usize>]> {
+        self.auto_metric.as_ref().map(|m| m.tied())
+    }
+
+    pub fn metric_configure(
+        &mut self,
+        refit_growth: f64,
+        rebuild_drift: f64,
+        seed: u64,
+        capacity: usize,
+    ) -> Result<(), ENNError> {
+        let metric = self.auto_metric.as_mut().ok_or_else(|| {
+            ENNError::InvalidParameter("metric policy requires metric_learning=AUTO".into())
+        })?;
+        metric.configure(refit_growth, rebuild_drift, seed, capacity)
+    }
+
     pub fn metric_set_weights(&mut self, weights: &[f64], rebuild_drift: Option<f64>) -> Result<bool, ENNError> {
         let update = {
             let metric = self.auto_metric.as_mut().ok_or_else(|| {

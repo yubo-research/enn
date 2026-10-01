@@ -141,7 +141,7 @@ fn fast_candidates_match_the_binomial_uniform_law() {
 
 #[test]
 fn auto_weights_identity_below_the_row_floor() {
-    let (w, gain) = auto_weights(&[0.0, 1.0, 0.5, 0.2], 2, 2, &[0.0, 1.0], 1, &[]);
+    let (w, gain) = auto_weights(&[0.0, 1.0, 0.5, 0.2], 2, 2, &[0.0, 1.0], 1, 10, &[]);
     assert_eq!(w, vec![1.0, 1.0]);
     assert!(gain.is_infinite() && gain.is_sign_negative());
 }
@@ -159,7 +159,7 @@ fn auto_weights_frozen_on_a_fixed_stream() {
         }
         y[i] = (6.0 * std::f64::consts::PI * x[i * d]).sin() + 0.01 * x[i * d + 1];
     }
-    let (w, gain) = auto_weights(&x, n, d, &y, 1, &[]);
+    let (w, gain) = auto_weights(&x, n, d, &y, 1, 10, &[]);
     let expect = [
         35.319_578_728_293_791,
         3.581_230_732_208_359_6e-5,

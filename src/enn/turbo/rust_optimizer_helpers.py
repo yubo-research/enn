@@ -19,6 +19,7 @@ from .config.morbo_tr_config import MorboTRConfig
 from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .config.trust_region import NoTRConfig, TurboTRConfig
+
 DEFAULT_ENN_K = 10
 _DEFAULT_NUM_CANDIDATES_FACTOR = 100.0
 _DEFAULT_MAX_CANDIDATES = 5000
@@ -140,8 +141,8 @@ def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
 
 
 def _metric_overrides(surrogate: ENNSurrogateConfig, overrides: dict[str, Any]) -> None:
-    if surrogate.metric_learning != ENNMetricLearning.NONE:
-        overrides["metric_learning_auto"] = True
+    if surrogate.metric_learning == ENNMetricLearning.AUTO:
+        overrides["metric_learning"] = "auto"
     if surrogate.tied_dims:
         overrides["tied_dims"] = [list(g) for g in surrogate.tied_dims]
     if surrogate.fit.affine_calibrate:

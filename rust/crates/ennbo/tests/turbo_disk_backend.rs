@@ -38,7 +38,7 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
             storage,
             work_dir,
             y_bounds: None,
-            metric_learning_auto: false,
+            metric_learning: ennbo::metric_auto::MetricLearning::None,
             tied_dims: Vec::new(),
             affine_calibrate: false,
         };

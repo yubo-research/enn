@@ -119,7 +119,9 @@ class EpistemicNearestNeighbors:
             "train_yvar": train_yvar,
             "scale_x": scale_x == ENNScaleX.ON,
             "index_driver": idx_driver,
-            "metric_learning": metric_learning != ENNMetricLearning.NONE,
+            "metric_learning": "auto"
+            if metric_learning == ENNMetricLearning.AUTO
+            else "none",
             "tied_dims": [list(g) for g in self.tied_dims],
         }
         if work_dir is not None:
@@ -197,7 +199,6 @@ class EpistemicNearestNeighbors:
     @property
     def metric_learning(self) -> ENNMetricLearning:
         return self._metric_learning
-
 
     @property
     def _train_y(self) -> np.ndarray:

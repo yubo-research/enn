@@ -5,7 +5,7 @@ use crate::metric_sobol::{
 };
 
 const MIN_VAR: f64 = 1e-24;
-const DEPENDENCE_FLOOR: f64 = 1e-6;
+pub const DEPENDENCE_FLOOR: f64 = 1e-6;
 
 fn column(y: &[f64], n: usize, m: usize, j: usize) -> Vec<f64> {
     (0..n).map(|i| y[i * m + j]).collect()
@@ -89,12 +89,20 @@ fn spread(x: &[f64], n: usize, d: usize) -> Vec<f64> {
     out
 }
 
-pub fn dependence_weights(x: &[f64], n: usize, d: usize, y: &[f64], m: usize, tied: &[Vec<usize>]) -> Vec<f64> {
+pub fn dependence_weights(
+    x: &[f64],
+    n: usize,
+    d: usize,
+    y: &[f64],
+    m: usize,
+    tied: &[Vec<usize>],
+    floor: f64,
+) -> Vec<f64> {
     let (mut s, unit) = unit_indices(x, n, d, y, m, tied);
     let s_max = s.iter().copied().fold(0.0_f64, f64::max);
     if s_max > 0.0 {
         for v in &mut s {
-            *v = v.max(DEPENDENCE_FLOOR * s_max);
+            *v = v.max(floor * s_max);
         }
     } else {
         s.fill(1.0);

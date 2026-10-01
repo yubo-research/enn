@@ -128,8 +128,12 @@ fn parse_metric_overrides(
     if let Some(v) = dict.get_item("raasp_fast")? {
         overrides.raasp_fast = Some(v.extract()?);
     }
-    if let Some(v) = dict.get_item("metric_learning_auto")? {
-        overrides.metric_learning_auto = Some(v.extract()?);
+    if let Some(v) = dict.get_item("metric_learning")? {
+        let name: String = v.extract()?;
+        let mode = ennbo::metric_auto::MetricLearning::parse(&name).ok_or_else(|| {
+            PyValueError::new_err(format!("metric_learning must be 'none' or 'auto', got {name}"))
+        })?;
+        overrides.metric_learning = Some(mode);
     }
     if let Some(v) = dict.get_item("affine_calibrate")? {
         overrides.affine_calibrate = Some(v.extract()?);

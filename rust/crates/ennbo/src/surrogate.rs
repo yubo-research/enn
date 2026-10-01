@@ -10,6 +10,7 @@ use crate::backend::EnnStorage;
 use crate::error::ENNError;
 use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
+use crate::metric_auto::MetricLearning;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 
@@ -19,7 +20,7 @@ fn enable_auto_if_configured(
     x: &ArrayView2<f64>,
     y: &ArrayView2<f64>,
 ) -> Result<(), ENNError> {
-    if config.metric_learning_auto {
+    if config.metric_learning == MetricLearning::Auto {
         model.enable_auto_metric(config.tied_dims.clone(), x, y)?;
     }
     Ok(())
@@ -87,8 +88,7 @@ pub struct ENNSurrogateConfig {
     pub work_dir: Option<PathBuf>,
     /// Optional per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
     pub y_bounds: Option<Array2<f64>>,
-    /// `ENNMetricLearning.AUTO` when true.
-    pub metric_learning_auto: bool,
+    pub metric_learning: MetricLearning,
     pub tied_dims: Vec<Vec<usize>>,
     pub affine_calibrate: bool,
 }
@@ -105,7 +105,7 @@ impl Default for ENNSurrogateConfig {
             storage: EnnStorage::InMemory,
             work_dir: None,
             y_bounds: None,
-            metric_learning_auto: false,
+            metric_learning: MetricLearning::None,
             tied_dims: Vec::new(),
             affine_calibrate: false,
         }

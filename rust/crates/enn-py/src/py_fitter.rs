@@ -58,12 +58,13 @@ impl PyENNStatefulFitter {
     fn ask(
         &mut self,
         model: &PyEpistemicNearestNeighbors,
-        num_fit_candidates: usize,
+        num_fit_candidates: Option<usize>,
         num_fit_samples: usize,
         params_warm_start: Option<PyENNParams>,
         affine_calibrate: bool,
     ) -> PyResult<PyENNParams> {
         let warm = params_warm_start.as_ref().map(|p| p.inner);
+        let num_fit_candidates = num_fit_candidates.unwrap_or(30);
         let result = self
             .inner
             .ask(
