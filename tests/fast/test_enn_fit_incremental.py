@@ -141,6 +141,46 @@ def test_enn_fit_rejects_stale_foreign_and_repeated_tokens():
         )
 
 
+def test_incremental_enn_fit_rejects_a_later_k_or_seed():
+    import numpy as np
+    import pytest
+
+    from enn.enn.enn_class import EpistemicNearestNeighbors
+    from enn.enn.enn_fit import enn_fit
+
+    rng = np.random.default_rng(1)
+    x = rng.standard_normal((4, 2))
+    y = rng.standard_normal((4, 1))
+    model = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
+    first = model.add(x[0:1], y[0:1])
+    enn_fit(
+        model,
+        k=2,
+        num_fit_candidates=1,
+        num_fit_samples=4,
+        rng=np.random.default_rng(1),
+        incremental=first,
+    )
+    second = model.add(x[1:2], y[1:2])
+    with pytest.raises(ValueError, match="freezes k"):
+        enn_fit(
+            model,
+            k=4,
+            num_fit_candidates=1,
+            num_fit_samples=4,
+            rng=np.random.default_rng(1),
+            incremental=second,
+        )
+    enn_fit(
+        model,
+        k=2,
+        num_fit_candidates=1,
+        num_fit_samples=4,
+        rng=np.random.default_rng(1),
+        incremental=second,
+    )
+
+
 def test_tell_with_y_bounds_tracks_warped_y_std():
     import numpy as np
 

@@ -42,8 +42,6 @@ def enn_neighbor_distances_and_indices(
 
 
 def _rust_index_driver_name(index_driver: ENNIndexDriver) -> str:
-    from enn.turbo.config.enn_index_driver import ENN_INDEX_DRIVER_TO_RUST
+    from enn.turbo.config.enn_index_driver import index_driver_to_wire
 
-    if index_driver not in ENN_INDEX_DRIVER_TO_RUST:
-        raise ValueError(f"Unsupported index driver: {index_driver}")
-    return ENN_INDEX_DRIVER_TO_RUST[index_driver]
+    return index_driver_to_wire(index_driver)

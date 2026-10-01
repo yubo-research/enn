@@ -4,6 +4,7 @@ pub mod disk_observation;
 mod flush_controller;
 mod in_memory;
 pub(crate) mod row_storage;
+mod storage_wire;
 
 pub use in_memory::InMemoryEnnBackend;
 pub use crate::disk_bpann::DiskBpannEnnBackend;
@@ -370,6 +371,15 @@ impl Drop for EnnBackend {
 #[cfg(test)]
 mod backend_dispatch_tests {
     use super::*;
+
+    #[test]
+    fn enn_storage_wire_names_round_trip() {
+        for storage in [EnnStorage::Disk, EnnStorage::InMemory] {
+            assert_eq!(EnnStorage::from_wire(storage.as_wire()), Some(storage));
+        }
+        assert_eq!(EnnStorage::from_wire("disk"), None);
+    }
+
     use ndarray::array;
 
     #[test]

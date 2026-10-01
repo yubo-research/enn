@@ -1,8 +1,32 @@
 //! Placement checks. The rule itself lives in `EnnLayout::try_from_parts`.
+//! Index and storage wire names are parsed by `IndexDriver` and `EnnStorage`.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
+
+/// Decode an index-driver wire name. The match lives on `IndexDriver`.
+#[doc = "kiss-coverage-off"]
+pub(crate) fn index_driver_from_wire(name: &str) -> PyResult<ennbo::IndexDriver> {
+    ennbo::IndexDriver::from_wire(name)
+        .ok_or_else(|| PyValueError::new_err(format!("Unknown index_driver: {name}")))
+}
+
+/// Decode a storage wire name. The match lives on `EnnStorage`.
+#[doc = "kiss-coverage-off"]
+pub(crate) fn enn_storage_from_wire(name: &str) -> PyResult<ennbo::EnnStorage> {
+    ennbo::EnnStorage::from_wire(name)
+        .ok_or_else(|| PyValueError::new_err(format!("Unknown enn_storage: {name}")))
+}
+
+/// Decode an optional storage wire name. `None` means the caller did not choose one.
+#[doc = "kiss-coverage-off"]
+pub(crate) fn enn_storage_optional(name: Option<&str>) -> PyResult<Option<ennbo::EnnStorage>> {
+    match name {
+        None => Ok(None),
+        Some(name) => Ok(Some(enn_storage_from_wire(name)?)),
+    }
+}
 
 #[pyfunction(name = "validate_enn_placement")]
 #[pyo3(signature = (index_driver, enn_storage, work_dir, scale_x, metric_learning))]
@@ -14,28 +38,9 @@ pub fn validate_enn_placement_py(
     scale_x: bool,
     metric_learning: &str,
 ) -> PyResult<()> {
-    use ennbo::index::IndexDriver;
     use ennbo::metric_auto::MetricLearning;
-    use ennbo::EnnStorage;
-    let driver = match index_driver {
-        "FLAT" => IndexDriver::Flat,
-        "BPANN_DISK" => IndexDriver::BpAnnDisk,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "Unknown index_driver: {other}"
-            )))
-        }
-    };
-    let storage = match enn_storage {
-        None => None,
-        Some("DISK") => Some(EnnStorage::Disk),
-        Some("MEMORY") => Some(EnnStorage::InMemory),
-        Some(other) => {
-            return Err(PyValueError::new_err(format!(
-                "Unknown enn_storage: {other}"
-            )))
-        }
-    };
+    let driver = index_driver_from_wire(index_driver)?;
+    let storage = enn_storage_optional(enn_storage)?;
     let metric = MetricLearning::parse(metric_learning).ok_or_else(|| {
         PyValueError::new_err(format!(
             "metric_learning must be 'none' or 'auto', got {metric_learning}"

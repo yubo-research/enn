@@ -25,6 +25,23 @@ impl IndexDriver {
     #[deprecated(since = "0.3.0", note = "renamed to IndexDriver::Flat")]
     #[allow(non_upper_case_globals)]
     pub const Exact: Self = Self::Flat;
+
+    /// Wire name shared with Python `ENNIndexDriver`.
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            Self::Flat => "FLAT",
+            Self::BpAnnDisk => "BPANN_DISK",
+        }
+    }
+
+    /// Parse a wire name. Returns `None` when `name` is not a known driver.
+    pub fn from_wire(name: &str) -> Option<Self> {
+        match name {
+            "FLAT" => Some(Self::Flat),
+            "BPANN_DISK" => Some(Self::BpAnnDisk),
+            _ => None,
+        }
+    }
 }
 
 pub fn is_disk_index_driver(driver: IndexDriver) -> bool {
@@ -223,6 +240,15 @@ impl ENNIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn index_driver_wire_names_round_trip() {
+        for driver in [IndexDriver::Flat, IndexDriver::BpAnnDisk] {
+            assert_eq!(IndexDriver::from_wire(driver.as_wire()), Some(driver));
+        }
+        assert_eq!(IndexDriver::from_wire("exact"), None);
+    }
+
     use crate::knn::faiss_backend::{
         faiss_map_err_for_test, faiss_spec_for_test, make_faiss_for_test,
     };

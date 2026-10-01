@@ -58,12 +58,13 @@ impl EpistemicNearestNeighbors {
         self.auto_metric.as_ref().map(|m| m.tied())
     }
 
+    /// Update only the metric fields that are `Some`.
     pub fn metric_configure(
         &mut self,
-        refit_growth: f64,
-        rebuild_drift: f64,
-        seed: u64,
-        capacity: usize,
+        refit_growth: Option<f64>,
+        rebuild_drift: Option<f64>,
+        seed: Option<u64>,
+        capacity: Option<usize>,
     ) -> Result<(), ENNError> {
         let metric = self.auto_metric.as_mut().ok_or_else(|| {
             ENNError::InvalidParameter("metric policy requires metric_learning=AUTO".into())

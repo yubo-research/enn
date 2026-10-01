@@ -72,6 +72,9 @@ def test_drift_threshold_extremes(tmp_path) -> None:
     _, _, model = _model(tmp_path)
     always = MBPANNMetric(model, rebuild_drift=0.0)
     assert always.set_weights(np.array([1.0, 1.0, 1.01])) is True
+    # A later view that sets no fields must keep the drift threshold at 0.
+    again = MBPANNMetric(model)
+    assert again.set_weights(np.array([1.0, 1.0, 1.02])) is True
     never = MBPANNMetric(model, rebuild_drift=np.inf)
     assert never.set_weights(np.array([1e4, 1.0, 1e-4])) is False
     assert never.drift(np.array([4.0, 1.0, 1.0])) == pytest.approx(np.log(2.0))

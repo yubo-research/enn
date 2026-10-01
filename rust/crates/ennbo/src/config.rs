@@ -5,14 +5,15 @@ use crate::candidates::CandidateRV;
 use crate::error::ENNError;
 use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
-use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
+use crate::morbo_override::MorboOverride;
+use crate::morbo_trust_region::MorboTRSettings;
 use crate::surrogate::ENNSurrogateConfig;
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::{TrustRegionConfig, TrustRegionKind};
 use std::path::PathBuf;
 
 mod rules;
-pub use rules::{OptimizerInitKind, OptimizerRuleSet, TurboEnnBuilder, validate_optimizer_rules};
+pub use rules::{validate_optimizer_rules, OptimizerInitKind, OptimizerRuleSet, TurboEnnBuilder};
 
 /// Optimizer configuration.
 #[derive(Debug, Clone)]
@@ -123,9 +124,8 @@ pub struct ConfigOverrides {
     pub enn_storage: Option<EnnStorage>,
     pub work_dir: Option<PathBuf>,
     pub trust_region_kind: Option<crate::trust_region_config::TrustRegionKind>,
-    pub num_metrics: Option<usize>,
-    pub alpha: Option<f64>,
-    pub rescalarize: Option<String>,
+    /// Present only as a complete MORBO triple: metric count, alpha, and rescalarize mode.
+    pub morbo: Option<MorboOverride>,
     pub raasp_fast: Option<bool>,
     pub metric_learning: Option<crate::metric_auto::MetricLearning>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
@@ -191,27 +191,27 @@ fn apply_trust_region_overrides(
     let lengths_set = overrides.length_init.is_some()
         || overrides.length_min.is_some()
         || overrides.length_max.is_some();
+    if overrides.morbo.is_some() && overrides.trust_region_kind != Some(TrustRegionKind::Morbo) {
+        return Err(ENNError::InvalidParameter(
+            "num_metrics and alpha require trust_region MORBO".into(),
+        ));
+    }
     if overrides.trust_region_kind == Some(TrustRegionKind::Morbo) {
+        let morbo = overrides.morbo.ok_or_else(|| {
+            ENNError::InvalidParameter(
+                "MORBO overrides require num_metrics and alpha together".into(),
+            )
+        })?;
         let length = TRLengthConfig::resolve(
             overrides.length_init,
             overrides.length_min,
             overrides.length_max,
         )?;
-        let num_metrics = overrides.num_metrics.unwrap_or(2);
-        let alpha = overrides.alpha.unwrap_or(0.05);
-        let rescalarize = match overrides.rescalarize.as_deref() {
-            None => Rescalarize::OnRestart,
-            Some(s) => s.parse().map_err(|_| {
-                ENNError::InvalidParameter(format!(
-                    "Unknown rescalarize mode: {s:?}; expected \"on_propose\" or \"on_restart\""
-                ))
-            })?,
-        };
         config.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
-            num_metrics,
-            alpha,
+            num_metrics: morbo.num_metrics,
+            alpha: morbo.alpha,
             length,
-            rescalarize,
+            rescalarize: morbo.rescalarize,
             noise_aware: overrides.noise_aware.unwrap_or(false),
         });
         return Ok(());
@@ -411,6 +411,7 @@ mod tests {
     use super::*;
     use crate::backend::EnnStorage;
     use crate::candidates::CandidateRV;
+    use crate::morbo_trust_region::Rescalarize;
     use std::path::Path;
 
     #[test]
@@ -536,7 +537,11 @@ mod tests {
 
         let overrides = ConfigOverrides {
             trust_region_kind: Some(TrustRegionKind::Morbo),
-            num_metrics: Some(1),
+            morbo: Some(MorboOverride {
+                num_metrics: 1,
+                alpha: 0.05,
+                rescalarize: Rescalarize::OnRestart,
+            }),
             ..Default::default()
         };
         let applied = overrides.apply_to(turbo_enn_config()).unwrap();
@@ -611,7 +616,11 @@ mod tests {
     fn morbo_config_missing_rescalarize_defaults_on_restart() {
         let overrides = ConfigOverrides {
             trust_region_kind: Some(TrustRegionKind::Morbo),
-            num_metrics: Some(2),
+            morbo: Some(MorboOverride {
+                num_metrics: 2,
+                alpha: 0.05,
+                rescalarize: Rescalarize::OnRestart,
+            }),
             ..Default::default()
         };
         let applied = overrides.apply_to(turbo_enn_config()).unwrap();
@@ -627,15 +636,35 @@ mod tests {
 
     #[test]
     fn morbo_config_unknown_rescalarize_errors() {
-        let overrides = ConfigOverrides {
+        let parsed: Result<Rescalarize, ()> = "NOT_A_MODE".parse();
+        assert!(
+            parsed.is_err(),
+            "unknown rescalarize names are not a stored mode"
+        );
+    }
+
+    #[test]
+    fn morbo_override_requires_the_paired_fields() {
+        let missing = ConfigOverrides {
             trust_region_kind: Some(TrustRegionKind::Morbo),
-            num_metrics: Some(2),
-            rescalarize: Some("NOT_A_MODE".to_string()),
             ..Default::default()
         };
-        let err = overrides.apply_to(turbo_enn_config()).unwrap_err();
+        let err = missing.apply_to(turbo_enn_config()).unwrap_err();
         assert!(
-            err.to_string().contains("Unknown rescalarize"),
+            err.to_string().contains("num_metrics and alpha"),
+            "unexpected error: {err}"
+        );
+        let unpaired = ConfigOverrides {
+            morbo: Some(MorboOverride {
+                num_metrics: 2,
+                alpha: 0.05,
+                rescalarize: Rescalarize::OnRestart,
+            }),
+            ..Default::default()
+        };
+        let err = unpaired.apply_to(turbo_enn_config()).unwrap_err();
+        assert!(
+            err.to_string().contains("require trust_region MORBO"),
             "unexpected error: {err}"
         );
     }

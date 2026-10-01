@@ -80,6 +80,8 @@ pub mod disk_bpann;
 #[allow(missing_docs)]
 pub mod model;
 #[allow(missing_docs)]
+pub mod morbo_override;
+#[allow(missing_docs)]
 pub mod morbo_trust_region;
 #[allow(missing_docs)]
 pub mod optimizer;

@@ -41,21 +41,11 @@ class RustOptimizer:
 
     @property
     def tr_obs_count(self) -> int:
-        tr_obs_count = getattr(self._inner, "tr_obs_count", None)
-        if callable(tr_obs_count):
-            return int(tr_obs_count())
-        if tr_obs_count is not None:
-            return int(tr_obs_count)
-        return 0
+        return int(self._inner.tr_obs_count())
 
     @property
     def tr_length(self) -> float:
-        tr_length = getattr(self._inner, "tr_length", None)
-        if callable(tr_length):
-            return float(tr_length())
-        if tr_length is not None:
-            return float(tr_length)
-        return 0.5
+        return float(self._inner.tr_length())
 
     def telemetry(self) -> Telemetry:
         t = self._inner.telemetry()

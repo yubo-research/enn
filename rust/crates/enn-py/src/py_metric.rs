@@ -174,11 +174,15 @@ pub fn metric_configure(
     reservoir_capacity: Option<usize>,
     tied_dims: Option<Vec<Vec<usize>>>,
 ) -> PyResult<()> {
-    if let Some(seed) = seed {
-        if seed < 0 {
-            return Err(PyValueError::new_err(format!("seed must be >= 0, got {seed}")));
+    let seed = match seed {
+        Some(seed) if seed < 0 => {
+            return Err(PyValueError::new_err(format!(
+                "seed must be >= 0, got {seed}"
+            )));
         }
-    }
+        Some(seed) => Some(seed as u64),
+        None => None,
+    };
     if let Some(groups) = &tied_dims {
         let stored = model.inner.metric_tied().map(|g| g.to_vec()).unwrap_or_default();
         if groups != &stored {
@@ -187,11 +191,6 @@ pub fn metric_configure(
             )));
         }
     }
-    let seed = seed.unwrap_or(0) as u64;
-    let refit_growth = refit_growth.unwrap_or(ennbo::metric_auto::AUTO_REFIT_GROWTH);
-    let rebuild_drift = rebuild_drift.unwrap_or(ennbo::metric_auto::DEFAULT_REBUILD_DRIFT);
-    let reservoir_capacity =
-        reservoir_capacity.unwrap_or(ennbo::metric_auto::AUTO_RESERVOIR_CAPACITY);
     model
         .inner
         .metric_configure(refit_growth, rebuild_drift, seed, reservoir_capacity)

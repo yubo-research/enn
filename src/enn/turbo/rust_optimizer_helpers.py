@@ -110,10 +110,10 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
     overrides.update(_trust_region_to_override(config))
     surrogate = getattr(config, "surrogate", None)
     if isinstance(surrogate, ENNSurrogateConfig):
-        from .config.enn_index_driver import ENN_INDEX_DRIVER_TO_RUST
+        from .config.enn_index_driver import index_driver_to_wire
+        from .config.enn_surrogate_config import enn_storage_to_wire
 
-        if surrogate.index_driver in ENN_INDEX_DRIVER_TO_RUST:
-            overrides["index_driver"] = ENN_INDEX_DRIVER_TO_RUST[surrogate.index_driver]
+        overrides["index_driver"] = index_driver_to_wire(surrogate.index_driver)
         if surrogate.num_fit_samples is not None:
             overrides["num_fit_samples"] = int(surrogate.num_fit_samples)
         if surrogate.num_fit_candidates is not None:
@@ -128,7 +128,7 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
         if surrogate.y_bounds is not None:
             overrides["y_bounds"] = np.asarray(surrogate.y_bounds, dtype=float)
         if surrogate.enn_storage is not None:
-            overrides["enn_storage"] = surrogate.enn_storage.name
+            overrides["enn_storage"] = enn_storage_to_wire(surrogate.enn_storage)
         if surrogate.work_dir is not None:
             overrides["work_dir"] = os.fspath(surrogate.work_dir)
     return overrides if overrides else None

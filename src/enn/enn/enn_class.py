@@ -6,8 +6,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from enn._rust import EpistemicNearestNeighbors as _RustENN
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage, validate_enn_placement
+from enn.turbo.config.enn_index_driver import ENNIndexDriver, index_driver_from_wire
+from enn.turbo.config.enn_surrogate_config import (
+    ENNStorage,
+    enn_storage_to_wire,
+    validate_enn_placement,
+)
 from enn.turbo.config.enn_x_scaling import (
     ENNMetricLearning,
     ENNScaleX,
@@ -29,12 +33,7 @@ class _EnnRustView:
 
     @property
     def _index_driver(self) -> ENNIndexDriver:
-        name = str(self._rust_model.index_driver)
-        if name == "BPANN_DISK":
-            return ENNIndexDriver.BPANN_DISK
-        if name == "FLAT":
-            return ENNIndexDriver.FLAT
-        raise ValueError(f"Unknown index_driver: {name}")
+        return index_driver_from_wire(str(self._rust_model.index_driver))
 
     @property
     def tied_dims(self) -> tuple[tuple[int, ...], ...]:
@@ -54,9 +53,7 @@ class _EnnRustView:
     def metric(self) -> MBPANNMetric | None:
         if self.metric_learning != ENNMetricLearning.AUTO:
             return None
-        view = MBPANNMetric.__new__(MBPANNMetric)
-        view._inner = self._rust_model
-        return view
+        return MBPANNMetric(self)
 
 
 def _posterior_flags_coerced(flags):
@@ -142,12 +139,10 @@ class EpistemicNearestNeighbors(_EnnRustView):
         if work_dir is not None:
             rust_kwargs["work_dir"] = os.fspath(work_dir)
         if enn_storage is not None:
-            rust_kwargs["enn_storage"] = enn_storage.name
+            rust_kwargs["enn_storage"] = enn_storage_to_wire(enn_storage)
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
-        if metric_learning == ENNMetricLearning.AUTO:
-            MBPANNMetric(self, tied_dims=groups)
 
     def add(
         self,

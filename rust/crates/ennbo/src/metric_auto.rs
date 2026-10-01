@@ -151,26 +151,40 @@ impl AutoMetric {
         &self.tied
     }
 
+    /// Update only the fields that are `Some`. Omitted fields stay as they are.
     pub fn configure(
         &mut self,
-        refit_growth: f64,
-        rebuild_drift: f64,
-        seed: u64,
-        capacity: usize,
+        refit_growth: Option<f64>,
+        rebuild_drift: Option<f64>,
+        seed: Option<u64>,
+        capacity: Option<usize>,
     ) -> Result<(), ENNError> {
-        if refit_growth <= 1.0 {
-            return Err(ENNError::InvalidParameter(format!(
-                "refit_growth must be > 1, got {refit_growth}"
-            )));
+        if let Some(growth) = refit_growth {
+            if growth <= 1.0 {
+                return Err(ENNError::InvalidParameter(format!(
+                    "refit_growth must be > 1, got {growth}"
+                )));
+            }
         }
-        if rebuild_drift.is_nan() || rebuild_drift < 0.0 {
-            return Err(ENNError::InvalidParameter(format!(
-                "rebuild_drift must be >= 0, got {rebuild_drift}"
-            )));
+        if let Some(drift) = rebuild_drift {
+            if drift.is_nan() || drift < 0.0 {
+                return Err(ENNError::InvalidParameter(format!(
+                    "rebuild_drift must be >= 0, got {drift}"
+                )));
+            }
         }
-        self.rows.configure(seed, capacity)?;
-        self.refit_growth = refit_growth;
-        self.rebuild_drift = rebuild_drift;
+        if seed.is_some() || capacity.is_some() {
+            self.rows.configure(
+                seed.unwrap_or_else(|| self.rows.seed()),
+                capacity.unwrap_or_else(|| self.rows.capacity()),
+            )?;
+        }
+        if let Some(growth) = refit_growth {
+            self.refit_growth = growth;
+        }
+        if let Some(drift) = rebuild_drift {
+            self.rebuild_drift = drift;
+        }
         Ok(())
     }
 
@@ -289,16 +303,39 @@ mod tests {
     #[test]
     fn configure_updates_growth_seed_and_capacity_before_replacement() {
         let mut metric = AutoMetric::new(2, 1, vec![], 0).unwrap();
-        metric.configure(3.0, 0.25, 7, 4).unwrap();
+        metric
+            .configure(Some(3.0), Some(0.25), Some(7), Some(4))
+            .unwrap();
         assert_eq!(metric.refit_growth, 3.0);
         assert_eq!(metric.rebuild_drift, 0.25);
         assert_eq!(metric.seed(), 7);
         assert_eq!(metric.capacity(), 4);
-        assert!(metric.configure(3.0, 0.25, 7, 0).is_err());
+        assert!(metric
+            .configure(Some(3.0), Some(0.25), Some(7), Some(0))
+            .is_err());
         metric
             .observe(&[0.0, 1.0, 0.2, 0.3], &[0.0, 1.0], 2)
             .unwrap();
-        assert!(metric.configure(3.0, 0.25, 7, 1).is_err());
+        assert!(metric
+            .configure(Some(3.0), Some(0.25), Some(7), Some(1))
+            .is_err());
+    }
+
+    #[test]
+    fn configure_leaves_omitted_fields() {
+        let mut metric = AutoMetric::new(2, 1, vec![], 4).unwrap();
+        let seed = metric.seed();
+        let capacity = metric.capacity();
+        let drift = metric.rebuild_drift;
+        metric.configure(Some(3.0), None, None, None).unwrap();
+        assert_eq!(metric.refit_growth, 3.0);
+        assert_eq!(metric.rebuild_drift, drift);
+        assert_eq!(metric.seed(), seed);
+        assert_eq!(metric.capacity(), capacity);
+        metric.configure(None, Some(0.1), None, None).unwrap();
+        assert_eq!(metric.refit_growth, 3.0);
+        assert_eq!(metric.seed(), seed);
+        assert_eq!(metric.capacity(), capacity);
     }
 
     #[test]

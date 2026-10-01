@@ -66,10 +66,14 @@ def enn_fit(
     """Fit ENN hyperparameters via ENNStatefulFitter tell/ask.
 
     Batch mode (``incremental`` is None): tell the full model and ask once.
+    ``k`` and ``rng`` build a new fitter on every call.
 
     Incremental mode: ``incremental`` must be the token just returned by
     ``model.add``. That token is consumed here, so a stale, foreign, or
-    repeated token cannot be told.
+    repeated token cannot be told. The first incremental call freezes ``k``
+    and the seed drawn from ``rng`` on the model. A later incremental call
+    must draw that same seed and pass that same ``k``. Any other pair raises
+    ``ValueError`` instead of being ignored.
     """
     from .enn_class import EpistemicNearestNeighbors as PyENN
     from .enn_fitter import ENNStatefulFitter
@@ -88,10 +92,19 @@ def enn_fit(
                 "incremental must be the token returned by model.add, "
                 f"got {type(incremental).__name__}"
             )
-        x_delta, y_delta, yvar_delta = incremental.take(model)
+        proposed_seed = int(rng.integers(0, 2**63 - 1))
         fitter = getattr(model, "_incremental_fitter", None)
+        if fitter is not None and (
+            int(k) != fitter.k or proposed_seed != fitter.seed
+        ):
+            raise ValueError(
+                "incremental enn_fit freezes k and the fitter seed on the first call; "
+                f"frozen k={fitter.k}, frozen seed={fitter.seed}, "
+                f"got k={int(k)}, seed={proposed_seed}"
+            )
+        x_delta, y_delta, yvar_delta = incremental.take(model)
         if fitter is None:
-            fitter = ENNStatefulFitter(k=k, rng=rng)
+            fitter = ENNStatefulFitter(k=k, seed=proposed_seed)
             model._incremental_fitter = fitter
         y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
         fitter.tell(x_delta, y_delta, yvar_delta, y_bounds=y_bounds)

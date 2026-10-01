@@ -68,30 +68,13 @@ impl PyEpistemicNearestNeighbors {
         metric_learning: &str,
         tied_dims: Option<Vec<Vec<usize>>>,
     ) -> PyResult<Self> {
-        let driver = match index_driver {
-            "FLAT" => ennbo::IndexDriver::Flat,
-            "BPANN_DISK" => ennbo::IndexDriver::BpAnnDisk,
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "Unknown index_driver: {index_driver}"
-                )))
-            }
-        };
+        let driver = crate::py_layout::index_driver_from_wire(index_driver)?;
         let metric_learning = ennbo::metric_auto::MetricLearning::parse(metric_learning).ok_or_else(|| {
             PyValueError::new_err(format!(
                 "metric_learning must be 'none' or 'auto', got {metric_learning}"
             ))
         })?;
-        let explicit = match enn_storage {
-            Some("DISK") => Some(ennbo::EnnStorage::Disk),
-            Some("MEMORY") => Some(ennbo::EnnStorage::InMemory),
-            None => None,
-            Some(other) => {
-                return Err(PyValueError::new_err(format!(
-                    "Unknown enn_storage: {other}"
-                )))
-            }
-        };
+        let explicit = crate::py_layout::enn_storage_optional(enn_storage)?;
         let work_dir = work_dir.map(PathBuf::from);
         let layout = ennbo::EnnLayout::try_from_parts(
             driver,
@@ -466,10 +449,7 @@ impl PyEpistemicNearestNeighbors {
     #[getter]
     #[doc = "kiss-coverage-off"]
     fn index_driver(&self) -> &'static str {
-        match self.inner.index_driver() {
-            ennbo::IndexDriver::Flat => "FLAT",
-            ennbo::IndexDriver::BpAnnDisk => "BPANN_DISK",
-        }
+        self.inner.index_driver().as_wire()
     }
 
     #[getter]

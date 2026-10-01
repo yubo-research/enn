@@ -1,11 +1,16 @@
+use ennbo::morbo_override::MorboOverride;
+use ennbo::{create_optimizer_enn_with_overrides, ConfigOverrides, Rescalarize, TrustRegionKind};
 use ndarray::array;
-use ennbo::{create_optimizer_enn_with_overrides, ConfigOverrides, TrustRegionKind};
 
 fn main() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let overrides = ConfigOverrides {
         trust_region_kind: Some(TrustRegionKind::Morbo),
-        num_metrics: Some(2),
+        morbo: Some(MorboOverride {
+            num_metrics: 2,
+            alpha: 0.05,
+            rescalarize: Rescalarize::OnRestart,
+        }),
         ..Default::default()
     };
     let mut opt =

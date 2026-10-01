@@ -68,12 +68,7 @@ mod kiss_coverage_tests {
 
 #[doc = "kiss-coverage-off"]
 fn parse_index_driver(s: &str) -> PyResult<ennbo::index::IndexDriver> {
-    use ennbo::index::IndexDriver;
-    match s {
-        "FLAT" => Ok(IndexDriver::Flat),
-        "BPANN_DISK" => Ok(IndexDriver::BpAnnDisk),
-        _ => Err(PyValueError::new_err(format!("Unknown index_driver: {s}"))),
-    }
+    crate::py_layout::index_driver_from_wire(s)
 }
 
 #[doc = "kiss-coverage-off"]
@@ -114,11 +109,7 @@ fn parse_candidate_rv(s: &str) -> PyResult<ennbo::CandidateRV> {
 
 #[doc = "kiss-coverage-off"]
 fn parse_enn_storage(s: &str) -> PyResult<ennbo::EnnStorage> {
-    match s {
-        "DISK" => Ok(ennbo::EnnStorage::Disk),
-        "MEMORY" => Ok(ennbo::EnnStorage::InMemory),
-        _ => Err(PyValueError::new_err(format!("Unknown enn_storage: {s}"))),
-    }
+    crate::py_layout::enn_storage_from_wire(s)
 }
 
 #[doc = "kiss-coverage-off"]
@@ -146,6 +137,47 @@ fn parse_metric_overrides(
 }
 
 #[doc = "kiss-coverage-off"]
+fn parse_morbo_override(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+    kind: Option<ennbo::TrustRegionKind>,
+) -> PyResult<Option<ennbo::morbo_override::MorboOverride>> {
+    let num_metrics = optional_usize(dict, "num_metrics")?;
+    let alpha = optional_f64(dict, "alpha")?;
+    let rescalarize_name = match dict.get_item("rescalarize")? {
+        Some(v) => Some(v.extract::<String>()?),
+        None => None,
+    };
+    let any = num_metrics.is_some() || alpha.is_some() || rescalarize_name.is_some();
+    let morbo = kind == Some(ennbo::TrustRegionKind::Morbo);
+    if !morbo && !any {
+        return Ok(None);
+    }
+    if !morbo {
+        return Err(PyValueError::new_err(
+            "num_metrics and alpha require trust_region 'morbo'",
+        ));
+    }
+    let (Some(num_metrics), Some(alpha)) = (num_metrics, alpha) else {
+        return Err(PyValueError::new_err(
+            "MORBO overrides require num_metrics and alpha together",
+        ));
+    };
+    let rescalarize = match rescalarize_name.as_deref() {
+        None => ennbo::Rescalarize::OnRestart,
+        Some(s) => s.parse().map_err(|_| {
+            PyValueError::new_err(format!(
+                "Unknown rescalarize mode: {s:?}; expected \"on_propose\" or \"on_restart\""
+            ))
+        })?,
+    };
+    Ok(Some(ennbo::morbo_override::MorboOverride {
+        num_metrics,
+        alpha,
+        rescalarize,
+    }))
+}
+
+#[doc = "kiss-coverage-off"]
 pub fn parse_config_overrides_from_dict(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<ennbo::ConfigOverrides> {
@@ -170,11 +202,7 @@ pub fn parse_config_overrides_from_dict(
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
         );
     }
-    overrides.num_metrics = optional_usize(dict, "num_metrics")?;
-    overrides.alpha = optional_f64(dict, "alpha")?;
-    if let Some(v) = dict.get_item("rescalarize")? {
-        overrides.rescalarize = Some(v.extract()?);
-    }
+    overrides.morbo = parse_morbo_override(dict, overrides.trust_region_kind)?;
     if let Some(v) = dict.get_item("enn_storage")? {
         overrides.enn_storage = Some(parse_enn_storage(&v.extract::<String>()?)?);
     }

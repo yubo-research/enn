@@ -20,7 +20,11 @@ def auto_uses_learned_metric(heldout_gain: float) -> bool:
 
 
 class MBPANNMetric:
-    """Holds the Rust model that owns the AUTO metric."""
+    """View of the Rust AUTO metric.
+
+    Omitted numeric arguments are left as they are. Passing one field does not
+    reset the seed, the refit growth, or the reservoir capacity.
+    """
 
     def __init__(
         self,
@@ -28,12 +32,12 @@ class MBPANNMetric:
         *,
         rebuild_drift: float | None = None,
         refit_growth: float | None = None,
-        tied_dims=(),
+        tied_dims=None,
         seed: int | None = None,
         reservoir_capacity: int | None = None,
     ) -> None:
         self._inner = model.rust_backend if hasattr(model, "rust_backend") else model
-        groups = [list(map(int, g)) for g in tied_dims]
+        groups = None if tied_dims is None else [list(map(int, g)) for g in tied_dims]
         _rust.metric_configure(
             self._inner,
             None if refit_growth is None else float(refit_growth),

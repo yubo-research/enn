@@ -7,13 +7,20 @@ from enum import Enum, auto
 import numpy as np
 
 from .enn_fit_config import ENNFitConfig
-from .enn_index_driver import ENNIndexDriver
+from .enn_index_driver import ENNIndexDriver, index_driver_to_wire
 from .enn_x_scaling import ENNMetricLearning, ENNScaleX
 
 
 class ENNStorage(Enum):
     MEMORY = auto()
     DISK = auto()
+
+
+def enn_storage_to_wire(storage: ENNStorage) -> str:
+    """Encode a storage kind. The wire name is the enum member name."""
+    if not isinstance(storage, ENNStorage):
+        raise ValueError(f"enn_storage must be an ENNStorage, got {storage!r}")
+    return storage.name
 
 
 def validate_enn_placement(
@@ -37,8 +44,8 @@ def validate_enn_placement(
             f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}"
         )
     rust_validate(
-        index_driver.name,
-        None if enn_storage is None else enn_storage.name,
+        index_driver_to_wire(index_driver),
+        None if enn_storage is None else enn_storage_to_wire(enn_storage),
         None if work_dir is None else os.fspath(work_dir),
         scale_x is ENNScaleX.ON,
         "auto" if metric_learning is ENNMetricLearning.AUTO else "none",

@@ -12,16 +12,32 @@ class ENNStatefulFitter:
     def __init__(
         self,
         k: int,
-        rng: Any,
+        rng: Any | None = None,
         *,
+        seed: int | None = None,
         infer_aleatoric_variance_scale: bool = True,
     ) -> None:
-        seed = int(rng.integers(0, 2**63 - 1))
+        if seed is None:
+            if rng is None:
+                raise TypeError("ENNStatefulFitter requires rng or seed")
+            seed = int(rng.integers(0, 2**63 - 1))
+        self._k = int(k)
+        self._seed = int(seed)
         self._rust = _RustENNStatefulFitter(
-            k,
-            seed,
+            self._k,
+            self._seed,
             infer_aleatoric_variance_scale,
         )
+
+    @property
+    def k(self) -> int:
+        """Neighbor count frozen when this fitter was created."""
+        return self._k
+
+    @property
+    def seed(self) -> int:
+        """Fitter seed frozen when this fitter was created."""
+        return self._seed
 
     def tell(
         self,
