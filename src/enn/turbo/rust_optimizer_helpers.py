@@ -13,14 +13,12 @@ from .config.acquisition import (
 )
 from .config.candidate_gen_config import CandidateGenConfig
 from .config.candidate_rv import CandidateRV
-from .config.enn_x_scaling import ENNScaleX
+from .config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from .config.init_strategies import LHDOnlyInit
 from .config.morbo_tr_config import MorboTRConfig
 from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .config.trust_region import NoTRConfig, TurboTRConfig
-from .fallback_registry import requires_python_optimizer_fallback
-
 DEFAULT_ENN_K = 10
 _DEFAULT_NUM_CANDIDATES_FACTOR = 100.0
 _DEFAULT_MAX_CANDIDATES = 5000
@@ -88,6 +86,8 @@ def _candidates_to_override(config: OptimizerConfig) -> dict[str, Any]:
     out: dict[str, Any] = {}
     out.update(_candidate_rv_override(config))
     out.update(_candidate_count_override(config))
+    if config.candidates.raasp_driver.name == "FAST":
+        out["raasp_fast"] = True
     return out
 
 
@@ -139,6 +139,15 @@ def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
     return out
 
 
+def _metric_overrides(surrogate: ENNSurrogateConfig, overrides: dict[str, Any]) -> None:
+    if surrogate.metric_learning != ENNMetricLearning.NONE:
+        overrides["metric_learning_auto"] = True
+    if surrogate.tied_dims:
+        overrides["tied_dims"] = [list(g) for g in surrogate.tied_dims]
+    if surrogate.fit.affine_calibrate:
+        overrides["affine_calibrate"] = True
+
+
 def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
     overrides: dict[str, Any] = {}
     overrides.update(_acquisition_to_override(config))
@@ -160,6 +169,7 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
         )
         if surrogate.scale_x == ENNScaleX.ON:
             overrides["scale_x"] = True
+        _metric_overrides(surrogate, overrides)
         if surrogate.y_bounds is not None:
             overrides["y_bounds"] = np.asarray(surrogate.y_bounds, dtype=float)
         if surrogate.enn_storage is not None:
@@ -170,8 +180,6 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
 
 
 def is_rust_supported_config(config: OptimizerConfig) -> bool:
-    if requires_python_optimizer_fallback(config):
-        return False
     if isinstance(config.surrogate, ENNSurrogateConfig):
         return True
     if isinstance(config.surrogate, NoSurrogateConfig):

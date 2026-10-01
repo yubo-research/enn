@@ -107,16 +107,12 @@ class RustOptimizer:
             raise ValueError(f"num_arms must be > 0, got {num_arms}")
 
         seed = int(self._rng.integers(2**63 - 1))
-        arms_unit = self._inner.ask(num_arms, seed)
-
-        lower = self._bounds[:, 0]
-        upper = self._bounds[:, 1]
-        return arms_unit * (upper - lower) + lower
+        return np.asarray(self._inner.ask(num_arms, seed), dtype=float)
 
     def tell(
         self, x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None = None
     ) -> np.ndarray:
-        from .python_fallback.turbo_optimizer_utils import validate_tell_inputs
+        from .tell_inputs import validate_tell_inputs
 
         inputs = validate_tell_inputs(x, y, y_var, self._num_dim)
         if self._expects_yvar is None:
@@ -132,12 +128,7 @@ class RustOptimizer:
                 else np.empty((0, inputs.num_metrics), dtype=float)
             )
 
-        lower = self._bounds[:, 0]
-        upper = self._bounds[:, 1]
-        x_unit = (inputs.x - lower) / (upper - lower)
-
-
-
+        x_native = inputs.x
         y_native = inputs.y[:, None] if inputs.y.ndim == 1 else inputs.y
         y_var_native = inputs.y_var
         if y_var_native is not None and y_var_native.ndim == 1:
@@ -145,9 +136,9 @@ class RustOptimizer:
 
         seed = int(self._rng.integers(2**63 - 1))
         if y_var_native is None:
-            self._inner.tell(x_unit, y_native, seed)
+            self._inner.tell(x_native, y_native, seed)
         else:
-            self._inner.tell(x_unit, y_native, seed, y_var_native)
+            self._inner.tell(x_native, y_native, seed, y_var_native)
 
         return inputs.y
 
@@ -160,11 +151,7 @@ def create_optimizer(
 ) -> Any:
     """Create optimizer, using Rust backend when possible."""
     if not is_rust_supported_config(config):
-        from .python_fallback.optimizer import (
-            create_optimizer as create_python_optimizer,
-        )
-
-        return create_python_optimizer(bounds=bounds, config=config, rng=rng)
+        raise ValueError(f"Unsupported optimizer config: {type(config.surrogate)}")
 
     bounds_arr = np.asarray(bounds, dtype=float)
     seed = int(rng.integers(2**63 - 1))

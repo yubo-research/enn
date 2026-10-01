@@ -18,6 +18,10 @@ pub fn pymodule_hash(m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::py_hash::normal_hash_batch_multi_seed_fast_py,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_hash::normal_hash_batch_multi_seed_py,
+        m
+    )?)?;
     Ok(())
 }
 
@@ -33,6 +37,17 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_util::arms_from_pareto_fronts_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_config_path_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::ensure_config_file_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::fit_affine, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::affine_map_mu, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::affine_map_draws, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::affine_apply, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::sample_normal, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::z_crit, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::confidence_interval, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::ackley_core, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::separable_unimodal, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::choose_indices, m)?)?;
+    m.add_class::<crate::py_numpy_normal::PyNumpyNormal>()?;
     Ok(())
 }
 
@@ -45,6 +60,22 @@ pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_model::PyENNParams>()?;
     m.add_function(wrap_pyfunction!(crate::py_model::train_rows_at_warped, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_model::set_unscaled_dims, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_built, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_heldout_gain, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_num_seen, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_num_refits, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_num_rescales, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_num_rebuilds, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_uses_learned, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_set_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::dependence_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::auto_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::sobol_index, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::null_sd, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::group_sobol_index, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::loo_loglik, m)?)?;
+    m.add_class::<crate::py_metric::PyReservoir>()?;
     Ok(())
 }
 

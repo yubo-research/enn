@@ -37,26 +37,6 @@ def _acq_configs(
     )
 
 
-def turbo_one_config(
-    *,
-    num_candidates: int | None = None,
-    num_init: int | None = None,
-    trust_region: tr.TrustRegionConfig | None = None,
-    candidate_rv: CandidateRV = CandidateRV.SOBOL,
-    acq_type: AcqType = AcqType.THOMPSON,
-) -> OptimizerConfig:
-    acquisition, acq_optimizer = _acq_configs(acq_type)
-    return OptimizerConfig(
-        trust_region=trust_region or tr.TurboTRConfig(),
-        candidates=_make_candidate_gen_config(candidate_rv, num_candidates),
-        init=InitConfig(num_init=num_init),
-        surrogate=sur.GPSurrogateConfig(),
-        acquisition=acquisition,
-        acq_optimizer=acq_optimizer,
-        observation_history=ObservationHistoryConfig(),
-    )
-
-
 def turbo_zero_config(
     *,
     num_candidates: int | None = None,

@@ -38,6 +38,9 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
             storage,
             work_dir,
             y_bounds: None,
+            metric_learning_auto: false,
+            tied_dims: Vec::new(),
+            affine_calibrate: false,
         };
     }
     cfg.candidates = CandidateConfig {
@@ -46,6 +49,7 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
         max_candidates: Some(20),
         num_candidates_per_arm: None,
         candidate_rv: CandidateRV::Uniform,
+        raasp_fast: false,
     };
     cfg
 }

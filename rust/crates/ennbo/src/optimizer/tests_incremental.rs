@@ -77,7 +77,7 @@ fn enn_fitter_ask_always_fits_with_enough_obs() {
     let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
     fitter.reset_y_stats(&ty.view());
     let mut rng = StdRng::seed_from_u64(99);
-    let p = fitter.ask(&model, 4, 3, None, &mut rng).unwrap();
+    let p = fitter.ask(&model, 4, 3, None, &mut rng, false).unwrap();
     assert_eq!(p.k_num_neighbors, 2);
     assert!(p.epistemic_variance_scale > 0.0);
 }

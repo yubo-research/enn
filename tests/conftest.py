@@ -59,21 +59,24 @@ def sphere_objective(x):
     return -np.sum(x**2, axis=1)
 
 
-def make_from_unit_fn(bounds):
-    from enn.turbo.python_fallback.turbo_utils import from_unit
+def _from_unit(x, bounds):
+    import numpy as np
 
+    bounds = np.asarray(bounds, dtype=float)
+    return np.asarray(x, dtype=float) * (bounds[:, 1] - bounds[:, 0]) + bounds[:, 0]
+
+
+def make_from_unit_fn(bounds):
     def from_unit_fn(x):
-        return from_unit(x, bounds)
+        return _from_unit(x, bounds)
 
     return from_unit_fn
 
 
 def make_select_sobol_fn(bounds, rng):
-    from enn.turbo.python_fallback.turbo_utils import from_unit
-
     def select_sobol_fn(x, n):
         idx = rng.choice(x.shape[0], size=n, replace=False)
-        return from_unit(x[idx], bounds)
+        return _from_unit(x[idx], bounds)
 
     return select_sobol_fn
 

@@ -59,7 +59,6 @@ class ENNStatefulFitter:
         params_warm_start: Any | None = None,
         affine_calibrate: bool = False,
     ) -> Any:
-        from .affine_calibrator import fit_affine_calibrator
         from .enn_class import EpistemicNearestNeighbors as PyENN
         from .enn_params import ENNParams as PyENNParams
 
@@ -79,6 +78,7 @@ class ENNStatefulFitter:
             num_fit_candidates,
             num_fit_samples,
             rust_warm_start,
+            affine_calibrate,
         )
 
         params = PyENNParams(
@@ -86,21 +86,46 @@ class ENNStatefulFitter:
             epistemic_variance_scale=rust_result.epistemic_variance_scale,
             aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
         )
-        if affine_calibrate:
-            self.affine_calibrator = fit_affine_calibrator(
-                model,
-                params,
-                num_samples=num_fit_samples,
-                rng=self._rng,
-            )
-        else:
+        coeffs = self._rust.affine_coeffs()
+        if coeffs is None:
             self.affine_calibrator = None
+        else:
+            from .affine_calibrator import AffineCalibrator
+
+            a, b, c = coeffs
+            self.affine_calibrator = AffineCalibrator(
+                a=np.asarray(a, dtype=float),
+                b=np.asarray(b, dtype=float),
+                c=np.asarray(c, dtype=float),
+            )
         return params
 
     def calibrate(self, normal: Any) -> Any:
         if self.affine_calibrator is None:
             return normal
         return self.affine_calibrator.apply(normal)
+
+    def _fit_scales(self, params: Any) -> np.ndarray:
+        return np.array(
+            [
+                params.k_num_neighbors,
+                params.epistemic_variance_scale,
+                params.aleatoric_variance_scale,
+            ],
+            dtype=float,
+        )
+
+    def _calibrator_rows(self) -> np.ndarray | None:
+        cal = self.affine_calibrator
+        if cal is None:
+            return None
+        return np.vstack(
+            [
+                np.asarray(cal.a, dtype=float),
+                np.asarray(cal.b, dtype=float),
+                np.asarray(cal.c, dtype=float),
+            ]
+        )
 
     def posterior(
         self,
@@ -109,11 +134,21 @@ class ENNStatefulFitter:
         params: Any,
         flags: Any | None = None,
     ) -> Any:
-        if flags is None:
-            raw = model.posterior(x, params=params)
-        else:
-            raw = model.posterior(x, params=params, flags=flags)
-        return self.calibrate(raw)
+        from .enn_normal import ENNNormal
+        from .enn_params import PosteriorFlags
+
+        flags = flags if flags is not None else PosteriorFlags()
+        mu, se, se_epi, se_ale, idx = self._rust.posterior_calibrated(
+            model.rust_backend,
+            np.asarray(x, dtype=float),
+            self._fit_scales(params),
+            self._calibrator_rows(),
+            flags.exclude_nearest,
+            flags.observation_noise,
+        )
+        idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
+        yb = np.asarray(model.rust_backend.y_bounds, dtype=float)
+        return ENNNormal(mu, se, se_epi, se_ale, idx=idx_arr, y_bounds=yb)
 
     def posterior_function_draw(
         self,
@@ -124,30 +159,22 @@ class ENNStatefulFitter:
         function_seeds: Any,
         flags: Any | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        draws, idx = model.posterior_function_draw(
-            x,
-            params,
-            function_seeds=function_seeds,
-            flags=flags,
+        from .enn_class_support import _to_rust_seeds
+        from .enn_params import PosteriorFlags
+
+        flags = flags if flags is not None else PosteriorFlags()
+        draws, idx = self._rust.function_draw_calibrated(
+            model.rust_backend,
+            np.asarray(x, dtype=float),
+            self._fit_scales(params),
+            _to_rust_seeds(function_seeds),
+            self._calibrator_rows(),
+            flags.exclude_nearest,
+            flags.observation_noise,
         )
-        if self.affine_calibrator is None:
-            return draws, idx
-        if flags is None:
-            raw_post = model.posterior(x, params=params)
-        else:
-            raw_post = model.posterior(x, params=params, flags=flags)
-        yb = np.asarray(model.rust_backend.y_bounds, dtype=float)
-        mapped = np.transpose(draws, (0, 2, 1))
-        se_p = self.affine_calibrator.c.reshape(1, -1) * np.asarray(
-            raw_post.se, dtype=float
-        )
-        mapped = self.affine_calibrator.map_draws(
-            mapped,
-            raw_post.mu,
-            y_bounds=yb,
-            se=se_p,
-        )
-        return np.transpose(mapped, (0, 2, 1)), idx
+        n_query = np.asarray(x).shape[0]
+        idx_arr = np.array(idx, dtype=int) if idx else np.zeros((n_query, 0), dtype=int)
+        return np.asarray(draws, dtype=float), idx_arr
 
     def sample(
         self,

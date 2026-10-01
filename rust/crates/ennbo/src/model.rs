@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::backend::{EnnBackend, EnnStorage};
 use crate::error::ENNError;
+use crate::metric_auto::AutoMetric;
 use crate::index::{IndexDriver, is_disk_index_driver};
 use crate::y_bounds::resolve_y_bounds;
 
@@ -23,6 +24,7 @@ type InitStats = (
 );
 
 mod access;
+mod auto_api;
 mod metric;
 mod y_bounds_api;
 pub use access::{EnnIndexAccess, EnnRowAccess};
@@ -53,6 +55,7 @@ pub struct EpistemicNearestNeighbors {
     /// Whether `y_bounds` is in `metadata.json` (it never changes, and metadata
     /// rewrites keep it, so it is written once).
     y_bounds_persisted: AtomicBool,
+    pub(crate) auto_metric: Option<AutoMetric>,
 }
 
 impl EpistemicNearestNeighbors {
@@ -236,6 +239,7 @@ impl EpistemicNearestNeighbors {
             x_sumsq,
             work_dir: stored_work_dir,
             y_bounds_persisted: AtomicBool::new(false),
+            auto_metric: None,
         };
         if disk_reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;
@@ -326,6 +330,7 @@ impl EpistemicNearestNeighbors {
 
             self.num_obs = n;
             self.persist_y_bounds_metadata()?;
+            self.observe_auto_metric(x, y)?;
         }
         Ok(())
     }

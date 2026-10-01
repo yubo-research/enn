@@ -41,7 +41,7 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None, metric_learning=false))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None, metric_learning=false, tied_dims=None))]
     #[allow(clippy::too_many_arguments)]
     #[doc = "kiss-coverage-off"]
     fn new(
@@ -54,6 +54,7 @@ impl PyEpistemicNearestNeighbors {
         enn_storage: Option<&str>,
         y_bounds: Option<PyReadonlyArray2<f64>>,
         metric_learning: bool,
+        tied_dims: Option<Vec<Vec<usize>>>,
     ) -> PyResult<Self> {
         let driver = match index_driver {
             "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Exact,
@@ -82,7 +83,7 @@ impl PyEpistemicNearestNeighbors {
         };
         let work_dir = work_dir.map(PathBuf::from);
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
-        let model = ennbo::EpistemicNearestNeighbors::new_with_storage(
+        let mut model = ennbo::EpistemicNearestNeighbors::new_with_storage(
             train_x.as_array().to_owned(),
             train_y.as_array().to_owned(),
             train_yvar.map(|v| v.as_array().to_owned()),
@@ -93,6 +94,20 @@ impl PyEpistemicNearestNeighbors {
             y_bounds,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        if metric_learning {
+            model
+                .enable_auto_metric(
+                    tied_dims.unwrap_or_default(),
+                    &train_x.as_array(),
+                    &train_y.as_array(),
+                )
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        } else if let Some(groups) = tied_dims {
+            let dims: Vec<usize> = groups.into_iter().flatten().collect();
+            model
+                .set_unscaled_dims(dims)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        }
         Ok(Self {
             inner: model,
             metric_learning,

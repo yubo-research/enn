@@ -22,13 +22,8 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("libgomp1", "libopenblas0", "libblas3", "liblapack3")
     .pip_install(
-        "torch==2.13.0",
-        index_url="https://download.pytorch.org/whl/cpu",
-    )
-    .pip_install(
         "numpy==2.4.6",
         "scipy==1.17.1",
-        "gpytorch==1.13",
         "click==8.4.2",
         "nds==0.4.3",
     )

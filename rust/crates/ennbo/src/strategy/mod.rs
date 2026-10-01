@@ -7,7 +7,7 @@ use rand::RngCore;
 use crate::util::argmax_random_tie;
 
 use crate::acquisition::{ParetoAcquisition, RandomAcquisition, UCBAcquisition};
-use crate::candidates::{generate_candidates, generate_lhd, generate_uniform};
+use crate::candidates::{generate_candidates, generate_lhd, generate_sobol_masked, generate_uniform};
 use crate::config::{AcquisitionConfig, InitStrategy};
 use crate::error::ENNError;
 use crate::optimizer::{Optimizer, Telemetry};
@@ -277,6 +277,54 @@ fn tell_init(
     tell_common(optimizer, x, y, yvar, None, rng)
 }
 
+fn draw_turbo_candidates(
+    optimizer: &mut Optimizer,
+    x_center: &ArrayView1<f64>,
+    lower_1d: &Array1<f64>,
+    upper_1d: &Array1<f64>,
+    lengthscales: Option<&ArrayView1<f64>>,
+    num_candidates: usize,
+    rng: &mut dyn RngCore,
+) -> Result<Array2<f64>, ENNError> {
+    let raasp_fast = optimizer.config().candidates.raasp_fast;
+    let candidate_rv = optimizer.config().candidates.candidate_rv;
+    if raasp_fast && candidate_rv == crate::candidates::CandidateRV::RAASP {
+        return crate::candidates_fast::generate_tr_candidates_fast(
+            x_center,
+            lower_1d,
+            upper_1d,
+            num_candidates,
+            rng,
+            20,
+        );
+    }
+    if optimizer.trust_region().is_morbo()
+        && candidate_rv == crate::candidates::CandidateRV::Sobol
+    {
+        if let Some(engine) = optimizer.sobol_engine_mut() {
+            return generate_sobol_masked(
+                x_center,
+                lower_1d,
+                upper_1d,
+                num_candidates,
+                rng,
+                engine,
+                20,
+            );
+        }
+    }
+    generate_candidates(
+        || (lower_1d.clone(), upper_1d.clone()),
+        x_center,
+        lengthscales,
+        num_candidates,
+        candidate_rv,
+        rng,
+        optimizer.sobol_engine_mut(),
+        20,
+    )
+}
+
 /// Ask for TuRBO phase.
 fn ask_turbo(
     optimizer: &mut Optimizer,
@@ -286,16 +334,6 @@ fn ask_turbo(
 ) -> Result<Array2<f64>, ENNError> {
     optimizer.trust_region_mut().resample_on_propose(rng);
     optimizer.trust_region_mut().set_num_arms(num_arms);
-
-    if optimizer.trust_region().is_morbo() {
-        let num_obs = optimizer.obs_count();
-        if num_obs > 0 {
-            optimizer
-                .trust_region_mut()
-                .morbo_rescalarize_incumbent(num_obs)?;
-        }
-    }
-
 
     let default_center = Array1::from_elem(optimizer.num_dim(), 0.5);
     let x_center = optimizer
@@ -314,16 +352,20 @@ fn ask_turbo(
     let config = optimizer.config().candidates.clone();
     let num_candidates = config.num_candidates(num_dim, num_arms);
     telemetry.num_candidates = num_candidates;
+    if optimizer.trust_region().is_morbo()
+        && config.candidate_rv == crate::candidates::CandidateRV::Sobol
+    {
+        optimizer.reseed_sobol(num_arms)?;
+    }
 
-    let x_cand_unit = generate_candidates(
-        || (lower_1d.clone(), upper_1d.clone()),
+    let x_cand_unit = draw_turbo_candidates(
+        optimizer,
         &x_center.view(),
+        &lower_1d,
+        &upper_1d,
         ls_ref.as_ref(),
         num_candidates,
-        config.candidate_rv,
         rng,
-        optimizer.sobol_engine_mut(),
-        20,
     )?;
 
 
@@ -332,6 +374,22 @@ fn ask_turbo(
     telemetry.dt_sel = start.elapsed().as_secs_f64();
 
     Ok(selected)
+}
+
+fn seed_turbo_scale_history(optimizer: &mut Optimizer, prev: usize) {
+    if prev == 0 {
+        return;
+    }
+    let Some(y_all) = optimizer.y_obs() else {
+        return;
+    };
+    if y_all.ncols() != 1 || y_all.nrows() < prev {
+        return;
+    }
+    let prefix = y_all.column(0).slice(ndarray::s![..prev]).to_owned();
+    optimizer
+        .trust_region_mut()
+        .turbo_seed_scale_history(&prefix.view());
 }
 
 /// Tell for TuRBO phase.
@@ -357,6 +415,7 @@ fn tell_turbo(
 
         if optimizer.trust_region().turbo_prev_num_obs() == 0 {
             let prev = num_obs.saturating_sub(y.nrows());
+            seed_turbo_scale_history(optimizer, prev);
             optimizer
                 .trust_region_mut()
                 .set_turbo_prev_num_obs(prev);

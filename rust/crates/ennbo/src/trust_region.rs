@@ -146,8 +146,8 @@ impl TurboTrustRegion {
         &mut self,
         num_obs: usize,
         y_incumbent_value: f64,
+        scale: f64,
     ) -> Result<(), TrustRegionError> {
-        let y_all = Array1::zeros(num_obs);
         if num_obs == 0 || num_obs == self.prev_num_obs {
             return Ok(());
         }
@@ -162,15 +162,6 @@ impl TurboTrustRegion {
             self.prev_num_obs = num_obs;
             return Ok(());
         }
-        let prev_slice = y_all.slice(s![..self.prev_num_obs]);
-        let prev_len = prev_slice.len();
-        let scale = if prev_len >= 2 {
-            let min_val = prev_slice.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-            let max_val = prev_slice.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-            (max_val - min_val).max(1e-6)
-        } else {
-            0.0
-        };
         let improved = y_incumbent_value > self.best_value + 1e-3 * scale;
         if improved {
             self.success_counter += 1;
@@ -412,6 +403,11 @@ impl TurboTrustRegion {
     pub fn set_prev_num_obs(&mut self, prev_num_obs: usize) {
         self.prev_num_obs = prev_num_obs;
     }
+
+    /// Include observations that predate the first length update in the improvement scale.
+    pub fn seed_scale_history(&mut self, y_prefix: &ArrayView1<f64>) {
+        self.incorporate_hist(y_prefix);
+    }
 }
 
 /// Null trust region (no trust region management).
@@ -568,6 +564,22 @@ mod tests {
         let e2 = TrustRegionError::InvalidState("bad state".to_string());
         assert!(e1.to_string().contains("Invalid parameter"));
         assert!(e2.to_string().contains("Invalid state"));
+    }
+
+    #[test]
+    fn seed_scale_history_uses_init_range_as_threshold() {
+        let mut tr = TurboTrustRegion::new(2, TRLengthConfig::default());
+        tr.set_num_arms(1);
+        let prefix = array![-20.0, -5.0];
+        tr.seed_scale_history(&prefix.view());
+        tr.set_prev_num_obs(2);
+        tr.update_with_incumbent_new_batch(&array![-4.0].view(), 3, -4.0)
+            .unwrap();
+        let length_before = tr.length();
+        tr.update_with_incumbent_new_batch(&array![-3.999].view(), 4, -3.999)
+            .unwrap();
+        assert_eq!(tr.length(), length_before);
+        assert_eq!(tr.failure_counter, 1);
     }
 
     #[test]

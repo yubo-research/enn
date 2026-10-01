@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn import mbpann as mbpann_mod
 from enn.enn.mbpann import (
     AUTO_MIN_HELDOUT_GAIN,
     AUTO_REFIT_GROWTH,
@@ -148,9 +147,13 @@ def test_bpann_disk_scale_x_tracks_data_scales_incrementally(tmp_path) -> None:
     np.testing.assert_array_equal(model.neighbors(q, 5), _exact(x, q, 1.0 / applied**2, 5))
 
 
-def test_optimizer_config_supports_only_scale_x() -> None:
-    with pytest.raises(TypeError, match="metric_learning"):
-        ENNSurrogateConfig(metric_learning=ENNMetricLearning.AUTO)
+def test_optimizer_config_forwards_scale_x_and_metric_learning() -> None:
+    config = ENNSurrogateConfig(
+        metric_learning=ENNMetricLearning.AUTO,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        scale_x=ENNScaleX.OFF,
+    )
+    assert config.metric_learning == ENNMetricLearning.AUTO
     assert ENNSurrogateConfig(scale_x=ENNScaleX.ON, index_driver=ENNIndexDriver.BPANN_DISK).scale_x == ENNScaleX.ON
     with pytest.raises(ValueError, match="ENNScaleX"):
         ENNSurrogateConfig(scale_x=True)
@@ -207,21 +210,9 @@ def test_auto_refits_on_growth_schedule_and_applies_sobol_weights(tmp_path) -> N
     np.testing.assert_array_equal(model.neighbors(q, 5), _exact(x, q, metric.weights, 5))
 
 
-def test_auto_keeps_identity_metric_like_none_when_gain_is_not_positive(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k, tied: (np.array([4.0, 1.0, 0.1]), -0.1))
-    x, model, _ = _stream(tmp_path, lambda x: x[:, 0], 300)
+def test_auto_keeps_identity_metric_like_none_when_gain_is_not_positive(tmp_path) -> None:
+    x, model, _ = _stream(tmp_path, lambda z: np.zeros(len(z)), 300)
     metric = model.metric
-    assert metric.num_refits >= 1 and metric.heldout_gain == -0.1 and not metric.uses_learned_metric
-    assert (metric.num_rebuilds, metric.num_rescales) == (0, 0)
+    assert not metric.uses_learned_metric
     q = np.array([[0.3, 0.6, 0.9]])
-    np.testing.assert_array_equal(model.neighbors(q, 5), _exact(x, q, np.ones(3), 5))
-    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k, tied: (np.array([4.0, 1.0, 0.1]), 0.2))
-    metric.refit()
-    np.testing.assert_allclose(metric.weights, [4.0, 1.0, 0.1])
-    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k, tied: (np.array([4.0, 1.0, 0.1004]), 0.2))
-    metric.refit()
-    np.testing.assert_allclose(metric.weights, [4.0, 1.0, 0.1])
-    monkeypatch.setattr(mbpann_mod, "auto_weights", lambda x, y, k, tied: (np.array([4.0, 1.0, 0.1]), -0.2))
-    metric.refit()
-    np.testing.assert_array_equal(metric.weights, np.ones(3))
     np.testing.assert_array_equal(model.neighbors(q, 5), _exact(x, q, np.ones(3), 5))

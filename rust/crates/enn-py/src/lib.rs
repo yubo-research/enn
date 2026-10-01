@@ -20,8 +20,11 @@ pub mod py_fit;
 pub mod py_fitter;
 pub mod py_hash;
 pub mod py_hypervolume;
+pub mod py_metric;
 pub mod py_model;
+pub mod py_numpy_normal;
 pub mod py_optimizer;
+pub mod py_ports;
 pub mod py_util;
 
 mod pymodule_wrappers;

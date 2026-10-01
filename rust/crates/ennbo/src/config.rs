@@ -66,6 +66,8 @@ pub struct CandidateConfig {
     pub num_candidates_per_arm: Option<usize>,
     /// Random variable type for candidates.
     pub candidate_rv: CandidateRV,
+    /// `RAASPDriver.FAST` when true. Ignored unless `candidate_rv` is RAASP.
+    pub raasp_fast: bool,
 }
 
 impl Default for CandidateConfig {
@@ -76,6 +78,7 @@ impl Default for CandidateConfig {
             max_candidates: None,
             num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
+            raasp_fast: false,
         }
     }
 }
@@ -136,6 +139,10 @@ pub struct ConfigOverrides {
     pub num_metrics: Option<usize>,
     pub alpha: Option<f64>,
     pub rescalarize: Option<String>,
+    pub raasp_fast: Option<bool>,
+    pub metric_learning_auto: Option<bool>,
+    pub tied_dims: Option<Vec<Vec<usize>>>,
+    pub affine_calibrate: Option<bool>,
 }
 
 #[doc = "kiss-coverage-off"]
@@ -168,6 +175,15 @@ fn apply_enn_surrogate_fields(config: &mut OptimizerConfig, overrides: &ConfigOv
     if let Some(yb) = overrides.y_bounds.clone() {
         enn.y_bounds = Some(yb);
     }
+    if let Some(auto) = overrides.metric_learning_auto {
+        enn.metric_learning_auto = auto;
+    }
+    if let Some(tied) = overrides.tied_dims.clone() {
+        enn.tied_dims = tied;
+    }
+    if let Some(cal) = overrides.affine_calibrate {
+        enn.affine_calibrate = cal;
+    }
     config.surrogate = SurrogateConfig::ENN(enn);
 }
 
@@ -185,7 +201,7 @@ fn apply_trust_region_overrides(
                 length_max: overrides.length_max.unwrap_or(1.6),
             };
             let rescalarize = match overrides.rescalarize.as_deref() {
-                None => Rescalarize::OnPropose,
+                None => Rescalarize::OnRestart,
                 Some(s) => s.parse().map_err(|_| {
                     ENNError::InvalidParameter(format!(
                         "Unknown rescalarize mode: {s:?}; expected \"on_propose\" or \"on_restart\""
@@ -255,6 +271,9 @@ impl ConfigOverrides {
         if let Some(m) = self.num_candidates_per_arm {
             config.candidates.num_candidates_per_arm = Some(m);
         }
+        if let Some(fast) = self.raasp_fast {
+            config.candidates.raasp_fast = fast;
+        }
         apply_trust_region_overrides(self, &mut config)?;
         if self.index_driver.is_some()
             || self.num_fit_samples.is_some()
@@ -264,6 +283,9 @@ impl ConfigOverrides {
             || self.enn_storage.is_some()
             || self.work_dir.is_some()
             || self.y_bounds.is_some()
+            || self.metric_learning_auto.is_some()
+            || self.tied_dims.is_some()
+            || self.affine_calibrate.is_some()
         {
             apply_enn_surrogate_fields(&mut config, self);
         }
@@ -319,6 +341,7 @@ pub fn turbo_enn_config() -> OptimizerConfig {
             max_candidates: None,
             num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
+            raasp_fast: false,
         },
         acquisition: AcquisitionConfig::UCB { beta: 2.0 },
         noise_aware: false,
@@ -336,6 +359,7 @@ pub fn turbo_zero_config() -> OptimizerConfig {
             max_candidates: None,
             num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
+            raasp_fast: false,
         },
         acquisition: AcquisitionConfig::Random,
         noise_aware: false,
@@ -353,6 +377,7 @@ pub fn lhd_only_config() -> OptimizerConfig {
             max_candidates: None,
             num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
+            raasp_fast: false,
         },
         acquisition: AcquisitionConfig::Random,
         noise_aware: false,
@@ -392,6 +417,7 @@ mod tests {
             max_candidates: Some(5000),
             num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
+            raasp_fast: false,
         };
         assert_eq!(config.num_candidates(60, 1), 5000);
         assert_eq!(config.num_candidates(100, 1), 5000);
@@ -406,6 +432,7 @@ mod tests {
             max_candidates: Some(50),
             num_candidates_per_arm: None,
             candidate_rv: CandidateRV::Uniform,
+            raasp_fast: false,
         };
         assert_eq!(config.num_candidates(2, 1), 50);
     }
@@ -533,6 +560,7 @@ mod tests {
             max_candidates: None,
             num_candidates_per_arm: Some(25),
             candidate_rv: CandidateRV::Uniform,
+            raasp_fast: false,
         };
         assert_eq!(cfg.num_candidates(2, 3), 75);
         assert_eq!(cfg.num_candidates(2, 8), 200);
@@ -594,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn morbo_config_missing_rescalarize_defaults_on_propose() {
+    fn morbo_config_missing_rescalarize_defaults_on_restart() {
         let overrides = ConfigOverrides {
             trust_region_kind: Some("morbo".to_string()),
             num_metrics: Some(2),
@@ -606,8 +634,8 @@ mod tests {
         };
         assert_eq!(
             settings.rescalarize,
-            Rescalarize::OnPropose,
-            "missing rescalarize should match Python MorboTRConfig default ON_PROPOSE"
+            Rescalarize::OnRestart,
+            "missing rescalarize should match Python MorboTRConfig default ON_RESTART"
         );
     }
 

@@ -8,10 +8,6 @@ import numpy as np
 if TYPE_CHECKING:
     from .enn_normal import ENNNormal
 
-_BOUND_EPS = 1e-3
-_BOUND_SE_MULT = 0.25
-
-
 def _as_2d(arr: np.ndarray, name: str) -> np.ndarray:
     out = np.asarray(arr, dtype=float)
     if out.ndim == 1:
@@ -21,87 +17,17 @@ def _as_2d(arr: np.ndarray, name: str) -> np.ndarray:
     return out
 
 
-def _ols_ab(mu: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    n, m = mu.shape
-    a = np.zeros(m, dtype=float)
-    b = np.ones(m, dtype=float)
-    if n < 2:
-        return a, b
-    for j in range(m):
-        mj = mu[:, j]
-        yj = y[:, j]
-        s_mu = float(mj.sum())
-        s_y = float(yj.sum())
-        s_mumu = float(np.dot(mj, mj))
-        s_muy = float(np.dot(mj, yj))
-        det = n * s_mumu - s_mu * s_mu
-        if not np.isfinite(det) or abs(det) < 1e-18 * max(1.0, abs(n * s_mumu)):
-            continue
-        a[j] = (s_mumu * s_y - s_mu * s_muy) / det
-        b[j] = (n * s_muy - s_mu * s_y) / det
-        if not (np.isfinite(a[j]) and np.isfinite(b[j])):
-            a[j], b[j] = 0.0, 1.0
-    return a, b
-
-
-def _residual_c(
-    mu: np.ndarray,
-    se: np.ndarray,
-    y: np.ndarray,
-    a: np.ndarray,
-    b: np.ndarray,
-) -> np.ndarray:
-    m = mu.shape[1]
-    c = np.ones(m, dtype=float)
-    pred = a.reshape(1, -1) + b.reshape(1, -1) * mu
-    resid = y - pred
-    for j in range(m):
-        rms_r = float(np.sqrt(np.mean(resid[:, j] ** 2)))
-        rms_s = float(np.sqrt(np.mean(se[:, j] ** 2)))
-        if not np.isfinite(rms_s) or rms_s <= 0.0 or not np.isfinite(rms_r):
-            c[j] = 1.0
-        else:
-            c[j] = rms_r / rms_s
-    return c
-
-
-def _column_margin(se_col: np.ndarray | None, span: float) -> np.ndarray | float:
-    floor = max(_BOUND_EPS, 1e-6 * span if np.isfinite(span) else _BOUND_EPS)
-    if se_col is None:
-        return floor
-    return np.maximum(floor, _BOUND_SE_MULT * np.abs(se_col))
-
-
-def _project_mu_to_open_bounds(
-    mu: np.ndarray,
-    y_bounds: np.ndarray | None,
-    se: np.ndarray | None = None,
-) -> np.ndarray:
+def _bounds(y_bounds: np.ndarray | None) -> np.ndarray | None:
     if y_bounds is None:
-        return mu
-    bounds = np.asarray(y_bounds, dtype=float)
-    if bounds.size == 0:
-        return mu
-    if np.all(np.isneginf(bounds[:, 0]) & np.isposinf(bounds[:, 1])):
-        return mu
-    out = np.array(mu, dtype=float, copy=True)
-    se_arr = None if se is None else np.asarray(se, dtype=float)
-    for j in range(bounds.shape[0]):
-        lo = float(bounds[j, 0])
-        hi = float(bounds[j, 1])
-        col = out[..., j]
-        se_col = None if se_arr is None else se_arr[..., j]
-        if np.isfinite(lo) and np.isfinite(hi):
-            eps = _column_margin(se_col, hi - lo)
-            lo_b = lo + eps
-            hi_b = hi - eps
-            mid = 0.5 * (lo + hi)
-            out[..., j] = np.where(lo_b >= hi_b, mid, np.clip(col, lo_b, hi_b))
-        elif np.isfinite(lo):
-            out[..., j] = np.maximum(col, lo + _column_margin(se_col, np.inf))
-        elif np.isfinite(hi):
-            out[..., j] = np.minimum(col, hi - _column_margin(se_col, np.inf))
-    return out
+        return None
+    return np.asarray(y_bounds, dtype=float)
+
+
+def _align(arr: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
+    out = np.asarray(arr, dtype=float)
+    while out.ndim < len(shape):
+        out = np.expand_dims(out, axis=-2)
+    return np.broadcast_to(out, shape)
 
 
 @dataclass
@@ -132,17 +58,11 @@ class AffineCalibrator:
         y2 = _as_2d(y, "y")
         if mu2.shape != y2.shape:
             raise ValueError(f"mu shape {mu2.shape} != y shape {y2.shape}")
-        a, b = _ols_ab(mu2, y2)
-        if fit_residual_scale:
-            if se is None:
-                raise ValueError("se is required when fit_residual_scale=True")
-            se2 = _as_2d(se, "se")
-            if se2.shape != mu2.shape:
-                raise ValueError(f"se shape {se2.shape} != mu shape {mu2.shape}")
-            c = _residual_c(mu2, se2, y2, a, b)
-        else:
-            c = np.ones(mu2.shape[1], dtype=float)
-        return cls(a=a, b=b, c=c)
+        from enn._rust import fit_affine
+
+        se_arr = None if se is None else _as_2d(se, "se")
+        a, b, c = fit_affine(mu2, y2, se_arr if fit_residual_scale else None)
+        return cls(a=np.asarray(a, dtype=float), b=np.asarray(b, dtype=float), c=np.asarray(c, dtype=float))
 
     def apply(self, normal: ENNNormal) -> ENNNormal:
         from .enn_normal import ENNNormal
@@ -160,18 +80,16 @@ class AffineCalibrator:
                 f"!= mu last axis {m}"
             )
 
-        c = self.c.reshape((1,) * (mu.ndim - 1) + (m,))
+        from enn._rust import affine_apply
 
-        se_epi_p = c * se_epi
-        se_ale_p = c * se_ale
-        se_p = np.sqrt(se_epi_p * se_epi_p + se_ale_p * se_ale_p)
-        mu_p = self.map_mu(mu, y_bounds=normal.y_bounds, se=se_p)
-
+        mu_p, se_p, se_epi_p, se_ale_p = affine_apply(
+            self.a, self.b, self.c, mu, se_epi, se_ale, _bounds(normal.y_bounds)
+        )
         return ENNNormal(
-            mu=mu_p,
-            se=se_p,
-            se_epi=se_epi_p,
-            se_ale=se_ale_p,
+            mu=np.asarray(mu_p, dtype=float),
+            se=np.asarray(se_p, dtype=float),
+            se_epi=np.asarray(se_epi_p, dtype=float),
+            se_ale=np.asarray(se_ale_p, dtype=float),
             idx=normal.idx,
             y_bounds=normal.y_bounds,
         )
@@ -188,9 +106,13 @@ class AffineCalibrator:
             raise ValueError(
                 f"mu last axis {mu_arr.shape[-1]} != calibrator metrics {m}"
             )
-        shape = (1,) * (mu_arr.ndim - 1) + (m,)
-        out = self.a.reshape(shape) + self.b.reshape(shape) * mu_arr
-        return _project_mu_to_open_bounds(out, y_bounds, se=se)
+        from enn._rust import affine_map_mu
+
+        se_flat = None if se is None else np.asarray(_align(np.asarray(se), mu_arr.shape)).reshape(-1, m)
+        out = affine_map_mu(
+            self.a, self.b, mu_arr.reshape(-1, m), _bounds(y_bounds), se_flat
+        )
+        return np.asarray(out, dtype=float).reshape(mu_arr.shape)
 
     def map_draws(
         self,
@@ -210,19 +132,20 @@ class AffineCalibrator:
             raise ValueError(
                 f"mu last axis {mu_arr.shape[-1]} != calibrator metrics {m}"
             )
-        while mu_arr.ndim < draws_arr.ndim:
-            mu_arr = np.expand_dims(mu_arr, axis=-2)
-        shape = (1,) * (draws_arr.ndim - 1) + (m,)
-        a = self.a.reshape(shape)
-        b = self.b.reshape(shape)
-        c = self.c.reshape(shape)
-        out = a + b * mu_arr + c * (draws_arr - mu_arr)
-        se_arr = se
-        if se_arr is not None:
-            se_arr = np.asarray(se_arr, dtype=float)
-            while se_arr.ndim < draws_arr.ndim:
-                se_arr = np.expand_dims(se_arr, axis=-2)
-        return _project_mu_to_open_bounds(out, y_bounds, se=se_arr)
+        from enn._rust import affine_map_draws
+
+        mu_b = _align(mu_arr, draws_arr.shape)
+        se_flat = None if se is None else np.asarray(_align(np.asarray(se), draws_arr.shape)).reshape(-1, m)
+        out = affine_map_draws(
+            self.a,
+            self.b,
+            self.c,
+            draws_arr.reshape(-1, m),
+            np.asarray(mu_b).reshape(-1, m),
+            _bounds(y_bounds),
+            se_flat,
+        )
+        return np.asarray(out, dtype=float).reshape(draws_arr.shape)
 
 
 def fit_affine_calibrator(
@@ -241,7 +164,10 @@ def fit_affine_calibrator(
         return AffineCalibrator.identity(num_metrics)
 
     p = min(int(num_samples), n)
-    idx = np.asarray(rng.choice(n, size=p, replace=False), dtype=int)
+    from enn._rust import choose_indices
+
+    seed = int(rng.integers(0, 2**63 - 1))
+    idx = np.asarray(choose_indices(n, p, seed), dtype=int)
     x_loo, y_loo, _yvar = model.train_rows_at(idx.tolist())
     flags = PosteriorFlags(exclude_nearest=True, observation_noise=observation_noise)
     post = model.posterior(x_loo, params=params, flags=flags)

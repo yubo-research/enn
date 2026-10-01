@@ -23,7 +23,6 @@ from .rescalarize import Rescalarize
 from .surrogate import (
     ENNFitConfig,
     ENNSurrogateConfig,
-    GPSurrogateConfig,
     NoSurrogateConfig,
     SurrogateConfig,
 )
@@ -42,7 +41,6 @@ def __getattr__(name: str) -> object:
     if name in (
         "lhd_only_config",
         "turbo_enn_config",
-        "turbo_one_config",
         "turbo_zero_config",
     ):
         from . import factory
@@ -74,7 +72,6 @@ __all__ = [
     "DrawAcquisitionConfig",
     "ENNFitConfig",
     "ENNSurrogateConfig",
-    "GPSurrogateConfig",
     "InitConfig",
     "HybridInit",
     "InitStrategy",
@@ -93,7 +90,6 @@ __all__ = [
     "SurrogateConfig",
     "TRLengthConfig",
     "turbo_enn_config",
-    "turbo_one_config",
     "TurboTRConfig",
     "turbo_zero_config",
     "UCBAcquisitionConfig",

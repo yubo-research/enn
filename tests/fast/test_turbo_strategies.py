@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from enn.turbo.config import (
-    GPSurrogateConfig,
+    ENNSurrogateConfig,
     HybridInit,
     InitConfig,
     LHDOnlyInit,
@@ -13,30 +13,13 @@ from enn.turbo.config import (
     turbo_zero_config,
 )
 from enn.turbo.config.validation import validate_optimizer_config
-from enn.turbo.python_fallback.optimizer import Optimizer
-from enn.turbo.python_fallback.sampling import draw_lhd
-from enn.turbo.python_fallback.strategies.lhd_only_strategy import LHDOnlyStrategy
-from enn.turbo.python_fallback.strategies.turbo_hybrid_strategy import (
-    TurboHybridStrategy,
-)
 
 
-def test_draw_lhd_shapes_and_bounds():
-    bounds = np.array([[-1.0, 1.0], [0.0, 2.0]], dtype=float)
-    rng = np.random.default_rng(0)
-    x = draw_lhd(bounds=bounds, num_arms=32, rng=rng)
-    assert x.shape == (32, 2)
-    assert np.all(x[:, 0] >= -1.0) and np.all(x[:, 0] <= 1.0)
-    assert np.all(x[:, 1] >= 0.0) and np.all(x[:, 1] <= 2.0)
-
-
-def test_init_strategies_build_runtime_strategies():
+def test_hybrid_init_runtime_strategy_is_not_a_python_object():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    hybrid = HybridInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
-    assert isinstance(hybrid, TurboHybridStrategy)
-    lhd = LHDOnlyStrategy.create(bounds=bounds, rng=rng)
-    assert isinstance(lhd, LHDOnlyStrategy)
+    with pytest.raises(ValueError, match="Rust optimizer"):
+        HybridInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
 
 
 def test_lhd_only_init_marker_not_python_runtime():
@@ -50,7 +33,7 @@ def test_validate_optimizer_config_lhd_only_requires_no_surrogate_direct_call():
     class Dummy:
         def __init__(self) -> None:
             self.init = InitConfig(init_strategy=LHDOnlyInit())
-            self.surrogate = GPSurrogateConfig()
+            self.surrogate = ENNSurrogateConfig()
             self.acquisition = RandomAcquisitionConfig()
             self.acq_optimizer = RAASPOptimizerConfig()
 
@@ -92,25 +75,3 @@ def test_turbo_hybrid_fallback_executes_when_init_points_exhausted_mid_batch():
     assert init_idx_before == 1 and num_init == 2
     x2 = opt.ask(num_arms=2)
     assert x2.shape == (2, 2)
-
-
-def test_optimizer_direct_constructor_builds_strategy_by_default():
-    from enn.turbo.config import turbo_one_config
-    from enn.turbo.python_fallback.components.surrogates import GPSurrogate
-    from enn.turbo.python_fallback.components.thompson_acq_optimizer import (
-        ThompsonAcqOptimizer,
-    )
-
-    bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    rng = np.random.default_rng(0)
-    cfg = turbo_one_config(num_init=3)
-    opt = Optimizer(
-        bounds=bounds,
-        config=cfg,
-        rng=rng,
-        surrogate=GPSurrogate(),
-        acquisition_optimizer=ThompsonAcqOptimizer(),
-    )
-    init = opt.init_progress
-    assert init is not None
-    assert init == (0, 3)

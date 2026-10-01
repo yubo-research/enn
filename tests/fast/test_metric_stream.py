@@ -13,7 +13,7 @@ def _two_of_six(n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
 
 
 def test_reservoir_fills_then_keeps_capacity() -> None:
-    res = ms.Reservoir(5, 2, np.random.default_rng(0))
+    res = ms.Reservoir(5, 2, 0)
     res.add(np.arange(6).reshape(3, 2), np.arange(3))
     assert len(res) == 3 and res.num_seen == 3
     np.testing.assert_array_equal(res.y, [[0], [1], [2]])
@@ -23,7 +23,7 @@ def test_reservoir_fills_then_keeps_capacity() -> None:
 
 
 def test_reservoir_keeps_output_columns() -> None:
-    res = ms.Reservoir(4, 1, np.random.default_rng(0), num_outputs=2)
+    res = ms.Reservoir(4, 1, 0, num_outputs=2)
     res.add(np.zeros((3, 1)), np.arange(6.0).reshape(3, 2))
     np.testing.assert_array_equal(res.y, [[0, 1], [2, 3], [4, 5]])
     with pytest.raises(ValueError, match="columns"):
@@ -33,7 +33,7 @@ def test_reservoir_keeps_output_columns() -> None:
 def test_reservoir_is_uniform_over_stream() -> None:
     counts = np.zeros(40)
     for seed in range(400):
-        res = ms.Reservoir(10, 1, np.random.default_rng(seed))
+        res = ms.Reservoir(10, 1, seed)
         for lo in range(0, 40, 7):
             ids = np.arange(lo, min(40, lo + 7), dtype=float)
             res.add(ids[:, None], ids)
@@ -43,9 +43,9 @@ def test_reservoir_is_uniform_over_stream() -> None:
 
 def test_reservoir_rejects_bad_input() -> None:
     with pytest.raises(ValueError, match="capacity"):
-        ms.Reservoir(0, 2, np.random.default_rng(0))
+        ms.Reservoir(0, 2, 0)
     with pytest.raises(ValueError, match="rows"):
-        ms.Reservoir(3, 2, np.random.default_rng(0)).add(np.zeros((2, 2)), np.zeros(3))
+        ms.Reservoir(3, 2, 0).add(np.zeros((2, 2)), np.zeros(3))
 
 
 def test_sobol_index_finds_relevant_inputs() -> None:

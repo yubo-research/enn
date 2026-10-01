@@ -75,7 +75,7 @@ def test_advance_adds_rows_in_batches_and_auto_refits_inside_add(monkeypatch: py
         for lo, hi in ((0, 30), (30, 100), (100, 260)):
             assert streamed.advance(x, y, lo, hi) > 0
         assert len(streamed.model) == 260
-        assert streamed.model.metric.reservoir.num_seen == 260
+        assert streamed.model.metric.num_seen == 260
         assert streamed.model.metric.num_refits == 2
 
 

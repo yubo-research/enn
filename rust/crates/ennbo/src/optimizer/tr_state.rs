@@ -68,6 +68,12 @@ impl TrustRegionState {
         }
     }
 
+    pub fn turbo_seed_scale_history(&mut self, y_prefix: &ArrayView1<f64>) {
+        if let TrustRegionState::Turbo(t) = self {
+            t.seed_scale_history(y_prefix);
+        }
+    }
+
     pub fn set_num_arms(&mut self, num_arms: usize) {
         match self {
             TrustRegionState::Turbo(t) => t.set_num_arms(num_arms),

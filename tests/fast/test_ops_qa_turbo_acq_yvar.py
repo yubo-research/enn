@@ -150,8 +150,10 @@ def test_matched_yvar_improves_or_matches_nll():
 def test_se_ale_monotonic_in_yvar_scale():
     from ops.qa import sweep_y_var_se_ale
 
+    yvar = dict(_FAST_YVAR)
+    yvar["num_fit_samples"] = yvar["n_train"]
     sweep = sweep_y_var_se_ale(
-        **_FAST_YVAR,
+        **yvar,
         yvar_scales=(0.01, 0.25, 1.0),
     )
     scales = [s for s, _ in sweep]

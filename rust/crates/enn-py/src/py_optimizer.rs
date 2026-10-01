@@ -121,6 +121,26 @@ fn parse_enn_storage(s: &str) -> PyResult<ennbo::EnnStorage> {
 }
 
 #[doc = "kiss-coverage-off"]
+fn parse_metric_overrides(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+    overrides: &mut ennbo::ConfigOverrides,
+) -> PyResult<()> {
+    if let Some(v) = dict.get_item("raasp_fast")? {
+        overrides.raasp_fast = Some(v.extract()?);
+    }
+    if let Some(v) = dict.get_item("metric_learning_auto")? {
+        overrides.metric_learning_auto = Some(v.extract()?);
+    }
+    if let Some(v) = dict.get_item("affine_calibrate")? {
+        overrides.affine_calibrate = Some(v.extract()?);
+    }
+    if let Some(v) = dict.get_item("tied_dims")? {
+        overrides.tied_dims = Some(v.extract()?);
+    }
+    Ok(())
+}
+
+#[doc = "kiss-coverage-off"]
 pub fn parse_config_overrides_from_dict(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<ennbo::ConfigOverrides> {
@@ -156,6 +176,7 @@ pub fn parse_config_overrides_from_dict(
         let arr: numpy::PyReadonlyArray2<f64> = v.extract()?;
         overrides.y_bounds = Some(arr.as_array().to_owned());
     }
+    parse_metric_overrides(dict, &mut overrides)?;
     apply_scalar_overrides(dict, &mut overrides)?;
     Ok(overrides)
 }
@@ -183,8 +204,8 @@ impl PyOptimizer {
             .inner
             .ask(num_arms, &mut rng)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-        Ok(result.into_dyn().into_pyarray_bound(py))
+        let natural = ennbo::from_unit(&result.view(), &self.inner.bounds().view());
+        Ok(natural.into_dyn().into_pyarray_bound(py))
     }
 
     /// Tell observations
@@ -198,14 +219,15 @@ impl PyOptimizer {
         y_var: Option<PyReadonlyArray2<f64>>,
     ) -> PyResult<()> {
         let mut rng = StdRng::seed_from_u64(seed);
-        let x_arr = x.as_array();
+        let x_unit = ennbo::to_unit(&x.as_array(), &self.inner.bounds().view());
         let y_arr = y.as_array();
         let result = match y_var.as_ref() {
             Some(yv) => {
                 let yv_arr = yv.as_array();
-                self.inner.tell(&x_arr, &y_arr, Some(&yv_arr), &mut rng)
+                self.inner
+                    .tell(&x_unit.view(), &y_arr, Some(&yv_arr), &mut rng)
             }
-            None => self.inner.tell(&x_arr, &y_arr, None, &mut rng),
+            None => self.inner.tell(&x_unit.view(), &y_arr, None, &mut rng),
         };
         result.map_err(|e| PyValueError::new_err(e.to_string()))
     }

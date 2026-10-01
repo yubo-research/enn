@@ -294,7 +294,7 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
+        let result = fitter.ask(&model, 5, 3, None, &mut rng, false).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -313,7 +313,7 @@ mod tests {
         let warm_start = ENNParams::new(2, 1.5, 0.2).unwrap();
 
         let result = fitter
-            .ask(&model, 5, 3, Some(&warm_start), &mut rng)
+            .ask(&model, 5, 3, Some(&warm_start), &mut rng, false)
             .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
@@ -329,7 +329,7 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
+        let result = fitter.ask(&model, 5, 3, None, &mut rng, false).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -350,7 +350,7 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
+        let result = fitter.ask(&model, 5, 3, None, &mut rng, false).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);

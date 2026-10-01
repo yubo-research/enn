@@ -8,7 +8,8 @@ mod tr_state;
 pub use observation_delta::ObservationDelta;
 
 use ndarray::{Array1, Array2, ArrayView2};
-use rand::RngCore;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 
 use crate::candidates::SobolEngine;
 use crate::config::{InitStrategy, OptimizerConfig, SurrogateConfig};
@@ -19,6 +20,28 @@ use crate::incumbent_tracker::{
 use crate::strategy::Strategy;
 use crate::surrogate::{BoxedSurrogate, ENNSurrogate, Surrogate};
 use tr_state::TrustRegionState;
+
+fn sobol_seed_for_state(
+    seed_base: u64,
+    restart_generation: usize,
+    n_obs: usize,
+    num_arms: usize,
+) -> u64 {
+    let mut x = seed_base;
+    x ^= (restart_generation.wrapping_add(1) as u64).wrapping_mul(0xD1342543DE82EF95);
+    x ^= (n_obs as u64)
+        .wrapping_add(1)
+        .wrapping_mul(0x9E3779B97F4A7C15);
+    x ^= (num_arms as u64)
+        .wrapping_add(1)
+        .wrapping_mul(0xBF58476D1CE4E5B9);
+    x = x.wrapping_add(0x9E3779B97F4A7C15);
+    let mut z = x;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+    z ^= z >> 31;
+    z & 0xFFFF_FFFF
+}
 
 /// Telemetry for timing.
 #[derive(Debug, Clone, Default)]
@@ -299,6 +322,25 @@ impl Optimizer {
     /// Get sobol engine.
     pub fn sobol_engine_mut(&mut self) -> Option<&mut SobolEngine> {
         self.sobol_engine.as_mut()
+    }
+
+    /// Fresh scrambled Sobol draw for this ask. Matches Python's per-ask engine.
+    pub fn reseed_sobol(&mut self, num_arms: usize) -> Result<(), ENNError> {
+        let Some(engine) = self.sobol_engine.as_ref() else {
+            return Ok(());
+        };
+        let dim = engine.dimension();
+        let seed = sobol_seed_for_state(
+            self.sobol_seed_base,
+            self.restart_generation,
+            self.obs_count(),
+            num_arms,
+        );
+        let mut eng = SobolEngine::new(dim)?;
+        let mut rng = StdRng::seed_from_u64(seed);
+        eng.scramble(&mut rng);
+        self.sobol_engine = Some(eng);
+        Ok(())
     }
 
     /// Get sobol seed base.

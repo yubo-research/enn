@@ -54,6 +54,7 @@ impl EpistemicNearestNeighbors {
             x_sumsq: Array1::zeros(num_dim),
             work_dir: stored_work_dir,
             y_bounds_persisted: std::sync::atomic::AtomicBool::new(false),
+            auto_metric: None,
         };
         model.persist_y_bounds_metadata()?;
         Ok(model)

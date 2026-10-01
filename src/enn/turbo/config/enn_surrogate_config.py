@@ -7,7 +7,7 @@ import numpy as np
 
 from .enn_fit_config import ENNFitConfig
 from .enn_index_driver import ENNIndexDriver
-from .enn_x_scaling import ENNScaleX, validate_scale_x
+from .enn_x_scaling import ENNMetricLearning, ENNScaleX, validate_metric_learning, validate_scale_x
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,8 @@ class ENNSurrogateConfig:
     k: int | None = None
     fit: ENNFitConfig = ENNFitConfig()
     scale_x: ENNScaleX = ENNScaleX.OFF
+    metric_learning: ENNMetricLearning = ENNMetricLearning.NONE
+    tied_dims: tuple = ()
     index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
     enn_storage: str | None = None
     work_dir: str | os.PathLike[str] | None = None
@@ -22,6 +24,7 @@ class ENNSurrogateConfig:
 
     def __post_init__(self) -> None:
         validate_scale_x(self.scale_x, self.index_driver)
+        validate_metric_learning(self.metric_learning, self.index_driver, self.scale_x)
         if self.y_bounds is not None:
             yb = np.asarray(self.y_bounds, dtype=float)
             if yb.ndim != 2 or yb.shape[1] != 2:

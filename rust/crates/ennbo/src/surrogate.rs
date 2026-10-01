@@ -13,6 +13,18 @@ use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 
+fn enable_auto_if_configured(
+    model: &mut EpistemicNearestNeighbors,
+    config: &ENNSurrogateConfig,
+    x: &ArrayView2<f64>,
+    y: &ArrayView2<f64>,
+) -> Result<(), ENNError> {
+    if config.metric_learning_auto {
+        model.enable_auto_metric(config.tied_dims.clone(), x, y)?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct SurrogatePrediction {
     pub mu: Array2<f64>,
@@ -75,6 +87,10 @@ pub struct ENNSurrogateConfig {
     pub work_dir: Option<PathBuf>,
     /// Optional per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
     pub y_bounds: Option<Array2<f64>>,
+    /// `ENNMetricLearning.AUTO` when true.
+    pub metric_learning_auto: bool,
+    pub tied_dims: Vec<Vec<usize>>,
+    pub affine_calibrate: bool,
 }
 
 impl Default for ENNSurrogateConfig {
@@ -89,6 +105,9 @@ impl Default for ENNSurrogateConfig {
             storage: EnnStorage::InMemory,
             work_dir: None,
             y_bounds: None,
+            metric_learning_auto: false,
+            tied_dims: Vec::new(),
+            affine_calibrate: false,
         }
     }
 }
@@ -98,6 +117,7 @@ pub struct ENNSurrogate {
     model: Option<EpistemicNearestNeighbors>,
     params: Option<ENNParams>,
     fitter: Option<ENNFitter>,
+    calibrator: Option<crate::calibration::AffineCalibrator>,
 }
 
 impl ENNSurrogate {
@@ -107,6 +127,7 @@ impl ENNSurrogate {
             model: None,
             params: None,
             fitter: None,
+            calibrator: None,
         }
     }
 
@@ -166,8 +187,10 @@ impl ENNSurrogate {
             self.config.num_fit_samples,
             self.params.as_ref(),
             rng,
+            self.config.affine_calibrate,
         )?;
         self.params = Some(p);
+        self.calibrator = fitter.calibrator().cloned();
         Ok(())
     }
 
@@ -212,7 +235,8 @@ impl ENNSurrogate {
         }
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
         
-        let model = self.construct_model(x_new, y_new, yvar_new)?;
+        let mut model = self.construct_model(x_new, y_new, yvar_new)?;
+        enable_auto_if_configured(&mut model, &self.config, x_new, y_new)?;
         fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
         self.model = Some(model);
         self.fitter = Some(fitter);
@@ -345,8 +369,10 @@ impl Surrogate for ENNSurrogate {
             self.config.num_fit_samples,
             self.params.as_ref(),
             &mut local_rng,
+            self.config.affine_calibrate,
         )?;
         self.params = Some(p);
+        self.calibrator = fitter.calibrator().cloned();
         self.model = Some(model);
         self.fitter = Some(fitter);
 
@@ -421,6 +447,10 @@ impl Surrogate for ENNSurrogate {
             .into_dimensionality::<ndarray::Ix2>()
             .map_err(|e| ENNError::InvalidParameter(format!("Shape error: {}", e)))?;
 
+        if let Some(cal) = &self.calibrator {
+            let (mu, se) = crate::surrogate_affine::apply_prediction(cal, mu, se, model.y_bounds());
+            return Ok(SurrogatePrediction { mu, se });
+        }
         Ok(SurrogatePrediction { mu, se })
     }
 
@@ -451,6 +481,9 @@ impl Surrogate for ENNSurrogate {
         let base_seed = u64::from_le_bytes(seed_bytes) as i64;
         let function_seeds: Vec<i64> = (0..num_samples as i64).map(|i| base_seed + i).collect();
 
+        if let Some(cal) = &self.calibrator {
+            return crate::surrogate_affine::calibrated_sample(model, &params, cal, x, num_samples, rng);
+        }
         let (draws, _) =
             model.posterior_function_draw_warped(x, &params, &function_seeds, &Default::default())?;
 
@@ -494,6 +527,39 @@ mod tests {
         let pred = surrogate.predict(&x_query.view()).unwrap();
         assert_eq!(pred.mu.shape(), &[1, 1]);
         assert!(pred.mu[[0, 0]].is_finite());
+    }
+
+    #[test]
+    fn affine_flag_off_matches_itself_and_on_changes_prediction() {
+        let x = array![[0.0], [0.25], [0.5], [0.75], [1.0], [1.25]];
+        let y = array![[1.0], [1.5], [2.0], [2.5], [3.0], [3.5]];
+        let query = array![[0.6]];
+        let base = ENNSurrogateConfig {
+            k: 3,
+            num_fit_candidates: 4,
+            num_fit_samples: 6,
+            infer_aleatoric_variance: false,
+            ..Default::default()
+        };
+        let mut off_a = ENNSurrogate::new(base.clone());
+        let mut off_b = ENNSurrogate::new(base.clone());
+        let mut on_cfg = base;
+        on_cfg.affine_calibrate = true;
+        let mut on = ENNSurrogate::new(on_cfg);
+        off_a.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1)).unwrap();
+        off_b.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1)).unwrap();
+        on.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1)).unwrap();
+        let a = off_a.predict(&query.view()).unwrap();
+        let b = off_b.predict(&query.view()).unwrap();
+        let c = on.predict(&query.view()).unwrap();
+        assert_eq!(a.mu[[0, 0]], b.mu[[0, 0]]);
+        assert_eq!(a.se[[0, 0]], b.se[[0, 0]]);
+        assert!(off_a.calibrator.is_none());
+        let cal = on.calibrator.as_ref().expect("flag on stores a calibrator");
+        let mu_gap = (c.mu[[0, 0]] - a.mu[[0, 0]]).abs();
+        let se_gap = (c.se[[0, 0]] - a.se[[0, 0]]).abs();
+        let moved = mu_gap > 1e-8 || se_gap > 1e-8;
+        assert!(moved, "cal a={} b={} c={}", cal.a[0], cal.b[0], cal.c[0]);
     }
 
     /// Regression: incremental `fit` must not reuse stale `train_yvar` when the caller

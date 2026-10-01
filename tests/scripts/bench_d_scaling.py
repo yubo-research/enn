@@ -2,16 +2,11 @@ import time
 
 import numpy as np
 import pandas as pd
-from scipy.stats import qmc
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_x_scaling import ENNScaleX
 from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
 from enn.enn.enn_params import ENNParams
-from enn.turbo.python_fallback.turbo_utils import (
-    generate_raasp_candidates,
-    generate_raasp_candidates_uniform,
-)
+from enn.turbo.config.enn_x_scaling import ENNScaleX
 
 
 def benchmark_d_scaling(ds=[100, 1000, 5000, 10000], n=1000, num_candidates=5000):
@@ -48,29 +43,6 @@ def benchmark_d_scaling(ds=[100, 1000, 5000, 10000], n=1000, num_candidates=5000
             exclude_nearest=False,
         )
         row["ENN_Search (s)"] = time.perf_counter() - t0
-
-
-        t0 = time.perf_counter()
-        center = np.full(d, 0.5)
-        lb, ub = np.zeros(d), np.ones(d)
-        sobol = qmc.Sobol(d=d, scramble=True, seed=0)
-        from enn.turbo.config.candidate_rv import CandidateRV
-
-        _ = generate_raasp_candidates(
-            center,
-            lb,
-            ub,
-            num_candidates,
-            rng=rng,
-            candidate_rv=CandidateRV.SOBOL,
-            sobol_engine=sobol,
-        )
-        row["RAASP_Sobol (s)"] = time.perf_counter() - t0
-
-
-        t0 = time.perf_counter()
-        _ = generate_raasp_candidates_uniform(center, lb, ub, num_candidates, rng=rng)
-        row["RAASP_Uniform (s)"] = time.perf_counter() - t0
 
         results.append(row)
 
