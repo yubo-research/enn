@@ -30,6 +30,7 @@ import numpy as np
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from evals.flat_sphere import gaussian_loglik, rmse
 from evals.metric_12d_results import (
@@ -110,6 +111,7 @@ def build_model(
         metric_learning=BPANN_METRIC_LEARNING[name],
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=model_dir,
+        enn_storage=ENNStorage.DISK,
     )
 
 

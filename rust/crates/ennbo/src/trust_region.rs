@@ -35,6 +35,10 @@ impl Default for TRLengthConfig {
     }
 }
 
+fn reject_length(message: String) -> crate::error::ENNError {
+    crate::error::ENNError::InvalidParameter(message)
+}
+
 impl TRLengthConfig {
     /// Create new TRLengthConfig with custom values.
     pub fn new(length_init: f64, length_min: f64, length_max: f64) -> Self {
@@ -43,6 +47,55 @@ impl TRLengthConfig {
             length_min,
             length_max,
         }
+    }
+
+    fn check(self) -> Result<Self, crate::error::ENNError> {
+        if self.length_init <= 0.0 {
+            return Err(reject_length(format!(
+                "length_init must be > 0, got {}",
+                self.length_init
+            )));
+        }
+        if self.length_min <= 0.0 {
+            return Err(reject_length(format!(
+                "length_min must be > 0, got {}",
+                self.length_min
+            )));
+        }
+        if self.length_max <= 0.0 {
+            return Err(reject_length(format!(
+                "length_max must be > 0, got {}",
+                self.length_max
+            )));
+        }
+        if self.length_min >= self.length_max {
+            return Err(reject_length(format!(
+                "length_min must be < length_max, got {} >= {}",
+                self.length_min, self.length_max
+            )));
+        }
+        if self.length_init > self.length_max || self.length_min > self.length_init {
+            return Err(reject_length(format!(
+                "lengths out of order: min {} init {} max {}",
+                self.length_min, self.length_init, self.length_max
+            )));
+        }
+        Ok(self)
+    }
+
+    /// Fill missing lengths from [`Self::default`] and reject an illegal triple.
+    pub fn resolve(
+        length_init: Option<f64>,
+        length_min: Option<f64>,
+        length_max: Option<f64>,
+    ) -> Result<Self, crate::error::ENNError> {
+        let defaults = Self::default();
+        Self {
+            length_init: length_init.unwrap_or(defaults.length_init),
+            length_min: length_min.unwrap_or(defaults.length_min),
+            length_max: length_max.unwrap_or(defaults.length_max),
+        }
+        .check()
     }
 }
 

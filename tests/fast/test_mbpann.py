@@ -15,7 +15,7 @@ from enn.enn.mbpann import (
 )
 from enn._rust import EpistemicNearestNeighbors as RustENN
 from enn.turbo.config.enn_index_driver import ENN_INDEX_DRIVER_TO_RUST, ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig
+from enn.turbo.config.enn_surrogate_config import ENNStorage, ENNSurrogateConfig
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from enn.turbo.config.optimizer_config import OptimizerConfig
 from enn.turbo.rust_optimizer_helpers import _config_to_rust_overrides
@@ -36,6 +36,7 @@ def _model(
         metric_learning=metric_learning,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
+        enn_storage=ENNStorage.DISK,
     )
     return x, y, model
 
@@ -46,7 +47,8 @@ def _exact(x: np.ndarray, q: np.ndarray, w: np.ndarray, k: int) -> np.ndarray:
 
 def test_scale_x_and_metric_learning_are_separate_enums() -> None:
     assert [d.name for d in ENNIndexDriver] == ["FLAT", "BPANN_DISK"]
-    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.BPANN_DISK] == "bpann_disk"
+    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.BPANN_DISK] == "BPANN_DISK"
+    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "FLAT"
     assert [s.name for s in ENNScaleX] == ["OFF", "ON"]
     assert [s.name for s in ENNMetricLearning] == ["NONE", "AUTO"]
 
@@ -131,12 +133,13 @@ def test_scale_x_and_metric_learning_require_matching_driver(tmp_path) -> None:
                 metric_learning=mode,
                 index_driver=ENNIndexDriver.BPANN_DISK,
                 work_dir=tmp_path,
+                enn_storage=ENNStorage.DISK,
             )
     with pytest.raises(ValueError, match="ENNScaleX"):
         EpistemicNearestNeighbors(x, y, scale_x=True)
     with pytest.raises(ValueError, match="ENNMetricLearning"):
         EpistemicNearestNeighbors(x, y, metric_learning=True)
-    with pytest.raises(ValueError, match="BpAnnDisk"):
+    with pytest.raises(ValueError, match="Unknown index_driver"):
         RustENN(x, y, index_driver="exact", metric_learning="auto")
     with pytest.raises(ValueError, match="Unknown index_driver"):
         RustENN(x, y, index_driver="mbpann_disk", work_dir=str(tmp_path))
@@ -153,6 +156,7 @@ def test_bpann_disk_scale_x_tracks_data_scales_incrementally(tmp_path) -> None:
         scale_x=ENNScaleX.ON,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
+        enn_storage=ENNStorage.DISK,
     )
     assert model.scale_x == ENNScaleX.ON
     for lo in range(10, 2000, 199):
@@ -170,6 +174,8 @@ def test_optimizer_config_forwards_scale_x_and_metric_learning() -> None:
     config = ENNSurrogateConfig(
         metric_learning=ENNMetricLearning.AUTO,
         index_driver=ENNIndexDriver.BPANN_DISK,
+        enn_storage=ENNStorage.DISK,
+        work_dir="/tmp/enn_auto",
         scale_x=ENNScaleX.OFF,
     )
     assert config.metric_learning == ENNMetricLearning.AUTO
@@ -197,6 +203,7 @@ def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:
         metric_learning=ENNMetricLearning.AUTO,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
+        enn_storage=ENNStorage.DISK,
     )
     q = np.array([[0.5, 0.5, 0.5]])
     np.testing.assert_array_equal(reopened.neighbors(q, 5), _exact(x, q, np.ones(3), 5))
@@ -219,6 +226,7 @@ def _stream(tmp_path, f, n: int, batch: int = 50, seed: int = 0):
         metric_learning=ENNMetricLearning.AUTO,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
+        enn_storage=ENNStorage.DISK,
     )
     counts = [model.metric.num_refits]
     for lo in range(batch, n, batch):
@@ -250,6 +258,7 @@ def test_refit_growth_and_capacity_reach_the_rust_policy(tmp_path) -> None:
         metric_learning=ENNMetricLearning.AUTO,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
+        enn_storage=ENNStorage.DISK,
     )
     MBPANNMetric(model, refit_growth=3.0)
     counts = [model.metric.num_refits]
@@ -264,6 +273,7 @@ def test_refit_growth_and_capacity_reach_the_rust_policy(tmp_path) -> None:
         metric_learning=ENNMetricLearning.AUTO,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path / "small",
+        enn_storage=ENNStorage.DISK,
     )
     MBPANNMetric(small, reservoir_capacity=8, seed=3)
     with pytest.raises(ValueError, match="reservoir_capacity"):

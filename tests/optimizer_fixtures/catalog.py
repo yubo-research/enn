@@ -86,7 +86,12 @@ PREFIX_CONFIG: dict[str, OptimizerConfig] = {
             noise_aware=True,
         ),
         num_init=8,
-        candidates=CandidateGenConfig(num_candidates=64),
+        candidates=CandidateGenConfig(
+            min_candidates=64,
+            max_candidates=64,
+            num_candidates_per_dim=0,
+            num_candidates_per_arm=0,
+        ),
     ),
 }
 

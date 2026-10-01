@@ -1,10 +1,10 @@
 use ndarray::array;
-use ennbo::{create_optimizer_enn_with_overrides, ConfigOverrides};
+use ennbo::{create_optimizer_enn_with_overrides, ConfigOverrides, TrustRegionKind};
 
 fn main() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let overrides = ConfigOverrides {
-        trust_region_kind: Some("morbo".to_string()),
+        trust_region_kind: Some(TrustRegionKind::Morbo),
         num_metrics: Some(2),
         ..Default::default()
     };

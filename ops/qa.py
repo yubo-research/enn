@@ -13,6 +13,7 @@ import numpy as np
 from enn import create_optimizer, turbo_enn_config, turbo_zero_config
 from enn.benchmarks import Ackley
 from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config import (
@@ -82,7 +83,7 @@ def build_ackley_enn_surrogate(index_driver: ENNIndexDriver) -> ENNSurrogateConf
         "index_driver": index_driver,
     }
     if index_driver == ENNIndexDriver.BPANN_DISK:
-        enn_kwargs["enn_storage"] = "disk"
+        enn_kwargs["enn_storage"] = ENNStorage.DISK
         enn_kwargs["work_dir"] = tempfile.mkdtemp(prefix="qa_ackley_bpann_")
     return ENNSurrogateConfig(**enn_kwargs)
 

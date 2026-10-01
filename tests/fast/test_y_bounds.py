@@ -9,6 +9,7 @@ from enn import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig, turbo_enn_config
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.turbo.rust_optimizer import create_optimizer
 
 
@@ -114,7 +115,7 @@ def test_disk_reopen_loads_y_bounds(tmp_path):
         y_bounds=bounds,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work),
-        enn_storage="disk",
+        enn_storage=ENNStorage.DISK,
     )
     model.persist_index_to_disk()
 
@@ -123,7 +124,7 @@ def test_disk_reopen_loads_y_bounds(tmp_path):
         np.zeros((0, 1)),
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work),
-        enn_storage="disk",
+        enn_storage=ENNStorage.DISK,
     )
     np.testing.assert_allclose(reopened._train_y, train_y)
     with pytest.raises(ValueError, match="do not match"):
@@ -133,7 +134,7 @@ def test_disk_reopen_loads_y_bounds(tmp_path):
             y_bounds=np.array([[0.0, 2.0]], dtype=float),
             index_driver=ENNIndexDriver.BPANN_DISK,
             work_dir=str(work),
-            enn_storage="disk",
+            enn_storage=ENNStorage.DISK,
         )
 
 

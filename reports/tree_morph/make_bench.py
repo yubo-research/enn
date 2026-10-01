@@ -59,8 +59,17 @@ def write_curve(path, rows):
             f.write(f"{START_X if r['k'] == 0 else r['k']:g} {r['q']:.5g} {r['recall']:.4f} {r['add']:.4g}\n")
 
 
-def morph_row(arm, n0, shrink, rows, fresh):
-    """Print the numbers quoted in the text and return this arm's table row."""
+def bold_math(expr, best):
+    return f"{{\\boldmath{expr}}}" if best else expr
+
+
+def best_flags(vals, higher):
+    """True when no other value is strictly better. ``higher`` is False when a smaller number is better."""
+    return [not any((o > v if higher else o < v) for j, o in enumerate(vals) if j != i) for i, v in enumerate(vals)]
+
+
+def morph_stats(arm, n0, shrink, rows, fresh):
+    """Print the numbers quoted in the text and return the fields of this arm's table row."""
     in_window = [r["add"] for r in rows if r["k"] > 0 and r["morphing"]]
     lo, hi = window(rows)
     end = rows[-1]
@@ -70,10 +79,37 @@ def morph_row(arm, n0, shrink, rows, fresh):
         f"x{end['q'] / fresh['q']:.2f}); window ends in ({lo:g}k, {hi:g}k]; in-window add {min(in_window):.0f}-"
         f"{max(in_window):.0f} us/row; after {end['add']:.2f}"
     )
-    return (
-        f"{n0 // 1000}k & {SCALE_LABEL[shrink]} & {MORPH_LABEL[arm]} & ${at(rows, 1)['recall']:.3f}$ & "
-        f"${at(rows, 5)['q'] * 1e3:.1f}$ & ${end['q'] / fresh['q']:.2f}$ & ${lo:g}$--${hi:g}$ & ${max(in_window):.0f}$\\\\"
-    )
+    return {
+        "arm": arm,
+        "n0": n0,
+        "shrink": shrink,
+        "recall": at(rows, 1)["recall"],
+        "q5": at(rows, 5)["q"] * 1e3,
+        "slow": end["q"] / fresh["q"],
+        "lo": lo,
+        "hi": hi,
+        "add": max(in_window),
+    }
+
+
+def format_pair(stats):
+    """Bold the better value in each column. A tie is bold on both rows. An earlier window has the smaller end."""
+    rec = best_flags([s["recall"] for s in stats], True)
+    q5 = best_flags([s["q5"] for s in stats], False)
+    slow = best_flags([s["slow"] for s in stats], False)
+    ends = best_flags([(s["hi"], s["lo"]) for s in stats], False)
+    add = best_flags([s["add"] for s in stats], False)
+    lines = []
+    for i, s in enumerate(stats):
+        lines.append(
+            f"{s['n0'] // 1000}k & {SCALE_LABEL[s['shrink']]} & {MORPH_LABEL[s['arm']]} "
+            "& " + bold_math("${:.3f}$".format(s["recall"]), rec[i]) + " "
+            "& " + bold_math("${:.1f}$".format(s["q5"]), q5[i]) + " "
+            "& " + bold_math("${:.2f}$".format(s["slow"]), slow[i]) + " "
+            "& " + bold_math("${:g}$--${:g}$".format(s["lo"], s["hi"]), ends[i]) + " "
+            "& " + bold_math("${:.0f}$".format(s["add"]), add[i]) + "\\\\"
+        )
+    return lines
 
 
 def case_rows(n0, shrink):
@@ -85,7 +121,7 @@ def case_rows(n0, shrink):
         freshes.append(fresh["q"])
         write_curve(os.path.join(HERE, f"d_mb_{arm}_{tag}.dat"), rows)
         if arm != "none":
-            table.append(morph_row(arm, n0, shrink, rows, fresh))
+            table.append(morph_stats(arm, n0, shrink, rows, fresh))
         else:
             print(f"none N0={n0} shrink={shrink}: start q300 {rows[0]['q']:.4f} recall {rows[0]['recall']:.3f}; "
                   f"end q300 {rows[-1]['q']:.4f} recall {rows[-1]['recall']:.3f}")
@@ -93,7 +129,7 @@ def case_rows(n0, shrink):
     q = sum(freshes) / len(freshes)
     with open(os.path.join(HERE, f"d_mb_fresh_{tag}.dat"), "w") as f:
         f.write(f"k q\n{START_X:g} {q:.5g}\n{last_k:g} {q:.5g}\n")
-    return table
+    return format_pair(table)
 
 
 def print_control():

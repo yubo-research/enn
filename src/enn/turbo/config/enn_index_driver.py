@@ -10,6 +10,6 @@ class ENNIndexDriver(Enum):
 
 
 ENN_INDEX_DRIVER_TO_RUST: dict[ENNIndexDriver, str] = {
-    ENNIndexDriver.FLAT: "exact",
-    ENNIndexDriver.BPANN_DISK: "bpann_disk",
+    ENNIndexDriver.FLAT: "FLAT",
+    ENNIndexDriver.BPANN_DISK: "BPANN_DISK",
 }

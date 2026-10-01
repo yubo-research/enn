@@ -74,6 +74,8 @@ pub mod knn;
 #[allow(missing_docs)]
 pub mod backend;
 #[allow(missing_docs)]
+pub mod layout;
+#[allow(missing_docs)]
 pub mod disk_bpann;
 #[allow(missing_docs)]
 pub mod model;
@@ -223,6 +225,8 @@ pub use model::EnnRowAccess;
 pub use backend::EnnBackend;
 /// In-memory or on-disk row storage.
 pub use backend::EnnStorage;
+/// Legal index, storage, and metric combination.
+pub use layout::EnnLayout;
 /// Training rows kept in process memory.
 pub use backend::InMemoryEnnBackend;
 /// Training rows and a B+ANN index stored on disk.
@@ -287,6 +291,8 @@ pub use trust_region::TrustRegionError;
 pub use trust_region::TurboTrustRegion;
 /// TuRBO or MORBO trust-region choice.
 pub use trust_region_config::TrustRegionConfig;
+/// Wire enum for a trust-region override.
+pub use trust_region_config::TrustRegionKind;
 /// Argmax that breaks ties at random.
 pub use util::argmax_random_tie;
 /// Sobol indices of the columns of `x` against `y`.

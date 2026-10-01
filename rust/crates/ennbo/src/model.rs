@@ -6,8 +6,9 @@ use std::sync::atomic::AtomicBool;
 
 use crate::backend::{EnnBackend, EnnStorage};
 use crate::error::ENNError;
-use crate::metric_auto::AutoMetric;
 use crate::index::{IndexDriver, is_disk_index_driver};
+use crate::layout::EnnLayout;
+use crate::metric_auto::AutoMetric;
 use crate::y_bounds::resolve_y_bounds;
 
 /// Rows read at a time when recomputing statistics from a reopened disk store, so
@@ -118,10 +119,7 @@ impl EpistemicNearestNeighbors {
             train_x,
             train_y,
             train_yvar,
-            scale_x,
-            driver,
-            EnnStorage::InMemory,
-            None,
+            EnnLayout::memory(driver, scale_x),
             None,
         )
     }
@@ -136,12 +134,14 @@ impl EpistemicNearestNeighbors {
         train_x: Array2<f64>,
         train_y: Array2<f64>,
         train_yvar: Option<Array2<f64>>,
-        scale_x: bool,
-        driver: IndexDriver,
-        storage: EnnStorage,
-        work_dir: Option<PathBuf>,
+        layout: EnnLayout,
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
+        let opened = layout.open();
+        let scale_x = opened.scale_x;
+        let driver = opened.driver;
+        let storage = opened.storage;
+        let work_dir = opened.work_dir;
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
         let num_dim = train_x.ncols();
         let mut num_metrics = train_y.ncols();
@@ -696,10 +696,14 @@ mod tests {
         let x = Array2::from_shape_fn((n, 2), |(i, j)| ((i * 7 + j * 3) % 101) as f64 * 0.01);
         let y = Array2::from_shape_fn((n, 1), |(i, _)| ((i * 13) % 97) as f64 * 0.1);
         let open = |x: Array2<f64>, y: Array2<f64>| {
-            let storage = EnnStorage::Disk;
-            let dir = Some(dir.path().to_path_buf());
-            EpistemicNearestNeighbors::new_with_storage(x, y, None, true, IndexDriver::BpAnnDisk, storage, dir, None)
-                .unwrap()
+            EpistemicNearestNeighbors::new_with_storage(
+                x,
+                y,
+                None,
+                EnnLayout::disk(dir.path().to_path_buf(), true),
+                None,
+            )
+            .unwrap()
         };
         let built = open(x, y);
         let stats = |m: &EpistemicNearestNeighbors| {

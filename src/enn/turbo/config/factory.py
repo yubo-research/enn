@@ -10,16 +10,13 @@ from .init_config import InitConfig
 from .optimizer_config import ObservationHistoryConfig, OptimizerConfig
 
 
-def _make_candidate_gen_config(
-    candidate_rv: CandidateRV,
-    num_candidates: int | None,
-    *,
-    num_candidates_per_arm: int | None = None,
-) -> CandidateGenConfig:
+def _lhd_candidates(candidate_rv: CandidateRV) -> CandidateGenConfig:
     return CandidateGenConfig(
         candidate_rv=candidate_rv,
-        num_candidates=num_candidates,
-        num_candidates_per_arm=num_candidates_per_arm,
+        min_candidates=1,
+        max_candidates=1_000_000_000,
+        num_candidates_per_dim=1,
+        num_candidates_per_arm=0,
     )
 
 
@@ -39,19 +36,14 @@ def _acq_configs(
 
 def turbo_zero_config(
     *,
-    num_candidates: int | None = None,
-    num_candidates_per_arm: int | None = None,
+    candidates: CandidateGenConfig | None = None,
     num_init: int | None = None,
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
 ) -> OptimizerConfig:
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
-        candidates=_make_candidate_gen_config(
-            candidate_rv,
-            num_candidates,
-            num_candidates_per_arm=num_candidates_per_arm,
-        ),
+        candidates=candidates or CandidateGenConfig(candidate_rv=candidate_rv),
         init=InitConfig(num_init=num_init),
         surrogate=sur.NoSurrogateConfig(),
         acquisition=acq.RandomAcquisitionConfig(),
@@ -86,7 +78,7 @@ def turbo_enn_config(
 
 def lhd_only_config(
     *,
-    num_candidates: int | None = None,
+    candidates: CandidateGenConfig | None = None,
     num_init: int | None = None,
     trust_region: tr.TrustRegionConfig | None = None,
     candidate_rv: CandidateRV = CandidateRV.SOBOL,
@@ -95,7 +87,7 @@ def lhd_only_config(
 
     return OptimizerConfig(
         trust_region=trust_region or tr.NoTRConfig(),
-        candidates=_make_candidate_gen_config(candidate_rv, num_candidates),
+        candidates=candidates or _lhd_candidates(candidate_rv),
         init=InitConfig(init_strategy=LHDOnlyInit(), num_init=num_init),
         surrogate=sur.NoSurrogateConfig(),
         acquisition=acq.RandomAcquisitionConfig(),

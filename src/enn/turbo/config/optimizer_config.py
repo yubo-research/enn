@@ -57,7 +57,3 @@ class OptimizerConfig:
     @property
     def raasp_driver(self) -> RAASPDriver:
         return self.candidates.raasp_driver
-
-    @property
-    def num_candidates(self):
-        return self.candidates.num_candidates

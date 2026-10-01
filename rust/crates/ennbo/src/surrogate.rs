@@ -4,12 +4,10 @@ use ndarray::{Array1, Array2, Array3, ArrayView2};
 use rand::RngCore;
 use rand::SeedableRng;
 
-use std::path::PathBuf;
-
-use crate::backend::EnnStorage;
 use crate::error::ENNError;
 use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
+use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
@@ -20,7 +18,7 @@ fn enable_auto_if_configured(
     x: &ArrayView2<f64>,
     y: &ArrayView2<f64>,
 ) -> Result<(), ENNError> {
-    if config.metric_learning == MetricLearning::Auto {
+    if config.layout.metric_learning() == MetricLearning::Auto {
         model.enable_auto_metric(config.tied_dims.clone(), x, y)?;
     }
     Ok(())
@@ -79,16 +77,13 @@ pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
 #[derive(Debug, Clone)]
 pub struct ENNSurrogateConfig {
     pub k: i32,
-    pub scale_x: bool,
     pub num_fit_candidates: usize,
     pub num_fit_samples: usize,
     pub infer_aleatoric_variance: bool,
-    pub index_driver: IndexDriver,
-    pub storage: EnnStorage,
-    pub work_dir: Option<PathBuf>,
+    /// Index, storage, and metric. Illegal pairs are not a variant.
+    pub layout: EnnLayout,
     /// Optional per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
     pub y_bounds: Option<Array2<f64>>,
-    pub metric_learning: MetricLearning,
     pub tied_dims: Vec<Vec<usize>>,
     pub affine_calibrate: bool,
 }
@@ -97,15 +92,11 @@ impl Default for ENNSurrogateConfig {
     fn default() -> Self {
         Self {
             k: 10,
-            scale_x: false,
             num_fit_candidates: 30,
             num_fit_samples: 10,
             infer_aleatoric_variance: true,
-            index_driver: IndexDriver::Flat,
-            storage: EnnStorage::InMemory,
-            work_dir: None,
+            layout: EnnLayout::memory(IndexDriver::Flat, false),
             y_bounds: None,
-            metric_learning: MetricLearning::None,
             tied_dims: Vec::new(),
             affine_calibrate: false,
         }
@@ -149,10 +140,7 @@ impl ENNSurrogate {
             x.to_owned(),
             y.to_owned(),
             yvar.map(|v| v.to_owned()),
-            self.config.scale_x,
-            self.config.index_driver,
-            self.config.storage,
-            self.config.work_dir.clone(),
+            self.config.layout.clone(),
             self.config.y_bounds.clone(),
         )
     }
@@ -240,17 +228,17 @@ impl ENNSurrogate {
         fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
         self.model = Some(model);
         self.fitter = Some(fitter);
-        let skip_fit = self.config.index_driver == IndexDriver::BpAnnDisk
-            && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
+        let on_disk = self.config.layout.index_driver() == IndexDriver::BpAnnDisk;
+        let skip_fit = on_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
         if !skip_fit {
             
-            if self.config.index_driver == IndexDriver::BpAnnDisk {
+            if on_disk {
                 if let Some(model) = &self.model {
                     model.ensure_index_sync()?;
                 }
             }
             self.run_fitter(rng)?;
-            if self.config.index_driver == IndexDriver::BpAnnDisk {
+            if on_disk {
                 if let Some(model) = &self.model {
                     model.index_access().release_observation_pages()?;
                 }
@@ -695,8 +683,6 @@ mod tests {
 
     #[test]
     fn fit_append_disk_drains_pending_before_search() {
-        use crate::backend::EnnStorage;
-        use crate::index::IndexDriver;
         use ndarray::Array2;
         use tempfile::TempDir;
 
@@ -705,10 +691,7 @@ mod tests {
             k: 2,
             num_fit_candidates: 2,
             num_fit_samples: 2,
-            index_driver: IndexDriver::BpAnnDisk,
-            storage: EnnStorage::Disk,
-            work_dir: Some(dir.path().to_path_buf()),
-            scale_x: false,
+            layout: EnnLayout::disk(dir.path().to_path_buf(), false),
             ..Default::default()
         };
         let mut sur = ENNSurrogate::new(config);
@@ -743,8 +726,6 @@ mod tests {
 
     #[test]
     fn fit_append_disk_streaming_skips_sync_when_params_exist() {
-        use crate::backend::EnnStorage;
-        use crate::index::IndexDriver;
         use tempfile::TempDir;
 
         let dir = TempDir::new().unwrap();
@@ -752,10 +733,7 @@ mod tests {
             k: 2,
             num_fit_candidates: 2,
             num_fit_samples: 2,
-            index_driver: IndexDriver::BpAnnDisk,
-            storage: EnnStorage::Disk,
-            work_dir: Some(dir.path().to_path_buf()),
-            scale_x: false,
+            layout: EnnLayout::disk(dir.path().to_path_buf(), false),
             ..Default::default()
         };
         let mut sur = ENNSurrogate::new(config);

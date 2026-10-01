@@ -482,8 +482,6 @@ mod tests {
 
     #[test]
     fn subsample_loglik_model_scores_warped_y_under_y_bounds() {
-        use crate::backend::EnnStorage;
-
         let train_x = array![[0.0], [1.0], [0.5], [0.25], [0.75]];
         let train_y = array![[0.1], [0.9], [0.5], [0.3], [0.7]];
         let bounds = array![[0.0, 1.0]];
@@ -491,10 +489,7 @@ mod tests {
             train_x,
             train_y,
             None,
-            false,
-            IndexDriver::Flat,
-            EnnStorage::InMemory,
-            None,
+            crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
             Some(bounds),
         )
         .unwrap();

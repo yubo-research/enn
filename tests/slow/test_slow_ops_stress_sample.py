@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 
 
 @pytest.mark.slow
@@ -22,7 +23,7 @@ def test_disk_persisted_store_10k_reopens_fast(tmp_path):
         np.empty((0, 1)),
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
-        enn_storage="disk",
+        enn_storage=ENNStorage.DISK,
     )
     batch = 500
     for start in range(0, num_obs, batch):
@@ -40,7 +41,7 @@ def test_disk_persisted_store_10k_reopens_fast(tmp_path):
         np.empty((0, 1)),
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
-        enn_storage="disk",
+        enn_storage=ENNStorage.DISK,
     )
     init_s = time.perf_counter() - t0
     assert init_s < 1.0, f"reopen init_s={init_s:.3f}s expected < 1.0s after persist"

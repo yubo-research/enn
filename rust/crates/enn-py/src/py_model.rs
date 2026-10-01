@@ -53,7 +53,7 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="Exact", work_dir=None, enn_storage=None, y_bounds=None, metric_learning="none", tied_dims=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="FLAT", work_dir=None, enn_storage=None, y_bounds=None, metric_learning="none", tied_dims=None))]
     #[allow(clippy::too_many_arguments)]
     #[doc = "kiss-coverage-off"]
     fn new(
@@ -69,8 +69,8 @@ impl PyEpistemicNearestNeighbors {
         tied_dims: Option<Vec<Vec<usize>>>,
     ) -> PyResult<Self> {
         let driver = match index_driver {
-            "Exact" | "exact" | "FLAT" | "flat" => ennbo::IndexDriver::Flat,
-            "BPANN_DISK" | "bpann_disk" => ennbo::IndexDriver::BpAnnDisk,
+            "FLAT" => ennbo::IndexDriver::Flat,
+            "BPANN_DISK" => ennbo::IndexDriver::BpAnnDisk,
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unknown index_driver: {index_driver}"
@@ -83,8 +83,8 @@ impl PyEpistemicNearestNeighbors {
             ))
         })?;
         let explicit = match enn_storage {
-            Some("disk" | "Disk") => Some(ennbo::EnnStorage::Disk),
-            Some("memory" | "in_memory" | "InMemory") => Some(ennbo::EnnStorage::InMemory),
+            Some("DISK") => Some(ennbo::EnnStorage::Disk),
+            Some("MEMORY") => Some(ennbo::EnnStorage::InMemory),
             None => None,
             Some(other) => {
                 return Err(PyValueError::new_err(format!(
@@ -93,7 +93,14 @@ impl PyEpistemicNearestNeighbors {
             }
         };
         let work_dir = work_dir.map(PathBuf::from);
-        let storage = ennbo::EnnStorage::resolve(explicit, work_dir.as_deref());
+        let layout = ennbo::EnnLayout::try_from_parts(
+            driver,
+            explicit,
+            work_dir,
+            scale_x,
+            metric_learning,
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_x = owned_matrix("train_x", train_x)?;
         let train_y = owned_matrix("train_y", train_y)?;
@@ -106,10 +113,7 @@ impl PyEpistemicNearestNeighbors {
             train_x.clone(),
             train_y,
             train_yvar,
-            scale_x,
-            driver,
-            storage,
-            work_dir,
+            layout,
             y_bounds,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -463,8 +467,8 @@ impl PyEpistemicNearestNeighbors {
     #[doc = "kiss-coverage-off"]
     fn index_driver(&self) -> &'static str {
         match self.inner.index_driver() {
-            ennbo::IndexDriver::Flat => "flat",
-            ennbo::IndexDriver::BpAnnDisk => "bpann_disk",
+            ennbo::IndexDriver::Flat => "FLAT",
+            ennbo::IndexDriver::BpAnnDisk => "BPANN_DISK",
         }
     }
 

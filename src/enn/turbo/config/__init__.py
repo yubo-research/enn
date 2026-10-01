@@ -16,7 +16,6 @@ from .base import (
 from .candidate_rv import CandidateRV
 from .enn_index_driver import ENNIndexDriver
 from .enn_x_scaling import ENNMetricLearning, ENNScaleX
-from .num_candidates_fn import default_num_candidates
 from .optimizer_config import OptimizerConfig
 from .raasp_driver import RAASPDriver
 from .rescalarize import Rescalarize
@@ -63,7 +62,6 @@ __all__ = [
     "AcquisitionConfig",
     "CandidateGenConfig",
     "CandidateRV",
-    "default_num_candidates",
     "ENNIndexDriver",
     "ENNMetricLearning",
     "ENNScaleX",

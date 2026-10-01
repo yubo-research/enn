@@ -240,10 +240,7 @@ mod tests {
             train_x,
             train_y.clone(),
             None,
-            false,
-            IndexDriver::Flat,
-            EnnStorage::InMemory,
-            None,
+            crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
             Some(bounds),
         )
         .unwrap();

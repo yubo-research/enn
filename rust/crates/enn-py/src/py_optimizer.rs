@@ -34,7 +34,7 @@ pub(crate) fn apply_scalar_overrides(
     dict: &Bound<'_, pyo3::types::PyDict>,
     overrides: &mut ennbo::ConfigOverrides,
 ) -> PyResult<()> {
-    overrides.num_candidates_factor = optional_f64(dict, "num_candidates_factor")?;
+    overrides.num_candidates_per_dim = optional_usize(dict, "num_candidates_per_dim")?;
     overrides.min_candidates = optional_usize(dict, "min_candidates")?;
     overrides.max_candidates = optional_usize(dict, "max_candidates")?;
     overrides.num_candidates_per_arm = optional_usize(dict, "num_candidates_per_arm")?;
@@ -69,9 +69,9 @@ mod kiss_coverage_tests {
 #[doc = "kiss-coverage-off"]
 fn parse_index_driver(s: &str) -> PyResult<ennbo::index::IndexDriver> {
     use ennbo::index::IndexDriver;
-    match s.to_lowercase().as_str() {
-        "exact" | "flat" => Ok(IndexDriver::Flat),
-        "bpann_disk" => Ok(IndexDriver::BpAnnDisk),
+    match s {
+        "FLAT" => Ok(IndexDriver::Flat),
+        "BPANN_DISK" => Ok(IndexDriver::BpAnnDisk),
         _ => Err(PyValueError::new_err(format!("Unknown index_driver: {s}"))),
     }
 }
@@ -111,9 +111,9 @@ fn parse_candidate_rv(s: &str) -> PyResult<ennbo::CandidateRV> {
 
 #[doc = "kiss-coverage-off"]
 fn parse_enn_storage(s: &str) -> PyResult<ennbo::EnnStorage> {
-    match s.to_lowercase().as_str() {
-        "disk" => Ok(ennbo::EnnStorage::Disk),
-        "memory" | "in_memory" | "inmemory" => Ok(ennbo::EnnStorage::InMemory),
+    match s {
+        "DISK" => Ok(ennbo::EnnStorage::Disk),
+        "MEMORY" => Ok(ennbo::EnnStorage::InMemory),
         _ => Err(PyValueError::new_err(format!("Unknown enn_storage: {s}"))),
     }
 }
@@ -161,7 +161,11 @@ pub fn parse_config_overrides_from_dict(
         overrides.candidate_rv = Some(parse_candidate_rv(&rv.extract::<String>()?)?);
     }
     if let Some(v) = dict.get_item("trust_region")? {
-        overrides.trust_region_kind = Some(v.extract()?);
+        let name: String = v.extract()?;
+        overrides.trust_region_kind = Some(
+            ennbo::TrustRegionKind::parse(&name)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+        );
     }
     overrides.num_metrics = optional_usize(dict, "num_metrics")?;
     overrides.alpha = optional_f64(dict, "alpha")?;

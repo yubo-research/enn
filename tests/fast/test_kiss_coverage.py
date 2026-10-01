@@ -74,20 +74,18 @@ def test_morbo_tr_config_properties():
     assert cfg.num_metrics == 2
     # alpha
     assert cfg.alpha == 0.05
-    # length_init / length_min / length_max
-    assert isinstance(cfg.length_init, float)
-    assert isinstance(cfg.length_min, float)
-    assert isinstance(cfg.length_max, float)
+    assert cfg.length_init is None
+    assert cfg.length_min is None
+    assert cfg.length_max is None
 
 
 def test_turbo_tr_config_properties():
     from enn.turbo.config import TurboTRConfig
 
     cfg = TurboTRConfig()
-    # length_init / length_min / length_max
-    assert isinstance(cfg.length_init, float)
-    assert isinstance(cfg.length_min, float)
-    assert isinstance(cfg.length_max, float)
+    assert cfg.length_init is None
+    assert cfg.length_min is None
+    assert cfg.length_max is None
 
 
 def test_enn_surrogate_config_properties():
@@ -121,12 +119,6 @@ def test_enn_index_driver_enum():
     from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
     assert ENNIndexDriver.FLAT != ENNIndexDriver.BPANN_DISK
-
-
-def test_num_candidates_fn_protocol():
-    from enn.turbo.config.num_candidates_fn import NumCandidatesFn
-
-    assert NumCandidatesFn is not None
 
 
 def test_optimizer_config_properties():

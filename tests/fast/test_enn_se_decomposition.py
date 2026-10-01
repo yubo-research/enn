@@ -125,7 +125,7 @@ def test_rust_posterior_tuple_contract():
     train_x = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
     train_y = np.array([[0.0], [1.0]], dtype=float)
     query = np.array([[0.5, 0.5]], dtype=float)
-    rs_model = RustENN(train_x, train_y, scale_x=False, index_driver="Exact")
+    rs_model = RustENN(train_x, train_y, scale_x=False, index_driver="FLAT")
     out = rs_model.posterior(
         query,
         k_num_neighbors=2,

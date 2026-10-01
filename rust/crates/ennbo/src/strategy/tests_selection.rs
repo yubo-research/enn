@@ -213,8 +213,9 @@ fn ask_scores_full_configured_candidate_pool() {
     let mut rng = StdRng::seed_from_u64(201);
     let mut config = turbo_enn_config();
     let num_candidates = 37usize;
-    config.candidates.num_candidates_factor = 1.0;
-    config.candidates.num_candidates_per_arm = Some(num_candidates);
+    config.candidates.num_candidates_per_dim = 0;
+    config.candidates.max_candidates = 1_000_000_000;
+    config.candidates.num_candidates_per_arm = num_candidates;
     let num_arms = 2usize;
     let expected_pool = config.candidates.num_candidates(2, num_arms);
     let mut opt =

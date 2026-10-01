@@ -128,7 +128,6 @@ impl EpistemicNearestNeighbors {
 
 #[cfg(test)]
 mod tests {
-    use crate::backend::EnnStorage;
     use crate::{EpistemicNearestNeighbors, IndexDriver};
     use ndarray::{Array1, Array2};
     use rand::{Rng, SeedableRng};
@@ -159,10 +158,7 @@ mod tests {
             x.slice(ndarray::s![..300, ..]).to_owned(),
             y.slice(ndarray::s![..300, ..]).to_owned(),
             None,
-            false,
-            IndexDriver::BpAnnDisk,
-            EnnStorage::Disk,
-            Some(dir.path().to_path_buf()),
+            crate::layout::EnnLayout::disk(dir.path().to_path_buf(), false),
             None,
         )
         .unwrap();
@@ -214,10 +210,7 @@ mod tests {
             x.slice(ndarray::s![..20, ..]).to_owned(),
             y.slice(ndarray::s![..20, ..]).to_owned(),
             None,
-            true,
-            IndexDriver::BpAnnDisk,
-            EnnStorage::Disk,
-            Some(dir.path().to_path_buf()),
+            crate::layout::EnnLayout::disk(dir.path().to_path_buf(), true),
             None,
         )
         .unwrap();
@@ -248,21 +241,18 @@ mod tests {
             row[2] = (row[2] > 0.5) as i32 as f64;
         }
         let y = Array2::zeros((600, 1));
-        let open = |driver, storage, work_dir| {
+        let open = |layout| {
             EpistemicNearestNeighbors::new_with_storage(
                 x.slice(ndarray::s![..300, ..]).to_owned(),
                 y.slice(ndarray::s![..300, ..]).to_owned(),
                 None,
-                true,
-                driver,
-                storage,
-                work_dir,
+                layout,
                 None,
             )
             .unwrap()
         };
-        let flat = open(IndexDriver::Flat, EnnStorage::InMemory, None);
-        let disk = open(IndexDriver::BpAnnDisk, EnnStorage::Disk, Some(dir.path().to_path_buf()));
+        let flat = open(crate::layout::EnnLayout::memory(IndexDriver::Flat, true));
+        let disk = open(crate::layout::EnnLayout::disk(dir.path().to_path_buf(), true));
         for mut model in [flat, disk] {
             assert!(model.set_unscaled_dims(vec![3]).is_err());
             model.set_unscaled_dims(vec![2]).unwrap();

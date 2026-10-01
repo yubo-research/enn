@@ -1,9 +1,7 @@
 """Build data files, table and macros for tree_morph.tex.
 
-- runs/{12d,ranges}_s*.out: ``bench.py TAG SEED 2`` for seeds 0, 2, 4, 6, 8 (10 seeds, run side by side)
-- timing_{12d,ranges}.out: ``bench.py TAG 0 1``, run alone. The FLAT lines come from the run on the heap-layout tree
-  (kept whole in timing_{12d,ranges}_heap.out); the BPANN_DISK lines from rerunning only bpann_disk and bpann_disk_auto
-  (``run_model`` with seed 0, alone) on the page-store tree, which reproduced seed 0's accuracy and events exactly
+- runs/{12d,ranges}_s*.out: ``bench.py TAG SEED 2`` for seeds 0, 2, 4, 6, 8 (10 seeds)
+- timing_{12d,ranges}.out: ``bench.py TAG 0 1``, run alone, all four models
 
 Accuracy values are means ± standard errors over the 10 seeds. Times come from the uncontended seed-0 runs:
 add time per observation is ``add_s / num_added`` for each checkpoint's segment, fit is ``fit_s`` and query
@@ -66,21 +64,90 @@ def paired(da, db, key="loglik"):
     return (*mean_se(diff), int(np.sum(np.array(diff) > 0)), len(diff))
 
 
+def not_dominated(vals, higher):
+    """True when no other printed number is strictly better."""
+    return [not any((o > v if higher else o < v) for j, o in enumerate(vals) if j != i) for i, v in enumerate(vals)]
+
+
+def paired_not_dominated(seed_maps, higher):
+    """True when no other model is strictly better on the same seeds.
+
+    The gap is the paired difference. It counts only when mean ± 1 standard error excludes 0.
+    """
+    out = []
+    for i, mine in enumerate(seed_maps):
+        dominated = False
+        for j, other in enumerate(seed_maps):
+            if i == j:
+                continue
+            seeds = sorted(set(mine) & set(other))
+            diff = [other[s] - mine[s] for s in seeds]
+            m, se = mean_se(diff)
+            better = (m - se > 0) if higher else (m + se < 0)
+            if better:
+                dominated = True
+                break
+        out.append(not dominated)
+    return out
+
+
+def bold_math(expr, best):
+    return f"{{\\boldmath{expr}}}" if best else expr
+
+
+def _table_row(label, stats, flags):
+    ll, nr, add, fit, q = stats
+    ll_best, nr_best, add_best, fit_best, q_best = flags
+    tex_ll = "${:+.3f}\\pm{:.3f}$".format(ll[0], ll[1])
+    tex_nr = "${:.4f}\\pm{:.4f}$".format(nr[0], nr[1])
+    return (
+        f"{label} & {bold_math(tex_ll, ll_best)} "
+        f"& {bold_math(tex_nr, nr_best)} "
+        "& " + bold_math("${:.1f}$".format(add), add_best) + " "
+        "& " + bold_math("${:.2f}$".format(fit), fit_best) + " "
+        "& " + bold_math("${:.3f}$".format(q), q_best) + "\\\\"
+    )
+
+
 def write_table(data_by_tag, timing_by_tag):
-    """At n = 1e6: loglik, nRMSE (10 seeds); add us/obs over the last segment, fit s, query ms/point (seed 0)."""
+    """At n = 1e6: loglik, nRMSE (10 seeds); add us/obs over the last segment, fit s, query ms/point (seed 0).
+
+    Within each stream, bold a cell when no other model is strictly better. For log-likelihood and nRMSE the comparison
+    is paired across seeds and counts only when mean ± 1 standard error of the difference excludes 0. Times are one run,
+    so the best printed number is bold.
+    """
     lines = []
     n = N_GRID[-1]
-
-    def row(label, d, t):
-        ll, nr = mean_se([r["loglik"] for r in d.values()]), mean_se([r["nrmse"] for r in d.values()])
-        add, fit, q = per_point(t)
-        return f"{label} & ${ll[0]:+.3f}$ & ${nr[0]:.4f}$ & ${add:.1f}$ & ${fit:.2f}$ & ${q:.3f}$\\\\"
 
     for tag in TAGS:
         name = {"12d": "Irrelevant inputs", "ranges": "Different ranges"}[tag]
         lines.append(f"\\multicolumn{{6}}{{@{{}}l}}{{\\emph{{{name}}}}}\\\\")
+        rows = []
         for model, label in MODELS:
-            lines.append(row(label, data_by_tag[tag][(model, n)], timing_by_tag[tag][(model, n)][0]))
+            d = data_by_tag[tag][(model, n)]
+            ll, nr = mean_se([r["loglik"] for r in d.values()]), mean_se([r["nrmse"] for r in d.values()])
+            add, fit, q = per_point(timing_by_tag[tag][(model, n)][0])
+            rows.append((label, ll, nr, add, fit, q, {s: r["loglik"] for s, r in d.items()}, {s: r["nrmse"] for s, r in d.items()}))
+        ll_best = paired_not_dominated([r[6] for r in rows], True)
+        nr_best = paired_not_dominated([r[7] for r in rows], False)
+        add_best = not_dominated([r[3] for r in rows], False)
+        fit_best = not_dominated([r[4] for r in rows], False)
+        q_best = not_dominated([r[5] for r in rows], False)
+        print(
+            f"[{tag}] bold best: "
+            + "; ".join(
+                f"{rows[i][0]} ll={ll_best[i]} nr={nr_best[i]} add={add_best[i]} fit={fit_best[i]} q={q_best[i]}"
+                for i in range(len(rows))
+            )
+        )
+        for i, (label, ll, nr, add, fit, q, _lls, _nrs) in enumerate(rows):
+            lines.append(
+                _table_row(
+                    label,
+                    (ll, nr, add, fit, q),
+                    (ll_best[i], nr_best[i], add_best[i], fit_best[i], q_best[i]),
+                )
+            )
     head = ["\\begin{tabular}{@{}lrrrrr@{}}", "\\toprule", "Model & log-lik & nRMSE & add & fit & query \\\\", "\\midrule"]
     with open(os.path.join(HERE, "t_main.tex"), "w") as f:
         f.write("\n".join(head + lines + ["\\bottomrule", "\\end{tabular}"]) + "\n")

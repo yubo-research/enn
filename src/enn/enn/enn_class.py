@@ -7,6 +7,7 @@ import numpy as np
 
 from enn._rust import EpistemicNearestNeighbors as _RustENN
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage, validate_enn_placement
 from enn.turbo.config.enn_x_scaling import (
     ENNMetricLearning,
     ENNScaleX,
@@ -28,9 +29,11 @@ class _EnnRustView:
     @property
     def _index_driver(self) -> ENNIndexDriver:
         name = str(self._rust_model.index_driver)
-        if name == "bpann_disk":
+        if name == "BPANN_DISK":
             return ENNIndexDriver.BPANN_DISK
-        return ENNIndexDriver.FLAT
+        if name == "FLAT":
+            return ENNIndexDriver.FLAT
+        raise ValueError(f"Unknown index_driver: {name}")
 
     @property
     def tied_dims(self) -> tuple[tuple[int, ...], ...]:
@@ -101,7 +104,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         metric_learning: ENNMetricLearning = ENNMetricLearning.NONE,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
         work_dir: str | os.PathLike[str] | None = None,
-        enn_storage: str | None = None,
+        enn_storage: ENNStorage | None = None,
         y_bounds: np.ndarray | None = None,
     ) -> None:
         if not isinstance(scale_x, ENNScaleX):
@@ -110,6 +113,13 @@ class EpistemicNearestNeighbors(_EnnRustView):
             raise ValueError(
                 f"metric_learning must be ENNMetricLearning, got {metric_learning!r}"
             )
+        validate_enn_placement(
+            index_driver=index_driver,
+            enn_storage=enn_storage,
+            work_dir=work_dir,
+            scale_x=scale_x,
+            metric_learning=metric_learning,
+        )
         train_x, train_y, train_yvar = self._coerce_inputs(
             train_x, train_y, train_yvar
         )
@@ -131,7 +141,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         if work_dir is not None:
             rust_kwargs["work_dir"] = os.fspath(work_dir)
         if enn_storage is not None:
-            rust_kwargs["enn_storage"] = enn_storage
+            rust_kwargs["enn_storage"] = enn_storage.name
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)

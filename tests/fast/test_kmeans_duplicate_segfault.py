@@ -13,6 +13,7 @@ import numpy as np
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 
 
 STRUCTURED_BUILD_ROW_LIMIT = 1024
@@ -36,7 +37,7 @@ def _bpann_with_duplicates(n: int, work_dir: str) -> EpistemicNearestNeighbors:
         train_y,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=work_dir,
-        enn_storage="disk",
+        enn_storage=ENNStorage.DISK,
     )
 
 

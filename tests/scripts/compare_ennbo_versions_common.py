@@ -9,15 +9,6 @@ import numpy as np
 BenchmarkObjective = Callable[[np.ndarray], np.ndarray]
 
 
-def _const_num_candidates_fn(n: int):
-    value = int(n)
-
-    def fn(*, num_dim: int, num_arms: int) -> int:
-        return value
-
-    return fn
-
-
 def _import_optimizer_configs() -> dict[str, Any]:
     try:
         from enn.turbo.config import (
@@ -58,15 +49,12 @@ def _make_candidate_gen_config(num_candidates: int | None = None) -> Any:
     CandidateGenConfig = cfg["CandidateGenConfig"]
     if num_candidates is None:
         return CandidateGenConfig()
-    probe = CandidateGenConfig()
-    if callable(getattr(probe, "num_candidates", None)):
-        try:
-            from enn.turbo.config.num_candidates_fn import const_num_candidates
-        except ImportError:
-            const_num_candidates = _const_num_candidates_fn
-
-        return CandidateGenConfig(num_candidates=const_num_candidates(num_candidates))
-    return CandidateGenConfig(num_candidates=num_candidates)
+    return CandidateGenConfig(
+        min_candidates=num_candidates,
+        max_candidates=num_candidates,
+        num_candidates_per_dim=0,
+        num_candidates_per_arm=0,
+    )
 
 
 def separable_unimodal_objective(x: np.ndarray) -> np.ndarray:

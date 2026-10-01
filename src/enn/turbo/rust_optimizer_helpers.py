@@ -53,16 +53,12 @@ def _candidate_count_override(config: OptimizerConfig) -> dict[str, Any]:
     candidates = getattr(config, "candidates", None)
     if not isinstance(candidates, CandidateGenConfig):
         return {}
-    out: dict[str, Any] = {}
-    if candidates.num_candidates is not None:
-        n = int(candidates.num_candidates)
-        out["num_candidates_factor"] = 1.0
-        out["min_candidates"] = n
-        if candidates.num_candidates_per_arm is None:
-            out["max_candidates"] = n
-    if candidates.num_candidates_per_arm is not None:
-        out["num_candidates_per_arm"] = int(candidates.num_candidates_per_arm)
-    return out
+    return {
+        "min_candidates": int(candidates.min_candidates),
+        "max_candidates": int(candidates.max_candidates),
+        "num_candidates_per_dim": int(candidates.num_candidates_per_dim),
+        "num_candidates_per_arm": int(candidates.num_candidates_per_arm),
+    }
 
 
 def _candidates_to_override(config: OptimizerConfig) -> dict[str, Any]:
@@ -74,23 +70,18 @@ def _candidates_to_override(config: OptimizerConfig) -> dict[str, Any]:
     return out
 
 
-def _get_tr_params(tr: TurboTRConfig) -> tuple[float, float, float]:
-    li = (
-        tr.length_init
-        if hasattr(tr, "length_init")
-        else getattr(tr.length, "length_init", 0.8)
-    )
-    lm = (
-        tr.length_min
-        if hasattr(tr, "length_min")
-        else getattr(tr.length, "length_min", 0.5**7)
-    )
-    lx = (
-        tr.length_max
-        if hasattr(tr, "length_max")
-        else getattr(tr.length, "length_max", 1.6)
-    )
-    return float(li), float(lm), float(lx)
+def _length_or_none(tr: TurboTRConfig, name: str) -> float | None:
+    value = getattr(tr, name) if hasattr(tr, name) else getattr(tr.length, name, None)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _put_set_lengths(out: dict[str, Any], tr: TurboTRConfig) -> None:
+    for name in ("length_init", "length_min", "length_max"):
+        value = _length_or_none(tr, name)
+        if value is not None:
+            out[name] = value
 
 
 def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
@@ -100,23 +91,14 @@ def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
         out["trust_region"] = "morbo"
         out["num_metrics"] = int(tr.num_metrics)
         out["alpha"] = float(tr.alpha)
-        li, lm, lx = _get_tr_params(tr)
-        out["length_init"] = li
-        out["length_min"] = lm
-        out["length_max"] = lx
+        _put_set_lengths(out, tr)
         out["rescalarize"] = tr.rescalarize.value
         if tr.noise_aware:
             out["noise_aware"] = True
         return out
     if not isinstance(tr, TurboTRConfig):
         return out
-    li, lm, lx = _get_tr_params(tr)
-    if li != 0.8:
-        out["length_init"] = li
-    if abs(lm - 0.5**7) > 1e-12:
-        out["length_min"] = lm
-    if lx != 1.6:
-        out["length_max"] = lx
+    _put_set_lengths(out, tr)
     if tr.noise_aware:
         out["noise_aware"] = True
     return out
@@ -156,7 +138,7 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
         if surrogate.y_bounds is not None:
             overrides["y_bounds"] = np.asarray(surrogate.y_bounds, dtype=float)
         if surrogate.enn_storage is not None:
-            overrides["enn_storage"] = surrogate.enn_storage
+            overrides["enn_storage"] = surrogate.enn_storage.name
         if surrogate.work_dir is not None:
             overrides["work_dir"] = os.fspath(surrogate.work_dir)
     return overrides if overrides else None

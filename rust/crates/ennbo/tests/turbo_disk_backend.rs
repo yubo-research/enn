@@ -3,7 +3,6 @@
 use ennbo::backend::EnnStorage;
 use ennbo::candidates::CandidateRV;
 use ennbo::config::{CandidateConfig, OptimizerConfig, SurrogateConfig, turbo_enn_config};
-use ennbo::index::IndexDriver;
 use ennbo::optimizer::Optimizer;
 use ennbo::strategy::Strategy;
 use ennbo::surrogate::ENNSurrogateConfig;
@@ -24,30 +23,26 @@ type IncumbentReplay = (
 fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> OptimizerConfig {
     let mut cfg = turbo_enn_config();
     if let SurrogateConfig::ENN(ref mut enn) = cfg.surrogate {
-        let index_driver = match storage {
-            EnnStorage::Disk => IndexDriver::BpAnnDisk,
-            EnnStorage::InMemory => IndexDriver::Flat,
+        let layout = match storage {
+            EnnStorage::Disk => ennbo::EnnLayout::disk(work_dir.expect("disk work_dir"), false),
+            EnnStorage::InMemory => ennbo::EnnLayout::memory(ennbo::IndexDriver::Flat, false),
         };
         *enn = ENNSurrogateConfig {
             k: 3,
-            scale_x: false,
             num_fit_candidates: 5,
             num_fit_samples: 3,
             infer_aleatoric_variance: true,
-            index_driver,
-            storage,
-            work_dir,
+            layout,
             y_bounds: None,
-            metric_learning: ennbo::metric_auto::MetricLearning::None,
             tied_dims: Vec::new(),
             affine_calibrate: false,
         };
     }
     cfg.candidates = CandidateConfig {
-        num_candidates_factor: 1.0,
         min_candidates: 20,
-        max_candidates: Some(20),
-        num_candidates_per_arm: None,
+        max_candidates: 20,
+        num_candidates_per_dim: 0,
+        num_candidates_per_arm: 0,
         candidate_rv: CandidateRV::Uniform,
         raasp_fast: false,
     };

@@ -14,10 +14,7 @@ fn logit_unit_model() -> EpistemicNearestNeighbors {
         train_x,
         train_y,
         None,
-        false,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
-        None,
+        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
         Some(bounds),
     )
     .unwrap()
@@ -157,10 +154,7 @@ fn y_bounds_edge_lower_only_log_warp_roundtrip_and_oob() {
         train_x.clone(),
         train_y.clone(),
         None,
-        false,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
-        None,
+        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
         Some(bounds.clone()),
     )
     .unwrap();
@@ -177,10 +171,7 @@ fn y_bounds_edge_lower_only_log_warp_roundtrip_and_oob() {
         train_x,
         array![[-0.1], [2.0], [1.0]],
         None,
-        false,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
-        None,
+        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
         Some(bounds),
     );
     assert!(oob.is_err(), "y <= lower must be rejected for (0, inf)");
@@ -195,10 +186,7 @@ fn y_bounds_edge_upper_only_neglog_warp_and_samples_in_bounds() {
         train_x,
         train_y,
         None,
-        false,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
-        None,
+        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
         Some(bounds),
     )
     .unwrap();
@@ -222,10 +210,7 @@ fn y_bounds_edge_near_open_endpoints_logit() {
         train_x,
         train_y.clone(),
         None,
-        false,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
-        None,
+        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
         Some(bounds),
     )
     .unwrap();
@@ -265,10 +250,7 @@ fn y_bounds_edge_identity_equals_storage() {
         train_x,
         train_y.clone(),
         None,
-        false,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
-        None,
+        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
         None,
     )
     .unwrap();

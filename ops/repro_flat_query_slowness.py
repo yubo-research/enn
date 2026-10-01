@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Repro: ENN FLAT (Rust ``exact``) neighbor queries are slow at scale.
+"""Repro: ENN FLAT neighbor queries are slow at scale.
 
-FLAT maps to Rust index driver name ``exact``
-(``ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "exact"``).
+FLAT maps to the Rust index driver name ``FLAT``
+(``ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "FLAT"``).
 
 This script builds FLAT and BPANN_DISK models on the same random data, syncs
 indexes, then times a batched ``posterior()`` call. Hyperparameter fitting is
@@ -41,6 +41,7 @@ import numpy as np
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver, ENN_INDEX_DRIVER_TO_RUST
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 
 _DEFAULT_NUM_OBS = 100_000
 _DEFAULT_NUM_QUERY = 10_000
@@ -73,7 +74,7 @@ def _empty_model(num_dim: int, *, driver: ENNIndexDriver, work_dir: str | None):
     empty_yvar = np.empty((0, 1))
     kwargs: dict = {"index_driver": driver}
     if driver == ENNIndexDriver.BPANN_DISK:
-        kwargs["enn_storage"] = "disk"
+        kwargs["enn_storage"] = ENNStorage.DISK
         kwargs["work_dir"] = work_dir
     return EpistemicNearestNeighbors(empty_x, empty_y, empty_yvar, **kwargs)
 

@@ -73,7 +73,7 @@ def test_rust_optimizer_passes_bpann_disk_index_driver():
     overrides = _config_to_rust_overrides(config)
 
     assert overrides is not None
-    assert overrides["index_driver"] == "bpann_disk"
+    assert overrides["index_driver"] == "BPANN_DISK"
 
 
 def test_none_fit_params_not_in_overrides():
