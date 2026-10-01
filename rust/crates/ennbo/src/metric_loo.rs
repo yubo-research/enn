@@ -1,5 +1,7 @@
 //! Leave-one-out ENN log-likelihood for a diagonal metric.
 
+use ndarray::ArrayView2;
+
 const EPS: f64 = 1e-9;
 const MIN_VAR: f64 = 1e-24;
 const SCALE_GRID: [f64; 13] = [
@@ -31,22 +33,28 @@ fn column_loglik(z: &[f64], ycol: &[f64], a_scaled: &[f64], n: usize, d: usize, 
     }
     let mut nbr = vec![0usize; n * k];
     let mut d2n = vec![0.0; n * k];
+    let mut dist = Vec::with_capacity(n - 1);
+    let gram = ArrayView2::from_shape((n, d), az.as_slice())
+        .expect("az is n by d")
+        .dot(&ArrayView2::from_shape((n, d), z).expect("z is n by d").t());
     for i in 0..n {
-        let mut dist = Vec::with_capacity(n - 1);
+        dist.clear();
+        let row_i = row_a[i];
         for r in 0..n {
             if r == i {
                 continue;
             }
-            let mut dot = 0.0;
-            for j in 0..d {
-                dot += az[i * d + j] * z[r * d + j];
-            }
-            dist.push((row_a[i] + row_a[r] - 2.0 * dot, r));
+            dist.push((row_i + row_a[r] - 2.0 * gram[[i, r]], r));
         }
-        dist.sort_by(|p, q| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1)));
-        for t in 0..k {
-            nbr[i * k + t] = dist[t].1;
-            d2n[i * k + t] = dist[t].0;
+        if k > 0 {
+            let order =
+                |p: &(f64, usize), q: &(f64, usize)| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1));
+            dist.select_nth_unstable_by(k - 1, order);
+            dist[..k].sort_by(order);
+            for t in 0..k {
+                nbr[i * k + t] = dist[t].1;
+                d2n[i * k + t] = dist[t].0;
+            }
         }
     }
     let mut best = f64::NEG_INFINITY;
@@ -97,4 +105,21 @@ pub fn loo_loglik(x: &[f64], n: usize, d: usize, y: &[f64], m: usize, a: &[f64],
         total += column_loglik(&z, &yz, &a_scaled, n, d, kk);
     }
     total / m as f64
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn partial_select_matches_full_sort_top_k() {
+        let mut dist: Vec<(f64, usize)> = (0..50).map(|i| ((i * 17 % 50) as f64, i)).collect();
+        dist.push((3.0, 3));
+        let k = 10;
+        let order = |p: &(f64, usize), q: &(f64, usize)| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1));
+        let mut full = dist.clone();
+        full.sort_by(order);
+        let mut part = dist;
+        part.select_nth_unstable_by(k - 1, order);
+        part[..k].sort_by(order);
+        assert_eq!(&full[..k], &part[..k]);
+    }
 }

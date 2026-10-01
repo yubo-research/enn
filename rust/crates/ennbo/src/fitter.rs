@@ -1,7 +1,7 @@
 //! Stateful ENN hyperparameter fitting with incremental statistics.
 
 use ndarray::{Array1, Array2, ArrayView2, Axis};
-use rand::seq::SliceRandom;
+use rand::seq::index::sample;
 use rand::Rng;
 
 use crate::calibration::AffineCalibrator;
@@ -295,12 +295,11 @@ impl ENNFitter {
         let indices: Vec<usize> = {
             let n = model.len();
             let p_actual = num_fit_samples.min(n);
-            let mut indices: Vec<usize> = (0..n).collect();
-            if p_actual < n {
-                indices.shuffle(rng);
-                indices.truncate(p_actual);
+            if p_actual == n {
+                (0..n).collect()
+            } else {
+                sample(rng, n, p_actual).into_iter().collect()
             }
-            indices
         };
 
         let (train_x, train_y, _) = model.rows().train_rows_at(&indices)?;

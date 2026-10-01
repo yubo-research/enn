@@ -55,13 +55,14 @@ pub(crate) fn dist2s_for_neighbor_indices(
         }
         return out;
     }
+    let mut seen = std::collections::HashSet::with_capacity(n_query.saturating_mul(k).min(4096));
     let mut unique: Vec<usize> = Vec::new();
     for i in 0..n_query {
         for j in 0..k {
             let ni = idx[[i, j]];
             if ni >= 0 {
                 let u = ni as usize;
-                if !unique.contains(&u) {
+                if seen.insert(u) {
                     unique.push(u);
                 }
             }

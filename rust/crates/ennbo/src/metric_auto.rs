@@ -38,6 +38,20 @@ fn floored_log(w: &[f64]) -> Vec<f64> {
     log_w.into_iter().map(|v| v.max(max - DRIFT_WEIGHT_FLOOR)).collect()
 }
 
+/// The leave-one-out Gram matrix is temporary. Return those pages so a later
+/// resident-set reading does not keep them.
+fn release_loo_pages() {
+    #[cfg(target_os = "linux")]
+    {
+        extern "C" {
+            fn malloc_trim(pad: usize) -> i32;
+        }
+        unsafe {
+            malloc_trim(0);
+        }
+    }
+}
+
 pub fn weight_drift(weights: &[f64], built: &[f64]) -> f64 {
     let a = floored_log(weights);
     let b = floored_log(built);
@@ -249,6 +263,11 @@ impl AutoMetric {
                 .zip(self.weights.iter())
                 .map(|(t, w)| (t / w).ln().abs())
                 .fold(0.0, f64::max);
+        // A full Gram matrix is worth releasing only once it is large enough
+        // to stay resident. Trimming the tiny fits moves the heap the wrong way.
+        if n >= 512 {
+            release_loo_pages();
+        }
         if change > AUTO_RESCALE_TOL {
             return Ok(Some(self.set_weights(&target)?));
         }

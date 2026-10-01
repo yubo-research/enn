@@ -111,7 +111,17 @@ impl FaissBackend {
     }
 
     pub(crate) fn rebuild(&mut self, train_scaled: &ArrayView2<f64>) -> Result<(), IndexError> {
-        self.inner = Self::make_index(self.num_dim, self.driver, train_scaled)?;
+        if train_scaled.ncols() != self.num_dim || !matches!(self.driver, IndexDriver::Exact) {
+            return Err(IndexError::InvalidShape {
+                expected: self.num_dim,
+                got: train_scaled.ncols(),
+            });
+        }
+        self.inner.reset().map_err(faiss_map_err)?;
+        if train_scaled.nrows() > 0 {
+            let data = arr2_rows_to_f32(train_scaled);
+            self.inner.add(&data).map_err(faiss_map_err)?;
+        }
         Ok(())
     }
 
