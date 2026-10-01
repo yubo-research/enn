@@ -43,6 +43,19 @@ def test_validate_optimizer_config_lhd_only_requires_no_surrogate_direct_call():
         validate_optimizer_config(bad)
 
 
+def test_validate_optimizer_config_rejects_unknown_acquisition():
+    class NotAnAcquisition:
+        pass
+
+    bad = type("Cfg", (), {})()
+    bad.init = InitConfig(init_strategy=LHDOnlyInit())
+    bad.surrogate = ENNSurrogateConfig()
+    bad.acquisition = NotAnAcquisition()
+    bad.acq_optimizer = RAASPOptimizerConfig()
+    with pytest.raises(TypeError, match="AcquisitionConfig"):
+        validate_optimizer_config(bad)
+
+
 def test_optimizer_init_progress_and_telemetry_smoke():
     from enn import create_optimizer
 

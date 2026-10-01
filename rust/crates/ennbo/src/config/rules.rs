@@ -1,6 +1,6 @@
 //! Init-kind and Python-facing optimizer checks, split out of `config.rs`.
 
-use super::{OptimizerConfig, SurrogateConfig};
+use super::{AcquisitionConfig, OptimizerConfig, SurrogateConfig};
 use crate::error::ENNError;
 use crate::surrogate::ENNSurrogateConfig;
 
@@ -83,23 +83,26 @@ pub struct OptimizerRuleSet {
 }
 
 /// Python dataclass checks. Names match the historical Python errors.
-pub fn validate_optimizer_rules(rules: &OptimizerRuleSet, acquisition: &str) -> Result<(), ENNError> {
+pub fn validate_optimizer_rules(
+    rules: &OptimizerRuleSet,
+    acquisition: &AcquisitionConfig,
+) -> Result<(), ENNError> {
     if rules.lhd_only && rules.has_surrogate {
         return Err(ENNError::InvalidParameter(
             "init_strategy='lhd_only' requires NoSurrogateConfig surrogate".into(),
         ));
     }
-    if !rules.has_surrogate && acquisition == "thompson" {
+    if !rules.has_surrogate && matches!(acquisition, AcquisitionConfig::Thompson) {
         return Err(ENNError::InvalidParameter(
             "DrawAcquisitionConfig (Thompson sampling) requires a surrogate. NoSurrogateConfig is not compatible with DrawAcquisitionConfig.".into(),
         ));
     }
-    if !rules.has_surrogate && acquisition == "ucb" {
+    if !rules.has_surrogate && matches!(acquisition, AcquisitionConfig::UCB { .. }) {
         return Err(ENNError::InvalidParameter(
             "UCBAcquisitionConfig requires a surrogate. NoSurrogateConfig is not compatible with UCBAcquisitionConfig.".into(),
         ));
     }
-    if acquisition == "pareto" && !rules.nds {
+    if matches!(acquisition, AcquisitionConfig::Pareto) && !rules.nds {
         return Err(ENNError::InvalidParameter(
             "ParetoAcquisitionConfig requires NDSOptimizerConfig".into(),
         ));

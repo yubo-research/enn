@@ -15,6 +15,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::error::ENNError;
 use crate::index::{ENNIndex, IndexDriver};
+use crate::layout::EnnLayout;
 
 /// Gathered training rows: `x`, `y`, optional `yvar`.
 pub type TrainRowsAtResult = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
@@ -86,13 +87,7 @@ impl EnnBackend {
         train_yvar: Option<Array2<f64>>,
         scale_x: bool,
         x_scale: Array1<f64>,
-        driver: IndexDriver,
     ) -> Result<Self, ENNError> {
-        if driver != IndexDriver::BpAnnDisk {
-            return Err(ENNError::InvalidParameter(
-                "Disk storage requires IndexDriver::BpAnnDisk".to_string(),
-            ));
-        }
         let inner = DiskBpannEnnBackend::new(
             work_dir,
             train_x,
@@ -100,45 +95,69 @@ impl EnnBackend {
             train_yvar,
             scale_x,
             x_scale,
-            driver,
         )?;
         Ok(Self::Disk(DiskBackendHandle::new(inner)))
     }
 
-    pub fn new_empty(
+    /// Build an empty backend from a layout. Illegal combinations are not representable here.
+    pub fn empty_from_layout(
         num_dim: usize,
         num_metrics: usize,
-        driver: IndexDriver,
-        storage: EnnStorage,
-        work_dir: Option<PathBuf>,
+        layout: &EnnLayout,
         pending_flush_threshold: Option<usize>,
     ) -> Result<Self, ENNError> {
-        match storage {
-            EnnStorage::InMemory => Ok(Self::InMemory(Box::new(InMemoryEnnBackend::new_empty(
-                num_dim, num_metrics, driver,
-            )?))),
-            EnnStorage::Disk => {
-                let dir = work_dir.or_else(EnnStorage::work_dir_from_env).ok_or_else(|| {
-                    ENNError::InvalidParameter(
-                        "Disk storage requires work_dir or ENN_WORK_DIR".to_string(),
-                    )
-                })?;
-                if driver != IndexDriver::BpAnnDisk {
-                    return Err(ENNError::InvalidParameter(
-                        "Disk storage requires IndexDriver::BpAnnDisk".to_string(),
-                    ));
-                }
+        match layout {
+            EnnLayout::Memory { driver, .. } => Ok(Self::InMemory(Box::new(
+                InMemoryEnnBackend::new_empty(num_dim, num_metrics, *driver)?,
+            ))),
+            EnnLayout::Disk { work_dir, .. } | EnnLayout::DiskAuto { work_dir } => {
                 let inner = match pending_flush_threshold {
                     Some(threshold) => DiskBpannEnnBackend::new_empty_with_flush_threshold(
-                        dir,
+                        work_dir.clone(),
                         num_dim,
                         num_metrics,
                         threshold,
                     )?,
-                    None => DiskBpannEnnBackend::new_empty(dir, num_dim, num_metrics)?,
+                    None => DiskBpannEnnBackend::new_empty(work_dir.clone(), num_dim, num_metrics)?,
                 };
                 Ok(Self::Disk(DiskBackendHandle::new(inner)))
             }
+        }
+    }
+
+    /// Build a backend from rows and a layout. Disk always uses `BpAnnDisk`.
+    pub fn from_layout(
+        layout: &EnnLayout,
+        train_x: Array2<f64>,
+        train_y: Array2<f64>,
+        train_yvar: Option<Array2<f64>>,
+        x_scale: Array1<f64>,
+    ) -> Result<Self, ENNError> {
+        match layout {
+            EnnLayout::Memory { driver, scale_x } => Self::new_in_memory(
+                train_x,
+                train_y,
+                train_yvar,
+                *scale_x,
+                x_scale,
+                *driver,
+            ),
+            EnnLayout::Disk { work_dir, scale_x } => Self::new_disk(
+                work_dir.clone(),
+                train_x,
+                train_y,
+                train_yvar,
+                *scale_x,
+                x_scale,
+            ),
+            EnnLayout::DiskAuto { work_dir } => Self::new_disk(
+                work_dir.clone(),
+                train_x,
+                train_y,
+                train_yvar,
+                false,
+                x_scale,
+            ),
         }
     }
 
@@ -382,7 +401,6 @@ mod backend_dispatch_tests {
             None,
             false,
             Array1::ones(2),
-            IndexDriver::BpAnnDisk,
         )
         .unwrap();
         backend.ensure_index_sync(false, &Array1::ones(2)).unwrap();
@@ -392,8 +410,15 @@ mod backend_dispatch_tests {
 
     #[test]
     fn disk_bpann_new_empty_without_work_dir_errors() {
-        let err = EnnBackend::new_empty(2, 1, IndexDriver::BpAnnDisk, EnnStorage::Disk, None, None);
-        assert!(err.is_err());
+        use crate::metric_auto::MetricLearning;
+        let err = EnnLayout::try_from_parts(
+            IndexDriver::BpAnnDisk,
+            Some(EnnStorage::Disk),
+            None,
+            false,
+            MetricLearning::None,
+        );
+        assert!(err.unwrap_err().to_string().contains("work_dir"));
     }
 
     #[test]
@@ -424,7 +449,6 @@ mod backend_dispatch_tests {
             None,
             false,
             Array1::ones(2),
-            IndexDriver::BpAnnDisk,
         )
         .unwrap();
         if let EnnBackend::Disk(handle) = &backend {

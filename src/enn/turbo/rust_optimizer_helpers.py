@@ -5,12 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from .config.acquisition import (
-    DrawAcquisitionConfig,
-    ParetoAcquisitionConfig,
-    RandomAcquisitionConfig,
-    UCBAcquisitionConfig,
-)
+from .config.acquisition import UCBAcquisitionConfig, acquisition_kind
 from .config.candidate_gen_config import CandidateGenConfig
 from .config.candidate_rv import CandidateRV
 from .config.enn_x_scaling import ENNMetricLearning, ENNScaleX
@@ -24,18 +19,13 @@ def _acquisition_to_override(config: OptimizerConfig) -> dict[str, Any]:
     acq = getattr(config, "acquisition", None)
     if acq is None:
         return {}
+    kind = acquisition_kind(acq)
     if isinstance(acq, UCBAcquisitionConfig):
         return {
-            "acquisition": "ucb",
+            "acquisition": kind,
             "acquisition_beta": float(getattr(acq, "beta", 2.0)),
         }
-    if isinstance(acq, DrawAcquisitionConfig):
-        return {"acquisition": "thompson"}
-    if isinstance(acq, RandomAcquisitionConfig):
-        return {"acquisition": "random"}
-    if isinstance(acq, ParetoAcquisitionConfig):
-        return {"acquisition": "pareto"}
-    return {}
+    return {"acquisition": kind}
 
 
 def _candidate_rv_override(config: OptimizerConfig) -> dict[str, Any]:

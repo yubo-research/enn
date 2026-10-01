@@ -51,7 +51,7 @@ def test_optimizer_fixture_capture_smoke():
 
 def test_coverage_enn_fit_fast():
     from enn.enn.enn_class import EpistemicNearestNeighbors
-    from enn.enn.enn_fit import ENNIncrementalDelta, enn_fit, subsample_loglik
+    from enn.enn.enn_fit import enn_fit, subsample_loglik
     from enn.enn.enn_fitter import ENNStatefulFitter
     from enn.enn.enn_params import ENNParams
 
@@ -64,14 +64,14 @@ def test_coverage_enn_fit_fast():
     fitter = ENNStatefulFitter(k=2, rng=np.random.default_rng(9))
     fitter.tell(x[:2], y[:2])
     model2 = EpistemicNearestNeighbors(x[:2], y[:2])
-    model2.add(x[2:3], y[2:3])
+    token = model2.add(x[2:3], y[2:3])
     params2 = enn_fit(
         model2,
         k=2,
         num_fit_candidates=2,
         num_fit_samples=2,
         rng=np.random.default_rng(10),
-        incremental=ENNIncrementalDelta(fitter=fitter, x=x[2:3], y=y[2:3]),
+        incremental=token,
         params_warm_start=params,
     )
     assert params2.k_num_neighbors >= 1

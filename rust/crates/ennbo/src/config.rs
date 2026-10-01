@@ -346,31 +346,14 @@ impl OptimizerConfig {
     /// `nds` is true when Pareto search uses the non-dominated-sort optimizer.
     pub fn validate_kind(&self, kind: OptimizerInitKind, nds: bool) -> Result<(), ENNError> {
         let has_surrogate = matches!(self.surrogate, SurrogateConfig::ENN(_));
-        if kind == OptimizerInitKind::LhdOnly && has_surrogate {
-            return Err(ENNError::InvalidParameter(
-                "init_strategy='lhd_only' requires NoSurrogateConfig surrogate".into(),
-            ));
-        }
-        if !has_surrogate {
-            match self.acquisition {
-                AcquisitionConfig::Thompson => {
-                    return Err(ENNError::InvalidParameter(
-                        "DrawAcquisitionConfig (Thompson sampling) requires a surrogate. NoSurrogateConfig is not compatible with DrawAcquisitionConfig.".into(),
-                    ));
-                }
-                AcquisitionConfig::UCB { .. } => {
-                    return Err(ENNError::InvalidParameter(
-                        "UCBAcquisitionConfig requires a surrogate. NoSurrogateConfig is not compatible with UCBAcquisitionConfig.".into(),
-                    ));
-                }
-                _ => {}
-            }
-        }
-        if matches!(self.acquisition, AcquisitionConfig::Pareto) && !nds {
-            return Err(ENNError::InvalidParameter(
-                "ParetoAcquisitionConfig requires NDSOptimizerConfig".into(),
-            ));
-        }
+        validate_optimizer_rules(
+            &OptimizerRuleSet {
+                lhd_only: kind == OptimizerInitKind::LhdOnly,
+                has_surrogate,
+                nds,
+            },
+            &self.acquisition,
+        )?;
         if let SurrogateConfig::ENN(enn) = &self.surrogate {
             if !matches!(self.acquisition, AcquisitionConfig::Pareto | AcquisitionConfig::Random)
                 && enn.num_fit_samples == 0

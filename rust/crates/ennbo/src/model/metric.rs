@@ -158,7 +158,9 @@ mod tests {
             x.slice(ndarray::s![..300, ..]).to_owned(),
             y.slice(ndarray::s![..300, ..]).to_owned(),
             None,
-            crate::layout::EnnLayout::disk(dir.path().to_path_buf(), false),
+            crate::layout::EnnLayout::DiskAuto {
+                work_dir: dir.path().to_path_buf(),
+            },
             None,
         )
         .unwrap();

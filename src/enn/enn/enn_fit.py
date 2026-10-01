@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
 from enn._rust import subsample_loglik as _rust_subsample_loglik
+
+from .add_token import ENNAddToken
 
 
 def subsample_loglik(
@@ -52,16 +53,6 @@ def subsample_loglik(
     )
 
 
-@dataclass(frozen=True)
-class ENNIncrementalDelta:
-    """Rows just appended via ``model.add`` plus the fitter tracking y_std."""
-
-    fitter: Any
-    x: np.ndarray
-    y: np.ndarray
-    yvar: np.ndarray | None = None
-
-
 def enn_fit(
     model: Any,
     *,
@@ -70,14 +61,15 @@ def enn_fit(
     num_fit_samples: int | None = None,
     rng: Any,
     params_warm_start: Any | None = None,
-    incremental: ENNIncrementalDelta | None = None,
+    incremental: ENNAddToken | None = None,
 ) -> Any:
     """Fit ENN hyperparameters via ENNStatefulFitter tell/ask.
 
     Batch mode (``incremental`` is None): tell the full model and ask once.
 
-    Incremental mode: tell only the delta rows that were just appended via
-    ``model.add``, then ask — same rhythm as ``ENNStatefulFitter.ask``.
+    Incremental mode: ``incremental`` must be the token just returned by
+    ``model.add``. That token is consumed here, so a stale, foreign, or
+    repeated token cannot be told.
     """
     from .enn_class import EpistemicNearestNeighbors as PyENN
     from .enn_fitter import ENNStatefulFitter
@@ -91,9 +83,18 @@ def enn_fit(
         y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
         fitter.tell(x_all, y_all, yvar_all, y_bounds=y_bounds)
     else:
-        fitter = incremental.fitter
+        if not isinstance(incremental, ENNAddToken):
+            raise TypeError(
+                "incremental must be the token returned by model.add, "
+                f"got {type(incremental).__name__}"
+            )
+        x_delta, y_delta, yvar_delta = incremental.take(model)
+        fitter = getattr(model, "_incremental_fitter", None)
+        if fitter is None:
+            fitter = ENNStatefulFitter(k=k, rng=rng)
+            model._incremental_fitter = fitter
         y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
-        fitter.tell(incremental.x, incremental.y, incremental.yvar, y_bounds=y_bounds)
+        fitter.tell(x_delta, y_delta, yvar_delta, y_bounds=y_bounds)
 
     return fitter.ask(
         model,

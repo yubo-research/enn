@@ -38,13 +38,7 @@ impl DiskBpannEnnBackend {
         train_yvar: Option<Array2<f64>>,
         scale_x: bool,
         x_scale: Array1<f64>,
-        driver: IndexDriver,
     ) -> Result<Self, ENNError> {
-        if driver != IndexDriver::BpAnnDisk {
-            return Err(ENNError::InvalidParameter(
-                "DiskBpannEnnBackend requires IndexDriver::BpAnnDisk".to_string(),
-            ));
-        }
         install_bpann_tuning_from_config();
         let inner = if train_x.nrows() == 0
             && train_y.nrows() == 0
@@ -61,7 +55,7 @@ impl DiskBpannEnnBackend {
         let num_metrics = inner.num_metrics();
         Ok(Self {
             inner,
-            driver,
+            driver: IndexDriver::BpAnnDisk,
             num_metrics,
         })
     }
@@ -298,21 +292,6 @@ mod tests {
     }
 
     #[test]
-    fn new_rejects_non_bpann_driver() {
-        let dir = TempDir::new().expect("tempdir");
-        let result = DiskBpannEnnBackend::new(
-            dir.path().to_path_buf(),
-            array![[0.0, 0.0]],
-            array![[0.0]],
-            None,
-            false,
-            array![1.0, 1.0],
-            IndexDriver::Flat,
-        );
-        assert!(matches!(result, Err(ENNError::InvalidParameter(_))));
-    }
-
-    #[test]
     fn append_rows_shape_error_maps_invalid_shape() {
         let dir = TempDir::new().expect("tempdir");
         let mut backend =
@@ -338,7 +317,6 @@ mod tests {
             None,
             false,
             array![1.0, 1.0],
-            IndexDriver::BpAnnDisk,
         )
         .expect("fresh");
         let reopened = DiskBpannEnnBackend::new(
@@ -348,7 +326,6 @@ mod tests {
             None,
             false,
             array![1.0, 1.0],
-            IndexDriver::BpAnnDisk,
         )
         .expect("reopen");
         assert_eq!(reopened.len(), 2);
@@ -365,7 +342,6 @@ mod tests {
             None,
             false,
             array![1.0, 1.0],
-            IndexDriver::BpAnnDisk,
         )
         .expect("fresh");
         let reopened = DiskBpannEnnBackend::new(
@@ -375,7 +351,6 @@ mod tests {
             None,
             false,
             array![1.0, 1.0],
-            IndexDriver::BpAnnDisk,
         )
         .expect("reopen");
         assert_eq!(reopened.num_metrics(), 2);

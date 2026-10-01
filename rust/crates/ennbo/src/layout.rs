@@ -35,19 +35,6 @@ pub enum EnnLayout {
     },
 }
 
-/// Fields the model constructor reads off a layout.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpenedLayout {
-    /// Divide `x` by per-dimension scales.
-    pub scale_x: bool,
-    /// Neighbor index.
-    pub driver: IndexDriver,
-    /// Where rows are stored.
-    pub storage: EnnStorage,
-    /// Disk directory, when storage is disk.
-    pub work_dir: Option<PathBuf>,
-}
-
 fn auto_rejected() -> ENNError {
     ENNError::InvalidParameter(
         "metric_learning=Auto requires IndexDriver::BpAnnDisk, disk storage, and scale_x=false"
@@ -146,16 +133,6 @@ impl EnnLayout {
         }
     }
 
-    /// Split the layout into the fields the model backend expects.
-    pub fn open(&self) -> OpenedLayout {
-        OpenedLayout {
-            scale_x: self.scale_x(),
-            driver: self.index_driver(),
-            storage: self.storage(),
-            work_dir: self.work_dir().map(Path::to_path_buf),
-        }
-    }
-
     /// Build a layout from the pieces a caller can set independently.
     ///
     /// `work_dir` without `Some(Disk)` is an error. It does not select disk.
@@ -224,7 +201,19 @@ mod tests {
     }
 
     #[test]
-    fn disk_auto_opens_as_bpann_disk() {
+    fn disk_without_work_dir_is_rejected() {
+        let err = EnnLayout::try_from_parts(
+            IndexDriver::BpAnnDisk,
+            Some(EnnStorage::Disk),
+            None,
+            false,
+            MetricLearning::None,
+        );
+        assert!(err.unwrap_err().to_string().contains("work_dir"));
+    }
+
+    #[test]
+    fn disk_auto_keeps_bpann_disk_fields() {
         let layout = EnnLayout::try_from_parts(
             IndexDriver::BpAnnDisk,
             Some(EnnStorage::Disk),
@@ -233,10 +222,9 @@ mod tests {
             MetricLearning::Auto,
         )
         .unwrap();
-        let opened = layout.open();
-        assert!(!opened.scale_x);
-        assert_eq!(opened.driver, IndexDriver::BpAnnDisk);
-        assert_eq!(opened.storage, EnnStorage::Disk);
+        assert!(!layout.scale_x());
+        assert_eq!(layout.index_driver(), IndexDriver::BpAnnDisk);
+        assert_eq!(layout.storage(), EnnStorage::Disk);
         assert_eq!(layout.metric_learning(), MetricLearning::Auto);
         let fixed = EnnLayout::disk(PathBuf::from("/tmp/enn_layout"), true);
         assert!(fixed.scale_x());

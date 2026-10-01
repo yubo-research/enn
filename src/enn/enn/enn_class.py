@@ -13,6 +13,7 @@ from enn.turbo.config.enn_x_scaling import (
     ENNScaleX,
 )
 
+from .add_token import ENNAddToken
 from .enn_class_support import _rust_index_driver_name, _to_rust_seeds
 from .mbpann import MBPANNMetric
 
@@ -153,9 +154,12 @@ class EpistemicNearestNeighbors(_EnnRustView):
         x: np.ndarray,
         y: np.ndarray,
         yvar: np.ndarray | None = None,
-    ) -> None:
+    ) -> ENNAddToken:
         x, y, yvar = self._coerce_inputs(x, y, yvar)
         self._rust_model.add(x, y, yvar)
+        token = ENNAddToken(self, x, y, yvar)
+        self._pending_fit_token = token
+        return token
 
     def ensure_index_sync(self) -> None:
         self._rust_model.ensure_index_sync()

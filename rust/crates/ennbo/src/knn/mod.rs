@@ -24,7 +24,6 @@ impl KnnBackend {
         match driver {
             IndexDriver::Flat => Ok(Self::Faiss(Mutex::new(FaissBackend::new(
                 num_dim,
-                driver,
                 train_scaled,
             )?))),
             IndexDriver::BpAnnDisk => Err(IndexError::InvalidParameter(

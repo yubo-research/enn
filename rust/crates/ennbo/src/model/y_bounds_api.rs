@@ -7,6 +7,8 @@ use super::EpistemicNearestNeighbors;
 use crate::backend::{EnnBackend, EnnStorage, TrainRowsAtResult};
 use crate::error::ENNError;
 use crate::index::IndexDriver;
+use crate::layout::EnnLayout;
+use crate::metric_auto::MetricLearning;
 use crate::y_bounds::{
     inv_y, is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar,
 };
@@ -22,21 +24,30 @@ impl EpistemicNearestNeighbors {
         pending_flush_threshold: Option<usize>,
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
-        let stored_work_dir = work_dir.clone().or_else(EnnStorage::work_dir_from_env);
+        let layout = EnnLayout::try_from_parts(
+            driver,
+            Some(storage),
+            work_dir,
+            false,
+            MetricLearning::None,
+        )?;
+        let stored_work_dir = layout
+            .work_dir()
+            .map(|p| p.to_path_buf())
+            .or_else(EnnStorage::work_dir_from_env);
         let meta_text = stored_work_dir
             .as_ref()
-            .filter(|p| matches!(storage, EnnStorage::Disk) && p.join("metadata.json").exists())
+            .filter(|p| layout.storage() == EnnStorage::Disk && p.join("metadata.json").exists())
             .and_then(|p| std::fs::read_to_string(p.join("metadata.json")).ok());
         let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics, meta_text.as_deref())?;
-        let backend = EnnBackend::new_empty(
+        let backend = EnnBackend::empty_from_layout(
             num_dim,
             num_metrics,
-            driver,
-            storage,
-            work_dir,
+            &layout,
             pending_flush_threshold,
         )?;
         let model = Self {
+            layout,
             backend,
             num_obs: 0,
             num_dim,

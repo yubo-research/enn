@@ -331,12 +331,12 @@ mod tests {
     fn kiss_index_helper_unit_names() {
         use crate::knn::{arr2_rows_to_f32, pad_neighbor_cols_to_search_k, unpack_batch_search};
         use faiss::Index;
-        assert_eq!(faiss_spec_for_test(IndexDriver::Flat), "Flat");
+        assert_eq!(faiss_spec_for_test(), "Flat");
         let _ = faiss_map_err_for_test as fn(FaissError) -> IndexError;
         let rows = array![[1.0, 2.0], [3.0, 4.0]];
         let f32v = arr2_rows_to_f32(&rows.view());
         assert_eq!(f32v.len(), 4);
-        let index = make_faiss_for_test(2, IndexDriver::Flat, &rows.view()).unwrap();
+        let index = make_faiss_for_test(2, &rows.view()).unwrap();
         assert_eq!(index.ntotal(), 2);
         let (d, _i) = pad_neighbor_cols_to_search_k(array![[1.0, 2.0]], array![[0i64, 1]], 3);
         assert_eq!(d.ncols(), 3);

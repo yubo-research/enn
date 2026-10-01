@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::backend::{EnnBackend, EnnStorage};
 use crate::error::ENNError;
-use crate::index::{IndexDriver, is_disk_index_driver};
+use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
 use crate::metric_auto::AutoMetric;
 use crate::y_bounds::resolve_y_bounds;
@@ -32,6 +32,7 @@ pub use access::{EnnIndexAccess, EnnRowAccess};
 
 /// Epistemic Nearest Neighbors model.
 pub struct EpistemicNearestNeighbors {
+    pub(crate) layout: EnnLayout,
     pub(crate) backend: EnnBackend,
     pub(crate) num_obs: usize,
     pub(crate) num_dim: usize,
@@ -137,11 +138,9 @@ impl EpistemicNearestNeighbors {
         layout: EnnLayout,
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
-        let opened = layout.open();
-        let scale_x = opened.scale_x;
-        let driver = opened.driver;
-        let storage = opened.storage;
-        let work_dir = opened.work_dir;
+        let scale_x = layout.scale_x();
+        let storage = layout.storage();
+        let work_dir = layout.work_dir().map(std::path::Path::to_path_buf);
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
         let num_dim = train_x.ncols();
         let mut num_metrics = train_y.ncols();
@@ -189,40 +188,16 @@ impl EpistemicNearestNeighbors {
             Self::init_stats(&train_x, &train_y, scale_x);
 
         let stored_work_dir = disk_work_dir.clone();
-        let backend = match storage {
-            EnnStorage::InMemory => EnnBackend::new_in_memory(
-                train_x,
-                train_y,
-                train_yvar,
-                scale_x,
-                x_scale.clone(),
-                driver,
-            )?,
-            EnnStorage::Disk => {
-                if !is_disk_index_driver(driver) {
-                    return Err(ENNError::InvalidParameter(
-                        "Disk storage requires IndexDriver::BpAnnDisk"
-                            .to_string(),
-                    ));
-                }
-                let dir = work_dir.or_else(EnnStorage::work_dir_from_env).ok_or_else(|| {
-                    ENNError::InvalidParameter(
-                        "Disk storage requires work_dir or ENN_WORK_DIR".to_string(),
-                    )
-                })?;
-                EnnBackend::new_disk(
-                    dir,
-                    train_x,
-                    train_y,
-                    train_yvar,
-                    scale_x,
-                    x_scale.clone(),
-                    driver,
-                )?
-            }
-        };
+        let backend = EnnBackend::from_layout(
+            &layout,
+            train_x,
+            train_y,
+            train_yvar,
+            x_scale.clone(),
+        )?;
 
         let mut model = Self {
+            layout,
             backend,
             num_obs,
             num_dim,

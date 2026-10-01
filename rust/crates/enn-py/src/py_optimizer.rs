@@ -77,25 +77,28 @@ fn parse_index_driver(s: &str) -> PyResult<ennbo::index::IndexDriver> {
 }
 
 #[doc = "kiss-coverage-off"]
-fn parse_acquisition(
-    dict: &Bound<'_, pyo3::types::PyDict>,
-    s: &str,
-) -> PyResult<ennbo::AcquisitionConfig> {
+fn acquisition_from_name(s: &str, beta: f64) -> PyResult<ennbo::AcquisitionConfig> {
     use ennbo::AcquisitionConfig;
     match s {
-        "ucb" => {
-            let beta = dict
-                .get_item("acquisition_beta")?
-                .map(|v| v.extract::<f64>())
-                .transpose()?
-                .unwrap_or(2.0);
-            Ok(AcquisitionConfig::UCB { beta })
-        }
+        "ucb" => Ok(AcquisitionConfig::UCB { beta }),
         "thompson" => Ok(AcquisitionConfig::Thompson),
         "random" => Ok(AcquisitionConfig::Random),
         "pareto" => Ok(AcquisitionConfig::Pareto),
         _ => Err(PyValueError::new_err(format!("Unknown acquisition: {s}"))),
     }
+}
+
+#[doc = "kiss-coverage-off"]
+fn parse_acquisition(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+    s: &str,
+) -> PyResult<ennbo::AcquisitionConfig> {
+    let beta = dict
+        .get_item("acquisition_beta")?
+        .map(|v| v.extract::<f64>())
+        .transpose()?
+        .unwrap_or(2.0);
+    acquisition_from_name(s, beta)
 }
 
 #[doc = "kiss-coverage-off"]
@@ -320,20 +323,26 @@ pub fn require_num_fit_samples_py(is_pareto: bool, num_fit_samples: Option<usize
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+#[doc = "kiss-coverage-off"]
+fn optimizer_flag(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<bool> {
+    dict.get_item(key)?
+        .ok_or_else(|| PyValueError::new_err(format!("missing optimizer flag {key}")))?
+        .extract()
+}
+
 #[pyfunction(name = "validate_optimizer_rules")]
 #[doc = "kiss-coverage-off"]
-pub fn validate_optimizer_rules_py(flags: Vec<bool>, acquisition: &str) -> PyResult<()> {
-    if flags.len() != 3 {
-        return Err(PyValueError::new_err(
-            "validate_optimizer_rules expects [lhd_only, has_surrogate, nds]",
-        ));
-    }
+pub fn validate_optimizer_rules_py(
+    flags: &Bound<'_, pyo3::types::PyDict>,
+    acquisition: &str,
+) -> PyResult<()> {
     let rules = ennbo::OptimizerRuleSet {
-        lhd_only: flags[0],
-        has_surrogate: flags[1],
-        nds: flags[2],
+        lhd_only: optimizer_flag(flags, "lhd_only")?,
+        has_surrogate: optimizer_flag(flags, "has_surrogate")?,
+        nds: optimizer_flag(flags, "nds")?,
     };
-    ennbo::validate_optimizer_rules(&rules, acquisition).map_err(|e| PyValueError::new_err(e.to_string()))
+    let kind = acquisition_from_name(acquisition, 2.0)?;
+    ennbo::validate_optimizer_rules(&rules, &kind).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Create TuRBO-ENN optimizer

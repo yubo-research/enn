@@ -16,26 +16,6 @@ class ENNStorage(Enum):
     DISK = auto()
 
 
-def _reject_auto(
-    index_driver: ENNIndexDriver,
-    enn_storage: ENNStorage | None,
-    scale_x: ENNScaleX,
-    metric_learning: ENNMetricLearning,
-) -> None:
-    if metric_learning != ENNMetricLearning.AUTO:
-        return
-    legal = (
-        index_driver is ENNIndexDriver.BPANN_DISK
-        and enn_storage is ENNStorage.DISK
-        and scale_x is ENNScaleX.OFF
-    )
-    if not legal:
-        raise ValueError(
-            "metric_learning=Auto requires IndexDriver::BpAnnDisk, "
-            "disk storage, and scale_x=false"
-        )
-
-
 def validate_enn_placement(
     *,
     index_driver: ENNIndexDriver,
@@ -44,15 +24,25 @@ def validate_enn_placement(
     scale_x: ENNScaleX,
     metric_learning: ENNMetricLearning,
 ) -> None:
+    from enn._rust import validate_enn_placement as rust_validate
+
     if not isinstance(index_driver, ENNIndexDriver):
         raise ValueError(f"index_driver must be an ENNIndexDriver, got {index_driver!r}")
     if enn_storage is not None and not isinstance(enn_storage, ENNStorage):
         raise ValueError(f"enn_storage must be an ENNStorage, got {enn_storage!r}")
-    if work_dir is not None and enn_storage is not ENNStorage.DISK:
-        raise ValueError("work_dir does not select storage; pass ENNStorage.DISK explicitly")
-    if enn_storage is ENNStorage.DISK and index_driver is not ENNIndexDriver.BPANN_DISK:
-        raise ValueError("Disk storage requires IndexDriver::BpAnnDisk")
-    _reject_auto(index_driver, enn_storage, scale_x, metric_learning)
+    if not isinstance(scale_x, ENNScaleX):
+        raise ValueError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
+    if not isinstance(metric_learning, ENNMetricLearning):
+        raise ValueError(
+            f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}"
+        )
+    rust_validate(
+        index_driver.name,
+        None if enn_storage is None else enn_storage.name,
+        None if work_dir is None else os.fspath(work_dir),
+        scale_x is ENNScaleX.ON,
+        "auto" if metric_learning is ENNMetricLearning.AUTO else "none",
+    )
 
 
 @dataclass(frozen=True)

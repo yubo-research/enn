@@ -5,8 +5,7 @@ def test_enn_fit_after_every_add_uses_num_fit_candidates_one():
     import numpy as np
 
     from enn.enn.enn_class import EpistemicNearestNeighbors
-    from enn.enn.enn_fit import ENNIncrementalDelta, enn_fit
-    from enn.enn.enn_fitter import ENNStatefulFitter
+    from enn.enn.enn_fit import enn_fit
     from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(7)
@@ -17,13 +16,12 @@ def test_enn_fit_after_every_add_uses_num_fit_candidates_one():
     model = EpistemicNearestNeighbors(
         np.empty((0, 2)), np.empty((0, 1)), np.empty((0, 1))
     )
-    fitter = ENNStatefulFitter(k=3, rng=np.random.default_rng(7))
     params: ENNParams | None = None
     for row_x, row_y, row_yvar in zip(x_all, y_all, yvar_all):
         row_x = row_x.reshape(1, -1)
         row_y = row_y.reshape(1, -1)
         row_yvar = row_yvar.reshape(1, -1)
-        model.add(row_x, row_y, row_yvar)
+        token = model.add(row_x, row_y, row_yvar)
         params = enn_fit(
             model,
             k=3,
@@ -31,7 +29,7 @@ def test_enn_fit_after_every_add_uses_num_fit_candidates_one():
             num_fit_samples=8,
             rng=np.random.default_rng(7),
             params_warm_start=params,
-            incremental=ENNIncrementalDelta(fitter, row_x, row_y, row_yvar),
+            incremental=token,
         )
     assert isinstance(params, ENNParams)
     assert params.k_num_neighbors == 3
@@ -42,7 +40,7 @@ def test_enn_fit_incremental_metamorphic_matches_manual_tell_ask():
     import numpy as np
 
     from enn.enn.enn_class import EpistemicNearestNeighbors
-    from enn.enn.enn_fit import ENNIncrementalDelta, enn_fit
+    from enn.enn.enn_fit import enn_fit
     from enn.enn.enn_fitter import ENNStatefulFitter
 
     rng = np.random.default_rng(99)
@@ -50,7 +48,6 @@ def test_enn_fit_incremental_metamorphic_matches_manual_tell_ask():
     y_all = rng.standard_normal((8, 1))
 
     via_enn_fit = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
-    fitter_a = ENNStatefulFitter(k=2, rng=np.random.default_rng(99))
     params_a = None
 
     via_manual = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
@@ -60,7 +57,7 @@ def test_enn_fit_incremental_metamorphic_matches_manual_tell_ask():
     for row_x, row_y in zip(x_all, y_all):
         row_x = row_x.reshape(1, -1)
         row_y = row_y.reshape(1, -1)
-        via_enn_fit.add(row_x, row_y)
+        token = via_enn_fit.add(row_x, row_y)
         params_a = enn_fit(
             via_enn_fit,
             k=2,
@@ -68,7 +65,7 @@ def test_enn_fit_incremental_metamorphic_matches_manual_tell_ask():
             num_fit_samples=6,
             rng=np.random.default_rng(99),
             params_warm_start=params_a,
-            incremental=ENNIncrementalDelta(fitter_a, row_x, row_y),
+            incremental=token,
         )
 
         via_manual.add(row_x, row_y)
@@ -91,6 +88,57 @@ def test_enn_fit_incremental_metamorphic_matches_manual_tell_ask():
         abs(params_a.aleatoric_variance_scale - params_b.aleatoric_variance_scale)
         < 1e-12
     )
+
+
+def test_enn_fit_rejects_stale_foreign_and_repeated_tokens():
+    import numpy as np
+    import pytest
+
+    from enn.enn.enn_class import EpistemicNearestNeighbors
+    from enn.enn.enn_fit import enn_fit
+
+    rng = np.random.default_rng(1)
+    x = rng.standard_normal((4, 2))
+    y = rng.standard_normal((4, 1))
+    model = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
+    other = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
+    first = model.add(x[0:1], y[0:1])
+    second = model.add(x[1:2], y[1:2])
+    with pytest.raises(ValueError, match="stale or already used"):
+        enn_fit(
+            model,
+            k=2,
+            num_fit_candidates=1,
+            num_fit_samples=4,
+            rng=np.random.default_rng(1),
+            incremental=first,
+        )
+    with pytest.raises(ValueError, match="different model"):
+        enn_fit(
+            other,
+            k=2,
+            num_fit_candidates=1,
+            num_fit_samples=4,
+            rng=np.random.default_rng(1),
+            incremental=second,
+        )
+    enn_fit(
+        model,
+        k=2,
+        num_fit_candidates=1,
+        num_fit_samples=4,
+        rng=np.random.default_rng(1),
+        incremental=second,
+    )
+    with pytest.raises(ValueError, match="stale or already used"):
+        enn_fit(
+            model,
+            k=2,
+            num_fit_candidates=1,
+            num_fit_samples=4,
+            rng=np.random.default_rng(1),
+            incremental=second,
+        )
 
 
 def test_tell_with_y_bounds_tracks_warped_y_std():

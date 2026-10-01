@@ -73,6 +73,7 @@ create_optimizer_zero = _ext.optimizer.create_optimizer_zero
 create_optimizer_lhd = _ext.optimizer.create_optimizer_lhd
 require_num_fit_samples = _ext.optimizer.require_num_fit_samples
 validate_optimizer_rules = _ext.optimizer.validate_optimizer_rules
+validate_enn_placement = _ext.model.validate_enn_placement
 
 
 __all__ = [
