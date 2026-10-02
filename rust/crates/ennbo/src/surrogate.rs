@@ -86,6 +86,9 @@ pub struct ENNSurrogateConfig {
     pub y_bounds: Option<Array2<f64>>,
     pub tied_dims: Vec<Vec<usize>>,
     pub affine_calibrate: bool,
+    /// When true, skip the scale search and use epistemic scale 1 and aleatoric scale 0.
+    /// This is the Python `num_fit_samples is None` contract from before the Rust port.
+    pub freeze_params: bool,
 }
 
 impl Default for ENNSurrogateConfig {
@@ -99,6 +102,7 @@ impl Default for ENNSurrogateConfig {
             y_bounds: None,
             tied_dims: Vec::new(),
             affine_calibrate: false,
+            freeze_params: false,
         }
     }
 }
@@ -145,7 +149,19 @@ impl ENNSurrogate {
         )
     }
 
+    fn freeze_default_params(&mut self) -> Result<(), ENNError> {
+        let params = ENNParams::new(self.config.k, 1.0, 0.0).map_err(|e| {
+            ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
+        })?;
+        self.params = Some(params);
+        self.calibrator = None;
+        Ok(())
+    }
+
     fn run_fitter(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
+        if self.config.freeze_params {
+            return self.freeze_default_params();
+        }
         let model = self
             .model
             .as_ref()
@@ -211,7 +227,7 @@ impl ENNSurrogate {
             if !skip_fit || bulk_disk {
                 model.ensure_index_sync()?;
             }
-            if !skip_fit {
+            if !skip_fit || self.config.freeze_params {
                 self.run_fitter(rng)?;
             }
             if !skip_fit || bulk_disk {
@@ -230,7 +246,7 @@ impl ENNSurrogate {
         self.fitter = Some(fitter);
         let on_disk = self.config.layout.index_driver() == IndexDriver::BpAnnDisk;
         let skip_fit = on_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
-        if !skip_fit {
+        if !skip_fit || self.config.freeze_params {
             
             if on_disk {
                 if let Some(model) = &self.model {
@@ -345,6 +361,11 @@ impl Surrogate for ENNSurrogate {
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
 
         let model = self.construct_model(x, y, yvar)?;
+        if self.config.freeze_params {
+            self.model = Some(model);
+            self.fitter = None;
+            return self.freeze_default_params();
+        }
 
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
         fitter.tell(x, y, yvar, self.config.y_bounds.as_ref())?;
@@ -515,6 +536,32 @@ mod tests {
         let pred = surrogate.predict(&x_query.view()).unwrap();
         assert_eq!(pred.mu.shape(), &[1, 1]);
         assert!(pred.mu[[0, 0]].is_finite());
+    }
+
+    #[test]
+    fn freeze_params_keeps_unit_epistemic_and_zero_aleatoric() {
+        let config = ENNSurrogateConfig {
+            k: 2,
+            freeze_params: true,
+            ..Default::default()
+        };
+        let mut surrogate = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(1);
+        let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5]];
+        let y = array![[0.0], [1.0], [1.0], [2.0], [0.4]];
+        surrogate
+            .fit_append(&x.view(), &y.view(), None, &mut rng)
+            .unwrap();
+        let params = surrogate.params().unwrap();
+        assert_eq!(params.k_num_neighbors, 2);
+        assert_eq!(params.epistemic_variance_scale, 1.0);
+        assert_eq!(params.aleatoric_variance_scale, 0.0);
+        surrogate
+            .fit_append(&array![[0.2, 0.2]].view(), &array![[0.3]].view(), None, &mut rng)
+            .unwrap();
+        let params = surrogate.params().unwrap();
+        assert_eq!(params.epistemic_variance_scale, 1.0);
+        assert_eq!(params.aleatoric_variance_scale, 0.0);
     }
 
     #[test]

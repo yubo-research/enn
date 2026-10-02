@@ -76,17 +76,61 @@ def test_rust_optimizer_passes_bpann_disk_index_driver():
     assert overrides["index_driver"] == "BPANN_DISK"
 
 
-def test_none_fit_params_not_in_overrides():
-    """When fit params are None, they should not appear in overrides."""
+def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
+    """tell returns the posterior mean. Unset fit samples freeze scales, so a new query does not depend on the seed."""
+    import numpy as np
+
+    from enn import create_optimizer
+    from enn.turbo.config import turbo_zero_config
+
+    bounds = np.array([[0.0, 1.0]] * 4, dtype=float)
+    x = np.array(
+        [
+            [0.1, 0.2, 0.3, 0.4],
+            [0.2, 0.1, 0.4, 0.3],
+            [0.8, 0.7, 0.2, 0.1],
+            [0.4, 0.4, 0.4, 0.4],
+            [0.9, 0.1, 0.8, 0.2],
+        ],
+        dtype=float,
+    )
+    y = np.array([0.2, 1.5, -0.4, 0.7, 0.1], dtype=float)
+    query = np.array([[0.55, 0.45, 0.35, 0.25]], dtype=float)
+
+    def query_mu(seed: int, num_fit_samples: int | None) -> tuple[np.ndarray, np.ndarray]:
+        if num_fit_samples is None:
+            fit = ENNFitConfig()
+        else:
+            fit = ENNFitConfig(num_fit_samples=num_fit_samples, num_fit_candidates=30)
+        cfg = turbo_enn_config(enn=ENNSurrogateConfig(k=3, fit=fit), num_init=2)
+        opt = create_optimizer(bounds=bounds, config=cfg, rng=np.random.default_rng(seed))
+        told = np.asarray(opt.tell(x, y), dtype=float)
+        at_query = np.asarray(opt._inner.posterior_mu(query), dtype=float)
+        return told, at_query
+
+    told_a, frozen_a = query_mu(1, None)
+    told_b, frozen_b = query_mu(99, None)
+    assert told_a.shape == y.shape
+    assert np.allclose(told_a, told_b)
+    assert np.allclose(frozen_a, frozen_b)
+    _, fitted = query_mu(1, 10)
+    assert not np.allclose(frozen_a, fitted)
+
+    zero = create_optimizer(
+        bounds=bounds,
+        config=turbo_zero_config(num_init=2),
+        rng=np.random.default_rng(0),
+    )
+    echoed = np.asarray(zero.tell(x, y), dtype=float)
+    assert np.allclose(echoed, y)
+
+
+def test_none_fit_params_freeze_the_scales():
+    """None means do not search. Rust would otherwise keep the factory counts of 10 and 30."""
     config = _make_enn_config(num_fit_samples=None, num_fit_candidates=None)
     overrides = _config_to_rust_overrides(config)
 
-
-    if overrides is not None:
-        assert (
-            "num_fit_samples" not in overrides or overrides["num_fit_samples"] is None
-        )
-        assert (
-            "num_fit_candidates" not in overrides
-            or overrides["num_fit_candidates"] is None
-        )
+    assert overrides is not None
+    assert overrides["freeze_params"] is True
+    assert "num_fit_samples" not in overrides
+    assert "num_fit_candidates" not in overrides

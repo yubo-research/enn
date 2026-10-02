@@ -44,6 +44,7 @@ pub(crate) fn apply_scalar_overrides(
     overrides.num_fit_samples = optional_usize(dict, "num_fit_samples")?;
     overrides.num_fit_candidates = optional_usize(dict, "num_fit_candidates")?;
     overrides.infer_aleatoric_variance = optional_bool(dict, "infer_aleatoric_variance")?;
+    overrides.freeze_params = optional_bool(dict, "freeze_params")?;
     overrides.noise_aware = optional_bool(dict, "noise_aware")?;
     overrides.scale_x = optional_bool(dict, "scale_x")?;
     Ok(())
@@ -259,6 +260,20 @@ impl PyOptimizer {
             None => self.inner.tell(&x_arr, &y_arr, None),
         };
         result.map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Posterior mean of the fitted surrogate at `x` in natural units.
+    #[doc = "kiss-coverage-off"]
+    fn posterior_mu<'py>(
+        &self,
+        py: Python<'py>,
+        x: PyReadonlyArray2<f64>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+        let mu = self
+            .inner
+            .posterior_mu(&x.as_array())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(mu.into_dyn().into_pyarray_bound(py))
     }
 
     /// Get init progress if in initialization phase

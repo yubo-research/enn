@@ -36,6 +36,7 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
             y_bounds: None,
             tied_dims: Vec::new(),
             affine_calibrate: false,
+            freeze_params: false,
         };
     }
     cfg.candidates = CandidateConfig {

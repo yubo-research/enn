@@ -250,6 +250,25 @@ impl Optimizer {
         result
     }
 
+    /// Posterior mean at `x` in natural units, in natural `y` units.
+    ///
+    /// `x` is converted to the unit cube, matching `tell`. There is no
+    /// surrogate on TuRBO-ZERO, and this returns an error in that case.
+    pub fn posterior_mu(&self, x_natural: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
+        if x_natural.ncols() != self.num_dim {
+            return Err(ENNError::InvalidShape {
+                expected: vec![x_natural.nrows(), self.num_dim],
+                got: vec![x_natural.nrows(), x_natural.ncols()],
+            });
+        }
+        let surrogate = self.surrogate.as_ref().ok_or_else(|| {
+            ENNError::InvalidParameter("No surrogate".to_string())
+        })?;
+        let x_unit = crate::candidates::to_unit(x_natural, &self.bounds.view());
+        let pred = surrogate.naturalize_prediction(surrogate.predict(&x_unit.view())?);
+        Ok(pred.mu)
+    }
+
     /// Get current telemetry.
     pub fn telemetry(&self) -> &Telemetry {
         &self.telemetry

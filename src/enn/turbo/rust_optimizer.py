@@ -16,6 +16,22 @@ from .rust_optimizer_helpers import (
 from .types.telemetry import Telemetry
 
 
+def _tell_estimate(inner: Any, x_native: np.ndarray, y_in: np.ndarray) -> np.ndarray:
+    """Posterior mean at the points just told. Raw y if there is no surrogate."""
+    x = np.asarray(x_native, dtype=float)
+    if x.ndim == 1:
+        x = x.reshape(1, -1)
+    try:
+        mu = np.asarray(inner.posterior_mu(x), dtype=float)
+    except ValueError as exc:
+        if "No surrogate" not in str(exc):
+            raise
+        return y_in
+    if y_in.ndim == 1 and mu.ndim == 2 and mu.shape[1] == 1:
+        return mu.reshape(-1)
+    return mu
+
+
 class RustOptimizer:
     """Facade over the Rust optimizer. The only field is the Rust object."""
 
@@ -73,6 +89,8 @@ class RustOptimizer:
         x_native = np.asarray(x, dtype=float)
         y_in = np.asarray(y, dtype=float)
         y_native = y_in.reshape(-1, 1) if y_in.ndim == 1 else y_in
+        if y_native.shape[0] == 0:
+            return y_in
         if y_var is None:
             self._inner.tell(x_native, y_native)
         else:
@@ -80,7 +98,7 @@ class RustOptimizer:
             if y_var_native.ndim == 1:
                 y_var_native = y_var_native.reshape(-1, 1)
             self._inner.tell(x_native, y_native, y_var_native)
-        return y_in
+        return _tell_estimate(self._inner, x_native, y_in)
 
 
 def create_optimizer(

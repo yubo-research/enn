@@ -130,6 +130,8 @@ pub struct ConfigOverrides {
     pub metric_learning: Option<crate::metric_auto::MetricLearning>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
     pub affine_calibrate: Option<bool>,
+    /// Skip the ENN scale search and keep epistemic scale 1, aleatoric scale 0.
+    pub freeze_params: Option<bool>,
 }
 
 #[doc = "kiss-coverage-off"]
@@ -179,6 +181,9 @@ fn apply_enn_surrogate_fields(
     }
     if let Some(cal) = overrides.affine_calibrate {
         enn.affine_calibrate = cal;
+    }
+    if let Some(freeze) = overrides.freeze_params {
+        enn.freeze_params = freeze;
     }
     config.surrogate = SurrogateConfig::ENN(enn);
     Ok(())
@@ -271,6 +276,7 @@ impl ConfigOverrides {
             || self.metric_learning.is_some()
             || self.tied_dims.is_some()
             || self.affine_calibrate.is_some()
+            || self.freeze_params.is_some()
         {
             apply_enn_surrogate_fields(&mut config, self)?;
         }
