@@ -70,6 +70,8 @@ pub trait Surrogate: Send + Sync {
     fn schedule_background_flush(&self) -> Result<(), ENNError>;
     fn wait_for_background_flush(&self) -> Result<(), ENNError>;
     fn release_observation_pages(&self) -> Result<(), ENNError>;
+    /// Drop fitted rows so the next `fit_append` starts a new local dataset.
+    fn clear_observations(&mut self) -> Result<(), ENNError>;
 }
 
 pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
@@ -426,6 +428,14 @@ impl Surrogate for ENNSurrogate {
         } else {
             Ok(())
         }
+    }
+
+    fn clear_observations(&mut self) -> Result<(), ENNError> {
+        self.model = None;
+        self.fitter = None;
+        self.calibrator = None;
+        self.params = None;
+        Ok(())
     }
 
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {

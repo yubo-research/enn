@@ -77,6 +77,9 @@ impl Strategy {
         telemetry: &mut Telemetry,
         rng: &mut dyn RngCore,
     ) -> Result<Array2<f64>, ENNError> {
+        if optimizer.reinit_left().is_some() {
+            return ask_local_reinit(optimizer, num_arms, rng);
+        }
         match self {
             Strategy::Init(state) => ask_init(state, optimizer, num_arms, rng),
             Strategy::Turbo(_) => ask_turbo(optimizer, num_arms, telemetry, rng),
@@ -99,6 +102,9 @@ impl Strategy {
         telemetry: &mut Telemetry,
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError> {
+        if optimizer.reinit_left().is_some() {
+            return tell_local_reinit(optimizer, x, y, yvar, rng);
+        }
         match self {
             Strategy::Init(state) => tell_init(state, optimizer, x, y, yvar, rng),
             Strategy::Turbo(_) => tell_turbo(optimizer, x, y, yvar, telemetry, rng),
@@ -118,6 +124,15 @@ impl Strategy {
                     tell_turbo(optimizer, x, y, yvar, telemetry, rng)
                 }
             }
+        }
+    }
+
+    /// Budget and design of the initial sample. TuRBO-only has no sample.
+    pub fn init_plan(&self) -> (usize, InitStrategy) {
+        match self {
+            Strategy::Init(state) => (state.num_init, state.strategy_type),
+            Strategy::Hybrid { init, .. } => (init.num_init, init.strategy_type),
+            Strategy::Turbo(_) => (0, InitStrategy::LHD),
         }
     }
 
@@ -158,6 +173,30 @@ fn ask_init(
     };
 
     Ok(candidates)
+}
+
+/// Fresh Latin hypercube (or uniform draw) after a collapsed trust region.
+fn ask_local_reinit(
+    optimizer: &mut Optimizer,
+    num_arms: usize,
+    rng: &mut dyn RngCore,
+) -> Result<Array2<f64>, ENNError> {
+    let left = optimizer.reinit_left().unwrap_or(num_arms);
+    let n = num_arms.min(left).max(1);
+    let state = InitStrategyState::new(optimizer.local_init_kind(), n);
+    ask_init(&state, optimizer, n, rng)
+}
+
+fn tell_local_reinit(
+    optimizer: &mut Optimizer,
+    x: &ArrayView2<f64>,
+    y: &ArrayView2<f64>,
+    yvar: Option<&ArrayView2<f64>>,
+    rng: &mut dyn RngCore,
+) -> Result<(), ENNError> {
+    tell_common(optimizer, x, y, yvar, None, rng)?;
+    optimizer.consume_reinit(x.nrows());
+    Ok(())
 }
 
 /// Ask for initialization phase in hybrid mode.
@@ -426,12 +465,9 @@ fn tell_turbo(
             num_obs,
         )?;
     }
-    if optimizer.trust_region().needs_restart() {
+    if optimizer.trust_region().needs_restart() && optimizer.trust_region().is_morbo() {
         optimizer.trust_region_mut().restart(Some(rng));
         optimizer.increment_restart_generation();
-
-
-
         morbo_sync_ranges_from_obs(optimizer)?;
     }
 

@@ -75,6 +75,11 @@ pub struct Optimizer {
     rng: StdRng,
     /// `Some(true)` after the first non-empty tell that included `yvar`.
     yvar_on_tell: Option<bool>,
+    /// Points in the fresh local sample drawn after a collapsed trust region.
+    local_init_budget: usize,
+    local_init_kind: InitStrategy,
+    /// `Some(remaining)` while that fresh sample is still being collected.
+    reinit_left: Option<usize>,
 }
 
 impl Optimizer {
@@ -121,6 +126,7 @@ impl Optimizer {
                 None
             };
 
+        let (local_init_budget, local_init_kind) = strategy.init_plan();
         let mut seed_bytes = [0u8; 8];
         rng.fill_bytes(&mut seed_bytes);
         let sobol_seed_base = u64::from_le_bytes(seed_bytes) % (1u64 << 31);
@@ -157,6 +163,9 @@ impl Optimizer {
             incumbent_tracker,
             rng: owned_rng,
             yvar_on_tell: None,
+            local_init_budget,
+            local_init_kind,
+            reinit_left: None,
         })
     }
 
@@ -168,6 +177,11 @@ impl Optimizer {
             return Err(ENNError::InvalidParameter(format!(
                 "num_arms must be > 0, got {num_arms}"
             )));
+        }
+        // The tell that collapsed the box still owes the caller a posterior.
+        // Drop the local rows on the next ask, then draw the fresh hypercube.
+        if !self.tr_state.is_morbo() && self.tr_state.needs_restart() {
+            self.begin_local_restart()?;
         }
         let start = std::time::Instant::now();
         let mut rng = self.rng.clone();
@@ -389,6 +403,48 @@ impl Optimizer {
     /// Get incumbent y scalar.
     pub fn incumbent_y_scalar(&self) -> Option<&Array1<f64>> {
         self.incumbent_y_scalar.as_ref()
+    }
+
+    pub(crate) fn reinit_left(&self) -> Option<usize> {
+        self.reinit_left
+    }
+
+    pub(crate) fn local_init_kind(&self) -> InitStrategy {
+        self.local_init_kind
+    }
+
+    pub(crate) fn consume_reinit(&mut self, n: usize) {
+        if let Some(left) = self.reinit_left {
+            let left = left.saturating_sub(n);
+            self.reinit_left = if left == 0 { None } else { Some(left) };
+        }
+    }
+
+    /// Drop the local dataset and, when an init budget exists, draw it again.
+    ///
+    /// This is the TuRBO restart: the next asks are a new Latin hypercube, and
+    /// the surrogate is fit only on points collected after the restart.
+    pub(crate) fn begin_local_restart(&mut self) -> Result<(), ENNError> {
+        if self.tr_state.is_morbo() {
+            return Ok(());
+        }
+        if let Some(surrogate) = self.surrogate.as_mut() {
+            surrogate.clear_observations()?;
+        }
+        self.fallback_x.clear();
+        self.fallback_y.clear();
+        self.incumbent_tracker.reset();
+        self.incumbent_idx = None;
+        self.incumbent_x_unit = None;
+        self.incumbent_y_scalar = None;
+        self.tr_state.restart_local();
+        self.restart_generation += 1;
+        self.reinit_left = if self.local_init_budget > 0 {
+            Some(self.local_init_budget)
+        } else {
+            None
+        };
+        Ok(())
     }
 
     /// Increment restart generation.

@@ -74,6 +74,14 @@ impl TrustRegionState {
         }
     }
 
+    /// Single-objective restart: drop the local length baseline as well as the length.
+    pub fn restart_local(&mut self) {
+        match self {
+            TrustRegionState::Turbo(t) => t.restart_local(),
+            TrustRegionState::Morbo(m) => m.as_mut().restart(None),
+        }
+    }
+
     pub fn set_num_arms(&mut self, num_arms: usize) {
         match self {
             TrustRegionState::Turbo(t) => t.set_num_arms(num_arms),

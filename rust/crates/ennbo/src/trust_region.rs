@@ -156,9 +156,11 @@ impl TurboTrustRegion {
         }
     }
 
-    fn scale_from_hist(&self) -> f64 {
-        if self.prev_num_obs >= 2 {
-            (self.hist_ymax - self.hist_ymin).max(1e-6)
+    /// Eriksson et al. scale the improvement bar by the absolute best value,
+    /// not by the range of every return seen so far.
+    fn improvement_scale(&self) -> f64 {
+        if self.best_value.is_finite() {
+            self.best_value.abs()
         } else {
             0.0
         }
@@ -282,23 +284,11 @@ impl TurboTrustRegion {
         }
 
         
-        let prev_slice = y_all.slice(s![..self.prev_num_obs]);
         let new_batch = y_all.slice(s![self.prev_num_obs..]);
 
         let new_best = new_batch.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
-        
-        let prev_len = prev_slice.len();
-        let scale = if prev_len >= 2 {
-            let min_val = prev_slice.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-            let max_val = prev_slice.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-            (max_val - min_val).max(1e-6)
-        } else {
-            0.0
-        };
-
-        
-        let improvement_threshold = 1e-3 * scale;
+        let improvement_threshold = 1e-3 * self.improvement_scale();
         let improved = new_best > self.best_value + improvement_threshold;
 
         if improved {
@@ -386,7 +376,7 @@ impl TurboTrustRegion {
             return Ok(());
         }
 
-        let scale = self.scale_from_hist();
+        let scale = self.improvement_scale();
         let improved = y_incumbent_value > self.best_value + 1e-3 * scale;
         if improved {
             self.success_counter += 1;
@@ -457,9 +447,25 @@ impl TurboTrustRegion {
         self.prev_num_obs = prev_num_obs;
     }
 
-    /// Include observations that predate the first length update in the improvement scale.
+    /// Record observations that predate the first length update.
+    ///
+    /// The best of that prefix becomes the baseline, matching TuRBO's first
+    /// comparison against the Latin-hypercube incumbent.
     pub fn seed_scale_history(&mut self, y_prefix: &ArrayView1<f64>) {
         self.incorporate_hist(y_prefix);
+        if !self.best_value.is_finite() {
+            if let Some(best) = y_prefix.iter().copied().reduce(f64::max) {
+                self.best_value = best;
+            }
+        }
+    }
+
+    /// Reset length and the local history. The next dataset is a new region.
+    pub fn restart_local(&mut self) {
+        self.restart();
+        self.prev_num_obs = 0;
+        self.hist_ymin = f64::INFINITY;
+        self.hist_ymax = f64::NEG_INFINITY;
     }
 }
 
@@ -617,6 +623,20 @@ mod tests {
         let e2 = TrustRegionError::InvalidState("bad state".to_string());
         assert!(e1.to_string().contains("Invalid parameter"));
         assert!(e2.to_string().contains("Invalid state"));
+    }
+
+    #[test]
+    fn improvement_bar_uses_abs_best_not_y_range() {
+        let mut tr = TurboTrustRegion::new(2, TRLengthConfig::default());
+        tr.set_num_arms(1);
+        tr.seed_scale_history(&array![-1000.0, 10.0].view());
+        tr.set_prev_num_obs(2);
+        tr.update_with_incumbent_new_batch(&array![10.02].view(), 3, 10.02)
+            .unwrap();
+        assert_eq!(
+            tr.success_counter, 1,
+            "a gain of 0.02 beats 0.001 * |10| and would fail a range bar near 1010"
+        );
     }
 
     #[test]

@@ -80,6 +80,7 @@ impl Surrogate for TieSurrogate {
     fn schedule_background_flush(&self) -> Result<(), ENNError> { Ok(()) }
     fn wait_for_background_flush(&self) -> Result<(), ENNError> { Ok(()) }
     fn release_observation_pages(&self) -> Result<(), ENNError> { Ok(()) }
+    fn clear_observations(&mut self) -> Result<(), ENNError> { Ok(()) }
 
 }
 

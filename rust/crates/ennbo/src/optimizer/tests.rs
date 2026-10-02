@@ -191,6 +191,29 @@ fn reset_incumbent_tracker_desyncs_count_from_obs() {
 }
 
 #[test]
+fn local_restart_drops_rows_and_asks_a_new_lhd() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, Some(3), Some(4), 0, None).unwrap();
+    let x = opt.ask(4).unwrap();
+    let y = ndarray::Array2::from_elem((4, 1), 1.0);
+    opt.tell(&x.view(), &y.view(), None).unwrap();
+    assert_eq!(opt.obs_count(), 4);
+    opt.begin_local_restart().unwrap();
+    assert_eq!(opt.obs_count(), 0);
+    assert_eq!(opt.reinit_left(), Some(4));
+    assert!(opt.incumbent_x().is_none());
+    let x2 = opt.ask(4).unwrap();
+    assert_eq!(x2.nrows(), 4);
+    let y2 = ndarray::Array2::from_elem((4, 1), 2.0);
+    opt.tell(&x2.view(), &y2.view(), None).unwrap();
+    assert_eq!(opt.obs_count(), 4);
+    assert_eq!(opt.reinit_left(), None);
+    let y_obs = opt.y_obs().unwrap();
+    assert!(y_obs.iter().all(|&v| (v - 2.0).abs() < 1e-9));
+}
+
+#[test]
 fn turbo_length_restart_keeps_incumbent_tracker_synced() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let overrides = ConfigOverrides {
@@ -210,7 +233,43 @@ fn turbo_length_restart_keeps_incumbent_tracker_synced() {
             "tracker must stay synced after tell (incl. post-restart)"
         );
     }
-    assert!(opt.restart_generation() >= 1, "expected at least one TR restart");
+    assert!(
+        opt.trust_region().needs_restart(),
+        "length should be below the minimum while rows are still fitted"
+    );
+    assert_eq!(opt.restart_generation(), 0);
+    assert!(opt.obs_count() > 0);
+}
+
+#[test]
+fn collapse_keeps_posterior_until_the_next_ask() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut opt =
+        create_optimizer_enn_with_overrides(bounds, Some(3), Some(1), 0, None).unwrap();
+    let x0 = opt.ask(1).unwrap();
+    opt.tell(&x0.view(), &array![[100.0]].view(), None).unwrap();
+    let mut last_x = x0;
+    for i in 0..40 {
+        last_x = opt.ask(1).unwrap();
+        opt.tell(&last_x.view(), &array![[-(i as f64)]].view(), None)
+            .unwrap();
+        if opt.trust_region().needs_restart() {
+            break;
+        }
+    }
+    assert!(opt.trust_region().needs_restart());
+    assert!(opt.obs_count() > 1);
+    let mu = opt.posterior_mu(&last_x.view()).unwrap();
+    assert!(mu[[0, 0]].is_finite());
+    let restarted = opt.ask(1).unwrap();
+    assert_eq!(restarted.nrows(), 1);
+    assert_eq!(opt.obs_count(), 0);
+    assert_eq!(opt.reinit_left(), Some(1));
+    opt.tell(&restarted.view(), &array![[5.0]].view(), None)
+        .unwrap();
+    assert_eq!(opt.obs_count(), 1);
+    let y_obs = opt.y_obs().unwrap();
+    assert!((y_obs[[0, 0]] - 5.0).abs() < 1e-9);
 }
 
 #[test]
