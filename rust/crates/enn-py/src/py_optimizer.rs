@@ -367,7 +367,6 @@ pub fn validate_optimizer_rules_py(
     let rules = ennbo::OptimizerRuleSet {
         lhd_only: optimizer_flag(flags, "lhd_only")?,
         has_surrogate: optimizer_flag(flags, "has_surrogate")?,
-        nds: optimizer_flag(flags, "nds")?,
     };
     let kind = acquisition_from_name(acquisition, 2.0)?;
     ennbo::validate_optimizer_rules(&rules, &kind).map_err(|e| PyValueError::new_err(e.to_string()))

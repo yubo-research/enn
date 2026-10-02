@@ -17,7 +17,6 @@ pub enum OptimizerInitKind {
 pub struct TurboEnnBuilder {
     pub(super) config: OptimizerConfig,
     pub(super) kind: OptimizerInitKind,
-    pub(super) nds: bool,
     pub(super) num_init: Option<usize>,
 }
 
@@ -53,12 +52,6 @@ impl TurboEnnBuilder {
         self
     }
 
-    /// Pareto without non-dominated sort fails [`Self::build`].
-    pub fn nds(mut self, nds: bool) -> Self {
-        self.nds = nds;
-        self
-    }
-
     /// Initialization budget. `None` means the factory default.
     pub fn num_init(mut self, num_init: Option<usize>) -> Self {
         self.num_init = num_init;
@@ -67,7 +60,7 @@ impl TurboEnnBuilder {
 
     /// Validate and return the config plus the optional init budget.
     pub fn build(self) -> Result<(OptimizerConfig, Option<usize>), ENNError> {
-        self.config.validate_kind(self.kind, self.nds)?;
+        self.config.validate_kind(self.kind)?;
         Ok((self.config, self.num_init))
     }
 }
@@ -78,8 +71,6 @@ pub struct OptimizerRuleSet {
     pub lhd_only: bool,
     /// A surrogate is installed.
     pub has_surrogate: bool,
-    /// Pareto search uses non-dominated sort.
-    pub nds: bool,
 }
 
 /// Python dataclass checks. Names match the historical Python errors.
@@ -100,11 +91,6 @@ pub fn validate_optimizer_rules(
     if !rules.has_surrogate && matches!(acquisition, AcquisitionConfig::UCB { .. }) {
         return Err(ENNError::InvalidParameter(
             "UCBAcquisitionConfig requires a surrogate. NoSurrogateConfig is not compatible with UCBAcquisitionConfig.".into(),
-        ));
-    }
-    if matches!(acquisition, AcquisitionConfig::Pareto) && !rules.nds {
-        return Err(ENNError::InvalidParameter(
-            "ParetoAcquisitionConfig requires NDSOptimizerConfig".into(),
         ));
     }
     Ok(())

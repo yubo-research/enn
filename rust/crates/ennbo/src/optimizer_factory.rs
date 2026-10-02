@@ -53,7 +53,7 @@ pub fn create_optimizer_enn_with_overrides(
     if let Some(o) = overrides {
         config = o.apply_to(config)?;
     }
-    config.validate_kind(OptimizerInitKind::Hybrid, true)?;
+    config.validate_kind(OptimizerInitKind::Hybrid)?;
     let num_init = resolve_num_init(num_init);
     let mut rng = StdRng::seed_from_u64(seed);
     let strategy = Strategy::hybrid(InitStrategy::LHD, num_init);
@@ -80,7 +80,7 @@ pub fn create_optimizer_zero_with_overrides(
     if let Some(o) = overrides {
         config = o.apply_to(config)?;
     }
-    config.validate_kind(OptimizerInitKind::Hybrid, true)?;
+    config.validate_kind(OptimizerInitKind::Hybrid)?;
     let num_init = resolve_num_init(num_init);
     let mut rng = StdRng::seed_from_u64(seed);
     let strategy = Strategy::hybrid(InitStrategy::LHD, num_init);
@@ -107,7 +107,7 @@ pub fn create_optimizer_lhd_with_overrides(
     if let Some(o) = overrides {
         config = o.apply_to(config)?;
     }
-    config.validate_kind(OptimizerInitKind::LhdOnly, true)?;
+    config.validate_kind(OptimizerInitKind::LhdOnly)?;
     let num_init = resolve_num_init(num_init);
     let mut rng = StdRng::seed_from_u64(seed);
     let strategy = Strategy::init(InitStrategy::LHD, num_init);

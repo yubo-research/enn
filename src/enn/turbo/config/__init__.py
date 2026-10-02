@@ -1,11 +1,8 @@
 from .acq_type import AcqType
 from .acquisition import (
-    AcqOptimizerConfig,
     AcquisitionConfig,
     DrawAcquisitionConfig,
-    NDSOptimizerConfig,
     ParetoAcquisitionConfig,
-    RAASPOptimizerConfig,
     RandomAcquisitionConfig,
     UCBAcquisitionConfig,
 )
@@ -57,7 +54,6 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
-    "AcqOptimizerConfig",
     "AcqType",
     "AcquisitionConfig",
     "CandidateGenConfig",
@@ -77,12 +73,10 @@ __all__ = [
     "lhd_only_config",
     "MorboTRConfig",
     "MultiObjectiveConfig",
-    "NDSOptimizerConfig",
     "NoSurrogateConfig",
     "NoTRConfig",
     "OptimizerConfig",
     "ParetoAcquisitionConfig",
-    "RAASPOptimizerConfig",
     "RandomAcquisitionConfig",
     "RescalePolicyConfig",
     "SurrogateConfig",

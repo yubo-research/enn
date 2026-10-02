@@ -1,7 +1,5 @@
 from .draw_acquisition_config import DrawAcquisitionConfig
-from .nds_optimizer_config import NDSOptimizerConfig
 from .pareto_acquisition_config import ParetoAcquisitionConfig
-from .raasp_optimizer_config import RAASPOptimizerConfig
 from .random_acquisition_config import RandomAcquisitionConfig
 from .ucb_acquisition_config import UCBAcquisitionConfig
 
@@ -28,15 +26,11 @@ def acquisition_kind(acq: object) -> str:
     )
 
 
-AcqOptimizerConfig = RAASPOptimizerConfig | NDSOptimizerConfig
 __all__ = [
-    "AcqOptimizerConfig",
     "AcquisitionConfig",
     "acquisition_kind",
     "DrawAcquisitionConfig",
-    "NDSOptimizerConfig",
     "ParetoAcquisitionConfig",
-    "RAASPOptimizerConfig",
     "RandomAcquisitionConfig",
     "UCBAcquisitionConfig",
 ]

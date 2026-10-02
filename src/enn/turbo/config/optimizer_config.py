@@ -10,7 +10,7 @@ from .surrogate import NoSurrogateConfig, SurrogateConfig
 from .trust_region import TrustRegionConfig, TurboTRConfig
 
 if TYPE_CHECKING:
-    from .acquisition import AcqOptimizerConfig, AcquisitionConfig
+    from .acquisition import AcquisitionConfig
     from .candidate_rv import CandidateRV
     from .raasp_driver import RAASPDriver
 
@@ -21,12 +21,6 @@ def _default_acquisition():
     return RandomAcquisitionConfig()
 
 
-def _default_acq_optimizer():
-    from .raasp_optimizer_config import RAASPOptimizerConfig
-
-    return RAASPOptimizerConfig()
-
-
 @dataclass(frozen=True)
 class OptimizerConfig:
     trust_region: TrustRegionConfig = TurboTRConfig()
@@ -34,7 +28,6 @@ class OptimizerConfig:
     init: InitConfig = InitConfig()
     surrogate: SurrogateConfig = NoSurrogateConfig()
     acquisition: AcquisitionConfig = field(default_factory=_default_acquisition)
-    acq_optimizer: AcqOptimizerConfig = field(default_factory=_default_acq_optimizer)
     observation_history: ObservationHistoryConfig = ObservationHistoryConfig()
 
     def __post_init__(self) -> None:
@@ -51,7 +44,7 @@ class OptimizerConfig:
         return None
 
     @property
-    def candidate_rv(self) -> CandidateRV:
+    def candidate_rv(self) -> CandidateRV | None:
         return self.candidates.candidate_rv
 
     @property

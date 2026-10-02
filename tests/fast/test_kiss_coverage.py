@@ -130,8 +130,8 @@ def test_optimizer_config_properties():
     mo = MultiObjectiveConfig(num_metrics=3, alpha=0.05)
     cfg2 = OptimizerConfig(trust_region=MorboTRConfig(multi_objective=mo))
     assert cfg2.num_metrics == 3
-    # candidate_rv / raasp_driver
-    assert cfg.candidate_rv is not None
+    # Unset sampler: Rust factories choose it. raasp_driver stays on the candidate config.
+    assert cfg.candidate_rv is None
     assert cfg.raasp_driver is not None
 
 

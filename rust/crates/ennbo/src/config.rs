@@ -310,6 +310,13 @@ pub enum InitStrategy {
     Random,
 }
 
+fn turbo_candidate_config() -> CandidateConfig {
+    CandidateConfig {
+        candidate_rv: CandidateRV::RAASP,
+        ..CandidateConfig::default()
+    }
+}
+
 /// Create a TuRBO-ENN configuration.
 pub fn turbo_enn_config() -> OptimizerConfig {
     OptimizerConfig {
@@ -320,7 +327,7 @@ pub fn turbo_enn_config() -> OptimizerConfig {
             ..Default::default()
         }),
         trust_region: TrustRegionConfig::default(),
-        candidates: CandidateConfig::default(),
+        candidates: turbo_candidate_config(),
         acquisition: AcquisitionConfig::UCB { beta: 2.0 },
         noise_aware: false,
     }
@@ -331,7 +338,7 @@ pub fn turbo_zero_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::None,
         trust_region: TrustRegionConfig::default(),
-        candidates: CandidateConfig::default(),
+        candidates: turbo_candidate_config(),
         acquisition: AcquisitionConfig::Random,
         noise_aware: false,
     }
@@ -340,17 +347,16 @@ pub fn turbo_zero_config() -> OptimizerConfig {
 impl OptimizerConfig {
     /// Reject illegal acquisition, surrogate, and fit-sample combinations.
     pub fn validate(&self) -> Result<(), ENNError> {
-        self.validate_kind(OptimizerInitKind::Hybrid, true)
+        self.validate_kind(OptimizerInitKind::Hybrid)
     }
 
-    /// `nds` is true when Pareto search uses the non-dominated-sort optimizer.
-    pub fn validate_kind(&self, kind: OptimizerInitKind, nds: bool) -> Result<(), ENNError> {
+    /// Reject illegal acquisition and surrogate combinations for this init kind.
+    pub fn validate_kind(&self, kind: OptimizerInitKind) -> Result<(), ENNError> {
         let has_surrogate = matches!(self.surrogate, SurrogateConfig::ENN(_));
         validate_optimizer_rules(
             &OptimizerRuleSet {
                 lhd_only: kind == OptimizerInitKind::LhdOnly,
                 has_surrogate,
-                nds,
             },
             &self.acquisition,
         )?;
@@ -372,7 +378,6 @@ impl OptimizerConfig {
         TurboEnnBuilder {
             config: turbo_enn_config(),
             kind: OptimizerInitKind::Hybrid,
-            nds: true,
             num_init: None,
         }
     }
@@ -462,6 +467,7 @@ mod tests {
         let config = turbo_enn_config();
         assert!(matches!(config.surrogate, SurrogateConfig::ENN(_)));
         assert!(matches!(config.acquisition, AcquisitionConfig::UCB { .. }));
+        assert_eq!(config.candidates.candidate_rv, CandidateRV::RAASP);
     }
 
     #[test]
@@ -469,6 +475,7 @@ mod tests {
         let config = turbo_zero_config();
         assert!(matches!(config.surrogate, SurrogateConfig::None));
         assert!(matches!(config.acquisition, AcquisitionConfig::Random));
+        assert_eq!(config.candidates.candidate_rv, CandidateRV::RAASP);
     }
 
     #[test]
