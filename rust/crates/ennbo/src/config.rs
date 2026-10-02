@@ -134,6 +134,19 @@ pub struct ConfigOverrides {
     pub freeze_params: Option<bool>,
 }
 
+fn overridden_layout(layout: &EnnLayout, overrides: &ConfigOverrides) -> Result<EnnLayout, ENNError> {
+    EnnLayout::try_from_parts(
+        overrides.index_driver.unwrap_or(layout.index_driver()),
+        Some(overrides.enn_storage.unwrap_or(layout.storage())),
+        overrides
+            .work_dir
+            .clone()
+            .or_else(|| layout.work_dir().map(|p| p.to_path_buf())),
+        overrides.scale_x.unwrap_or(layout.scale_x()),
+        overrides.metric_learning.unwrap_or(layout.metric_learning()),
+    )
+}
+
 #[doc = "kiss-coverage-off"]
 fn apply_enn_surrogate_fields(
     config: &mut OptimizerConfig,
@@ -152,27 +165,7 @@ fn apply_enn_surrogate_fields(
     if let Some(ale) = overrides.infer_aleatoric_variance {
         enn.infer_aleatoric_variance = ale;
     }
-    let mut driver = enn.layout.index_driver();
-    let mut storage = Some(enn.layout.storage());
-    let mut work_dir = enn.layout.work_dir().map(|p| p.to_path_buf());
-    let mut scale_x = enn.layout.scale_x();
-    let mut metric = enn.layout.metric_learning();
-    if let Some(next) = overrides.index_driver {
-        driver = next;
-    }
-    if let Some(sx) = overrides.scale_x {
-        scale_x = sx;
-    }
-    if let Some(next) = overrides.enn_storage {
-        storage = Some(next);
-    }
-    if let Some(dir) = overrides.work_dir.clone() {
-        work_dir = Some(dir);
-    }
-    if let Some(mode) = overrides.metric_learning {
-        metric = mode;
-    }
-    enn.layout = EnnLayout::try_from_parts(driver, storage, work_dir, scale_x, metric)?;
+    enn.layout = overridden_layout(&enn.layout, overrides)?;
     if let Some(yb) = overrides.y_bounds.clone() {
         enn.y_bounds = Some(yb);
     }

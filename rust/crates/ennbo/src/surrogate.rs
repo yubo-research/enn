@@ -431,10 +431,21 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn clear_observations(&mut self) -> Result<(), ENNError> {
+        let owned_store = match &self.model {
+            Some(model) => {
+                model.backend.wait_for_flush()?;
+                self.config.layout.work_dir().map(std::path::Path::to_path_buf)
+            }
+            None => None,
+        };
         self.model = None;
         self.fitter = None;
         self.calibrator = None;
         self.params = None;
+        if let Some(work_dir) = owned_store {
+            ennbo_bpann::bpann_remove_store(&work_dir)
+                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        }
         Ok(())
     }
 
@@ -828,6 +839,42 @@ mod tests {
             before, after_wait,
             "wait_for_background_flush must not force ensure_index_sync"
         );
+    }
+
+    /// Regression: a TuRBO restart clears observations and refits in the same work_dir.
+    #[test]
+    fn clear_observations_disk_restarts_in_same_work_dir() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 2,
+            num_fit_samples: 2,
+            layout: EnnLayout::disk(dir.path().to_path_buf(), false),
+            ..Default::default()
+        };
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(5);
+        let x0 = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+        let y0 = array![[0.0], [1.0], [0.5], [2.0]];
+        sur.fit_append(&x0.view(), &y0.view(), None, &mut rng).unwrap();
+        sur.fit_append(&array![[0.5, 0.5]].view(), &array![[0.7]].view(), None, &mut rng)
+            .unwrap();
+        let other = dir.path().join("not_bpann.txt");
+        std::fs::write(&other, "keep").unwrap();
+
+        sur.clear_observations().unwrap();
+        assert!(sur.observation_count().is_none());
+
+        let x1 = array![[0.2, 0.2], [0.8, 0.3], [0.4, 0.9]];
+        let y1 = array![[3.0], [4.0], [5.0]];
+        sur.fit_append(&x1.view(), &y1.view(), None, &mut rng).unwrap();
+        assert_eq!(sur.observation_count(), Some(3));
+        let ys = sur.observations_y().unwrap().unwrap();
+        assert_eq!(ys, y1);
+        assert!(sur.predict(&array![[0.3, 0.3]].view()).unwrap().mu[[0, 0]].is_finite());
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "keep");
     }
 
     /// Under non-identity `y_bounds`, public `Surrogate::predict` returns natural-unit μ

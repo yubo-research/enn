@@ -3,6 +3,7 @@
 mod incumbent;
 pub mod obs_access;
 mod observation_delta;
+mod restart;
 mod tr_state;
 
 pub use observation_delta::ObservationDelta;
@@ -172,14 +173,14 @@ impl Optimizer {
     /// Ask for `num_arms` points in natural units (inside `bounds`).
     ///
     /// Draws from the `StdRng` stored at construction. Rejects `num_arms == 0`.
+    /// A trust-region restart happens here, not in the `tell` that collapsed the
+    /// box, because that `tell` still owes the caller a posterior.
     pub fn ask(&mut self, num_arms: usize) -> Result<Array2<f64>, ENNError> {
         if num_arms == 0 {
             return Err(ENNError::InvalidParameter(format!(
                 "num_arms must be > 0, got {num_arms}"
             )));
         }
-        // The tell that collapsed the box still owes the caller a posterior.
-        // Drop the local rows on the next ask, then draw the fresh hypercube.
         if !self.tr_state.is_morbo() && self.tr_state.needs_restart() {
             self.begin_local_restart()?;
         }
@@ -403,58 +404,6 @@ impl Optimizer {
     /// Get incumbent y scalar.
     pub fn incumbent_y_scalar(&self) -> Option<&Array1<f64>> {
         self.incumbent_y_scalar.as_ref()
-    }
-
-    pub(crate) fn reinit_left(&self) -> Option<usize> {
-        self.reinit_left
-    }
-
-    pub(crate) fn local_init_kind(&self) -> InitStrategy {
-        self.local_init_kind
-    }
-
-    pub(crate) fn consume_reinit(&mut self, n: usize) {
-        if let Some(left) = self.reinit_left {
-            let left = left.saturating_sub(n);
-            self.reinit_left = if left == 0 { None } else { Some(left) };
-        }
-    }
-
-    /// Drop the local dataset and, when an init budget exists, draw it again.
-    ///
-    /// This is the TuRBO restart: the next asks are a new Latin hypercube, and
-    /// the surrogate is fit only on points collected after the restart.
-    pub(crate) fn begin_local_restart(&mut self) -> Result<(), ENNError> {
-        if self.tr_state.is_morbo() {
-            return Ok(());
-        }
-        if let Some(surrogate) = self.surrogate.as_mut() {
-            surrogate.clear_observations()?;
-        }
-        self.fallback_x.clear();
-        self.fallback_y.clear();
-        self.incumbent_tracker.reset();
-        self.incumbent_idx = None;
-        self.incumbent_x_unit = None;
-        self.incumbent_y_scalar = None;
-        self.tr_state.restart_local();
-        self.restart_generation += 1;
-        self.reinit_left = if self.local_init_budget > 0 {
-            Some(self.local_init_budget)
-        } else {
-            None
-        };
-        Ok(())
-    }
-
-    /// Increment restart generation.
-    pub fn increment_restart_generation(&mut self) {
-        self.restart_generation += 1;
-    }
-
-    /// Get restart generation.
-    pub fn restart_generation(&self) -> usize {
-        self.restart_generation
     }
 
     /// Get sobol engine.

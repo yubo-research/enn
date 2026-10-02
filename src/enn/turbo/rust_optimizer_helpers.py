@@ -115,7 +115,6 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
 
         overrides["index_driver"] = index_driver_to_wire(surrogate.index_driver)
         if surrogate.num_fit_samples is None:
-            # March 2026 mk_enn skipped the search and kept scales (1, 0).
             overrides["freeze_params"] = True
         else:
             overrides["num_fit_samples"] = int(surrogate.num_fit_samples)
