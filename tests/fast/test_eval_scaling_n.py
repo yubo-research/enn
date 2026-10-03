@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,6 +10,9 @@ from evals import scaling_n as mod
 from evals.scaling_fit import TERMS, RegFit, TermTest, best_term
 from evals.short import eval_scaling
 from ops.stress import MeanSE
+
+_HAS_PROC = Path("/proc/self/status").is_file()
+_PROC_METRICS = ("rss_mib", "anon_mib", "file_mib", "peak_mib")
 
 TINY = mod.ScalingConfig(
     n_grid=(20, 40, 60, 80),
@@ -22,6 +26,13 @@ TINY = mod.ScalingConfig(
 )
 
 
+def _reg_obs(metric: str) -> int:
+    if _HAS_PROC or metric not in _PROC_METRICS:
+        return 8
+    return 0
+
+
+@pytest.mark.skipif(not _HAS_PROC, reason="VmRSS and clear_refs need Linux /proc")
 def test_memory_mib_and_reset_peak() -> None:
     big = np.ones(20_000_000)
     del big
@@ -52,10 +63,15 @@ def test_summarize_and_format_lines() -> None:
     assert list(summary) == [10, 100]
     assert summary[10]["add_s"] == MeanSE(mean=2.0, se=1.0)
     line = mod.format_eval_line(10, summary[10])
-    assert line.startswith("EVAL: model = bpann_disk_auto_ols n = 10 SMALLER(rss_mib) = 2.0000 ± 1.0000 ")
+    assert line.startswith(
+        "EVAL: model = bpann_disk_auto_ols n = 10 SMALLER(rss_mib) = 2.0000 ± 1.0000 "
+    )
     assert "LARGER(loglik) = 2.0000 ± 1.0000" in line and "SMALLER(nrmse)" in line
     assert all(f"({k})" in line for k in mod.METRICS)
-    assert mod.format_seed_line(3, {"n": 100.0, "add_s": 5.0}) == "seed = 3 n = 100 add_s = 5.0000"
+    assert (
+        mod.format_seed_line(3, {"n": 100.0, "add_s": 5.0})
+        == "seed = 3 n = 100 add_s = 5.0000"
+    )
 
 
 def test_format_reg_line() -> None:
@@ -72,7 +88,11 @@ def test_format_reg_line() -> None:
 
 
 def test_regress_recovers_linear_memory() -> None:
-    rows = [{"n": float(n), **{m: 3.0 + 0.002 * n + 0.01 * s for m in mod.REG_METRICS}} for n in (100, 1000, 10000, 100000) for s in range(3)]
+    rows = [
+        {"n": float(n), **{m: 3.0 + 0.002 * n + 0.01 * s for m in mod.REG_METRICS}}
+        for n in (100, 1000, 10000, 100000)
+        for s in range(3)
+    ]
     fits = mod.regress(rows)
     assert set(fits) == set(mod.REG_METRICS)
     term_fits = fits["rss_mib"]
@@ -90,7 +110,7 @@ def test_run_eval_tiny(capsys: pytest.CaptureFixture[str]) -> None:
         assert stats["query_s"].mean > 0 and np.isfinite(stats["nrmse"].mean)
     assert out.count("seed = ") == TINY.num_seeds * len(TINY.n_grid)
     assert out.count("EVAL: ") == len(TINY.n_grid) + len(mod.REG_METRICS)
-    assert all(f"reg = {m} obs = 8 best = " in out for m in mod.REG_METRICS)
+    assert all(f"reg = {m} obs = {_reg_obs(m)} best = " in out for m in mod.REG_METRICS)
     assert set(fits) == set(mod.REG_METRICS)
 
 
@@ -103,7 +123,12 @@ def test_run_eval_rejects_bad_config() -> None:
 
 def test_run_seed_isolated_matches_grid() -> None:
     cfg = mod.ScalingConfig(
-        n_grid=(20, 40), num_test=5, batch=20, k=4, num_fit_candidates=2, num_fit_samples=2
+        n_grid=(20, 40),
+        num_test=5,
+        batch=20,
+        k=4,
+        num_fit_candidates=2,
+        num_fit_samples=2,
     )
     rows = mod.run_seed_isolated(cfg)
     assert [r["n"] for r in rows] == [20.0, 40.0]
