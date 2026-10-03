@@ -4,13 +4,15 @@
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 MATURIN_AUDITWHEEL := --auditwheel skip
-# PyO3 `extension-module` omits libpython; macOS ld rejects undefined `_Py*` when nextest
-# links ennbo-py as a cdylib. Linux GNU ld allows it. Scoped to rust-test only — maturin
-# release builds must not inherit this (they use pyo3-build-config link args instead).
-RUST_TEST_ENV := RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
+# PyO3 `extension-module` omits libpython. macOS ld then rejects undefined `_Py*`,
+# BLAS, and OpenMP symbols when linking the ennbo-py cdylib. Linux GNU ld allows
+# those symbols. rust-test and `publish-rust` (cargo's verify build) need these
+# flags. Maturin builds must not inherit them; maturin passes its own link args
+# through pyo3-build-config.
+CDYLIB_LINK_ENV := RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
 else
 MATURIN_AUDITWHEEL :=
-RUST_TEST_ENV :=
+CDYLIB_LINK_ENV :=
 endif
 
 # Default: build a release extension for the local platform.
@@ -33,7 +35,7 @@ test: build-ext rust-test python-test-body
 
 # Run Rust tests only
 rust-test:
-	cd rust && $(RUST_TEST_ENV) cargo nextest run --test-threads=8
+	cd rust && $(CDYLIB_LINK_ENV) cargo nextest run --test-threads=8
 
 # Run Python tests only
 python-test: build-ext python-test-body
@@ -67,10 +69,12 @@ pypi-auth-check: pypi-build
 
 # --- crates.io: dependency order (ennbo-bpann → ennbo → ennbo-py) ---
 # Requires crates.io credentials (e.g. `cargo login`). Does not bump versions.
+# On macOS, cargo's verify build of ennbo-py needs the same dynamic-lookup
+# flags as rust-test. The library crates link as rlibs and do not.
 publish-rust:
 	cd rust && cargo publish -p ennbo-bpann
 	cd rust && cargo publish -p ennbo
-	cd rust && cargo publish -p ennbo-py
+	cd rust && $(CDYLIB_LINK_ENV) cargo publish -p ennbo-py
 
 # Clean build artifacts
 clean:
