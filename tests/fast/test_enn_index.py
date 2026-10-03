@@ -16,7 +16,9 @@ from enn.enn.enn_hash import (
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 
-def _enn(train_x, *, scale_x=ENNScaleX.OFF, index_driver=ENNIndexDriver.FLAT, train_y=None):
+def _enn(
+    train_x, *, scale_x=ENNScaleX.OFF, index_driver=ENNIndexDriver.FLAT, train_y=None
+):
     if train_y is None:
         train_y = np.zeros((train_x.shape[0], 1), dtype=float)
     return EpistemicNearestNeighbors(
@@ -222,7 +224,9 @@ def test_normal_hash_batch_multi_seed_matches_numpy_philox():
         seed_u = np.uint64(seed)
         idx_u = np.uint64(idx)
         metric_u = np.uint64(metric)
-        combined = (seed_u * np.uint64(1_000_003) + idx_u) * np.uint64(1_000_003) + metric_u
+        combined = (seed_u * np.uint64(1_000_003) + idx_u) * np.uint64(
+            1_000_003
+        ) + metric_u
         rng = np.random.Generator(np.random.Philox(int(combined)))
         uniform = float(np.clip(rng.random(), 1e-10, 1.0 - 1e-10))
         return float(ndtri(uniform))
@@ -232,7 +236,8 @@ def test_normal_hash_batch_multi_seed_matches_numpy_philox():
         for i, idx in enumerate(indices):
             for metric in range(2):
                 expect[s, i, metric] = one(int(seed), int(idx), metric)
-    np.testing.assert_array_equal(got, expect)
+    # Cephes ndtri and SciPy 1.15.3 differ by one ulp on one of these draws.
+    np.testing.assert_array_max_ulp(got, expect, maxulp=1)
 
 
 def test_normal_hash_batch_multi_seed_shape():
