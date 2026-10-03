@@ -1,21 +1,22 @@
 # Epistemic Nearest Neighbors
 A fast, alternative surrogate for Bayesian optimization
 
-ENN estimates a function's value and associated epistemic uncertainty using a K-Nearest Neighbors model. Queries take $O(N \ln K)$ time, where $N$ is the number of observations available for KNN lookups, and measured running times stay small as $N$ grows. [1]
+ENN estimates a function's value and associated epistemic uncertainty using k-nearest neighbors (KNN) or approximate nearest neighbors (ANN). Queries take O(Nlnk) time (KNN) or O(k lnN) time (ANN),
+where N is the number of observations available for KNN lookups and k is the number of neighbors.
 
-We also extend ENN with an alternative, disk-based approximate nearest neighbors backend based on B+ANN [4]. This reduces ENN and TuRBO-ENN to [effectively O(lnN)](https://github.com/yubo-research/enn/blob/main/reports/report_002/report_002.pdf) per iteration.
+## Code
+- Python API: [`src/enn/__init__.py`](https://github.com/yubo-research/enn/blob/main/src/enn/__init__.py)
+- Rust API: [`rust/crates/ennbo/src/lib.rs`](https://github.com/yubo-research/enn/blob/main/rust/crates/ennbo/src/lib.rs)
 
 ## Contents
-- ENN surrogate, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) [1]
+- ENN surrogate, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn_class.py) [1]
 - TuRBO optimizer via [`create_optimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/rust_optimizer.py) with config factories
-	- `turbo_enn_config()` - TuRBO-ENN (Rust-backed by default)
-	- `turbo_zero_config()` - TuRBO-zero (Rust-backed)
-	- `lhd_only_config()` - LHD design on every `ask()` (Rust-backed)
+	- [`turbo_enn_config()`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/config/factory.py) - TuRBO-ENN (Rust-backed by default)
+	- [`turbo_zero_config()`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/config/factory.py) - TuRBO-zero (Rust-backed)
+	- [`lhd_only_config()`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/config/factory.py) - LHD design on every `ask()` (Rust-backed)
 The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow TuRBO:
   - Generate candidates with RAASP [3] sampling.
   - Select a candidate with UCB or Thompson sampling (TuRBO-ENN), or randomly (TuRBO-zero).
-
-- Overview of algorithms: [algos.pdf](docs/algos.pdf)
 
 
 
@@ -35,42 +36,9 @@ or
 `cargo add ennbo`
 
 
-## Demonstration
-[`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_enn.ipynb) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) to build and query an ENN model.
-[`demo_turbo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_turbo_enn.ipynb) - Shows how to use [`RustOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/rust_optimizer.py) to optimize the Ackley function.
-
-
-
-## Installation, MacOS
-
-On my MacBook I can run into problems with dependencies and compatibilities.
-
-On MacOS try:
-```
-micromamba env create -n ennbo -f admin/conda-macos.yml
-micromamba activate ennbo
-pip install --no-deps ennbo
-pytest -sv tests
-```
-
-You may replace `micromamba` with `conda` and this will probably still work.
-
-The commands above make sure
-- faiss and SciPy come from one conda build, with a single OpenMP (`llvm-openmp` and `nomkl`) [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/40).
-- NumPy stays on a faiss-compatible build [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/104).
-- matplotlib's pin does not upgrade NumPy.
-- `pip install --no-deps` leaves those pins in place.
-
 Run tests with
 ```
-pytest -x -sv tests
+make test
 ```
-and they should all pass fairly quickly (~10s-30s).
 
 
-If a duplicate OpenMP still crashes or hangs the process, try:
-```
-export KMP_DUPLICATE_LIB_OK=TRUE
-export OMP_NUM_THREADS=1
-```
-I don't recommend this, however, as it will slow things down.
