@@ -25,7 +25,7 @@ LINE = re.compile(
 ARMS = ("none", "old", "new")
 CASES = [(100000, "0.001"), (400000, "0.001"), (100000, "0.25"), (400000, "0.25")]
 START_X = 0.5
-MORPH_LABEL = {"old": "re-insertion", "new": "reference moves"}
+MORPH_LABEL = {"old": "re-insertion", "new": "reference-moving"}
 SCALE_LABEL = {"0.001": "$\\times 10^{-3}$", "0.25": "$\\times\\tfrac14$"}
 
 
