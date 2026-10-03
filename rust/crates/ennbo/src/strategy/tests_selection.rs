@@ -270,7 +270,10 @@ fn select_with_pareto_scores_naturalized_under_y_bounds() {
 
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let overrides = ConfigOverrides {
-        y_bounds: Some(array![[0.0, 1.0]]),
+        enn: Some(crate::EnnOverrides {
+            y_bounds: Some(array![[0.0, 1.0]]),
+            ..Default::default()
+        }),
         acquisition: Some(AcquisitionConfig::Pareto),
         ..Default::default()
     };
@@ -309,7 +312,10 @@ fn select_with_thompson_scores_naturalized_under_y_bounds() {
 
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let overrides = ConfigOverrides {
-        y_bounds: Some(array![[0.0, 1.0]]),
+        enn: Some(crate::EnnOverrides {
+            y_bounds: Some(array![[0.0, 1.0]]),
+            ..Default::default()
+        }),
         acquisition: Some(AcquisitionConfig::Thompson),
         ..Default::default()
     };

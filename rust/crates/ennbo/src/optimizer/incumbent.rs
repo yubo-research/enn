@@ -43,7 +43,7 @@ impl Optimizer {
                     y_rows[[r, m]] = y_row[m];
                 }
             }
-            if self.tr_state.morbo().map(|m| m.noise_aware()).unwrap_or(false) {
+            if self.config.noise_aware {
                 if let Some(surrogate) = self.surrogate.as_ref() {
                     let mut x_cand = Array2::zeros((n_cand, self.num_dim));
                     for (r, &idx) in candidate_indices.iter().enumerate() {

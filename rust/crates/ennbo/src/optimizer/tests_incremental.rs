@@ -99,7 +99,7 @@ fn enn_surrogate_fit_append_grows_model() {
     let config = ENNSurrogateConfig {
         k: 2,
         num_fit_candidates: 4,
-        num_fit_samples: 2,
+        fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
         ..Default::default()
     };
     let mut sur = ENNSurrogate::new(config);
@@ -143,7 +143,6 @@ fn morbo_ask_without_tell_preserves_y_ranges() {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();

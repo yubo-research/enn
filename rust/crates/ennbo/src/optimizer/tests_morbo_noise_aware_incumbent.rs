@@ -24,7 +24,7 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
     let mut cfg = OptimizerConfig {
         surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
             k: 3,
-            num_fit_samples: 6,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(6)).unwrap(),
             num_fit_candidates: 4,
             ..Default::default()
         }),
@@ -33,7 +33,6 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: true,
         }),
         ..OptimizerConfig::default()
     };

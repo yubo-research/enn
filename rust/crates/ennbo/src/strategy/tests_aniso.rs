@@ -67,7 +67,6 @@ fn morbo_bounds_use_the_same_sides() {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     };
     let mut rng = StdRng::seed_from_u64(9);
     let tr = MorboTrustRegion::new(2, settings, &mut rng).unwrap();
@@ -89,7 +88,7 @@ fn disk_auto_optimizer(dir: &std::path::Path, num_dim: usize, seed: u64) -> Opti
     cfg.surrogate = SurrogateConfig::ENN(ENNSurrogateConfig {
         k: 10,
         num_fit_candidates: 4,
-        num_fit_samples: 4,
+        fit_samples: crate::fit_samples::FitSamples::from_count(Some(4)).unwrap(),
         layout,
         ..Default::default()
     });

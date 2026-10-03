@@ -30,13 +30,12 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
         *enn = ENNSurrogateConfig {
             k: 3,
             num_fit_candidates: 5,
-            num_fit_samples: 3,
+            fit_samples: ennbo::fit_samples::FitSamples::from_count(Some(3)).unwrap(),
             infer_aleatoric_variance: true,
             layout,
             y_bounds: None,
             tied_dims: Vec::new(),
             affine_calibrate: false,
-            freeze_params: false,
         };
     }
     cfg.candidates = CandidateConfig {

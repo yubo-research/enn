@@ -3,7 +3,6 @@
 use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use std::path::PathBuf;
 
 #[doc = "kiss-coverage-off"]
 pub(crate) fn optional_f64(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<f64>> {
@@ -41,12 +40,7 @@ pub(crate) fn apply_scalar_overrides(
     overrides.length_init = optional_f64(dict, "length_init")?;
     overrides.length_min = optional_f64(dict, "length_min")?;
     overrides.length_max = optional_f64(dict, "length_max")?;
-    overrides.num_fit_samples = optional_usize(dict, "num_fit_samples")?;
-    overrides.num_fit_candidates = optional_usize(dict, "num_fit_candidates")?;
-    overrides.infer_aleatoric_variance = optional_bool(dict, "infer_aleatoric_variance")?;
-    overrides.freeze_params = optional_bool(dict, "freeze_params")?;
     overrides.noise_aware = optional_bool(dict, "noise_aware")?;
-    overrides.scale_x = optional_bool(dict, "scale_x")?;
     Ok(())
 }
 
@@ -65,11 +59,6 @@ mod kiss_coverage_tests {
             apply_scalar_overrides as fn(_, _) -> _,
         );
     }
-}
-
-#[doc = "kiss-coverage-off"]
-fn parse_index_driver(s: &str) -> PyResult<ennbo::index::IndexDriver> {
-    crate::py_layout::index_driver_from_wire(s)
 }
 
 #[doc = "kiss-coverage-off"]
@@ -102,32 +91,6 @@ fn parse_candidate_rv(s: &str) -> PyResult<ennbo::CandidateRV> {
         "raasp" => Ok(CandidateRV::RAASP),
         _ => Err(PyValueError::new_err(format!("Unknown candidate_rv: {s}"))),
     }
-}
-
-#[doc = "kiss-coverage-off"]
-fn parse_enn_storage(s: &str) -> PyResult<ennbo::EnnStorage> {
-    crate::py_layout::enn_storage_from_wire(s)
-}
-
-#[doc = "kiss-coverage-off"]
-fn parse_metric_overrides(
-    dict: &Bound<'_, pyo3::types::PyDict>,
-    overrides: &mut ennbo::ConfigOverrides,
-) -> PyResult<()> {
-    if let Some(v) = dict.get_item("raasp_fast")? {
-        overrides.raasp_fast = Some(v.extract()?);
-    }
-    if let Some(v) = dict.get_item("metric_learning")? {
-        let name: String = v.extract()?;
-        overrides.metric_learning = Some(crate::py_layout::metric_learning_from_wire(&name)?);
-    }
-    if let Some(v) = dict.get_item("affine_calibrate")? {
-        overrides.affine_calibrate = Some(v.extract()?);
-    }
-    if let Some(v) = dict.get_item("tied_dims")? {
-        overrides.tied_dims = Some(v.extract()?);
-    }
-    Ok(())
 }
 
 #[doc = "kiss-coverage-off"]
@@ -171,9 +134,9 @@ fn parse_morbo_override(
     }))
 }
 
-/// Every key `parse_config_overrides_from_dict` reads.
+/// Every non-ENN key `parse_config_overrides_from_dict` reads. ENN keys are in
+/// [`crate::py_enn_overrides::ENN_OVERRIDE_KEYS`].
 pub(crate) const CONFIG_OVERRIDE_KEYS: &[&str] = &[
-    "index_driver",
     "acquisition",
     "acquisition_beta",
     "candidate_rv",
@@ -181,13 +144,7 @@ pub(crate) const CONFIG_OVERRIDE_KEYS: &[&str] = &[
     "num_metrics",
     "alpha",
     "rescalarize",
-    "enn_storage",
-    "work_dir",
-    "y_bounds",
     "raasp_fast",
-    "metric_learning",
-    "affine_calibrate",
-    "tied_dims",
     "num_candidates_per_dim",
     "min_candidates",
     "max_candidates",
@@ -195,19 +152,16 @@ pub(crate) const CONFIG_OVERRIDE_KEYS: &[&str] = &[
     "length_init",
     "length_min",
     "length_max",
-    "num_fit_samples",
-    "num_fit_candidates",
-    "infer_aleatoric_variance",
-    "freeze_params",
     "noise_aware",
-    "scale_x",
 ];
 
 #[doc = "kiss-coverage-off"]
 fn reject_unknown_override_keys(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<()> {
     for key in dict.keys() {
         let name: String = key.extract()?;
-        if !CONFIG_OVERRIDE_KEYS.contains(&name.as_str()) {
+        let known = CONFIG_OVERRIDE_KEYS.contains(&name.as_str())
+            || crate::py_enn_overrides::ENN_OVERRIDE_KEYS.contains(&name.as_str());
+        if !known {
             return Err(PyValueError::new_err(format!(
                 "Unknown config override key: {name:?}"
             )));
@@ -225,9 +179,6 @@ pub fn parse_config_overrides_from_dict(
     reject_unknown_override_keys(dict)?;
     let mut overrides = ConfigOverrides::default();
 
-    if let Some(v) = dict.get_item("index_driver")? {
-        overrides.index_driver = Some(parse_index_driver(&v.extract::<String>()?)?);
-    }
     if let Some(acq) = dict.get_item("acquisition")? {
         let s: String = acq.extract()?;
         overrides.acquisition = Some(parse_acquisition(dict, &s)?);
@@ -243,17 +194,8 @@ pub fn parse_config_overrides_from_dict(
         );
     }
     overrides.morbo = parse_morbo_override(dict, overrides.trust_region_kind)?;
-    if let Some(v) = dict.get_item("enn_storage")? {
-        overrides.enn_storage = Some(parse_enn_storage(&v.extract::<String>()?)?);
-    }
-    if let Some(v) = dict.get_item("work_dir")? {
-        overrides.work_dir = Some(PathBuf::from(v.extract::<String>()?));
-    }
-    if let Some(v) = dict.get_item("y_bounds")? {
-        let arr: numpy::PyReadonlyArray2<f64> = v.extract()?;
-        overrides.y_bounds = Some(arr.as_array().to_owned());
-    }
-    parse_metric_overrides(dict, &mut overrides)?;
+    overrides.raasp_fast = optional_bool(dict, "raasp_fast")?;
+    overrides.enn = crate::py_enn_overrides::parse_enn_overrides(dict)?;
     apply_scalar_overrides(dict, &mut overrides)?;
     Ok(overrides)
 }
@@ -404,11 +346,13 @@ pub struct PyTelemetry {
     pub num_candidates: usize,
 }
 
-#[pyfunction(name = "require_num_fit_samples", signature = (is_pareto, num_fit_samples=None))]
+#[pyfunction(name = "require_num_fit_samples", signature = (acquisition, num_fit_samples=None))]
 #[doc = "kiss-coverage-off"]
-pub fn require_num_fit_samples_py(is_pareto: bool, num_fit_samples: Option<usize>) -> PyResult<()> {
-    ennbo::require_num_fit_samples(is_pareto, num_fit_samples)
-        .map_err(|e| PyValueError::new_err(e.to_string()))
+pub fn require_num_fit_samples_py(acquisition: &str, num_fit_samples: Option<usize>) -> PyResult<()> {
+    let acq = acquisition_from_name(acquisition, ennbo::DEFAULT_UCB_BETA)?;
+    let fit_samples = ennbo::FitSamples::from_count(num_fit_samples)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    ennbo::require_fit_samples(&acq, fit_samples).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 #[doc = "kiss-coverage-off"]

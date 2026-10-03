@@ -22,12 +22,10 @@ fn morbo_update_paths_and_incumbent_only() {
         alpha: 0.1,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: true,
     };
     let mut rng = StdRng::seed_from_u64(3);
     let mut tr = MorboTrustRegion::new(2, settings, &mut rng).unwrap();
     assert_eq!(tr.num_metrics(), 2);
-    assert!(tr.noise_aware());
     assert_eq!(tr.rescalarize(), Rescalarize::OnRestart);
     assert!(tr.y_min().is_none());
     assert!(tr.y_max().is_none());
@@ -62,7 +60,6 @@ fn morbo_update_paths_and_incumbent_only() {
         alpha: 0.1,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnPropose,
-        noise_aware: false,
     };
     let mut tr2 = MorboTrustRegion::new(2, settings2, &mut rng).unwrap();
     tr2.set_num_arms(2);

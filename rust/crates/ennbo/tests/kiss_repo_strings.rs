@@ -129,7 +129,7 @@ fn kiss_ennbo_build_main() {
 #[test]
 fn kiss_fullrepo_static_name_registry_extra() {
     let names: &[&str] = &[
-        "apply_enn_surrogate_fields",
+        "apply_enn_overrides",
         "turbo_enn_config",
         "turbo_zero_config",
         "lhd_only_config",

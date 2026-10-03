@@ -93,7 +93,6 @@ fn morbo_optimizer_scalarize_ready(seed: u64) -> Optimizer {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
@@ -176,7 +175,6 @@ fn morbo_pareto_ask_after_multiobjective_tell() {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt = Optimizer::new_with_strategy(
         bounds,
@@ -218,7 +216,6 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt = Optimizer::new_with_strategy(
         bounds,
@@ -279,7 +276,6 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnPropose,
-        noise_aware: false,
     });
     let mut opt = Optimizer::new_with_strategy(
         bounds,
@@ -338,7 +334,7 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
     let mut cfg = turbo_enn_config();
     cfg.surrogate = SurrogateConfig::ENN(crate::surrogate::ENNSurrogateConfig {
         k: 3,
-        num_fit_samples: 4,
+        fit_samples: crate::fit_samples::FitSamples::from_count(Some(4)).unwrap(),
         num_fit_candidates: 4,
         y_bounds: Some(array![[0.0, 1.0], [0.0, 1.0]]),
         ..Default::default()
@@ -348,7 +344,6 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();

@@ -30,7 +30,6 @@ pub struct MorboTRSettings {
     pub alpha: f64,
     pub length: TRLengthConfig,
     pub rescalarize: Rescalarize,
-    pub noise_aware: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -39,7 +38,6 @@ pub struct MorboTrustRegion {
     num_metrics: usize,
     alpha: f64,
     rescalarize: Rescalarize,
-    noise_aware: bool,
     weights: Array1<f64>,
     y_min: Option<Array1<f64>>,
     y_max: Option<Array1<f64>>,
@@ -67,7 +65,6 @@ impl MorboTrustRegion {
             num_metrics: settings.num_metrics,
             alpha: settings.alpha,
             rescalarize: settings.rescalarize,
-            noise_aware: settings.noise_aware,
             weights: Array1::zeros(settings.num_metrics),
             y_min: None,
             y_max: None,
@@ -82,10 +79,6 @@ impl MorboTrustRegion {
 
     pub fn num_metrics(&self) -> usize {
         self.num_metrics
-    }
-
-    pub fn noise_aware(&self) -> bool {
-        self.noise_aware
     }
 
     #[doc = "kiss-coverage-off"]
@@ -531,7 +524,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         };
         let mut rng = StdRng::seed_from_u64(2026);
         let tr = MorboTrustRegion::new(2, settings, &mut rng).unwrap();
@@ -547,7 +539,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         };
         let mut rng = StdRng::seed_from_u64(7);
         let result = MorboTrustRegion::new(2, settings, &mut rng);
@@ -564,7 +555,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         };
         let mut rng = StdRng::seed_from_u64(99);
         let result = MorboTrustRegion::new(2, settings, &mut rng);
@@ -578,7 +568,6 @@ mod tests {
             alpha: 0.1,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         };
         let mut rng = StdRng::seed_from_u64(1);
         let mut tr = MorboTrustRegion::new(2, settings, &mut rng).unwrap();

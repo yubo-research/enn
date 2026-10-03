@@ -61,7 +61,7 @@ def turbo_enn_config(
     surrogate = enn if enn is not None else sur.ENNSurrogateConfig()
     from enn._rust import require_num_fit_samples
 
-    require_num_fit_samples(acq_type == AcqType.PARETO, surrogate.num_fit_samples)
+    require_num_fit_samples(acq.acquisition_kind(acquisition), surrogate.num_fit_samples)
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=candidates or CandidateGenConfig(),

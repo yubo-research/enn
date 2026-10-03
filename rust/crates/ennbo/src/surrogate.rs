@@ -5,6 +5,7 @@ use rand::RngCore;
 use rand::SeedableRng;
 
 use crate::error::ENNError;
+use crate::fit_samples::{FitSamples, DEFAULT_FIT_SAMPLES};
 use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
@@ -80,7 +81,7 @@ pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
 pub struct ENNSurrogateConfig {
     pub k: i32,
     pub num_fit_candidates: usize,
-    pub num_fit_samples: usize,
+    pub fit_samples: FitSamples,
     pub infer_aleatoric_variance: bool,
     /// Index, storage, and metric. Illegal pairs are not a variant.
     pub layout: EnnLayout,
@@ -88,9 +89,6 @@ pub struct ENNSurrogateConfig {
     pub y_bounds: Option<Array2<f64>>,
     pub tied_dims: Vec<Vec<usize>>,
     pub affine_calibrate: bool,
-    /// When true, skip the scale search and use epistemic scale 1 and aleatoric scale 0.
-    /// This is the Python `num_fit_samples is None` contract from before the Rust port.
-    pub freeze_params: bool,
 }
 
 impl Default for ENNSurrogateConfig {
@@ -98,13 +96,12 @@ impl Default for ENNSurrogateConfig {
         Self {
             k: 10,
             num_fit_candidates: 30,
-            num_fit_samples: 10,
+            fit_samples: FitSamples::Draw(DEFAULT_FIT_SAMPLES),
             infer_aleatoric_variance: true,
             layout: EnnLayout::memory(IndexDriver::Flat, false),
             y_bounds: None,
             tied_dims: Vec::new(),
             affine_calibrate: false,
-            freeze_params: false,
         }
     }
 }
@@ -161,9 +158,9 @@ impl ENNSurrogate {
     }
 
     fn run_fitter(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
-        if self.config.freeze_params {
+        let FitSamples::Draw(num_fit_samples) = self.config.fit_samples else {
             return self.freeze_default_params();
-        }
+        };
         let model = self
             .model
             .as_ref()
@@ -190,7 +187,7 @@ impl ENNSurrogate {
         let p = fitter.ask(
             model,
             Some(self.config.num_fit_candidates),
-            self.config.num_fit_samples,
+            num_fit_samples.get(),
             self.params.as_ref(),
             rng,
             self.config.affine_calibrate,
@@ -229,7 +226,7 @@ impl ENNSurrogate {
             if !skip_fit || bulk_disk {
                 model.ensure_index_sync()?;
             }
-            if !skip_fit || self.config.freeze_params {
+            if !skip_fit || self.config.fit_samples.is_frozen() {
                 self.run_fitter(rng)?;
             }
             if !skip_fit || bulk_disk {
@@ -248,7 +245,7 @@ impl ENNSurrogate {
         self.fitter = Some(fitter);
         let on_disk = self.config.layout.index_driver() == IndexDriver::BpAnnDisk;
         let skip_fit = on_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
-        if !skip_fit || self.config.freeze_params {
+        if !skip_fit || self.config.fit_samples.is_frozen() {
             
             if on_disk {
                 if let Some(model) = &self.model {
@@ -363,11 +360,11 @@ impl Surrogate for ENNSurrogate {
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
 
         let model = self.construct_model(x, y, yvar)?;
-        if self.config.freeze_params {
+        let FitSamples::Draw(num_fit_samples) = self.config.fit_samples else {
             self.model = Some(model);
             self.fitter = None;
             return self.freeze_default_params();
-        }
+        };
 
         let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
         fitter.tell(x, y, yvar, self.config.y_bounds.as_ref())?;
@@ -377,7 +374,7 @@ impl Surrogate for ENNSurrogate {
         let p = fitter.ask(
             &model,
             Some(self.config.num_fit_candidates),
-            self.config.num_fit_samples,
+            num_fit_samples.get(),
             self.params.as_ref(),
             &mut local_rng,
             self.config.affine_calibrate,
@@ -541,7 +538,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 5,
-            num_fit_samples: 3,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(3)).unwrap(),
             ..Default::default()
         };
         let mut surrogate = ENNSurrogate::new(config);
@@ -567,7 +564,7 @@ mod tests {
     fn freeze_params_keeps_unit_epistemic_and_zero_aleatoric() {
         let config = ENNSurrogateConfig {
             k: 2,
-            freeze_params: true,
+            fit_samples: FitSamples::Frozen,
             ..Default::default()
         };
         let mut surrogate = ENNSurrogate::new(config);
@@ -597,7 +594,7 @@ mod tests {
         let base = ENNSurrogateConfig {
             k: 3,
             num_fit_candidates: 4,
-            num_fit_samples: 6,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(6)).unwrap(),
             infer_aleatoric_variance: false,
             ..Default::default()
         };
@@ -629,7 +626,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 4,
-            num_fit_samples: 2,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
             ..Default::default()
         };
         let x0 = array![[0.0, 0.0], [1.0, 0.0]];
@@ -667,7 +664,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 4,
-            num_fit_samples: 2,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
             ..Default::default()
         };
         let x0 = array![[0.0, 0.0], [1.0, 0.0]];
@@ -739,7 +736,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 4,
-            num_fit_samples: 4,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(4)).unwrap(),
             y_bounds: Some(bounds),
             ..Default::default()
         };
@@ -762,7 +759,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 2,
-            num_fit_samples: 2,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
             layout: EnnLayout::disk(dir.path().to_path_buf(), false),
             ..Default::default()
         };
@@ -804,7 +801,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 2,
-            num_fit_samples: 2,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
             layout: EnnLayout::disk(dir.path().to_path_buf(), false),
             ..Default::default()
         };
@@ -854,7 +851,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 2,
-            num_fit_samples: 2,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
             layout: EnnLayout::disk(dir.path().to_path_buf(), false),
             ..Default::default()
         };
@@ -889,7 +886,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 4,
-            num_fit_samples: 3,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(3)).unwrap(),
             y_bounds: Some(bounds),
             ..Default::default()
         };
@@ -920,7 +917,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 4,
-            num_fit_samples: 3,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(3)).unwrap(),
             y_bounds: Some(bounds),
             ..Default::default()
         };
@@ -968,7 +965,7 @@ mod tests {
         let config = ENNSurrogateConfig {
             k: 2,
             num_fit_candidates: 2,
-            num_fit_samples: 2,
+            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
             layout,
             ..Default::default()
         };

@@ -1,16 +1,14 @@
 //! Configuration types for the optimizer.
 
-use crate::backend::EnnStorage;
 use crate::candidates::CandidateRV;
+use crate::enn_overrides::EnnOverrides;
 use crate::error::ENNError;
-use crate::index::IndexDriver;
-use crate::layout::EnnLayout;
+use crate::fit_samples::{FitSamples, DEFAULT_FIT_SAMPLES};
 use crate::morbo_override::MorboOverride;
 use crate::morbo_trust_region::MorboTRSettings;
 use crate::surrogate::ENNSurrogateConfig;
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::{TrustRegionConfig, TrustRegionKind};
-use std::path::PathBuf;
 
 mod rules;
 pub use rules::{validate_optimizer_rules, OptimizerInitKind, OptimizerRuleSet, TurboEnnBuilder};
@@ -114,71 +112,22 @@ pub struct ConfigOverrides {
     pub length_init: Option<f64>,
     pub length_min: Option<f64>,
     pub length_max: Option<f64>,
-    pub index_driver: Option<IndexDriver>,
-    pub num_fit_samples: Option<usize>,
-    pub num_fit_candidates: Option<usize>,
-    pub infer_aleatoric_variance: Option<bool>,
-    pub scale_x: Option<bool>,
-    pub y_bounds: Option<ndarray::Array2<f64>>,
     pub noise_aware: Option<bool>,
-    pub enn_storage: Option<EnnStorage>,
-    pub work_dir: Option<PathBuf>,
     pub trust_region_kind: Option<crate::trust_region_config::TrustRegionKind>,
     /// Present only as a complete MORBO triple: metric count, alpha, and rescalarize mode.
     pub morbo: Option<MorboOverride>,
     pub raasp_fast: Option<bool>,
-    pub metric_learning: Option<crate::metric_auto::MetricLearning>,
-    pub tied_dims: Option<Vec<Vec<usize>>>,
-    pub affine_calibrate: Option<bool>,
-    /// Skip the ENN scale search and keep epistemic scale 1, aleatoric scale 0.
-    pub freeze_params: Option<bool>,
+    /// ENN-surrogate fields. Applying them to a config without a surrogate is an error.
+    pub enn: Option<EnnOverrides>,
 }
 
-fn overridden_layout(layout: &EnnLayout, overrides: &ConfigOverrides) -> Result<EnnLayout, ENNError> {
-    EnnLayout::try_from_parts(
-        overrides.index_driver.unwrap_or(layout.index_driver()),
-        Some(overrides.enn_storage.unwrap_or(layout.storage())),
-        overrides
-            .work_dir
-            .clone()
-            .or_else(|| layout.work_dir().map(|p| p.to_path_buf())),
-        overrides.scale_x.unwrap_or(layout.scale_x()),
-        overrides.metric_learning.unwrap_or(layout.metric_learning()),
-    )
-}
-
-#[doc = "kiss-coverage-off"]
-fn apply_enn_surrogate_fields(
-    config: &mut OptimizerConfig,
-    overrides: &ConfigOverrides,
-) -> Result<(), ENNError> {
-    let SurrogateConfig::ENN(enn_cfg) = &config.surrogate else {
-        return Ok(());
+fn apply_enn_overrides(config: &mut OptimizerConfig, enn: &EnnOverrides) -> Result<(), ENNError> {
+    let SurrogateConfig::ENN(base) = &config.surrogate else {
+        return Err(ENNError::InvalidParameter(
+            "ENN surrogate overrides require an ENN surrogate".into(),
+        ));
     };
-    let mut enn = enn_cfg.clone();
-    if let Some(nfs) = overrides.num_fit_samples {
-        enn.num_fit_samples = nfs;
-    }
-    if let Some(nfc) = overrides.num_fit_candidates {
-        enn.num_fit_candidates = nfc;
-    }
-    if let Some(ale) = overrides.infer_aleatoric_variance {
-        enn.infer_aleatoric_variance = ale;
-    }
-    enn.layout = overridden_layout(&enn.layout, overrides)?;
-    if let Some(yb) = overrides.y_bounds.clone() {
-        enn.y_bounds = Some(yb);
-    }
-    if let Some(tied) = overrides.tied_dims.clone() {
-        enn.tied_dims = tied;
-    }
-    if let Some(cal) = overrides.affine_calibrate {
-        enn.affine_calibrate = cal;
-    }
-    if let Some(freeze) = overrides.freeze_params {
-        enn.freeze_params = freeze;
-    }
-    config.surrogate = SurrogateConfig::ENN(enn);
+    config.surrogate = SurrogateConfig::ENN(enn.apply(base)?);
     Ok(())
 }
 
@@ -210,7 +159,6 @@ fn apply_trust_region_overrides(
             alpha: morbo.alpha,
             length,
             rescalarize: morbo.rescalarize,
-            noise_aware: overrides.noise_aware.unwrap_or(false),
         });
         return Ok(());
     }
@@ -258,20 +206,8 @@ impl ConfigOverrides {
             config.candidates.raasp_fast = fast;
         }
         apply_trust_region_overrides(self, &mut config)?;
-        if self.index_driver.is_some()
-            || self.num_fit_samples.is_some()
-            || self.num_fit_candidates.is_some()
-            || self.infer_aleatoric_variance.is_some()
-            || self.scale_x.is_some()
-            || self.enn_storage.is_some()
-            || self.work_dir.is_some()
-            || self.y_bounds.is_some()
-            || self.metric_learning.is_some()
-            || self.tied_dims.is_some()
-            || self.affine_calibrate.is_some()
-            || self.freeze_params.is_some()
-        {
-            apply_enn_surrogate_fields(&mut config, self)?;
+        if let Some(enn) = &self.enn {
+            apply_enn_overrides(&mut config, enn)?;
         }
         if let Some(na) = self.noise_aware {
             config.noise_aware = na;
@@ -327,7 +263,7 @@ pub fn turbo_enn_config() -> OptimizerConfig {
         surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
             k: 10,
             num_fit_candidates: 30,
-            num_fit_samples: 10,
+            fit_samples: FitSamples::Draw(DEFAULT_FIT_SAMPLES),
             ..Default::default()
         }),
         trust_region: TrustRegionConfig::default(),
@@ -365,14 +301,7 @@ impl OptimizerConfig {
             &self.acquisition,
         )?;
         if let SurrogateConfig::ENN(enn) = &self.surrogate {
-            if !matches!(self.acquisition, AcquisitionConfig::Pareto | AcquisitionConfig::Random)
-                && enn.num_fit_samples == 0
-            {
-                return Err(ENNError::InvalidParameter(format!(
-                    "enn.num_fit_samples required for acq_type={:?}",
-                    self.acquisition
-                )));
-            }
+            require_fit_samples(&self.acquisition, enn.fit_samples)?;
         }
         Ok(())
     }
@@ -387,12 +316,17 @@ impl OptimizerConfig {
     }
 }
 
-/// Error when a non-Pareto TuRBO-ENN config omits `num_fit_samples`.
-pub fn require_num_fit_samples(is_pareto: bool, num_fit_samples: Option<usize>) -> Result<(), ENNError> {
-    if !is_pareto && num_fit_samples.is_none() {
-        return Err(ENNError::InvalidParameter(
-            "enn.num_fit_samples required for non-Pareto acquisition".into(),
-        ));
+/// Error when an acquisition that reads fitted ENN scales gets a frozen surrogate.
+/// Pareto and Random acquisition may run with frozen scales.
+pub fn require_fit_samples(
+    acquisition: &AcquisitionConfig,
+    fit_samples: FitSamples,
+) -> Result<(), ENNError> {
+    let exempt = matches!(acquisition, AcquisitionConfig::Pareto | AcquisitionConfig::Random);
+    if fit_samples.is_frozen() && !exempt {
+        return Err(ENNError::InvalidParameter(format!(
+            "enn.num_fit_samples required for acq_type={acquisition:?}"
+        )));
     }
     Ok(())
 }
@@ -504,10 +438,13 @@ mod tests {
         let overrides = ConfigOverrides {
             acquisition: Some(AcquisitionConfig::Thompson),
             candidate_rv: Some(CandidateRV::Sobol),
-            index_driver: Some(IndexDriver::Flat),
-            num_fit_samples: Some(123),
-            num_fit_candidates: Some(456),
-            scale_x: Some(true),
+            enn: Some(EnnOverrides {
+                index_driver: Some(IndexDriver::Flat),
+                fit_samples: Some(FitSamples::from_count(Some(123)).unwrap()),
+                num_fit_candidates: Some(456),
+                scale_x: Some(true),
+                ..Default::default()
+            }),
             ..Default::default()
         };
 
@@ -518,7 +455,7 @@ mod tests {
         assert_eq!(applied.candidates.candidate_rv, CandidateRV::Sobol);
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
             assert_eq!(enn.layout.index_driver(), IndexDriver::Flat);
-            assert_eq!(enn.num_fit_samples, 123);
+            assert_eq!(enn.fit_samples.count(), Some(123));
             assert_eq!(enn.num_fit_candidates, 456);
             assert!(enn.layout.scale_x());
         } else {
@@ -529,7 +466,10 @@ mod tests {
     #[test]
     fn test_config_overrides_scale_x_apply() {
         let overrides = ConfigOverrides {
-            scale_x: Some(true),
+            enn: Some(EnnOverrides {
+                scale_x: Some(true),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let applied = overrides.apply_to(turbo_enn_config()).unwrap();
@@ -584,16 +524,19 @@ mod tests {
     #[test]
     fn config_overrides_apply_enn_num_fit_fields() {
         let overrides = ConfigOverrides {
-            num_fit_samples: Some(7),
-            num_fit_candidates: Some(11),
-            scale_x: Some(true),
+            enn: Some(EnnOverrides {
+                fit_samples: Some(FitSamples::from_count(Some(7)).unwrap()),
+                num_fit_candidates: Some(11),
+                scale_x: Some(true),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let applied = overrides.apply_to(turbo_enn_config()).unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
-        assert_eq!(enn.num_fit_samples, 7);
+        assert_eq!(enn.fit_samples.count(), Some(7));
         assert_eq!(enn.num_fit_candidates, 11);
         assert!(enn.layout.scale_x());
     }
@@ -604,9 +547,12 @@ mod tests {
         use std::path::PathBuf;
 
         let overrides = ConfigOverrides {
-            index_driver: Some(IndexDriver::BpAnnDisk),
-            enn_storage: Some(EnnStorage::Disk),
-            work_dir: Some(PathBuf::from("/tmp/enn_work")),
+            enn: Some(EnnOverrides {
+                index_driver: Some(IndexDriver::BpAnnDisk),
+                enn_storage: Some(EnnStorage::Disk),
+                work_dir: Some(PathBuf::from("/tmp/enn_work")),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let applied = overrides.apply_to(turbo_enn_config()).unwrap();
@@ -619,8 +565,49 @@ mod tests {
     }
 
     #[test]
-    fn kiss_apply_enn_surrogate_fields_unit_name() {
-        assert_eq!("apply_enn_surrogate_fields", "apply_enn_surrogate_fields");
+    fn enn_overrides_without_surrogate_are_rejected() {
+        let overrides = ConfigOverrides {
+            enn: Some(EnnOverrides {
+                fit_samples: Some(FitSamples::from_count(Some(7)).unwrap()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        for base in [turbo_zero_config(), lhd_only_config()] {
+            let err = overrides.apply_to(base).unwrap_err();
+            assert!(err.to_string().contains("require an ENN surrogate"), "{err}");
+        }
+        let mut config = turbo_zero_config();
+        apply_enn_overrides(&mut config, &EnnOverrides::default()).unwrap_err();
+    }
+
+    #[test]
+    fn require_fit_samples_exempts_pareto_and_random_only() {
+        let draw = FitSamples::from_count(Some(4)).unwrap();
+        for acq in [
+            AcquisitionConfig::default(),
+            AcquisitionConfig::Thompson,
+            AcquisitionConfig::Pareto,
+            AcquisitionConfig::Random,
+        ] {
+            require_fit_samples(&acq, draw).unwrap();
+        }
+        require_fit_samples(&AcquisitionConfig::Pareto, FitSamples::Frozen).unwrap();
+        require_fit_samples(&AcquisitionConfig::Random, FitSamples::Frozen).unwrap();
+        require_fit_samples(&AcquisitionConfig::Thompson, FitSamples::Frozen).unwrap_err();
+        require_fit_samples(&AcquisitionConfig::default(), FitSamples::Frozen).unwrap_err();
+    }
+
+    #[test]
+    fn validate_rejects_frozen_enn_with_ucb() {
+        let mut config = turbo_enn_config();
+        if let SurrogateConfig::ENN(enn) = &mut config.surrogate {
+            enn.fit_samples = FitSamples::Frozen;
+        }
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("enn.num_fit_samples required"), "{err}");
+        config.acquisition = AcquisitionConfig::Pareto;
+        config.validate().unwrap();
     }
 
     #[test]

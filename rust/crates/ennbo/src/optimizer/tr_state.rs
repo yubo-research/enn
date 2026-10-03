@@ -264,7 +264,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnPropose,
-            noise_aware: false,
         });
         let mut tr = TrustRegionState::from_config(3, &cfg, &mut rng).unwrap();
         assert!(tr.is_morbo());
@@ -280,7 +279,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnPropose,
-            noise_aware: false,
         });
         let mut tr = TrustRegionState::from_config(2, &cfg, &mut rng).unwrap();
         let w0 = tr.morbo_mut().expect("morbo").weights().to_owned();
@@ -330,7 +328,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         });
         let mut tr = TrustRegionState::from_config(2, &cfg, &mut rng).unwrap();
         let w0 = tr.morbo_mut().expect("morbo").weights().to_owned();

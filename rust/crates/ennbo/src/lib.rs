@@ -32,6 +32,10 @@ pub mod fit;
 #[allow(missing_docs)]
 pub mod fitter;
 #[allow(missing_docs)]
+pub mod fit_samples;
+#[allow(missing_docs)]
+pub mod enn_overrides;
+#[allow(missing_docs)]
 pub mod benchmarks;
 #[allow(missing_docs)]
 pub mod calibration;
@@ -141,8 +145,12 @@ pub use candidates::to_unit;
 pub use candidates::CandidateRV;
 /// Default Latin-hypercube-only optimizer config.
 pub use config::lhd_only_config;
-/// Reject a missing `num_fit_samples` on non-Pareto acquisition.
-pub use config::require_num_fit_samples;
+/// Reject frozen ENN scales for an acquisition that needs fitted scales.
+pub use config::require_fit_samples;
+/// ENN-surrogate fields an override may replace.
+pub use enn_overrides::EnnOverrides;
+/// ENN scale-search draw count, or frozen.
+pub use fit_samples::FitSamples;
 /// Default TuRBO-ENN optimizer config.
 pub use config::turbo_enn_config;
 /// Default TuRBO-ZERO optimizer config.
