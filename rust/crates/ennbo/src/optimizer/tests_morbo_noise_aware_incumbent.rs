@@ -23,9 +23,8 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
     let mut rng = StdRng::seed_from_u64(42);
     let mut cfg = OptimizerConfig {
         surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
-            k: 3,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(6)).unwrap(),
-            num_fit_candidates: 4,
+            k: crate::NeighborCount::new(3).unwrap(),
+            fit_samples: crate::FitSamples::draw(6, 4).unwrap(),
             ..Default::default()
         }),
         trust_region: TrustRegionConfig::Morbo(MorboTRSettings {

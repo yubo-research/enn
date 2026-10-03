@@ -34,6 +34,8 @@ pub mod fitter;
 #[allow(missing_docs)]
 pub mod fit_samples;
 #[allow(missing_docs)]
+pub mod neighbor_count;
+#[allow(missing_docs)]
 pub mod enn_overrides;
 #[allow(missing_docs)]
 pub mod benchmarks;
@@ -149,8 +151,12 @@ pub use config::lhd_only_config;
 pub use config::require_fit_samples;
 /// ENN-surrogate fields an override may replace.
 pub use enn_overrides::EnnOverrides;
-/// ENN scale-search draw count, or frozen.
+/// ENN scale-search settings, or frozen.
 pub use fit_samples::FitSamples;
+/// Settings of the ENN scale search.
+pub use fit_samples::ScaleSearch;
+/// Positive ENN neighbor count.
+pub use neighbor_count::NeighborCount;
 /// Default TuRBO-ENN optimizer config.
 pub use config::turbo_enn_config;
 /// Default TuRBO-ZERO optimizer config.

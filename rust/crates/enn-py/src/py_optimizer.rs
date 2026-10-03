@@ -62,24 +62,15 @@ mod kiss_coverage_tests {
 }
 
 #[doc = "kiss-coverage-off"]
-fn acquisition_from_name(s: &str, beta: f64) -> PyResult<ennbo::AcquisitionConfig> {
+fn acquisition_from_name(s: &str) -> PyResult<ennbo::AcquisitionConfig> {
     use ennbo::AcquisitionConfig;
     match s {
-        "ucb" => Ok(AcquisitionConfig::UCB { beta }),
+        "ucb" => Ok(AcquisitionConfig::default()),
         "thompson" => Ok(AcquisitionConfig::Thompson),
         "random" => Ok(AcquisitionConfig::Random),
         "pareto" => Ok(AcquisitionConfig::Pareto),
         _ => Err(PyValueError::new_err(format!("Unknown acquisition: {s}"))),
     }
-}
-
-#[doc = "kiss-coverage-off"]
-fn parse_acquisition(
-    dict: &Bound<'_, pyo3::types::PyDict>,
-    s: &str,
-) -> PyResult<ennbo::AcquisitionConfig> {
-    let beta = optional_f64(dict, "acquisition_beta")?.unwrap_or(ennbo::DEFAULT_UCB_BETA);
-    acquisition_from_name(s, beta)
 }
 
 #[doc = "kiss-coverage-off"]
@@ -138,7 +129,6 @@ fn parse_morbo_override(
 /// [`crate::py_enn_overrides::ENN_OVERRIDE_KEYS`].
 pub(crate) const CONFIG_OVERRIDE_KEYS: &[&str] = &[
     "acquisition",
-    "acquisition_beta",
     "candidate_rv",
     "trust_region",
     "num_metrics",
@@ -181,7 +171,7 @@ pub fn parse_config_overrides_from_dict(
 
     if let Some(acq) = dict.get_item("acquisition")? {
         let s: String = acq.extract()?;
-        overrides.acquisition = Some(parse_acquisition(dict, &s)?);
+        overrides.acquisition = Some(acquisition_from_name(&s)?);
     }
     if let Some(rv) = dict.get_item("candidate_rv")? {
         overrides.candidate_rv = Some(parse_candidate_rv(&rv.extract::<String>()?)?);
@@ -349,7 +339,7 @@ pub struct PyTelemetry {
 #[pyfunction(name = "require_num_fit_samples", signature = (acquisition, num_fit_samples=None))]
 #[doc = "kiss-coverage-off"]
 pub fn require_num_fit_samples_py(acquisition: &str, num_fit_samples: Option<usize>) -> PyResult<()> {
-    let acq = acquisition_from_name(acquisition, ennbo::DEFAULT_UCB_BETA)?;
+    let acq = acquisition_from_name(acquisition)?;
     let fit_samples = ennbo::FitSamples::from_count(num_fit_samples)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
     ennbo::require_fit_samples(&acq, fit_samples).map_err(|e| PyValueError::new_err(e.to_string()))
@@ -372,7 +362,7 @@ pub fn validate_optimizer_rules_py(
         lhd_only: optimizer_flag(flags, "lhd_only")?,
         has_surrogate: optimizer_flag(flags, "has_surrogate")?,
     };
-    let kind = acquisition_from_name(acquisition, ennbo::DEFAULT_UCB_BETA)?;
+    let kind = acquisition_from_name(acquisition)?;
     ennbo::validate_optimizer_rules(&rules, &kind).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 

@@ -9,6 +9,7 @@ use crate::config::{
     OptimizerInitKind, SurrogateConfig,
 };
 use crate::error::ENNError;
+use crate::neighbor_count::NeighborCount;
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
 
@@ -17,8 +18,8 @@ pub const DEFAULT_ENN_K: i32 = 10;
 /// Default initialization budget when `num_init` is omitted.
 pub const DEFAULT_NUM_INIT: usize = 10;
 
-fn resolve_k(k: Option<i32>) -> i32 {
-    k.unwrap_or(DEFAULT_ENN_K)
+fn resolve_k(k: Option<i32>) -> Result<NeighborCount, ENNError> {
+    NeighborCount::new(k.unwrap_or(DEFAULT_ENN_K))
 }
 
 fn resolve_num_init(num_init: Option<usize>) -> usize {
@@ -48,7 +49,7 @@ pub fn create_optimizer_enn_with_overrides(
 ) -> Result<Optimizer, ENNError> {
     let mut config = turbo_enn_config();
     if let SurrogateConfig::ENN(enn_cfg) = &mut config.surrogate {
-        enn_cfg.k = resolve_k(k);
+        enn_cfg.k = resolve_k(k)?;
     }
     if let Some(o) = overrides {
         config = o.apply_to(config)?;
@@ -131,5 +132,32 @@ mod tests {
 
         let mut lhd = create_optimizer_lhd(bounds, Some(2), 101).unwrap();
         let _ = lhd.ask(1).unwrap();
+    }
+
+    #[test]
+    fn create_optimizer_enn_rejects_nonpositive_k_at_build() {
+        let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+        for k in [0, -3] {
+            let err = create_optimizer_enn(bounds.clone(), Some(k), Some(3), 0)
+                .err()
+                .expect("k < 1 must be rejected");
+            assert!(err.to_string().contains("k (number of neighbors)"), "{err}");
+        }
+    }
+
+    #[test]
+    fn create_optimizer_enn_rejects_tied_dims_without_auto_metric() {
+        let overrides = ConfigOverrides {
+            enn: Some(crate::EnnOverrides {
+                tied_dims: Some(vec![vec![0, 99]]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+        let err = create_optimizer_enn_with_overrides(bounds, None, Some(3), 0, Some(&overrides))
+            .err()
+            .expect("ignored tied_dims must be rejected");
+        assert!(err.to_string().contains("tied_dims require"), "{err}");
     }
 }

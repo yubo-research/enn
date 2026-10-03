@@ -13,6 +13,7 @@ from .enn_x_scaling import (
     ENNScaleX,
     metric_learning_to_wire,
     scale_x_to_wire,
+    validate_tied_dims,
 )
 
 
@@ -68,10 +69,22 @@ class ENNSurrogateConfig:
             scale_x=self.scale_x,
             metric_learning=self.metric_learning,
         )
+        self._check_tied_dims()
         if self.y_bounds is not None:
             object.__setattr__(
                 self, "y_bounds", np.asarray(self.y_bounds, dtype=float)
             )
+
+    def _check_tied_dims(self) -> None:
+        """Only ``ENNMetricLearning.AUTO`` reads ``tied_dims``. The range check against the
+        problem dimension runs when the optimizer is built."""
+        if not self.tied_dims:
+            return
+        if self.metric_learning is not ENNMetricLearning.AUTO:
+            raise ValueError("tied_dims require metric_learning=ENNMetricLearning.AUTO")
+        flat = [j for g in self.tied_dims for j in g]
+        groups = validate_tied_dims(self.tied_dims, 1 + max([0, *flat]))
+        object.__setattr__(self, "tied_dims", groups)
 
     @property
     def num_fit_samples(self) -> int | None:

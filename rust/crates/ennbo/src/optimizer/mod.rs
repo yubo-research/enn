@@ -113,6 +113,7 @@ impl Optimizer {
 
         let surrogate: Option<BoxedSurrogate> = match &config.surrogate {
             SurrogateConfig::ENN(enn_config) => {
+                enn_config.validate(num_dim)?;
                 Some(Box::new(ENNSurrogate::new(enn_config.clone())))
             }
             SurrogateConfig::None => None,

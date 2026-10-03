@@ -3,9 +3,10 @@
 use crate::candidates::CandidateRV;
 use crate::enn_overrides::EnnOverrides;
 use crate::error::ENNError;
-use crate::fit_samples::{FitSamples, DEFAULT_FIT_SAMPLES};
+use crate::fit_samples::FitSamples;
 use crate::morbo_override::MorboOverride;
 use crate::morbo_trust_region::MorboTRSettings;
+use crate::neighbor_count::NeighborCount;
 use crate::surrogate::ENNSurrogateConfig;
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::{TrustRegionConfig, TrustRegionKind};
@@ -261,9 +262,8 @@ fn turbo_candidate_config() -> CandidateConfig {
 pub fn turbo_enn_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
-            k: 10,
-            num_fit_candidates: 30,
-            fit_samples: FitSamples::Draw(DEFAULT_FIT_SAMPLES),
+            k: NeighborCount::default(),
+            fit_samples: FitSamples::default(),
             ..Default::default()
         }),
         trust_region: TrustRegionConfig::default(),
@@ -354,8 +354,17 @@ mod tests {
     use super::*;
     use crate::backend::EnnStorage;
     use crate::candidates::CandidateRV;
+    use crate::enn_overrides::{FitOverride, SearchOverrides};
     use crate::morbo_trust_region::Rescalarize;
     use std::path::Path;
+
+    fn draw_override(num_fit_samples: usize, num_fit_candidates: usize) -> FitOverride {
+        FitOverride::Draw(SearchOverrides {
+            num_fit_samples: std::num::NonZeroUsize::new(num_fit_samples),
+            num_fit_candidates: Some(num_fit_candidates),
+            ..Default::default()
+        })
+    }
 
     #[test]
     fn test_candidate_config_num_candidates() {
@@ -440,8 +449,7 @@ mod tests {
             candidate_rv: Some(CandidateRV::Sobol),
             enn: Some(EnnOverrides {
                 index_driver: Some(IndexDriver::Flat),
-                fit_samples: Some(FitSamples::from_count(Some(123)).unwrap()),
-                num_fit_candidates: Some(456),
+                fit: Some(draw_override(123, 456)),
                 scale_x: Some(true),
                 ..Default::default()
             }),
@@ -456,7 +464,7 @@ mod tests {
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
             assert_eq!(enn.layout.index_driver(), IndexDriver::Flat);
             assert_eq!(enn.fit_samples.count(), Some(123));
-            assert_eq!(enn.num_fit_candidates, 456);
+            assert_eq!(enn.fit_samples.search().unwrap().num_fit_candidates, 456);
             assert!(enn.layout.scale_x());
         } else {
             panic!("expected ENN surrogate");
@@ -525,8 +533,7 @@ mod tests {
     fn config_overrides_apply_enn_num_fit_fields() {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
-                fit_samples: Some(FitSamples::from_count(Some(7)).unwrap()),
-                num_fit_candidates: Some(11),
+                fit: Some(draw_override(7, 11)),
                 scale_x: Some(true),
                 ..Default::default()
             }),
@@ -537,7 +544,7 @@ mod tests {
             panic!("expected ENN surrogate");
         };
         assert_eq!(enn.fit_samples.count(), Some(7));
-        assert_eq!(enn.num_fit_candidates, 11);
+        assert_eq!(enn.fit_samples.search().unwrap().num_fit_candidates, 11);
         assert!(enn.layout.scale_x());
     }
 
@@ -568,7 +575,7 @@ mod tests {
     fn enn_overrides_without_surrogate_are_rejected() {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
-                fit_samples: Some(FitSamples::from_count(Some(7)).unwrap()),
+                fit: Some(draw_override(7, 11)),
                 ..Default::default()
             }),
             ..Default::default()

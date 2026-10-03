@@ -30,18 +30,27 @@ fn to_py_err(e: ennbo::ENNError) -> PyErr {
 #[doc = "kiss-coverage-off"]
 fn parse_fit_samples(
     dict: &Bound<'_, pyo3::types::PyDict>,
-) -> PyResult<Option<ennbo::FitSamples>> {
-    let count = optional_usize(dict, "num_fit_samples")?;
+) -> PyResult<Option<ennbo::enn_overrides::FitOverride>> {
+    use ennbo::enn_overrides::{FitOverride, SearchOverrides};
+
+    let search = SearchOverrides {
+        num_fit_samples: optional_usize(dict, "num_fit_samples")?
+            .map(ennbo::fit_samples::nonzero_samples)
+            .transpose()
+            .map_err(to_py_err)?,
+        num_fit_candidates: optional_usize(dict, "num_fit_candidates")?,
+        infer_aleatoric_variance: optional_bool(dict, "infer_aleatoric_variance")?,
+        affine_calibrate: optional_bool(dict, "affine_calibrate")?,
+    };
     let frozen = optional_bool(dict, "freeze_params")?.unwrap_or(false);
-    match (frozen, count) {
-        (true, Some(_)) => Err(PyValueError::new_err(
-            "freeze_params and num_fit_samples cannot both be set",
+    match (frozen, search.is_empty()) {
+        (true, false) => Err(PyValueError::new_err(
+            "freeze_params excludes num_fit_samples, num_fit_candidates, \
+             infer_aleatoric_variance, and affine_calibrate",
         )),
-        (true, None) => Ok(Some(ennbo::FitSamples::Frozen)),
-        (false, None) => Ok(None),
-        (false, Some(n)) => ennbo::FitSamples::from_count(Some(n))
-            .map(Some)
-            .map_err(to_py_err),
+        (true, true) => Ok(Some(FitOverride::Frozen)),
+        (false, true) => Ok(None),
+        (false, false) => Ok(Some(FitOverride::Draw(search))),
     }
 }
 
@@ -84,9 +93,7 @@ pub(crate) fn parse_enn_overrides(
         index_driver: optional_string(dict, "index_driver")?
             .map(|s| index_driver_from_wire(&s))
             .transpose()?,
-        fit_samples: parse_fit_samples(dict)?,
-        num_fit_candidates: optional_usize(dict, "num_fit_candidates")?,
-        infer_aleatoric_variance: optional_bool(dict, "infer_aleatoric_variance")?,
+        fit: parse_fit_samples(dict)?,
         scale_x: optional_bool(dict, "scale_x")?,
         y_bounds,
         enn_storage: optional_string(dict, "enn_storage")?
@@ -97,7 +104,6 @@ pub(crate) fn parse_enn_overrides(
             .map(|s| metric_learning_from_wire(&s))
             .transpose()?,
         tied_dims,
-        affine_calibrate: optional_bool(dict, "affine_calibrate")?,
     }))
 }
 

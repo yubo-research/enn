@@ -5,13 +5,17 @@ use rand::RngCore;
 use rand::SeedableRng;
 
 use crate::error::ENNError;
-use crate::fit_samples::{FitSamples, DEFAULT_FIT_SAMPLES};
+use crate::fit_samples::FitSamples;
 use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
 use crate::model::EpistemicNearestNeighbors;
+use crate::neighbor_count::NeighborCount;
 use crate::params::{ENNParams, PosteriorFlags};
+
+/// Disk appends with at least this many rows skip the scale search.
+const BULK_DISK_TELL_SKIP_FIT_ROWS: usize = 4_096;
 
 fn enable_auto_if_configured(
     model: &mut EpistemicNearestNeighbors,
@@ -79,30 +83,53 @@ pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub struct ENNSurrogateConfig {
-    pub k: i32,
-    pub num_fit_candidates: usize,
+    pub k: NeighborCount,
+    /// Scale-search settings, or frozen scales.
     pub fit_samples: FitSamples,
-    pub infer_aleatoric_variance: bool,
     /// Index, storage, and metric. Illegal pairs are not a variant.
     pub layout: EnnLayout,
     /// Optional per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
     pub y_bounds: Option<Array2<f64>>,
+    /// Groups of tied input dimensions. Only `MetricLearning::Auto` reads them.
     pub tied_dims: Vec<Vec<usize>>,
-    pub affine_calibrate: bool,
 }
 
 impl Default for ENNSurrogateConfig {
     fn default() -> Self {
         Self {
-            k: 10,
-            num_fit_candidates: 30,
-            fit_samples: FitSamples::Draw(DEFAULT_FIT_SAMPLES),
-            infer_aleatoric_variance: true,
+            k: NeighborCount::default(),
+            fit_samples: FitSamples::default(),
             layout: EnnLayout::memory(IndexDriver::Flat, false),
             y_bounds: None,
             tied_dims: Vec::new(),
-            affine_calibrate: false,
         }
+    }
+}
+
+impl ENNSurrogateConfig {
+    /// Reject `tied_dims` that would be ignored or that do not fit `num_dim` inputs.
+    pub fn validate(&self, num_dim: usize) -> Result<(), ENNError> {
+        if self.tied_dims.is_empty() {
+            return Ok(());
+        }
+        if self.layout.metric_learning() != MetricLearning::Auto {
+            return Err(ENNError::InvalidParameter(
+                "tied_dims require metric_learning=Auto".into(),
+            ));
+        }
+        crate::metric_weights::validate_tied_dims(&self.tied_dims, num_dim)
+    }
+
+    fn default_params(&self) -> Result<ENNParams, ENNError> {
+        ENNParams::new(self.k.get(), 1.0, 0.0).map_err(|e| {
+            ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
+        })
+    }
+
+    fn new_fitter(&self) -> Option<ENNFitter> {
+        self.fit_samples
+            .search()
+            .map(|s| ENNFitter::new(self.k.get(), s.infer_aleatoric_variance))
     }
 }
 
@@ -149,16 +176,13 @@ impl ENNSurrogate {
     }
 
     fn freeze_default_params(&mut self) -> Result<(), ENNError> {
-        let params = ENNParams::new(self.config.k, 1.0, 0.0).map_err(|e| {
-            ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
-        })?;
-        self.params = Some(params);
+        self.params = Some(self.config.default_params()?);
         self.calibrator = None;
         Ok(())
     }
 
     fn run_fitter(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
-        let FitSamples::Draw(num_fit_samples) = self.config.fit_samples else {
+        let FitSamples::Draw(search) = self.config.fit_samples else {
             return self.freeze_default_params();
         };
         let model = self
@@ -170,7 +194,7 @@ impl ENNSurrogate {
             let indices: Vec<usize> = (0..n).collect();
             
             let (train_x, train_y, train_yvar) = model.train_rows_at(&indices)?;
-            let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
+            let mut fitter = ENNFitter::new(self.config.k.get(), search.infer_aleatoric_variance);
             let yvar_view = train_yvar.as_ref().map(|v| v.view());
             fitter.tell(
                 &train_x.view(),
@@ -186,11 +210,11 @@ impl ENNSurrogate {
         let fitter = self.fitter.as_mut().expect("fitter");
         let p = fitter.ask(
             model,
-            Some(self.config.num_fit_candidates),
-            num_fit_samples.get(),
+            Some(search.num_fit_candidates),
+            search.num_fit_samples.get(),
             self.params.as_ref(),
             rng,
-            self.config.affine_calibrate,
+            search.affine_calibrate,
         )?;
         self.params = Some(p);
         self.calibrator = fitter.calibrator().cloned();
@@ -204,12 +228,6 @@ impl ENNSurrogate {
         yvar_new: Option<&ArrayView2<f64>>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
-        
-        
-        
-        
-        
-        const BULK_DISK_TELL_SKIP_FIT_ROWS: usize = 4_096;
         if let Some(model) = &mut self.model {
             model.add(x_new, y_new, yvar_new)?;
             if let Some(fitter) = self.fitter.as_mut() {
@@ -236,13 +254,25 @@ impl ENNSurrogate {
             }
             return Ok(());
         }
-        let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
-        
+        self.start_model(x_new, y_new, yvar_new, rng)
+    }
+
+    /// Build a model from `x`, `y`, `yvar` alone and fit its scales. `self.model` must be `None`.
+    fn start_model(
+        &mut self,
+        x_new: &ArrayView2<f64>,
+        y_new: &ArrayView2<f64>,
+        yvar_new: Option<&ArrayView2<f64>>,
+        rng: &mut rand::rngs::StdRng,
+    ) -> Result<(), ENNError> {
         let mut model = self.construct_model(x_new, y_new, yvar_new)?;
         enable_auto_if_configured(&mut model, &self.config, x_new, y_new)?;
-        fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
+        let mut fitter = self.config.new_fitter();
+        if let Some(fitter) = fitter.as_mut() {
+            fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
+        }
         self.model = Some(model);
-        self.fitter = Some(fitter);
+        self.fitter = fitter;
         let on_disk = self.config.layout.index_driver() == IndexDriver::BpAnnDisk;
         let skip_fit = on_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
         if !skip_fit || self.config.fit_samples.is_frozen() {
@@ -358,33 +388,10 @@ impl Surrogate for ENNSurrogate {
         let mut seed_bytes = [0u8; 32];
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
-
-        let model = self.construct_model(x, y, yvar)?;
-        let FitSamples::Draw(num_fit_samples) = self.config.fit_samples else {
-            self.model = Some(model);
-            self.fitter = None;
-            return self.freeze_default_params();
-        };
-
-        let mut fitter = ENNFitter::new(self.config.k, self.config.infer_aleatoric_variance);
-        fitter.tell(x, y, yvar, self.config.y_bounds.as_ref())?;
-        if let Some(p) = self.params {
-            fitter.set_params(p);
-        }
-        let p = fitter.ask(
-            &model,
-            Some(self.config.num_fit_candidates),
-            num_fit_samples.get(),
-            self.params.as_ref(),
-            &mut local_rng,
-            self.config.affine_calibrate,
-        )?;
-        self.params = Some(p);
-        self.calibrator = fitter.calibrator().cloned();
-        self.model = Some(model);
-        self.fitter = Some(fitter);
-
-        Ok(())
+        self.model = None;
+        self.fitter = None;
+        self.calibrator = None;
+        self.start_model(x, y, yvar, &mut local_rng)
     }
 
     fn fit_append(
@@ -456,9 +463,7 @@ impl Surrogate for ENNSurrogate {
             None => {
                 
                 
-                ENNParams::new(self.config.k, 1.0, 0.0).map_err(|e| {
-                    ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
-                })?
+                self.config.default_params()?
             }
         };
 
@@ -496,9 +501,7 @@ impl Surrogate for ENNSurrogate {
             None => {
                 
                 
-                ENNParams::new(self.config.k, 1.0, 0.0).map_err(|e| {
-                    ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
-                })?
+                self.config.default_params()?
             }
         };
 
@@ -536,9 +539,8 @@ mod tests {
     #[test]
     fn test_enn_surrogate_fit_predict() {
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 5,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(3)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(3, 5).unwrap(),
             ..Default::default()
         };
         let mut surrogate = ENNSurrogate::new(config);
@@ -563,7 +565,7 @@ mod tests {
     #[test]
     fn freeze_params_keeps_unit_epistemic_and_zero_aleatoric() {
         let config = ENNSurrogateConfig {
-            k: 2,
+            k: crate::NeighborCount::new(2).unwrap(),
             fit_samples: FitSamples::Frozen,
             ..Default::default()
         };
@@ -592,16 +594,20 @@ mod tests {
         let y = array![[1.0], [1.5], [2.0], [2.5], [3.0], [3.5]];
         let query = array![[0.6]];
         let base = ENNSurrogateConfig {
-            k: 3,
-            num_fit_candidates: 4,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(6)).unwrap(),
-            infer_aleatoric_variance: false,
+            k: crate::NeighborCount::new(3).unwrap(),
+            fit_samples: FitSamples::Draw(crate::ScaleSearch {
+                num_fit_candidates: 4,
+                infer_aleatoric_variance: false,
+                ..crate::ScaleSearch::with_samples(std::num::NonZeroUsize::new(6).unwrap())
+            }),
             ..Default::default()
         };
         let mut off_a = ENNSurrogate::new(base.clone());
         let mut off_b = ENNSurrogate::new(base.clone());
         let mut on_cfg = base;
-        on_cfg.affine_calibrate = true;
+        if let FitSamples::Draw(search) = &mut on_cfg.fit_samples {
+            search.affine_calibrate = true;
+        }
         let mut on = ENNSurrogate::new(on_cfg);
         off_a.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1)).unwrap();
         off_b.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1)).unwrap();
@@ -624,9 +630,8 @@ mod tests {
     #[test]
     fn regression_incremental_fit_refreshes_prefix_yvar_to_match_full_refit() {
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 4,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(2, 4).unwrap(),
             ..Default::default()
         };
         let x0 = array![[0.0, 0.0], [1.0, 0.0]];
@@ -662,9 +667,8 @@ mod tests {
     #[test]
     fn regression_incremental_fit_rejects_nan_y_on_append() {
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 4,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(2, 4).unwrap(),
             ..Default::default()
         };
         let x0 = array![[0.0, 0.0], [1.0, 0.0]];
@@ -697,7 +701,7 @@ mod tests {
     #[test]
     fn kiss_surrogate_config_default() {
         let cfg = ENNSurrogateConfig::default();
-        assert!(cfg.k >= 1);
+        assert!(cfg.k.get() >= 1);
     }
 
     #[test]
@@ -734,9 +738,8 @@ mod tests {
         );
 
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 4,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(4)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(4, 4).unwrap(),
             y_bounds: Some(bounds),
             ..Default::default()
         };
@@ -757,9 +760,8 @@ mod tests {
 
         let dir = TempDir::new().unwrap();
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 2,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(2, 2).unwrap(),
             layout: EnnLayout::disk(dir.path().to_path_buf(), false),
             ..Default::default()
         };
@@ -799,9 +801,8 @@ mod tests {
 
         let dir = TempDir::new().unwrap();
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 2,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(2, 2).unwrap(),
             layout: EnnLayout::disk(dir.path().to_path_buf(), false),
             ..Default::default()
         };
@@ -849,9 +850,8 @@ mod tests {
 
         let dir = TempDir::new().unwrap();
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 2,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(2, 2).unwrap(),
             layout: EnnLayout::disk(dir.path().to_path_buf(), false),
             ..Default::default()
         };
@@ -884,9 +884,8 @@ mod tests {
     fn regression_surrogate_predict_natural_under_y_bounds() {
         let bounds = array![[0.0, 1.0]];
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 4,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(3)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(3, 4).unwrap(),
             y_bounds: Some(bounds),
             ..Default::default()
         };
@@ -915,9 +914,8 @@ mod tests {
     fn surrogate_observation_row_and_batch_agree_natural_under_y_bounds() {
         let bounds = array![[0.0, 1.0]];
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 4,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(3)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(3, 4).unwrap(),
             y_bounds: Some(bounds),
             ..Default::default()
         };
@@ -963,9 +961,8 @@ mod tests {
 
     fn fitted_sides(layout: EnnLayout, weights: Option<&[f64]>) -> Option<Array1<f64>> {
         let config = ENNSurrogateConfig {
-            k: 2,
-            num_fit_candidates: 2,
-            fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(2, 2).unwrap(),
             layout,
             ..Default::default()
         };
@@ -978,6 +975,51 @@ mod tests {
             sur.model.as_mut().unwrap().metric_set_weights(w, None).unwrap();
         }
         Surrogate::lengthscales(&sur)
+    }
+
+    #[test]
+    fn fit_enables_auto_metric_like_fit_append() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+        let y = array![[0.0], [1.0], [0.5], [2.0]];
+        let seen = |name: &str, use_fit: bool| {
+            let mut sur = ENNSurrogate::new(ENNSurrogateConfig {
+                k: NeighborCount::new(2).unwrap(),
+                fit_samples: FitSamples::draw(2, 2).unwrap(),
+                layout: EnnLayout::DiskAuto {
+                    work_dir: dir.path().join(name),
+                },
+                ..Default::default()
+            });
+            let mut rng = StdRng::seed_from_u64(5);
+            if use_fit {
+                sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
+            } else {
+                sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
+            }
+            sur.model().unwrap().metric_snapshot().map(|s| s.num_seen)
+        };
+        let from_fit = seen("fit", true);
+        assert!(from_fit.is_some(), "fit must enable the Auto metric");
+        assert_eq!(from_fit, seen("append", false));
+    }
+
+    #[test]
+    fn validate_rejects_ignored_or_out_of_range_tied_dims() {
+        assert!(ENNSurrogateConfig::default().validate(2).is_ok());
+        let mut cfg = ENNSurrogateConfig {
+            tied_dims: vec![vec![0, 1]],
+            ..Default::default()
+        };
+        let err = cfg.validate(2).unwrap_err();
+        assert!(err.to_string().contains("metric_learning=Auto"), "{err}");
+        cfg.layout = EnnLayout::DiskAuto {
+            work_dir: std::path::PathBuf::from("/tmp/unused"),
+        };
+        cfg.validate(2).unwrap();
+        assert!(cfg.validate(1).is_err());
+        cfg.tied_dims = vec![vec![0], vec![0]];
+        assert!(cfg.validate(2).is_err());
     }
 
     #[test]

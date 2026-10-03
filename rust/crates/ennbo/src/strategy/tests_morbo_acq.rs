@@ -333,9 +333,8 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
     let mut rng = StdRng::seed_from_u64(4242);
     let mut cfg = turbo_enn_config();
     cfg.surrogate = SurrogateConfig::ENN(crate::surrogate::ENNSurrogateConfig {
-        k: 3,
-        fit_samples: crate::fit_samples::FitSamples::from_count(Some(4)).unwrap(),
-        num_fit_candidates: 4,
+        k: crate::NeighborCount::new(3).unwrap(),
+        fit_samples: crate::FitSamples::draw(4, 4).unwrap(),
         y_bounds: Some(array![[0.0, 1.0], [0.0, 1.0]]),
         ..Default::default()
     });

@@ -28,14 +28,11 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
             EnnStorage::InMemory => ennbo::EnnLayout::memory(ennbo::IndexDriver::Flat, false),
         };
         *enn = ENNSurrogateConfig {
-            k: 3,
-            num_fit_candidates: 5,
-            fit_samples: ennbo::fit_samples::FitSamples::from_count(Some(3)).unwrap(),
-            infer_aleatoric_variance: true,
+            k: ennbo::NeighborCount::new(3).unwrap(),
+            fit_samples: ennbo::FitSamples::draw(3, 5).unwrap(),
             layout,
             y_bounds: None,
             tied_dims: Vec::new(),
-            affine_calibrate: false,
         };
     }
     cfg.candidates = CandidateConfig {

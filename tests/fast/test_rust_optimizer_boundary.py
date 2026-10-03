@@ -44,3 +44,36 @@ def test_ucb_override_leaves_beta_to_rust():
     assert overrides is not None
     assert overrides["acquisition"] == "ucb"
     assert "acquisition_beta" not in overrides
+
+
+def test_acquisition_beta_key_is_rejected():
+    for overrides in (
+        {"acquisition_beta": 50.0},
+        {"acquisition": "thompson", "acquisition_beta": 50.0},
+    ):
+        with pytest.raises(ValueError, match="acquisition_beta"):
+            _rust.create_optimizer_enn(_BOUNDS, None, 3, 0, config_overrides=overrides)
+
+
+@pytest.mark.parametrize("k", [0, -3])
+def test_nonpositive_k_is_rejected_before_any_tell(k):
+    with pytest.raises(ValueError, match="k \\(number of neighbors\\)"):
+        _rust.create_optimizer_enn(_BOUNDS, k, 3, 0)
+
+
+def test_tied_dims_are_rejected_without_auto_metric():
+    with pytest.raises(ValueError, match="tied_dims require"):
+        _rust.create_optimizer_enn(
+            _BOUNDS, None, 3, 0, config_overrides={"tied_dims": [[0, 99]]}
+        )
+    with pytest.raises(ValueError, match="tied_dims require"):
+        ENNSurrogateConfig(tied_dims=((0, 99), (0,)))
+
+
+@pytest.mark.parametrize(
+    "extra", [{"affine_calibrate": True}, {"num_fit_candidates": 999}]
+)
+def test_freeze_params_rejects_search_settings(extra):
+    overrides = {"acquisition": "pareto", "freeze_params": True, **extra}
+    with pytest.raises(ValueError, match="freeze_params excludes"):
+        _rust.create_optimizer_enn(_BOUNDS, None, 3, 0, config_overrides=overrides)

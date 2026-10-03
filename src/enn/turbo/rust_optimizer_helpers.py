@@ -104,10 +104,10 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
             overrides["num_fit_samples"] = int(surrogate.num_fit_samples)
         if surrogate.num_fit_candidates is not None:
             overrides["num_fit_candidates"] = int(surrogate.num_fit_candidates)
-
-        overrides["infer_aleatoric_variance"] = bool(
-            surrogate.fit.infer_aleatoric_variance_scale
-        )
+        if surrogate.fit.infer_aleatoric_variance_scale is not None:
+            overrides["infer_aleatoric_variance"] = bool(
+                surrogate.fit.infer_aleatoric_variance_scale
+            )
         overrides["scale_x"] = scale_x_to_wire(surrogate.scale_x)
         _metric_overrides(surrogate, overrides)
         if surrogate.y_bounds is not None:

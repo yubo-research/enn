@@ -43,7 +43,7 @@ def test_num_fit_samples_passed_to_rust_overrides():
 
 def test_num_fit_candidates_passed_to_rust_overrides():
     """num_fit_candidates should be included in Rust config overrides."""
-    config = _make_enn_config(num_fit_samples=None, num_fit_candidates=500)
+    config = _make_enn_config(num_fit_samples=20, num_fit_candidates=500)
     overrides = _config_to_rust_overrides(config)
 
     assert overrides is not None
@@ -52,6 +52,18 @@ def test_num_fit_candidates_passed_to_rust_overrides():
         "different values will produce identical results"
     )
     assert overrides["num_fit_candidates"] == 500
+
+
+def test_search_settings_without_num_fit_samples_are_rejected():
+    """num_fit_samples=None freezes the scales, so search-only settings would be ignored."""
+    import pytest
+
+    with pytest.raises(ValueError, match="num_fit_candidates require num_fit_samples"):
+        ENNFitConfig(num_fit_candidates=500)
+    with pytest.raises(ValueError, match="affine_calibrate require num_fit_samples"):
+        ENNFitConfig(affine_calibrate=True)
+    with pytest.raises(ValueError, match="infer_aleatoric_variance_scale require"):
+        ENNFitConfig(infer_aleatoric_variance_scale=False)
 
 
 def test_both_fit_params_passed_to_rust_overrides():
@@ -134,3 +146,4 @@ def test_none_fit_params_freeze_the_scales():
     assert overrides["freeze_params"] is True
     assert "num_fit_samples" not in overrides
     assert "num_fit_candidates" not in overrides
+    assert "infer_aleatoric_variance" not in overrides

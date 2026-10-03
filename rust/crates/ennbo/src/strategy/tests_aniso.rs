@@ -86,9 +86,8 @@ fn disk_auto_optimizer(dir: &std::path::Path, num_dim: usize, seed: u64) -> Opti
     };
     let mut cfg = turbo_enn_config();
     cfg.surrogate = SurrogateConfig::ENN(ENNSurrogateConfig {
-        k: 10,
-        num_fit_candidates: 4,
-        fit_samples: crate::fit_samples::FitSamples::from_count(Some(4)).unwrap(),
+        k: crate::NeighborCount::new(10).unwrap(),
+        fit_samples: crate::FitSamples::draw(4, 4).unwrap(),
         layout,
         ..Default::default()
     });

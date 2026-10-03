@@ -97,9 +97,8 @@ fn observation_delta_views() {
 #[test]
 fn enn_surrogate_fit_append_grows_model() {
     let config = ENNSurrogateConfig {
-        k: 2,
-        num_fit_candidates: 4,
-        fit_samples: crate::fit_samples::FitSamples::from_count(Some(2)).unwrap(),
+        k: crate::NeighborCount::new(2).unwrap(),
+        fit_samples: crate::FitSamples::draw(2, 4).unwrap(),
         ..Default::default()
     };
     let mut sur = ENNSurrogate::new(config);
