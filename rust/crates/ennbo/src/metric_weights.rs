@@ -176,6 +176,16 @@ pub fn dependence_weights(
     Ok((0..d).map(|j| (u * s[unit[j]] / s_sum) / spr[j]).collect())
 }
 
+/// Trust-region side multipliers from metric weights, normalized like TuRBO-1 lengthscales:
+/// `s = 1 / w`, divided by its arithmetic mean, then by its geometric mean.
+pub fn trust_region_sides(weights: &[f64]) -> Vec<f64> {
+    let inv: Vec<f64> = weights.iter().map(|w| 1.0 / w).collect();
+    let mean = inv.iter().sum::<f64>() / inv.len() as f64;
+    let s: Vec<f64> = inv.iter().map(|v| v / mean).collect();
+    let geo = (s.iter().map(|v| v.ln()).sum::<f64>() / s.len() as f64).exp();
+    s.iter().map(|v| v / geo).collect()
+}
+
 pub fn too_few_rows(n: usize) -> bool {
     n < MIN_DEPENDENCE_ROWS
 }

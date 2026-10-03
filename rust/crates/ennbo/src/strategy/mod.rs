@@ -325,7 +325,6 @@ fn draw_turbo_candidates(
     x_center: &ArrayView1<f64>,
     lower_1d: &Array1<f64>,
     upper_1d: &Array1<f64>,
-    lengthscales: Option<&ArrayView1<f64>>,
     num_candidates: usize,
     rng: &mut dyn RngCore,
 ) -> Result<Array2<f64>, ENNError> {
@@ -359,7 +358,7 @@ fn draw_turbo_candidates(
     generate_candidates(
         || (lower_1d.clone(), upper_1d.clone()),
         x_center,
-        lengthscales,
+        None,
         num_candidates,
         candidate_rv,
         rng,
@@ -406,7 +405,6 @@ fn ask_turbo(
         &x_center.view(),
         &lower_1d,
         &upper_1d,
-        ls_ref.as_ref(),
         num_candidates,
         rng,
     )?;
@@ -478,6 +476,8 @@ fn tell_turbo(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests_aniso;
 #[cfg(test)]
 mod tests_init;
 #[cfg(test)]

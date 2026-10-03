@@ -521,7 +521,11 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn lengthscales(&self) -> Option<Array1<f64>> {
-        None
+        if !matches!(self.config.layout, EnnLayout::DiskAuto { .. }) {
+            return None;
+        }
+        let weights = self.model.as_ref()?.metric_weights()?;
+        Some(Array1::from(crate::metric_weights::trust_region_sides(weights)))
     }
 }
 
@@ -958,5 +962,43 @@ mod tests {
         for (a, b) in batch.iter().zip(back.iter()) {
             assert!((a - b).abs() < 1e-12);
         }
+    }
+
+    fn fitted_sides(layout: EnnLayout, weights: Option<&[f64]>) -> Option<Array1<f64>> {
+        let config = ENNSurrogateConfig {
+            k: 2,
+            num_fit_candidates: 2,
+            num_fit_samples: 2,
+            layout,
+            ..Default::default()
+        };
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(5);
+        let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
+        let y = array![[0.0], [1.0], [0.5], [2.0]];
+        sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
+        if let Some(w) = weights {
+            sur.model.as_mut().unwrap().metric_set_weights(w, None).unwrap();
+        }
+        Surrogate::lengthscales(&sur)
+    }
+
+    #[test]
+    fn lengthscales_follow_auto_weights_only_under_disk_auto() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let auto = |name: &str| EnnLayout::DiskAuto {
+            work_dir: dir.path().join(name),
+        };
+        assert_eq!(fitted_sides(auto("a"), None).unwrap().to_vec(), vec![1.0, 1.0]);
+        let s = fitted_sides(auto("b"), Some(&[1.0, 4.0])).unwrap();
+        assert!((s[0] - 2.0).abs() < 1e-12 && (s[1] - 0.5).abs() < 1e-12);
+        assert!(fitted_sides(EnnLayout::memory(IndexDriver::Flat, false), None).is_none());
+        let disk = EnnLayout::disk(dir.path().join("disk"), false);
+        assert!(fitted_sides(disk, None).is_none());
+        let unfitted = ENNSurrogate::new(ENNSurrogateConfig {
+            layout: auto("c"),
+            ..Default::default()
+        });
+        assert!(Surrogate::lengthscales(&unfitted).is_none());
     }
 }

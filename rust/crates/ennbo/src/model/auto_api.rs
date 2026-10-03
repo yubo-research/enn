@@ -58,6 +58,11 @@ impl EpistemicNearestNeighbors {
         self.auto_metric.as_ref().map(|m| m.tied())
     }
 
+    /// Weights currently applied to the metric, one per input dimension.
+    pub fn metric_weights(&self) -> Option<&[f64]> {
+        self.auto_metric.as_ref().map(|m| m.weights())
+    }
+
     /// Update only the metric fields that are `Some`.
     pub fn metric_configure(
         &mut self,
