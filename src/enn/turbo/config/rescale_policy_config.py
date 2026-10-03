@@ -7,4 +7,4 @@ from .rescalarize import Rescalarize
 
 @dataclass(frozen=True)
 class RescalePolicyConfig:
-    rescalarize: Rescalarize = Rescalarize.ON_PROPOSE
+    rescalarize: Rescalarize = Rescalarize.ON_RESTART

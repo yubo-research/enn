@@ -19,8 +19,8 @@ class HybridInit(InitStrategy):
         rng: Generator,
         num_init: int | None,
     ) -> Any:
-        from ...python_fallback.strategies.turbo_hybrid_strategy import (
-            TurboHybridStrategy,
+        del bounds, rng, num_init
+        raise ValueError(
+            "HybridInit is applied inside the Rust optimizer; "
+            "use create_optimizer instead of create_runtime_strategy"
         )
-
-        return TurboHybridStrategy.create(bounds=bounds, rng=rng, num_init=num_init)

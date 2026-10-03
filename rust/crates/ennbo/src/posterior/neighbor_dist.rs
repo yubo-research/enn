@@ -50,7 +50,7 @@ mod kiss_coverage_tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0]];
         let train_y = array![[0.0], [1.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
         let dists = crate::posterior::neighbor_dist::row_dist2s_for_query(
             &model,

@@ -120,6 +120,9 @@ pub fn subsample_loglik_model<R: Rng>(
     subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
 }
 
+/// Subsample count used when the caller omits `P`.
+pub const DEFAULT_SUBSAMPLE_P: usize = 10;
+
 pub fn subsample_loglik<R: Rng>(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -270,7 +273,7 @@ mod tests {
         let train_x = array![[0.0, 0.0]];
         let train_y = array![[0.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
 
         let x = array![[0.5, 0.5]];
@@ -289,12 +292,12 @@ mod tests {
     fn test_enn_fitter_ask_basic() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
+        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -305,7 +308,7 @@ mod tests {
     fn test_enn_fitter_ask_with_warm_start() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
@@ -313,7 +316,7 @@ mod tests {
         let warm_start = ENNParams::new(2, 1.5, 0.2).unwrap();
 
         let result = fitter
-            .ask(&model, 5, 3, Some(&warm_start), &mut rng)
+            .ask(&model, &crate::fit_samples::test_search(3, 5, true), Some(&warm_start), &mut rng)
             .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
@@ -324,12 +327,12 @@ mod tests {
     fn test_enn_fitter_ask_disable_aleatoric() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
-        let mut fitter = ENNFitter::new(2, false);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
+        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, false), None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -341,16 +344,16 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5]];
         let train_y = array![[0.0, 1.0], [1.0, 2.0], [1.0, 0.0], [2.0, 1.0], [1.0, 1.5]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
 
         let mut rng = StdRng::seed_from_u64(42);
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
+        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -479,8 +482,6 @@ mod tests {
 
     #[test]
     fn subsample_loglik_model_scores_warped_y_under_y_bounds() {
-        use crate::backend::EnnStorage;
-
         let train_x = array![[0.0], [1.0], [0.5], [0.25], [0.75]];
         let train_y = array![[0.1], [0.9], [0.5], [0.3], [0.7]];
         let bounds = array![[0.0, 1.0]];
@@ -488,10 +489,7 @@ mod tests {
             train_x,
             train_y,
             None,
-            false,
-            IndexDriver::Exact,
-            EnnStorage::InMemory,
-            None,
+            crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
             Some(bounds),
         )
         .unwrap();

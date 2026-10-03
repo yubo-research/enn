@@ -146,9 +146,8 @@ impl InMemoryEnnBackend {
             if !*stale {
                 return Ok(());
             }
-            let train_x_scaled = (&self.train_x_rows.view()
-                / &x_scale.view().insert_axis(Axis(0)))
-                .to_owned();
+            let train_x_scaled =
+                &self.train_x_rows.view() / &x_scale.view().insert_axis(Axis(0));
             self.index
                 .rebuild_from_scaled(train_x_scaled, x_scale.clone())?;
             *stale = false;
@@ -166,8 +165,11 @@ impl InMemoryEnnBackend {
         if *synced > self.index.len() {
             *synced = self.index.len();
         }
+        let idx_len = self.index.len();
+        let append_suffix = *synced == idx_len && idx_len < num_obs;
         if num_obs > 0
-            && (self.index.len() != num_obs || (*synced == 0 && !self.index.is_empty()))
+            && !append_suffix
+            && (idx_len != num_obs || (*synced == 0 && !self.index.is_empty()))
         {
             let train_x_scaled = self.train_x_rows.view().to_owned();
             self.index
@@ -272,7 +274,7 @@ mod tests {
             None,
             false,
             Array1::ones(2),
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
         let (x, y, yv) = backend.train_rows_at(&[1]).unwrap();

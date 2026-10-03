@@ -22,5 +22,5 @@ class LHDOnlyInit(InitStrategy):
         del bounds, rng, num_init
         raise RuntimeError(
             "LHDOnlyInit is a Rust-routing config marker for lhd_only_config; "
-            "use create_optimizer, not python_fallback runtime strategies"
+            "use create_optimizer, not a runtime strategy object"
         )

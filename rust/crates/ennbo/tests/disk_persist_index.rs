@@ -28,10 +28,7 @@ fn build_reference_disk_model(
         x,
         y,
         None,
-        false,
-        IndexDriver::BpAnnDisk,
-        EnnStorage::Disk,
-        Some(work_dir.to_path_buf()),
+        ennbo::EnnLayout::disk(work_dir.to_path_buf(), false),
             None,
         )
     .expect("reference new");
@@ -105,10 +102,7 @@ fn disk_persist_index_multi_batch_reopen_is_fast_and_correct() {
         Array2::zeros((0, dim)),
         Array2::zeros((0, 1)),
         None,
-        false,
-        IndexDriver::BpAnnDisk,
-        EnnStorage::Disk,
-        Some(work_dir.clone()),
+        ennbo::EnnLayout::disk(work_dir.clone(), false),
             None,
         )
     .expect("reopen");

@@ -20,7 +20,7 @@ fn train_rows_at_matches_train_x_y_views() {
     ];
     let train_y = array![[0.0], [1.0], [1.5], [2.0], [0.5]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
 
     for _ in 0..20 {
         let n = model.len();
@@ -57,7 +57,7 @@ fn single_index_train_rows_at_matches_full_gather() {
     ];
     let train_y = array![[0.0], [1.0], [1.5], [2.0], [0.5]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
 
     for _ in 0..20 {
         let i = rng.gen_range(0..model.len());
@@ -74,7 +74,7 @@ fn scale_x_true_append_to_nonempty_succeeds() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
     let mut model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Flat).unwrap();
     model
         .add(
             &array![[0.5, 0.5]].view(),

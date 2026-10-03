@@ -13,6 +13,7 @@ import numpy as np
 from enn import create_optimizer, turbo_enn_config, turbo_zero_config
 from enn.benchmarks import Ackley
 from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config import (
@@ -82,7 +83,7 @@ def build_ackley_enn_surrogate(index_driver: ENNIndexDriver) -> ENNSurrogateConf
         "index_driver": index_driver,
     }
     if index_driver == ENNIndexDriver.BPANN_DISK:
-        enn_kwargs["enn_storage"] = "disk"
+        enn_kwargs["enn_storage"] = ENNStorage.DISK
         enn_kwargs["work_dir"] = tempfile.mkdtemp(prefix="qa_ackley_bpann_")
     return ENNSurrogateConfig(**enn_kwargs)
 
@@ -266,7 +267,7 @@ def evaluate_natural_y(
     se = np.asarray(post.se, dtype=float).ravel()
     y = np.asarray(y_test, dtype=float).ravel()
     err = mu - y
-    draws = post.sample(num_draws, rng)
+    draws = post.sample(num_draws, seed=0)
     lo, hi = interval if interval is not None else (-np.inf, np.inf)
     return YBoundsMetrics(
         name=name,

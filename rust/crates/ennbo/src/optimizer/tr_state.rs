@@ -68,6 +68,20 @@ impl TrustRegionState {
         }
     }
 
+    pub fn turbo_seed_scale_history(&mut self, y_prefix: &ArrayView1<f64>) {
+        if let TrustRegionState::Turbo(t) = self {
+            t.seed_scale_history(y_prefix);
+        }
+    }
+
+    /// Single-objective restart: drop the local length baseline as well as the length.
+    pub fn restart_local(&mut self) {
+        match self {
+            TrustRegionState::Turbo(t) => t.restart_local(),
+            TrustRegionState::Morbo(m) => m.as_mut().restart(None),
+        }
+    }
+
     pub fn set_num_arms(&mut self, num_arms: usize) {
         match self {
             TrustRegionState::Turbo(t) => t.set_num_arms(num_arms),
@@ -250,7 +264,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnPropose,
-            noise_aware: false,
         });
         let mut tr = TrustRegionState::from_config(3, &cfg, &mut rng).unwrap();
         assert!(tr.is_morbo());
@@ -266,7 +279,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnPropose,
-            noise_aware: false,
         });
         let mut tr = TrustRegionState::from_config(2, &cfg, &mut rng).unwrap();
         let w0 = tr.morbo_mut().expect("morbo").weights().to_owned();
@@ -316,7 +328,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         });
         let mut tr = TrustRegionState::from_config(2, &cfg, &mut rng).unwrap();
         let w0 = tr.morbo_mut().expect("morbo").weights().to_owned();

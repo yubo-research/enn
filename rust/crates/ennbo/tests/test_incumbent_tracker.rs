@@ -15,7 +15,7 @@ fn test_incumbent_tracker_integration_paths() {
         "sorted_indices",
     ];
     assert!(!names.is_empty());
-    assert_eq!(tracker_m_from_enn_k(3), 3);
+    assert_eq!(tracker_m_from_enn_k(ennbo::NeighborCount::new(3).unwrap()), 3);
     let _ = tracker_m_no_surrogate();
 
     let mut noiseless = IncrementalIncumbentTracker::new(5, false, 1);

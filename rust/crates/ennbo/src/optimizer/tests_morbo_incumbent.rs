@@ -19,7 +19,6 @@ fn morbo_optimizer_with_tied_obs(seed: u64) -> Optimizer {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();

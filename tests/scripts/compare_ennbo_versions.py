@@ -1,5 +1,5 @@
 
-"""Compare current ennbo source to ennbo==0.3.6 on TuRBO-ENN, TuRBO-ONE, and MORBO.
+"""Compare current ennbo source to ennbo==0.3.6 on TuRBO-ENN and MORBO.
 
 Runs three difficult benchmarks (Ackley 30D, DoubleAckley 30D, separable unimodal)
 for each optimizer mode and reports answer quality plus wall-clock / ask() timing.
@@ -32,6 +32,7 @@ _cspec = importlib.util.spec_from_file_location(
 )
 _common = importlib.util.module_from_spec(_cspec)
 assert _cspec.loader is not None
+sys.modules[_cspec.name] = _common
 _cspec.loader.exec_module(_common)
 OPTIMIZER_NAMES = _common.OPTIMIZER_NAMES
 PROBLEMS = _common.PROBLEMS
@@ -76,6 +77,7 @@ def _run_worker_subprocess(
     problem: str,
     version_label: str,
     quick: bool,
+    affine_calibrate: bool = False,
 ) -> BenchmarkResult:
     cmd = [
         sys.executable,
@@ -90,6 +92,8 @@ def _run_worker_subprocess(
     ]
     if quick:
         cmd.append("--quick")
+    if affine_calibrate:
+        cmd.append("--affine")
     proc = subprocess.run(
         cmd,
         env=_env_for_version(version_label),
@@ -114,6 +118,7 @@ def _worker_main(args: argparse.Namespace) -> int:
         optimizer=args.optimizer,
         problem=problem,
         version_label=args.version,
+        affine_calibrate=args.affine,
     )
     print(json.dumps(result.to_dict()))
     return 0
@@ -176,6 +181,20 @@ def _main(args: argparse.Namespace) -> int:
             print(f"    {_format_row(result)}")
         print()
 
+    print("=== current, affine_calibrate=True ===")
+    for optimizer, problem_name in combos:
+        print(f"  running current:{optimizer}:{problem_name}:affine...", flush=True)
+        result = _run_worker_subprocess(
+            optimizer=optimizer,
+            problem=problem_name,
+            version_label=CURRENT_LABEL,
+            quick=args.quick,
+            affine_calibrate=True,
+        )
+        results[(CURRENT_LABEL, f"{optimizer}:affine", problem_name)] = result
+        print(f"    {_format_row(result)}")
+    print()
+
     comparisons: list[dict[str, float | str]] = []
     print("=== comparison (current minus baseline) ===")
     for optimizer, problem_name in combos:
@@ -228,6 +247,11 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     worker_parser.add_argument("--quick", action="store_true")
+    worker_parser.add_argument(
+        "--affine",
+        action="store_true",
+        help="Turn on ENNFitConfig.affine_calibrate (current package only)",
+    )
 
     parser.add_argument(
         "--quick",

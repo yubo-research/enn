@@ -12,77 +12,53 @@ from .rust_optimizer_helpers import (
     _config_to_rust_overrides,
     _is_lhd_only_config,
     is_rust_supported_config,
-    resolve_enn_k,
 )
 from .types.telemetry import Telemetry
 
 
-class _ObsView:
-    """Minimal view wrapper for observation arrays (compat with Python optimizer).
-
-    When empty, defaults to shape (0, 1). After tell() with multi-objective y,
-    _y_obs reflects the actual shape (n, m) from the inner optimizer.
-    """
-
-    def __init__(self, arr: np.ndarray) -> None:
-        self._arr = np.asarray(arr, dtype=float)
-
-    def view(self) -> np.ndarray:
-        return self._arr
+def _tell_estimate(inner: Any, x_native: np.ndarray, y_in: np.ndarray) -> np.ndarray:
+    """Posterior mean at the points just told. Raw y if there is no surrogate."""
+    if not inner.has_surrogate():
+        return y_in
+    x = np.asarray(x_native, dtype=float)
+    if x.ndim == 1:
+        x = x.reshape(1, -1)
+    mu = np.asarray(inner.posterior_mu(x), dtype=float)
+    if y_in.ndim == 1 and mu.ndim == 2 and mu.shape[1] == 1:
+        return mu.reshape(-1)
+    return mu
 
 
 class RustOptimizer:
-    """Python wrapper around the Rust-backed optimizer."""
+    """Facade over the Rust optimizer. The only field is the Rust object."""
 
-    def __init__(
-        self,
-        bounds: np.ndarray,
-        config: OptimizerConfig,
-        rng: Generator,
-        inner: Any,
-    ) -> None:
-        self._bounds = np.asarray(bounds, dtype=float)
-        self._config = config
-        self._rng = rng
+    def __init__(self, inner: Any) -> None:
         self._inner = inner
-        self._num_dim = self._bounds.shape[0]
-        self._expects_yvar: bool | None = None
+
+    def _dim(self) -> int:
+        return int(np.asarray(self._inner.bounds()).shape[0])
 
     @property
-    def _x_obs(self) -> _ObsView:
-        fn = getattr(self._inner, "x_obs", None)
-        if fn is None or not callable(fn):
-            return _ObsView(np.empty((0, self._num_dim)))
-        arr = fn()
-        return _ObsView(
-            np.empty((0, self._num_dim)) if arr is None else np.asarray(arr)
-        )
+    def _x_obs(self) -> np.ndarray:
+        arr = self._inner.x_obs()
+        if arr is None:
+            return np.empty((0, self._dim()))
+        return np.asarray(arr, dtype=float)
 
     @property
-    def _y_obs(self) -> _ObsView:
-        fn = getattr(self._inner, "y_obs", None)
-        if fn is None or not callable(fn):
-            return _ObsView(np.empty((0, 1)))
-        arr = fn()
-        return _ObsView(np.empty((0, 1)) if arr is None else np.asarray(arr))
+    def _y_obs(self) -> np.ndarray:
+        arr = self._inner.y_obs()
+        if arr is None:
+            return np.empty((0, 1))
+        return np.asarray(arr, dtype=float)
 
     @property
     def tr_obs_count(self) -> int:
-        tr_obs_count = getattr(self._inner, "tr_obs_count", None)
-        if callable(tr_obs_count):
-            return int(tr_obs_count())
-        if tr_obs_count is not None:
-            return int(tr_obs_count)
-        return 0
+        return int(self._inner.tr_obs_count())
 
     @property
     def tr_length(self) -> float:
-        tr_length = getattr(self._inner, "tr_length", None)
-        if callable(tr_length):
-            return float(tr_length())
-        if tr_length is not None:
-            return float(tr_length)
-        return 0.5
+        return float(self._inner.tr_length())
 
     def telemetry(self) -> Telemetry:
         t = self._inner.telemetry()
@@ -102,54 +78,24 @@ class RustOptimizer:
         return result
 
     def ask(self, num_arms: int) -> np.ndarray:
-        num_arms = int(num_arms)
-        if num_arms <= 0:
-            raise ValueError(f"num_arms must be > 0, got {num_arms}")
-
-        seed = int(self._rng.integers(2**63 - 1))
-        arms_unit = self._inner.ask(num_arms, seed)
-
-        lower = self._bounds[:, 0]
-        upper = self._bounds[:, 1]
-        return arms_unit * (upper - lower) + lower
+        return np.asarray(self._inner.ask(int(num_arms)), dtype=float)
 
     def tell(
         self, x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None = None
     ) -> np.ndarray:
-        from .python_fallback.turbo_optimizer_utils import validate_tell_inputs
-
-        inputs = validate_tell_inputs(x, y, y_var, self._num_dim)
-        if self._expects_yvar is None:
-            self._expects_yvar = inputs.y_var is not None
-        if (inputs.y_var is not None) != bool(self._expects_yvar):
-            raise ValueError(
-                f"y_var must be {'provided' if self._expects_yvar else 'omitted'} on every tell()"
-            )
-        if inputs.x.shape[0] == 0:
-            return (
-                np.array([], dtype=float)
-                if inputs.num_metrics == 1
-                else np.empty((0, inputs.num_metrics), dtype=float)
-            )
-
-        lower = self._bounds[:, 0]
-        upper = self._bounds[:, 1]
-        x_unit = (inputs.x - lower) / (upper - lower)
-
-
-
-        y_native = inputs.y[:, None] if inputs.y.ndim == 1 else inputs.y
-        y_var_native = inputs.y_var
-        if y_var_native is not None and y_var_native.ndim == 1:
-            y_var_native = y_var_native[:, None]
-
-        seed = int(self._rng.integers(2**63 - 1))
-        if y_var_native is None:
-            self._inner.tell(x_unit, y_native, seed)
+        x_native = np.asarray(x, dtype=float)
+        y_in = np.asarray(y, dtype=float)
+        y_native = y_in.reshape(-1, 1) if y_in.ndim == 1 else y_in
+        if y_native.shape[0] == 0:
+            return y_in
+        if y_var is None:
+            self._inner.tell(x_native, y_native)
         else:
-            self._inner.tell(x_unit, y_native, seed, y_var_native)
-
-        return inputs.y
+            y_var_native = np.asarray(y_var, dtype=float)
+            if y_var_native.ndim == 1:
+                y_var_native = y_var_native.reshape(-1, 1)
+            self._inner.tell(x_native, y_native, y_var_native)
+        return _tell_estimate(self._inner, x_native, y_in)
 
 
 def create_optimizer(
@@ -158,34 +104,29 @@ def create_optimizer(
     config: OptimizerConfig,
     rng: Generator,
 ) -> Any:
-    """Create optimizer, using Rust backend when possible."""
+    """Create a Rust optimizer. `rng` is used only to draw the construction seed."""
     if not is_rust_supported_config(config):
-        from .python_fallback.optimizer import (
-            create_optimizer as create_python_optimizer,
-        )
-
-        return create_python_optimizer(bounds=bounds, config=config, rng=rng)
+        raise ValueError(f"Unsupported optimizer config: {type(config.surrogate)}")
 
     bounds_arr = np.asarray(bounds, dtype=float)
     seed = int(rng.integers(2**63 - 1))
     num_init = config.init.num_init
-    n_init = num_init if num_init is not None else 10
     overrides = _config_to_rust_overrides(config)
 
     if _is_lhd_only_config(config):
         inner = _rust.create_optimizer_lhd(
-            bounds_arr, n_init, seed, config_overrides=overrides
+            bounds_arr, num_init, seed, config_overrides=overrides
         )
     elif isinstance(config.surrogate, ENNSurrogateConfig):
-        k = resolve_enn_k(config)
+        k = None if config.surrogate.k is None else int(config.surrogate.k)
         inner = _rust.create_optimizer_enn(
-            bounds_arr, k, n_init, seed, config_overrides=overrides
+            bounds_arr, k, num_init, seed, config_overrides=overrides
         )
     elif isinstance(config.surrogate, NoSurrogateConfig):
         inner = _rust.create_optimizer_zero(
-            bounds_arr, n_init, seed, config_overrides=overrides
+            bounds_arr, num_init, seed, config_overrides=overrides
         )
     else:
         raise ValueError(f"Unsupported surrogate config: {type(config.surrogate)}")
 
-    return RustOptimizer(bounds=bounds, config=config, rng=rng, inner=inner)
+    return RustOptimizer(inner)

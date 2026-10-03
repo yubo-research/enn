@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Repro: ENN FLAT (Rust ``exact``) neighbor queries are slow at scale.
+"""Repro: ENN FLAT neighbor queries are slow at scale.
 
-FLAT maps to Rust index driver name ``exact``
-(``ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "exact"``).
+FLAT maps to the Rust index driver name ``FLAT``
+(``index_driver_to_wire(ENNIndexDriver.FLAT) == "FLAT"``).
 
 This script builds FLAT and BPANN_DISK models on the same random data, syncs
 indexes, then times a batched ``posterior()`` call. Hyperparameter fitting is
@@ -40,7 +40,8 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
-from enn.turbo.config.enn_index_driver import ENNIndexDriver, ENN_INDEX_DRIVER_TO_RUST
+from enn.turbo.config.enn_index_driver import ENNIndexDriver, index_driver_to_wire
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 
 _DEFAULT_NUM_OBS = 100_000
 _DEFAULT_NUM_QUERY = 10_000
@@ -73,7 +74,7 @@ def _empty_model(num_dim: int, *, driver: ENNIndexDriver, work_dir: str | None):
     empty_yvar = np.empty((0, 1))
     kwargs: dict = {"index_driver": driver}
     if driver == ENNIndexDriver.BPANN_DISK:
-        kwargs["enn_storage"] = "disk"
+        kwargs["enn_storage"] = ENNStorage.DISK
         kwargs["work_dir"] = work_dir
     return EpistemicNearestNeighbors(empty_x, empty_y, empty_yvar, **kwargs)
 
@@ -163,7 +164,7 @@ def main(
         f"k={k_neighbors} seed={seed}"
     )
     click.echo(
-        f"FLAT rust name = {ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT]!r} "
+        f"FLAT rust name = {index_driver_to_wire(ENNIndexDriver.FLAT)!r} "
         f"(this is the exact/brute-force path)"
     )
 
@@ -176,7 +177,7 @@ def main(
         batch_size=batch_size,
     )
     flat_query = _time_posterior(flat.model, query_x, params)
-    _print_row("FLAT", ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT], flat, flat_query)
+    _print_row("FLAT", index_driver_to_wire(ENNIndexDriver.FLAT), flat, flat_query)
 
     if skip_bpann:
         click.echo(
@@ -196,7 +197,7 @@ def main(
         bpann_query = _time_posterior(bpann.model, query_x, params)
         _print_row(
             "BPANN_DISK",
-            ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.BPANN_DISK],
+            index_driver_to_wire(ENNIndexDriver.BPANN_DISK),
             bpann,
             bpann_query,
         )

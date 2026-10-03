@@ -3,8 +3,6 @@
 use ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
 
 /// Python wrapper for standardize_y
 #[pyfunction(name = "standardize_y")]
@@ -32,14 +30,6 @@ pub fn pareto_front_2d_maximize_py<'py>(
 
     let a_arr = a.as_array();
     let b_arr = b.as_array();
-    if a_arr.len() != b_arr.len() {
-        return Err(PyValueError::new_err(format!(
-            "a and b must have same length, got {} and {}",
-            a_arr.len(),
-            b_arr.len()
-        )));
-    }
-    let n = a_arr.len();
     let idx_vec: Option<Vec<usize>> = match idx {
         Some(i) => {
             let mut out = Vec::with_capacity(i.as_array().len());
@@ -47,24 +37,12 @@ pub fn pareto_front_2d_maximize_py<'py>(
                 let u = usize::try_from(x).map_err(|_| {
                     PyValueError::new_err(format!("idx entry {x} is negative"))
                 })?;
-                if u >= n {
-                    return Err(PyValueError::new_err(format!(
-                        "idx entry {x} is out of bounds for length {n}"
-                    )));
-                }
                 out.push(u);
             }
             Some(out)
         }
         None => None,
     };
-
-    let check_indices: Vec<usize> = idx_vec.clone().unwrap_or_else(|| (0..n).collect());
-    for &i in &check_indices {
-        if !a_arr[i].is_finite() || !b_arr[i].is_finite() {
-            return Err(PyValueError::new_err("a and b must be finite"));
-        }
-    }
 
     let result = py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, idx_vec.as_deref()));
 
@@ -103,18 +81,8 @@ pub fn sobol_sequence_py<'py>(
 ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
     use pyo3::exceptions::PyValueError;
 
-    let mut engine = ennbo::candidates::SobolEngine::new(dimension)
+    let out = ennbo::sobol_sequence(dimension, num_points, seed)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    let mut rng = StdRng::seed_from_u64(seed);
-    let mut out = ndarray::Array2::zeros((num_points, dimension));
-    for i in 0..num_points {
-        let row = engine
-            .sample(&mut rng)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        for j in 0..dimension {
-            out[[i, j]] = row[j];
-        }
-    }
     Ok(out.into_dyn().into_pyarray_bound(py))
 }
 
@@ -143,12 +111,11 @@ pub fn arms_from_pareto_fronts_py<'py>(
     let x_arr = x_cand.as_array();
     let mu_arr = mu.as_array();
     let se_arr = se.as_array();
-    if x_arr.nrows() != mu_arr.len() || mu_arr.len() != se_arr.len() {
+    if x_arr.nrows() != mu_arr.len() {
         return Err(PyValueError::new_err(format!(
-            "shape mismatch: x_cand rows {}, mu {}, se {}",
+            "shape mismatch: x_cand rows {}, mu {}",
             x_arr.nrows(),
-            mu_arr.len(),
-            se_arr.len()
+            mu_arr.len()
         )));
     }
 
@@ -160,7 +127,8 @@ pub fn arms_from_pareto_fronts_py<'py>(
             num_arms,
             seed,
         )
-    });
+    })
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
     if indices.is_empty() {
         let empty = ndarray::Array2::<f64>::zeros((0, x_arr.ncols()));
         return Ok(empty.into_pyarray_bound(py));
@@ -188,8 +156,5 @@ pub fn set_config_path_py(path: Option<&str>) -> PyResult<()> {
 #[pyfunction(name = "ensure_config_file")]
 #[doc = "kiss-coverage-off"]
 pub fn ensure_config_file_py() -> PyResult<String> {
-    ennbo::install_bpann_tuning_from_config();
-    let cfg = ennbo::Config::new();
-    let _ = cfg.load();
-    Ok(cfg.path().display().to_string())
+    Ok(ennbo::ensure_config_file().display().to_string())
 }

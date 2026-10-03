@@ -1,9 +1,12 @@
 //! Stateful ENN hyperparameter fitting with incremental statistics.
 
-use ndarray::{Array1, Array2, ArrayView2, Axis};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
+use rand::seq::index::sample;
 use rand::Rng;
 
+use crate::calibration::AffineCalibrator;
 use crate::error::ENNError;
+use crate::fit_samples::ScaleSearch;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::ENNParams;
 use crate::y_bounds::{bounds_match, is_identity_bounds, validate_bounds, warp_y, warp_yvar};
@@ -11,7 +14,6 @@ use crate::y_bounds::{bounds_match, is_identity_bounds, validate_bounds, warp_y,
 /// Stateful ENN fitter: running `y` moments and warm-start params.
 pub struct ENNFitter {
     k: i32,
-    infer_aleatoric_variance: bool,
     params: Option<ENNParams>,
     y_sum: Array1<f64>,
     y_sumsq: Array1<f64>,
@@ -21,13 +23,13 @@ pub struct ENNFitter {
     num_dim: Option<usize>,
     /// Optional output bounds; when set, `tell` accumulates warped-z moments.
     y_bounds: Option<Array2<f64>>,
+    calibrator: Option<AffineCalibrator>,
 }
 
 impl ENNFitter {
-    pub fn new(k: i32, infer_aleatoric_variance: bool) -> Self {
+    pub fn new(k: i32) -> Self {
         Self {
             k,
-            infer_aleatoric_variance,
             params: None,
             y_sum: Array1::zeros(0),
             y_sumsq: Array1::zeros(0),
@@ -35,7 +37,38 @@ impl ENNFitter {
             num_metrics: 0,
             num_dim: None,
             y_bounds: None,
+            calibrator: None,
         }
+    }
+
+    pub fn calibrator(&self) -> Option<&AffineCalibrator> {
+        self.calibrator.as_ref()
+    }
+
+    /// Replace the stored calibrator with rows `(a, b, c)`.
+    pub fn set_calibrator_rows(&mut self, rows: ArrayView2<f64>) -> Result<(), ENNError> {
+        self.calibrator = Some(AffineCalibrator::from_rows(rows)?);
+        Ok(())
+    }
+
+    /// Store a calibrator from coefficient vectors. The `(3, m)` layout is built here.
+    pub fn set_calibrator_abc(
+        &mut self,
+        a: ArrayView1<f64>,
+        b: ArrayView1<f64>,
+        c: ArrayView1<f64>,
+    ) -> Result<(), ENNError> {
+        if a.len() != b.len() || b.len() != c.len() {
+            return Err(ENNError::InvalidShape {
+                expected: vec![a.len()],
+                got: vec![b.len(), c.len()],
+            });
+        }
+        let mut rows = Array2::zeros((3, a.len()));
+        rows.row_mut(0).assign(&a);
+        rows.row_mut(1).assign(&b);
+        rows.row_mut(2).assign(&c);
+        self.set_calibrator_rows(rows.view())
     }
 
     pub fn params(&self) -> Option<&ENNParams> {
@@ -133,6 +166,7 @@ impl ENNFitter {
         if let Some(msg) = Self::tell_input_error(x, y, yvar, self.num_dim) {
             return Err(ENNError::InvalidParameter(msg));
         }
+        self.calibrator = None;
         if let Some(b) = y_bounds {
             validate_bounds(b, y.ncols())?;
             if let Some(prev) = &self.y_bounds {
@@ -182,17 +216,15 @@ impl ENNFitter {
     pub(crate) fn build_random_param_candidates<R: Rng>(
         &self,
         num_random: usize,
+        infer_aleatoric_variance: bool,
         rng: &mut R,
     ) -> Result<Vec<ENNParams>, ENNError> {
-        if num_random == 0 {
-            return Ok(vec![]);
-        }
         let log_min = -3.0;
         let log_max = 3.0;
         let epi: Vec<f64> = (0..num_random)
             .map(|_| 10f64.powf(rng.gen_range(log_min..=log_max)))
             .collect();
-        let ale: Vec<f64> = if self.infer_aleatoric_variance {
+        let ale: Vec<f64> = if infer_aleatoric_variance {
             (0..num_random)
                 .map(|_| 10f64.powf(rng.gen_range(log_min..=log_max)))
                 .collect()
@@ -214,14 +246,39 @@ impl ENNFitter {
         Ok(paramss)
     }
 
+    fn commit_ask<R: Rng>(
+        &mut self,
+        model: &EpistemicNearestNeighbors,
+        best: ENNParams,
+        num_fit_samples: usize,
+        rng: &mut R,
+        affine_calibrate: bool,
+    ) -> Result<ENNParams, ENNError> {
+        self.params = Some(best);
+        self.calibrator = if affine_calibrate {
+            Some(crate::surrogate_affine::fit_calibrator(
+                model,
+                &best,
+                num_fit_samples,
+                rng,
+                false,
+            )?)
+        } else {
+            None
+        };
+        Ok(best)
+    }
+
+    /// Score `search.num_fit_candidates` random scales plus the warm start, keep the best.
     pub fn ask<R: Rng>(
         &mut self,
         model: &EpistemicNearestNeighbors,
-        num_fit_candidates: usize,
-        num_fit_samples: usize,
+        search: &ScaleSearch,
         params_warm_start: Option<&ENNParams>,
         rng: &mut R,
     ) -> Result<ENNParams, ENNError> {
+        let num_fit_samples = search.num_fit_samples.get();
+        let affine_calibrate = search.affine_calibrate;
         if let Some(dim) = self.num_dim {
             if dim != model.num_dim() {
                 return Err(ENNError::InvalidParameter(format!(
@@ -235,8 +292,7 @@ impl ENNFitter {
             let best = ENNParams::new(self.k, 1.0, 0.0).map_err(|e| {
                 ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
             })?;
-            self.params = Some(best);
-            return Ok(best);
+            return self.commit_ask(model, best, num_fit_samples, rng, affine_calibrate);
         }
         if self.y_count == 0 {
             return Err(ENNError::InvalidParameter(
@@ -244,13 +300,17 @@ impl ENNFitter {
                     .to_string(),
             ));
         }
-        let mut paramss = self.build_random_param_candidates(num_fit_candidates, rng)?;
+        let mut paramss = self.build_random_param_candidates(
+            search.num_fit_candidates.get(),
+            search.infer_aleatoric_variance,
+            rng,
+        )?;
         let warm = params_warm_start.or(self.params.as_ref());
         if let Some(warm) = warm {
             let warm_params = ENNParams::new(
                 self.k,
                 warm.epistemic_variance_scale,
-                if self.infer_aleatoric_variance {
+                if search.infer_aleatoric_variance {
                     warm.aleatoric_variance_scale
                 } else {
                     0.0
@@ -267,7 +327,6 @@ impl ENNFitter {
             if p_actual == n {
                 (0..n).collect()
             } else {
-                use rand::seq::index::sample;
                 sample(rng, n, p_actual).into_iter().collect()
             }
         };
@@ -290,8 +349,7 @@ impl ENNFitter {
             .map(|(idx, _)| idx)
             .unwrap_or(0);
         let best = paramss[best_idx];
-        self.params = Some(best);
-        Ok(best)
+        self.commit_ask(model, best, num_fit_samples, rng, affine_calibrate)
     }
 }
 
@@ -305,7 +363,7 @@ mod tests {
 
     #[test]
     fn tell_rejects_non_finite_y() {
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let x = array![[0.0, 0.0]];
         let y = array![[f64::NAN]];
         assert!(fitter.tell(&x.view(), &y.view(), None, None).is_err());
@@ -313,7 +371,7 @@ mod tests {
 
     #[test]
     fn tell_rejects_non_finite_x() {
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let x = array![[f64::NAN, 0.0]];
         let y = array![[0.0]];
         assert!(fitter.tell(&x.view(), &y.view(), None, None).is_err());
@@ -321,7 +379,7 @@ mod tests {
 
     #[test]
     fn tell_rejects_shape_mismatch_and_bad_yvar() {
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let x = array![[0.0, 0.0], [1.0, 0.0]];
         let y = array![[0.0]];
         assert!(fitter.tell(&x.view(), &y.view(), None, None).is_err());
@@ -338,14 +396,14 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 1.0]];
         let train_y = array![[0.0], [1.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let x_bad = array![[0.0], [1.0]];
         let y = array![[0.0], [1.0]];
         fitter.tell(&x_bad.view(), &y.view(), None, None).unwrap();
         let mut rng = StdRng::seed_from_u64(0);
-        let err = fitter.ask(&model, 5, 3, None, &mut rng).unwrap_err();
+        let err = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap_err();
         assert!(
             err.to_string().contains("feature dimensions"),
             "unexpected error: {err}"
@@ -354,7 +412,7 @@ mod tests {
 
     #[test]
     fn tell_rejects_inconsistent_x_ncols() {
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let x2 = array![[0.0, 0.0]];
         let y = array![[0.0]];
         fitter.tell(&x2.view(), &y.view(), None, None).unwrap();
@@ -367,17 +425,24 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0], [2.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x.clone(), train_y.clone(), None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x.clone(), train_y.clone(), None, false, IndexDriver::Flat)
                 .unwrap();
-        let mut fitter = ENNFitter::new(2, true);
-        fitter.tell(&train_x.view(), &train_y.view(), None, None).unwrap();
         let warm = ENNParams::new(2, 2.5, 0.3).unwrap();
-        let mut rng = StdRng::seed_from_u64(7);
-        let p = fitter
-            .ask(&model, 0, 2, Some(&warm), &mut rng)
-            .unwrap();
-        assert_eq!(p.k_num_neighbors, 2);
-        assert!((p.epistemic_variance_scale - 2.5).abs() < 1e-12);
+        let search = crate::fit_samples::test_search(2, 1, true);
+        let ask = |seed: u64, warm: Option<&ENNParams>| {
+            let mut fitter = ENNFitter::new(2);
+            fitter.tell(&train_x.view(), &train_y.view(), None, None).unwrap();
+            fitter.ask(&model, &search, warm, &mut StdRng::seed_from_u64(seed)).unwrap()
+        };
+        let mut warm_won = false;
+        for seed in 0..20 {
+            let cold = ask(seed, None);
+            let p = ask(seed, Some(&warm));
+            assert_eq!(p.k_num_neighbors, 2);
+            assert!(p == cold || p == warm, "seed {seed}: {p:?} is neither {cold:?} nor {warm:?}");
+            warm_won |= p == warm;
+        }
+        assert!(warm_won, "the warm start never beat the single random candidate");
     }
 
     #[test]
@@ -385,16 +450,16 @@ mod tests {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0], [2.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
-        let mut fitter = ENNFitter::new(2, false);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
         let warm = ENNParams::new(2, 2.5, 9.9).unwrap();
         let mut rng = StdRng::seed_from_u64(8);
         let p = fitter
-            .ask(&model, 2, 2, Some(&warm), &mut rng)
+            .ask(&model, &crate::fit_samples::test_search(2, 2, false), Some(&warm), &mut rng)
             .unwrap();
         assert_eq!(p.aleatoric_variance_scale, 0.0);
     }
@@ -404,11 +469,11 @@ mod tests {
         let train_x = array![[0.0, 0.0]];
         let train_y = array![[0.0]];
         let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
-        let mut fitter = ENNFitter::new(3, true);
+        let mut fitter = ENNFitter::new(3);
         let mut rng = StdRng::seed_from_u64(1);
-        let p = fitter.ask(&model, 5, 3, None, &mut rng).unwrap();
+        let p = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap();
         assert_eq!(p.k_num_neighbors, 3);
         assert!((p.epistemic_variance_scale - 1.0).abs() < 1e-12);
         assert!((p.aleatoric_variance_scale - 0.0).abs() < 1e-12);
@@ -429,10 +494,10 @@ mod tests {
             train_y.clone(),
             None,
             false,
-            IndexDriver::Exact,
+            IndexDriver::Flat,
         )
         .unwrap();
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         for (i, row) in train_y.axis_iter(Axis(0)).enumerate() {
             let y_row = row.insert_axis(Axis(0));
             let x_row = train_x.slice(s![i..i + 1, ..]);
@@ -455,7 +520,7 @@ mod tests {
         let y = array![[0.1], [0.2], [0.8], [0.9]];
         let bounds = array![[0.0, 1.0]];
         let y_z = crate::y_bounds::warp_y(y.view(), &bounds).unwrap();
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         fitter
             .tell(&x.view(), &y.view(), None, Some(&bounds))
             .unwrap();
@@ -470,7 +535,7 @@ mod tests {
 
     #[test]
     fn tell_rejects_out_of_bounds_y_when_y_bounds_set() {
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let x = array![[0.0, 0.0]];
         let y = array![[1.5]];
         let bounds = array![[0.0, 1.0]];
@@ -479,11 +544,11 @@ mod tests {
 
     #[test]
     fn kiss_fitter_update_y_and_random_params() {
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let y = array![[1.0], [2.0]];
         fitter.update_y(&y.view());
         let mut rng = StdRng::seed_from_u64(0);
-        let cands = fitter.build_random_param_candidates(3, &mut rng).unwrap();
+        let cands = fitter.build_random_param_candidates(3, true, &mut rng).unwrap();
         assert_eq!(cands.len(), 3);
     }
 }

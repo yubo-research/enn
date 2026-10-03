@@ -18,6 +18,10 @@ pub fn pymodule_hash(m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::py_hash::normal_hash_batch_multi_seed_fast_py,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_hash::normal_hash_batch_multi_seed_py,
+        m
+    )?)?;
     Ok(())
 }
 
@@ -33,6 +37,20 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_util::arms_from_pareto_fronts_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_config_path_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::ensure_config_file_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::fit_affine, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::affine_map_mu, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::affine_map_draws, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::affine_apply, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::sample_normal, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::z_crit, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::confidence_interval, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::ackley_core, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::separable_unimodal, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_ports::choose_indices, m)?)?;
+    m.add_class::<crate::py_numpy_normal::PyNumpyNormal>()?;
+    m.add_class::<crate::py_ports::PyENNNormal>()?;
+    m.add_class::<crate::py_ports::PyAckley>()?;
+    m.add_class::<crate::py_ports::PyDoubleAckley>()?;
     Ok(())
 }
 
@@ -44,7 +62,31 @@ pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_model::PyEpistemicNearestNeighbors>()?;
     m.add_class::<crate::py_model::PyENNParams>()?;
     m.add_function(wrap_pyfunction!(crate::py_model::train_rows_at_warped, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_layout::validate_enn_placement_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_model::set_unscaled_dims, m)?)?;
+    m.add_class::<crate::py_metric::MetricSnapshot>()?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_snapshot, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_set_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_configure, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::metric_tied, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::weight_drift, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::auto_uses_learned_metric, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::dependence_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::auto_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::sobol_index, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::null_sd, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::group_sobol_index, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::loo_loglik, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_metric::validate_tied_dims, m)?)?;
+    m.add_class::<crate::py_metric::PyReservoir>()?;
+    m.add("DEFAULT_REBUILD_DRIFT", ennbo::metric_auto::DEFAULT_REBUILD_DRIFT)?;
+    m.add("DRIFT_WEIGHT_FLOOR", ennbo::metric_auto::DRIFT_WEIGHT_FLOOR)?;
+    m.add("AUTO_MIN_HELDOUT_GAIN", ennbo::metric_auto::AUTO_MIN_HELDOUT_GAIN)?;
+    m.add("AUTO_RESERVOIR_CAPACITY", ennbo::metric_auto::AUTO_RESERVOIR_CAPACITY)?;
+    m.add("AUTO_K", ennbo::metric_auto::AUTO_K)?;
+    m.add("AUTO_REFIT_GROWTH", ennbo::metric_auto::AUTO_REFIT_GROWTH)?;
+    m.add("AUTO_RESCALE_TOL", ennbo::metric_auto::AUTO_RESCALE_TOL)?;
+    m.add("DEPENDENCE_FLOOR", ennbo::metric_weights::DEPENDENCE_FLOOR)?;
     Ok(())
 }
 
@@ -55,6 +97,9 @@ pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
 pub fn pymodule_fit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_fitter::PyENNStatefulFitter>()?;
     m.add_function(wrap_pyfunction!(crate::py_fit::subsample_loglik_py, m)?)?;
+    m.add_class::<crate::py_fit::PyAddToken>()?;
+    m.add_function(wrap_pyfunction!(crate::py_fit::enn_fit_incremental_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_fitter::fit_model_affine, m)?)?;
     Ok(())
 }
 
@@ -68,6 +113,8 @@ pub fn pymodule_optimizer(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_enn_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_zero_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_lhd_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_optimizer::require_num_fit_samples_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_optimizer::validate_optimizer_rules_py, m)?)?;
     Ok(())
 }
 

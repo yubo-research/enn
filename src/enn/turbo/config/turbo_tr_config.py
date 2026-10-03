@@ -11,13 +11,13 @@ class TurboTRConfig:
     noise_aware: bool = False
 
     @property
-    def length_init(self) -> float:
+    def length_init(self) -> float | None:
         return self.length.length_init
 
     @property
-    def length_min(self) -> float:
+    def length_min(self) -> float | None:
         return self.length.length_min
 
     @property
-    def length_max(self) -> float:
+    def length_max(self) -> float | None:
         return self.length.length_max

@@ -211,6 +211,30 @@ def test_enn_neighbor_search_invalid_inputs(query_shape, search_k):
         )
 
 
+def test_normal_hash_batch_multi_seed_matches_numpy_philox():
+    from scipy.special import ndtri
+
+    seeds = np.array([1, 7], dtype=np.int64)
+    indices = np.array([0, 4, 4])
+    got = normal_hash_batch_multi_seed(seeds, indices, num_metrics=2)
+
+    def one(seed, idx, metric):
+        seed_u = np.uint64(seed)
+        idx_u = np.uint64(idx)
+        metric_u = np.uint64(metric)
+        combined = (seed_u * np.uint64(1_000_003) + idx_u) * np.uint64(1_000_003) + metric_u
+        rng = np.random.Generator(np.random.Philox(int(combined)))
+        uniform = float(np.clip(rng.random(), 1e-10, 1.0 - 1e-10))
+        return float(ndtri(uniform))
+
+    expect = np.empty((2, 3, 2), dtype=float)
+    for s, seed in enumerate(seeds):
+        for i, idx in enumerate(indices):
+            for metric in range(2):
+                expect[s, i, metric] = one(int(seed), int(idx), metric)
+    np.testing.assert_array_equal(got, expect)
+
+
 def test_normal_hash_batch_multi_seed_shape():
     function_seeds = np.array([1, 2, 3], dtype=np.int64)
     data_indices = np.array([[0, 1, 2], [3, 4, 5]], dtype=int)

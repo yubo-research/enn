@@ -10,6 +10,7 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from evals.stress_eval import format_plain, format_smaller
 
 NUM_DIM = 10
@@ -74,7 +75,7 @@ def build_model(
         y,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=work_dir,
-        enn_storage="disk",
+        enn_storage=ENNStorage.DISK,
     )
 
 

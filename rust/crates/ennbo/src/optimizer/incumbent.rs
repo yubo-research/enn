@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2};
+use ndarray::Array2;
 use rand::RngCore;
 
 use super::Optimizer;
@@ -6,32 +6,6 @@ use crate::error::ENNError;
 use crate::util::argmax_random_tie;
 
 impl Optimizer {
-    fn pick_noise_aware_incumbent(&mut self, candidate_indices: &[usize]) -> Result<(), ENNError> {
-        let surrogate = self.surrogate.as_ref().unwrap();
-        let n_cand = candidate_indices.len();
-        let mut x_cand = Array2::zeros((n_cand, self.num_dim));
-        for (r, &idx) in candidate_indices.iter().enumerate() {
-            let x_row = self.obs_access().obs_row_x(idx)?;
-            for d in 0..self.num_dim {
-                x_cand[[r, d]] = x_row[d];
-            }
-        }
-        let pred = surrogate.predict(&x_cand.view())?;
-        let mu = pred.mu;
-        let mut best = candidate_indices[0];
-        let mut best_mu = mu[[0, 0]];
-        for (r, &idx) in candidate_indices.iter().enumerate().skip(1) {
-            if mu[[r, 0]] > best_mu {
-                best_mu = mu[[r, 0]];
-                best = idx;
-            }
-        }
-        self.incumbent_idx = Some(best);
-        self.incumbent_x_unit = Some(self.obs_access().obs_row_x(best)?);
-        self.incumbent_y_scalar = Some(Array1::from_elem(1, best_mu));
-        Ok(())
-    }
-
     #[allow(dead_code)]
     pub(crate) fn reset_incumbent_tracker(&mut self) {
         self.incumbent_tracker.reset();
@@ -69,7 +43,7 @@ impl Optimizer {
                     y_rows[[r, m]] = y_row[m];
                 }
             }
-            if self.tr_state.morbo().map(|m| m.noise_aware()).unwrap_or(false) {
+            if self.config.noise_aware {
                 if let Some(surrogate) = self.surrogate.as_ref() {
                     let mut x_cand = Array2::zeros((n_cand, self.num_dim));
                     for (r, &idx) in candidate_indices.iter().enumerate() {
@@ -84,7 +58,9 @@ impl Optimizer {
             }
             let scores = self
                 .tr_state
-                .morbo_scalarize(&y_rows.view(), true)
+                .morbo()
+                .ok_or_else(|| ENNError::InvalidParameter("Morbo incumbent without Morbo".to_string()))?
+                .scalarize_local(&y_rows.view())
                 .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
             let best_pos = argmax_random_tie(scores.as_slice().unwrap_or(&[]), rng);
             let best_idx = candidate_indices[best_pos];
@@ -92,10 +68,6 @@ impl Optimizer {
             self.incumbent_x_unit = Some(self.obs_access().obs_row_x(best_idx)?);
             self.incumbent_y_scalar = Some(y_rows.row(best_pos).to_owned());
             return Ok(());
-        }
-
-        if self.config.noise_aware && self.surrogate.is_some() {
-            return self.pick_noise_aware_incumbent(&candidate_indices);
         }
 
         let best_idx = candidate_indices

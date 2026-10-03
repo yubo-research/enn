@@ -201,9 +201,7 @@ pub fn normal_hash_batch_multi_seed(
     data_indices: &[i64],
     num_metrics: i64,
 ) -> Result<ArrayD<f64>, HashError> {
-
-
-    normal_hash_batch_multi_seed_fast(function_seeds, data_indices, num_metrics)
+    crate::philox_hash::philox_normal_hash(function_seeds, data_indices, num_metrics)
 }
 
 #[cfg(test)]
@@ -299,8 +297,8 @@ mod tests {
 
         let fast = normal_hash_batch_multi_seed_fast(&seeds, &indices, num_metrics).unwrap();
         let wrapped = normal_hash_batch_multi_seed(&seeds, &indices, num_metrics).unwrap();
-
-        assert_eq!(wrapped, fast);
+        assert_eq!(wrapped.shape(), fast.shape());
+        assert_ne!(wrapped, fast);
     }
 
     fn normal_hash_batch_multi_seed_fast_serial(

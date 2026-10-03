@@ -42,7 +42,12 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
         ),
     )
     candidates = (
-        CandidateGenConfig(num_candidates=cfg.num_candidates)
+        CandidateGenConfig(
+            min_candidates=cfg.num_candidates,
+            max_candidates=cfg.num_candidates,
+            num_candidates_per_dim=0,
+            num_candidates_per_arm=0,
+        )
         if cfg.num_candidates is not None
         else None
     )

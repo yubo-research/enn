@@ -89,7 +89,7 @@ fn test_posterior_function_draw() {
     assert!(result.is_ok());
 
     let (draws, idx) = result.unwrap();
-    assert_eq!(draws.shape(), &[3, 1, 1]);
+    assert_eq!(draws.shape(), &[1, 1, 3]);
     assert_eq!(idx.len(), 1);
 }
 
@@ -128,7 +128,7 @@ fn test_compute_posterior_internals_empty_model() {
     let train_x = array![[0.0, 0.0]];
     let train_y = array![[0.0]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
             .unwrap();
 
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();

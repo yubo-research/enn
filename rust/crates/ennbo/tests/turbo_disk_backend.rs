@@ -3,7 +3,6 @@
 use ennbo::backend::EnnStorage;
 use ennbo::candidates::CandidateRV;
 use ennbo::config::{CandidateConfig, OptimizerConfig, SurrogateConfig, turbo_enn_config};
-use ennbo::index::IndexDriver;
 use ennbo::optimizer::Optimizer;
 use ennbo::strategy::Strategy;
 use ennbo::surrogate::ENNSurrogateConfig;
@@ -24,28 +23,25 @@ type IncumbentReplay = (
 fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> OptimizerConfig {
     let mut cfg = turbo_enn_config();
     if let SurrogateConfig::ENN(ref mut enn) = cfg.surrogate {
-        let index_driver = match storage {
-            EnnStorage::Disk => IndexDriver::BpAnnDisk,
-            EnnStorage::InMemory => IndexDriver::Exact,
+        let layout = match storage {
+            EnnStorage::Disk => ennbo::EnnLayout::disk(work_dir.expect("disk work_dir"), false),
+            EnnStorage::InMemory => ennbo::EnnLayout::memory(ennbo::IndexDriver::Flat, false),
         };
         *enn = ENNSurrogateConfig {
-            k: 3,
-            scale_x: false,
-            num_fit_candidates: 5,
-            num_fit_samples: 3,
-            infer_aleatoric_variance: true,
-            index_driver,
-            storage,
-            work_dir,
+            k: ennbo::NeighborCount::new(3).unwrap(),
+            fit_samples: ennbo::FitSamples::draw(3, 5).unwrap(),
+            layout,
             y_bounds: None,
+            tied_dims: Vec::new(),
         };
     }
     cfg.candidates = CandidateConfig {
-        num_candidates_factor: 1.0,
         min_candidates: 20,
-        max_candidates: Some(20),
-        num_candidates_per_arm: None,
+        max_candidates: 20,
+        num_candidates_per_dim: 0,
+        num_candidates_per_arm: 0,
         candidate_rv: CandidateRV::Uniform,
+        raasp_fast: false,
     };
     cfg
 }
@@ -76,17 +72,17 @@ fn record_tell_schedule(
     let mut ys = Vec::new();
 
     while opt.init_progress().is_some() {
-        let x = opt.ask(num_arms, &mut rng)?;
+        let x = opt.ask(num_arms)?;
         let y = synthetic_y(&x.view(), &mut rng);
-        opt.tell(&x.view(), &y.view(), None, &mut rng)?;
+        opt.tell(&x.view(), &y.view(), None)?;
         xs.push(x);
         ys.push(y);
     }
 
     for _ in 0..num_rounds {
-        let x = opt.ask(num_arms, &mut rng)?;
+        let x = opt.ask(num_arms)?;
         let y = synthetic_y(&x.view(), &mut rng);
-        opt.tell(&x.view(), &y.view(), None, &mut rng)?;
+        opt.tell(&x.view(), &y.view(), None)?;
         xs.push(x);
         ys.push(y);
     }
@@ -107,11 +103,11 @@ fn replay_tells(
     let mut opt = Optimizer::new_with_strategy(bounds, config, strategy, &mut rng)?;
 
     for (x, y) in xs.iter().zip(ys.iter()) {
-        opt.tell(&x.view(), &y.view(), None, &mut rng)?;
+        opt.tell(&x.view(), &y.view(), None)?;
     }
 
     let obs_count = opt.obs_count();
-    let x_inc = opt.incumbent_x_unit().map(|x| x.to_owned());
+    let x_inc = opt.incumbent_x();
     let y_inc = opt.incumbent_y_scalar().map(|y| y.to_owned());
     Ok((x_inc, y_inc, obs_count))
 }

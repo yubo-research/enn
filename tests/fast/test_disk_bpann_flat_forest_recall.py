@@ -6,6 +6,7 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 
 
 def _brute_force_neighbor_ids(
@@ -33,7 +34,7 @@ def test_disk_bpann_batched_sync_recall_above_incore_threshold():
             np.empty((0, 1)),
             index_driver=ENNIndexDriver.BPANN_DISK,
             work_dir=work_dir,
-            enn_storage="disk",
+            enn_storage=ENNStorage.DISK,
         )
         for start in range(0, n, batch_size):
             end = min(start + batch_size, n)
@@ -70,7 +71,7 @@ def test_disk_bpann_midband_vector_leaf_forest_recall():
             np.empty((0, 1)),
             index_driver=ENNIndexDriver.BPANN_DISK,
             work_dir=work_dir,
-            enn_storage="disk",
+            enn_storage=ENNStorage.DISK,
         )
         for start in range(0, n, batch_size):
             end = min(start + batch_size, n)
@@ -107,7 +108,7 @@ def test_disk_bpann_large_scale_batched_recall():
             np.empty((0, 1)),
             index_driver=ENNIndexDriver.BPANN_DISK,
             work_dir=work_dir,
-            enn_storage="disk",
+            enn_storage=ENNStorage.DISK,
         )
         for start in range(0, n, batch_size):
             end = min(start + batch_size, n)

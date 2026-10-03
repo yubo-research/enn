@@ -34,6 +34,7 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from evals.flat_sphere import gaussian_loglik, rmse
 from evals.metric_12d import DataFn, Metric12dConfig, StreamedModel
@@ -156,6 +157,7 @@ def build_model(
         metric_learning=ENNMetricLearning.AUTO if auto else ENNMetricLearning.NONE,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=model_dir,
+        enn_storage=ENNStorage.DISK,
     )
 
 

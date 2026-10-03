@@ -147,8 +147,8 @@ def test_affine_apply_projects_mu_into_open_y_bounds():
     out = cal.apply(raw)
     assert np.all(out.mu > 0.0)
     assert np.all(out.mu < 1.0)
-    rng = np.random.default_rng(0)
-    samples = out.sample(8, rng=rng)
+    np.random.default_rng(0)
+    samples = out.sample(8, seed=0)
     assert np.all(np.isfinite(samples))
     assert np.all(samples > 0.0)
     assert np.all(samples < 1.0)
@@ -280,9 +280,7 @@ def test_fitter_function_draw_scatter_follows_c_not_b():
     q = x[:20]
     seeds = list(range(64))
     raw_d, _ = model.posterior_function_draw(q, params, function_seeds=seeds)
-    cal_d, _ = fitter.posterior_function_draw(
-        model, q, params, function_seeds=seeds
-    )
+    cal_d, _ = fitter.posterior_function_draw(model, q, params, function_seeds=seeds)
     raw_std = float(np.std(raw_d, axis=-1).mean())
     cal_std = float(np.std(cal_d, axis=-1).mean())
     ratio = cal_std / raw_std
@@ -306,10 +304,18 @@ def test_fitter_sample_uses_calibrated_posterior():
     )
     q = x[:3]
     s1 = fitter.sample(model, q, params, 8, rng=np.random.default_rng(99))
-    s2 = fitter.posterior(model, q, params).sample(
-        8, rng=np.random.default_rng(99)
-    )
+    seed = int(np.random.default_rng(99).integers(0, 2**63 - 1))
+    s2 = fitter.posterior(model, q, params).sample(8, seed=seed)
     assert np.allclose(s1, s2)
+
+
+def test_apply_coeff_length_is_rust_invalid_shape():
+    mu = np.ones((3, 1), dtype=float)
+    se = np.ones_like(mu)
+    raw = ENNNormal(mu=mu, se=se, se_epi=se.copy(), se_ale=np.zeros_like(se))
+    cal = AffineCalibrator(a=np.zeros(2), b=np.ones(2), c=np.ones(2))
+    with pytest.raises(ValueError, match="Invalid shape"):
+        cal.apply(raw)
 
 
 def test_affine_unbounded_apply_matches_formula():
@@ -323,4 +329,3 @@ def test_affine_unbounded_apply_matches_formula():
     )
     out = cal.apply(raw)
     assert np.allclose(out.mu, -0.5 + 2.0 * mu)
-

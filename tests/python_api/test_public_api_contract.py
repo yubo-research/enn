@@ -57,11 +57,9 @@ class TestPublicAPIExports:
         from enn import (
             lhd_only_config,
             turbo_enn_config,
-            turbo_one_config,
             turbo_zero_config,
         )
 
-        assert callable(turbo_one_config)
         assert callable(turbo_zero_config)
         assert callable(turbo_enn_config)
         assert callable(lhd_only_config)

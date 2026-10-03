@@ -10,7 +10,10 @@ from enn.enn.mbpann import MBPANNMetric
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from evals import metric_12d as mod
-from evals.long import eval_metric_12d as entry
+from evals.long import eval_metric_12d_bpann_disk as long_bpann_disk
+from evals.long import eval_metric_12d_bpann_disk_auto as long_bpann_disk_auto
+from evals.long import eval_metric_12d_flat as long_flat
+from evals.long import eval_metric_12d_flat_scale_x as long_flat_scale_x
 from evals.short import eval_metric_12d as short_entry
 from ops.stress import MeanSE
 
@@ -72,7 +75,7 @@ def test_advance_adds_rows_in_batches_and_auto_refits_inside_add(monkeypatch: py
         for lo, hi in ((0, 30), (30, 100), (100, 260)):
             assert streamed.advance(x, y, lo, hi) > 0
         assert len(streamed.model) == 260
-        assert streamed.model.metric.reservoir.num_seen == 260
+        assert streamed.model.metric.num_seen == 260
         assert streamed.model.metric.num_refits == 2
 
 
@@ -176,11 +179,33 @@ def test_run_eval_rejects_bad_grid() -> None:
         mod.run_eval(mod.Metric12dConfig(n_grid=(10, 30), num_rows=20))
 
 
-def test_evaluate_entry_invokes_run_eval(monkeypatch: pytest.MonkeyPatch) -> None:
-    called: list[int] = []
-    monkeypatch.setattr(entry, "run_eval", lambda: called.append(1))
+LONG_ENTRIES = (
+    long_flat,
+    long_flat_scale_x,
+    long_bpann_disk,
+    long_bpann_disk_auto,
+)
+
+
+def test_long_entries_cover_each_model_once() -> None:
+    assert tuple(e.MODEL for e in LONG_ENTRIES) == mod.MODELS
+    assert all(e.run_eval is mod.run_eval for e in LONG_ENTRIES)
+
+
+@pytest.mark.parametrize("entry", LONG_ENTRIES, ids=lambda e: e.MODEL)
+def test_long_entry_runs_only_its_model(entry, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[dict[str, object]] = []
+    monkeypatch.setattr(entry, "run_eval", lambda **kwargs: seen.append(kwargs))
     entry.evaluate()
-    assert called == [1]
+    assert seen == [{"models": (entry.MODEL,)}]
+
+
+def test_single_model_run_matches_combined_run() -> None:
+    combined = mod.run_eval(TINY, models=("flat", "flat_scale_x"))
+    single = mod.run_eval(TINY, models=("flat_scale_x",))
+    assert [(s.num_obs, s.loglik, s.nrmse) for s in single] == [
+        (s.num_obs, s.loglik, s.nrmse) for s in combined if s.model == "flat_scale_x"
+    ]
 
 
 def test_short_entry_runs_long_config_up_to_1e5(monkeypatch: pytest.MonkeyPatch) -> None:

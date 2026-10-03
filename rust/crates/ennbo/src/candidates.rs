@@ -1,9 +1,11 @@
 //! Candidate generation for trust region optimization.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
-use rand::distributions::Uniform;
+use rand::distributions::{Bernoulli, Uniform};
+use rand::rngs::StdRng;
 use rand::Rng;
 use rand::RngCore;
+use rand::SeedableRng;
 use sobol::params::JoeKuoD6;
 use sobol::Sobol;
 use std::sync::OnceLock;
@@ -111,6 +113,45 @@ pub fn generate_candidates<R: Rng + ?Sized>(
     }
 }
 
+/// Sobol fill of a binomial subset of coordinates. Unselected coordinates stay at `x_center`.
+pub fn generate_sobol_masked<R: Rng + ?Sized>(
+    x_center: &ArrayView1<f64>,
+    lower: &Array1<f64>,
+    upper: &Array1<f64>,
+    num_candidates: usize,
+    rng: &mut R,
+    engine: &mut SobolEngine,
+    num_pert: usize,
+) -> Result<Array2<f64>, ENNError> {
+    let num_dim = x_center.len();
+    if num_dim == 0 {
+        return Err(ENNError::InvalidParameter("num_dim must be > 0".to_string()));
+    }
+    let prob = (num_pert as f64 / num_dim as f64).min(1.0);
+    let bern = Bernoulli::new(prob).map_err(|e| {
+        ENNError::InvalidParameter(format!("binomial mask: {e}"))
+    })?;
+    let mut candidates = Array2::zeros((num_candidates, num_dim));
+    for i in 0..num_candidates {
+        for j in 0..num_dim {
+            candidates[[i, j]] = x_center[j];
+        }
+        let sample = engine.sample(rng)?;
+        let mut k = (0..num_dim).filter(|_| rng.sample(bern)).count();
+        if k == 0 {
+            k = 1;
+        }
+        let mut dims: Vec<usize> = (0..num_dim).collect();
+        for t in 0..k {
+            let j = t + rng.gen_range(0..(num_dim - t));
+            dims.swap(t, j);
+            let d = dims[t];
+            candidates[[i, d]] = lower[d] + sample[d] * (upper[d] - lower[d]);
+        }
+    }
+    Ok(candidates)
+}
+
 /// Generate uniformly random candidates.
 pub fn generate_uniform<R: Rng + ?Sized>(
     lower: &Array1<f64>,
@@ -193,6 +234,20 @@ fn generate_raasp<R: Rng + ?Sized>(
     Ok(candidates)
 }
 
+/// `n` Sobol points in `dim` dimensions, scrambled with `seed`.
+pub fn sobol_sequence(dim: usize, n: usize, seed: u64) -> Result<Array2<f64>, ENNError> {
+    let mut engine = SobolEngine::new(dim)?;
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut out = Array2::zeros((n, dim));
+    for i in 0..n {
+        let row = engine.sample(&mut rng)?;
+        for (j, value) in row.into_iter().enumerate() {
+            out[[i, j]] = value;
+        }
+    }
+    Ok(out)
+}
+
 /// Sobol quasi-random sequence generator.
 pub struct SobolEngine {
     dimension: usize,
@@ -244,6 +299,10 @@ impl SobolEngine {
             }
         }
         Ok(sample)
+    }
+
+    pub fn dimension(&self) -> usize {
+        self.dimension
     }
 
     /// Scramble the sequence using random digital shift per dimension.

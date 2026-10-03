@@ -6,6 +6,7 @@ import pytest
 from enn.enn import metric_stream as ms
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX, validate_tied_dims
 
 
@@ -56,7 +57,11 @@ def test_validate_tied_dims() -> None:
 @pytest.mark.parametrize("driver", [ENNIndexDriver.FLAT, ENNIndexDriver.BPANN_DISK])
 def test_scale_x_leaves_tied_dims_unscaled(tmp_path, driver) -> None:
     x, y = _mixed(600)
-    kw = {"work_dir": tmp_path} if driver == ENNIndexDriver.BPANN_DISK else {}
+    kw = (
+        {"work_dir": tmp_path, "enn_storage": ENNStorage.DISK}
+        if driver == ENNIndexDriver.BPANN_DISK
+        else {}
+    )
     model = EpistemicNearestNeighbors(
         x[:300], y[:300, None], tied_dims=[[2, 3, 4]], scale_x=ENNScaleX.ON, index_driver=driver, **kw
     )
@@ -82,6 +87,7 @@ def test_auto_metric_ties_group_weights(tmp_path) -> None:
         metric_learning=ENNMetricLearning.AUTO,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
+        enn_storage=ENNStorage.DISK,
     )
     for lo in range(50, 700, 50):
         model.add(x[lo : lo + 50], y[lo : lo + 50, None])

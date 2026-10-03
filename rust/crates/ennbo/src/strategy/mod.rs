@@ -1,16 +1,20 @@
 //! Optimization strategies for ask/tell pattern.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
-use rand::seq::SliceRandom;
 use rand::RngCore;
 
-use crate::util::argmax_random_tie;
-
-use crate::acquisition::{ParetoAcquisition, RandomAcquisition, UCBAcquisition};
-use crate::candidates::{generate_candidates, generate_lhd, generate_uniform};
-use crate::config::{AcquisitionConfig, InitStrategy};
+use crate::candidates::{generate_candidates, generate_lhd, generate_sobol_masked, generate_uniform};
+use crate::config::InitStrategy;
 use crate::error::ENNError;
 use crate::optimizer::{Optimizer, Telemetry};
+
+mod select;
+use select::select_arms;
+#[cfg(test)]
+use select::{
+    select_by_indices, select_with_pareto, select_with_random, select_with_thompson,
+    select_with_ucb,
+};
 
 /// Strategy state for initialization phase.
 #[derive(Debug, Clone)]
@@ -77,6 +81,9 @@ impl Strategy {
         telemetry: &mut Telemetry,
         rng: &mut dyn RngCore,
     ) -> Result<Array2<f64>, ENNError> {
+        if optimizer.reinit_left().is_some() {
+            return ask_local_reinit(optimizer, num_arms, rng);
+        }
         match self {
             Strategy::Init(state) => ask_init(state, optimizer, num_arms, rng),
             Strategy::Turbo(_) => ask_turbo(optimizer, num_arms, telemetry, rng),
@@ -99,6 +106,9 @@ impl Strategy {
         telemetry: &mut Telemetry,
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError> {
+        if optimizer.reinit_left().is_some() {
+            return tell_local_reinit(optimizer, x, y, yvar, rng);
+        }
         match self {
             Strategy::Init(state) => tell_init(state, optimizer, x, y, yvar, rng),
             Strategy::Turbo(_) => tell_turbo(optimizer, x, y, yvar, telemetry, rng),
@@ -118,6 +128,15 @@ impl Strategy {
                     tell_turbo(optimizer, x, y, yvar, telemetry, rng)
                 }
             }
+        }
+    }
+
+    /// Budget and design of the initial sample. TuRBO-only has no sample.
+    pub fn init_plan(&self) -> (usize, InitStrategy) {
+        match self {
+            Strategy::Init(state) => (state.num_init, state.strategy_type),
+            Strategy::Hybrid { init, .. } => (init.num_init, init.strategy_type),
+            Strategy::Turbo(_) => (0, InitStrategy::LHD),
         }
     }
 
@@ -158,6 +177,30 @@ fn ask_init(
     };
 
     Ok(candidates)
+}
+
+/// Fresh Latin hypercube (or uniform draw) after a collapsed trust region.
+fn ask_local_reinit(
+    optimizer: &mut Optimizer,
+    num_arms: usize,
+    rng: &mut dyn RngCore,
+) -> Result<Array2<f64>, ENNError> {
+    let left = optimizer.reinit_left().unwrap_or(num_arms);
+    let n = num_arms.min(left).max(1);
+    let state = InitStrategyState::new(optimizer.local_init_kind(), n);
+    ask_init(&state, optimizer, n, rng)
+}
+
+fn tell_local_reinit(
+    optimizer: &mut Optimizer,
+    x: &ArrayView2<f64>,
+    y: &ArrayView2<f64>,
+    yvar: Option<&ArrayView2<f64>>,
+    rng: &mut dyn RngCore,
+) -> Result<(), ENNError> {
+    tell_common(optimizer, x, y, yvar, None, rng)?;
+    optimizer.consume_reinit(x.nrows());
+    Ok(())
 }
 
 /// Ask for initialization phase in hybrid mode.
@@ -277,6 +320,53 @@ fn tell_init(
     tell_common(optimizer, x, y, yvar, None, rng)
 }
 
+fn draw_turbo_candidates(
+    optimizer: &mut Optimizer,
+    x_center: &ArrayView1<f64>,
+    lower_1d: &Array1<f64>,
+    upper_1d: &Array1<f64>,
+    num_candidates: usize,
+    rng: &mut dyn RngCore,
+) -> Result<Array2<f64>, ENNError> {
+    let raasp_fast = optimizer.config().candidates.raasp_fast;
+    let candidate_rv = optimizer.config().candidates.candidate_rv;
+    if raasp_fast && candidate_rv == crate::candidates::CandidateRV::RAASP {
+        return crate::candidates_fast::generate_tr_candidates_fast(
+            x_center,
+            lower_1d,
+            upper_1d,
+            num_candidates,
+            rng,
+            20,
+        );
+    }
+    if optimizer.trust_region().is_morbo()
+        && candidate_rv == crate::candidates::CandidateRV::Sobol
+    {
+        if let Some(engine) = optimizer.sobol_engine_mut() {
+            return generate_sobol_masked(
+                x_center,
+                lower_1d,
+                upper_1d,
+                num_candidates,
+                rng,
+                engine,
+                20,
+            );
+        }
+    }
+    generate_candidates(
+        || (lower_1d.clone(), upper_1d.clone()),
+        x_center,
+        None,
+        num_candidates,
+        candidate_rv,
+        rng,
+        optimizer.sobol_engine_mut(),
+        20,
+    )
+}
+
 /// Ask for TuRBO phase.
 fn ask_turbo(
     optimizer: &mut Optimizer,
@@ -286,16 +376,6 @@ fn ask_turbo(
 ) -> Result<Array2<f64>, ENNError> {
     optimizer.trust_region_mut().resample_on_propose(rng);
     optimizer.trust_region_mut().set_num_arms(num_arms);
-
-    if optimizer.trust_region().is_morbo() {
-        let num_obs = optimizer.obs_count();
-        if num_obs > 0 {
-            optimizer
-                .trust_region_mut()
-                .morbo_rescalarize_incumbent(num_obs)?;
-        }
-    }
-
 
     let default_center = Array1::from_elem(optimizer.num_dim(), 0.5);
     let x_center = optimizer
@@ -314,16 +394,19 @@ fn ask_turbo(
     let config = optimizer.config().candidates.clone();
     let num_candidates = config.num_candidates(num_dim, num_arms);
     telemetry.num_candidates = num_candidates;
+    if optimizer.trust_region().is_morbo()
+        && config.candidate_rv == crate::candidates::CandidateRV::Sobol
+    {
+        optimizer.reseed_sobol(num_arms)?;
+    }
 
-    let x_cand_unit = generate_candidates(
-        || (lower_1d.clone(), upper_1d.clone()),
+    let x_cand_unit = draw_turbo_candidates(
+        optimizer,
         &x_center.view(),
-        ls_ref.as_ref(),
+        &lower_1d,
+        &upper_1d,
         num_candidates,
-        config.candidate_rv,
         rng,
-        optimizer.sobol_engine_mut(),
-        20,
     )?;
 
 
@@ -332,6 +415,22 @@ fn ask_turbo(
     telemetry.dt_sel = start.elapsed().as_secs_f64();
 
     Ok(selected)
+}
+
+fn seed_turbo_scale_history(optimizer: &mut Optimizer, prev: usize) {
+    if prev == 0 {
+        return;
+    }
+    let Some(y_all) = optimizer.y_obs() else {
+        return;
+    };
+    if y_all.ncols() != 1 || y_all.nrows() < prev {
+        return;
+    }
+    let prefix = y_all.column(0).slice(ndarray::s![..prev]).to_owned();
+    optimizer
+        .trust_region_mut()
+        .turbo_seed_scale_history(&prefix.view());
 }
 
 /// Tell for TuRBO phase.
@@ -357,6 +456,7 @@ fn tell_turbo(
 
         if optimizer.trust_region().turbo_prev_num_obs() == 0 {
             let prev = num_obs.saturating_sub(y.nrows());
+            seed_turbo_scale_history(optimizer, prev);
             optimizer
                 .trust_region_mut()
                 .set_turbo_prev_num_obs(prev);
@@ -367,177 +467,17 @@ fn tell_turbo(
             num_obs,
         )?;
     }
-    if optimizer.trust_region().needs_restart() {
+    if optimizer.trust_region().needs_restart() && optimizer.trust_region().is_morbo() {
         optimizer.trust_region_mut().restart(Some(rng));
         optimizer.increment_restart_generation();
-
-
-
         morbo_sync_ranges_from_obs(optimizer)?;
     }
 
     Ok(())
 }
 
-/// Select arms randomly.
-fn select_with_random(
-    x_cand: &ArrayView2<f64>,
-    num_arms: usize,
-    rng: &mut dyn RngCore,
-) -> Result<Array2<f64>, ENNError> {
-    let random_acq = RandomAcquisition;
-    let indices = random_acq
-        .select(x_cand.nrows(), num_arms, rng)
-        .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-    Ok(select_by_indices(x_cand, &indices))
-}
-
-/// Select arms via Thompson sampling (posterior draw).
-fn select_with_thompson(
-    optimizer: &Optimizer,
-    surrogate: &(dyn crate::surrogate::Surrogate + Send + Sync),
-    x_cand: &ArrayView2<f64>,
-    num_arms: usize,
-    rng: &mut dyn RngCore,
-) -> Result<Array2<f64>, ENNError> {
-    let samples = surrogate.sample(x_cand, num_arms, rng)?;
-    let n_candidates = x_cand.nrows();
-    if optimizer.trust_region().is_morbo() {
-        let num_metrics = samples.shape()[2];
-        let mut flat = ndarray::Array2::zeros((num_arms * n_candidates, num_metrics));
-        for arm in 0..num_arms {
-            for cand in 0..n_candidates {
-                for m in 0..num_metrics {
-                    flat[[arm * n_candidates + cand, m]] = samples[[arm, cand, m]];
-                }
-            }
-        }
-
-        let flat = surrogate.naturalize_observations_y(flat);
-        let flat_scores = optimizer
-            .trust_region()
-            .morbo_scalarize(&flat.view(), false)
-            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-        let mut all_scores = ndarray::Array2::zeros((num_arms, n_candidates));
-        for arm in 0..num_arms {
-            for cand in 0..n_candidates {
-                all_scores[[arm, cand]] = flat_scores[arm * n_candidates + cand];
-            }
-        }
-        let mut indices = Vec::with_capacity(num_arms);
-        for arm in 0..num_arms {
-            let mut arm_scores = vec![f64::NEG_INFINITY; n_candidates];
-            for cand in 0..n_candidates {
-                arm_scores[cand] = all_scores[[arm, cand]];
-            }
-            for &prev in &indices {
-                arm_scores[prev] = f64::NEG_INFINITY;
-            }
-            indices.push(argmax_random_tie(&arm_scores, rng));
-        }
-        return Ok(select_by_indices(x_cand, &indices));
-    }
-
-
-    let mut flat = ndarray::Array2::zeros((num_arms * n_candidates, 1));
-    for arm in 0..num_arms {
-        for i in 0..n_candidates {
-            flat[[arm * n_candidates + i, 0]] = samples[[arm, i, 0]];
-        }
-    }
-    let flat = surrogate.naturalize_observations_y(flat);
-    let mut indices = Vec::with_capacity(num_arms);
-    for arm in 0..num_arms {
-        let arm_scores: Vec<f64> = (0..n_candidates)
-            .map(|i| flat[[arm * n_candidates + i, 0]])
-            .collect();
-        indices.push(argmax_random_tie(&arm_scores, rng));
-    }
-    Ok(select_by_indices(x_cand, &indices))
-}
-
-/// Select arms via UCB (upper confidence bound).
-fn select_with_ucb(
-    optimizer: &Optimizer,
-    surrogate: &(dyn crate::surrogate::Surrogate + Send + Sync),
-    x_cand: &ArrayView2<f64>,
-    num_arms: usize,
-    beta: f64,
-    rng: &mut dyn RngCore,
-) -> Result<Array2<f64>, ENNError> {
-    let pred = surrogate.naturalize_prediction(surrogate.predict(x_cand)?);
-    if optimizer.trust_region().is_morbo() {
-
-        let ucb_vals = &pred.mu + &(pred.se * beta);
-        let scores = optimizer
-            .trust_region()
-            .morbo_scalarize(&ucb_vals.view(), false)
-            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-        let mut indices: Vec<usize> = (0..scores.len()).collect();
-        indices.shuffle(rng);
-        indices.sort_by(|&a, &b| scores[b].total_cmp(&scores[a]));
-        let selected: Vec<usize> = indices.into_iter().take(num_arms).collect();
-        return Ok(select_by_indices(x_cand, &selected));
-    }
-    let mu = pred.mu.column(0);
-    let sigma = pred.se.column(0);
-    let ucb = UCBAcquisition::new(beta);
-    let indices = ucb
-        .select(&mu, &sigma, num_arms, rng)
-        .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-    Ok(select_by_indices(x_cand, &indices))
-}
-
-/// Select arms via Pareto frontier.
-fn select_with_pareto(
-    surrogate: &(dyn crate::surrogate::Surrogate + Send + Sync),
-    x_cand: &ArrayView2<f64>,
-    num_arms: usize,
-    rng: &mut dyn RngCore,
-) -> Result<Array2<f64>, ENNError> {
-
-    let pred = surrogate.naturalize_prediction(surrogate.predict(x_cand)?);
-    let pareto = ParetoAcquisition::new();
-    let indices = pareto
-        .select(&pred.mu.view(), &pred.se.view(), num_arms, rng)
-        .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-    Ok(select_by_indices(x_cand, &indices))
-}
-
-/// Select arms using acquisition function.
-fn select_arms(
-    optimizer: &Optimizer,
-    x_cand: &ArrayView2<f64>,
-    num_arms: usize,
-    rng: &mut dyn RngCore,
-) -> Result<Array2<f64>, ENNError> {
-    let config = optimizer.config().acquisition;
-
-    match config {
-        AcquisitionConfig::Random => select_with_random(x_cand, num_arms, rng),
-        AcquisitionConfig::Thompson => match optimizer.surrogate() {
-            Some(s) => select_with_thompson(optimizer, s, x_cand, num_arms, rng),
-            None => select_with_random(x_cand, num_arms, rng),
-        },
-        AcquisitionConfig::UCB { beta } => match optimizer.surrogate() {
-            Some(s) => select_with_ucb(optimizer, s, x_cand, num_arms, beta, rng),
-            None => select_with_random(x_cand, num_arms, rng),
-        },
-        AcquisitionConfig::Pareto => match optimizer.surrogate() {
-            Some(s) => select_with_pareto(s, x_cand, num_arms, rng),
-            None => select_with_random(x_cand, num_arms, rng),
-        },
-    }
-}
-
-/// Select rows by indices.
-fn select_by_indices(x: &ArrayView2<f64>, indices: &[usize]) -> Array2<f64> {
-    use ndarray::Axis;
-    let rows: Vec<_> = indices.iter().map(|&i| x.row(i).to_owned()).collect();
-    ndarray::stack(Axis(0), &rows.iter().map(|r| r.view()).collect::<Vec<_>>())
-        .expect("stack should succeed for same-shaped rows")
-}
-
+#[cfg(test)]
+mod tests_aniso;
 #[cfg(test)]
 mod tests_init;
 #[cfg(test)]

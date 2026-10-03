@@ -1,11 +1,8 @@
 from .acq_type import AcqType
 from .acquisition import (
-    AcqOptimizerConfig,
     AcquisitionConfig,
     DrawAcquisitionConfig,
-    NDSOptimizerConfig,
     ParetoAcquisitionConfig,
-    RAASPOptimizerConfig,
     RandomAcquisitionConfig,
     UCBAcquisitionConfig,
 )
@@ -16,14 +13,12 @@ from .base import (
 from .candidate_rv import CandidateRV
 from .enn_index_driver import ENNIndexDriver
 from .enn_x_scaling import ENNMetricLearning, ENNScaleX
-from .num_candidates_fn import default_num_candidates
 from .optimizer_config import OptimizerConfig
 from .raasp_driver import RAASPDriver
 from .rescalarize import Rescalarize
 from .surrogate import (
     ENNFitConfig,
     ENNSurrogateConfig,
-    GPSurrogateConfig,
     NoSurrogateConfig,
     SurrogateConfig,
 )
@@ -42,7 +37,6 @@ def __getattr__(name: str) -> object:
     if name in (
         "lhd_only_config",
         "turbo_enn_config",
-        "turbo_one_config",
         "turbo_zero_config",
     ):
         from . import factory
@@ -60,12 +54,10 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
-    "AcqOptimizerConfig",
     "AcqType",
     "AcquisitionConfig",
     "CandidateGenConfig",
     "CandidateRV",
-    "default_num_candidates",
     "ENNIndexDriver",
     "ENNMetricLearning",
     "ENNScaleX",
@@ -74,7 +66,6 @@ __all__ = [
     "DrawAcquisitionConfig",
     "ENNFitConfig",
     "ENNSurrogateConfig",
-    "GPSurrogateConfig",
     "InitConfig",
     "HybridInit",
     "InitStrategy",
@@ -82,18 +73,15 @@ __all__ = [
     "lhd_only_config",
     "MorboTRConfig",
     "MultiObjectiveConfig",
-    "NDSOptimizerConfig",
     "NoSurrogateConfig",
     "NoTRConfig",
     "OptimizerConfig",
     "ParetoAcquisitionConfig",
-    "RAASPOptimizerConfig",
     "RandomAcquisitionConfig",
     "RescalePolicyConfig",
     "SurrogateConfig",
     "TRLengthConfig",
     "turbo_enn_config",
-    "turbo_one_config",
     "TurboTRConfig",
     "turbo_zero_config",
     "UCBAcquisitionConfig",

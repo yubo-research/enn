@@ -8,6 +8,7 @@ import numpy as np
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from evals.stress_eval import format_larger, format_plain, format_smaller
 from ops.qa import gaussian_nll
 from ops.stress import (
@@ -89,7 +90,7 @@ def _build_sphere_enn(
         seed_dir = os.path.join(work_dir, f"seed_{seed}")
         os.makedirs(seed_dir, exist_ok=True)
         model_kwargs["work_dir"] = seed_dir
-        model_kwargs["enn_storage"] = "disk"
+        model_kwargs["enn_storage"] = ENNStorage.DISK
     elif work_dir is not None:
         raise ValueError("work_dir requires bpann_disk")
     return EpistemicNearestNeighbors(**model_kwargs)

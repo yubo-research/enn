@@ -74,12 +74,12 @@ impl Surrogate for TieSurrogate {
     }
     fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError> { Ok(None) }
     fn naturalize_observations_y(&self, y_warped: Array2<f64>) -> Array2<f64> { y_warped }
-    fn naturalize_prediction(&self, pred: SurrogatePrediction) -> SurrogatePrediction { pred }
     fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> { Ok(y.to_owned()) }
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> { Ok(None) }
     fn schedule_background_flush(&self) -> Result<(), ENNError> { Ok(()) }
     fn wait_for_background_flush(&self) -> Result<(), ENNError> { Ok(()) }
     fn release_observation_pages(&self) -> Result<(), ENNError> { Ok(()) }
+    fn clear_observations(&mut self) -> Result<(), ENNError> { Ok(()) }
 
 }
 
@@ -92,7 +92,6 @@ fn morbo_optimizer_scalarize_ready(seed: u64) -> Optimizer {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
@@ -167,14 +166,14 @@ fn morbo_pareto_ask_after_multiobjective_tell() {
     let mut cfg = turbo_enn_config();
     cfg.acquisition = crate::config::AcquisitionConfig::Pareto;
     cfg.candidates.min_candidates = 32;
-    cfg.candidates.num_candidates_factor = 1.0;
-    cfg.candidates.num_candidates_per_arm = Some(32);
+    cfg.candidates.max_candidates = 1_000_000_000;
+    cfg.candidates.num_candidates_per_dim = 0;
+    cfg.candidates.num_candidates_per_arm = 32;
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt = Optimizer::new_with_strategy(
         bounds,
@@ -194,11 +193,11 @@ fn morbo_pareto_ask_after_multiobjective_tell() {
         [0.5, 0.6],
     ];
     for i in 0..4 {
-        let x = opt.ask(2, &mut rng).unwrap();
+        let x = opt.ask(2).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None).unwrap();
     }
-    let x_arms = opt.ask(2, &mut rng).unwrap();
+    let x_arms = opt.ask(2).unwrap();
     assert_eq!(x_arms.nrows(), 2);
     assert!(opt.trust_region().is_morbo());
 }
@@ -208,14 +207,14 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(302);
     let mut cfg = turbo_enn_config();
-    cfg.candidates.num_candidates_factor = 1.0;
-    cfg.candidates.num_candidates_per_arm = Some(32);
+    cfg.candidates.num_candidates_per_dim = 0;
+    cfg.candidates.max_candidates = 1_000_000_000;
+    cfg.candidates.num_candidates_per_arm = 32;
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt = Optimizer::new_with_strategy(
         bounds,
@@ -235,9 +234,9 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
         [0.5, 0.6],
     ];
     for i in 0..4 {
-        let x = opt.ask(2, &mut rng).unwrap();
+        let x = opt.ask(2).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None).unwrap();
     }
     let w0 = opt
         .trust_region()
@@ -245,7 +244,7 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
         .expect("morbo tr")
         .weights()
         .to_owned();
-    let _ = opt.ask(2, &mut rng).unwrap();
+    let _ = opt.ask(2).unwrap();
     let w1 = opt
         .trust_region()
         .morbo()
@@ -268,14 +267,14 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(301);
     let mut cfg = turbo_enn_config();
-    cfg.candidates.num_candidates_factor = 1.0;
-    cfg.candidates.num_candidates_per_arm = Some(32);
+    cfg.candidates.num_candidates_per_dim = 0;
+    cfg.candidates.max_candidates = 1_000_000_000;
+    cfg.candidates.num_candidates_per_arm = 32;
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnPropose,
-        noise_aware: false,
     });
     let mut opt = Optimizer::new_with_strategy(
         bounds,
@@ -295,9 +294,9 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
         [0.5, 0.6],
     ];
     for i in 0..4 {
-        let x = opt.ask(2, &mut rng).unwrap();
+        let x = opt.ask(2).unwrap();
         let y = y_fit.slice(ndarray::s![i * 2..i * 2 + 2, ..]);
-        opt.tell(&x.view(), &y, None, &mut rng).unwrap();
+        opt.tell(&x.view(), &y, None).unwrap();
     }
     let w0 = opt
         .trust_region()
@@ -305,7 +304,7 @@ fn morbo_on_propose_rescalarize_via_ask_turbo() {
         .expect("morbo tr")
         .weights()
         .to_owned();
-    let _ = opt.ask(2, &mut rng).unwrap();
+    let _ = opt.ask(2).unwrap();
     let w1 = opt
         .trust_region()
         .morbo()
@@ -333,9 +332,8 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
     let mut rng = StdRng::seed_from_u64(4242);
     let mut cfg = turbo_enn_config();
     cfg.surrogate = SurrogateConfig::ENN(crate::surrogate::ENNSurrogateConfig {
-        k: 3,
-        num_fit_samples: 4,
-        num_fit_candidates: 4,
+        k: crate::NeighborCount::new(3).unwrap(),
+        fit_samples: crate::FitSamples::draw(4, 4).unwrap(),
         y_bounds: Some(array![[0.0, 1.0], [0.0, 1.0]]),
         ..Default::default()
     });
@@ -344,7 +342,6 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
@@ -360,7 +357,7 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
         [0.2, 0.8],
         [0.5, 0.5],
     ];
-    opt.tell(&x.view(), &y.view(), None, &mut rng).unwrap();
+    opt.tell(&x.view(), &y.view(), None).unwrap();
 
     let morbo = opt.trust_region().morbo().expect("morbo");
     let ymin = morbo.y_min().expect("ymin").to_owned();

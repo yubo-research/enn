@@ -30,7 +30,6 @@ pub struct MorboTRSettings {
     pub alpha: f64,
     pub length: TRLengthConfig,
     pub rescalarize: Rescalarize,
-    pub noise_aware: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -39,11 +38,13 @@ pub struct MorboTrustRegion {
     num_metrics: usize,
     alpha: f64,
     rescalarize: Rescalarize,
-    noise_aware: bool,
     weights: Array1<f64>,
     y_min: Option<Array1<f64>>,
     y_max: Option<Array1<f64>>,
     incumbent_y_raw: Option<Array1<f64>>,
+    score_min: Option<f64>,
+    score_max: Option<f64>,
+    score_count: usize,
 }
 
 impl MorboTrustRegion {
@@ -64,11 +65,13 @@ impl MorboTrustRegion {
             num_metrics: settings.num_metrics,
             alpha: settings.alpha,
             rescalarize: settings.rescalarize,
-            noise_aware: settings.noise_aware,
             weights: Array1::zeros(settings.num_metrics),
             y_min: None,
             y_max: None,
             incumbent_y_raw: None,
+            score_min: None,
+            score_max: None,
+            score_count: 0,
         };
         morbo.resample_weights(rng);
         Ok(morbo)
@@ -76,10 +79,6 @@ impl MorboTrustRegion {
 
     pub fn num_metrics(&self) -> usize {
         self.num_metrics
-    }
-
-    pub fn noise_aware(&self) -> bool {
-        self.noise_aware
     }
 
     #[doc = "kiss-coverage-off"]
@@ -115,10 +114,30 @@ impl MorboTrustRegion {
         self.inner.needs_restart()
     }
 
+    fn push_scalar_update(&mut self, num_obs: usize, score: f64) -> Result<(), TrustRegionError> {
+        let scale = if self.score_count >= 2 {
+            match (self.score_min, self.score_max) {
+                (Some(lo), Some(hi)) => (hi - lo).max(1e-6),
+                _ => 0.0,
+            }
+        } else {
+            0.0
+        };
+        self.inner
+            .update_scalar_incumbent(num_obs, score, scale)?;
+        self.score_min = Some(self.score_min.map(|v| v.min(score)).unwrap_or(score));
+        self.score_max = Some(self.score_max.map(|v| v.max(score)).unwrap_or(score));
+        self.score_count += 1;
+        Ok(())
+    }
+
     pub fn restart(&mut self, rng: Option<&mut dyn RngCore>) {
         self.y_min = None;
         self.y_max = None;
         self.incumbent_y_raw = None;
+        self.score_min = None;
+        self.score_max = None;
+        self.score_count = 0;
         self.inner.restart();
         if let Some(rng) = rng {
             if self.rescalarize == Rescalarize::OnRestart {
@@ -148,6 +167,27 @@ impl MorboTrustRegion {
         )
     }
 
+    /// Chebyshev scores using the min and max of `y` itself.
+    pub fn scalarize_local(&self, y: &ArrayView2<f64>) -> Result<Array1<f64>, TrustRegionError> {
+        let m = y.ncols();
+        let mut y_min = Array1::from_elem(m, f64::INFINITY);
+        let mut y_max = Array1::from_elem(m, f64::NEG_INFINITY);
+        for i in 0..y.nrows() {
+            for j in 0..m {
+                y_min[j] = y_min[j].min(y[[i, j]]);
+                y_max[j] = y_max[j].max(y[[i, j]]);
+            }
+        }
+        scalarize_with_ranges(
+            y,
+            &y_min.view(),
+            &y_max.view(),
+            &self.weights.view(),
+            self.alpha,
+            self.num_metrics,
+            true,
+        )
+    }
 
     #[doc = "kiss-coverage-off"]
     fn empty_ranges_ok() -> Result<(), TrustRegionError> {
@@ -254,8 +294,7 @@ impl MorboTrustRegion {
                 self.num_metrics,
                 true,
             )?[0];
-            self.inner
-                .update_scalar_incumbent(num_obs, score)
+            self.push_scalar_update(num_obs, score)
                 .map_err(|e| TrustRegionError::InvalidState(e.to_string()))?;
             return Ok(());
         }
@@ -277,9 +316,7 @@ impl MorboTrustRegion {
         let old_score = scores[0];
         let new_score = scores[1];
         self.inner.set_best_value(old_score);
-        self.inner
-            .update_scalar_incumbent(num_obs, new_score)
-            .map_err(|e| TrustRegionError::InvalidState(e.to_string()))?;
+        self.push_scalar_update(num_obs, new_score)?;
         if new_score > old_score {
             self.incumbent_y_raw = Some(y_incumbent.to_owned());
         }
@@ -304,9 +341,7 @@ impl MorboTrustRegion {
             true,
         )?[0];
         self.inner.set_best_value(score);
-        self.inner
-            .update_scalar_incumbent(num_obs, score)
-            .map_err(|e| TrustRegionError::InvalidState(e.to_string()))
+        self.push_scalar_update(num_obs, score)
     }
 
     pub fn update(
@@ -370,8 +405,7 @@ impl MorboTrustRegion {
                 self.num_metrics,
                 true,
             )?[0];
-            self.inner
-                .update_scalar_incumbent(n, score)
+            self.push_scalar_update(n, score)
                 .map_err(|e| TrustRegionError::InvalidState(e.to_string()))?;
             return Ok(());
         }
@@ -394,9 +428,7 @@ impl MorboTrustRegion {
         let old_score = scores[0];
         let new_score = scores[1];
         self.inner.set_best_value(old_score);
-        self.inner
-            .update_scalar_incumbent(n, new_score)
-            .map_err(|e| TrustRegionError::InvalidState(e.to_string()))?;
+        self.push_scalar_update(n, new_score)?;
         if new_score > old_score {
             self.incumbent_y_raw = Some(y_incumbent.to_owned());
         }
@@ -492,7 +524,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         };
         let mut rng = StdRng::seed_from_u64(2026);
         let tr = MorboTrustRegion::new(2, settings, &mut rng).unwrap();
@@ -508,7 +539,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         };
         let mut rng = StdRng::seed_from_u64(7);
         let result = MorboTrustRegion::new(2, settings, &mut rng);
@@ -525,7 +555,6 @@ mod tests {
             alpha: 0.05,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         };
         let mut rng = StdRng::seed_from_u64(99);
         let result = MorboTrustRegion::new(2, settings, &mut rng);
@@ -539,7 +568,6 @@ mod tests {
             alpha: 0.1,
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
-            noise_aware: false,
         };
         let mut rng = StdRng::seed_from_u64(1);
         let mut tr = MorboTrustRegion::new(2, settings, &mut rng).unwrap();

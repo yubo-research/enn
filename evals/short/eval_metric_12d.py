@@ -7,6 +7,6 @@ CONFIG = Metric12dConfig(n_grid=tuple(n for n in N_GRID if n <= N_MAX), num_rows
 
 
 def evaluate() -> None:
-    """long/metric_12d truncated to 1e5 rows: 12-d two-of-twelve stream, 10 seeds: mean±se
-    loglik, nrmse, add_s, query_s per model and checkpoint."""
+    """long/metric_12d_* truncated to 1e5 rows, all models in one run: 12-d two-of-twelve
+    stream, 10 seeds: mean±se loglik, nrmse, add_s, query_s per model and checkpoint."""
     run_eval(CONFIG)

@@ -1,22 +1,22 @@
 # Epistemic Nearest Neighbors
 A fast, alternative surrogate for Bayesian optimization
 
-ENN estimates a function's value and associated epistemic uncertainty using a K-Nearest Neighbors model. Queries take $O(N lnK)$ time, where $N$ is the number of observations available for KNN lookups. Compare to an exact GP, which takes $O(N^2)$ time. Additionally, measured running times are very small compared to GPs and other alternative surrogates. [1]
+ENN estimates a function's value and associated epistemic uncertainty using k-nearest neighbors (KNN) or approximate nearest neighbors (ANN). Queries take O(Nlnk) time (KNN) or O(k lnN) time (ANN),
+where N is the number of observations available for KNN lookups and k is the number of neighbors.
 
-We also extend ENN with an alternative, disk-based approximate nearest neighbors backend based on B+ANN [4]. This reduces ENN and TuRBO-ENN to [effectively O(lnN)](https://github.com/yubo-research/enn/blob/main/reports/report_002/report_002.pdf) per iteration.
+## Code
+- Python API: [`src/enn/__init__.py`](https://github.com/yubo-research/enn/blob/main/src/enn/__init__.py)
+- Rust API: [`rust/crates/ennbo/src/lib.rs`](https://github.com/yubo-research/enn/blob/main/rust/crates/ennbo/src/lib.rs)
 
 ## Contents
-- ENN surrogate, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) [1]
+- ENN surrogate, [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn_class.py) [1]
 - TuRBO optimizer via [`create_optimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/rust_optimizer.py) with config factories
-	- `turbo_enn_config()` - TuRBO-ENN (Rust-backed by default)
-	- `turbo_zero_config()` - TuRBO-zero (Rust-backed)
-	- `lhd_only_config()` - LHD design on every `ask()` (Rust-backed)
-	- `turbo_one_config()` - TuRBO with GP surrogate (Python fallback until GP is ported)
+	- [`turbo_enn_config()`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/config/factory.py) - TuRBO-ENN (Rust-backed by default)
+	- [`turbo_zero_config()`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/config/factory.py) - TuRBO-zero (Rust-backed)
+	- [`lhd_only_config()`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/config/factory.py) - LHD design on every `ask()` (Rust-backed)
 The optimizer has an `ask()/tell()` interface. All `turbo_*()` methods follow TuRBO:
   - Generate candidates with RAASP [3] sampling.
-  - Select a candidate with Thompson sampling (TuRBO-one), UCB (TuRBO-ENN), or randomly (TURBO-zero).
-
-- Overview of algorithms: [algos.pdf](docs/algos.pdf)
+  - Select a candidate with UCB or Thompson sampling (TuRBO-ENN), or randomly (TuRBO-zero).
 
 
 
@@ -36,43 +36,9 @@ or
 `cargo add ennbo`
 
 
-## Demonstration
-[`demo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_enn.ipynb) - Shows how to use [`EpistemicNearestNeighbors`](https://github.com/yubo-research/enn/blob/main/src/enn/enn/enn.py) to build and query an ENN model.
-[`demo_turbo_enn.ipynb`](https://github.com/yubo-research/enn/tree/main/examples/demo_turbo_enn.ipynb) - Shows how to use [`TurboOptimizer`](https://github.com/yubo-research/enn/blob/main/src/enn/turbo/turbo_optimizer.py) to optimize the Ackley function.
-
-
-
-## Installation, MacOS
-
-On my MacBook I can run into problems with dependencies and compatibilities.
-
-On MacOS try:
-```
-micromamba env create -n ennbo -f admin/conda-macos.yml
-micromamba activate ennbo
-pip install --no-deps ennbo
-pytest -sv tests
-```
-
-You may replace `micromamba` with `conda` and this will probably still work.
-
-The commands above make sure
-- You use the MacOS-specific PyTorch (with `mps`).
-- You avoid having multiple, competing OpenMPs installed [PyTorch issue](https://github.com/pytorch/pytorch/issues/44282) [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/40).
-- You use old enough versions of NumPy and PyTorch to be compatible with faiss [faiss issue](https://github.com/faiss-wheels/faiss-wheels/issues/104).
-- Prevent matplotlib's installation from upgrading your NumPy to an incompatible version.
-- `ennbo`'s listed dependencies do not undo any of the above (which is fine b/c the above commands set the up correctly).
-
 Run tests with
 ```
-pytest -x -sv tests
+make test
 ```
-and they should all pass fairly quickly (~10s-30s).
 
 
-If your code still crashes or hangs, try this [hack](https://discuss.pytorch.org/t/ran-into-this-issue-while-executing/101460):
-```
-export KMP_DUPLICATE_LIB_OK=TRUE
-export OMP_NUM_THREADS=1
-```
-I don't recommend this, however, as it will slow things down.

@@ -4,7 +4,7 @@ import operator
 from collections.abc import Sequence
 from enum import Enum, auto
 
-from .enn_index_driver import ENNIndexDriver
+from enn._rust import validate_tied_dims as _validate_tied_dims
 
 
 class ENNScaleX(Enum):
@@ -35,6 +35,22 @@ class ENNMetricLearning(Enum):
     AUTO = auto()
 
 
+def scale_x_to_wire(scale_x: ENNScaleX) -> bool:
+    """Encode a scale_x choice as the boolean Rust expects."""
+    if not isinstance(scale_x, ENNScaleX):
+        raise ValueError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
+    return scale_x is ENNScaleX.ON
+
+
+def metric_learning_to_wire(metric_learning: ENNMetricLearning) -> str:
+    """Encode a metric-learning mode. The wire name is the enum member name."""
+    if not isinstance(metric_learning, ENNMetricLearning):
+        raise ValueError(
+            f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}"
+        )
+    return metric_learning.name
+
+
 def validate_tied_dims(tied_dims: Sequence[Sequence[int]] | None, num_dim: int) -> tuple[tuple[int, ...], ...]:
     """Groups of tied input dimensions (e.g. the one-hot columns of one categorical variable).
 
@@ -44,36 +60,5 @@ def validate_tied_dims(tied_dims: Sequence[Sequence[int]] | None, num_dim: int) 
     if tied_dims is None:
         return ()
     groups = tuple(tuple(operator.index(j) for j in g) for g in tied_dims)
-    flat = [j for g in groups for j in g]
-    if any(len(g) == 0 for g in groups):
-        raise ValueError("tied_dims groups must be non-empty")
-    if any(j < 0 or j >= num_dim for j in flat):
-        raise ValueError(f"tied_dims entries must be in [0, {num_dim}), got {flat}")
-    if len(set(flat)) != len(flat):
-        raise ValueError(f"tied_dims groups must be disjoint, got {groups}")
+    _validate_tied_dims([list(g) for g in groups], int(num_dim))
     return groups
-
-
-def validate_scale_x(scale_x: ENNScaleX, index_driver: ENNIndexDriver) -> None:
-    if not isinstance(scale_x, ENNScaleX):
-        raise ValueError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
-    if not isinstance(index_driver, ENNIndexDriver):
-        raise ValueError(f"index_driver must be an ENNIndexDriver, got {index_driver!r}")
-
-
-def validate_metric_learning(
-    metric_learning: ENNMetricLearning,
-    index_driver: ENNIndexDriver,
-    scale_x: ENNScaleX = ENNScaleX.OFF,
-) -> None:
-    if not isinstance(metric_learning, ENNMetricLearning):
-        raise ValueError(f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}")
-    if metric_learning == ENNMetricLearning.NONE:
-        return
-    if index_driver != ENNIndexDriver.BPANN_DISK:
-        raise ValueError(
-            f"metric_learning={metric_learning.name} requires index_driver=BPANN_DISK, "
-            f"got {index_driver.name}"
-        )
-    if scale_x == ENNScaleX.ON:
-        raise ValueError(f"metric_learning={metric_learning.name} requires scale_x=OFF")

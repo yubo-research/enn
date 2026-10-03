@@ -68,14 +68,12 @@ def mk_enn(
         fitter = ENNStatefulFitter(
             k=k,
             rng=rng,
-            infer_aleatoric_variance_scale=fit.infer_aleatoric_variance_scale,
+            infer_aleatoric_variance_scale=fit.infers_aleatoric_variance,
         )
         fitter.tell(x_obs_array, y, yvar, y_bounds=y_bounds)
         fitted_params = fitter.ask(
             enn_model,
-            num_fit_candidates=(
-                fit.num_fit_candidates if fit.num_fit_candidates is not None else 30
-            ),
+            num_fit_candidates=fit.num_fit_candidates,
             num_fit_samples=fit.num_fit_samples,
             params_warm_start=params_warm_start,
         )

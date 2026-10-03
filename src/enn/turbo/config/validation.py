@@ -4,30 +4,16 @@ from typing import Any
 
 
 def validate_optimizer_config(cfg: Any) -> None:
-    from .acquisition import (
-        DrawAcquisitionConfig,
-        NDSOptimizerConfig,
-        ParetoAcquisitionConfig,
-        UCBAcquisitionConfig,
-    )
+    from enn._rust import validate_optimizer_rules
+
+    from .acquisition import acquisition_kind
+    from .init_strategies import LHDOnlyInit
     from .surrogate import NoSurrogateConfig
 
-    if type(cfg.init.init_strategy).__name__ == "LHDOnlyInit":
-        if not isinstance(cfg.surrogate, NoSurrogateConfig):
-            raise ValueError(
-                "init_strategy='lhd_only' requires NoSurrogateConfig surrogate"
-            )
-    if isinstance(cfg.surrogate, NoSurrogateConfig):
-        if isinstance(cfg.acquisition, DrawAcquisitionConfig):
-            raise ValueError(
-                "DrawAcquisitionConfig (Thompson sampling) requires a surrogate. "
-                "NoSurrogateConfig is not compatible with DrawAcquisitionConfig."
-            )
-        if isinstance(cfg.acquisition, UCBAcquisitionConfig):
-            raise ValueError(
-                "UCBAcquisitionConfig requires a surrogate. "
-                "NoSurrogateConfig is not compatible with UCBAcquisitionConfig."
-            )
-    if isinstance(cfg.acquisition, ParetoAcquisitionConfig):
-        if not isinstance(cfg.acq_optimizer, NDSOptimizerConfig):
-            raise ValueError("ParetoAcquisitionConfig requires NDSOptimizerConfig")
+    validate_optimizer_rules(
+        {
+            "lhd_only": isinstance(cfg.init.init_strategy, LHDOnlyInit),
+            "has_surrogate": not isinstance(cfg.surrogate, NoSurrogateConfig),
+        },
+        acquisition_kind(cfg.acquisition),
+    )

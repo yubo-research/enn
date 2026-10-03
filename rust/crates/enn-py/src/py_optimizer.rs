@@ -3,9 +3,6 @@
 use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
-use std::path::PathBuf;
 
 #[doc = "kiss-coverage-off"]
 pub(crate) fn optional_f64(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<f64>> {
@@ -36,18 +33,14 @@ pub(crate) fn apply_scalar_overrides(
     dict: &Bound<'_, pyo3::types::PyDict>,
     overrides: &mut ennbo::ConfigOverrides,
 ) -> PyResult<()> {
-    overrides.num_candidates_factor = optional_f64(dict, "num_candidates_factor")?;
+    overrides.num_candidates_per_dim = optional_usize(dict, "num_candidates_per_dim")?;
     overrides.min_candidates = optional_usize(dict, "min_candidates")?;
     overrides.max_candidates = optional_usize(dict, "max_candidates")?;
     overrides.num_candidates_per_arm = optional_usize(dict, "num_candidates_per_arm")?;
     overrides.length_init = optional_f64(dict, "length_init")?;
     overrides.length_min = optional_f64(dict, "length_min")?;
     overrides.length_max = optional_f64(dict, "length_max")?;
-    overrides.num_fit_samples = optional_usize(dict, "num_fit_samples")?;
-    overrides.num_fit_candidates = optional_usize(dict, "num_fit_candidates")?;
-    overrides.infer_aleatoric_variance = optional_bool(dict, "infer_aleatoric_variance")?;
     overrides.noise_aware = optional_bool(dict, "noise_aware")?;
-    overrides.scale_x = optional_bool(dict, "scale_x")?;
     Ok(())
 }
 
@@ -69,30 +62,10 @@ mod kiss_coverage_tests {
 }
 
 #[doc = "kiss-coverage-off"]
-fn parse_index_driver(s: &str) -> PyResult<ennbo::index::IndexDriver> {
-    use ennbo::index::IndexDriver;
-    match s.to_lowercase().as_str() {
-        "exact" | "flat" => Ok(IndexDriver::Exact),
-        "bpann_disk" => Ok(IndexDriver::BpAnnDisk),
-        _ => Err(PyValueError::new_err(format!("Unknown index_driver: {s}"))),
-    }
-}
-
-#[doc = "kiss-coverage-off"]
-fn parse_acquisition(
-    dict: &Bound<'_, pyo3::types::PyDict>,
-    s: &str,
-) -> PyResult<ennbo::AcquisitionConfig> {
+fn acquisition_from_name(s: &str) -> PyResult<ennbo::AcquisitionConfig> {
     use ennbo::AcquisitionConfig;
     match s {
-        "ucb" => {
-            let beta = dict
-                .get_item("acquisition_beta")?
-                .map(|v| v.extract::<f64>())
-                .transpose()?
-                .unwrap_or(2.0);
-            Ok(AcquisitionConfig::UCB { beta })
-        }
+        "ucb" => Ok(AcquisitionConfig::default()),
         "thompson" => Ok(AcquisitionConfig::Thompson),
         "random" => Ok(AcquisitionConfig::Random),
         "pareto" => Ok(AcquisitionConfig::Pareto),
@@ -112,12 +85,79 @@ fn parse_candidate_rv(s: &str) -> PyResult<ennbo::CandidateRV> {
 }
 
 #[doc = "kiss-coverage-off"]
-fn parse_enn_storage(s: &str) -> PyResult<ennbo::EnnStorage> {
-    match s.to_lowercase().as_str() {
-        "disk" => Ok(ennbo::EnnStorage::Disk),
-        "memory" | "in_memory" | "inmemory" => Ok(ennbo::EnnStorage::InMemory),
-        _ => Err(PyValueError::new_err(format!("Unknown enn_storage: {s}"))),
+fn parse_morbo_override(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+    kind: Option<ennbo::TrustRegionKind>,
+) -> PyResult<Option<ennbo::morbo_override::MorboOverride>> {
+    let num_metrics = optional_usize(dict, "num_metrics")?;
+    let alpha = optional_f64(dict, "alpha")?;
+    let rescalarize_name = match dict.get_item("rescalarize")? {
+        Some(v) => Some(v.extract::<String>()?),
+        None => None,
+    };
+    let any = num_metrics.is_some() || alpha.is_some() || rescalarize_name.is_some();
+    let morbo = kind == Some(ennbo::TrustRegionKind::Morbo);
+    if !morbo && !any {
+        return Ok(None);
     }
+    if !morbo {
+        return Err(PyValueError::new_err(
+            "num_metrics and alpha require trust_region 'morbo'",
+        ));
+    }
+    let (Some(num_metrics), Some(alpha)) = (num_metrics, alpha) else {
+        return Err(PyValueError::new_err(
+            "MORBO overrides require num_metrics and alpha together",
+        ));
+    };
+    let rescalarize = match rescalarize_name.as_deref() {
+        None => ennbo::Rescalarize::OnRestart,
+        Some(s) => s.parse().map_err(|_| {
+            PyValueError::new_err(format!(
+                "Unknown rescalarize mode: {s:?}; expected \"on_propose\" or \"on_restart\""
+            ))
+        })?,
+    };
+    Ok(Some(ennbo::morbo_override::MorboOverride {
+        num_metrics,
+        alpha,
+        rescalarize,
+    }))
+}
+
+/// Every non-ENN key `parse_config_overrides_from_dict` reads. ENN keys are in
+/// [`crate::py_enn_overrides::ENN_OVERRIDE_KEYS`].
+pub(crate) const CONFIG_OVERRIDE_KEYS: &[&str] = &[
+    "acquisition",
+    "candidate_rv",
+    "trust_region",
+    "num_metrics",
+    "alpha",
+    "rescalarize",
+    "raasp_fast",
+    "num_candidates_per_dim",
+    "min_candidates",
+    "max_candidates",
+    "num_candidates_per_arm",
+    "length_init",
+    "length_min",
+    "length_max",
+    "noise_aware",
+];
+
+#[doc = "kiss-coverage-off"]
+fn reject_unknown_override_keys(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<()> {
+    for key in dict.keys() {
+        let name: String = key.extract()?;
+        let known = CONFIG_OVERRIDE_KEYS.contains(&name.as_str())
+            || crate::py_enn_overrides::ENN_OVERRIDE_KEYS.contains(&name.as_str());
+        if !known {
+            return Err(PyValueError::new_err(format!(
+                "Unknown config override key: {name:?}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[doc = "kiss-coverage-off"]
@@ -126,36 +166,26 @@ pub fn parse_config_overrides_from_dict(
 ) -> PyResult<ennbo::ConfigOverrides> {
     use ennbo::ConfigOverrides;
 
+    reject_unknown_override_keys(dict)?;
     let mut overrides = ConfigOverrides::default();
 
-    if let Some(v) = dict.get_item("index_driver")? {
-        overrides.index_driver = Some(parse_index_driver(&v.extract::<String>()?)?);
-    }
     if let Some(acq) = dict.get_item("acquisition")? {
         let s: String = acq.extract()?;
-        overrides.acquisition = Some(parse_acquisition(dict, &s)?);
+        overrides.acquisition = Some(acquisition_from_name(&s)?);
     }
     if let Some(rv) = dict.get_item("candidate_rv")? {
         overrides.candidate_rv = Some(parse_candidate_rv(&rv.extract::<String>()?)?);
     }
     if let Some(v) = dict.get_item("trust_region")? {
-        overrides.trust_region_kind = Some(v.extract()?);
+        let name: String = v.extract()?;
+        overrides.trust_region_kind = Some(
+            ennbo::TrustRegionKind::parse(&name)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+        );
     }
-    overrides.num_metrics = optional_usize(dict, "num_metrics")?;
-    overrides.alpha = optional_f64(dict, "alpha")?;
-    if let Some(v) = dict.get_item("rescalarize")? {
-        overrides.rescalarize = Some(v.extract()?);
-    }
-    if let Some(v) = dict.get_item("enn_storage")? {
-        overrides.enn_storage = Some(parse_enn_storage(&v.extract::<String>()?)?);
-    }
-    if let Some(v) = dict.get_item("work_dir")? {
-        overrides.work_dir = Some(PathBuf::from(v.extract::<String>()?));
-    }
-    if let Some(v) = dict.get_item("y_bounds")? {
-        let arr: numpy::PyReadonlyArray2<f64> = v.extract()?;
-        overrides.y_bounds = Some(arr.as_array().to_owned());
-    }
+    overrides.morbo = parse_morbo_override(dict, overrides.trust_region_kind)?;
+    overrides.raasp_fast = optional_bool(dict, "raasp_fast")?;
+    overrides.enn = crate::py_enn_overrides::parse_enn_overrides(dict)?;
     apply_scalar_overrides(dict, &mut overrides)?;
     Ok(overrides)
 }
@@ -168,46 +198,59 @@ pub struct PyOptimizer {
 
 #[pymethods]
 impl PyOptimizer {
-    /// Ask for candidate points
-    #[pyo3(signature = (num_arms, seed))]
+    /// Ask for candidate points in natural units.
     #[doc = "kiss-coverage-off"]
     fn ask<'py>(
         &mut self,
         py: Python<'py>,
         num_arms: usize,
-        seed: u64,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        let mut rng = StdRng::seed_from_u64(seed);
-
         let result = self
             .inner
-            .ask(num_arms, &mut rng)
+            .ask(num_arms)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
         Ok(result.into_dyn().into_pyarray_bound(py))
     }
 
-    /// Tell observations
-    #[pyo3(signature = (x, y, seed, y_var=None))]
+    /// Tell observations in natural units.
+    #[pyo3(signature = (x, y, y_var=None))]
     #[doc = "kiss-coverage-off"]
     fn tell(
         &mut self,
         x: PyReadonlyArray2<f64>,
         y: PyReadonlyArray2<f64>,
-        seed: u64,
         y_var: Option<PyReadonlyArray2<f64>>,
     ) -> PyResult<()> {
-        let mut rng = StdRng::seed_from_u64(seed);
         let x_arr = x.as_array();
         let y_arr = y.as_array();
         let result = match y_var.as_ref() {
             Some(yv) => {
                 let yv_arr = yv.as_array();
-                self.inner.tell(&x_arr, &y_arr, Some(&yv_arr), &mut rng)
+                self.inner.tell(&x_arr, &y_arr, Some(&yv_arr))
             }
-            None => self.inner.tell(&x_arr, &y_arr, None, &mut rng),
+            None => self.inner.tell(&x_arr, &y_arr, None),
         };
         result.map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Posterior mean of the fitted surrogate at `x` in natural units.
+    #[doc = "kiss-coverage-off"]
+    fn posterior_mu<'py>(
+        &self,
+        py: Python<'py>,
+        x: PyReadonlyArray2<f64>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+        let mu = self
+            .inner
+            .posterior_mu(&x.as_array())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(mu.into_dyn().into_pyarray_bound(py))
+    }
+
+    /// Whether this optimizer fits a surrogate (false for TuRBO-ZERO and LHD-only).
+    #[doc = "kiss-coverage-off"]
+    fn has_surrogate(&self) -> bool {
+        self.inner.has_surrogate()
     }
 
     /// Get init progress if in initialization phase
@@ -259,10 +302,10 @@ impl PyOptimizer {
 
     /// Get incumbent x in unit space (if any).
     #[doc = "kiss-coverage-off"]
-    fn incumbent_x_unit<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
+    fn incumbent_x<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
         self.inner
-            .incumbent_x_unit()
-            .map(|x| x.view().to_owned().into_dyn().into_pyarray_bound(py))
+            .incumbent_x()
+            .map(|x| x.into_dyn().into_pyarray_bound(py))
     }
 
     /// Get optimizer bounds.
@@ -293,20 +336,49 @@ pub struct PyTelemetry {
     pub num_candidates: usize,
 }
 
+#[pyfunction(name = "require_num_fit_samples", signature = (acquisition, num_fit_samples=None))]
+#[doc = "kiss-coverage-off"]
+pub fn require_num_fit_samples_py(acquisition: &str, num_fit_samples: Option<usize>) -> PyResult<()> {
+    let acq = acquisition_from_name(acquisition)?;
+    let fit_samples = ennbo::FitSamples::from_count(num_fit_samples)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    ennbo::require_fit_samples(&acq, fit_samples).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+#[doc = "kiss-coverage-off"]
+fn optimizer_flag(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<bool> {
+    dict.get_item(key)?
+        .ok_or_else(|| PyValueError::new_err(format!("missing optimizer flag {key}")))?
+        .extract()
+}
+
+#[pyfunction(name = "validate_optimizer_rules")]
+#[doc = "kiss-coverage-off"]
+pub fn validate_optimizer_rules_py(
+    flags: &Bound<'_, pyo3::types::PyDict>,
+    acquisition: &str,
+) -> PyResult<()> {
+    let rules = ennbo::OptimizerRuleSet {
+        lhd_only: optimizer_flag(flags, "lhd_only")?,
+        has_surrogate: optimizer_flag(flags, "has_surrogate")?,
+    };
+    let kind = acquisition_from_name(acquisition)?;
+    ennbo::validate_optimizer_rules(&rules, &kind).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Create TuRBO-ENN optimizer
 #[pyfunction(name = "create_optimizer_enn")]
-#[pyo3(signature = (bounds, k=10, num_init=10, seed=42, config_overrides=None))]
+#[pyo3(signature = (bounds, k=None, num_init=None, seed=42, config_overrides=None))]
 #[doc = "kiss-coverage-off"]
 pub fn create_optimizer_enn_py(
     bounds: PyReadonlyArray2<f64>,
-    k: i32,
-    num_init: usize,
+    k: Option<i32>,
+    num_init: Option<usize>,
     seed: u64,
     config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
     use ennbo::optimizer_factory::create_optimizer_enn_with_overrides;
 
-    let mut rng = StdRng::seed_from_u64(seed);
     let overrides: Option<ennbo::ConfigOverrides> = config_overrides
         .as_ref()
         .map(|d| parse_config_overrides_from_dict(d))
@@ -316,7 +388,7 @@ pub fn create_optimizer_enn_py(
         bounds.as_array().to_owned(),
         k,
         num_init,
-        &mut rng,
+        seed,
         overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -326,17 +398,16 @@ pub fn create_optimizer_enn_py(
 
 /// Create TuRBO-ZERO optimizer
 #[pyfunction(name = "create_optimizer_zero")]
-#[pyo3(signature = (bounds, num_init=10, seed=42, config_overrides=None))]
+#[pyo3(signature = (bounds, num_init=None, seed=42, config_overrides=None))]
 #[doc = "kiss-coverage-off"]
 pub fn create_optimizer_zero_py(
     bounds: PyReadonlyArray2<f64>,
-    num_init: usize,
+    num_init: Option<usize>,
     seed: u64,
     config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
     use ennbo::optimizer_factory::create_optimizer_zero_with_overrides;
 
-    let mut rng = StdRng::seed_from_u64(seed);
     let overrides: Option<ennbo::ConfigOverrides> = config_overrides
         .as_ref()
         .map(|d| parse_config_overrides_from_dict(d))
@@ -345,7 +416,7 @@ pub fn create_optimizer_zero_py(
     let optimizer = create_optimizer_zero_with_overrides(
         bounds.as_array().to_owned(),
         num_init,
-        &mut rng,
+        seed,
         overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -355,17 +426,16 @@ pub fn create_optimizer_zero_py(
 
 /// Create LHD-only optimizer
 #[pyfunction(name = "create_optimizer_lhd")]
-#[pyo3(signature = (bounds, num_init=10, seed=42, config_overrides=None))]
+#[pyo3(signature = (bounds, num_init=None, seed=42, config_overrides=None))]
 #[doc = "kiss-coverage-off"]
 pub fn create_optimizer_lhd_py(
     bounds: PyReadonlyArray2<f64>,
-    num_init: usize,
+    num_init: Option<usize>,
     seed: u64,
     config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<PyOptimizer> {
     use ennbo::optimizer_factory::create_optimizer_lhd_with_overrides;
 
-    let mut rng = StdRng::seed_from_u64(seed);
     let overrides: Option<ennbo::ConfigOverrides> = config_overrides
         .as_ref()
         .map(|d| parse_config_overrides_from_dict(d))
@@ -374,7 +444,7 @@ pub fn create_optimizer_lhd_py(
     let optimizer = create_optimizer_lhd_with_overrides(
         bounds.as_array().to_owned(),
         num_init,
-        &mut rng,
+        seed,
         overrides.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -391,13 +461,14 @@ mod kiss_pymethods_coverage {
         let _ = (
             PyOptimizer::ask,
             PyOptimizer::tell,
+            PyOptimizer::has_surrogate,
             PyOptimizer::init_progress,
             PyOptimizer::telemetry,
             PyOptimizer::tr_obs_count,
             PyOptimizer::tr_length,
             PyOptimizer::x_obs,
             PyOptimizer::y_obs,
-            PyOptimizer::incumbent_x_unit,
+            PyOptimizer::incumbent_x,
             PyOptimizer::bounds,
             std::mem::size_of::<PyOptimizer>,
             std::mem::size_of::<PyTelemetry>,

@@ -107,7 +107,7 @@ fn conditional_exclude_nearest_keeps_nearest_whatif_for_novel_query() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
     let train_y = array![[0.0], [1.0], [1.0], [0.3]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
             .unwrap();
     let params = ENNParams::new(2, 1.0, 0.0).unwrap();
     let query = array![[5.05, 5.05]];
@@ -144,7 +144,7 @@ fn test_conditional_posterior_scaled_model() {
     let train_x = array![[0.0, 0.0], [2.0, 2.0], [4.0, 4.0]];
     let train_y = array![[0.0], [1.0], [2.0]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Exact)
+        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Flat)
             .unwrap();
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
@@ -169,7 +169,7 @@ fn test_conditional_scale_single_row() {
     let train_x = array![[0.0, 0.0]];
     let train_y = array![[1.0]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact)
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
             .unwrap();
     let params = ENNParams::new(1, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
@@ -279,7 +279,7 @@ fn test_empty_query_posterior_with_yvar_no_panic() {
         train_y,
         Some(train_yvar),
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
     )
     .unwrap();
 
@@ -338,7 +338,7 @@ fn test_empty_query_conditional_posterior_with_yvar_no_panic() {
         train_y,
         Some(train_yvar),
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
     )
     .unwrap();
 

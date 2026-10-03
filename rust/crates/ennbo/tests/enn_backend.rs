@@ -9,7 +9,7 @@ fn in_memory_backend_row_and_index_accessors() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
     let train_y = array![[0.0], [1.0], [2.0]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
     assert_eq!(model.index_access().len(), 3);
     assert_eq!(model.num_dim(), 2);
     let x0 = model.rows().row_x(0).unwrap();
@@ -31,7 +31,7 @@ fn new_empty_in_memory_accepts_incremental_add() {
     let mut model = EpistemicNearestNeighbors::new_empty(
         2,
         1,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
         EnnStorage::InMemory,
         None,
             None,
@@ -53,10 +53,7 @@ fn disk_backend_roundtrip_and_search() {
         train_x.clone(),
         train_y,
         None,
-        false,
-        IndexDriver::BpAnnDisk,
-        EnnStorage::Disk,
-        Some(dir.path().to_path_buf()),
+        ennbo::EnnLayout::disk(dir.path().to_path_buf(), false),
             None,
         )
     .unwrap();
@@ -71,7 +68,7 @@ fn disk_backend_roundtrip_and_search() {
         array![[0.0], [1.0], [1.0], [2.0]],
         None,
         false,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
     )
     .unwrap();
     let exact = mem.neighbors(&query.view(), 1, false).unwrap();
@@ -106,19 +103,14 @@ fn kiss_disk_bpann_static_coverage_names() {
 #[test]
 fn disk_storage_rejects_non_disk_driver() {
     let dir = TempDir::new().expect("tempdir");
-    match EpistemicNearestNeighbors::new_with_storage(
-        array![[0.0, 0.0]],
-        array![[0.0]],
-        None,
-        false,
-        IndexDriver::Exact,
-        EnnStorage::Disk,
+    let err = ennbo::EnnLayout::try_from_parts(
+        IndexDriver::Flat,
+        Some(EnnStorage::Disk),
         Some(dir.path().to_path_buf()),
-            None,
-        ) {
-        Ok(_) => panic!("expected disk + Exact to error"),
-        Err(e) => assert!(e.to_string().contains("BpAnnDisk")),
-    }
+        false,
+        ennbo::metric_auto::MetricLearning::None,
+    );
+    assert!(err.unwrap_err().to_string().contains("BpAnnDisk"));
 }
 
 #[test]
@@ -128,10 +120,7 @@ fn scale_x_accepts_bpann_disk() {
         array![[0.0, 0.0], [2.0, 20.0]],
         array![[0.0], [1.0]],
         None,
-        true,
-        IndexDriver::BpAnnDisk,
-        EnnStorage::Disk,
-        Some(dir.path().to_path_buf()),
+        ennbo::EnnLayout::disk(dir.path().to_path_buf(), true),
         None,
     )
     .expect("scale_x + BpAnnDisk must succeed");

@@ -5,7 +5,10 @@ import pytest
 
 from evals import metric_12d
 from evals import metric_ranges as mod
-from evals.long import eval_metric_ranges as entry
+from evals.long import eval_metric_ranges_bpann_disk as long_bpann_disk
+from evals.long import eval_metric_ranges_bpann_disk_auto as long_bpann_disk_auto
+from evals.long import eval_metric_ranges_flat as long_flat
+from evals.long import eval_metric_ranges_flat_scale_x as long_flat_scale_x
 from evals.short import eval_metric_ranges as short_entry
 
 TINY = metric_12d.Metric12dConfig(
@@ -58,11 +61,25 @@ def test_run_eval_passes_ranges_data_to_stream(monkeypatch: pytest.MonkeyPatch) 
     assert seen == [(TINY, metric_12d.MODELS, mod.make_data), (TINY, ("bpann_disk",), mod.make_data)]
 
 
-def test_evaluate_entry_invokes_run_eval(monkeypatch: pytest.MonkeyPatch) -> None:
-    called = []
-    monkeypatch.setattr(entry, "run_eval", lambda: called.append(1))
+LONG_ENTRIES = (
+    long_flat,
+    long_flat_scale_x,
+    long_bpann_disk,
+    long_bpann_disk_auto,
+)
+
+
+def test_long_entries_cover_each_model_once() -> None:
+    assert tuple(e.MODEL for e in LONG_ENTRIES) == metric_12d.MODELS
+    assert all(e.run_eval is mod.run_eval for e in LONG_ENTRIES)
+
+
+@pytest.mark.parametrize("entry", LONG_ENTRIES, ids=lambda e: e.MODEL)
+def test_long_entry_runs_only_its_model(entry, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = []
+    monkeypatch.setattr(entry, "run_eval", lambda **kwargs: seen.append(kwargs))
     entry.evaluate()
-    assert called == [1]
+    assert seen == [{"models": (entry.MODEL,)}]
 
 
 def test_short_entry_runs_long_config_up_to_1e5(monkeypatch: pytest.MonkeyPatch) -> None:

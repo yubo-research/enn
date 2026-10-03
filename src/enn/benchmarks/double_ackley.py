@@ -1,25 +1,26 @@
 import numpy as np
 from numpy.random import Generator
 
-from .ackley_core import ackley_core
+from enn._rust import DoubleAckley as _RustDoubleAckley
 
 
 class DoubleAckley:
+    """Facade over the Rust DoubleAckley benchmark. The only field is the Rust object."""
+
     def __init__(self, noise: float, rng: Generator):
-        self.noise = noise
-        self.rng = rng
-        self.bounds = [-32.768, 32.768]
+        seed = int(rng.integers(0, 2**63 - 1))
+        self._inner = _RustDoubleAckley(float(noise), seed)
+
+    @property
+    def noise(self) -> float:
+        return float(self._inner.noise)
+
+    @property
+    def bounds(self) -> list[float]:
+        return [float(v) for v in self._inner.bounds]
 
     def __call__(self, x: np.ndarray) -> np.ndarray:
         x = np.asarray(x, dtype=float)
         if x.ndim == 1:
             x = x[None, :]
-        n, d = x.shape
-        if d % 2 != 0:
-            raise ValueError("num_dim must be even for DoubleAckley")
-        mid = d // 2
-        x1 = x[:, :mid]
-        x2 = x[:, mid:]
-        y1 = -ackley_core(x1) + self.noise * self.rng.normal(size=n)
-        y2 = -ackley_core(x2) + self.noise * self.rng.normal(size=n)
-        return np.stack([y1, y2], axis=1)
+        return np.asarray(self._inner.evaluate(x), dtype=float)

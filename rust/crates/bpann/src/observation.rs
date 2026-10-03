@@ -50,6 +50,36 @@ pub fn bpann_validate_index_backend(work_dir: &Path, expected: &str) -> Result<(
     Ok(())
 }
 
+/// Files and directories a `BpannBackend` writes under `work_dir`.
+const STORE_FILES: &[&str] = &[
+    "train_x.bin",
+    "train_y.bin",
+    "train_yvar.bin",
+    "num_obs.bin",
+    "indexed_rows.bin",
+    "metadata.json",
+    crate::metric::METRIC_MARKER_FILE,
+];
+const STORE_DIRS: &[&str] = &["index"];
+
+/// Delete the persisted store in `work_dir`, leaving other files alone.
+/// No backend may be open on `work_dir`.
+pub fn bpann_remove_store(work_dir: &Path) -> Result<(), BpannError> {
+    let gone = |r: std::io::Result<()>| match r {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(BpannError::InvalidParameter(e.to_string()))
+        }
+        _ => Ok(()),
+    };
+    for name in STORE_FILES {
+        gone(fs::remove_file(work_dir.join(name)))?;
+    }
+    for name in STORE_DIRS {
+        gone(fs::remove_dir_all(work_dir.join(name)))?;
+    }
+    Ok(())
+}
+
 pub fn bpann_load_num_obs(work_dir: &Path) -> Option<usize> {
     let sidecar = work_dir.join("num_obs.bin");
     let from_sidecar = if let Ok(data) = fs::read(&sidecar) {

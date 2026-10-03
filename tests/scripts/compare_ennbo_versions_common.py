@@ -9,15 +9,6 @@ import numpy as np
 BenchmarkObjective = Callable[[np.ndarray], np.ndarray]
 
 
-def _const_num_candidates_fn(n: int):
-    value = int(n)
-
-    def fn(*, num_dim: int, num_arms: int) -> int:
-        return value
-
-    return fn
-
-
 def _import_optimizer_configs() -> dict[str, Any]:
     try:
         from enn.turbo.config import (
@@ -29,7 +20,6 @@ def _import_optimizer_configs() -> dict[str, Any]:
             MultiObjectiveConfig,
             TurboTRConfig,
             turbo_enn_config,
-            turbo_one_config,
         )
     except ImportError:
         from enn.turbo.optimizer_config import (
@@ -41,7 +31,6 @@ def _import_optimizer_configs() -> dict[str, Any]:
             MultiObjectiveConfig,
             TurboTRConfig,
             turbo_enn_config,
-            turbo_one_config,
         )
     return {
         "AcqType": AcqType,
@@ -52,7 +41,6 @@ def _import_optimizer_configs() -> dict[str, Any]:
         "MultiObjectiveConfig": MultiObjectiveConfig,
         "TurboTRConfig": TurboTRConfig,
         "turbo_enn_config": turbo_enn_config,
-        "turbo_one_config": turbo_one_config,
     }
 
 
@@ -61,15 +49,12 @@ def _make_candidate_gen_config(num_candidates: int | None = None) -> Any:
     CandidateGenConfig = cfg["CandidateGenConfig"]
     if num_candidates is None:
         return CandidateGenConfig()
-    probe = CandidateGenConfig()
-    if callable(getattr(probe, "num_candidates", None)):
-        try:
-            from enn.turbo.config.num_candidates_fn import const_num_candidates
-        except ImportError:
-            const_num_candidates = _const_num_candidates_fn
-
-        return CandidateGenConfig(num_candidates=const_num_candidates(num_candidates))
-    return CandidateGenConfig(num_candidates=num_candidates)
+    return CandidateGenConfig(
+        min_candidates=num_candidates,
+        max_candidates=num_candidates,
+        num_candidates_per_dim=0,
+        num_candidates_per_arm=0,
+    )
 
 
 def separable_unimodal_objective(x: np.ndarray) -> np.ndarray:
@@ -221,11 +206,10 @@ PROBLEMS: dict[str, ProblemSpec] = {
     ),
 }
 
-OPTIMIZER_NAMES: tuple[str, ...] = ("turbo_enn", "turbo_one", "morbo")
+OPTIMIZER_NAMES: tuple[str, ...] = ("turbo_enn", "morbo")
 
 EXPERIMENT_GRID: dict[str, tuple[str, ...]] = {
     "turbo_enn": ("ackley_30d", "double_ackley_30d", "separable_unimodal"),
-    "turbo_one": ("ackley_30d", "double_ackley_30d", "separable_unimodal"),
     "morbo": ("double_ackley_30d", "separable_unimodal", "ackley_pair_30d"),
 }
 
@@ -243,7 +227,9 @@ def experiment_combos(
     return combos
 
 
-def build_optimizer_config(optimizer: str, problem: ProblemSpec) -> Any:
+def build_optimizer_config(
+    optimizer: str, problem: ProblemSpec, *, affine_calibrate: bool = False
+) -> Any:
     if optimizer not in OPTIMIZER_NAMES:
         raise ValueError(optimizer)
     cfg = _import_optimizer_configs()
@@ -254,7 +240,6 @@ def build_optimizer_config(optimizer: str, problem: ProblemSpec) -> Any:
     MultiObjectiveConfig = cfg["MultiObjectiveConfig"]
     TurboTRConfig = cfg["TurboTRConfig"]
     turbo_enn_config = cfg["turbo_enn_config"]
-    turbo_one_config = cfg["turbo_one_config"]
 
     turbo_tr = TurboTRConfig(noise_aware=True)
     morbo_tr = None
@@ -268,7 +253,7 @@ def build_optimizer_config(optimizer: str, problem: ProblemSpec) -> Any:
         return turbo_enn_config(
             enn=ENNSurrogateConfig(
                 k=10,
-                fit=ENNFitConfig(num_fit_samples=100),
+                fit=_fit_config(ENNFitConfig, affine_calibrate),
             ),
             trust_region=morbo_tr,
             acq_type=AcqType.UCB,
@@ -287,18 +272,11 @@ def build_optimizer_config(optimizer: str, problem: ProblemSpec) -> Any:
         return turbo_enn_config(
             enn=ENNSurrogateConfig(
                 k=10,
-                fit=ENNFitConfig(num_fit_samples=100),
+                fit=_fit_config(ENNFitConfig, affine_calibrate),
             ),
             trust_region=trust_region,
             acq_type=acq_type,
             candidates=candidates,
-            num_init=min(20, 2 * problem.num_dim),
-        )
-
-    if optimizer == "turbo_one":
-        trust_region = morbo_tr if morbo_tr is not None else turbo_tr
-        return turbo_one_config(
-            trust_region=trust_region,
             num_init=min(20, 2 * problem.num_dim),
         )
 
@@ -316,9 +294,16 @@ class BenchmarkResult:
     ask_seconds: float
     num_evals: int
     seed: int
+    affine_calibrate: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _fit_config(enn_fit_config: Any, affine_calibrate: bool) -> Any:
+    if affine_calibrate:
+        return enn_fit_config(num_fit_samples=100, affine_calibrate=True)
+    return enn_fit_config(num_fit_samples=100)
 
 
 def run_benchmark(
@@ -326,16 +311,16 @@ def run_benchmark(
     optimizer: str,
     problem: ProblemSpec,
     version_label: str,
+    affine_calibrate: bool = False,
 ) -> BenchmarkResult:
-    import torch
-
     from enn import create_optimizer
 
-    torch.manual_seed(problem.torch_seed)
     rng = np.random.default_rng(problem.rng_seed)
     bounds = problem.bounds()
     objective = problem.make_objective()
-    config = build_optimizer_config(optimizer, problem)
+    config = build_optimizer_config(
+        optimizer, problem, affine_calibrate=affine_calibrate
+    )
     opt = create_optimizer(bounds=bounds, config=config, rng=rng)
 
     best_y = -np.inf
@@ -378,6 +363,7 @@ def run_benchmark(
         ask_seconds=ask_seconds,
         num_evals=num_evals,
         seed=problem.rng_seed,
+        affine_calibrate=affine_calibrate,
     )
 
 

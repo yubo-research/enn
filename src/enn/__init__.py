@@ -13,7 +13,6 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "create_optimizer_lhd": ("._rust", "create_optimizer_lhd"),
     "Telemetry": (".turbo.types.telemetry", "Telemetry"),
     "OptimizerConfig": (".turbo.optimizer_config", "OptimizerConfig"),
-    "turbo_one_config": (".turbo.optimizer_config", "turbo_one_config"),
     "turbo_zero_config": (".turbo.optimizer_config", "turbo_zero_config"),
     "turbo_enn_config": (".turbo.optimizer_config", "turbo_enn_config"),
     "lhd_only_config": (".turbo.optimizer_config", "lhd_only_config"),

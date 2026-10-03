@@ -59,9 +59,9 @@ def test_confidence_interval_unbounded_matches_linear():
     se = np.array([[0.2, 0.5]], dtype=float)
     post = ENNNormal(mu=mu, se=se, se_epi=se.copy(), se_ale=np.zeros_like(se))
     lower, upper = post.confidence_interval(0.95)
-    from enn.enn.enn_normal import _z_crit
+    from enn._rust import z_crit
 
-    z_impl = _z_crit(0.95)
+    z_impl = z_crit(0.95)
     np.testing.assert_allclose(lower, mu - z_impl * se)
     np.testing.assert_allclose(upper, mu + z_impl * se)
 
@@ -82,7 +82,7 @@ def test_sample_and_function_draw_respect_y_bounds():
         aleatoric_variance_scale=0.05,
     )
     post = model.posterior(x_test, params=params)
-    samples = post.sample(128, np.random.default_rng(0))
+    samples = post.sample(128, seed=0)
     _assert_in_open_interval(samples, lo, hi)
 
     draws, _ = model.posterior_function_draw(

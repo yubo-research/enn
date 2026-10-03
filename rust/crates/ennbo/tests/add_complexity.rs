@@ -63,7 +63,7 @@ fn model_with_rows(n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
         deterministic_y(n),
         None,
         scale_x,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
     )
     .unwrap()
 }
@@ -74,7 +74,7 @@ fn model_with_rows_and_yvar(n: usize, scale_x: bool) -> EpistemicNearestNeighbor
         deterministic_y(n),
         Some(deterministic_yvar(n)),
         scale_x,
-        IndexDriver::Exact,
+        IndexDriver::Flat,
     )
     .unwrap()
 }

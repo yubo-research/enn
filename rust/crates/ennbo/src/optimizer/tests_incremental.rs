@@ -18,7 +18,7 @@ fn scale_x_false_index_not_stale_after_add() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
     let mut model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
     model.ensure_index_sync().unwrap();
     assert!(!model.index_access().is_stale());
     let x_add = array![[0.5, 0.5]];
@@ -35,7 +35,7 @@ fn scale_x_true_add_to_nonempty_succeeds() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
     let mut model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Flat).unwrap();
     model.ensure_index_sync().unwrap();
     let x_add = array![[0.5, 0.5]];
     let y_add = array![[0.5]];
@@ -52,7 +52,7 @@ fn scale_x_true_index_stale_after_add() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
     let mut model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Exact).unwrap();
+        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Flat).unwrap();
     model.ensure_index_sync().unwrap();
     assert!(!model.index_access().is_stale());
     let x_add = array![[0.5, 0.5]];
@@ -71,13 +71,13 @@ fn enn_fitter_ask_always_fits_with_enough_obs() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
     let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Exact).unwrap();
-    let mut fitter = ENNFitter::new(2, true);
+        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
+    let mut fitter = ENNFitter::new(2);
     let all: Vec<usize> = (0..model.len()).collect();
     let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
     fitter.reset_y_stats(&ty.view());
     let mut rng = StdRng::seed_from_u64(99);
-    let p = fitter.ask(&model, 4, 3, None, &mut rng).unwrap();
+    let p = fitter.ask(&model, &crate::fit_samples::test_search(3, 4, true), None, &mut rng).unwrap();
     assert_eq!(p.k_num_neighbors, 2);
     assert!(p.epistemic_variance_scale > 0.0);
 }
@@ -97,9 +97,8 @@ fn observation_delta_views() {
 #[test]
 fn enn_surrogate_fit_append_grows_model() {
     let config = ENNSurrogateConfig {
-        k: 2,
-        num_fit_candidates: 4,
-        num_fit_samples: 2,
+        k: crate::NeighborCount::new(2).unwrap(),
+        fit_samples: crate::FitSamples::draw(2, 4).unwrap(),
         ..Default::default()
     };
     let mut sur = ENNSurrogate::new(config);
@@ -121,10 +120,10 @@ fn tell_rejects_changing_num_metrics() {
     let mut opt = Optimizer::new(bounds, cfg, &mut rng).unwrap();
     let x0 = array![[0.2, 0.3]];
     let y0 = array![[1.0]];
-    opt.tell(&x0.view(), &y0.view(), None, &mut rng).unwrap();
+    opt.tell(&x0.view(), &y0.view(), None).unwrap();
     let x1 = array![[0.4, 0.5], [0.6, 0.7]];
     let y1 = array![[2.0, 3.0], [4.0, 5.0]];
-    let err = opt.tell(&x1.view(), &y1.view(), None, &mut rng);
+    let err = opt.tell(&x1.view(), &y1.view(), None);
     assert!(err.is_err());
     let msg = err.unwrap_err().to_string();
     assert!(
@@ -143,17 +142,16 @@ fn morbo_ask_without_tell_preserves_y_ranges() {
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
-        noise_aware: false,
     });
     let mut opt =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
     let x0 = array![[0.1, 0.2], [0.3, 0.4]];
     let y0 = array![[1.0, 0.5], [0.2, 0.9]];
-    opt.tell(&x0.view(), &y0.view(), None, &mut rng).unwrap();
+    opt.tell(&x0.view(), &y0.view(), None).unwrap();
     let morbo = opt.trust_region().morbo().expect("morbo");
     let ymin_before = morbo.y_min().expect("y_min").to_owned();
     let ymax_before = morbo.y_max().expect("y_max").to_owned();
-    let _ = opt.ask(2, &mut rng).unwrap();
+    let _ = opt.ask(2).unwrap();
     let morbo_after = opt.trust_region().morbo().expect("morbo");
     assert!(morbo_after.y_min().unwrap().iter().zip(ymin_before.iter()).all(|(a, b)| (a - b).abs() < 1e-12));
     assert!(morbo_after.y_max().unwrap().iter().zip(ymax_before.iter()).all(|(a, b)| (a - b).abs() < 1e-12));

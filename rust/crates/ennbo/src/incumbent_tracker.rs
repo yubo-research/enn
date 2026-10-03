@@ -2,6 +2,8 @@
 
 use ndarray::{Array1, ArrayView2};
 
+use crate::neighbor_count::NeighborCount;
+
 const ALL_CANDIDATES_M_THRESHOLD: usize = 1_000_000_000;
 
 pub struct IncrementalIncumbentTracker {
@@ -140,8 +142,8 @@ impl IncrementalIncumbentTracker {
     }
 }
 
-pub fn tracker_m_from_enn_k(k: i32) -> usize {
-    k.max(1) as usize
+pub fn tracker_m_from_enn_k(k: NeighborCount) -> usize {
+    k.as_usize()
 }
 
 pub fn tracker_m_no_surrogate() -> usize {
@@ -200,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_tracker_m_from_enn_k_and_rebuild() {
-        assert_eq!(tracker_m_from_enn_k(4), 4);
+        assert_eq!(tracker_m_from_enn_k(NeighborCount::new(4).unwrap()), 4);
         let mut t = IncrementalIncumbentTracker::new(2, true, 1);
         t.rebuild(&array![[1.0], [3.0], [2.0]].view());
         assert_eq!(t.ask(), vec![1, 2]);
