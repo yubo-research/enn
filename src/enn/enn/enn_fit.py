@@ -4,9 +4,11 @@ from typing import Any
 
 import numpy as np
 
+from enn._rust import ENNAddToken
+from enn._rust import enn_fit_incremental as _rust_enn_fit_incremental
 from enn._rust import subsample_loglik as _rust_subsample_loglik
 
-from .add_token import ENNAddToken
+from .enn_fitter import ENNStatefulFitter, py_params, rust_params
 
 
 def subsample_loglik(
@@ -69,14 +71,13 @@ def enn_fit(
     ``k`` and ``rng`` build a new fitter on every call.
 
     Incremental mode: ``incremental`` must be the token just returned by
-    ``model.add``. That token is consumed here, so a stale, foreign, or
-    repeated token cannot be told. The first incremental call freezes ``k``
-    and the seed drawn from ``rng`` on the model. A later incremental call
-    must draw that same seed and pass that same ``k``. Any other pair raises
-    ``ValueError`` instead of being ignored.
+    ``model.add``. The Rust model consumes that token and tells only the rows
+    of that ``add``, so a stale, foreign, or repeated token cannot be told.
+    The first incremental call freezes ``k`` and the seed drawn from ``rng``
+    on the Rust model. A later incremental call must draw that same seed and
+    pass that same ``k``. Any other pair raises ``ValueError``.
     """
     from .enn_class import EpistemicNearestNeighbors as PyENN
-    from .enn_fitter import ENNStatefulFitter
 
     if not isinstance(model, PyENN):
         raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
@@ -86,32 +87,24 @@ def enn_fit(
         x_all, y_all, yvar_all = model.train_rows_at(list(range(len(model))))
         y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
         fitter.tell(x_all, y_all, yvar_all, y_bounds=y_bounds)
-    else:
-        if not isinstance(incremental, ENNAddToken):
-            raise TypeError(
-                "incremental must be the token returned by model.add, "
-                f"got {type(incremental).__name__}"
-            )
-        proposed_seed = int(rng.integers(0, 2**63 - 1))
-        fitter = getattr(model, "_incremental_fitter", None)
-        if fitter is not None and (
-            int(k) != fitter.k or proposed_seed != fitter.seed
-        ):
-            raise ValueError(
-                "incremental enn_fit freezes k and the fitter seed on the first call; "
-                f"frozen k={fitter.k}, frozen seed={fitter.seed}, "
-                f"got k={int(k)}, seed={proposed_seed}"
-            )
-        x_delta, y_delta, yvar_delta = incremental.take(model)
-        if fitter is None:
-            fitter = ENNStatefulFitter(k=k, seed=proposed_seed)
-            model._incremental_fitter = fitter
-        y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
-        fitter.tell(x_delta, y_delta, yvar_delta, y_bounds=y_bounds)
-
-    return fitter.ask(
-        model,
-        num_fit_candidates=num_fit_candidates,
+        return fitter.ask(
+            model,
+            num_fit_candidates=num_fit_candidates,
+            num_fit_samples=num_fit_samples,
+            params_warm_start=params_warm_start,
+        )
+    if not isinstance(incremental, ENNAddToken):
+        raise TypeError(
+            "incremental must be the token returned by model.add, "
+            f"got {type(incremental).__name__}"
+        )
+    rust_result = _rust_enn_fit_incremental(
+        model.rust_backend,
+        incremental,
+        int(k),
+        int(rng.integers(0, 2**63 - 1)),
+        num_fit_candidates=None if num_fit_candidates is None else int(num_fit_candidates),
         num_fit_samples=num_fit_samples,
-        params_warm_start=params_warm_start,
+        params_warm_start=rust_params(params_warm_start),
     )
+    return py_params(rust_result)

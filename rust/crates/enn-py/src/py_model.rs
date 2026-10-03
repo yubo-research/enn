@@ -48,6 +48,7 @@ fn py_posterior_flags(
 #[pyclass(name = "EpistemicNearestNeighbors")]
 pub struct PyEpistemicNearestNeighbors {
     pub(crate) inner: ennbo::EpistemicNearestNeighbors,
+    pub(crate) incremental: ennbo::IncrementalFit,
 }
 
 #[pymethods]
@@ -69,11 +70,7 @@ impl PyEpistemicNearestNeighbors {
         tied_dims: Option<Vec<Vec<usize>>>,
     ) -> PyResult<Self> {
         let driver = crate::py_layout::index_driver_from_wire(index_driver)?;
-        let metric_learning = ennbo::metric_auto::MetricLearning::parse(metric_learning).ok_or_else(|| {
-            PyValueError::new_err(format!(
-                "metric_learning must be 'none' or 'auto', got {metric_learning}"
-            ))
-        })?;
+        let metric_learning = crate::py_layout::metric_learning_from_wire(metric_learning)?;
         let explicit = crate::py_layout::enn_storage_optional(enn_storage)?;
         let work_dir = work_dir.map(PathBuf::from);
         let layout = ennbo::EnnLayout::try_from_parts(
@@ -118,7 +115,7 @@ impl PyEpistemicNearestNeighbors {
         model
             .set_tied_groups(groups)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self { inner: model })
+        Ok(Self { inner: model, incremental: ennbo::IncrementalFit::new() })
     }
 
     #[pyo3(signature = (x_scale, rebuild=false))]
@@ -136,10 +133,11 @@ impl PyEpistemicNearestNeighbors {
         x: PyReadonlyArray2<f64>,
         y: PyReadonlyArray2<f64>,
         yvar: Option<PyReadonlyArray2<f64>>,
-    ) -> PyResult<()> {
+    ) -> PyResult<crate::py_fit::PyAddToken> {
         let yvar_arr = yvar.as_ref().map(|v| v.as_array());
-        self.inner
-            .add(&x.as_array(), &y.as_array(), yvar_arr.as_ref())
+        self.incremental
+            .add(&mut self.inner, &x.as_array(), &y.as_array(), yvar_arr.as_ref())
+            .map(|inner| crate::py_fit::PyAddToken { inner })
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 

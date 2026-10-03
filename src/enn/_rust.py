@@ -67,6 +67,8 @@ ENNParams = _ext.model.ENNParams
 set_unscaled_dims = _ext.model.set_unscaled_dims
 ENNStatefulFitter = _ext.fit.ENNStatefulFitter
 subsample_loglik = _ext.fit.subsample_loglik
+ENNAddToken = _ext.fit.ENNAddToken
+enn_fit_incremental = _ext.fit.enn_fit_incremental
 Optimizer = _ext.optimizer.Optimizer
 create_optimizer_enn = _ext.optimizer.create_optimizer_enn
 create_optimizer_zero = _ext.optimizer.create_optimizer_zero
@@ -91,6 +93,8 @@ __all__ = [
     "set_unscaled_dims",
     "ENNStatefulFitter",
     "subsample_loglik",
+    "ENNAddToken",
+    "enn_fit_incremental",
     "Optimizer",
     "create_optimizer_enn",
     "create_optimizer_zero",

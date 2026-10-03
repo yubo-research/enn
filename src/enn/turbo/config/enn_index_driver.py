@@ -11,7 +11,7 @@ class ENNIndexDriver(Enum):
 def index_driver_to_wire(driver: ENNIndexDriver) -> str:
     """Encode an index driver. The wire name is the enum member name."""
     if not isinstance(driver, ENNIndexDriver):
-        raise ValueError(f"Unsupported index driver: {driver}")
+        raise ValueError(f"index_driver must be an ENNIndexDriver, got {driver!r}")
     return driver.name
 
 
@@ -21,8 +21,3 @@ def index_driver_from_wire(name: str) -> ENNIndexDriver:
         return ENNIndexDriver[name]
     except KeyError:
         raise ValueError(f"Unknown index_driver: {name}") from None
-
-
-ENN_INDEX_DRIVER_TO_RUST: dict[ENNIndexDriver, str] = {
-    driver: index_driver_to_wire(driver) for driver in ENNIndexDriver
-}

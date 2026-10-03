@@ -89,11 +89,7 @@ fn parse_acquisition(
     dict: &Bound<'_, pyo3::types::PyDict>,
     s: &str,
 ) -> PyResult<ennbo::AcquisitionConfig> {
-    let beta = dict
-        .get_item("acquisition_beta")?
-        .map(|v| v.extract::<f64>())
-        .transpose()?
-        .unwrap_or(2.0);
+    let beta = optional_f64(dict, "acquisition_beta")?.unwrap_or(ennbo::DEFAULT_UCB_BETA);
     acquisition_from_name(s, beta)
 }
 
@@ -123,10 +119,7 @@ fn parse_metric_overrides(
     }
     if let Some(v) = dict.get_item("metric_learning")? {
         let name: String = v.extract()?;
-        let mode = ennbo::metric_auto::MetricLearning::parse(&name).ok_or_else(|| {
-            PyValueError::new_err(format!("metric_learning must be 'none' or 'auto', got {name}"))
-        })?;
-        overrides.metric_learning = Some(mode);
+        overrides.metric_learning = Some(crate::py_layout::metric_learning_from_wire(&name)?);
     }
     if let Some(v) = dict.get_item("affine_calibrate")? {
         overrides.affine_calibrate = Some(v.extract()?);
@@ -178,12 +171,58 @@ fn parse_morbo_override(
     }))
 }
 
+/// Every key `parse_config_overrides_from_dict` reads.
+pub(crate) const CONFIG_OVERRIDE_KEYS: &[&str] = &[
+    "index_driver",
+    "acquisition",
+    "acquisition_beta",
+    "candidate_rv",
+    "trust_region",
+    "num_metrics",
+    "alpha",
+    "rescalarize",
+    "enn_storage",
+    "work_dir",
+    "y_bounds",
+    "raasp_fast",
+    "metric_learning",
+    "affine_calibrate",
+    "tied_dims",
+    "num_candidates_per_dim",
+    "min_candidates",
+    "max_candidates",
+    "num_candidates_per_arm",
+    "length_init",
+    "length_min",
+    "length_max",
+    "num_fit_samples",
+    "num_fit_candidates",
+    "infer_aleatoric_variance",
+    "freeze_params",
+    "noise_aware",
+    "scale_x",
+];
+
+#[doc = "kiss-coverage-off"]
+fn reject_unknown_override_keys(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<()> {
+    for key in dict.keys() {
+        let name: String = key.extract()?;
+        if !CONFIG_OVERRIDE_KEYS.contains(&name.as_str()) {
+            return Err(PyValueError::new_err(format!(
+                "Unknown config override key: {name:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[doc = "kiss-coverage-off"]
 pub fn parse_config_overrides_from_dict(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<ennbo::ConfigOverrides> {
     use ennbo::ConfigOverrides;
 
+    reject_unknown_override_keys(dict)?;
     let mut overrides = ConfigOverrides::default();
 
     if let Some(v) = dict.get_item("index_driver")? {
@@ -274,6 +313,12 @@ impl PyOptimizer {
             .posterior_mu(&x.as_array())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(mu.into_dyn().into_pyarray_bound(py))
+    }
+
+    /// Whether this optimizer fits a surrogate (false for TuRBO-ZERO and LHD-only).
+    #[doc = "kiss-coverage-off"]
+    fn has_surrogate(&self) -> bool {
+        self.inner.has_surrogate()
     }
 
     /// Get init progress if in initialization phase
@@ -383,7 +428,7 @@ pub fn validate_optimizer_rules_py(
         lhd_only: optimizer_flag(flags, "lhd_only")?,
         has_surrogate: optimizer_flag(flags, "has_surrogate")?,
     };
-    let kind = acquisition_from_name(acquisition, 2.0)?;
+    let kind = acquisition_from_name(acquisition, ennbo::DEFAULT_UCB_BETA)?;
     ennbo::validate_optimizer_rules(&rules, &kind).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
@@ -482,6 +527,7 @@ mod kiss_pymethods_coverage {
         let _ = (
             PyOptimizer::ask,
             PyOptimizer::tell,
+            PyOptimizer::has_surrogate,
             PyOptimizer::init_progress,
             PyOptimizer::telemetry,
             PyOptimizer::tr_obs_count,

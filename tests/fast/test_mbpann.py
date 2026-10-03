@@ -14,7 +14,7 @@ from enn.enn.mbpann import (
     auto_uses_learned_metric,
 )
 from enn._rust import EpistemicNearestNeighbors as RustENN
-from enn.turbo.config.enn_index_driver import ENN_INDEX_DRIVER_TO_RUST, ENNIndexDriver
+from enn.turbo.config.enn_index_driver import ENNIndexDriver, index_driver_to_wire
 from enn.turbo.config.enn_surrogate_config import ENNStorage, ENNSurrogateConfig
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from enn.turbo.config.optimizer_config import OptimizerConfig
@@ -47,8 +47,8 @@ def _exact(x: np.ndarray, q: np.ndarray, w: np.ndarray, k: int) -> np.ndarray:
 
 def test_scale_x_and_metric_learning_are_separate_enums() -> None:
     assert [d.name for d in ENNIndexDriver] == ["FLAT", "BPANN_DISK"]
-    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.BPANN_DISK] == "BPANN_DISK"
-    assert ENN_INDEX_DRIVER_TO_RUST[ENNIndexDriver.FLAT] == "FLAT"
+    assert index_driver_to_wire(ENNIndexDriver.BPANN_DISK) == "BPANN_DISK"
+    assert index_driver_to_wire(ENNIndexDriver.FLAT) == "FLAT"
     assert [s.name for s in ENNScaleX] == ["OFF", "ON"]
     assert [s.name for s in ENNMetricLearning] == ["NONE", "AUTO"]
 
@@ -174,14 +174,14 @@ def test_bpann_disk_scale_x_tracks_data_scales_incrementally(tmp_path) -> None:
 
 
 def test_optimizer_config_forwards_scale_x_and_metric_learning() -> None:
-    config = ENNSurrogateConfig(
+    auto_surrogate = ENNSurrogateConfig(
         metric_learning=ENNMetricLearning.AUTO,
         index_driver=ENNIndexDriver.BPANN_DISK,
         enn_storage=ENNStorage.DISK,
         work_dir="/tmp/enn_auto",
         scale_x=ENNScaleX.OFF,
     )
-    assert config.metric_learning == ENNMetricLearning.AUTO
+    assert auto_surrogate.metric_learning == ENNMetricLearning.AUTO
     assert (
         ENNSurrogateConfig(
             scale_x=ENNScaleX.ON, index_driver=ENNIndexDriver.BPANN_DISK
@@ -190,9 +190,13 @@ def test_optimizer_config_forwards_scale_x_and_metric_learning() -> None:
     )
     with pytest.raises(ValueError, match="ENNScaleX"):
         ENNSurrogateConfig(scale_x=True)
-    for scale_x, expected in ((ENNScaleX.OFF, None), (ENNScaleX.ON, True)):
+    for scale_x, expected in ((ENNScaleX.OFF, False), (ENNScaleX.ON, True)):
         config = OptimizerConfig(surrogate=ENNSurrogateConfig(scale_x=scale_x))
         assert _config_to_rust_overrides(config).get("scale_x") is expected
+    none_cfg = OptimizerConfig(surrogate=ENNSurrogateConfig())
+    assert _config_to_rust_overrides(none_cfg)["metric_learning"] == "NONE"
+    auto_cfg = OptimizerConfig(surrogate=auto_surrogate)
+    assert _config_to_rust_overrides(auto_cfg)["metric_learning"] == "AUTO"
 
 
 def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:

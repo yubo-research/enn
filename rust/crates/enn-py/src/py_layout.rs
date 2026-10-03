@@ -1,5 +1,6 @@
 //! Placement checks. The rule itself lives in `EnnLayout::try_from_parts`.
-//! Index and storage wire names are parsed by `IndexDriver` and `EnnStorage`.
+//! Index, storage, and metric-learning wire names are parsed by `IndexDriver`,
+//! `EnnStorage`, and `MetricLearning`; every binding module decodes them here.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -17,6 +18,14 @@ pub(crate) fn index_driver_from_wire(name: &str) -> PyResult<ennbo::IndexDriver>
 pub(crate) fn enn_storage_from_wire(name: &str) -> PyResult<ennbo::EnnStorage> {
     ennbo::EnnStorage::from_wire(name)
         .ok_or_else(|| PyValueError::new_err(format!("Unknown enn_storage: {name}")))
+}
+
+/// Decode a metric-learning wire name. The match lives on `MetricLearning`.
+#[doc = "kiss-coverage-off"]
+pub(crate) fn metric_learning_from_wire(name: &str) -> PyResult<ennbo::metric_auto::MetricLearning> {
+    ennbo::metric_auto::MetricLearning::parse(name).ok_or_else(|| {
+        PyValueError::new_err(format!("metric_learning must be 'NONE' or 'AUTO', got {name}"))
+    })
 }
 
 /// Decode an optional storage wire name. `None` means the caller did not choose one.
@@ -38,14 +47,9 @@ pub fn validate_enn_placement_py(
     scale_x: bool,
     metric_learning: &str,
 ) -> PyResult<()> {
-    use ennbo::metric_auto::MetricLearning;
     let driver = index_driver_from_wire(index_driver)?;
     let storage = enn_storage_optional(enn_storage)?;
-    let metric = MetricLearning::parse(metric_learning).ok_or_else(|| {
-        PyValueError::new_err(format!(
-            "metric_learning must be 'none' or 'auto', got {metric_learning}"
-        ))
-    })?;
+    let metric = metric_learning_from_wire(metric_learning)?;
     ennbo::EnnLayout::try_from_parts(
         driver,
         storage,

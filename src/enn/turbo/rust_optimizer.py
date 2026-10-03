@@ -18,15 +18,12 @@ from .types.telemetry import Telemetry
 
 def _tell_estimate(inner: Any, x_native: np.ndarray, y_in: np.ndarray) -> np.ndarray:
     """Posterior mean at the points just told. Raw y if there is no surrogate."""
+    if not inner.has_surrogate():
+        return y_in
     x = np.asarray(x_native, dtype=float)
     if x.ndim == 1:
         x = x.reshape(1, -1)
-    try:
-        mu = np.asarray(inner.posterior_mu(x), dtype=float)
-    except ValueError as exc:
-        if "No surrogate" not in str(exc):
-            raise
-        return y_in
+    mu = np.asarray(inner.posterior_mu(x), dtype=float)
     if y_in.ndim == 1 and mu.ndim == 2 and mu.shape[1] == 1:
         return mu.reshape(-1)
     return mu

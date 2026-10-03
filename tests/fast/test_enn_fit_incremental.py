@@ -181,6 +181,26 @@ def test_incremental_enn_fit_rejects_a_later_k_or_seed():
     )
 
 
+def test_incremental_fit_state_lives_only_in_the_rust_model():
+    import numpy as np
+
+    from enn.enn.enn_class import EpistemicNearestNeighbors
+    from enn.enn.enn_fit import enn_fit
+
+    r = np.random.default_rng(0)
+    model = EpistemicNearestNeighbors(r.random((20, 2)), r.random((20, 1)))
+    token = model.add(r.random((5, 2)), r.random((5, 1)))
+    enn_fit(
+        model,
+        k=5,
+        num_fit_candidates=10,
+        num_fit_samples=10,
+        rng=np.random.default_rng(1),
+        incremental=token,
+    )
+    assert sorted(vars(model)) == ["_rust_model"]
+
+
 def test_tell_with_y_bounds_tracks_warped_y_std():
     import numpy as np
 

@@ -293,9 +293,14 @@ pub enum AcquisitionConfig {
     Pareto,
 }
 
+/// UCB exploration weight used when none is given.
+pub const DEFAULT_UCB_BETA: f64 = 2.0;
+
 impl Default for AcquisitionConfig {
     fn default() -> Self {
-        AcquisitionConfig::UCB { beta: 2.0 }
+        AcquisitionConfig::UCB {
+            beta: DEFAULT_UCB_BETA,
+        }
     }
 }
 
@@ -327,7 +332,7 @@ pub fn turbo_enn_config() -> OptimizerConfig {
         }),
         trust_region: TrustRegionConfig::default(),
         candidates: turbo_candidate_config(),
-        acquisition: AcquisitionConfig::UCB { beta: 2.0 },
+        acquisition: AcquisitionConfig::default(),
         noise_aware: false,
     }
 }

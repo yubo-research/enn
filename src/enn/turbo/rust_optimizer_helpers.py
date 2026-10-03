@@ -5,10 +5,9 @@ from typing import Any
 
 import numpy as np
 
-from .config.acquisition import UCBAcquisitionConfig, acquisition_kind
-from .config.candidate_gen_config import CandidateGenConfig
+from .config.acquisition import acquisition_kind
 from .config.candidate_rv import CandidateRV
-from .config.enn_x_scaling import ENNMetricLearning, ENNScaleX
+from .config.enn_x_scaling import metric_learning_to_wire, scale_x_to_wire
 from .config.init_strategies import LHDOnlyInit
 from .config.morbo_tr_config import MorboTRConfig
 from .config.optimizer_config import OptimizerConfig
@@ -16,20 +15,11 @@ from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .config.trust_region import NoTRConfig, TurboTRConfig
 
 def _acquisition_to_override(config: OptimizerConfig) -> dict[str, Any]:
-    acq = getattr(config, "acquisition", None)
-    if acq is None:
-        return {}
-    kind = acquisition_kind(acq)
-    if isinstance(acq, UCBAcquisitionConfig):
-        return {
-            "acquisition": kind,
-            "acquisition_beta": float(getattr(acq, "beta", 2.0)),
-        }
-    return {"acquisition": kind}
+    return {"acquisition": acquisition_kind(config.acquisition)}
 
 
 def _candidate_rv_override(config: OptimizerConfig) -> dict[str, Any]:
-    rv = getattr(config, "candidate_rv", None)
+    rv = config.candidate_rv
     if rv is CandidateRV.SOBOL:
         return {"candidate_rv": "sobol"}
     if rv is CandidateRV.UNIFORM:
@@ -40,9 +30,7 @@ def _candidate_rv_override(config: OptimizerConfig) -> dict[str, Any]:
 
 
 def _candidate_count_override(config: OptimizerConfig) -> dict[str, Any]:
-    candidates = getattr(config, "candidates", None)
-    if not isinstance(candidates, CandidateGenConfig):
-        return {}
+    candidates = config.candidates
     return {
         "min_candidates": int(candidates.min_candidates),
         "max_candidates": int(candidates.max_candidates),
@@ -60,23 +48,20 @@ def _candidates_to_override(config: OptimizerConfig) -> dict[str, Any]:
     return out
 
 
-def _length_or_none(tr: TurboTRConfig, name: str) -> float | None:
-    value = getattr(tr, name) if hasattr(tr, name) else getattr(tr.length, name, None)
-    if value is None:
-        return None
-    return float(value)
-
-
-def _put_set_lengths(out: dict[str, Any], tr: TurboTRConfig) -> None:
-    for name in ("length_init", "length_min", "length_max"):
-        value = _length_or_none(tr, name)
+def _put_set_lengths(out: dict[str, Any], tr: TurboTRConfig | MorboTRConfig) -> None:
+    lengths = {
+        "length_init": tr.length_init,
+        "length_min": tr.length_min,
+        "length_max": tr.length_max,
+    }
+    for name, value in lengths.items():
         if value is not None:
-            out[name] = value
+            out[name] = float(value)
 
 
 def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    tr = getattr(config, "trust_region", None)
+    tr = config.trust_region
     if isinstance(tr, MorboTRConfig):
         out["trust_region"] = "morbo"
         out["num_metrics"] = int(tr.num_metrics)
@@ -95,8 +80,7 @@ def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
 
 
 def _metric_overrides(surrogate: ENNSurrogateConfig, overrides: dict[str, Any]) -> None:
-    if surrogate.metric_learning == ENNMetricLearning.AUTO:
-        overrides["metric_learning"] = "auto"
+    overrides["metric_learning"] = metric_learning_to_wire(surrogate.metric_learning)
     if surrogate.tied_dims:
         overrides["tied_dims"] = [list(g) for g in surrogate.tied_dims]
     if surrogate.fit.affine_calibrate:
@@ -108,7 +92,7 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
     overrides.update(_acquisition_to_override(config))
     overrides.update(_candidates_to_override(config))
     overrides.update(_trust_region_to_override(config))
-    surrogate = getattr(config, "surrogate", None)
+    surrogate = config.surrogate
     if isinstance(surrogate, ENNSurrogateConfig):
         from .config.enn_index_driver import index_driver_to_wire
         from .config.enn_surrogate_config import enn_storage_to_wire
@@ -124,8 +108,7 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
         overrides["infer_aleatoric_variance"] = bool(
             surrogate.fit.infer_aleatoric_variance_scale
         )
-        if surrogate.scale_x == ENNScaleX.ON:
-            overrides["scale_x"] = True
+        overrides["scale_x"] = scale_x_to_wire(surrogate.scale_x)
         _metric_overrides(surrogate, overrides)
         if surrogate.y_bounds is not None:
             overrides["y_bounds"] = np.asarray(surrogate.y_bounds, dtype=float)

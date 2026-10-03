@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-
 
 def _to_rust_seeds(function_seeds: np.ndarray | list[int]) -> list[int]:
     if hasattr(function_seeds, "__iter__"):
@@ -39,9 +37,3 @@ def enn_neighbor_distances_and_indices(
         bool(exclude_nearest),
     )
     return np.asarray(dist2s, dtype=float), np.asarray(idx, dtype=int)
-
-
-def _rust_index_driver_name(index_driver: ENNIndexDriver) -> str:
-    from enn.turbo.config.enn_index_driver import index_driver_to_wire
-
-    return index_driver_to_wire(index_driver)

@@ -8,6 +8,26 @@ from enn._rust import ENNParams as RustENNParams
 from enn._rust import ENNStatefulFitter as _RustENNStatefulFitter
 
 
+def rust_params(params: Any | None) -> RustENNParams | None:
+    if params is None:
+        return None
+    return RustENNParams(
+        params.k_num_neighbors,
+        params.epistemic_variance_scale,
+        params.aleatoric_variance_scale,
+    )
+
+
+def py_params(rust_result: Any) -> Any:
+    from .enn_params import ENNParams as PyENNParams
+
+    return PyENNParams(
+        k_num_neighbors=rust_result.k_num_neighbors,
+        epistemic_variance_scale=rust_result.epistemic_variance_scale,
+        aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
+    )
+
+
 class ENNStatefulFitter:
     def __init__(
         self,
@@ -73,32 +93,18 @@ class ENNStatefulFitter:
         affine_calibrate: bool = False,
     ) -> Any:
         from .enn_class import EpistemicNearestNeighbors as PyENN
-        from .enn_params import ENNParams as PyENNParams
 
         if not isinstance(model, PyENN):
             raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
-
-        rust_warm_start = None
-        if params_warm_start is not None:
-            rust_warm_start = RustENNParams(
-                params_warm_start.k_num_neighbors,
-                params_warm_start.epistemic_variance_scale,
-                params_warm_start.aleatoric_variance_scale,
-            )
 
         rust_result = self._rust.ask(
             model.rust_backend,
             None if num_fit_candidates is None else int(num_fit_candidates),
             num_fit_samples,
-            rust_warm_start,
+            rust_params(params_warm_start),
             affine_calibrate,
         )
-
-        return PyENNParams(
-            k_num_neighbors=rust_result.k_num_neighbors,
-            epistemic_variance_scale=rust_result.epistemic_variance_scale,
-            aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
-        )
+        return py_params(rust_result)
 
     @property
     def affine_calibrator(self):

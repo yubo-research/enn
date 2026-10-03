@@ -66,6 +66,8 @@ mod golden_parity;
 #[allow(missing_docs)]
 pub mod hypervolume;
 #[allow(missing_docs)]
+pub mod incremental_fit;
+#[allow(missing_docs)]
 pub mod incumbent_tracker;
 #[allow(missing_docs)]
 pub mod index;
@@ -149,6 +151,8 @@ pub use config::turbo_zero_config;
 pub use config::validate_optimizer_rules;
 /// Which acquisition the optimizer runs.
 pub use config::AcquisitionConfig;
+/// UCB exploration weight used when none is given.
+pub use config::DEFAULT_UCB_BETA;
 /// Flags for [`validate_optimizer_rules`].
 pub use config::OptimizerRuleSet;
 /// How many candidates to draw.
@@ -199,6 +203,8 @@ pub use benchmarks::DoubleAckley;
 pub use calibration::AffineCalibrator;
 /// Stateful fitter for ENN variance scales.
 pub use fitter::ENNFitter;
+/// Incremental fitting tied to a model's `add` calls.
+pub use incremental_fit::{AddToken, IncrementalAsk, IncrementalFit};
 /// Hash a batch of normal draws for several seeds.
 pub use hash::normal_hash_batch_multi_seed;
 /// Faster path of [`normal_hash_batch_multi_seed`].

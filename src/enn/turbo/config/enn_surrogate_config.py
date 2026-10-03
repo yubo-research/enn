@@ -8,7 +8,12 @@ import numpy as np
 
 from .enn_fit_config import ENNFitConfig
 from .enn_index_driver import ENNIndexDriver, index_driver_to_wire
-from .enn_x_scaling import ENNMetricLearning, ENNScaleX
+from .enn_x_scaling import (
+    ENNMetricLearning,
+    ENNScaleX,
+    metric_learning_to_wire,
+    scale_x_to_wire,
+)
 
 
 class ENNStorage(Enum):
@@ -31,24 +36,15 @@ def validate_enn_placement(
     scale_x: ENNScaleX,
     metric_learning: ENNMetricLearning,
 ) -> None:
+    """Check the placement options. Each wire encoder rejects a wrong type."""
     from enn._rust import validate_enn_placement as rust_validate
 
-    if not isinstance(index_driver, ENNIndexDriver):
-        raise ValueError(f"index_driver must be an ENNIndexDriver, got {index_driver!r}")
-    if enn_storage is not None and not isinstance(enn_storage, ENNStorage):
-        raise ValueError(f"enn_storage must be an ENNStorage, got {enn_storage!r}")
-    if not isinstance(scale_x, ENNScaleX):
-        raise ValueError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
-    if not isinstance(metric_learning, ENNMetricLearning):
-        raise ValueError(
-            f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}"
-        )
     rust_validate(
         index_driver_to_wire(index_driver),
         None if enn_storage is None else enn_storage_to_wire(enn_storage),
         None if work_dir is None else os.fspath(work_dir),
-        scale_x is ENNScaleX.ON,
-        "auto" if metric_learning is ENNMetricLearning.AUTO else "none",
+        scale_x_to_wire(scale_x),
+        metric_learning_to_wire(metric_learning),
     )
 
 
@@ -65,12 +61,6 @@ class ENNSurrogateConfig:
     y_bounds: np.ndarray | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.scale_x, ENNScaleX):
-            raise ValueError(f"scale_x must be an ENNScaleX, got {self.scale_x!r}")
-        if not isinstance(self.metric_learning, ENNMetricLearning):
-            raise ValueError(
-                f"metric_learning must be an ENNMetricLearning, got {self.metric_learning!r}"
-            )
         validate_enn_placement(
             index_driver=self.index_driver,
             enn_storage=self.enn_storage,

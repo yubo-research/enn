@@ -5,8 +5,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from enn._rust import ENNAddToken
 from enn._rust import EpistemicNearestNeighbors as _RustENN
-from enn.turbo.config.enn_index_driver import ENNIndexDriver, index_driver_from_wire
+from enn.turbo.config.enn_index_driver import (
+    ENNIndexDriver,
+    index_driver_from_wire,
+    index_driver_to_wire,
+)
 from enn.turbo.config.enn_surrogate_config import (
     ENNStorage,
     enn_storage_to_wire,
@@ -15,10 +20,11 @@ from enn.turbo.config.enn_surrogate_config import (
 from enn.turbo.config.enn_x_scaling import (
     ENNMetricLearning,
     ENNScaleX,
+    metric_learning_to_wire,
+    scale_x_to_wire,
 )
 
-from .add_token import ENNAddToken
-from .enn_class_support import _rust_index_driver_name, _to_rust_seeds
+from .enn_class_support import _to_rust_seeds
 from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
@@ -105,12 +111,6 @@ class EpistemicNearestNeighbors(_EnnRustView):
         enn_storage: ENNStorage | None = None,
         y_bounds: np.ndarray | None = None,
     ) -> None:
-        if not isinstance(scale_x, ENNScaleX):
-            raise ValueError(f"scale_x must be ENNScaleX, got {scale_x!r}")
-        if not isinstance(metric_learning, ENNMetricLearning):
-            raise ValueError(
-                f"metric_learning must be ENNMetricLearning, got {metric_learning!r}"
-            )
         validate_enn_placement(
             index_driver=index_driver,
             enn_storage=enn_storage,
@@ -124,16 +124,13 @@ class EpistemicNearestNeighbors(_EnnRustView):
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
         groups = [] if tied_dims is None else [list(map(int, g)) for g in tied_dims]
-        idx_driver = _rust_index_driver_name(index_driver)
         rust_kwargs: dict[str, Any] = {
             "train_x": train_x,
             "train_y": train_y,
             "train_yvar": train_yvar,
-            "scale_x": scale_x == ENNScaleX.ON,
-            "index_driver": idx_driver,
-            "metric_learning": "auto"
-            if metric_learning == ENNMetricLearning.AUTO
-            else "none",
+            "scale_x": scale_x_to_wire(scale_x),
+            "index_driver": index_driver_to_wire(index_driver),
+            "metric_learning": metric_learning_to_wire(metric_learning),
             "tied_dims": groups,
         }
         if work_dir is not None:
@@ -151,10 +148,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         yvar: np.ndarray | None = None,
     ) -> ENNAddToken:
         x, y, yvar = self._coerce_inputs(x, y, yvar)
-        self._rust_model.add(x, y, yvar)
-        token = ENNAddToken(self, x, y, yvar)
-        self._pending_fit_token = token
-        return token
+        return self._rust_model.add(x, y, yvar)
 
     def ensure_index_sync(self) -> None:
         self._rust_model.ensure_index_sync()

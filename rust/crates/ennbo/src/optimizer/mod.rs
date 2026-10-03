@@ -267,8 +267,8 @@ impl Optimizer {
 
     /// Posterior mean at `x` in natural units, in natural `y` units.
     ///
-    /// `x` is converted to the unit cube, matching `tell`. There is no
-    /// surrogate on TuRBO-ZERO, and this returns an error in that case.
+    /// `x` is converted to the unit cube, matching `tell`. Returns an error
+    /// when [`Self::has_surrogate`] is false.
     pub fn posterior_mu(&self, x_natural: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
         if x_natural.ncols() != self.num_dim {
             return Err(ENNError::InvalidShape {
@@ -327,6 +327,11 @@ impl Optimizer {
     /// Get surrogate.
     pub fn surrogate(&self) -> Option<&(dyn Surrogate + Send + Sync)> {
         self.surrogate.as_ref().map(|s| s.as_ref())
+    }
+
+    /// Whether this optimizer fits a surrogate (false for TuRBO-ZERO and LHD-only).
+    pub fn has_surrogate(&self) -> bool {
+        self.surrogate.is_some()
     }
 
     /// Get mutable surrogate.

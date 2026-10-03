@@ -6,7 +6,43 @@ use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use crate::py_model::PyEpistemicNearestNeighbors;
+use crate::py_model::{PyENNParams, PyEpistemicNearestNeighbors};
+
+/// One-shot proof that `EpistemicNearestNeighbors.add` appended rows to one model.
+#[pyclass(name = "ENNAddToken", frozen)]
+#[derive(Clone, Copy)]
+pub struct PyAddToken {
+    pub(crate) inner: ennbo::AddToken,
+}
+
+/// Tell the rows of `token`'s `add` to the model's incremental fitter, then fit.
+#[allow(clippy::too_many_arguments)]
+#[pyfunction(name = "enn_fit_incremental")]
+#[pyo3(signature = (model, token, k, seed, num_fit_candidates=None, num_fit_samples=None, params_warm_start=None))]
+#[doc = "kiss-coverage-off"]
+pub fn enn_fit_incremental_py(
+    mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
+    token: &PyAddToken,
+    k: i32,
+    seed: u64,
+    num_fit_candidates: Option<usize>,
+    num_fit_samples: Option<usize>,
+    params_warm_start: Option<PyENNParams>,
+) -> PyResult<PyENNParams> {
+    let opts = ennbo::IncrementalAsk {
+        k,
+        seed,
+        num_fit_candidates,
+        num_fit_samples,
+        params_warm_start: params_warm_start.map(|p| p.inner),
+    };
+    let model = &mut *model;
+    model
+        .incremental
+        .ask(&model.inner, token.inner, &opts)
+        .map(|inner| PyENNParams { inner })
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
 
 /// Python wrapper for subsample_loglik
 #[allow(clippy::too_many_arguments)]
