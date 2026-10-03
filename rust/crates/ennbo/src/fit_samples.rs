@@ -11,7 +11,10 @@ pub const DEFAULT_FIT_SAMPLES: NonZeroUsize = match NonZeroUsize::new(10) {
 };
 
 /// Candidate count in the default ENN surrogate config.
-pub const DEFAULT_FIT_CANDIDATES: usize = 30;
+pub const DEFAULT_FIT_CANDIDATES: NonZeroUsize = match NonZeroUsize::new(30) {
+    Some(n) => n,
+    None => panic!("30 is nonzero"),
+};
 
 /// Settings read only by the scale search.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +22,7 @@ pub struct ScaleSearch {
     /// Observations sampled to score each candidate.
     pub num_fit_samples: NonZeroUsize,
     /// Random scale candidates scored per search.
-    pub num_fit_candidates: usize,
+    pub num_fit_candidates: NonZeroUsize,
     /// Search the aleatoric scale too; otherwise it stays 0.
     pub infer_aleatoric_variance: bool,
     /// Fit an affine calibrator after the search.
@@ -35,6 +38,19 @@ impl ScaleSearch {
             infer_aleatoric_variance: true,
             affine_calibrate: false,
         }
+    }
+
+    /// Default search with these counts. `None` takes the default; zero is rejected.
+    pub fn from_counts(
+        num_fit_samples: Option<usize>,
+        num_fit_candidates: Option<usize>,
+    ) -> Result<Self, ENNError> {
+        let samples = num_fit_samples.map(nonzero_samples).transpose()?;
+        let candidates = num_fit_candidates.map(nonzero_candidates).transpose()?;
+        Ok(Self {
+            num_fit_candidates: candidates.unwrap_or(DEFAULT_FIT_CANDIDATES),
+            ..Self::with_samples(samples.unwrap_or(DEFAULT_FIT_SAMPLES))
+        })
     }
 }
 
@@ -73,10 +89,7 @@ impl FitSamples {
 
     /// Default search with `num_fit_samples` draws and `num_fit_candidates` candidates.
     pub fn draw(num_fit_samples: usize, num_fit_candidates: usize) -> Result<Self, ENNError> {
-        Ok(Self::Draw(ScaleSearch {
-            num_fit_candidates,
-            ..ScaleSearch::with_samples(nonzero_samples(num_fit_samples)?)
-        }))
+        ScaleSearch::from_counts(Some(num_fit_samples), Some(num_fit_candidates)).map(Self::Draw)
     }
 
     /// Draw count, or `None` when frozen.
@@ -104,6 +117,24 @@ pub fn nonzero_samples(n: usize) -> Result<NonZeroUsize, ENNError> {
         .ok_or_else(|| ENNError::InvalidParameter("num_fit_samples must be > 0, got 0".into()))
 }
 
+/// Reject a zero candidate count.
+pub fn nonzero_candidates(n: usize) -> Result<NonZeroUsize, ENNError> {
+    NonZeroUsize::new(n)
+        .ok_or_else(|| ENNError::InvalidParameter("num_fit_candidates must be > 0, got 0".into()))
+}
+
+#[cfg(test)]
+pub(crate) fn test_search(
+    num_fit_samples: usize,
+    num_fit_candidates: usize,
+    infer_aleatoric_variance: bool,
+) -> ScaleSearch {
+    ScaleSearch {
+        infer_aleatoric_variance,
+        ..ScaleSearch::from_counts(Some(num_fit_samples), Some(num_fit_candidates)).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,10 +155,22 @@ mod tests {
     fn draw_sets_counts_and_keeps_default_flags() {
         let s = FitSamples::draw(4, 9).unwrap().search().unwrap();
         assert_eq!(s.num_fit_samples.get(), 4);
-        assert_eq!(s.num_fit_candidates, 9);
+        assert_eq!(s.num_fit_candidates.get(), 9);
         assert!(s.infer_aleatoric_variance);
         assert!(!s.affine_calibrate);
         assert!(FitSamples::draw(0, 9).is_err());
+        let err = FitSamples::draw(4, 0).unwrap_err();
+        assert!(err.to_string().contains("num_fit_candidates"), "{err}");
         assert_eq!(FitSamples::default().count(), Some(DEFAULT_FIT_SAMPLES.get()));
+    }
+
+    #[test]
+    fn from_counts_fills_defaults_and_rejects_zero() {
+        assert_eq!(ScaleSearch::from_counts(None, None).unwrap(), ScaleSearch::default());
+        let s = ScaleSearch::from_counts(None, Some(3)).unwrap();
+        assert_eq!(s.num_fit_samples, DEFAULT_FIT_SAMPLES);
+        assert_eq!(s.num_fit_candidates.get(), 3);
+        assert!(ScaleSearch::from_counts(Some(0), None).is_err());
+        assert!(ScaleSearch::from_counts(None, Some(0)).is_err());
     }
 }

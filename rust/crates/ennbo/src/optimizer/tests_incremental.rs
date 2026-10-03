@@ -72,12 +72,12 @@ fn enn_fitter_ask_always_fits_with_enough_obs() {
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
     let model =
         EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
-    let mut fitter = ENNFitter::new(2, true);
+    let mut fitter = ENNFitter::new(2);
     let all: Vec<usize> = (0..model.len()).collect();
     let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
     fitter.reset_y_stats(&ty.view());
     let mut rng = StdRng::seed_from_u64(99);
-    let p = fitter.ask(&model, Some(4), 3, None, &mut rng, false).unwrap();
+    let p = fitter.ask(&model, &crate::fit_samples::test_search(3, 4, true), None, &mut rng).unwrap();
     assert_eq!(p.k_num_neighbors, 2);
     assert!(p.epistemic_variance_scale > 0.0);
 }

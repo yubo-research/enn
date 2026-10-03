@@ -13,9 +13,7 @@ use crate::metric_auto::MetricLearning;
 use crate::model::EpistemicNearestNeighbors;
 use crate::neighbor_count::NeighborCount;
 use crate::params::{ENNParams, PosteriorFlags};
-
-/// Disk appends with at least this many rows skip the scale search.
-const BULK_DISK_TELL_SKIP_FIT_ROWS: usize = 4_096;
+use crate::surrogate_state::{AppendInput, AppendPlan, FitState, ScaleFit};
 
 fn enable_auto_if_configured(
     model: &mut EpistemicNearestNeighbors,
@@ -52,6 +50,7 @@ pub trait Surrogate: Send + Sync {
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError>;
 
+    /// Posterior mean and standard error in natural `y` units.
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError>;
 
     fn sample(
@@ -69,7 +68,6 @@ pub trait Surrogate: Send + Sync {
     fn observation_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError>;
     fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError>;
     fn naturalize_observations_y(&self, y_warped: Array2<f64>) -> Array2<f64>;
-    fn naturalize_prediction(&self, pred: SurrogatePrediction) -> SurrogatePrediction;
     fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError>;
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError>;
     fn schedule_background_flush(&self) -> Result<(), ENNError>;
@@ -126,38 +124,44 @@ impl ENNSurrogateConfig {
         })
     }
 
-    fn new_fitter(&self) -> Option<ENNFitter> {
-        self.fit_samples
-            .search()
-            .map(|s| ENNFitter::new(self.k.get(), s.infer_aleatoric_variance))
-    }
 }
 
 pub struct ENNSurrogate {
     config: ENNSurrogateConfig,
-    model: Option<EpistemicNearestNeighbors>,
-    params: Option<ENNParams>,
-    fitter: Option<ENNFitter>,
-    calibrator: Option<crate::calibration::AffineCalibrator>,
+    state: FitState,
 }
 
 impl ENNSurrogate {
     pub fn new(config: ENNSurrogateConfig) -> Self {
         Self {
             config,
-            model: None,
-            params: None,
-            fitter: None,
-            calibrator: None,
+            state: FitState::Unfitted,
         }
     }
 
     pub fn model(&self) -> Option<&EpistemicNearestNeighbors> {
-        self.model.as_ref()
+        self.state.model()
     }
 
     pub fn params(&self) -> Option<&ENNParams> {
-        self.params.as_ref()
+        self.state.params()
+    }
+
+    fn fitted_model(&self) -> Result<&EpistemicNearestNeighbors, ENNError> {
+        self.state
+            .model()
+            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))
+    }
+
+    fn params_or_default(&self) -> Result<ENNParams, ENNError> {
+        match self.state.params() {
+            Some(p) => Ok(*p),
+            None => self.config.default_params(),
+        }
+    }
+
+    fn on_disk(&self) -> bool {
+        self.config.layout.index_driver() == IndexDriver::BpAnnDisk
     }
 
     fn construct_model(
@@ -175,49 +179,30 @@ impl ENNSurrogate {
         )
     }
 
-    fn freeze_default_params(&mut self) -> Result<(), ENNError> {
-        self.params = Some(self.config.default_params()?);
-        self.calibrator = None;
+    fn search_scales(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
+        if let FitState::Searched { model, fit } = &mut self.state {
+            let ScaleFit {
+                search,
+                fitter,
+                params,
+                calibrator,
+            } = fit.as_mut();
+            *params = Some(fitter.ask(model, search, params.as_ref(), rng)?);
+            *calibrator = fitter.calibrator().cloned();
+        }
         Ok(())
     }
 
-    fn run_fitter(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
-        let FitSamples::Draw(search) = self.config.fit_samples else {
-            return self.freeze_default_params();
-        };
-        let model = self
-            .model
-            .as_ref()
-            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
-        if self.fitter.is_none() {
-            let n = model.len();
-            let indices: Vec<usize> = (0..n).collect();
-            
-            let (train_x, train_y, train_yvar) = model.train_rows_at(&indices)?;
-            let mut fitter = ENNFitter::new(self.config.k.get(), search.infer_aleatoric_variance);
-            let yvar_view = train_yvar.as_ref().map(|v| v.view());
-            fitter.tell(
-                &train_x.view(),
-                &train_y.view(),
-                yvar_view.as_ref(),
-                Some(model.y_bounds()),
-            )?;
-            if let Some(p) = self.params {
-                fitter.set_params(p);
-            }
-            self.fitter = Some(fitter);
+    fn apply_plan(&mut self, plan: AppendPlan, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
+        if plan.sync {
+            self.fitted_model()?.ensure_index_sync()?;
         }
-        let fitter = self.fitter.as_mut().expect("fitter");
-        let p = fitter.ask(
-            model,
-            Some(search.num_fit_candidates),
-            search.num_fit_samples.get(),
-            self.params.as_ref(),
-            rng,
-            search.affine_calibrate,
-        )?;
-        self.params = Some(p);
-        self.calibrator = fitter.calibrator().cloned();
+        if plan.search {
+            self.search_scales(rng)?;
+        }
+        if plan.release {
+            self.fitted_model()?.index_access().release_observation_pages()?;
+        }
         Ok(())
     }
 
@@ -228,99 +213,95 @@ impl ENNSurrogate {
         yvar_new: Option<&ArrayView2<f64>>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
-        if let Some(model) = &mut self.model {
-            model.add(x_new, y_new, yvar_new)?;
-            if let Some(fitter) = self.fitter.as_mut() {
-                
-                fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
+        match &mut self.state {
+            FitState::Unfitted => return self.start_model(x_new, y_new, yvar_new, None, rng),
+            FitState::Frozen { model, .. } => model.add(x_new, y_new, yvar_new)?,
+            FitState::Searched { model, fit } => {
+                model.add(x_new, y_new, yvar_new)?;
+                fit.fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
             }
-            let is_disk = model.backend_driver() == IndexDriver::BpAnnDisk;
-            let bulk_disk = is_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
-            
-            
-            let skip_fit = bulk_disk || (is_disk && self.params.is_some());
-            
-            
-            if !skip_fit || bulk_disk {
-                model.ensure_index_sync()?;
-            }
-            if !skip_fit || self.config.fit_samples.is_frozen() {
-                self.run_fitter(rng)?;
-            }
-            if !skip_fit || bulk_disk {
-                if let Some(model) = &self.model {
-                    model.index_access().release_observation_pages()?;
-                }
-            }
-            return Ok(());
         }
-        self.start_model(x_new, y_new, yvar_new, rng)
+        let has_params = self.state.params().is_some();
+        let frozen = matches!(self.state, FitState::Frozen { .. });
+        self.apply_plan(
+            AppendPlan::new(AppendInput {
+                on_disk: self.on_disk(),
+                rows: x_new.nrows(),
+                frozen,
+                has_params,
+                initial: false,
+            }),
+            rng,
+        )
     }
 
-    /// Build a model from `x`, `y`, `yvar` alone and fit its scales. `self.model` must be `None`.
+    /// Replace the state with a model of `x`, `y`, `yvar` alone and fit its scales, starting
+    /// the search from `warm`.
     fn start_model(
         &mut self,
         x_new: &ArrayView2<f64>,
         y_new: &ArrayView2<f64>,
         yvar_new: Option<&ArrayView2<f64>>,
+        warm: Option<ENNParams>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
         let mut model = self.construct_model(x_new, y_new, yvar_new)?;
         enable_auto_if_configured(&mut model, &self.config, x_new, y_new)?;
-        let mut fitter = self.config.new_fitter();
-        if let Some(fitter) = fitter.as_mut() {
-            fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
-        }
-        self.model = Some(model);
-        self.fitter = fitter;
-        let on_disk = self.config.layout.index_driver() == IndexDriver::BpAnnDisk;
-        let skip_fit = on_disk && x_new.nrows() >= BULK_DISK_TELL_SKIP_FIT_ROWS;
-        if !skip_fit || self.config.fit_samples.is_frozen() {
-            
-            if on_disk {
-                if let Some(model) = &self.model {
-                    model.ensure_index_sync()?;
+        self.state = match self.config.fit_samples {
+            FitSamples::Frozen => FitState::Frozen {
+                model,
+                params: self.config.default_params()?,
+            },
+            FitSamples::Draw(search) => {
+                let mut fitter = ENNFitter::new(self.config.k.get());
+                fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
+                FitState::Searched {
+                    model,
+                    fit: Box::new(ScaleFit {
+                        search,
+                        fitter,
+                        params: warm,
+                        calibrator: None,
+                    }),
                 }
             }
-            self.run_fitter(rng)?;
-            if on_disk {
-                if let Some(model) = &self.model {
-                    model.index_access().release_observation_pages()?;
-                }
-            }
-        }
-        Ok(())
+        };
+        let frozen = self.config.fit_samples.is_frozen();
+        self.apply_plan(
+            AppendPlan::new(AppendInput {
+                on_disk: self.on_disk(),
+                rows: x_new.nrows(),
+                frozen,
+                has_params: false,
+                initial: true,
+            }),
+            rng,
+        )
     }
 }
 
 impl Surrogate for ENNSurrogate {
     fn fitted_num_metrics(&self) -> Option<usize> {
-        self.model.as_ref().map(|m| m.num_metrics())
+        self.state.model().map(|m| m.num_metrics())
     }
 
     fn observation_count(&self) -> Option<usize> {
-        self.model.as_ref().map(|m| m.len())
+        self.state.model().map(|m| m.len())
     }
 
     fn observation_row_x(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
-        let model = self
-            .model
-            .as_ref()
-            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
+        let model = self.fitted_model()?;
         model.rows().row_x(idx)
     }
 
     fn observation_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
-        let model = self
-            .model
-            .as_ref()
-            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
+        let model = self.fitted_model()?;
         
         model.row_y_natural(idx)
     }
 
     fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError> {
-        let model = match self.model.as_ref() {
+        let model = match self.state.model() {
             Some(m) => m,
             None => return Ok(None),
         };
@@ -336,7 +317,7 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn naturalize_observations_y(&self, y_warped: Array2<f64>) -> Array2<f64> {
-        let Some(model) = self.model.as_ref() else {
+        let Some(model) = self.state.model() else {
             return y_warped;
         };
         if crate::y_bounds::is_identity_bounds(model.y_bounds()) {
@@ -345,12 +326,8 @@ impl Surrogate for ENNSurrogate {
         crate::y_bounds::inv_y(y_warped.view(), model.y_bounds())
     }
 
-    fn naturalize_prediction(&self, pred: SurrogatePrediction) -> SurrogatePrediction {
-        pred
-    }
-
     fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
-        if let Some(model) = self.model.as_ref() {
+        if let Some(model) = self.state.model() {
             let (yz, _) = model.warp_observations(y, None)?;
             return Ok(yz);
         }
@@ -363,7 +340,7 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
-        let model = match self.model.as_ref() {
+        let model = match self.state.model() {
             Some(m) => m,
             None => return Ok(None),
         };
@@ -388,10 +365,9 @@ impl Surrogate for ENNSurrogate {
         let mut seed_bytes = [0u8; 32];
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
-        self.model = None;
-        self.fitter = None;
-        self.calibrator = None;
-        self.start_model(x, y, yvar, &mut local_rng)
+        let warm = self.state.params().copied();
+        self.state = FitState::Unfitted;
+        self.start_model(x, y, yvar, warm, &mut local_rng)
     }
 
     fn fit_append(
@@ -408,7 +384,7 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn schedule_background_flush(&self) -> Result<(), ENNError> {
-        if let Some(model) = &self.model {
+        if let Some(model) = self.state.model() {
             model.backend.schedule_background_flush()
         } else {
             Ok(())
@@ -416,7 +392,7 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn wait_for_background_flush(&self) -> Result<(), ENNError> {
-        if let Some(model) = &self.model {
+        if let Some(model) = self.state.model() {
             
             
             
@@ -427,7 +403,7 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn release_observation_pages(&self) -> Result<(), ENNError> {
-        if let Some(model) = &self.model {
+        if let Some(model) = self.state.model() {
             model.index_access().release_observation_pages()
         } else {
             Ok(())
@@ -435,17 +411,14 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn clear_observations(&mut self) -> Result<(), ENNError> {
-        let owned_store = match &self.model {
+        let owned_store = match self.state.model() {
             Some(model) => {
                 model.backend.wait_for_flush()?;
                 self.config.layout.work_dir().map(std::path::Path::to_path_buf)
             }
             None => None,
         };
-        self.model = None;
-        self.fitter = None;
-        self.calibrator = None;
-        self.params = None;
+        self.state = FitState::Unfitted;
         if let Some(work_dir) = owned_store {
             ennbo_bpann::bpann_remove_store(&work_dir)
                 .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
@@ -454,18 +427,8 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {
-        let model = self
-            .model
-            .as_ref()
-            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
-        let params = match self.params.as_ref() {
-            Some(p) => *p,
-            None => {
-                
-                
-                self.config.default_params()?
-            }
-        };
+        let model = self.fitted_model()?;
+        let params = self.params_or_default()?;
 
         let flags = PosteriorFlags::new();
         let posterior = model.posterior(x, &params, &flags)?;
@@ -479,7 +442,7 @@ impl Surrogate for ENNSurrogate {
             .into_dimensionality::<ndarray::Ix2>()
             .map_err(|e| ENNError::InvalidParameter(format!("Shape error: {}", e)))?;
 
-        if let Some(cal) = &self.calibrator {
+        if let Some(cal) = self.state.calibrator() {
             let (mu, se) = crate::surrogate_affine::apply_prediction(cal, mu, se, model.y_bounds())?;
             return Ok(SurrogatePrediction { mu, se });
         }
@@ -492,18 +455,8 @@ impl Surrogate for ENNSurrogate {
         num_samples: usize,
         rng: &mut dyn RngCore,
     ) -> Result<Array3<f64>, ENNError> {
-        let model = self
-            .model
-            .as_ref()
-            .ok_or_else(|| ENNError::InvalidParameter("Surrogate not fitted".to_string()))?;
-        let params = match self.params.as_ref() {
-            Some(p) => *p,
-            None => {
-                
-                
-                self.config.default_params()?
-            }
-        };
+        let model = self.fitted_model()?;
+        let params = self.params_or_default()?;
 
         
         let mut seed_bytes = [0u8; 8];
@@ -511,7 +464,7 @@ impl Surrogate for ENNSurrogate {
         let base_seed = u64::from_le_bytes(seed_bytes) as i64;
         let function_seeds: Vec<i64> = (0..num_samples as i64).map(|i| base_seed + i).collect();
 
-        if let Some(cal) = &self.calibrator {
+        if let Some(cal) = self.state.calibrator() {
             return crate::surrogate_affine::calibrated_sample(model, &params, cal, x, num_samples, rng);
         }
         let (draws, _) =
@@ -524,7 +477,7 @@ impl Surrogate for ENNSurrogate {
         if !matches!(self.config.layout, EnnLayout::DiskAuto { .. }) {
             return None;
         }
-        let weights = self.model.as_ref()?.metric_weights()?;
+        let weights = self.state.model()?.metric_weights()?;
         Some(Array1::from(crate::metric_weights::trust_region_sides(weights)))
     }
 }
@@ -595,11 +548,7 @@ mod tests {
         let query = array![[0.6]];
         let base = ENNSurrogateConfig {
             k: crate::NeighborCount::new(3).unwrap(),
-            fit_samples: FitSamples::Draw(crate::ScaleSearch {
-                num_fit_candidates: 4,
-                infer_aleatoric_variance: false,
-                ..crate::ScaleSearch::with_samples(std::num::NonZeroUsize::new(6).unwrap())
-            }),
+            fit_samples: FitSamples::Draw(crate::fit_samples::test_search(6, 4, false)),
             ..Default::default()
         };
         let mut off_a = ENNSurrogate::new(base.clone());
@@ -617,8 +566,8 @@ mod tests {
         let c = on.predict(&query.view()).unwrap();
         assert_eq!(a.mu[[0, 0]], b.mu[[0, 0]]);
         assert_eq!(a.se[[0, 0]], b.se[[0, 0]]);
-        assert!(off_a.calibrator.is_none());
-        let cal = on.calibrator.as_ref().expect("flag on stores a calibrator");
+        assert!(off_a.state.calibrator().is_none());
+        let cal = on.state.calibrator().expect("flag on stores a calibrator");
         let mu_gap = (c.mu[[0, 0]] - a.mu[[0, 0]]).abs();
         let se_gap = (c.se[[0, 0]] - a.se[[0, 0]]).abs();
         let moved = mu_gap > 1e-8 || se_gap > 1e-8;
@@ -709,13 +658,13 @@ mod tests {
         let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
         let y = array![[0.1], [0.2], [0.8], [0.9]];
         let bounds = array![[0.0, 1.0]];
-        let mut fit_nat = crate::fitter::ENNFitter::new(2, true);
+        let mut fit_nat = crate::fitter::ENNFitter::new(2);
         fit_nat
             .tell(&x.view(), &y.view(), None, None)
             .unwrap();
         let nat_std = fit_nat.y_std()[0];
         let y_z = crate::y_bounds::warp_y(y.view(), &bounds).unwrap();
-        let mut fit_z = crate::fitter::ENNFitter::new(2, true);
+        let mut fit_z = crate::fitter::ENNFitter::new(2);
         fit_z
             .tell(&x.view(), &y_z.view(), None, None)
             .unwrap();
@@ -727,7 +676,7 @@ mod tests {
         );
         assert!(z_std > 1.5, "warped y_std={z_std}");
 
-        let mut fit_bounded = crate::fitter::ENNFitter::new(2, true);
+        let mut fit_bounded = crate::fitter::ENNFitter::new(2);
         fit_bounded
             .tell(&x.view(), &y.view(), None, Some(&bounds))
             .unwrap();
@@ -746,7 +695,10 @@ mod tests {
         let mut sur = ENNSurrogate::new(config);
         let mut rng = StdRng::seed_from_u64(7);
         sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
-        let fitter_std = sur.fitter.as_ref().expect("fitter").y_std()[0];
+        let FitState::Searched { fit, .. } = &sur.state else {
+            panic!("Draw config must keep a fitter");
+        };
+        let fitter_std = fit.fitter.y_std()[0];
         assert!(
             (fitter_std - z_std).abs() < 1e-9,
             "surrogate fitter must track warped y: got {fitter_std} want {z_std} (natural would be {nat_std})"
@@ -777,22 +729,46 @@ mod tests {
             .unwrap();
 
         let model = sur.model().expect("model");
-        
-        
-        let indexed = std::fs::read(dir.path().join("indexed_rows.bin"))
-            .ok()
-            .and_then(|b| {
-                if b.len() >= 8 {
-                    Some(u64::from_le_bytes(b[..8].try_into().ok()?) as usize)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
         assert_eq!(
-            indexed, model.len(),
+            indexed_rows(dir.path()),
+            model.len(),
             "indexed_rows.bin must match num_obs after fit_append sync-before-fit"
         );
+    }
+
+    fn indexed_rows(dir: &std::path::Path) -> usize {
+        std::fs::read(dir.join("indexed_rows.bin"))
+            .ok()
+            .and_then(|b| Some(u64::from_le_bytes(b.get(..8)?.try_into().ok()?) as usize))
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn first_bulk_disk_tell_defers_index_until_later_bulk_tell() {
+        use ndarray::Array2;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let config = ENNSurrogateConfig {
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples: crate::FitSamples::draw(2, 2).unwrap(),
+            layout: EnnLayout::disk(dir.path().to_path_buf(), false),
+            ..Default::default()
+        };
+        let mut sur = ENNSurrogate::new(config);
+        let mut rng = StdRng::seed_from_u64(7);
+        let x = Array2::from_shape_fn((4_096, 2), |(i, j)| (i + j) as f64 * 0.001);
+        let y = Array2::from_shape_fn((4_096, 1), |(i, _)| (i as f64) * 0.01);
+        sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
+        sur.wait_for_background_flush().unwrap();
+        let n = sur.model().expect("model").len();
+        assert!(
+            indexed_rows(dir.path()) < n,
+            "first bulk disk tell must leave the index short of {n} rows"
+        );
+        sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
+        sur.wait_for_background_flush().unwrap();
+        assert_eq!(indexed_rows(dir.path()), sur.model().expect("model").len());
     }
 
     #[test]
@@ -878,8 +854,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&other).unwrap(), "keep");
     }
 
-    /// Under non-identity `y_bounds`, public `Surrogate::predict` returns natural-unit μ
-    /// (open interval), idempotent under `naturalize_prediction`.
+    /// Under non-identity `y_bounds`, public `Surrogate::predict` returns natural-unit μ.
     #[test]
     fn regression_surrogate_predict_natural_under_y_bounds() {
         let bounds = array![[0.0, 1.0]];
@@ -896,18 +871,8 @@ mod tests {
         sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
 
         let x_query = array![[0.5, 0.5]];
-        let pred = sur.predict(&x_query.view()).unwrap();
-        let naturalized = Surrogate::naturalize_prediction(&sur, pred.clone());
-        let mu = pred.mu[[0, 0]];
-        let mu_nat = naturalized.mu[[0, 0]];
-        assert!(
-            (mu - mu_nat).abs() < 1e-12,
-            "Surrogate::predict under y_bounds must return natural-unit mu (idempotent under naturalize_prediction); got {mu} vs naturalized {mu_nat}"
-        );
-        assert!(
-            mu_nat > 0.0 && mu_nat < 1.0,
-            "naturalized mu must lie in open (0,1); got {mu_nat}"
-        );
+        let mu = sur.predict(&x_query.view()).unwrap().mu[[0, 0]];
+        assert!(mu > 0.0 && mu < 1.0, "natural mu must lie in open (0,1); got {mu}");
     }
 
     #[test]
@@ -972,7 +937,10 @@ mod tests {
         let y = array![[0.0], [1.0], [0.5], [2.0]];
         sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
         if let Some(w) = weights {
-            sur.model.as_mut().unwrap().metric_set_weights(w, None).unwrap();
+            let FitState::Searched { model, .. } = &mut sur.state else {
+                panic!("Draw config must reach the Searched state");
+            };
+            model.metric_set_weights(w, None).unwrap();
         }
         Surrogate::lengthscales(&sur)
     }

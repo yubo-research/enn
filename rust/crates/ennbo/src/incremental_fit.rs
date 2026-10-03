@@ -11,7 +11,8 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use crate::error::ENNError;
-use crate::fitter::{ENNFitter, DEFAULT_NUM_FIT_SAMPLES};
+use crate::fit_samples::ScaleSearch;
+use crate::fitter::ENNFitter;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::ENNParams;
 
@@ -38,9 +39,9 @@ pub struct IncrementalAsk {
     pub k: i32,
     /// Fitter seed; must equal the one frozen by the first `ask`.
     pub seed: u64,
-    /// Random candidates per `ask` (`None` uses the fitter default).
+    /// Random candidates per `ask` (`None` uses [`crate::fit_samples::DEFAULT_FIT_CANDIDATES`]).
     pub num_fit_candidates: Option<usize>,
-    /// Draws per `ask` (`None` uses [`DEFAULT_NUM_FIT_SAMPLES`]).
+    /// Draws per `ask` (`None` uses [`crate::fit_samples::DEFAULT_FIT_SAMPLES`]).
     pub num_fit_samples: Option<usize>,
     /// Warm-start parameters.
     pub params_warm_start: Option<ENNParams>,
@@ -124,9 +125,10 @@ impl IncrementalFit {
         opts: &IncrementalAsk,
     ) -> Result<ENNParams, ENNError> {
         self.check_frozen(opts.k, opts.seed)?;
+        let search = ScaleSearch::from_counts(opts.num_fit_samples, opts.num_fit_candidates)?;
         let (start, end) = self.take(token)?;
         let frozen = self.frozen.get_or_insert_with(|| FrozenFitter {
-            fitter: ENNFitter::new(opts.k, true),
+            fitter: ENNFitter::new(opts.k),
             rng: StdRng::seed_from_u64(opts.seed),
             k: opts.k,
             seed: opts.seed,
@@ -140,14 +142,9 @@ impl IncrementalFit {
             yvar_view.as_ref(),
             Some(model.y_bounds()),
         )?;
-        frozen.fitter.ask(
-            model,
-            opts.num_fit_candidates,
-            opts.num_fit_samples.unwrap_or(DEFAULT_NUM_FIT_SAMPLES),
-            opts.params_warm_start.as_ref(),
-            &mut frozen.rng,
-            false,
-        )
+        frozen
+            .fitter
+            .ask(model, &search, opts.params_warm_start.as_ref(), &mut frozen.rng)
     }
 }
 

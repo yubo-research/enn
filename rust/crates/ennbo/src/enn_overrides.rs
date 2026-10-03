@@ -15,7 +15,7 @@ use crate::surrogate::ENNSurrogateConfig;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SearchOverrides {
     pub num_fit_samples: Option<NonZeroUsize>,
-    pub num_fit_candidates: Option<usize>,
+    pub num_fit_candidates: Option<NonZeroUsize>,
     pub infer_aleatoric_variance: Option<bool>,
     pub affine_calibrate: Option<bool>,
 }
@@ -138,7 +138,7 @@ mod tests {
         assert!(SearchOverrides::default().is_empty());
         let base = FitSamples::draw(5, 7).unwrap();
         let s = only_cal.apply(base).unwrap();
-        assert_eq!((s.num_fit_samples.get(), s.num_fit_candidates), (5, 7));
+        assert_eq!((s.num_fit_samples.get(), s.num_fit_candidates.get()), (5, 7));
         assert!(s.affine_calibrate);
         assert!(only_cal.apply(FitSamples::Frozen).is_err());
         let counted = SearchOverrides {
@@ -149,7 +149,7 @@ mod tests {
         let s = counted.apply(FitSamples::Frozen).unwrap();
         assert_eq!(s.num_fit_samples.get(), 3);
         assert!(!s.infer_aleatoric_variance && s.affine_calibrate);
-        assert_eq!(counted.apply(base).unwrap().num_fit_candidates, 7);
+        assert_eq!(counted.apply(base).unwrap().num_fit_candidates.get(), 7);
     }
 
     #[test]

@@ -38,7 +38,10 @@ fn parse_fit_samples(
             .map(ennbo::fit_samples::nonzero_samples)
             .transpose()
             .map_err(to_py_err)?,
-        num_fit_candidates: optional_usize(dict, "num_fit_candidates")?,
+        num_fit_candidates: optional_usize(dict, "num_fit_candidates")?
+            .map(ennbo::fit_samples::nonzero_candidates)
+            .transpose()
+            .map_err(to_py_err)?,
         infer_aleatoric_variance: optional_bool(dict, "infer_aleatoric_variance")?,
         affine_calibrate: optional_bool(dict, "affine_calibrate")?,
     };

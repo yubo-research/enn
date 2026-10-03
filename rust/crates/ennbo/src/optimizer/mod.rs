@@ -276,7 +276,7 @@ impl Optimizer {
             ENNError::InvalidParameter("No surrogate".to_string())
         })?;
         let x_unit = crate::candidates::to_unit(x_natural, &self.bounds.view());
-        let pred = surrogate.naturalize_prediction(surrogate.predict(&x_unit.view())?);
+        let pred = surrogate.predict(&x_unit.view())?;
         Ok(pred.mu)
     }
 

@@ -292,12 +292,12 @@ mod tests {
     fn test_enn_fitter_ask_basic() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, Some(5), 3, None, &mut rng, false).unwrap();
+        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -308,7 +308,7 @@ mod tests {
     fn test_enn_fitter_ask_with_warm_start() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
@@ -316,7 +316,7 @@ mod tests {
         let warm_start = ENNParams::new(2, 1.5, 0.2).unwrap();
 
         let result = fitter
-            .ask(&model, Some(5), 3, Some(&warm_start), &mut rng, false)
+            .ask(&model, &crate::fit_samples::test_search(3, 5, true), Some(&warm_start), &mut rng)
             .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
@@ -327,12 +327,12 @@ mod tests {
     fn test_enn_fitter_ask_disable_aleatoric() {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
-        let mut fitter = ENNFitter::new(2, false);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, Some(5), 3, None, &mut rng, false).unwrap();
+        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, false), None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -348,12 +348,12 @@ mod tests {
                 .unwrap();
 
         let mut rng = StdRng::seed_from_u64(42);
-        let mut fitter = ENNFitter::new(2, true);
+        let mut fitter = ENNFitter::new(2);
         let all: Vec<usize> = (0..model.len()).collect();
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, Some(5), 3, None, &mut rng, false).unwrap();
+        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);

@@ -96,7 +96,7 @@ pub(super) fn select_with_ucb(
     beta: f64,
     rng: &mut dyn RngCore,
 ) -> Result<Array2<f64>, ENNError> {
-    let pred = surrogate.naturalize_prediction(surrogate.predict(x_cand)?);
+    let pred = surrogate.predict(x_cand)?;
     if optimizer.trust_region().is_morbo() {
 
         let ucb_vals = &pred.mu + &(pred.se * beta);
@@ -127,7 +127,7 @@ pub(super) fn select_with_pareto(
     rng: &mut dyn RngCore,
 ) -> Result<Array2<f64>, ENNError> {
 
-    let pred = surrogate.naturalize_prediction(surrogate.predict(x_cand)?);
+    let pred = surrogate.predict(x_cand)?;
     let pareto = ParetoAcquisition::new();
     let indices = pareto
         .select(&pred.mu.view(), &pred.se.view(), num_arms, rng)

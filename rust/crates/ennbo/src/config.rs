@@ -361,7 +361,7 @@ mod tests {
     fn draw_override(num_fit_samples: usize, num_fit_candidates: usize) -> FitOverride {
         FitOverride::Draw(SearchOverrides {
             num_fit_samples: std::num::NonZeroUsize::new(num_fit_samples),
-            num_fit_candidates: Some(num_fit_candidates),
+            num_fit_candidates: std::num::NonZeroUsize::new(num_fit_candidates),
             ..Default::default()
         })
     }
@@ -464,7 +464,7 @@ mod tests {
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
             assert_eq!(enn.layout.index_driver(), IndexDriver::Flat);
             assert_eq!(enn.fit_samples.count(), Some(123));
-            assert_eq!(enn.fit_samples.search().unwrap().num_fit_candidates, 456);
+            assert_eq!(enn.fit_samples.search().unwrap().num_fit_candidates.get(), 456);
             assert!(enn.layout.scale_x());
         } else {
             panic!("expected ENN surrogate");
@@ -544,7 +544,7 @@ mod tests {
             panic!("expected ENN surrogate");
         };
         assert_eq!(enn.fit_samples.count(), Some(7));
-        assert_eq!(enn.fit_samples.search().unwrap().num_fit_candidates, 11);
+        assert_eq!(enn.fit_samples.search().unwrap().num_fit_candidates.get(), 11);
         assert!(enn.layout.scale_x());
     }
 

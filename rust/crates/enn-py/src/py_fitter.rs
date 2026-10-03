@@ -12,6 +12,7 @@ use crate::py_model::{PyENNParams, PyEpistemicNearestNeighbors, PosteriorPyOut};
 pub struct PyENNStatefulFitter {
     inner: ennbo::ENNFitter,
     rng: StdRng,
+    infer_aleatoric_variance: bool,
 }
 
 #[pymethods]
@@ -21,8 +22,9 @@ impl PyENNStatefulFitter {
     #[doc = "kiss-coverage-off"]
     fn new(k: i32, seed: u64, infer_aleatoric_variance_scale: bool) -> Self {
         Self {
-            inner: ennbo::ENNFitter::new(k, infer_aleatoric_variance_scale),
+            inner: ennbo::ENNFitter::new(k),
             rng: StdRng::seed_from_u64(seed),
+            infer_aleatoric_variance: infer_aleatoric_variance_scale,
         }
     }
 
@@ -63,17 +65,15 @@ impl PyENNStatefulFitter {
         affine_calibrate: bool,
     ) -> PyResult<PyENNParams> {
         let warm = params_warm_start.as_ref().map(|p| p.inner);
-        let num_fit_samples = num_fit_samples.unwrap_or(ennbo::fitter::DEFAULT_NUM_FIT_SAMPLES);
+        let search = ennbo::ScaleSearch {
+            infer_aleatoric_variance: self.infer_aleatoric_variance,
+            affine_calibrate,
+            ..ennbo::ScaleSearch::from_counts(num_fit_samples, num_fit_candidates)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?
+        };
         let result = self
             .inner
-            .ask(
-                &model.inner,
-                num_fit_candidates,
-                num_fit_samples,
-                warm.as_ref(),
-                &mut self.rng,
-                affine_calibrate,
-            )
+            .ask(&model.inner, &search, warm.as_ref(), &mut self.rng)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(PyENNParams { inner: result })
     }

@@ -74,7 +74,6 @@ impl Surrogate for TieSurrogate {
     }
     fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError> { Ok(None) }
     fn naturalize_observations_y(&self, y_warped: Array2<f64>) -> Array2<f64> { y_warped }
-    fn naturalize_prediction(&self, pred: SurrogatePrediction) -> SurrogatePrediction { pred }
     fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> { Ok(y.to_owned()) }
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> { Ok(None) }
     fn schedule_background_flush(&self) -> Result<(), ENNError> { Ok(()) }

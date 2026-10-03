@@ -297,7 +297,7 @@ fn select_with_pareto_scores_naturalized_under_y_bounds() {
     let mut rng_a = StdRng::seed_from_u64(404);
     let mut rng_b = StdRng::seed_from_u64(404);
     let out = select_with_pareto(sur, &x_cand.view(), 2, &mut rng_a).unwrap();
-    let pred_nat = sur.naturalize_prediction(sur.predict(&x_cand.view()).unwrap());
+    let pred_nat = sur.predict(&x_cand.view()).unwrap();
     let idx = ParetoAcquisition::new()
         .select(&pred_nat.mu.view(), &pred_nat.se.view(), 2, &mut rng_b)
         .unwrap();
