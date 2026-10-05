@@ -1,5 +1,5 @@
 .PHONY: all install clean test build-ext rust-test python-test python-test-body lint wheels wheelsl \
-	pypi-build pypi-publish pypi-auth-check publish-rust
+	pypi-build pypi-publish pypi-auth-check publish-rust dry-publish-rust
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
@@ -75,6 +75,11 @@ publish-rust:
 	cd rust && cargo publish -p ennbo-bpann
 	cd rust && cargo publish -p ennbo
 	cd rust && $(CDYLIB_LINK_ENV) cargo publish -p ennbo-py
+
+dry-publish-rust:
+	cd rust && cargo publish --dry-run -p ennbo-bpann
+	cd rust && cargo publish --dry-run -p ennbo
+	cd rust && $(CDYLIB_LINK_ENV) cargo publish --dry-run -p ennbo-py
 
 # Clean build artifacts
 clean:
