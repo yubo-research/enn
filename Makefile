@@ -15,9 +15,15 @@ MATURIN_AUDITWHEEL :=
 CDYLIB_LINK_ENV :=
 endif
 
-# Default: build a release extension for the local platform.
+# Default: build a release wheel for the local platform.
+# Skip auditwheel here. `auditwheel repair` hardlinks
+# rust/target/release/deps/libenn_rust.so into its work directory and
+# rewrites that file's NEEDED entries to hashed SONAMEs. The next `make`
+# then fails looking for those names. Repair also runs `dpkg-query --search`
+# on the conda BLAS/OpenMP libraries this build links. Portable Linux wheels
+# are built by `wheels` and `pypi-build`.
 all:
-	maturin build --release $(MATURIN_AUDITWHEEL)
+	maturin build --release --auditwheel skip
 
 # Install the mixed Python/Rust package in editable mode (USearch always on; see pyproject [tool.maturin]).
 # PIP_QUIET=1 drops pip's "Ignoring … markers 'extra == …'" INFO lines for unselected extras.

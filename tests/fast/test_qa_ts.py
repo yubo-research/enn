@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import os
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 
 from ops.qa_ts import (
@@ -71,7 +77,9 @@ def test_run_one_scores_four_models() -> None:
     for name in ("ennts", "ennts_metlrn", "enn", "bpann_auto"):
         assert np.isfinite(row[f"loglik_{name}"])
         assert np.isfinite(row[f"nrmse_{name}"])
-        assert row[f"seconds_{name}"] >= 0.0
+        assert row[f"add_s_{name}"] >= 0.0
+        assert row[f"query_s_{name}"] >= 0.0
+        assert row[f"seconds_{name}"] + 1e-9 >= row[f"add_s_{name}"] + row[f"query_s_{name}"]
 
 
 def test_compare_command_delegates_to_sweep(monkeypatch, tmp_path) -> None:
@@ -94,6 +102,74 @@ def test_compare_command_delegates_to_sweep(monkeypatch, tmp_path) -> None:
         ["compare", "--function", "arma", "--seed", "3", "--out", str(tmp_path)],
     )
     assert result.exit_code == 0, result.output
+    assert seen["kind"] == "arma"
+    assert seen["sizes"] == [100, 300, 1000, 3000, 10000, 30000, 100000]
+    assert seen["seed"] == 3
+    assert seen["out"] == str(tmp_path)
+
+
+_REPO = Path(__file__).resolve().parents[2]
+_QA_TS = _REPO / "ops" / "qa_ts.py"
+
+
+def _run_qa_ts(args: list[str], pythonpath: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = pythonpath
+    return subprocess.run(
+        [sys.executable, str(_QA_TS), *args],
+        cwd=_REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_script_is_executable() -> None:
+    mode = _QA_TS.stat().st_mode
+    assert mode & stat.S_IXUSR
+    assert _QA_TS.read_text(encoding="utf-8").startswith("#!/usr/bin/env python\n")
+
+
+def test_help_prints_usage_without_numpy(tmp_path: Path) -> None:
+    blocker = tmp_path / "numpy.py"
+    blocker.write_text("raise RuntimeError('numpy imported during help')\n", encoding="utf-8")
+    blocked = f"{tmp_path}{os.pathsep}{_REPO / 'src'}"
+    result = _run_qa_ts(["--help"], blocked)
+    assert result.returncode == 0, result.stderr
+    assert "compare" in result.stdout
+    assert "--help" in result.stdout
+    assert "numpy imported" not in result.stderr
+
+
+def test_compare_help_and_usage_errors_skip_numpy(tmp_path: Path) -> None:
+    blocker = tmp_path / "numpy.py"
+    blocker.write_text("raise RuntimeError('numpy imported during usage')\n", encoding="utf-8")
+    blocked = f"{tmp_path}{os.pathsep}{_REPO / 'src'}"
+    help_result = _run_qa_ts(["compare", "--help"], blocked)
+    assert help_result.returncode == 0, help_result.stderr
+    assert "--seed" in help_result.stdout
+    missing = _run_qa_ts(["compare"], blocked)
+    assert missing.returncode == 2
+    assert "numpy imported" not in missing.stderr
+
+
+def test_compare_cli_delegates_to_sweep(monkeypatch, tmp_path: Path) -> None:
+    import ops.qa_ts_lib as lib
+
+    from ops.qa_ts import main
+
+    seen: dict = {}
+
+    def fake_sweep(kind, sizes, seed, out_dir):
+        seen["kind"] = kind
+        seen["sizes"] = list(sizes)
+        seen["seed"] = seed
+        seen["out"] = out_dir
+        return []
+
+    monkeypatch.setattr(lib, "run_sweep", fake_sweep)
+    main(["compare", "--function", "arma", "--seed", "3", "--out", str(tmp_path)])
     assert seen["kind"] == "arma"
     assert seen["sizes"] == [100, 300, 1000, 3000, 10000, 30000, 100000]
     assert seen["seed"] == 3
