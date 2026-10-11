@@ -1,4 +1,3 @@
-
 use crate::error::ENNError;
 use crate::morbo_trust_region::MorboTRSettings;
 use crate::trust_region::TRLengthConfig;
@@ -40,8 +39,14 @@ mod tests {
     #[test]
     fn trust_region_kind_rejects_unknown_spelling() {
         assert!(TrustRegionKind::parse("not_morbo").is_err());
-        assert_eq!(TrustRegionKind::parse("morbo").unwrap(), TrustRegionKind::Morbo);
-        assert_eq!(TrustRegionKind::parse("turbo").unwrap(), TrustRegionKind::Turbo);
+        assert_eq!(
+            TrustRegionKind::parse("morbo").unwrap(),
+            TrustRegionKind::Morbo
+        );
+        assert_eq!(
+            TrustRegionKind::parse("turbo").unwrap(),
+            TrustRegionKind::Turbo
+        );
         assert!(TrustRegionKind::parse("MORBO").is_err());
     }
 }

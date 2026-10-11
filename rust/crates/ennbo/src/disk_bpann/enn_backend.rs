@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 
 use ennbo_bpann::BpannBackend;
@@ -11,7 +10,9 @@ use crate::index::IndexDriver;
 
 fn bpann_err(e: ennbo_bpann::BpannError) -> ENNError {
     match e {
-        ennbo_bpann::BpannError::InvalidShape { expected, got } => ENNError::InvalidShape { expected, got },
+        ennbo_bpann::BpannError::InvalidShape { expected, got } => {
+            ENNError::InvalidShape { expected, got }
+        }
         ennbo_bpann::BpannError::InvalidParameter(s) => ENNError::InvalidParameter(s),
     }
 }
@@ -44,7 +45,9 @@ impl DiskBpannEnnBackend {
             && work_dir.join("metadata.json").exists()
         {
             let mut reopened = BpannBackend::reopen(work_dir.clone()).map_err(bpann_err)?;
-            reopened.discard_metric_index_on_reopen().map_err(bpann_err)?;
+            reopened
+                .discard_metric_index_on_reopen()
+                .map_err(bpann_err)?;
             reopened
         } else {
             BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
@@ -59,7 +62,11 @@ impl DiskBpannEnnBackend {
         })
     }
 
-    pub fn new_empty(work_dir: PathBuf, num_dim: usize, num_metrics: usize) -> Result<Self, ENNError> {
+    pub fn new_empty(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+    ) -> Result<Self, ENNError> {
         install_bpann_tuning_from_config();
         let inner = apply_config_flush_threshold(
             BpannBackend::new_empty(work_dir, num_dim, num_metrics).map_err(bpann_err)?,
@@ -123,7 +130,11 @@ impl DiskBpannEnnBackend {
             .map_err(bpann_err)
     }
 
-    pub fn set_metric_scale(&mut self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
+    pub fn set_metric_scale(
+        &mut self,
+        x_scale: &Array1<f64>,
+        rebuild: bool,
+    ) -> Result<(), ENNError> {
         let result = if rebuild {
             self.inner.rebuild_metric(x_scale)
         } else {
@@ -147,8 +158,6 @@ impl DiskBpannEnnBackend {
     }
 
     pub fn row_y(&self, i: usize) -> Result<Array1<f64>, ENNError> {
-
-
         let (y, _) = self.inner.mmap_row_y_and_yvar(i).map_err(bpann_err)?;
         Ok(Array1::from(y.to_vec()))
     }
@@ -274,13 +283,9 @@ mod tests {
     #[test]
     fn new_empty_with_flush_threshold_sets_defer_sync() {
         let dir = TempDir::new().expect("tempdir");
-        let backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
-            dir.path().to_path_buf(),
-            2,
-            1,
-            5,
-        )
-        .expect("backend");
+        let backend =
+            DiskBpannEnnBackend::new_empty_with_flush_threshold(dir.path().to_path_buf(), 2, 1, 5)
+                .expect("backend");
         assert_eq!(backend.pending_flush_threshold(), 5);
         assert!(!backend.append_syncs_at_threshold());
         assert_eq!(backend.pending_unindexed_count(), 0);
@@ -292,11 +297,7 @@ mod tests {
         let mut backend =
             DiskBpannEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1).expect("backend");
         let err = backend
-            .append_rows(
-                &array![[0.0, 0.0, 0.0]].view(),
-                &array![[0.0]].view(),
-                None,
-            )
+            .append_rows(&array![[0.0, 0.0, 0.0]].view(), &array![[0.0]].view(), None)
             .unwrap_err();
         assert!(matches!(err, ENNError::InvalidShape { .. }));
     }
@@ -362,11 +363,7 @@ mod tests {
         )
         .expect("backend");
         backend
-            .append_rows(
-                &array![[0.0, 0.0]].view(),
-                &array![[1.0]].view(),
-                None,
-            )
+            .append_rows(&array![[0.0, 0.0]].view(), &array![[1.0]].view(), None)
             .expect("append");
         assert_eq!(backend.pending_unindexed_count(), 0);
         backend.mark_index_stale();
@@ -376,13 +373,9 @@ mod tests {
     #[test]
     fn soft_sync_inner_drains_pending_without_pages() {
         let dir = TempDir::new().expect("tempdir");
-        let mut backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
-            dir.path().to_path_buf(),
-            2,
-            1,
-            5,
-        )
-        .expect("backend");
+        let mut backend =
+            DiskBpannEnnBackend::new_empty_with_flush_threshold(dir.path().to_path_buf(), 2, 1, 5)
+                .expect("backend");
         assert!(backend.defer_append_indexing_for_flush());
         backend
             .append_rows(
@@ -394,9 +387,7 @@ mod tests {
         backend.mark_index_stale();
         assert!(backend.pending_unindexed_count() > 0);
         if let Some(built) = backend.soft_sync_build_detached().expect("build") {
-            backend
-                .soft_sync_publish_detached(built)
-                .expect("publish");
+            backend.soft_sync_publish_detached(built).expect("publish");
         }
         assert_eq!(backend.pending_unindexed_count(), 0);
         assert!(!dir.path().join("index/pages.bin").exists());

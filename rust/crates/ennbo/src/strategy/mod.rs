@@ -1,8 +1,9 @@
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::RngCore;
 
-use crate::candidates::{generate_candidates, generate_lhd, generate_sobol_masked, generate_uniform};
+use crate::candidates::{
+    generate_candidates, generate_lhd, generate_sobol_masked, generate_uniform,
+};
 use crate::config::InitStrategy;
 use crate::error::ENNError;
 use crate::optimizer::{Optimizer, Telemetry};
@@ -201,7 +202,6 @@ fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError>
         return Ok(());
     }
 
-
     let Some(y_all) = optimizer.y_obs() else {
         return Ok(());
     };
@@ -243,19 +243,13 @@ fn tell_common(
     }
     if let Some(surrogate) = optimizer.surrogate_mut() {
         let start = std::time::Instant::now();
-        surrogate.fit_append(
-            &delta.x_new_view(),
-            &delta.y_new_view(),
-            yvar,
-            rng,
-        )?;
+        surrogate.fit_append(&delta.x_new_view(), &delta.y_new_view(), yvar, rng)?;
         if let Some(tel) = telemetry {
             tel.dt_fit = start.elapsed().as_secs_f64();
         }
     }
 
     if optimizer.trust_region().is_morbo() && delta.new_n > delta.old_n {
-
         optimizer
             .trust_region_mut()
             .morbo_update_ranges_only(&delta.y_new_view())?;
@@ -270,15 +264,11 @@ fn tell_common(
                 .incumbent_y_scalar()
                 .ok_or_else(|| ENNError::InvalidParameter("Missing incumbent y".to_string()))?
                 .to_owned();
-            optimizer.trust_region_mut().morbo_update_incumbent_only(
-                &y_inc.view(),
-                num_obs,
-            )?;
+            optimizer
+                .trust_region_mut()
+                .morbo_update_incumbent_only(&y_inc.view(), num_obs)?;
         }
     }
-
-
-
 
     if x.nrows() >= 64 {
         if let Some(surrogate) = optimizer.surrogate() {
@@ -321,8 +311,7 @@ fn draw_turbo_candidates(
             20,
         );
     }
-    if optimizer.trust_region().is_morbo()
-        && candidate_rv == crate::candidates::CandidateRV::Sobol
+    if optimizer.trust_region().is_morbo() && candidate_rv == crate::candidates::CandidateRV::Sobol
     {
         if let Some(engine) = optimizer.sobol_engine_mut() {
             return generate_sobol_masked(
@@ -369,7 +358,6 @@ fn ask_turbo(
         .trust_region()
         .compute_bounds_1d(&x_center.view(), ls_ref.as_ref());
 
-
     let num_dim = optimizer.num_dim();
     let config = optimizer.config().candidates.clone();
     let num_candidates = config.num_candidates(num_dim, num_arms);
@@ -388,7 +376,6 @@ fn ask_turbo(
         num_candidates,
         rng,
     )?;
-
 
     let start = std::time::Instant::now();
     let selected = select_arms(optimizer, &x_cand_unit.view(), num_arms, rng)?;
@@ -430,21 +417,14 @@ fn tell_turbo(
         .to_owned();
     optimizer.trust_region_mut().set_num_arms(x.nrows());
     if !optimizer.trust_region().is_morbo() {
-
-
-
         if optimizer.trust_region().turbo_prev_num_obs() == 0 {
             let prev = num_obs.saturating_sub(y.nrows());
             seed_turbo_scale_history(optimizer, prev);
-            optimizer
-                .trust_region_mut()
-                .set_turbo_prev_num_obs(prev);
+            optimizer.trust_region_mut().set_turbo_prev_num_obs(prev);
         }
-        optimizer.trust_region_mut().tell_update_new_batch(
-            y,
-            &y_incumbent.view(),
-            num_obs,
-        )?;
+        optimizer
+            .trust_region_mut()
+            .tell_update_new_batch(y, &y_incumbent.view(), num_obs)?;
     }
     if optimizer.trust_region().needs_restart() && optimizer.trust_region().is_morbo() {
         optimizer.trust_region_mut().restart(Some(rng));

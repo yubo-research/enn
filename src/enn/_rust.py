@@ -25,6 +25,7 @@ arms_from_pareto_fronts = _ext.util.arms_from_pareto_fronts
 set_config_path = _ext.util.set_config_path
 ensure_config_file = _ext.util.ensure_config_file
 EpistemicNearestNeighbors = _ext.model.EpistemicNearestNeighbors
+ENNTS = _ext.model.ENNTS
 PyReservoir = _ext.model.PyReservoir
 metric_snapshot = _ext.model.metric_snapshot
 metric_set_weights = _ext.model.metric_set_weights
@@ -89,6 +90,7 @@ __all__ = [
     "set_config_path",
     "ensure_config_file",
     "EpistemicNearestNeighbors",
+    "ENNTS",
     "ENNParams",
     "set_unscaled_dims",
     "ENNStatefulFitter",

@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, ArrayView2};
 
 use super::EpistemicNearestNeighbors;

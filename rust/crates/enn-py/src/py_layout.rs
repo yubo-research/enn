@@ -1,4 +1,3 @@
-
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -13,9 +12,13 @@ pub(crate) fn enn_storage_from_wire(name: &str) -> PyResult<ennbo::EnnStorage> {
         .ok_or_else(|| PyValueError::new_err(format!("Unknown enn_storage: {name}")))
 }
 
-pub(crate) fn metric_learning_from_wire(name: &str) -> PyResult<ennbo::metric_auto::MetricLearning> {
+pub(crate) fn metric_learning_from_wire(
+    name: &str,
+) -> PyResult<ennbo::metric_auto::MetricLearning> {
     ennbo::metric_auto::MetricLearning::parse(name).ok_or_else(|| {
-        PyValueError::new_err(format!("metric_learning must be 'NONE' or 'AUTO', got {name}"))
+        PyValueError::new_err(format!(
+            "metric_learning must be 'NONE' or 'AUTO', got {name}"
+        ))
     })
 }
 

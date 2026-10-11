@@ -1,4 +1,3 @@
-
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
@@ -25,7 +24,10 @@ impl SearchOverrides {
 
     pub fn apply(&self, base: FitSamples) -> Result<ScaleSearch, ENNError> {
         let mut search = match (base.search(), self.num_fit_samples) {
-            (Some(s), Some(n)) => ScaleSearch { num_fit_samples: n, ..s },
+            (Some(s), Some(n)) => ScaleSearch {
+                num_fit_samples: n,
+                ..s
+            },
             (Some(s), None) => s,
             (None, Some(n)) => ScaleSearch::with_samples(n),
             (None, None) => {
@@ -128,7 +130,10 @@ mod tests {
         assert!(SearchOverrides::default().is_empty());
         let base = FitSamples::draw(5, 7).unwrap();
         let s = only_cal.apply(base).unwrap();
-        assert_eq!((s.num_fit_samples.get(), s.num_fit_candidates.get()), (5, 7));
+        assert_eq!(
+            (s.num_fit_samples.get(), s.num_fit_candidates.get()),
+            (5, 7)
+        );
         assert!(s.affine_calibrate);
         assert!(only_cal.apply(FitSamples::Frozen).is_err());
         let counted = SearchOverrides {
@@ -148,6 +153,8 @@ mod tests {
             metric_learning: Some(MetricLearning::Auto),
             ..Default::default()
         };
-        assert!(overrides.layout(&ENNSurrogateConfig::default().layout).is_err());
+        assert!(overrides
+            .layout(&ENNSurrogateConfig::default().layout)
+            .is_err());
     }
 }

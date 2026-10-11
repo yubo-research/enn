@@ -1,4 +1,3 @@
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
@@ -69,22 +68,16 @@ impl DiskBackendHandle {
             match handle.join() {
                 Ok(Ok(())) => {}
                 Ok(Err(msg)) => {
-                    *self
-                        .last_error
-                        .lock()
-                        .map_err(|_| {
-                            ENNError::InvalidParameter("flush last_error poisoned".to_string())
-                        })? = Some(msg.clone());
+                    *self.last_error.lock().map_err(|_| {
+                        ENNError::InvalidParameter("flush last_error poisoned".to_string())
+                    })? = Some(msg.clone());
                     return Err(ENNError::InvalidParameter(msg));
                 }
                 Err(_) => {
                     let msg = "background soft sync panicked".to_string();
-                    *self
-                        .last_error
-                        .lock()
-                        .map_err(|_| {
-                            ENNError::InvalidParameter("flush last_error poisoned".to_string())
-                        })? = Some(msg.clone());
+                    *self.last_error.lock().map_err(|_| {
+                        ENNError::InvalidParameter("flush last_error poisoned".to_string())
+                    })? = Some(msg.clone());
                     return Err(ENNError::InvalidParameter(msg));
                 }
             }
@@ -121,13 +114,11 @@ impl DiskBackendHandle {
             )
         };
 
-
         if defer && pending >= hard {
             self.wait_for_flush()?;
-            let mut g = self
-                .data
-                .write()
-                .map_err(|_| ENNError::InvalidParameter("disk backend lock poisoned".to_string()))?;
+            let mut g = self.data.write().map_err(|_| {
+                ENNError::InvalidParameter("disk backend lock poisoned".to_string())
+            })?;
 
             if g.pending_unindexed_count() >= g.pending_hard_flush_threshold() {
                 if let Some(built) = g.soft_sync_build_detached()? {
@@ -143,7 +134,6 @@ impl DiskBackendHandle {
                 .lock()
                 .map_err(|_| ENNError::InvalidParameter("flush job poisoned".to_string()))?;
             if job.is_some() {
-
                 return Ok(());
             }
         }
@@ -159,15 +149,13 @@ impl DiskBackendHandle {
                     .read()
                     .map_err(|_| "disk backend lock poisoned during soft sync".to_string())?;
 
-
                 maybe_wait_test_flush_gate();
-                g.soft_sync_build_detached()
-                    .map_err(|e| e.to_string())?
+                g.soft_sync_build_detached().map_err(|e| e.to_string())?
             };
             if let Some(built) = built {
-                let mut g = data
-                    .write()
-                    .map_err(|_| "disk backend lock poisoned during soft sync publish".to_string())?;
+                let mut g = data.write().map_err(|_| {
+                    "disk backend lock poisoned during soft sync publish".to_string()
+                })?;
                 g.soft_sync_publish_detached(built)
                     .map_err(|e| e.to_string())?;
             }
@@ -179,7 +167,6 @@ impl DiskBackendHandle {
             .lock()
             .map_err(|_| ENNError::InvalidParameter("flush job poisoned".to_string()))?;
         if job.is_some() {
-
             drop(job);
             let _ = handle.join();
             return Ok(());
@@ -196,7 +183,6 @@ impl DiskBackendHandle {
             .persist_index_to_disk()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -310,7 +296,9 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         arm_test_flush_worker_barrier(Arc::clone(&barrier));
         model.schedule_background_flush().expect("first schedule");
-        model.schedule_background_flush().expect("second schedule while running");
+        model
+            .schedule_background_flush()
+            .expect("second schedule while running");
         barrier.wait();
         model.backend.wait_for_flush().expect("wait");
         clear_test_flush_worker_barrier();
@@ -463,7 +451,9 @@ mod tests {
                 Some("injected soft sync failure".to_string());
         }
         let schedule_err = handle.schedule_background_flush().expect_err("schedule");
-        assert!(schedule_err.to_string().contains("injected soft sync failure"));
+        assert!(schedule_err
+            .to_string()
+            .contains("injected soft sync failure"));
         let wait_err = handle.wait_for_flush().expect_err("wait");
         assert!(wait_err.to_string().contains("injected soft sync failure"));
         handle.wait_for_flush().expect("cleared");
@@ -479,7 +469,6 @@ mod tests {
 
     #[test]
     fn schedule_soft_band_stays_async() {
-
         let dir = TempDir::new().expect("tempdir");
         let handle = DiskBackendHandle::new(
             crate::disk_bpann::DiskBpannEnnBackend::new_empty_with_flush_thresholds(

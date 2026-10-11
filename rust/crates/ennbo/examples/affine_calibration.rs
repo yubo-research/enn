@@ -1,5 +1,5 @@
-use ndarray::array;
 use ennbo::AffineCalibrator;
+use ndarray::array;
 
 fn main() {
     let rows = array![[1.0, 0.5], [2.0, 1.5], [0.1, 0.2]];

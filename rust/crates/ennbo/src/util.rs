@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use ndarray_linalg::Norm;
 use rand::Rng;
@@ -27,7 +26,6 @@ pub fn standardize_y(y: &ArrayView1<f64>) -> (f64, f64) {
         return (f64::NAN, 1.0);
     }
 
-    
     let mut sorted = y.to_vec();
     sorted.sort_by(|a, b| a.total_cmp(b));
     let n = sorted.len();
@@ -87,11 +85,8 @@ pub fn pareto_front_2d_maximize(
 
     let mut pairs: Vec<(usize, f64, f64)> = indices.iter().map(|&i| (i, a[i], b[i])).collect();
 
-    
     pairs.sort_by(|x, y| y.1.total_cmp(&x.1).then_with(|| y.2.total_cmp(&x.2)));
 
-    
-    
     let mut front = Vec::new();
     let mut best_b = f64::NEG_INFINITY;
     let mut last_a = f64::NAN;
@@ -99,13 +94,11 @@ pub fn pareto_front_2d_maximize(
 
     for (orig_idx, a_val, b_val) in pairs {
         if b_val > best_b {
-            
             best_b = b_val;
             last_a = a_val;
             last_b = b_val;
             front.push(orig_idx);
         } else if b_val == best_b && a_val == last_a && b_val == last_b {
-            
             front.push(orig_idx);
         }
     }
@@ -117,43 +110,36 @@ pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Arra
     let n = x.nrows();
     let d = x.ncols();
 
-    
     if n < 9 {
         return Array1::ones(d);
     }
 
     let vy = y.var(0.0);
 
-    
     if vy <= 0.0 || !vy.is_finite() {
         return Array1::ones(d);
     }
 
-    
     let num_bins = if n >= 30 { 10 } else { 3 };
 
     let mut sobol = Array1::zeros(d);
 
-    
     let mut x_var = Array1::zeros(d);
     for dim in 0..d {
         x_var[dim] = x.column(dim).var(0.0);
     }
 
     for dim in 0..d {
-        
         if x_var[dim] <= 1e-12 {
             sobol[dim] = 0.0;
             continue;
         }
         let x_dim = x.column(dim);
 
-        
         let mut indexed: Vec<(usize, f64)> =
             x_dim.iter().enumerate().map(|(i, &v)| (i, v)).collect();
         indexed.sort_by(|a, b| a.1.total_cmp(&b.1));
 
-        
         let mut bins = vec![0usize; n];
         for (rank, (idx, _)) in indexed.iter().enumerate() {
             bins[*idx] = (rank * num_bins) / n;
@@ -260,7 +246,7 @@ mod tests {
         let y = array![1.0, 2.0, 3.0, 4.0, 5.0];
         let (center, scale) = standardize_y(&y.view());
 
-        assert_eq!(center, 3.0); 
+        assert_eq!(center, 3.0);
         assert!(scale > 0.0);
         assert!(scale.is_finite());
     }
@@ -271,7 +257,7 @@ mod tests {
         let (center, scale) = standardize_y(&y.view());
 
         assert_eq!(center, 5.0);
-        assert_eq!(scale, 1.0); 
+        assert_eq!(scale, 1.0);
     }
 
     #[test]
@@ -285,16 +271,14 @@ mod tests {
 
     #[test]
     fn test_pareto_front_simple() {
-        
-        
         let a = array![1.0, 0.5, 0.2];
         let b = array![0.5, 1.0, 0.2];
 
         let front = pareto_front_2d_maximize(&a.view(), &b.view(), None).unwrap();
 
-        assert!(front.contains(&0)); 
-        assert!(front.contains(&1)); 
-        assert!(!front.contains(&2)); 
+        assert!(front.contains(&0));
+        assert!(front.contains(&1));
+        assert!(!front.contains(&2));
     }
 
     #[test]
@@ -344,7 +328,6 @@ mod tests {
 
         let sobol = calculate_sobol_indices(&x.view(), &y.view());
 
-        
         assert_eq!(sobol, array![1.0]);
     }
 
@@ -421,5 +404,4 @@ mod tests {
         let idx = argmax_random_tie(&[1.0, 3.0, 2.0], &mut rng);
         assert_eq!(idx, 1);
     }
-
 }

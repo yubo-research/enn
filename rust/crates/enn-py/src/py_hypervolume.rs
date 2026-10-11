@@ -1,4 +1,3 @@
-
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -11,7 +10,6 @@ pub fn hypervolume_2d_max_py<'py>(
 ) -> PyResult<f64> {
     let y_arr = y.as_array();
     let ref_arr = ref_point.as_array();
-
 
     let result = py.allow_threads(|| ennbo::hypervolume_2d_max(&y_arr, &ref_arr));
 

@@ -33,7 +33,8 @@ fn validate_index_backend() {
 #[test]
 fn append_yvar_on_add() {
     let dir = TempDir::new().unwrap();
-    let mut yvar = ennbo::backend::disk_observation::open_or_append_yvar(dir.path(), 1, None).unwrap();
+    let mut yvar =
+        ennbo::backend::disk_observation::open_or_append_yvar(dir.path(), 1, None).unwrap();
     ennbo::backend::disk_observation::append_yvar_on_add(
         dir.path(),
         1,
@@ -97,8 +98,7 @@ fn parse_json_usize_field() {
 fn parse_json_string_field() {
     let text = r#"{"index_backend":"bpann_disk"}"#;
     assert_eq!(
-        ennbo::backend::disk_observation::parse_json_string_field(text, "index_backend")
-            .as_deref(),
+        ennbo::backend::disk_observation::parse_json_string_field(text, "index_backend").as_deref(),
         Some("bpann_disk")
     );
 }

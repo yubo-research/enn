@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 
 use crate::backend::EnnStorage;
@@ -8,17 +7,9 @@ use crate::metric_auto::MetricLearning;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnnLayout {
-    Memory {
-        driver: IndexDriver,
-        scale_x: bool,
-    },
-    Disk {
-        work_dir: PathBuf,
-        scale_x: bool,
-    },
-    DiskAuto {
-        work_dir: PathBuf,
-    },
+    Memory { driver: IndexDriver, scale_x: bool },
+    Disk { work_dir: PathBuf, scale_x: bool },
+    DiskAuto { work_dir: PathBuf },
 }
 
 fn auto_rejected() -> ENNError {
@@ -40,11 +31,11 @@ fn memory_layout(
 }
 
 fn require_disk_dir(work_dir: Option<PathBuf>) -> Result<PathBuf, ENNError> {
-    work_dir.or_else(EnnStorage::work_dir_from_env).ok_or_else(|| {
-        ENNError::InvalidParameter(
-            "Disk storage requires work_dir or ENN_WORK_DIR".into(),
-        )
-    })
+    work_dir
+        .or_else(EnnStorage::work_dir_from_env)
+        .ok_or_else(|| {
+            ENNError::InvalidParameter("Disk storage requires work_dir or ENN_WORK_DIR".into())
+        })
 }
 
 fn disk_layout(
@@ -146,13 +137,8 @@ mod tests {
             MetricLearning::None,
         );
         assert!(flat_disk.unwrap_err().to_string().contains("BpAnnDisk"));
-        let auto_flat = EnnLayout::try_from_parts(
-            IndexDriver::Flat,
-            None,
-            None,
-            false,
-            MetricLearning::Auto,
-        );
+        let auto_flat =
+            EnnLayout::try_from_parts(IndexDriver::Flat, None, None, false, MetricLearning::Auto);
         assert!(auto_flat.unwrap_err().to_string().contains("scale_x=false"));
         let auto_scaled = EnnLayout::try_from_parts(
             IndexDriver::BpAnnDisk,
@@ -161,7 +147,10 @@ mod tests {
             true,
             MetricLearning::Auto,
         );
-        assert!(auto_scaled.unwrap_err().to_string().contains("scale_x=false"));
+        assert!(auto_scaled
+            .unwrap_err()
+            .to_string()
+            .contains("scale_x=false"));
     }
 
     #[test]
@@ -173,7 +162,10 @@ mod tests {
             false,
             MetricLearning::None,
         );
-        assert!(err.unwrap_err().to_string().contains("does not select storage"));
+        assert!(err
+            .unwrap_err()
+            .to_string()
+            .contains("does not select storage"));
     }
 
     #[test]
@@ -204,6 +196,8 @@ mod tests {
         assert_eq!(layout.metric_learning(), MetricLearning::Auto);
         let fixed = EnnLayout::disk(PathBuf::from("/tmp/enn_layout"), true);
         assert!(fixed.scale_x());
-        assert!(EnnLayout::memory(IndexDriver::Flat, false).work_dir().is_none());
+        assert!(EnnLayout::memory(IndexDriver::Flat, false)
+            .work_dir()
+            .is_none());
     }
 }

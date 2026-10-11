@@ -1,4 +1,3 @@
-
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use ndarray::ArrayView2;
@@ -127,9 +126,12 @@ impl IncrementalFit {
             yvar_view.as_ref(),
             Some(model.y_bounds()),
         )?;
-        frozen
-            .fitter
-            .ask(model, &search, opts.params_warm_start.as_ref(), &mut frozen.rng)
+        frozen.fitter.ask(
+            model,
+            &search,
+            opts.params_warm_start.as_ref(),
+            &mut frozen.rng,
+        )
     }
 }
 
@@ -161,7 +163,11 @@ mod tests {
         }
     }
 
-    fn add_row(fit: &mut IncrementalFit, model: &mut EpistemicNearestNeighbors, v: f64) -> AddToken {
+    fn add_row(
+        fit: &mut IncrementalFit,
+        model: &mut EpistemicNearestNeighbors,
+        v: f64,
+    ) -> AddToken {
         let x = Array2::from_elem((1, 2), v);
         let y = Array2::from_elem((1, 1), v * v);
         fit.add(model, &x.view(), &y.view(), None).unwrap()

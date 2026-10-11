@@ -80,10 +80,7 @@ fn apply_exclude_nearest_identity(
     if width == nc {
         (out_d, out_i)
     } else if width == 0 {
-        (
-            Array2::zeros((n_query, 0)),
-            Array2::zeros((n_query, 0)),
-        )
+        (Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0)))
     } else {
         (
             out_d
@@ -132,10 +129,7 @@ impl ENNIndex {
         x_scale: Array1<f64>,
     ) -> Result<(), IndexError> {
         self.inner.rebuild(&train_x_scaled.view())?;
-        *self
-            .x_scale
-            .lock()
-            .expect("x_scale mutex poisoned") = x_scale;
+        *self.x_scale.lock().expect("x_scale mutex poisoned") = x_scale;
         Ok(())
     }
 
@@ -146,11 +140,7 @@ impl ENNIndex {
                 got: x.ncols(),
             });
         }
-        let x_scale = self
-            .x_scale
-            .lock()
-            .expect("x_scale mutex poisoned")
-            .clone();
+        let x_scale = self.x_scale.lock().expect("x_scale mutex poisoned").clone();
         let x_scaled: Array2<f64> = if self.scale_x {
             x / &x_scale.view().insert_axis(Axis(0))
         } else {
@@ -182,11 +172,7 @@ impl ENNIndex {
         let n_query = x.nrows();
         let search_k = search_k as usize;
 
-        let x_scale = self
-            .x_scale
-            .lock()
-            .expect("x_scale mutex poisoned")
-            .clone();
+        let x_scale = self.x_scale.lock().expect("x_scale mutex poisoned").clone();
         let x_scaled: Array2<f64> = if self.scale_x {
             x / &x_scale.view().insert_axis(Axis(0))
         } else {
@@ -200,8 +186,7 @@ impl ENNIndex {
             )
         } else {
             let k_eff = search_k.min(n_train);
-            self.inner
-                .search(&x_scaled.view(), k_eff, search_k)?
+            self.inner.search(&x_scaled.view(), k_eff, search_k)?
         };
 
         if exclude_nearest {
@@ -378,20 +363,10 @@ mod tests {
     #[test]
     fn index_driver_rebuild_and_memory() {
         let train_x = array![[0.0, 0.0], [1.0, 1.0]];
-        let index = ENNIndex::new(
-            train_x,
-            2,
-            array![1.0, 1.0],
-            false,
-            IndexDriver::Flat,
-        )
-        .unwrap();
+        let index = ENNIndex::new(train_x, 2, array![1.0, 1.0], false, IndexDriver::Flat).unwrap();
         assert_eq!(index.driver(), IndexDriver::Flat);
         index
-            .rebuild_from_scaled(
-                array![[0.0, 0.0], [1.0, 1.0]],
-                array![1.0, 1.0],
-            )
+            .rebuild_from_scaled(array![[0.0, 0.0], [1.0, 1.0]], array![1.0, 1.0])
             .unwrap();
         assert!(index.memory_usage_bytes() > 0);
     }

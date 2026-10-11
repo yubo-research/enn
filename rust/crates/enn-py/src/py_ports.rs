@@ -1,11 +1,17 @@
-
 use ndarray::{Array2, ArrayD};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2,
+    PyReadonlyArrayDyn,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 fn as_2d(arr: &ArrayD<f64>) -> Array2<f64> {
-    let rows = if arr.ndim() == 1 { arr.len() } else { arr.shape()[0] };
+    let rows = if arr.ndim() == 1 {
+        arr.len()
+    } else {
+        arr.shape()[0]
+    };
     let cols = if arr.ndim() == 1 { 1 } else { arr.shape()[1] };
     Array2::from_shape_vec((rows, cols), arr.iter().copied().collect()).expect("2d")
 }
@@ -18,7 +24,11 @@ pub fn fit_affine<'py>(
     mu: PyReadonlyArray2<f64>,
     y: PyReadonlyArray2<f64>,
     se: Option<PyReadonlyArray2<f64>>,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+)> {
     let se_owned = se.as_ref().map(|v| v.as_array().to_owned());
     let cal = ennbo::calibration::AffineCalibrator::fit(
         mu.as_array().view(),
@@ -47,8 +57,9 @@ pub fn sample_normal<'py>(
     let mu_d = mu.as_array().to_owned().into_dyn();
     let se_d = se.as_array().to_owned().into_dyn();
     let bounds = y_bounds.as_ref().map(|v| v.as_array().to_owned());
-    let out = ennbo::normal_sample::sample_normal(&mu_d, &se_d, bounds.as_ref(), num_samples, seed, clip)
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let out =
+        ennbo::normal_sample::sample_normal(&mu_d, &se_d, bounds.as_ref(), num_samples, seed, clip)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
     let rows = mu.as_array().nrows();
     let cols = mu.as_array().ncols();
     let flat: Vec<f64> = out.iter().copied().collect();
@@ -77,7 +88,10 @@ pub fn confidence_interval<'py>(
     let bounds = y_bounds.as_ref().map(|v| v.as_array().to_owned());
     let (lo, hi) = ennbo::normal_sample::confidence_interval(&mu_d, &se_d, bounds.as_ref(), level)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    Ok((as_2d(&lo).into_pyarray_bound(py), as_2d(&hi).into_pyarray_bound(py)))
+    Ok((
+        as_2d(&lo).into_pyarray_bound(py),
+        as_2d(&hi).into_pyarray_bound(py),
+    ))
 }
 
 #[pyfunction]
@@ -200,7 +214,10 @@ pub fn choose_indices(n: usize, p: usize, seed: u64) -> PyResult<Vec<usize>> {
 }
 
 #[pyfunction]
-pub fn separable_unimodal<'py>(py: Python<'py>, x: PyReadonlyArray2<f64>) -> Bound<'py, PyArray2<f64>> {
+pub fn separable_unimodal<'py>(
+    py: Python<'py>,
+    x: PyReadonlyArray2<f64>,
+) -> Bound<'py, PyArray2<f64>> {
     ennbo::benchmarks::separable_unimodal(x.as_array().view()).into_pyarray_bound(py)
 }
 
@@ -309,7 +326,9 @@ pub struct PyAckley {
 impl PyAckley {
     #[new]
     fn new(noise: f64, seed: u64) -> Self {
-        Self { inner: ennbo::Ackley::new(noise, seed) }
+        Self {
+            inner: ennbo::Ackley::new(noise, seed),
+        }
     }
 
     #[getter]
@@ -344,7 +363,9 @@ pub struct PyDoubleAckley {
 impl PyDoubleAckley {
     #[new]
     fn new(noise: f64, seed: u64) -> Self {
-        Self { inner: ennbo::DoubleAckley::new(noise, seed) }
+        Self {
+            inner: ennbo::DoubleAckley::new(noise, seed),
+        }
     }
 
     #[getter]

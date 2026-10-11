@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView2};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -75,8 +74,18 @@ impl DoubleAckley {
             ));
         }
         let mid = d / 2;
-        let left = ackley_core(x.slice(ndarray::s![.., ..mid]), 20.0, 0.2, 2.0 * std::f64::consts::PI);
-        let right = ackley_core(x.slice(ndarray::s![.., mid..]), 20.0, 0.2, 2.0 * std::f64::consts::PI);
+        let left = ackley_core(
+            x.slice(ndarray::s![.., ..mid]),
+            20.0,
+            0.2,
+            2.0 * std::f64::consts::PI,
+        );
+        let right = ackley_core(
+            x.slice(ndarray::s![.., mid..]),
+            20.0,
+            0.2,
+            2.0 * std::f64::consts::PI,
+        );
         let mut out = Array2::zeros((x.nrows(), 2));
         for i in 0..x.nrows() {
             out[[i, 0]] = -left[i];

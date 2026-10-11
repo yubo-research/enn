@@ -3,8 +3,8 @@
 use ennbo::{EnnStorage, EpistemicNearestNeighbors, IndexDriver};
 use ndarray::Array2;
 use rand::Rng;
-use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use tempfile::TempDir;
 
 const STREAMING_SEED: u64 = 99;
@@ -14,11 +14,7 @@ const STREAMING_FLUSH_THRESHOLD: usize = 5;
 const STREAMING_CROSS_ROWS: usize = STREAMING_FLUSH_THRESHOLD + 1;
 const STREAMING_N: usize = 120;
 
-fn random_batch(
-    rng: &mut ChaCha8Rng,
-    rows: usize,
-    d: usize,
-) -> (Array2<f64>, Array2<f64>) {
+fn random_batch(rng: &mut ChaCha8Rng, rows: usize, d: usize) -> (Array2<f64>, Array2<f64>) {
     let mut x = Array2::zeros((rows, d));
     let mut y = Array2::zeros((rows, 1));
     for i in 0..rows {

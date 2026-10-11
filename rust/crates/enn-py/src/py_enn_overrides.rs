@@ -1,4 +1,3 @@
-
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -72,13 +71,19 @@ fn any_enn_key(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<bool> {
 pub(crate) fn parse_enn_overrides(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<Option<ennbo::EnnOverrides>> {
-    use crate::py_layout::{enn_storage_from_wire, index_driver_from_wire, metric_learning_from_wire};
+    use crate::py_layout::{
+        enn_storage_from_wire, index_driver_from_wire, metric_learning_from_wire,
+    };
 
     if !any_enn_key(dict)? {
         return Ok(None);
     }
     let y_bounds = match dict.get_item("y_bounds")? {
-        Some(v) => Some(v.extract::<numpy::PyReadonlyArray2<f64>>()?.as_array().to_owned()),
+        Some(v) => Some(
+            v.extract::<numpy::PyReadonlyArray2<f64>>()?
+                .as_array()
+                .to_owned(),
+        ),
         None => None,
     };
     let tied_dims = match dict.get_item("tied_dims")? {

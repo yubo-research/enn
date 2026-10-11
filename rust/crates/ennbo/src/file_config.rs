@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
@@ -290,9 +289,6 @@ mod tests {
 
     #[test]
     fn missing_hard_key_with_soft_above_default_preserves_soft() {
-
-
-
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
         fs::write(
@@ -307,7 +303,6 @@ mod tests {
 
     #[test]
     fn missing_hard_key_with_soft_above_default_hard_uses_soft() {
-
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
         fs::write(
@@ -452,8 +447,6 @@ mod tests {
 
     #[test]
     fn install_tuning_picks_up_row_limit_overrides() {
-
-
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
         let cfg = Config::with_path(&path);

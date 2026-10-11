@@ -1,4 +1,3 @@
-
 use ndarray::IxDyn;
 use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyValueError;
@@ -19,7 +18,8 @@ pub fn normal_hash_batch_multi_seed_py<'py>(
     output_shape.push(seeds.len());
     output_shape.extend(input_shape.iter().copied());
     output_shape.push(num_metrics.max(0) as usize);
-    let result = py.allow_threads(|| ennbo::normal_hash_batch_multi_seed(&seeds, &indices, num_metrics));
+    let result =
+        py.allow_threads(|| ennbo::normal_hash_batch_multi_seed(&seeds, &indices, num_metrics));
     match result {
         Ok(arr) => {
             let reshaped = arr
@@ -49,14 +49,11 @@ pub fn normal_hash_batch_multi_seed_fast_py<'py>(
     output_shape.extend(input_shape.iter().copied());
     output_shape.push(num_metrics.max(0) as usize);
 
-
     let result = py
         .allow_threads(|| ennbo::normal_hash_batch_multi_seed_fast(&seeds, &indices, num_metrics));
 
     match result {
         Ok(arr) => {
-
-
             let reshaped = arr
                 .into_shape_with_order(IxDyn(&output_shape))
                 .map_err(|e| PyValueError::new_err(format!("Shape error: {}", e)))?;

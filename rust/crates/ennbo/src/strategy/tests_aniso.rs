@@ -106,18 +106,25 @@ fn raasp_rates_stay_uniform_under_unequal_auto_weights() {
     let y = Array2::from_shape_fn((300, 1), |(i, _)| (6.0 * x[[i, 0]]).sin());
     opt.tell(&x.view(), &y.view(), None).unwrap();
 
-    let s = opt.surrogate().and_then(|s| s.lengthscales()).expect("DiskAuto sides");
+    let s = opt
+        .surrogate()
+        .and_then(|s| s.lengthscales())
+        .expect("DiskAuto sides");
     assert_eq!(s.len(), num_dim);
     assert!(s[0] < 0.5 * s[1], "x0 should get the shortest side: {s:?}");
 
     let center = Array1::from_elem(num_dim, 0.5);
-    let (lb, ub) = opt.trust_region().compute_bounds_1d(&center.view(), Some(&s.view()));
+    let (lb, ub) = opt
+        .trust_region()
+        .compute_bounds_1d(&center.view(), Some(&s.view()));
     let num_candidates = 4000;
-    let cand =
-        draw_turbo_candidates(&mut opt, &center.view(), &lb, &ub, num_candidates, &mut rng).unwrap();
+    let cand = draw_turbo_candidates(&mut opt, &center.view(), &lb, &ub, num_candidates, &mut rng)
+        .unwrap();
     let rates: Vec<f64> = (0..num_dim)
         .map(|j| {
-            let moved = (0..num_candidates).filter(|&i| cand[[i, j]] != center[j]).count();
+            let moved = (0..num_candidates)
+                .filter(|&i| cand[[i, j]] != center[j])
+                .count();
             moved as f64 / num_candidates as f64
         })
         .collect();

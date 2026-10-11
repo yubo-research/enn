@@ -1,4 +1,3 @@
-
 use crate::calibration::AffineCalibrator;
 use crate::fit_samples::ScaleSearch;
 use crate::fitter::ENNFitter;
@@ -109,7 +108,11 @@ mod tests {
 
     #[test]
     fn append_plan_truth_table() {
-        let plan = |sync, search, release| AppendPlan { sync, search, release };
+        let plan = |sync, search, release| AppendPlan {
+            sync,
+            search,
+            release,
+        };
         let bulk = BULK_DISK_TELL_SKIP_FIT_ROWS;
         const DISK: u8 = 1;
         const FROZEN: u8 = 2;
@@ -118,7 +121,10 @@ mod tests {
         for flags in [0, PARAMS, FROZEN, FROZEN | PARAMS] {
             let search = flags & FROZEN == 0;
             assert_eq!(AppendPlan::new(input(1, flags)), plan(true, search, true));
-            assert_eq!(AppendPlan::new(input(bulk, flags)), plan(true, search, true));
+            assert_eq!(
+                AppendPlan::new(input(bulk, flags)),
+                plan(true, search, true)
+            );
             assert_eq!(
                 AppendPlan::new(input(1, flags | INITIAL)),
                 plan(false, search, false)

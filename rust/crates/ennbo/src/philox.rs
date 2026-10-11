@@ -1,4 +1,3 @@
-
 use crate::numpy_seed::seed_sequence_u64;
 
 const PHILOX_M0: u64 = 0xD2E7_470E_E14C_6C93;

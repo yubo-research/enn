@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, ArrayD};
 use thiserror::Error;
 
@@ -25,18 +24,15 @@ impl ENNParams {
         epistemic_variance_scale: f64,
         aleatoric_variance_scale: f64,
     ) -> Result<Self, ParamsError> {
-
         if k_num_neighbors <= 0 {
             return Err(ParamsError::InvalidK(k_num_neighbors));
         }
-
 
         if !epistemic_variance_scale.is_finite() || epistemic_variance_scale < 0.0 {
             return Err(ParamsError::InvalidEpistemicVariance(
                 epistemic_variance_scale,
             ));
         }
-
 
         if !aleatoric_variance_scale.is_finite() || aleatoric_variance_scale < 0.0 {
             return Err(ParamsError::InvalidAleatoricVariance(
@@ -127,12 +123,7 @@ impl ENNNormal {
         &self,
         level: f64,
     ) -> Result<(ArrayD<f64>, ArrayD<f64>), crate::error::ENNError> {
-        crate::normal_sample::confidence_interval(
-            &self.mu,
-            &self.se,
-            self.y_bounds.as_ref(),
-            level,
-        )
+        crate::normal_sample::confidence_interval(&self.mu, &self.se, self.y_bounds.as_ref(), level)
     }
 
     pub fn len(&self) -> usize {

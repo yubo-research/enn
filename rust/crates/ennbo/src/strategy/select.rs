@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, ArrayView2};
 use rand::seq::SliceRandom;
 use rand::RngCore;
@@ -66,7 +65,6 @@ pub(super) fn select_with_thompson(
         return Ok(select_by_indices(x_cand, &indices));
     }
 
-
     let mut flat = ndarray::Array2::zeros((num_arms * n_candidates, 1));
     for arm in 0..num_arms {
         for i in 0..n_candidates {
@@ -94,7 +92,6 @@ pub(super) fn select_with_ucb(
 ) -> Result<Array2<f64>, ENNError> {
     let pred = surrogate.predict(x_cand)?;
     if optimizer.trust_region().is_morbo() {
-
         let ucb_vals = &pred.mu + &(pred.se * beta);
         let scores = optimizer
             .trust_region()
@@ -121,7 +118,6 @@ pub(super) fn select_with_pareto(
     num_arms: usize,
     rng: &mut dyn RngCore,
 ) -> Result<Array2<f64>, ENNError> {
-
     let pred = surrogate.predict(x_cand)?;
     let pareto = ParetoAcquisition::new();
     let indices = pareto

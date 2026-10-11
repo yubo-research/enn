@@ -1,4 +1,3 @@
-
 use ndarray::{s, Array1, ArrayView1};
 use thiserror::Error;
 
@@ -21,7 +20,7 @@ impl Default for TRLengthConfig {
     fn default() -> Self {
         Self {
             length_init: 0.8,
-            length_min: 0.5f64.powi(7), 
+            length_min: 0.5f64.powi(7),
             length_max: 1.6,
         }
     }
@@ -231,7 +230,6 @@ impl TurboTrustRegion {
             )));
         }
 
-        
         if !self.best_value.is_finite() {
             let new_best = y_all.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
             self.best_value = new_best;
@@ -239,7 +237,6 @@ impl TurboTrustRegion {
             return Ok(());
         }
 
-        
         let new_batch = y_all.slice(s![self.prev_num_obs..]);
 
         let new_best = new_batch.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
@@ -256,16 +253,13 @@ impl TurboTrustRegion {
             self.success_counter = 0;
         }
 
-        
         let success_tol = self.success_tolerance;
         let failure_tol = self.failure_tolerance.unwrap_or(4);
 
         if self.success_counter >= success_tol {
-            
             self.length = (self.length * 2.0).min(self.config.length_max);
             self.success_counter = 0;
         } else if self.failure_counter >= failure_tol {
-            
             self.length *= 0.5;
             self.failure_counter = 0;
         }
@@ -366,7 +360,6 @@ impl TurboTrustRegion {
         let lb = x_center - &half_length;
         let ub = x_center + &half_length;
 
-        
         let lb = lb.mapv(|v| v.clamp(0.0, 1.0));
         let ub = ub.mapv(|v| v.clamp(0.0, 1.0));
 
@@ -454,16 +447,14 @@ mod tests {
         let mut tr = TurboTrustRegion::new(5, config);
         tr.set_num_arms(1);
 
-        
         tr.update(&array![1.0].view(), 1).unwrap();
         assert_eq!(tr.length(), 0.8);
 
-        
         tr.update(&array![1.0, 2.0].view(), 2).unwrap();
         tr.update(&array![1.0, 2.0, 3.0].view(), 3).unwrap();
         tr.update(&array![1.0, 2.0, 3.0, 4.0].view(), 4).unwrap();
 
-        assert!(tr.length() > 0.8); 
+        assert!(tr.length() > 0.8);
     }
 
     #[test]
@@ -472,10 +463,8 @@ mod tests {
         let mut tr = TurboTrustRegion::new(5, config);
         tr.set_num_arms(1);
 
-        
         tr.update(&array![1.0].view(), 1).unwrap();
 
-        
         let failure_tol = tr.failure_tolerance.unwrap();
         let mut y_all = vec![1.0];
         for _ in 0..failure_tol {
@@ -484,7 +473,7 @@ mod tests {
             tr.update(&y_arr.view(), y_all.len()).unwrap();
         }
 
-        assert!(tr.length() < 0.8); 
+        assert!(tr.length() < 0.8);
     }
 
     #[test]
@@ -493,7 +482,6 @@ mod tests {
         let mut tr = TurboTrustRegion::new(5, config);
         tr.set_num_arms(1);
 
-        
         tr.update(&array![1.0].view(), 1).unwrap();
         let mut y_all = vec![1.0, 0.5];
         for _ in 0..10 {
@@ -504,7 +492,6 @@ mod tests {
 
         assert!(tr.length() < 0.8);
 
-        
         tr.restart();
         assert_eq!(tr.length(), 0.8);
         assert!(!tr.needs_restart());
@@ -580,9 +567,6 @@ mod tests {
 
     #[test]
     fn restart_preserves_hist_scale_for_improvement() {
-        
-        
-        
         let config = TRLengthConfig::default();
         let mut tr = TurboTrustRegion::new(2, config);
         tr.set_num_arms(1);
@@ -605,14 +589,10 @@ mod tests {
             "restart must preserve historical y max for scale"
         );
 
-        
         let y1 = array![100.0];
         tr.update_with_incumbent_new_batch(&y1.view(), 3, 100.0)
             .unwrap();
 
-        
-        
-        
         for (i, inc) in [100.05_f64, 100.10, 100.15].into_iter().enumerate() {
             let y = array![inc];
             tr.update_with_incumbent_new_batch(&y.view(), 4 + i, inc)
@@ -641,8 +621,7 @@ mod tests {
         for (b, &inc) in batches.iter().zip(incumbents.iter()) {
             y_all.extend_from_slice(b);
             let y_arr = ndarray::Array1::from_vec(y_all.clone());
-            full
-                .update_with_incumbent(&y_arr.view(), y_all.len(), inc)
+            full.update_with_incumbent(&y_arr.view(), y_all.len(), inc)
                 .unwrap();
             let y_new = ndarray::Array1::from_vec(b.to_vec());
             batch
@@ -657,7 +636,6 @@ mod tests {
 
     #[test]
     fn update_with_incumbent_restart_preserves_watermark_then_batch_matches_full() {
-        
         let config = TRLengthConfig::default();
         let mut full = TurboTrustRegion::new(2, config);
         let mut mixed = TurboTrustRegion::new(2, config);
@@ -669,8 +647,7 @@ mod tests {
         for (b, &inc) in pre.iter().zip([1.0_f64, 1.0].iter()) {
             y_all.extend_from_slice(b);
             let y_arr = ndarray::Array1::from_vec(y_all.clone());
-            full
-                .update_with_incumbent(&y_arr.view(), y_all.len(), inc)
+            full.update_with_incumbent(&y_arr.view(), y_all.len(), inc)
                 .unwrap();
             mixed
                 .update_with_incumbent(&y_arr.view(), y_all.len(), inc)
@@ -689,8 +666,7 @@ mod tests {
         for (b, &inc) in post.iter().zip(post_inc.iter()) {
             y_all.extend_from_slice(b);
             let y_arr = ndarray::Array1::from_vec(y_all.clone());
-            full
-                .update_with_incumbent(&y_arr.view(), y_all.len(), inc)
+            full.update_with_incumbent(&y_arr.view(), y_all.len(), inc)
                 .unwrap();
             let y_new = ndarray::Array1::from_vec(b.to_vec());
             mixed

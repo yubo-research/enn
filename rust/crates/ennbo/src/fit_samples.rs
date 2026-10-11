@@ -1,4 +1,3 @@
-
 use std::num::NonZeroUsize;
 
 use crate::error::ENNError;
@@ -138,12 +137,18 @@ mod tests {
         assert!(FitSamples::draw(0, 9).is_err());
         let err = FitSamples::draw(4, 0).unwrap_err();
         assert!(err.to_string().contains("num_fit_candidates"), "{err}");
-        assert_eq!(FitSamples::default().count(), Some(DEFAULT_FIT_SAMPLES.get()));
+        assert_eq!(
+            FitSamples::default().count(),
+            Some(DEFAULT_FIT_SAMPLES.get())
+        );
     }
 
     #[test]
     fn from_counts_fills_defaults_and_rejects_zero() {
-        assert_eq!(ScaleSearch::from_counts(None, None).unwrap(), ScaleSearch::default());
+        assert_eq!(
+            ScaleSearch::from_counts(None, None).unwrap(),
+            ScaleSearch::default()
+        );
         let s = ScaleSearch::from_counts(None, Some(3)).unwrap();
         assert_eq!(s.num_fit_samples, DEFAULT_FIT_SAMPLES);
         assert_eq!(s.num_fit_candidates.get(), 3);

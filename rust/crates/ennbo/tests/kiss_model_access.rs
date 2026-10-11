@@ -7,9 +7,14 @@ const MODEL_ACCESS_SRC: &str = include_str!("../src/model/access.rs");
 
 #[test]
 fn kiss_model_access_types_imported() {
-    let model =
-        EpistemicNearestNeighbors::new(array![[0.0]], array![[1.0]], None, false, IndexDriver::Flat)
-            .unwrap();
+    let model = EpistemicNearestNeighbors::new(
+        array![[0.0]],
+        array![[1.0]],
+        None,
+        false,
+        IndexDriver::Flat,
+    )
+    .unwrap();
     let _: EnnIndexAccess<'_> = model.index_access();
     let _: EnnRowAccess<'_> = model.rows();
     let _ = model.index_access().ensure_sync();

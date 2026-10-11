@@ -14,7 +14,10 @@ use crate::trust_region_config::TrustRegionConfig;
 use crate::util::argmax_random_tie;
 
 fn argmax_scores(scores: &ndarray::Array1<f64>) -> usize {
-    argmax_random_tie(scores.as_slice().unwrap_or(&[]), &mut StdRng::seed_from_u64(0))
+    argmax_random_tie(
+        scores.as_slice().unwrap_or(&[]),
+        &mut StdRng::seed_from_u64(0),
+    )
 }
 
 #[test]
@@ -37,21 +40,10 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
     };
     cfg.noise_aware = true;
 
-    let mut opt =
-        Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
+    let mut opt = Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
 
-    let x = array![
-        [0.02, 0.02],
-        [0.98, 0.02],
-        [0.02, 0.98],
-        [0.60, 0.60],
-    ];
-    let y = array![
-        [2.0, 2.0],
-        [50.0, 1.0],
-        [1.0, 50.0],
-        [3.0, 3.0],
-    ];
+    let x = array![[0.02, 0.02], [0.98, 0.02], [0.02, 0.98], [0.60, 0.60],];
+    let y = array![[2.0, 2.0], [50.0, 1.0], [1.0, 50.0], [3.0, 3.0],];
     opt.tell(&x.view(), &y.view(), None).unwrap();
 
     let sur = opt.surrogate().expect("enn surrogate");
@@ -85,7 +77,8 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
     let raw_y_at_mu_winner = y_all.row(mu_winner).to_owned();
 
     assert!(
-        y_inc.iter()
+        y_inc
+            .iter()
             .zip(expected_mu.iter())
             .all(|(a, b)| (a - b).abs() < 1e-6),
         "noise_aware Morbo must store posterior mu row {:?} used to select incumbent, got {:?}",
@@ -93,7 +86,8 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
         y_inc.as_slice().unwrap()
     );
     assert!(
-        y_inc.iter()
+        y_inc
+            .iter()
             .zip(raw_y_at_mu_winner.iter())
             .any(|(a, b)| (a - b).abs() > 1e-6),
         "stored incumbent must not be raw observed y {:?} when mu differs {:?}",

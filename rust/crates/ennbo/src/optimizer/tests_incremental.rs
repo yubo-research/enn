@@ -4,10 +4,10 @@ use rand::SeedableRng;
 
 use crate::config::turbo_enn_config;
 use crate::fitter::ENNFitter;
-use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
-use crate::optimizer::{ObservationDelta, Optimizer};
 use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
+use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
+use crate::optimizer::{ObservationDelta, Optimizer};
 use crate::strategy::Strategy;
 use crate::surrogate::{ENNSurrogate, ENNSurrogateConfig, Surrogate};
 use crate::trust_region::TRLengthConfig;
@@ -77,7 +77,14 @@ fn enn_fitter_ask_always_fits_with_enough_obs() {
     let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
     fitter.reset_y_stats(&ty.view());
     let mut rng = StdRng::seed_from_u64(99);
-    let p = fitter.ask(&model, &crate::fit_samples::test_search(3, 4, true), None, &mut rng).unwrap();
+    let p = fitter
+        .ask(
+            &model,
+            &crate::fit_samples::test_search(3, 4, true),
+            None,
+            &mut rng,
+        )
+        .unwrap();
     assert_eq!(p.k_num_neighbors, 2);
     assert!(p.epistemic_variance_scale > 0.0);
 }
@@ -105,10 +112,12 @@ fn enn_surrogate_fit_append_grows_model() {
     let mut rng = StdRng::seed_from_u64(42);
     let x0 = array![[0.0, 0.0], [1.0, 0.0]];
     let y0 = array![[0.0], [1.0]];
-    sur.fit_append(&x0.view(), &y0.view(), None, &mut rng).unwrap();
+    sur.fit_append(&x0.view(), &y0.view(), None, &mut rng)
+        .unwrap();
     let x1 = array![[0.5, 0.5]];
     let y1 = array![[1.5]];
-    sur.fit_append(&x1.view(), &y1.view(), None, &mut rng).unwrap();
+    sur.fit_append(&x1.view(), &y1.view(), None, &mut rng)
+        .unwrap();
     assert_eq!(sur.model().unwrap().num_obs(), 3);
 }
 
@@ -143,8 +152,7 @@ fn morbo_ask_without_tell_preserves_y_ranges() {
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
     });
-    let mut opt =
-        Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
+    let mut opt = Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
     let x0 = array![[0.1, 0.2], [0.3, 0.4]];
     let y0 = array![[1.0, 0.5], [0.2, 0.9]];
     opt.tell(&x0.view(), &y0.view(), None).unwrap();
@@ -153,6 +161,16 @@ fn morbo_ask_without_tell_preserves_y_ranges() {
     let ymax_before = morbo.y_max().expect("y_max").to_owned();
     let _ = opt.ask(2).unwrap();
     let morbo_after = opt.trust_region().morbo().expect("morbo");
-    assert!(morbo_after.y_min().unwrap().iter().zip(ymin_before.iter()).all(|(a, b)| (a - b).abs() < 1e-12));
-    assert!(morbo_after.y_max().unwrap().iter().zip(ymax_before.iter()).all(|(a, b)| (a - b).abs() < 1e-12));
+    assert!(morbo_after
+        .y_min()
+        .unwrap()
+        .iter()
+        .zip(ymin_before.iter())
+        .all(|(a, b)| (a - b).abs() < 1e-12));
+    assert!(morbo_after
+        .y_max()
+        .unwrap()
+        .iter()
+        .zip(ymax_before.iter())
+        .all(|(a, b)| (a - b).abs() < 1e-12));
 }

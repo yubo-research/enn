@@ -65,9 +65,7 @@ fn test_thompson_sampling_uses_posterior_sample() {
 
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.8, 0.2], [0.5, 0.5]];
     let y_fit = array![[0.0], [1.0], [0.5], [0.4], [0.6]];
-    optimizer
-        .tell(&x_fit.view(), &y_fit.view(), None)
-        .unwrap();
+    optimizer.tell(&x_fit.view(), &y_fit.view(), None).unwrap();
 
     let tel_after_tell = optimizer.telemetry();
     assert!(
@@ -93,9 +91,7 @@ fn test_thompson_sampling_uses_posterior_sample() {
         &mut rng2,
     )
     .unwrap();
-    optimizer2
-        .tell(&x_fit.view(), &y_fit.view(), None)
-        .unwrap();
+    optimizer2.tell(&x_fit.view(), &y_fit.view(), None).unwrap();
 
     let _candidates1 = optimizer.ask(2).unwrap();
     let _candidates2 = optimizer2.ask(2).unwrap();
@@ -151,9 +147,7 @@ fn test_telemetry_populated_after_operations() {
 
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.5, 0.5]];
     let y_fit = array![[0.0], [1.0], [0.5]];
-    optimizer
-        .tell(&x_fit.view(), &y_fit.view(), None)
-        .unwrap();
+    optimizer.tell(&x_fit.view(), &y_fit.view(), None).unwrap();
 
     let tel1 = optimizer.telemetry();
     assert!(
@@ -225,7 +219,8 @@ fn ask_scores_full_configured_candidate_pool() {
     opt.tell(&xf.view(), &yf.view(), None).unwrap();
     let _ = opt.ask(num_arms).unwrap();
     assert_eq!(
-        opt.telemetry().num_candidates, expected_pool,
+        opt.telemetry().num_candidates,
+        expected_pool,
         "ask must score the full configured RAASP pool (no silent cap)"
     );
     assert!(
@@ -302,7 +297,10 @@ fn select_with_pareto_scores_naturalized_under_y_bounds() {
         .select(&pred_nat.mu.view(), &pred_nat.se.view(), 2, &mut rng_b)
         .unwrap();
     let expected = x_cand.select(ndarray::Axis(0), &idx);
-    assert_eq!(out, expected, "Pareto must rank naturalized μ/σ under y_bounds");
+    assert_eq!(
+        out, expected,
+        "Pareto must rank naturalized μ/σ under y_bounds"
+    );
 }
 
 #[test]
@@ -329,8 +327,6 @@ fn select_with_thompson_scores_naturalized_under_y_bounds() {
     let mut rng_sel = StdRng::seed_from_u64(606);
     let out = select_with_thompson(&opt, sur, &x_cand.view(), 2, &mut rng_sel).unwrap();
     assert_eq!(out.nrows(), 2);
-
-
 
     let n_cand = x_cand.nrows();
     let mut rng_full = StdRng::seed_from_u64(606);

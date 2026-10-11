@@ -1,13 +1,12 @@
-
 pub mod disk_observation;
 mod flush_controller;
 mod in_memory;
 pub(crate) mod row_storage;
 mod storage_wire;
 
-pub use in_memory::InMemoryEnnBackend;
 pub use crate::disk_bpann::DiskBpannEnnBackend;
 pub(crate) use flush_controller::DiskBackendHandle;
+pub use in_memory::InMemoryEnnBackend;
 
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
@@ -87,14 +86,8 @@ impl EnnBackend {
         scale_x: bool,
         x_scale: Array1<f64>,
     ) -> Result<Self, ENNError> {
-        let inner = DiskBpannEnnBackend::new(
-            work_dir,
-            train_x,
-            train_y,
-            train_yvar,
-            scale_x,
-            x_scale,
-        )?;
+        let inner =
+            DiskBpannEnnBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)?;
         Ok(Self::Disk(DiskBackendHandle::new(inner)))
     }
 
@@ -131,14 +124,9 @@ impl EnnBackend {
         x_scale: Array1<f64>,
     ) -> Result<Self, ENNError> {
         match layout {
-            EnnLayout::Memory { driver, scale_x } => Self::new_in_memory(
-                train_x,
-                train_y,
-                train_yvar,
-                *scale_x,
-                x_scale,
-                *driver,
-            ),
+            EnnLayout::Memory { driver, scale_x } => {
+                Self::new_in_memory(train_x, train_y, train_yvar, *scale_x, x_scale, *driver)
+            }
             EnnLayout::Disk { work_dir, scale_x } => Self::new_disk(
                 work_dir.clone(),
                 train_x,
@@ -247,11 +235,7 @@ impl EnnBackend {
         }
     }
 
-    pub fn ensure_index_sync(
-        &self,
-        scale_x: bool,
-        x_scale: &Array1<f64>,
-    ) -> Result<(), ENNError> {
+    pub fn ensure_index_sync(&self, scale_x: bool, x_scale: &Array1<f64>) -> Result<(), ENNError> {
         self.wait_for_flush()?;
         match self {
             Self::InMemory(b) => b.ensure_index_sync(scale_x, x_scale),
@@ -269,10 +253,7 @@ impl EnnBackend {
         }
     }
 
-    pub fn train_rows_at(
-        &self,
-        indices: &[usize],
-    ) -> Result<TrainRowsAtResult, ENNError> {
+    pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAtResult, ENNError> {
         match self {
             Self::InMemory(b) => b.train_rows_at(indices),
             Self::Disk(h) => disk_read(h.data())?.train_rows_at(indices),

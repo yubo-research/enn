@@ -4,6 +4,8 @@ from ._lazy import lazy_getattr
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "EpistemicNearestNeighbors": (".enn.enn_class", "EpistemicNearestNeighbors"),
+    "ENNTS": (".ennts", "ENNTS"),
+    "ENNTSConfig": (".ennts", "ENNTSConfig"),
     "ENNStatefulFitter": (".enn.enn_fitter", "ENNStatefulFitter"),
     "AffineCalibrator": (".enn.affine_calibrator", "AffineCalibrator"),
     "fit_affine_calibrator": (".enn.affine_calibrator", "fit_affine_calibrator"),

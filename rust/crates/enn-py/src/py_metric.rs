@@ -1,4 +1,3 @@
-
 use ndarray::Array2;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
@@ -173,7 +172,11 @@ pub fn metric_configure(
         None => None,
     };
     if let Some(groups) = &tied_dims {
-        let stored = model.inner.metric_tied().map(|g| g.to_vec()).unwrap_or_default();
+        let stored = model
+            .inner
+            .metric_tied()
+            .map(|g| g.to_vec())
+            .unwrap_or_default();
         if groups != &stored {
             return Err(PyValueError::new_err(format!(
                 "tied_dims {groups:?} do not match the model groups {stored:?}"

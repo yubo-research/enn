@@ -7,21 +7,18 @@ use ndarray::array;
 fn batch_posterior_on_train_matches_posterior_when_no_neighbors() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
-    let model = EpistemicNearestNeighbors::new(
-        train_x.clone(),
-        train_y,
-        None,
-        false,
-        IndexDriver::Flat,
-    )
-    .unwrap();
+    let model =
+        EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Flat)
+            .unwrap();
     let bad = ENNParams {
         k_num_neighbors: 0,
         epistemic_variance_scale: 1.0,
         aleatoric_variance_scale: 0.1,
     };
     let flags = PosteriorFlags::new();
-    let batch = model.batch_posterior(&train_x.view(), &[bad], &flags).unwrap();
+    let batch = model
+        .batch_posterior(&train_x.view(), &[bad], &flags)
+        .unwrap();
     let ind = model.posterior(&train_x.view(), &bad, &flags).unwrap();
     for i in 0..train_x.nrows() {
         assert_eq!(batch.mu[[0, i, 0]], ind.mu[[i, 0]]);

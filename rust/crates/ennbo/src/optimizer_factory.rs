@@ -1,4 +1,3 @@
-
 use ndarray::Array2;
 use rand::rngs::StdRng;
 use rand::SeedableRng;

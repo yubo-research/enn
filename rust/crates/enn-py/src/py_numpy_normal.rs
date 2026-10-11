@@ -1,4 +1,3 @@
-
 use numpy::{PyArray1, ToPyArray};
 use pyo3::prelude::*;
 
@@ -20,11 +19,7 @@ impl PyNumpyNormal {
         }
     }
 
-    fn standard_normals<'py>(
-        &mut self,
-        py: Python<'py>,
-        n: usize,
-    ) -> Bound<'py, PyArray1<f64>> {
+    fn standard_normals<'py>(&mut self, py: Python<'py>, n: usize) -> Bound<'py, PyArray1<f64>> {
         let mut out = Vec::with_capacity(n);
         for _ in 0..n {
             out.push(self.rng.standard_normal());

@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, Array3};
 
 #[derive(Debug, Clone, PartialEq)]

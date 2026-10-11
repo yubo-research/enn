@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::{Path, PathBuf};
 
@@ -8,9 +7,7 @@ use crate::error::ENNError;
 use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
-use crate::y_bounds::{
-    inv_y, is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar,
-};
+use crate::y_bounds::{inv_y, is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar};
 
 impl EpistemicNearestNeighbors {
     pub fn new_empty_with_y_bounds(
@@ -38,12 +35,8 @@ impl EpistemicNearestNeighbors {
             .filter(|p| layout.storage() == EnnStorage::Disk && p.join("metadata.json").exists())
             .and_then(|p| std::fs::read_to_string(p.join("metadata.json")).ok());
         let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics, meta_text.as_deref())?;
-        let backend = EnnBackend::empty_from_layout(
-            num_dim,
-            num_metrics,
-            &layout,
-            pending_flush_threshold,
-        )?;
+        let backend =
+            EnnBackend::empty_from_layout(num_dim, num_metrics, &layout, pending_flush_threshold)?;
         let model = Self {
             layout,
             backend,
@@ -119,10 +112,7 @@ impl EpistemicNearestNeighbors {
         &self.y_bounds
     }
 
-    pub fn train_rows_at(
-        &self,
-        indices: &[usize],
-    ) -> Result<TrainRowsAtResult, ENNError> {
+    pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAtResult, ENNError> {
         let (x, y_z, yvar_z) = self.rows().train_rows_at(indices)?;
         if is_identity_bounds(&self.y_bounds) {
             return Ok((x, y_z, yvar_z));
@@ -207,7 +197,8 @@ fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<bool
         ));
     };
     if new_text != text {
-        std::fs::write(&meta_path, new_text).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        std::fs::write(&meta_path, new_text)
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
     }
     Ok(true)
 }

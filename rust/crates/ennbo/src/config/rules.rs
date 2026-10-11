@@ -1,4 +1,3 @@
-
 use super::{AcquisitionConfig, OptimizerConfig, SurrogateConfig};
 use crate::error::ENNError;
 use crate::surrogate::ENNSurrogateConfig;

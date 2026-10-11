@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, ArrayView2};
 
 use crate::neighbor_count::NeighborCount;
@@ -128,9 +127,7 @@ impl IncrementalIncumbentTracker {
 
     fn push_top_m(entries: &mut Vec<(usize, f64)>, index: usize, value: f64, m: usize) {
         entries.push((index, value));
-        entries.sort_by(|&(ia, va), &(ib, vb)| {
-            vb.total_cmp(&va).then_with(|| ia.cmp(&ib))
-        });
+        entries.sort_by(|&(ia, va), &(ib, vb)| vb.total_cmp(&va).then_with(|| ia.cmp(&ib)));
         entries.truncate(m);
     }
 

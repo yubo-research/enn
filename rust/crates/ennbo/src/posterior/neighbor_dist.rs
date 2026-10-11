@@ -52,10 +52,8 @@ mod kiss_coverage_tests {
         let model =
             EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
                 .unwrap();
-        let dists = crate::posterior::neighbor_dist::row_dist2s_for_query(
-            &model,
-            array![0.5, 0.0].view(),
-        );
+        let dists =
+            crate::posterior::neighbor_dist::row_dist2s_for_query(&model, array![0.5, 0.0].view());
         assert_eq!(dists.len(), 2);
         let d = crate::posterior::neighbor_dist::posterior_row_sq_l2(
             array![0.0, 0.0].view(),

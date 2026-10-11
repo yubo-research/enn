@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -143,7 +142,6 @@ impl EpistemicNearestNeighbors {
             None
         };
 
-
         if disk_reopen {
             if let Some(text) = meta_text.as_deref() {
                 if let Some(persisted) =
@@ -153,12 +151,7 @@ impl EpistemicNearestNeighbors {
                 }
             }
         }
-        let y_bounds = resolve_y_bounds(
-            y_bounds.as_ref(),
-            num_metrics,
-            meta_text.as_deref(),
-        )?;
-
+        let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics, meta_text.as_deref())?;
 
         let (train_y, train_yvar) = if disk_reopen {
             (train_y, train_yvar)
@@ -171,13 +164,8 @@ impl EpistemicNearestNeighbors {
             Self::init_stats(&train_x, &train_y, scale_x);
 
         let stored_work_dir = disk_work_dir.clone();
-        let backend = EnnBackend::from_layout(
-            &layout,
-            train_x,
-            train_y,
-            train_yvar,
-            x_scale.clone(),
-        )?;
+        let backend =
+            EnnBackend::from_layout(&layout, train_x, train_y, train_yvar, x_scale.clone())?;
 
         let mut model = Self {
             layout,
@@ -475,7 +463,10 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
     if n == 0 {
         return Ok(());
     }
-    let (mut y_sum, mut y_sumsq) = (Array1::zeros(model.num_metrics), Array1::zeros(model.num_metrics));
+    let (mut y_sum, mut y_sumsq) = (
+        Array1::zeros(model.num_metrics),
+        Array1::zeros(model.num_metrics),
+    );
     let (mut x_sum, mut x_sumsq) = (Array1::zeros(model.num_dim), Array1::zeros(model.num_dim));
     for start in (0..n).step_by(STATS_CHUNK_ROWS) {
         let indices: Vec<usize> = (start..(start + STATS_CHUNK_ROWS).min(n)).collect();
@@ -494,7 +485,8 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
         model.x_scale = model.data_x_scale(n);
         model.built_x_scale = model.x_scale.clone();
     }
-    model.backend
+    model
+        .backend
         .ensure_index_sync(model.scale_x, &model.x_scale)?;
     Ok(())
 }
@@ -660,7 +652,13 @@ mod tests {
         };
         let built = open(x, y);
         let stats = |m: &EpistemicNearestNeighbors| {
-            (m.num_obs, m.y_sum.clone(), m.y_sumsq.clone(), m.x_sum.clone(), m.x_sumsq.clone())
+            (
+                m.num_obs,
+                m.y_sum.clone(),
+                m.y_sumsq.clone(),
+                m.x_sum.clone(),
+                m.x_sumsq.clone(),
+            )
         };
         let expected = stats(&built);
         drop(built);

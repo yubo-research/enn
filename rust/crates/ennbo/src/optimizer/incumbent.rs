@@ -20,7 +20,6 @@ impl Optimizer {
         }
 
         if self.incumbent_tracker.observation_count() != self.obs_count() {
-
             if let Some(y_nat) = self.y_obs() {
                 self.incumbent_tracker.rebuild(&y_nat.view());
             }
@@ -59,7 +58,9 @@ impl Optimizer {
             let scores = self
                 .tr_state
                 .morbo()
-                .ok_or_else(|| ENNError::InvalidParameter("Morbo incumbent without Morbo".to_string()))?
+                .ok_or_else(|| {
+                    ENNError::InvalidParameter("Morbo incumbent without Morbo".to_string())
+                })?
                 .scalarize_local(&y_rows.view())
                 .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
             let best_pos = argmax_random_tie(scores.as_slice().unwrap_or(&[]), rng);
@@ -73,11 +74,13 @@ impl Optimizer {
         let best_idx = candidate_indices
             .into_iter()
             .max_by(|&a, &b| {
-                self.obs_access().obs_row_y(a).and_then(|ya| {
-                    self.obs_access()
-                        .obs_row_y(b)
-                        .map(|yb| ya[0].total_cmp(&yb[0]))
-                })
+                self.obs_access()
+                    .obs_row_y(a)
+                    .and_then(|ya| {
+                        self.obs_access()
+                            .obs_row_y(b)
+                            .map(|yb| ya[0].total_cmp(&yb[0]))
+                    })
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .ok_or_else(|| ENNError::InvalidParameter("No incumbent candidates".to_string()))?;

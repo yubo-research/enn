@@ -1,4 +1,3 @@
-
 use crate::numpy_seed::seed_sequence_u64;
 
 const MULT_HI: u128 = 2549297995355413924;
@@ -14,7 +13,12 @@ pub struct NumpyPcg64 {
 
 impl NumpyPcg64 {
     pub fn from_parts(state: u128, inc: u128) -> Self {
-        Self { state, inc, has_u32: false, u32_buf: 0 }
+        Self {
+            state,
+            inc,
+            has_u32: false,
+            u32_buf: 0,
+        }
     }
 
     pub fn from_seed(seed: u64) -> Self {
@@ -26,7 +30,12 @@ impl NumpyPcg64 {
         state = state.wrapping_mul(MULT).wrapping_add(inc);
         state = state.wrapping_add(initstate);
         state = state.wrapping_mul(MULT).wrapping_add(inc);
-        Self { state, inc, has_u32: false, u32_buf: 0 }
+        Self {
+            state,
+            inc,
+            has_u32: false,
+            u32_buf: 0,
+        }
     }
 
     pub fn next_f64(&mut self) -> f64 {

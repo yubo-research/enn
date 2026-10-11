@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -38,20 +37,16 @@ impl UCBAcquisition {
             return Ok(Vec::new());
         }
 
-
         let ucb: Array1<f64> = mu + &(sigma * self.beta);
-
 
         let mut indices: Vec<usize> = (0..ucb.len()).collect();
         indices.shuffle(rng);
-
 
         indices.sort_by(|&a, &b| {
             let ucb_a = ucb[a];
             let ucb_b = ucb[b];
             ucb_b.total_cmp(&ucb_a)
         });
-
 
         let result: Vec<usize> = indices.into_iter().take(num_arms).collect();
         Ok(result)
@@ -85,7 +80,6 @@ impl ThompsonAcquisition {
         const CLIP_MIN: f64 = 1e-12;
         const CLIP_MAX: f64 = 1.0 - 1e-12;
 
-
         let mut samples = Array1::zeros(mu.len());
         for i in 0..mu.len() {
             let mean = mu[i];
@@ -98,12 +92,9 @@ impl ThompsonAcquisition {
             samples[i] = mean + std * z;
         }
 
-
         let mut indices: Vec<usize> = (0..samples.len()).collect();
         indices.shuffle(rng);
-        indices.sort_by(|&a, &b| {
-            samples[b].total_cmp(&samples[a])
-        });
+        indices.sort_by(|&a, &b| samples[b].total_cmp(&samples[a]));
 
         Ok(indices.into_iter().take(num_arms).collect())
     }
@@ -188,11 +179,8 @@ impl ParetoAcquisition {
             );
         }
 
-
-
         let objectives = Self::interleave_mu_se(mu, se);
         let pareto_fronts = self.non_domin_sort(&objectives.view());
-
 
         let mut selected = Vec::with_capacity(num_arms);
         for front in pareto_fronts {
@@ -204,7 +192,6 @@ impl ParetoAcquisition {
             if front.len() <= remaining {
                 selected.extend(front);
             } else {
-
                 let mut front_indices = front;
                 front_indices.shuffle(rng);
                 selected.extend(front_indices.into_iter().take(remaining));
@@ -237,18 +224,15 @@ impl ParetoAcquisition {
             return Vec::new();
         }
 
-
         let mut domination_count: Vec<usize> = vec![0; n];
         let mut dominated: Vec<Vec<usize>> = vec![Vec::new(); n];
         let mut fronts: Vec<Vec<usize>> = Vec::new();
-
 
         for i in 0..n {
             for j in 0..n {
                 if i == j {
                     continue;
                 }
-
 
                 let mut all_gte = true;
                 let mut any_gt = false;
@@ -265,7 +249,6 @@ impl ParetoAcquisition {
                 if all_gte && any_gt {
                     dominated[i].push(j);
                 } else if !all_gte {
-
                     let mut j_gte = true;
                     let mut j_gt = false;
                     for k in 0..m {
@@ -283,7 +266,6 @@ impl ParetoAcquisition {
                 }
             }
         }
-
 
         let mut current_front: Vec<usize> = (0..n).filter(|&i| domination_count[i] == 0).collect();
 
@@ -314,13 +296,11 @@ impl ParetoAcquisition {
         let mut fronts: Vec<Vec<usize>> = Vec::new();
 
         while !remaining.is_empty() {
-
             remaining.sort_by(|&i, &j| {
                 objectives[[j, 0]]
                     .total_cmp(&objectives[[i, 0]])
                     .then_with(|| objectives[[j, 1]].total_cmp(&objectives[[i, 1]]))
             });
-
 
             let mut front: Vec<usize> = Vec::new();
             let mut best_obj1 = f64::NEG_INFINITY;
@@ -336,7 +316,6 @@ impl ParetoAcquisition {
                     last_obj0 = obj0;
                     last_obj1 = obj1;
                 } else if obj1 == best_obj1 && obj0 == last_obj0 && obj1 == last_obj1 {
-
                     front.push(idx);
                 }
             }
@@ -366,14 +345,8 @@ impl ParetoAcquisition {
         let num_arms = num_arms.min(n);
         let dummy_x = ndarray::Array2::<f64>::zeros((n, 1));
         let seed = rng.r#gen::<u64>();
-        crate::util::arms_from_pareto_fronts(
-            &dummy_x.view(),
-            mu,
-            sigma,
-            num_arms,
-            seed,
-        )
-        .map_err(|e| AcquisitionError::InvalidParameter(e.to_string()))
+        crate::util::arms_from_pareto_fronts(&dummy_x.view(), mu, sigma, num_arms, seed)
+            .map_err(|e| AcquisitionError::InvalidParameter(e.to_string()))
     }
 }
 

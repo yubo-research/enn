@@ -1,7 +1,8 @@
-
 use ennbo::traits::PosteriorComputation;
 use ndarray::Array2;
-use numpy::{IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn};
+use numpy::{
+    IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -33,10 +34,7 @@ pub(crate) type TrainRowsAtPyOut<'py> = (
     Option<Bound<'py, PyArray2<f64>>>,
 );
 
-fn py_posterior_flags(
-    exclude_nearest: bool,
-    observation_noise: bool,
-) -> ennbo::PosteriorFlags {
+fn py_posterior_flags(exclude_nearest: bool, observation_noise: bool) -> ennbo::PosteriorFlags {
     ennbo::PosteriorFlags::new()
         .with_exclude_nearest(exclude_nearest)
         .with_observation_noise(observation_noise)
@@ -69,14 +67,9 @@ impl PyEpistemicNearestNeighbors {
         let metric_learning = crate::py_layout::metric_learning_from_wire(metric_learning)?;
         let explicit = crate::py_layout::enn_storage_optional(enn_storage)?;
         let work_dir = work_dir.map(PathBuf::from);
-        let layout = ennbo::EnnLayout::try_from_parts(
-            driver,
-            explicit,
-            work_dir,
-            scale_x,
-            metric_learning,
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let layout =
+            ennbo::EnnLayout::try_from_parts(driver, explicit, work_dir, scale_x, metric_learning)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_x = owned_matrix("train_x", train_x)?;
         let train_y = owned_matrix("train_y", train_y)?;
@@ -96,11 +89,7 @@ impl PyEpistemicNearestNeighbors {
         let groups = tied_dims.unwrap_or_default();
         if metric_learning == ennbo::metric_auto::MetricLearning::Auto {
             model
-                .enable_auto_metric(
-                    groups.clone(),
-                    &train_x.view(),
-                    &train_y_auto.view(),
-                )
+                .enable_auto_metric(groups.clone(), &train_x.view(), &train_y_auto.view())
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
         } else if !groups.is_empty() {
             let dims: Vec<usize> = groups.iter().flatten().copied().collect();
@@ -111,7 +100,10 @@ impl PyEpistemicNearestNeighbors {
         model
             .set_tied_groups(groups)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self { inner: model, incremental: ennbo::IncrementalFit::new() })
+        Ok(Self {
+            inner: model,
+            incremental: ennbo::IncrementalFit::new(),
+        })
     }
 
     #[pyo3(signature = (x_scale, rebuild=false))]
@@ -130,7 +122,12 @@ impl PyEpistemicNearestNeighbors {
     ) -> PyResult<crate::py_fit::PyAddToken> {
         let yvar_arr = yvar.as_ref().map(|v| v.as_array());
         self.incremental
-            .add(&mut self.inner, &x.as_array(), &y.as_array(), yvar_arr.as_ref())
+            .add(
+                &mut self.inner,
+                &x.as_array(),
+                &y.as_array(),
+                yvar_arr.as_ref(),
+            )
             .map(|inner| crate::py_fit::PyAddToken { inner })
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
@@ -205,7 +202,6 @@ impl PyEpistemicNearestNeighbors {
         exclude_nearest: bool,
         observation_noise: bool,
     ) -> PyResult<PosteriorPyOut<'py>> {
-
         let n_params = k_values.len();
         if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {
             return Err(PyValueError::new_err(
@@ -386,11 +382,7 @@ impl PyEpistemicNearestNeighbors {
         let (dist2s, idx) = self
             .inner
             .index_access()
-            .index_neighbor_distances_and_indices(
-                &x.as_array(),
-                search_k,
-                exclude_nearest,
-            )
+            .index_neighbor_distances_and_indices(&x.as_array(), search_k, exclude_nearest)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
             dist2s.into_dyn().into_pyarray_bound(py),

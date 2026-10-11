@@ -1,4 +1,3 @@
-
 use ndarray::{Array3, ArrayView2};
 
 use crate::error::ENNError;

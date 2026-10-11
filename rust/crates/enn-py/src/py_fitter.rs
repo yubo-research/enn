@@ -1,11 +1,10 @@
-
 use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use crate::py_model::{PyENNParams, PyEpistemicNearestNeighbors, PosteriorPyOut};
+use crate::py_model::{PosteriorPyOut, PyENNParams, PyEpistemicNearestNeighbors};
 
 #[pyclass(name = "ENNStatefulFitter")]
 pub struct PyENNStatefulFitter {
@@ -165,7 +164,9 @@ impl PyENNStatefulFitter {
 fn enn_params(scales: &PyReadonlyArray1<f64>) -> PyResult<ennbo::ENNParams> {
     let s = scales.as_slice()?;
     if s.len() != 3 {
-        return Err(PyValueError::new_err("scales must be [k, epistemic, aleatoric]"));
+        return Err(PyValueError::new_err(
+            "scales must be [k, epistemic, aleatoric]",
+        ));
     }
     ennbo::ENNParams::new(s[0] as i32, s[1], s[2]).map_err(|e| PyValueError::new_err(e.to_string()))
 }
