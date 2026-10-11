@@ -25,6 +25,7 @@ from enn.turbo.config import (
     TurboTRConfig,
 )
 from enn.turbo.optimizer_config import CandidateRV
+from ops.qa_ts import observation_grid, run_sweep
 
 NUM_DIM = 99
 NUM_ROUNDS = 101
@@ -133,6 +134,20 @@ def run_turbo_enn_ackley(
 @click.group()
 def cli() -> None:
     """QA / optimization-performance checks."""
+
+
+@cli.command("compare")
+@click.option(
+    "--function",
+    "kind",
+    type=click.Choice(["arma", "periodic", "nonlinear"]),
+    required=True,
+)
+@click.option("--seed", type=int, default=0, show_default=True)
+@click.option("--out", type=click.Path(), default="_reports/ennts", show_default=True)
+def compare_cmd(kind: str, seed: int, out: str) -> None:
+    """Compare ENNTS, flat ENN, and BPANN_DISK+AUTO on a time-series sweep."""
+    run_sweep(kind, observation_grid(), int(seed), out)
 
 
 @cli.command("ackley-99")
