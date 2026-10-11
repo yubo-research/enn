@@ -64,11 +64,11 @@ def test_nonlinear_target_uses_five_lags() -> None:
     assert nonlinear_signal(x[:6], np.zeros((8, x.shape[1]))).shape == (6,)
 
 
-def test_run_one_scores_three_models() -> None:
+def test_run_one_scores_four_models() -> None:
     row = run_one("periodic", 100, 0, 0.1)
     assert row["n_test"] > 0
     assert row["n_train"] > 0
-    for name in ("ennts", "enn", "bpann_auto"):
+    for name in ("ennts", "ennts_metlrn", "enn", "bpann_auto"):
         assert np.isfinite(row[f"loglik_{name}"])
         assert np.isfinite(row[f"nrmse_{name}"])
         assert row[f"seconds_{name}"] >= 0.0

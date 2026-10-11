@@ -33,6 +33,32 @@ def test_posterior_uses_only_an_available_target() -> None:
     assert int(series[0, 0]) == -1
 
 
+def test_metric_learning_rejects_unknown_names_and_starts_at_identity() -> None:
+    with pytest.raises(ValueError, match="metric_learning"):
+        ENNTSConfig(lookback=2, metric_learning="full")
+    model = ENNTS(
+        ENNTSConfig(
+            lookback=4,
+            metric_learning="auto",
+            bucket_width=1.0e9,
+            num_tables=2,
+            num_projections=2,
+            k=2,
+        )
+    )
+    x = np.column_stack([np.linspace(0.0, 1.0, 12), np.zeros(12)])
+    model.add(0, x, x[:, 0])
+    weights = model.metric_weights
+    assert weights is not None
+    assert np.allclose(weights, 1.0)
+    assert model.heldout_gain is None
+    assert model.metric_morph_remaining == 0
+    assert model.uses_learned_metric is False
+    mu, se, _, _ = model.posterior(x[:4], cutoff=8, observation_noise=False)
+    assert np.isfinite(mu).all()
+    assert np.isfinite(se).all()
+
+
 def test_lookback_is_required_and_stays_fixed() -> None:
     with pytest.raises(TypeError):
         ENNTSConfig()

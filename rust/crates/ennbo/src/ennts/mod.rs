@@ -1,14 +1,16 @@
 mod add;
 mod lsh;
+mod metric;
 mod predict;
 mod search;
 mod store;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use ndarray::ArrayView2;
 
 use crate::error::ENNError;
+use crate::metric_auto::MetricLearning;
 
 pub use predict::PosteriorArrays;
 pub use search::SearchBatch;
@@ -29,6 +31,7 @@ pub struct EnnTsConfig {
     pub seed: u64,
     pub epistemic_variance_scale: f64,
     pub aleatoric_variance_scale: f64,
+    pub metric_learning: MetricLearning,
 }
 
 impl EnnTsConfig {
@@ -45,6 +48,7 @@ impl EnnTsConfig {
             seed: 0,
             epistemic_variance_scale: 1.0,
             aleatoric_variance_scale: 0.1,
+            metric_learning: MetricLearning::None,
         }
     }
 
@@ -91,6 +95,11 @@ pub struct EnnTs {
     series: HashMap<u64, SeriesBuf>,
     buckets: Vec<HashMap<Vec<i32>, Vec<Posting>>>,
     windows: Vec<Posting>,
+    window_scale_gen: Vec<u32>,
+    metric_observed: Vec<u8>,
+    scale_gens: Vec<Vec<f64>>,
+    morph_queue: VecDeque<usize>,
+    metric: Option<crate::metric_auto::AutoMetric>,
     n_obs: usize,
     n_y: usize,
     y_sum: Vec<f64>,
@@ -112,6 +121,11 @@ impl EnnTs {
             series: HashMap::new(),
             buckets: Vec::new(),
             windows: Vec::new(),
+            window_scale_gen: Vec::new(),
+            metric_observed: Vec::new(),
+            scale_gens: Vec::new(),
+            morph_queue: VecDeque::new(),
+            metric: None,
             n_obs: 0,
             n_y: 0,
             y_sum: Vec::new(),
@@ -204,6 +218,24 @@ impl EnnTs {
 
     pub fn neighbor_k(&self) -> usize {
         self.config.k
+    }
+
+    pub fn metric_weights(&self) -> Option<Vec<f64>> {
+        self.metric.as_ref().map(|metric| metric.weights().to_vec())
+    }
+
+    pub fn heldout_gain(&self) -> Option<f64> {
+        self.metric.as_ref().and_then(|metric| metric.heldout_gain)
+    }
+
+    pub fn metric_morph_remaining(&self) -> usize {
+        self.morph_queue.len()
+    }
+
+    pub fn uses_learned_metric(&self) -> bool {
+        self.metric
+            .as_ref()
+            .is_some_and(crate::metric_auto::AutoMetric::uses_learned_metric)
     }
 }
 

@@ -149,6 +149,96 @@ fn wide_buckets_match_exact_search() {
     assert_eq!(approx.series_id, exact.series_id);
 }
 
+fn slot_count(model: &EnnTs) -> usize {
+    model
+        .buckets
+        .iter()
+        .map(|table| table.values().map(Vec::len).sum::<usize>())
+        .sum()
+}
+
+#[test]
+fn metric_morph_keeps_one_slot_per_table_and_the_new_distance() {
+    let mut model = EnnTs::new(wide_config()).unwrap();
+    let (ts, x, y) = column_series(12);
+    model.add(0, &ts, x.view(), Some(y.view())).unwrap();
+    let before = model.num_windows();
+    assert_eq!(slot_count(&model), model.config.num_tables * before);
+    assert_eq!(model.metric_morph_remaining(), 0);
+    let width = model.lookback() * model.num_dim().unwrap();
+    let mut scale = vec![1.0; width];
+    scale[0] = 0.25;
+    model.adopt_scale_for_test(scale.clone()).unwrap();
+    assert_eq!(model.metric_morph_remaining(), before);
+    assert_eq!(slot_count(&model), model.config.num_tables * before);
+    let extra_x = Array2::from_elem((1, 2), 11.0);
+    let extra_y = Array2::from_elem((1, 1), 11.0);
+    model
+        .add(0, &[12], extra_x.view(), Some(extra_y.view()))
+        .unwrap();
+    let moved = 6.min(before);
+    assert_eq!(model.metric_morph_remaining(), before - moved);
+    assert_eq!(
+        slot_count(&model),
+        model.config.num_tables * model.num_windows()
+    );
+    let mut q = first_window_query();
+    q[[0, 0]] = 1.0;
+    let opts = options(11, 1, true);
+    let approx = model.search(q.view(), &opts).unwrap();
+    let exact = model.search_exact(q.view(), &opts).unwrap();
+    assert_eq!(approx.end_timestamp[[0, 0]], exact.end_timestamp[[0, 0]]);
+    let stored = window_row(&x, exact.end_timestamp[[0, 0]] as usize);
+    let mut expect = 0.0;
+    for j in 0..width {
+        let delta = (q[[0, j]] - stored[j]) / scale[j];
+        expect += delta * delta;
+    }
+    assert!(expect > 0.0);
+    assert!((exact.distance[[0, 0]] - expect.sqrt()).abs() < 1e-8);
+}
+
+#[test]
+fn auto_metric_refits_once_a_hundred_windows_are_labeled() {
+    let mut cfg = wide_config();
+    cfg.metric_learning = crate::metric_auto::MetricLearning::Auto;
+    cfg.lookback = 2;
+    let mut model = EnnTs::new(cfg).unwrap();
+    let n = 110;
+    let ts: Vec<i64> = (0..n as i64).collect();
+    let x = Array2::from_shape_fn((n, 2), |(i, j)| {
+        if j == 0 {
+            0.05 * i as f64
+        } else {
+            ((i * 17) % 13) as f64
+        }
+    });
+    let y = Array2::from_shape_fn((n, 1), |(i, _)| 0.05 * (i as f64 + 1.0));
+    model.add(0, &ts, x.view(), Some(y.view())).unwrap();
+    let weights = model.metric_weights().expect("learner");
+    assert_eq!(weights.len(), 4);
+    assert!(weights.iter().all(|w| w.is_finite() && *w > 0.0));
+    assert!(model.heldout_gain().is_some());
+    assert!(
+        weights[0] + weights[2] > weights[1] + weights[3],
+        "feature 0 should outweigh the noise feature, weights={weights:?}, gain={:?}",
+        model.heldout_gain()
+    );
+    assert_eq!(
+        slot_count(&model),
+        model.config.num_tables * model.num_windows()
+    );
+}
+
+fn window_row(x: &Array2<f64>, end: usize) -> Vec<f64> {
+    let mut out = Vec::new();
+    for row in (end + 1 - 5)..=end {
+        out.push(x[[row, 0]]);
+        out.push(x[[row, 1]]);
+    }
+    out
+}
+
 fn query_from_rows(x: &Array2<f64>, end: usize) -> Array2<f64> {
     let mut q = Array2::zeros((1, 10));
     for i in 0..5 {

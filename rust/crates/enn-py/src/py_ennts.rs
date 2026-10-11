@@ -34,7 +34,7 @@ impl PyENNTS {
         horizon=1,
         cadence=1,
         probe=1,
-        variance_scales=None
+        scales_and_metric=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -47,10 +47,10 @@ impl PyENNTS {
         horizon: i64,
         cadence: i64,
         probe: i32,
-        variance_scales: Option<(f64, f64)>,
+        scales_and_metric: Option<(f64, f64, String)>,
     ) -> PyResult<Self> {
-        let (epistemic_variance_scale, aleatoric_variance_scale) =
-            variance_scales.unwrap_or((1.0, 0.1));
+        let (epistemic_variance_scale, aleatoric_variance_scale, metric_learning) =
+            scales_and_metric.unwrap_or((1.0, 0.1, "none".to_string()));
         let config = EnnTsConfig {
             lookback,
             horizon,
@@ -63,6 +63,12 @@ impl PyENNTS {
             seed,
             epistemic_variance_scale,
             aleatoric_variance_scale,
+            metric_learning: ennbo::metric_auto::MetricLearning::parse(&metric_learning)
+                .ok_or_else(|| {
+                    PyValueError::new_err(format!(
+                        "metric_learning must be 'none' or 'auto', got {metric_learning}"
+                    ))
+                })?,
         };
         let inner = EnnTs::new(config).map_err(to_py)?;
         Ok(Self { inner })
@@ -179,6 +185,26 @@ impl PyENNTS {
     fn neighbor_k(&self) -> usize {
         self.inner.neighbor_k()
     }
+
+    #[getter]
+    fn metric_weights(&self) -> Option<Vec<f64>> {
+        self.inner.metric_weights()
+    }
+
+    #[getter]
+    fn heldout_gain(&self) -> Option<f64> {
+        self.inner.heldout_gain()
+    }
+
+    #[getter]
+    fn metric_morph_remaining(&self) -> usize {
+        self.inner.metric_morph_remaining()
+    }
+
+    #[getter]
+    fn uses_learned_metric(&self) -> bool {
+        self.inner.uses_learned_metric()
+    }
 }
 
 type SearchPy<'py> = (
@@ -248,6 +274,10 @@ mod kiss_coverage {
             PyENNTS::num_dim,
             PyENNTS::lookback,
             PyENNTS::neighbor_k,
+            PyENNTS::metric_weights,
+            PyENNTS::heldout_gain,
+            PyENNTS::metric_morph_remaining,
+            PyENNTS::uses_learned_metric,
         );
     }
 }

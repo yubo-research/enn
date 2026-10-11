@@ -146,7 +146,7 @@ def cli() -> None:
 @click.option("--seed", type=int, default=0, show_default=True)
 @click.option("--out", type=click.Path(), default="_reports/ennts", show_default=True)
 def compare_cmd(kind: str, seed: int, out: str) -> None:
-    """Compare ENNTS, flat ENN, and BPANN_DISK+AUTO on a time-series sweep."""
+    """Compare ENNTS, ENNTS+METLRN, flat ENN, and BPANN_DISK+AUTO."""
     run_sweep(kind, observation_grid(), int(seed), out)
 
 

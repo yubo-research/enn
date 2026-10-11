@@ -241,7 +241,7 @@ def loglik_and_nrmse(
     return float(-nll), nrmse
 
 
-def _ennts() -> ENNTS:
+def _ennts(metric_learning: str = "none") -> ENNTS:
     width = float(np.sqrt(LOOKBACK * DIM))
     return ENNTS(
         ENNTSConfig(
@@ -256,17 +256,37 @@ def _ennts() -> ENNTS:
             cadence=1,
             aleatoric_variance_scale=ALEATORIC,
             epistemic_variance_scale=EPISTEMIC,
+            metric_learning=metric_learning,
         )
     )
 
 
-def predict_ennts(series: list, test_x: np.ndarray, t_cut: int):
-    model = _ennts()
+def _fill_ennts(model: ENNTS, series: list) -> None:
     for sid, t0, x, y in series:
         stamps = np.arange(int(t0), int(t0) + len(y), dtype=np.int64)
         model.add(int(sid), x, np.asarray(y, dtype=float).reshape(-1, 1), stamps)
+
+
+def predict_ennts(series: list, test_x: np.ndarray, t_cut: int):
+    model = _ennts()
+    _fill_ennts(model, series)
     mu, se, _, _ = model.posterior(test_x, cutoff=int(t_cut))
     return np.asarray(mu, dtype=float).ravel(), np.asarray(se, dtype=float).ravel()
+
+
+def predict_ennts_metlrn(series: list, test_x: np.ndarray, t_cut: int):
+    model = _ennts("auto")
+    _fill_ennts(model, series)
+    mu, se, _, _ = model.posterior(test_x, cutoff=int(t_cut))
+    weights = model.metric_weights
+    return {
+        "mu": np.asarray(mu, dtype=float).ravel(),
+        "se": np.asarray(se, dtype=float).ravel(),
+        "heldout_gain": model.heldout_gain,
+        "weights": None if weights is None else np.asarray(weights, dtype=float),
+        "morph_remaining": int(model.metric_morph_remaining),
+        "uses_learned": bool(model.uses_learned_metric),
+    }
 
 
 def _flat_test(test_x: np.ndarray) -> np.ndarray:
@@ -351,6 +371,15 @@ def run_one(kind: str, n_obs: int, seed: int, noise: float = NOISE) -> dict:
     mu, se = predict_ennts(data["series"], data["test_x"], data["t_cut"])
     ts_row = _score_pair("ennts", y, mu, se, time.perf_counter() - started)
     started = time.perf_counter()
+    learned = predict_ennts_metlrn(data["series"], data["test_x"], data["t_cut"])
+    met_row = _score_pair(
+        "ennts_metlrn",
+        y,
+        learned["mu"],
+        learned["se"],
+        time.perf_counter() - started,
+    )
+    started = time.perf_counter()
     mu, se = predict_enn(data["train_x"], data["train_y"], data["test_x"])
     enn_row = _score_pair("enn", y, mu, se, time.perf_counter() - started)
     started = time.perf_counter()
@@ -367,8 +396,15 @@ def run_one(kind: str, n_obs: int, seed: int, noise: float = NOISE) -> dict:
         "mean_count": float(np.mean(counts)),
     }
     row.update(ts_row)
+    row.update(met_row)
     row.update(enn_row)
     row.update(auto_row)
+    gain = learned["heldout_gain"]
+    row["heldout_gain_metlrn"] = None if gain is None else float(gain)
+    weights = learned["weights"]
+    row["weights_metlrn"] = None if weights is None else weights.tolist()
+    row["morph_remaining_metlrn"] = int(learned["morph_remaining"])
+    row["uses_learned_metlrn"] = bool(learned["uses_learned"])
     return row
 
 
@@ -376,6 +412,8 @@ def _echo(row: dict) -> None:
     fields = (
         ("LARGER", "loglik_ennts"),
         ("SMALLER", "nrmse_ennts"),
+        ("LARGER", "loglik_ennts_metlrn"),
+        ("SMALLER", "nrmse_ennts_metlrn"),
         ("LARGER", "loglik_enn"),
         ("SMALLER", "nrmse_enn"),
         ("LARGER", "loglik_bpann_auto"),

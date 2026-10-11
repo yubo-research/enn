@@ -5,6 +5,7 @@ use ndarray::{Array2, Array3, ArrayView2};
 use crate::error::ENNError;
 
 use super::lsh::probed_keys;
+use super::metric::{self, keys_for_scale};
 use super::store::{target_of, window_of, Posting};
 use super::{EnnTs, QueryOptions};
 
@@ -105,7 +106,8 @@ fn candidate(
         None if require_target => return Ok(None),
         None => vec![f64::NAN; model.metrics],
     };
-    let dist2 = squared_distance(window, &window_of(model, posting)?)?;
+    let scale = metric::latest_scale(model)?;
+    let dist2 = metric::dist2(window, &window_of(model, posting)?, scale)?;
     Ok(Some(Candidate {
         series_id: posting.series_id,
         end_ts: posting.end_ts,
@@ -135,16 +137,18 @@ fn lsh_postings(
     })?;
     let mut seen = HashSet::new();
     let mut out = Vec::new();
-    for table in 0..model.config.num_tables {
-        let base = lsh.hash_table(table, window)?;
-        for key in probed_keys(&base, model.config.probe) {
-            let Some(bucket) = model.buckets[table].get(&key) else {
-                continue;
-            };
-            let end = bucket.partition_point(|p| p.end_ts <= max_end);
-            for posting in &bucket[..end] {
-                if seen.insert((posting.series_id, posting.end_pos)) {
-                    out.push(*posting);
+    for scale in &model.scale_gens {
+        let keys = keys_for_scale(lsh, model.config.num_tables, window, scale)?;
+        for (table, base) in keys.iter().enumerate() {
+            for key in probed_keys(base, model.config.probe) {
+                let Some(bucket) = model.buckets[table].get(&key) else {
+                    continue;
+                };
+                let end = bucket.partition_point(|p| p.end_ts <= max_end);
+                for posting in &bucket[..end] {
+                    if seen.insert((posting.series_id, posting.end_pos)) {
+                        out.push(*posting);
+                    }
                 }
             }
         }
@@ -165,18 +169,6 @@ fn max_end_ts(model: &EnnTs, options: &QueryOptions) -> Result<i64, ENNError> {
         .cutoff
         .checked_sub(step)
         .ok_or_else(|| ENNError::InvalidParameter("cutoff overflow".into()))
-}
-
-fn squared_distance(left: &[f64], right: &[f64]) -> Result<f64, ENNError> {
-    if left.len() != right.len() {
-        return Err(ENNError::InvalidParameter("window lengths differ".into()));
-    }
-    let mut sum = 0.0;
-    for (a, b) in left.iter().zip(right.iter()) {
-        let delta = a - b;
-        sum += delta * delta;
-    }
-    Ok(sum.max(0.0))
 }
 
 fn pack(ranked: &[Vec<Candidate>], k: usize, metrics: usize) -> SearchBatch {

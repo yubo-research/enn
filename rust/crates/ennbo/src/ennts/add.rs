@@ -5,7 +5,8 @@ use ndarray::ArrayView2;
 use crate::error::ENNError;
 
 use super::lsh::LshFamily;
-use super::store::{complete_window, Posting};
+use super::metric::{self, MORPH_PER_WINDOW};
+use super::store::{complete_window, insert_bucket, target_of, Posting};
 use super::EnnTs;
 
 pub(super) fn auto_timestamps(
@@ -79,7 +80,7 @@ pub(super) fn add_y(
         }
         model.n_y += 1;
     }
-    Ok(())
+    metric::observe_labeled(model, series_id, timestamps)
 }
 
 fn target_positions(
@@ -171,6 +172,7 @@ fn ensure_dim(model: &mut EnnTs, dim: usize) -> Result<(), ENNError> {
         model.config.bucket_width,
         model.config.seed,
     )?);
+    model.scale_gens = vec![vec![1.0; window_dim]];
     model.buckets = (0..model.config.num_tables)
         .map(|_| HashMap::new())
         .collect();
@@ -271,7 +273,16 @@ fn check_increasing(last: Option<i64>, timestamps: &[i64]) -> Result<(), ENNErro
 fn index_new_windows(model: &mut EnnTs, series_id: u64, start: usize) -> Result<(), ENNError> {
     let pending = pending_windows(model, series_id, start)?;
     for (pos, end_ts, window) in pending {
-        insert_posting(model, series_id, pos, end_ts, &window)?;
+        let probe = Posting {
+            series_id,
+            end_pos: pos,
+            end_ts,
+        };
+        let y = target_of(model, probe);
+        if let Some(row) = &y {
+            metric::note_window(model, &window, row)?;
+        }
+        insert_posting(model, series_id, pos, end_ts, &window, y.is_some())?;
     }
     Ok(())
 }
@@ -290,13 +301,9 @@ fn pending_windows(
         .ok_or_else(|| ENNError::InvalidParameter(format!("unknown series {series_id}")))?;
     let mut pending = Vec::new();
     for pos in start..series.ts.len() {
-        if let Some(window) = complete_window(
-            series,
-            pos,
-            model.lookback,
-            model.config.cadence,
-            dim,
-        ) {
+        if let Some(window) =
+            complete_window(series, pos, model.lookback, model.config.cadence, dim)
+        {
             pending.push((pos, series.ts[pos], window));
         }
     }
@@ -309,41 +316,21 @@ fn insert_posting(
     pos: usize,
     end_ts: i64,
     window: &[f64],
+    observed: bool,
 ) -> Result<(), ENNError> {
     let posting = Posting {
         series_id,
         end_pos: pos,
         end_ts,
     };
-    let keys = hash_keys(model, window)?;
+    let gen = metric::current_gen(model)?;
+    let keys = metric::keys_for_gen(model, window, gen)?;
     model.windows.push(posting);
+    model.window_scale_gen.push(gen);
+    model.metric_observed.push(u8::from(observed));
     for (table, key) in keys.into_iter().enumerate() {
         let bucket = model.buckets[table].entry(key).or_default();
-        insert_sorted(bucket, posting);
+        insert_bucket(bucket, posting);
     }
-    Ok(())
-}
-
-fn hash_keys(model: &EnnTs, window: &[f64]) -> Result<Vec<Vec<i32>>, ENNError> {
-    let lsh = model.lsh.as_ref().ok_or_else(|| {
-        ENNError::InvalidParameter("locality-sensitive hash family is unset".into())
-    })?;
-    let mut keys = Vec::with_capacity(model.config.num_tables);
-    for table in 0..model.config.num_tables {
-        keys.push(lsh.hash_table(table, window)?);
-    }
-    Ok(keys)
-}
-
-fn insert_sorted(bucket: &mut Vec<Posting>, posting: Posting) {
-    if bucket
-        .last()
-        .map(|p| p.end_ts <= posting.end_ts)
-        .unwrap_or(true)
-    {
-        bucket.push(posting);
-        return;
-    }
-    let idx = bucket.partition_point(|p| p.end_ts <= posting.end_ts);
-    bucket.insert(idx, posting);
+    metric::advance(model, MORPH_PER_WINDOW)
 }

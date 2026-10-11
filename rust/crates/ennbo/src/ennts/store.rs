@@ -108,6 +108,34 @@ pub(super) fn target_of(model: &EnnTs, posting: Posting) -> Option<Vec<f64>> {
     series.y_row(pos)
 }
 
+pub(super) fn insert_bucket(bucket: &mut Vec<Posting>, posting: Posting) {
+    if bucket
+        .last()
+        .map(|p| p.end_ts <= posting.end_ts)
+        .unwrap_or(true)
+    {
+        bucket.push(posting);
+        return;
+    }
+    let idx = bucket.partition_point(|p| p.end_ts <= posting.end_ts);
+    bucket.insert(idx, posting);
+}
+
+pub(super) fn remove_bucket(bucket: &mut Vec<Posting>, posting: Posting) -> Result<(), ENNError> {
+    let start = bucket.partition_point(|p| p.end_ts < posting.end_ts);
+    let end = bucket.partition_point(|p| p.end_ts <= posting.end_ts);
+    let Some(offset) = bucket[start..end]
+        .iter()
+        .position(|p| p.series_id == posting.series_id && p.end_pos == posting.end_pos)
+    else {
+        return Err(ENNError::InvalidParameter(
+            "metric rehash missed a stored posting".into(),
+        ));
+    };
+    bucket.remove(start + offset);
+    Ok(())
+}
+
 pub(super) fn window_of(model: &EnnTs, posting: Posting) -> Result<Vec<f64>, ENNError> {
     let dim = model.dim.ok_or_else(|| {
         ENNError::InvalidParameter("add observations before reconstructing a window".into())

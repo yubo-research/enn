@@ -15,6 +15,7 @@ _CONFIG_DEFAULTS = {
     "seed": 0,
     "epistemic_variance_scale": 1.0,
     "aleatoric_variance_scale": 0.1,
+    "metric_learning": "none",
 }
 
 
@@ -37,6 +38,10 @@ class ENNTSConfig:
         self.seed = int(values["seed"])
         self.epistemic_variance_scale = float(values["epistemic_variance_scale"])
         self.aleatoric_variance_scale = float(values["aleatoric_variance_scale"])
+        metric = str(values["metric_learning"]).lower()
+        if metric not in {"none", "auto"}:
+            raise ValueError("metric_learning must be 'none' or 'auto'")
+        self.metric_learning = metric
 
 
 class ENNTS:
@@ -55,6 +60,7 @@ class ENNTS:
             (
                 float(cfg.epistemic_variance_scale),
                 float(cfg.aleatoric_variance_scale),
+                str(cfg.metric_learning),
             ),
         )
 
@@ -128,6 +134,28 @@ class ENNTS:
     @property
     def lookback(self) -> int:
         return int(self._inner.lookback)
+
+    @property
+    def metric_weights(self) -> np.ndarray | None:
+        weights = self._inner.metric_weights
+        if weights is None:
+            return None
+        return np.asarray(weights, dtype=float)
+
+    @property
+    def heldout_gain(self) -> float | None:
+        gain = self._inner.heldout_gain
+        if gain is None:
+            return None
+        return float(gain)
+
+    @property
+    def metric_morph_remaining(self) -> int:
+        return int(self._inner.metric_morph_remaining)
+
+    @property
+    def uses_learned_metric(self) -> bool:
+        return bool(self._inner.uses_learned_metric)
 
 
 def _feature_matrix(x: np.ndarray) -> np.ndarray:
