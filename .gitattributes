@@ -4,3 +4,4 @@
 \*.tex filter=lfs diff=lfs merge=lfs -text
 docs/* filter=lfs diff=lfs merge=lfs -text
 docs/*/* filter=lfs diff=lfs merge=lfs -text
+\*.pdf filter=lfs diff=lfs merge=lfs -text
