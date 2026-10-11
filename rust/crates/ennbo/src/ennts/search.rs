@@ -41,6 +41,9 @@ pub(super) fn rank_all(
     exact: bool,
 ) -> Result<Vec<Vec<Candidate>>, ENNError> {
     check_query(model, &queries, options)?;
+    if !exact && model.windows.len() > super::ann::TREE_MIN_WINDOWS {
+        return super::ann::rank_large(model, queries, options);
+    }
     let mut ranked = Vec::with_capacity(queries.nrows());
     for i in 0..queries.nrows() {
         ranked.push(rank_one(model, &queries.row(i).to_vec(), options, exact)?);
@@ -95,7 +98,7 @@ fn rank_one(
     Ok(cands)
 }
 
-fn candidate(
+pub(super) fn candidate(
     model: &EnnTs,
     window: &[f64],
     posting: Posting,
@@ -156,7 +159,7 @@ fn lsh_postings(
     Ok(out)
 }
 
-fn max_end_ts(model: &EnnTs, options: &QueryOptions) -> Result<i64, ENNError> {
+pub(super) fn max_end_ts(model: &EnnTs, options: &QueryOptions) -> Result<i64, ENNError> {
     if !options.require_target {
         return Ok(options.cutoff);
     }

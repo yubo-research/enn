@@ -1,4 +1,5 @@
 mod add;
+mod ann;
 mod lsh;
 mod metric;
 mod predict;
@@ -6,6 +7,7 @@ mod search;
 mod store;
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::Mutex;
 
 use ndarray::ArrayView2;
 
@@ -95,10 +97,13 @@ pub struct EnnTs {
     series: HashMap<u64, SeriesBuf>,
     buckets: Vec<HashMap<Vec<i32>, Vec<Posting>>>,
     windows: Vec<Posting>,
+    window_rows: Vec<f64>,
     window_scale_gen: Vec<u32>,
     metric_observed: Vec<u8>,
     scale_gens: Vec<Vec<f64>>,
+    scale_epoch: u64,
     morph_queue: VecDeque<usize>,
+    ann: Mutex<Option<ann::Cache>>,
     metric: Option<crate::metric_auto::AutoMetric>,
     n_obs: usize,
     n_y: usize,
@@ -121,10 +126,13 @@ impl EnnTs {
             series: HashMap::new(),
             buckets: Vec::new(),
             windows: Vec::new(),
+            window_rows: Vec::new(),
             window_scale_gen: Vec::new(),
             metric_observed: Vec::new(),
             scale_gens: Vec::new(),
+            scale_epoch: 0,
             morph_queue: VecDeque::new(),
+            ann: Mutex::new(None),
             metric: None,
             n_obs: 0,
             n_y: 0,
@@ -140,7 +148,8 @@ impl EnnTs {
         x: ArrayView2<f64>,
         y: Option<ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        add::add(self, series_id, timestamps, x, y)
+        add::add(self, series_id, timestamps, x, y)?;
+        ann::sync(self)
     }
 
     pub fn add_y(
@@ -149,7 +158,8 @@ impl EnnTs {
         timestamps: &[i64],
         y: ArrayView2<f64>,
     ) -> Result<(), ENNError> {
-        add::add_y(self, series_id, timestamps, y)
+        add::add_y(self, series_id, timestamps, y)?;
+        ann::sync(self)
     }
 
     pub fn auto_timestamps(&self, series_id: u64, n: usize) -> Result<Vec<i64>, ENNError> {

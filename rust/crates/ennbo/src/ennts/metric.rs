@@ -160,6 +160,7 @@ fn adopt(model: &mut EnnTs, x_scale: Vec<f64>) -> Result<(), ENNError> {
         ));
     }
     model.scale_gens.push(x_scale);
+    model.scale_epoch = model.scale_epoch.saturating_add(1);
     let latest = current_gen(model)?;
     model.morph_queue.clear();
     for index in 0..model.windows.len() {

@@ -100,6 +100,22 @@ pub(super) fn complete_window(
     series.window(end_pos, lookback, dim).ok()
 }
 
+pub(super) fn has_target(model: &EnnTs, posting: Posting) -> bool {
+    let Some(step) = model.config.horizon.checked_mul(model.config.cadence) else {
+        return false;
+    };
+    let Some(target_ts) = posting.end_ts.checked_add(step) else {
+        return false;
+    };
+    let Some(series) = model.series.get(&posting.series_id) else {
+        return false;
+    };
+    let Some(pos) = series.pos_of(target_ts) else {
+        return false;
+    };
+    series.known.get(pos).copied() == Some(1)
+}
+
 pub(super) fn target_of(model: &EnnTs, posting: Posting) -> Option<Vec<f64>> {
     let step = model.config.horizon.checked_mul(model.config.cadence)?;
     let target_ts = posting.end_ts.checked_add(step)?;

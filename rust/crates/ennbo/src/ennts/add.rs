@@ -326,6 +326,7 @@ fn insert_posting(
     let gen = metric::current_gen(model)?;
     let keys = metric::keys_for_gen(model, window, gen)?;
     model.windows.push(posting);
+    model.window_rows.extend_from_slice(window);
     model.window_scale_gen.push(gen);
     model.metric_observed.push(u8::from(observed));
     for (table, key) in keys.into_iter().enumerate() {
