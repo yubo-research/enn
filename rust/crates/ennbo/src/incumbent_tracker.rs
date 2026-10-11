@@ -1,4 +1,3 @@
-//! Incremental incumbent candidate tracker for TuRBO optimizers.
 
 use ndarray::{Array1, ArrayView2};
 

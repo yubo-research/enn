@@ -1,4 +1,3 @@
-//! NumPy `Generator(PCG64(seed))` for `integers(0, high)`.
 
 use crate::numpy_seed::seed_sequence_u64;
 
@@ -34,7 +33,6 @@ impl NumpyPcg64 {
         (self.next_u64() >> 11) as f64 * (1.0 / 9007199254740992.0)
     }
 
-    /// `Generator.standard_normal`, NumPy's ziggurat.
     pub fn standard_normal(&mut self) -> f64 {
         use crate::numpy_ziggurat_tables::{
             FI_DOUBLE, KI_DOUBLE, WI_DOUBLE, ZIGGURAT_NOR_INV_R, ZIGGURAT_NOR_R,
@@ -90,7 +88,6 @@ impl NumpyPcg64 {
         next as u32
     }
 
-    /// `Generator.integers(0, high)` for `high >= 1` (exclusive upper bound).
     pub fn integers_high(&mut self, high: u64) -> u64 {
         debug_assert!(high >= 1);
         let rng = high - 1;

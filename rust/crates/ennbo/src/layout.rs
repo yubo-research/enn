@@ -1,4 +1,3 @@
-//! Index, storage, and metric combinations that can be constructed.
 
 use std::path::{Path, PathBuf};
 
@@ -7,30 +6,17 @@ use crate::error::ENNError;
 use crate::index::IndexDriver;
 use crate::metric_auto::MetricLearning;
 
-/// Legal placement of an ENN model.
-///
-/// Disk storage exists only with `BpAnnDisk`. `Auto` exists only on disk with
-/// `scale_x` false. A flat index on disk, and Auto on any other layout, have
-/// no variant.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnnLayout {
-    /// In-memory index. `driver` may be flat or B+ANN.
     Memory {
-        /// Neighbor index.
         driver: IndexDriver,
-        /// Divide `x` by per-dimension scales.
         scale_x: bool,
     },
-    /// On-disk B+ANN with a fixed metric.
     Disk {
-        /// Directory for rows and the index.
         work_dir: PathBuf,
-        /// Divide `x` by per-dimension scales.
         scale_x: bool,
     },
-    /// On-disk B+ANN with Auto metric learning. `scale_x` is false.
     DiskAuto {
-        /// Directory for rows and the index.
         work_dir: PathBuf,
     },
 }
@@ -83,17 +69,14 @@ fn disk_layout(
 }
 
 impl EnnLayout {
-    /// In-memory layout. Metric learning is off.
     pub fn memory(driver: IndexDriver, scale_x: bool) -> Self {
         Self::Memory { driver, scale_x }
     }
 
-    /// On-disk B+ANN with a fixed metric.
     pub fn disk(work_dir: PathBuf, scale_x: bool) -> Self {
         Self::Disk { work_dir, scale_x }
     }
 
-    /// Whether `x` is divided by per-dimension scales.
     pub fn scale_x(&self) -> bool {
         match self {
             Self::Memory { scale_x, .. } | Self::Disk { scale_x, .. } => *scale_x,
@@ -101,7 +84,6 @@ impl EnnLayout {
         }
     }
 
-    /// Neighbor index used by this layout.
     pub fn index_driver(&self) -> IndexDriver {
         match self {
             Self::Memory { driver, .. } => *driver,
@@ -109,7 +91,6 @@ impl EnnLayout {
         }
     }
 
-    /// Row storage used by this layout.
     pub fn storage(&self) -> EnnStorage {
         match self {
             Self::Memory { .. } => EnnStorage::InMemory,
@@ -117,7 +98,6 @@ impl EnnLayout {
         }
     }
 
-    /// Disk directory, if this layout stores rows on disk.
     pub fn work_dir(&self) -> Option<&Path> {
         match self {
             Self::Memory { .. } => None,
@@ -125,7 +105,6 @@ impl EnnLayout {
         }
     }
 
-    /// Metric policy implied by this layout.
     pub fn metric_learning(&self) -> MetricLearning {
         match self {
             Self::DiskAuto { .. } => MetricLearning::Auto,
@@ -133,9 +112,6 @@ impl EnnLayout {
         }
     }
 
-    /// Build a layout from the pieces a caller can set independently.
-    ///
-    /// `work_dir` without `Some(Disk)` is an error. It does not select disk.
     pub fn try_from_parts(
         driver: IndexDriver,
         storage: Option<EnnStorage>,

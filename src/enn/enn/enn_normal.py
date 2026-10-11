@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 
 
 class ENNNormal:
-    """Facade over the Rust posterior. The only field is that object."""
 
     def __init__(
         self,

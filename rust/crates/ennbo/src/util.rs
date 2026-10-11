@@ -1,6 +1,3 @@
-//! Utility functions for ENN algorithms.
-//!
-//! Includes standardization, Pareto front computation, and Sobol sensitivity analysis.
 
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use ndarray_linalg::Norm;
@@ -8,7 +5,6 @@ use rand::Rng;
 
 use crate::error::ENNError;
 
-/// Index of maximum value, choosing uniformly among ties (matches Python `argmax_random_tie`).
 pub fn argmax_random_tie(values: &[f64], rng: &mut dyn rand::RngCore) -> usize {
     if values.is_empty() {
         return 0;
@@ -26,19 +22,6 @@ pub fn argmax_random_tie(values: &[f64], rng: &mut dyn rand::RngCore) -> usize {
     ties[rng.gen_range(0..ties.len())]
 }
 
-/// Standardize y values by computing center and scale.
-///
-/// Returns (center, scale) where:
-/// - center = median(y)
-/// - scale = std(y) (or 1.0 if std is 0 or non-finite)
-///
-/// # Arguments
-///
-/// * `y` - Array of y values to standardize
-///
-/// # Returns
-///
-/// Tuple of (center, scale) as floats.
 pub fn standardize_y(y: &ArrayView1<f64>) -> (f64, f64) {
     if y.is_empty() {
         return (f64::NAN, 1.0);
@@ -66,23 +49,6 @@ pub fn standardize_y(y: &ArrayView1<f64>) -> (f64, f64) {
     }
 }
 
-/// Find Pareto front for 2D maximization problem.
-///
-/// Given two objective arrays `a` and `b`, returns indices of points
-/// on the Pareto front (non-dominated points).
-///
-/// A point dominates another if it is >= in all objectives and > in at least one.
-///
-/// # Arguments
-///
-/// * `a` - First objective values (to maximize)
-/// * `b` - Second objective values (to maximize)
-/// * `idx` - Optional indices to use (if None, uses 0..n)
-///
-/// # Returns
-///
-/// Array of indices on the Pareto front, sorted by a descending.
-#[doc = "kiss-coverage-off"]
 pub fn pareto_front_2d_maximize(
     a: &ArrayView1<f64>,
     b: &ArrayView1<f64>,
@@ -147,19 +113,6 @@ pub fn pareto_front_2d_maximize(
     Ok(front)
 }
 
-/// Calculate first-order Sobol sensitivity indices.
-///
-/// Uses variance-based sensitivity analysis with binning.
-///
-/// # Arguments
-///
-/// * `x` - Input array of shape (n, d)
-/// * `y` - Output array of shape (n,)
-///
-/// # Returns
-///
-/// Array of shape (d,) containing Sobol indices in [0, 1].
-#[doc = "kiss-coverage-off"]
 pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Array1<f64> {
     let n = x.nrows();
     let d = x.ncols();
@@ -232,23 +185,6 @@ pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Arra
     sobol
 }
 
-/// Select arms from Pareto fronts.
-///
-/// Iteratively extracts Pareto fronts (mu, se) and selects arms.
-/// When the last front overflows, uses seed for deterministic random selection.
-///
-/// # Arguments
-///
-/// * `x_cand` - Candidate inputs
-/// * `mu` - Mean predictions
-/// * `se` - Standard errors
-/// * `num_arms` - Number of arms to select
-/// * `seed` - RNG seed for random selection when front overflows
-///
-/// # Returns
-///
-/// Selected arm indices, sorted by mu descending.
-#[doc = "kiss-coverage-off"]
 pub fn arms_from_pareto_fronts(
     _x_cand: &ArrayView2<f64>,
     mu: &ArrayView1<f64>,
@@ -296,8 +232,6 @@ pub fn arms_from_pareto_fronts(
     Ok(i_keep)
 }
 
-/// Deterministic subset selection using seed (simple LCG).
-#[doc = "kiss-coverage-off"]
 fn deterministic_choice(indices: &[usize], k: usize, seed: u64) -> Vec<usize> {
     if k >= indices.len() {
         return indices.to_vec();

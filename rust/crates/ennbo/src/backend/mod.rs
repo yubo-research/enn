@@ -1,4 +1,3 @@
-//! ENN storage and indexing backends.
 
 pub mod disk_observation;
 mod flush_controller;
@@ -18,7 +17,6 @@ use crate::error::ENNError;
 use crate::index::{ENNIndex, IndexDriver};
 use crate::layout::EnnLayout;
 
-/// Gathered training rows: `x`, `y`, optional `yvar`.
 pub type TrainRowsAtResult = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,7 +98,6 @@ impl EnnBackend {
         Ok(Self::Disk(DiskBackendHandle::new(inner)))
     }
 
-    /// Build an empty backend from a layout. Illegal combinations are not representable here.
     pub fn empty_from_layout(
         num_dim: usize,
         num_metrics: usize,
@@ -126,7 +123,6 @@ impl EnnBackend {
         }
     }
 
-    /// Build a backend from rows and a layout. Disk always uses `BpAnnDisk`.
     pub fn from_layout(
         layout: &EnnLayout,
         train_x: Array2<f64>,
@@ -352,7 +348,6 @@ impl EnnBackend {
     }
 }
 
-/// Drop faulted observation mmap pages from process RSS (disk backend only).
 pub(crate) fn release_enn_observation_pages(backend: &EnnBackend) -> Result<(), ENNError> {
     match backend {
         EnnBackend::InMemory(_) => Ok(()),

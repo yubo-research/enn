@@ -1,4 +1,3 @@
-"""Input checks for optimizer tell()."""
 
 from __future__ import annotations
 

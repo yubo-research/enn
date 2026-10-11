@@ -1,4 +1,3 @@
-//! Caller-set diagonal metric for disk BPANN models (metric learning mode).
 
 use ndarray::Array1;
 
@@ -6,10 +5,7 @@ use super::{EpistemicNearestNeighbors, scale_from_moments};
 use crate::error::ENNError;
 use crate::index::{is_disk_index_driver, IndexDriver};
 
-/// Disk `scale_x`: largest per-dimension `|log(new / applied)|` left unapplied after an `add`.
 pub const SCALE_X_RESCALE_TOL: f64 = 0.01;
-/// Disk `scale_x`: largest per-dimension `|log(new / built)|` served by an in-place rescale;
-/// beyond it the index is re-partitioned (same rule as `MBPANNMetric`'s default).
 pub const SCALE_X_REBUILD_DRIFT: f64 = std::f64::consts::LN_2;
 
 fn max_log_ratio(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
@@ -20,24 +16,20 @@ fn max_log_ratio(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 }
 
 impl EpistemicNearestNeighbors {
-    /// Index used for neighbor search.
     pub fn index_driver(&self) -> IndexDriver {
         self.backend_driver()
     }
 
-    /// `true` when AUTO metric learning has been enabled.
     pub fn metric_learning_auto(&self) -> bool {
         self.auto_metric.is_some()
     }
 
-    /// Grouped columns that stay unscaled, or the AUTO tied groups.
     pub fn set_tied_groups(&mut self, groups: Vec<Vec<usize>>) -> Result<(), ENNError> {
         crate::metric_weights::validate_tied_dims(&groups, self.num_dim)?;
         self.tied_groups = groups;
         Ok(())
     }
 
-    /// Tied groups stored on the model, or the groups owned by AUTO.
     pub fn tied_groups(&self) -> &[Vec<usize>] {
         if let Some(metric) = &self.auto_metric {
             return metric.tied();
@@ -45,7 +37,6 @@ impl EpistemicNearestNeighbors {
         &self.tied_groups
     }
 
-    /// `scale_x` scales from the running moments of `n` rows; `unscaled_dims` get 1.
     pub(crate) fn data_x_scale(&self, n: usize) -> Array1<f64> {
         let mut x_scale = scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
         for &j in &self.unscaled_dims {
@@ -54,7 +45,6 @@ impl EpistemicNearestNeighbors {
         x_scale
     }
 
-    /// Move `scale_x` to `data_x_scale(n)`: incrementally for disk BPANN, else by a lazy rebuild.
     pub(crate) fn refresh_data_x_scale(&mut self, n: usize) -> Result<(), ENNError> {
         let x_scale = self.data_x_scale(n);
         if is_disk_index_driver(self.backend.driver()) {
@@ -65,8 +55,6 @@ impl EpistemicNearestNeighbors {
         Ok(())
     }
 
-    /// Dimensions `scale_x` leaves unscaled (e.g. one-hot categories, already in `{0, 1}`):
-    /// their `x_scale` stays 1 while the other dimensions follow their standard deviations.
     pub fn set_unscaled_dims(&mut self, dims: Vec<usize>) -> Result<(), ENNError> {
         if let Some(j) = dims.iter().find(|&&j| j >= self.num_dim) {
             return Err(ENNError::InvalidParameter(format!(
@@ -81,8 +69,6 @@ impl EpistemicNearestNeighbors {
         self.refresh_data_x_scale(self.num_obs)
     }
 
-    /// Incremental `scale_x` for disk BPANN: move the index to the data-moment scale
-    /// `x_scale` without re-reading rows, unless it drifted far from the partition's scale.
     pub(crate) fn apply_incremental_x_scale(&mut self, x_scale: Array1<f64>) -> Result<(), ENNError> {
         if max_log_ratio(&x_scale, &self.x_scale) <= SCALE_X_RESCALE_TOL {
             return Ok(());
@@ -96,11 +82,6 @@ impl EpistemicNearestNeighbors {
         Ok(())
     }
 
-    /// Set per-dimension distance scales: distances use `x / x_scale`.
-    ///
-    /// `rebuild=false` rescales the stored index in place (partition kept);
-    /// `rebuild=true` also re-partitions it in place, a little on each later add. Later `add`
-    /// calls keep this metric instead of re-deriving `x_scale` from data moments.
     pub fn set_metric_scale(&mut self, x_scale: Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
         if self.auto_metric.is_none() {
             return Err(ENNError::InvalidParameter(

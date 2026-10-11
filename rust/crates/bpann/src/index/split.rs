@@ -1,4 +1,3 @@
-//! Weighted 2-means split used when a tree page overflows.
 
 use std::cmp::Ordering;
 
@@ -6,7 +5,6 @@ use crate::distance::l2_sq_f32;
 
 const TWO_MEANS_ITERS: usize = 6;
 
-/// Weighted mean of `points[i]` over `members`.
 pub fn weighted_mean<P: AsRef<[f32]>>(points: &[P], weights: &[f64], members: &[usize]) -> Vec<f32> {
     let dim = points.first().map_or(0, |p| p.as_ref().len());
     let mut acc = vec![0.0f64; dim];
@@ -33,10 +31,6 @@ fn farthest_from<P: AsRef<[f32]>>(points: &[P], anchor: &[f32]) -> usize {
     best.0
 }
 
-/// Split `points` (n >= 2) into two halves (sizes `n/2` and `n - n/2`) at the median
-/// of their projections onto the line through two far-apart points: `a`, the point
-/// farthest from `points[0]`, and `b`, the point farthest from `a`. Ties (and
-/// duplicate points) are broken by position, so the halves are always balanced.
 pub fn median_split<P: AsRef<[f32]>>(points: &[P]) -> (Vec<usize>, Vec<usize>) {
     let n = points.len();
     assert!(n >= 2, "median_split needs at least two points");
@@ -55,9 +49,6 @@ pub fn median_split<P: AsRef<[f32]>>(points: &[P]) -> (Vec<usize>, Vec<usize>) {
     (left, right)
 }
 
-/// Split `points` (n >= 2) into two non-empty groups of index positions by weighted
-/// 2-means. Each group keeps at least a quarter of the points, so repeated splits keep
-/// the tree balanced even for skewed or duplicate points.
 pub fn two_means_split<P: AsRef<[f32]>>(points: &[P], weights: &[f64]) -> (Vec<usize>, Vec<usize>) {
     let n = points.len();
     assert!(n >= 2, "two_means_split needs at least two points");

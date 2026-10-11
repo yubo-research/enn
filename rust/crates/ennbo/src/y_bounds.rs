@@ -1,12 +1,8 @@
-//! Per-metric output bounds and strictly increasing warps φ(y) → z.
-//!
-//! Storage / fit / acquisition stay in warped `z`. Public APIs naturalize.
 
 use ndarray::{Array2, ArrayView2, Zip};
 
 use crate::error::ENNError;
 
-/// Default unbounded bounds for `num_metrics` columns: each `(−∞, +∞)`.
 pub fn unbounded_bounds(num_metrics: usize) -> Array2<f64> {
     let mut b = Array2::zeros((num_metrics, 2));
     for i in 0..num_metrics {
@@ -16,7 +12,6 @@ pub fn unbounded_bounds(num_metrics: usize) -> Array2<f64> {
     b
 }
 
-/// True when every column is `(−∞, +∞)`.
 pub fn is_identity_bounds(bounds: &Array2<f64>) -> bool {
     bounds.nrows() == 0
         || bounds
@@ -25,7 +20,6 @@ pub fn is_identity_bounds(bounds: &Array2<f64>) -> bool {
             .all(|row| row[0] == f64::NEG_INFINITY && row[1] == f64::INFINITY)
 }
 
-/// Validate shape `(num_metrics, 2)` and `a < b` when both finite.
 pub fn validate_bounds(bounds: &Array2<f64>, num_metrics: usize) -> Result<(), ENNError> {
     if bounds.nrows() != num_metrics || bounds.ncols() != 2 {
         return Err(ENNError::InvalidShape {
@@ -60,7 +54,6 @@ pub fn validate_bounds(bounds: &Array2<f64>, num_metrics: usize) -> Result<(), E
     Ok(())
 }
 
-/// Open-interval check: reject `y <= a` or `y >= b` on finite sides.
 pub fn validate_y_in_open_interval(
     y: ArrayView2<f64>,
     bounds: &Array2<f64>,
@@ -129,7 +122,6 @@ fn inv_scalar(z: f64, a: f64, b: f64) -> f64 {
     }
 }
 
-/// dφ⁻¹/dz at warped z.
 #[inline]
 pub fn d_inv_dz(z: f64, a: f64, b: f64) -> f64 {
     match (a.is_finite(), b.is_finite()) {
@@ -143,7 +135,6 @@ pub fn d_inv_dz(z: f64, a: f64, b: f64) -> f64 {
     }
 }
 
-/// dφ/dy at natural y (for yvar Jacobian).
 #[inline]
 fn d_warp_dy(y: f64, a: f64, b: f64) -> Result<f64, ENNError> {
     let d = match (a.is_finite(), b.is_finite()) {
@@ -164,7 +155,6 @@ fn d_warp_dy(y: f64, a: f64, b: f64) -> Result<f64, ENNError> {
     }
 }
 
-/// Warp a batch of natural y → z. Validates open interval and finite z.
 pub fn warp_y(y: ArrayView2<f64>, bounds: &Array2<f64>) -> Result<Array2<f64>, ENNError> {
     validate_y_in_open_interval(y, bounds)?;
     let mut z = Array2::zeros(y.raw_dim());
@@ -176,7 +166,6 @@ pub fn warp_y(y: ArrayView2<f64>, bounds: &Array2<f64>) -> Result<Array2<f64>, E
     Ok(z)
 }
 
-/// Inverse-warp a batch of z → natural y.
 pub fn inv_y(z: ArrayView2<f64>, bounds: &Array2<f64>) -> Array2<f64> {
     let mut y = Array2::zeros(z.raw_dim());
     for i in 0..z.nrows() {
@@ -187,7 +176,6 @@ pub fn inv_y(z: ArrayView2<f64>, bounds: &Array2<f64>) -> Array2<f64> {
     y
 }
 
-/// Warp observation noise: `yvar_z = (φ'(y))² · yvar_y`.
 pub fn warp_yvar(
     y: ArrayView2<f64>,
     yvar: ArrayView2<f64>,
@@ -216,7 +204,6 @@ pub fn warp_yvar(
     Ok(out)
 }
 
-/// Naturalize posterior moments: μ_nat = φ⁻¹(μ_z), se_nat = |dφ⁻¹/dz|(μ_z) · se_z.
 pub fn naturalize_mu_se(
     mu_z: &mut Array2<f64>,
     se_z: &mut Array2<f64>,
@@ -245,7 +232,6 @@ pub fn naturalize_mu_se(
         });
 }
 
-/// Naturalize draws with shape `(..., metrics)` along the last axis matching bounds columns.
 pub fn inv_last_axis(values: &mut Array2<f64>, bounds: &Array2<f64>) {
     if is_identity_bounds(bounds) {
         return;
@@ -257,7 +243,6 @@ pub fn inv_last_axis(values: &mut Array2<f64>, bounds: &Array2<f64>) {
     }
 }
 
-/// Compare two bound matrices with `null`↔`±∞` semantics (exact f64 match).
 pub fn bounds_match(a: &Array2<f64>, b: &Array2<f64>) -> bool {
     if a.shape() != b.shape() {
         return false;
@@ -270,7 +255,6 @@ pub fn bounds_match(a: &Array2<f64>, b: &Array2<f64>) -> bool {
     })
 }
 
-/// Serialize bounds as JSON array of `[lo, hi]` with `null` for open sides.
 pub fn bounds_to_json(bounds: &Array2<f64>) -> String {
     let mut parts = Vec::with_capacity(bounds.nrows());
     for row in bounds.rows() {
@@ -289,7 +273,6 @@ pub fn bounds_to_json(bounds: &Array2<f64>) -> String {
     format!("[{}]", parts.join(","))
 }
 
-/// Parse a `[lo,hi]` pair where `null` means open (−∞ or +∞).
 pub fn parse_bound_pair(lo_tok: &str, hi_tok: &str) -> Result<(f64, f64), ENNError> {
     let lo = if lo_tok == "null" {
         f64::NEG_INFINITY
@@ -308,7 +291,6 @@ pub fn parse_bound_pair(lo_tok: &str, hi_tok: &str) -> Result<(f64, f64), ENNErr
     Ok((lo, hi))
 }
 
-/// Robust metadata parse using string splitting (avoids null-position ambiguity).
 pub fn load_y_bounds_from_metadata_text(
     text: &str,
     num_metrics: usize,
@@ -390,7 +372,6 @@ pub fn load_y_bounds_from_metadata_text(
     Ok(Some(bounds))
 }
 
-/// Resolve construction-time bounds: None → unbounded (or load from disk text).
 pub fn resolve_y_bounds(
     requested: Option<&Array2<f64>>,
     num_metrics: usize,

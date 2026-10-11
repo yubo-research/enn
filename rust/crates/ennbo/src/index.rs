@@ -13,20 +13,16 @@ pub enum IndexError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IndexDriver {
-    /// Exact in-memory scan (`Faiss` Flat).
     #[default]
     Flat,
-    /// B+ANN disk index (`EnnStorage::Disk` + `work_dir`).
     BpAnnDisk,
 }
 
 impl IndexDriver {
-    /// Deprecated name for [`IndexDriver::Flat`].
     #[deprecated(since = "0.3.0", note = "renamed to IndexDriver::Flat")]
     #[allow(non_upper_case_globals)]
     pub const Exact: Self = Self::Flat;
 
-    /// Wire name shared with Python `ENNIndexDriver`.
     pub fn as_wire(self) -> &'static str {
         match self {
             Self::Flat => "FLAT",
@@ -34,7 +30,6 @@ impl IndexDriver {
         }
     }
 
-    /// Parse a wire name. Returns `None` when `name` is not a known driver.
     pub fn from_wire(name: &str) -> Option<Self> {
         match name {
             "FLAT" => Some(Self::Flat),
@@ -50,15 +45,8 @@ pub fn is_disk_index_driver(driver: IndexDriver) -> bool {
 
 use std::sync::Mutex;
 
-/// Squared-distance threshold treated as an exact self hit (LOO identity).
 const SELF_DIST_EPS: f64 = 1e-15;
 
-/// Drop the query's own training row when present; keep the true NN otherwise.
-///
-/// Callers that set `exclude_nearest` often fetch `k+1` neighbors. Self-match
-/// rows drop column 0 and pad with `(-1, inf)`; novel rows keep every fetched
-/// column (including when `k == n` so no extra slot was available). Trailing
-/// columns that are unused in every row are trimmed.
 fn apply_exclude_nearest_identity(
     dist2s: Array2<f64>,
     idx: Array2<i64>,
@@ -231,7 +219,6 @@ impl ENNIndex {
         self.len() == 0
     }
 
-    /// Approximate RAM used by the KNN index (not on-disk checkpoint size).
     pub fn memory_usage_bytes(&self) -> usize {
         self.inner.memory_usage_bytes()
     }

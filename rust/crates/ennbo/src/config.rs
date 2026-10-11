@@ -1,4 +1,3 @@
-//! Configuration types for the optimizer.
 
 use crate::candidates::CandidateRV;
 use crate::enn_overrides::EnnOverrides;
@@ -14,18 +13,12 @@ use crate::trust_region_config::{TrustRegionConfig, TrustRegionKind};
 mod rules;
 pub use rules::{validate_optimizer_rules, OptimizerInitKind, OptimizerRuleSet, TurboEnnBuilder};
 
-/// Optimizer configuration.
 #[derive(Debug, Clone)]
 pub struct OptimizerConfig {
-    /// Surrogate configuration.
     pub surrogate: SurrogateConfig,
-    /// Trust region configuration.
     pub trust_region: TrustRegionConfig,
-    /// Candidate generation configuration.
     pub candidates: CandidateConfig,
-    /// Acquisition function configuration.
     pub acquisition: AcquisitionConfig,
-    /// Use surrogate posterior mean for incumbent selection among candidates.
     pub noise_aware: bool,
 }
 
@@ -41,39 +34,25 @@ impl Default for OptimizerConfig {
     }
 }
 
-/// Surrogate type configuration.
 #[derive(Debug, Clone)]
 pub enum SurrogateConfig {
-    /// ENN surrogate.
     ENN(ENNSurrogateConfig),
-    /// No surrogate (for LHD/random).
     None,
 }
 
 impl Default for SurrogateConfig {
-    #[doc = "kiss-coverage-off"]
     fn default() -> Self {
         SurrogateConfig::ENN(ENNSurrogateConfig::default())
     }
 }
 
-/// Candidate generation configuration.
-///
-/// Pool size is owned here:
-/// `max(min_candidates, min(max_candidates, per_dim * dim + per_arm * arms))`.
 #[derive(Debug, Clone)]
 pub struct CandidateConfig {
-    /// Floor on the pool size.
     pub min_candidates: usize,
-    /// Cap on the pool size.
     pub max_candidates: usize,
-    /// Added once per input dimension.
     pub num_candidates_per_dim: usize,
-    /// Added once per arm.
     pub num_candidates_per_arm: usize,
-    /// Random variable type for candidates.
     pub candidate_rv: CandidateRV,
-    /// `RAASPDriver.FAST` when true. Ignored unless `candidate_rv` is RAASP.
     pub raasp_fast: bool,
 }
 
@@ -91,7 +70,6 @@ impl Default for CandidateConfig {
 }
 
 impl CandidateConfig {
-    /// Pool size for this dimension and arm count.
     pub fn num_candidates(&self, num_dim: usize, num_arms: usize) -> usize {
         let per_dim = self.num_candidates_per_dim.saturating_mul(num_dim);
         let per_arm = self.num_candidates_per_arm.saturating_mul(num_arms);
@@ -100,8 +78,6 @@ impl CandidateConfig {
     }
 }
 
-/// Optional overrides to apply on top of factory default config.
-/// Used for Python→Rust config pass-through.
 #[derive(Debug, Clone, Default)]
 pub struct ConfigOverrides {
     pub acquisition: Option<AcquisitionConfig>,
@@ -115,10 +91,8 @@ pub struct ConfigOverrides {
     pub length_max: Option<f64>,
     pub noise_aware: Option<bool>,
     pub trust_region_kind: Option<crate::trust_region_config::TrustRegionKind>,
-    /// Present only as a complete MORBO triple: metric count, alpha, and rescalarize mode.
     pub morbo: Option<MorboOverride>,
     pub raasp_fast: Option<bool>,
-    /// ENN-surrogate fields. Applying them to a config without a surrogate is an error.
     pub enn: Option<EnnOverrides>,
 }
 
@@ -183,7 +157,6 @@ fn apply_trust_region_overrides(
 }
 
 impl ConfigOverrides {
-    /// Apply overrides to an existing config.
     pub fn apply_to(&self, mut config: OptimizerConfig) -> Result<OptimizerConfig, ENNError> {
         if let Some(acq) = self.acquisition {
             config.acquisition = acq;
@@ -217,20 +190,14 @@ impl ConfigOverrides {
     }
 }
 
-/// Acquisition function configuration.
 #[derive(Debug, Clone, Copy)]
 pub enum AcquisitionConfig {
-    /// Upper Confidence Bound.
     UCB { beta: f64 },
-    /// Thompson sampling.
     Thompson,
-    /// Random acquisition.
     Random,
-    /// Pareto front acquisition (multi-objective).
     Pareto,
 }
 
-/// UCB exploration weight used when none is given.
 pub const DEFAULT_UCB_BETA: f64 = 2.0;
 
 impl Default for AcquisitionConfig {
@@ -241,13 +208,10 @@ impl Default for AcquisitionConfig {
     }
 }
 
-/// Initialization strategy type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InitStrategy {
-    /// Latin Hypercube Design.
     #[default]
     LHD,
-    /// Random uniform.
     Random,
 }
 
@@ -258,7 +222,6 @@ fn turbo_candidate_config() -> CandidateConfig {
     }
 }
 
-/// Create a TuRBO-ENN configuration.
 pub fn turbo_enn_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
@@ -273,7 +236,6 @@ pub fn turbo_enn_config() -> OptimizerConfig {
     }
 }
 
-/// Create a TuRBO-ZERO configuration.
 pub fn turbo_zero_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::None,
@@ -285,12 +247,10 @@ pub fn turbo_zero_config() -> OptimizerConfig {
 }
 
 impl OptimizerConfig {
-    /// Reject illegal acquisition, surrogate, and fit-sample combinations.
     pub fn validate(&self) -> Result<(), ENNError> {
         self.validate_kind(OptimizerInitKind::Hybrid)
     }
 
-    /// Reject illegal acquisition and surrogate combinations for this init kind.
     pub fn validate_kind(&self, kind: OptimizerInitKind) -> Result<(), ENNError> {
         let has_surrogate = matches!(self.surrogate, SurrogateConfig::ENN(_));
         validate_optimizer_rules(
@@ -306,7 +266,6 @@ impl OptimizerConfig {
         Ok(())
     }
 
-    /// Start a TuRBO-ENN builder. [`TurboEnnBuilder::build`] runs [`Self::validate`].
     pub fn turbo_enn() -> TurboEnnBuilder {
         TurboEnnBuilder {
             config: turbo_enn_config(),
@@ -316,8 +275,6 @@ impl OptimizerConfig {
     }
 }
 
-/// Error when an acquisition that reads fitted ENN scales gets a frozen surrogate.
-/// Pareto and Random acquisition may run with frozen scales.
 pub fn require_fit_samples(
     acquisition: &AcquisitionConfig,
     fit_samples: FitSamples,
@@ -331,7 +288,6 @@ pub fn require_fit_samples(
     Ok(())
 }
 
-/// Create an LHD-only configuration.
 pub fn lhd_only_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::None,

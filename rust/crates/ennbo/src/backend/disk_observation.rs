@@ -1,4 +1,3 @@
-//! Shared disk observation metadata helpers (mmap stores + metadata.json).
 
 use std::fs;
 use std::path::Path;
@@ -187,7 +186,6 @@ pub fn train_rows_for_disk_backend(
     disk_train_rows_at(len, train_x, train_y, train_yvar, indices)
 }
 
-/// Shared `append_rows` / `train_rows_at` for disk backends with mmap observation stores.
 #[macro_export]
 macro_rules! impl_disk_mmap_observation_api {
     ($backend:ty) => {

@@ -1,4 +1,3 @@
-//! Epistemic Nearest Neighbors model implementation.
 
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
@@ -11,8 +10,6 @@ use crate::layout::EnnLayout;
 use crate::metric_auto::AutoMetric;
 use crate::y_bounds::resolve_y_bounds;
 
-/// Rows read at a time when recomputing statistics from a reopened disk store, so
-/// the pass needs memory independent of the number of rows.
 const STATS_CHUNK_ROWS: usize = 1 << 16;
 
 type InitStats = (
@@ -30,7 +27,6 @@ mod metric;
 mod y_bounds_api;
 pub use access::{EnnIndexAccess, EnnRowAccess};
 
-/// Epistemic Nearest Neighbors model.
 pub struct EpistemicNearestNeighbors {
     pub(crate) layout: EnnLayout,
     pub(crate) backend: EnnBackend,
@@ -39,23 +35,16 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) num_metrics: usize,
     pub(crate) scale_x: bool,
     pub(crate) x_scale: Array1<f64>,
-    /// True once a caller-set metric owns `x_scale` (BPANN_DISK with metric learning).
     pub(crate) metric_fixed: bool,
-    /// Disk `scale_x`: the `x_scale` the BPANN partition was last built under.
     pub(crate) built_x_scale: Array1<f64>,
-    /// Dimensions `scale_x` leaves at scale 1 (e.g. one-hot categories).
     pub(crate) unscaled_dims: Vec<usize>,
     pub(crate) y_scale: Array1<f64>,
-    /// Per-metric `(lo, hi)` in natural units; open sides are `±∞`.
     pub(crate) y_bounds: Array2<f64>,
     y_sum: Array1<f64>,
     y_sumsq: Array1<f64>,
     x_sum: Array1<f64>,
     x_sumsq: Array1<f64>,
-    /// Disk work directory when using disk storage (for metadata patches).
     work_dir: Option<PathBuf>,
-    /// Whether `y_bounds` is in `metadata.json` (it never changes, and metadata
-    /// rewrites keep it, so it is written once).
     y_bounds_persisted: AtomicBool,
     pub(crate) auto_metric: Option<AutoMetric>,
     tied_groups: Vec<Vec<usize>>,
@@ -108,7 +97,6 @@ impl EpistemicNearestNeighbors {
         }
     }
 
-    /// Create a new ENN model (in-memory backend).
     pub fn new(
         train_x: Array2<f64>,
         train_y: Array2<f64>,
@@ -125,11 +113,6 @@ impl EpistemicNearestNeighbors {
         )
     }
 
-    /// Create a new ENN model with explicit storage backend.
-    ///
-    /// `y_bounds`: optional `(num_metrics, 2)` natural-unit open intervals.
-    /// `None` → all `(−∞,+∞)` for new models; on disk reopen, load from metadata.
-    /// `Some` on reopen must match persisted bounds.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_storage(
         train_x: Array2<f64>,
@@ -312,12 +295,10 @@ impl EpistemicNearestNeighbors {
         Ok(())
     }
 
-    /// Schedule a background index flush when pending rows exceed the disk threshold.
     pub fn schedule_background_flush(&self) -> Result<(), ENNError> {
         self.backend.schedule_background_flush()
     }
 
-    /// Merge in-memory index fragments and persist a single on-disk BPANN index.
     pub fn persist_index_to_disk(&self) -> Result<(), ENNError> {
         crate::backend::persist_enn_backend_index(&self.backend)?;
         self.persist_y_bounds_metadata()
@@ -339,7 +320,6 @@ impl EpistemicNearestNeighbors {
         self.scale_x
     }
 
-    /// Python `neighbors`: one query row, then the same checks as [`Self::neighbors`].
     pub fn neighbors_one(
         &self,
         x: &ArrayView2<f64>,
@@ -412,7 +392,6 @@ impl EpistemicNearestNeighbors {
         self.x_scale.clone().insert_axis(ndarray::Axis(0))
     }
 
-    /// Row view of the fit/posterior `y_scale` (warped storage units under y_bounds).
     pub fn y_scale_row(&self) -> Array2<f64> {
         self.y_scale.clone().insert_axis(ndarray::Axis(0))
     }
@@ -488,7 +467,6 @@ fn validate_finite_xy(
     Ok(())
 }
 
-/// Rebuild observation count and scale moments from persisted backend rows (disk reopen).
 fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<(), ENNError> {
     model.num_dim = model.backend.num_dim();
     model.num_metrics = model.backend.num_metrics();

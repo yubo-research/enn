@@ -1,4 +1,3 @@
-//! In-RAM exhaustive search for small/mid observation counts (N ≤ 8192).
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -9,14 +8,8 @@ use crate::merge::{
 };
 use rayon::prelude::*;
 
-/// When `len() ≤` this, search uses a resident flat f32 matrix + heap top-k.
-///
-/// Covers turbo-enn mid checkpoints (N=1232, N=3000) under `--tell-all`, and
-/// bridges the post-4096 immature indexed+pending window without riding
-/// late in-core O(N) cost up to 16k (which relocates the cum-mean peak).
 pub const SMALL_N_INCORE_SEARCH_LIMIT: usize = 8192;
 
-/// Total order wrapper so squared distances can live in a binary heap.
 #[derive(Copy, Clone, Debug)]
 pub struct OrderedF32(pub f32);
 
@@ -37,7 +30,6 @@ impl Ord for OrderedF32 {
     }
 }
 
-/// k-smallest squared-L2 neighbors against a flat `N·D` f32 matrix (max-heap of size k).
 pub fn topk_flat_sq_l2(
     query: &[f32],
     flat: &[f32],
@@ -77,7 +69,6 @@ pub fn topk_flat_sq_l2(
     out
 }
 
-/// Parameters for [`score_queries_flat`].
 pub struct ScoreQueriesFlat<'a> {
     pub flat: &'a [f32],
     pub total: usize,
@@ -89,7 +80,6 @@ pub struct ScoreQueriesFlat<'a> {
     pub exclude_nearest: bool,
 }
 
-/// Score every query against a flat train matrix; return per-query (dists, ids).
 pub fn score_queries_flat(
     query_rows: &[Vec<f64>],
     args: &ScoreQueriesFlat<'_>,
@@ -135,7 +125,6 @@ pub fn score_queries_flat(
         .collect()
 }
 
-/// Load or build the resident flat f32 train cache for small-N search.
 pub fn load_or_build_small_n_cache(
     backend: &crate::backend::BpannBackend,
     n: usize,

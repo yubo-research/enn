@@ -30,8 +30,6 @@ pub struct BpannIndex {
     pub index_dir: PathBuf,
 }
 
-/// Skip edges are written only for the middle row-count band. Limits come from
-/// call-time tuning; on-disk edges still reflect whatever limits were active at build.
 fn needs_skip_edges(row_count: usize) -> bool {
     current_tuning().rows_need_skip_edges(row_count)
 }
@@ -297,8 +295,6 @@ impl BpannIndex {
             .unwrap_or_default()
     }
 
-    /// True when any leaf uses mmap row-range scoring (empty-leaf soft-sync pages).
-    /// Survives `concat_merge` and requires exhaustive scan with a mmap store.
     pub fn has_mmap_range_leaves(&self) -> bool {
         self.pages.iter().any(|page| {
             matches!(
@@ -311,14 +307,10 @@ impl BpannIndex {
         })
     }
 
-    /// Greedy beam search is invalid for these topologies; scan all leaves.
     pub fn requires_exhaustive_leaf_scan(&self) -> bool {
         self.is_flat_forest() || self.has_mmap_range_leaves()
     }
 
-    /// True when the index is a star-shaped soft-sync forest: exactly one internal
-    /// page (the root) whose children are all leaves. Greedy beam search cannot
-    /// navigate this topology; callers must scan all leaves exhaustively.
     pub fn is_flat_forest(&self) -> bool {
         let internal_count = self
             .pages

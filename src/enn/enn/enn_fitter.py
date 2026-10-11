@@ -51,12 +51,10 @@ class ENNStatefulFitter:
 
     @property
     def k(self) -> int:
-        """Neighbor count frozen when this fitter was created."""
         return self._k
 
     @property
     def seed(self) -> int:
-        """Fitter seed frozen when this fitter was created."""
         return self._seed
 
     def tell(

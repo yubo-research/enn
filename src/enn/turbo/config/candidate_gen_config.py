@@ -13,7 +13,6 @@ def _reject_negative(name: str, value: int) -> None:
 
 @dataclass(frozen=True)
 class CandidateGenConfig:
-    """Candidate-pool parameters. Rust computes the pool size."""
 
     candidate_rv: CandidateRV | None = None
     min_candidates: int = 10

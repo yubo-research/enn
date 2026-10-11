@@ -1,4 +1,3 @@
-//! Surrogate models for optimization.
 
 use ndarray::{Array1, Array2, Array3, ArrayView2};
 use rand::RngCore;
@@ -50,7 +49,6 @@ pub trait Surrogate: Send + Sync {
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError>;
 
-    /// Posterior mean and standard error in natural `y` units.
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError>;
 
     fn sample(
@@ -73,7 +71,6 @@ pub trait Surrogate: Send + Sync {
     fn schedule_background_flush(&self) -> Result<(), ENNError>;
     fn wait_for_background_flush(&self) -> Result<(), ENNError>;
     fn release_observation_pages(&self) -> Result<(), ENNError>;
-    /// Drop fitted rows so the next `fit_append` starts a new local dataset.
     fn clear_observations(&mut self) -> Result<(), ENNError>;
 }
 
@@ -82,13 +79,9 @@ pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
 #[derive(Debug, Clone)]
 pub struct ENNSurrogateConfig {
     pub k: NeighborCount,
-    /// Scale-search settings, or frozen scales.
     pub fit_samples: FitSamples,
-    /// Index, storage, and metric. Illegal pairs are not a variant.
     pub layout: EnnLayout,
-    /// Optional per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
     pub y_bounds: Option<Array2<f64>>,
-    /// Groups of tied input dimensions. Only `MetricLearning::Auto` reads them.
     pub tied_dims: Vec<Vec<usize>>,
 }
 
@@ -105,7 +98,6 @@ impl Default for ENNSurrogateConfig {
 }
 
 impl ENNSurrogateConfig {
-    /// Reject `tied_dims` that would be ignored or that do not fit `num_dim` inputs.
     pub fn validate(&self, num_dim: usize) -> Result<(), ENNError> {
         if self.tied_dims.is_empty() {
             return Ok(());
@@ -235,8 +227,6 @@ impl ENNSurrogate {
         )
     }
 
-    /// Replace the state with a model of `x`, `y`, `yvar` alone and fit its scales, starting
-    /// the search from `warm`.
     fn start_model(
         &mut self,
         x_new: &ArrayView2<f64>,

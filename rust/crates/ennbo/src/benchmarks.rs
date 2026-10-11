@@ -1,4 +1,3 @@
-//! Benchmark objectives. Noise, when requested, is drawn in Rust from a seed.
 
 use ndarray::{Array1, Array2, ArrayView2};
 use rand::rngs::StdRng;
@@ -14,19 +13,19 @@ fn standard_normal<R: Rng + ?Sized>(rng: &mut R) -> f64 {
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
 }
 
-/// Ackley objective. The Python wrapper holds this value and nothing else.
+fn noise_and_rng(noise: f64, seed: u64) -> (f64, StdRng) {
+    (noise, StdRng::seed_from_u64(seed))
+}
+
 pub struct Ackley {
     noise: f64,
     rng: StdRng,
 }
 
 impl Ackley {
-    /// `seed` initializes the noise generator once.
     pub fn new(noise: f64, seed: u64) -> Self {
-        Self {
-            noise,
-            rng: StdRng::seed_from_u64(seed),
-        }
+        let (noise, rng) = noise_and_rng(noise, seed);
+        Self { noise, rng }
     }
 
     pub fn noise(&self) -> f64 {
@@ -37,7 +36,6 @@ impl Ackley {
         [-ACKLEY_BOUND, ACKLEY_BOUND]
     }
 
-    /// One row per input. 1-D input is `(1, d)` after the caller reshapes.
     pub fn evaluate(&mut self, x: ArrayView2<f64>) -> Array1<f64> {
         let mut base = ackley_core(x, 20.0, 0.2, 2.0 * std::f64::consts::PI);
         base.mapv_inplace(|v| -v);
@@ -50,7 +48,6 @@ impl Ackley {
     }
 }
 
-/// Two Ackley objectives on even-dimensional inputs, split in half.
 pub struct DoubleAckley {
     noise: f64,
     rng: StdRng,
@@ -58,10 +55,8 @@ pub struct DoubleAckley {
 
 impl DoubleAckley {
     pub fn new(noise: f64, seed: u64) -> Self {
-        Self {
-            noise,
-            rng: StdRng::seed_from_u64(seed),
-        }
+        let (noise, rng) = noise_and_rng(noise, seed);
+        Self { noise, rng }
     }
 
     pub fn noise(&self) -> f64 {

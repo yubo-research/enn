@@ -1,28 +1,3 @@
-"""Streaming evals with categorical inputs, one-hot encoded: categorical-only and mixed.
-
-Each categorical variable with ``c`` categories is ``c`` one-hot columns in {0, 1} (a variable with
-one category is a constant column). Level effects are fixed tables drawn once from ``EFFECT_SEED``,
-centered and scaled to unit variance, then multiplied by the variable's strength. Noise is 0.1 N(0,1).
-
-- ``cat_only``: six categorical variables with 1, 2, 3, 4, 6 and 10 categories (26 columns) and
-  main-effect strengths 0, 3, 1, 0.3, 0.1 and 0 (the 10-category variable is irrelevant), plus an
-  interaction of strength 1 between the 3- and 4-category variables. The interaction table is
-  centered only overall, so part of it acts as main effects; most of it (about two thirds of its
-  variance) is pure interaction, which first-order Sobol indices do not see, and the 4-category
-  variable matters mostly through that part.
-- ``mixed``: four continuous inputs x_i = s_i u_i, u ~ U[0,1]^4, ranges s = 0.01, 1, 100, 10, and
-  three categorical variables with 3, 5 and 2 categories (14 columns). The target is
-  sin(2 pi u0) (strong, narrowest input) + slope[A] (u1 - 0.5) (the slope on u1 depends on the
-  3-category variable A) + 0.3 (u2 - 0.5) (weak, widest input) + A's main effect (strength 1) +
-  the 5-category variable's (strength 0.3); u3 and the 2-category variable are irrelevant.
-
-Models are BPANN_DISK: ``bpann_disk`` (raw distances), ``bpann_disk_scale_x`` (every column divided
-by its running standard deviation), ``bpann_disk_scale_x_tied`` (the same, but ``tied_dims`` leaves
-the one-hot columns unscaled), ``bpann_disk_auto`` (metric_learning AUTO, one weight per column) and
-``bpann_disk_auto_tied`` (AUTO with each variable's one-hot columns tied to one joint-Sobol weight).
-The streaming protocol, seeds and mean ± SE lines are those of ``evals/metric_12d.py``; each EVAL
-line also names the problem.
-"""
 
 from __future__ import annotations
 
@@ -90,7 +65,6 @@ CAT_ONLY_EFFECTS, CAT_ONLY_PAIR, MIXED_EFFECTS = _tables()
 
 
 def tied_groups(cards: tuple[int, ...], start: int = 0) -> tuple[tuple[int, ...], ...]:
-    """Column indices of each variable's one-hot block, blocks laid out from column ``start``."""
     ends = start + np.cumsum(cards)
     return tuple(tuple(range(e - c, e)) for c, e in zip(cards, ends.tolist()))
 
@@ -98,7 +72,6 @@ def tied_groups(cards: tuple[int, ...], start: int = 0) -> tuple[tuple[int, ...]
 def _categories(
     cards: tuple[int, ...], num_obs: int, rng: np.random.Generator
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Uniform category of each variable (``num_obs`` x vars) and its one-hot columns."""
     levels = np.column_stack([rng.integers(0, c, num_obs) for c in cards])
     onehot = np.hstack([np.eye(c)[levels[:, i]] for i, c in enumerate(cards)])
     return levels, onehot
@@ -179,7 +152,6 @@ class CategoricalStreamedModel(StreamedModel):
 def run_model(
     problem: Problem, name: str, work_dir: str, config: Metric12dConfig
 ) -> list[CheckpointResult]:
-    """Stream ``config.seed``'s rows of ``problem`` through one model; one result per checkpoint."""
     rng = np.random.default_rng(config.seed)
     x, y = problem.data(config.stream_rows(), rng)
     x_test, y_test = problem.data(config.num_test, rng)

@@ -1,4 +1,3 @@
-//! Large-N BPANN search: indexed fragments + pending mmap brute-force leg.
 
 use ndarray::Array2;
 use rayon::prelude::*;
@@ -22,7 +21,6 @@ pub struct SearchPendingArgs<'a> {
     pub num_dim: usize,
 }
 
-#[doc = "kiss-coverage-off"]
 fn merge_pending_unscaled(
     leg_a: &[(u32, f32)],
     leg_b: &[(u32, f32)],

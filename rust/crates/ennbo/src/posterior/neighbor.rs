@@ -1,4 +1,3 @@
-//! Neighbor lookup helpers for posterior computation.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
 
@@ -97,7 +96,6 @@ pub(crate) fn dist2s_for_neighbor_indices(
     out
 }
 
-/// Re-sort each query row by refined f64 distance (then index) for stable top-k.
 pub(crate) fn sort_neighbors_by_dist2(dist2s: &mut Array2<f64>, idx: &mut Array2<i64>) {
     let n_query = dist2s.nrows();
     let k = dist2s.ncols();
@@ -135,7 +133,6 @@ pub(crate) fn index_search(
             Array2::from_elem((n_query, k_out), -1i64),
         ));
     }
-    /// Cap Faiss oversample at `n_obs` (Faiss repeats the last id; the index API pads with (-1, inf)).
     const FAISS_F64_OVERSAMPLE: i32 = 32;
     let n_obs_i = n_obs as i32;
     let fetch_k = if model.backend_driver() == IndexDriver::Flat {
@@ -240,7 +237,6 @@ pub(crate) fn exact_f64_batch_topk(
     Ok(apply_exclude_nearest(dist2s, idx, exclude_nearest))
 }
 
-/// Squared-distance threshold treated as an exact self hit (LOO identity).
 const SELF_DIST_EPS: f64 = 1e-15;
 
 /// Drop the query's own training row when present; keep the true NN otherwise.

@@ -1,46 +1,30 @@
-//! Hash-based deterministic random number generation.
-//!
-//! This module provides deterministic RNG functions using SplitMix64
-//! and Box-Muller transform for generating standard normal variates.
 
 use ndarray::{Array, ArrayD, IxDyn};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// Errors that can occur during hash-based RNG.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum HashError {
-    /// Invalid number of metrics.
     #[error("num_metrics must be positive, got {0}")]
     InvalidNumMetrics(i64),
-    /// Dimension mismatch in inputs.
     #[error("Dimension mismatch: {0}")]
     DimensionMismatch(String),
 }
 
-/// SplitMix64 algorithm constants.
 const SM64_GOLDEN_RATIO: u64 = 0x9E3779B97F4A7C15;
 const SM64_MULTIPLIER_1: u64 = 0xBF58476D1CE4E5B9;
 const SM64_MULTIPLIER_2: u64 = 0x94D049BB133111EB;
 const SM64_XOR_OFFSET: u64 = 0xD2B74407B1CE6E93;
 
-/// Prime constant for seed combination.
 const SEED_PRIME: u64 = 1_000_003;
 
-/// 2^53 as f64 constant.
 const INV_2P53: f64 = 1.0 / 9007199254740992.0;
 
-/// Minimum clip value to avoid log(0).
 const CLIP_MIN: f64 = 1e-12;
 
-/// Maximum clip value (exclusive upper bound).
 const CLIP_MAX: f64 = 1.0 - 1e-12;
 
-/// SplitMix64 hash function.
-///
-/// This is a fast, high-quality hash function for 64-bit integers.
-/// The implementation must match the Python version exactly for parity.
 #[inline(always)]
 pub fn splitmix64(x: u64) -> u64 {
     let x = x.wrapping_add(SM64_GOLDEN_RATIO);
@@ -50,15 +34,11 @@ pub fn splitmix64(x: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// Convert u64 to f64 in [0, 1) using high 53 bits.
 #[inline(always)]
 pub fn u64_to_f53(x: u64) -> f64 {
     ((x >> 11) as f64) * INV_2P53
 }
 
-/// Box-Muller transform for standard normal variates.
-///
-/// Takes two uniform [0, 1) values and produces one standard normal.
 #[inline(always)]
 pub fn box_muller(u1: f64, u2: f64) -> f64 {
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
@@ -79,10 +59,6 @@ pub fn normal_for_seed_index_metric(seed_u64: u64, unique_idx: i64, metric: usiz
     box_muller(u1, u2)
 }
 
-/// Independent standard normal for aleatoric noise at a query/metric.
-///
-/// Uses a distinct salt from [`normal_for_seed_index_metric`] so query-local
-/// aleatoric draws do not collide with neighbor-indexed noise-field normals.
 #[inline(always)]
 pub fn normal_for_seed_query_metric(seed_u64: u64, query_idx: usize, metric: usize) -> f64 {
     const QUERY_SALT: u64 = 0xC0FF_EE00_D15C_A11E;
@@ -102,7 +78,6 @@ pub fn normal_for_seed_query_metric(seed_u64: u64, query_idx: usize, metric: usi
     box_muller(u1, u2)
 }
 
-/// Build sorted-unique neighbor indices and an inverse map for `data_indices`.
 pub fn unique_index_inverse(data_indices: &[i64]) -> (Vec<i64>, Vec<usize>) {
     let unique_indices: Vec<i64> = {
         let mut v = data_indices.to_vec();
@@ -126,28 +101,6 @@ pub fn unique_index_inverse(data_indices: &[i64]) -> (Vec<i64>, Vec<usize>) {
     (unique_indices, inverse)
 }
 
-/// Fast hash-based RNG for multiple seeds, indices, and metrics.
-///
-/// This is the optimized SplitMix64 + Box-Muller version that matches
-/// the Python `normal_hash_batch_multi_seed_fast` function.
-///
-/// Seeds are processed in parallel; each seed's outputs are bit-identical to the
-/// serial implementation (deterministic per `(seed, index, metric)`).
-///
-/// # Arguments
-///
-/// * `function_seeds` - Array of int64 seed values
-/// * `data_indices` - Array of int indices (arbitrary shape)
-/// * `num_metrics` - Number of metrics to generate per (seed, index) pair
-///
-/// # Returns
-///
-/// Array of shape (num_seeds, *data_indices.shape, num_metrics) containing
-/// standard normal variates.
-///
-/// # Errors
-///
-/// Returns `HashError::InvalidNumMetrics` if num_metrics <= 0.
 pub fn normal_hash_batch_multi_seed_fast(
     function_seeds: &[i64],
     data_indices: &[i64],
@@ -192,10 +145,6 @@ pub fn normal_hash_batch_multi_seed_fast(
     Ok(output)
 }
 
-/// Reference implementation using external RNG (placeholder).
-///
-/// This would use a CSPRNG like Philox for comparison/validation.
-/// For now, it's a thin wrapper around the fast version.
 pub fn normal_hash_batch_multi_seed(
     function_seeds: &[i64],
     data_indices: &[i64],

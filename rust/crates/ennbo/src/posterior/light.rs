@@ -1,4 +1,3 @@
-//! Fused posterior fast path when yvar is absent and observation_noise is off.
 
 use ndarray::{Array2, ArrayView2, Axis};
 
@@ -103,7 +102,6 @@ fn fuse_neighbors_to_mu_se(
     (mu, se, se_epi, se_ale, idx_out)
 }
 
-/// Fused index_search + mu/se for the no-yvar, no-observation-noise posterior path.
 pub(crate) fn compute_posterior_light(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,

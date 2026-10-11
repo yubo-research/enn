@@ -1,4 +1,3 @@
-//! Parameter fitting for ENN models via subsample log-likelihood.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
 use rand::seq::index::sample;
@@ -9,7 +8,6 @@ use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 use crate::traits::PosteriorComputation;
 
-/// Validates subsample log-likelihood inputs.
 fn validate_subsample_inputs(
     x: &ArrayView2<f64>,
     y: &ArrayView2<f64>,
@@ -48,7 +46,6 @@ fn validate_subsample_inputs(
     Ok(())
 }
 
-/// Compute single log-likelihood given scaled predictions.
 fn compute_single_loglik(
     y_scaled: &ArrayView2<f64>,
     mu_i: &ArrayView2<f64>,
@@ -84,20 +81,6 @@ fn compute_single_loglik(
     }
 }
 
-/// Compute subsample log-likelihood for multiple parameter sets.
-///
-/// # Arguments
-/// * `model` - The ENN model
-/// * `x` - Input features (n x d)
-/// * `y` - Target values (n x m)
-/// * `paramss` - Parameter sets to evaluate
-/// * `p` - Number of subsamples
-/// * `rng` - Random number generator
-/// * `y_std` - Optional standardization factors for y
-///
-/// # Returns
-/// Vector of log-likelihoods, one per parameter set
-/// Subsample log-likelihood using row indices into the model (no full-dataset views).
 pub fn subsample_loglik_model<R: Rng>(
     model: &EpistemicNearestNeighbors,
     paramss: &[ENNParams],
@@ -120,7 +103,6 @@ pub fn subsample_loglik_model<R: Rng>(
     subsample_loglik(model, &x.view(), &y.view(), paramss, p, rng, y_std)
 }
 
-/// Subsample count used when the caller omits `P`.
 pub const DEFAULT_SUBSAMPLE_P: usize = 10;
 
 pub fn subsample_loglik<R: Rng>(

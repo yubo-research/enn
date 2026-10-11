@@ -1,4 +1,3 @@
-//! ENN-surrogate fields that an optimizer override may replace.
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -11,7 +10,6 @@ use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
 use crate::surrogate::ENNSurrogateConfig;
 
-/// Scale-search overrides. Each `Some` field replaces the search setting.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SearchOverrides {
     pub num_fit_samples: Option<NonZeroUsize>,
@@ -21,13 +19,10 @@ pub struct SearchOverrides {
 }
 
 impl SearchOverrides {
-    /// Whether no field is set.
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
     }
 
-    /// Search settings of `base` with every set field replaced. A frozen `base` needs
-    /// `num_fit_samples`, because frozen scales have no search settings to adjust.
     pub fn apply(&self, base: FitSamples) -> Result<ScaleSearch, ENNError> {
         let mut search = match (base.search(), self.num_fit_samples) {
             (Some(s), Some(n)) => ScaleSearch { num_fit_samples: n, ..s },
@@ -52,16 +47,12 @@ impl SearchOverrides {
     }
 }
 
-/// Override of the fit-sample policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FitOverride {
-    /// Freeze the scales. Search settings do not exist in this variant.
     Frozen,
-    /// Run the scale search, adjusting the base settings.
     Draw(SearchOverrides),
 }
 
-/// Overrides for an [`ENNSurrogateConfig`]. Each `Some` field replaces the config value.
 #[derive(Debug, Clone, Default)]
 pub struct EnnOverrides {
     pub index_driver: Option<IndexDriver>,
@@ -87,7 +78,6 @@ impl EnnOverrides {
         )
     }
 
-    /// Return `base` with every set field replaced.
     pub fn apply(&self, base: &ENNSurrogateConfig) -> Result<ENNSurrogateConfig, ENNError> {
         let mut enn = base.clone();
         match self.fit {

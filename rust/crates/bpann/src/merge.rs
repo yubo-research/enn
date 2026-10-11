@@ -3,15 +3,8 @@ use std::collections::HashMap;
 use crate::error::BpannError;
 use crate::mmap_store::MmapColumnStore;
 
-/// Squared-distance threshold treated as an exact self hit (LOO identity).
 const SELF_DIST_EPS: f64 = 1e-15;
 
-/// Exclude the query's own training row when present among candidates.
-///
-/// - If `self_id` is known and present: remove that id (even if not nearest).
-/// - If `self_id` is known but absent: do not strip a neighbor (approx miss).
-/// - If `self_id` is unknown: remove a zero-distance hit if any; otherwise keep
-///   the true NN (Exact LOO parity for novel queries that are not training rows).
 pub fn bpann_apply_exclude_nearest(
     ranked: &mut Vec<(u32, f64)>,
     exclude_nearest: bool,
@@ -31,7 +24,6 @@ pub fn bpann_apply_exclude_nearest(
     }
 }
 
-/// Exact float row match of `query` against training rows (identity for LOO).
 pub fn find_query_train_id(train_x: &MmapColumnStore, query: &[f64]) -> Option<u32> {
     let n = train_x.nrows;
     for i in 0..n {
@@ -45,7 +37,6 @@ pub fn find_query_train_id(train_x: &MmapColumnStore, query: &[f64]) -> Option<u
     None
 }
 
-/// Exact float match of `query` in a flat f32 train matrix.
 pub fn find_query_train_id_flat(
     flat: &[f32],
     total: usize,

@@ -1,4 +1,3 @@
-//! Stateful ENN fitter Python bindings.
 
 use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 use pyo3::exceptions::PyValueError;
@@ -19,7 +18,6 @@ pub struct PyENNStatefulFitter {
 impl PyENNStatefulFitter {
     #[new]
     #[pyo3(signature = (k, seed, infer_aleatoric_variance_scale=true))]
-    #[doc = "kiss-coverage-off"]
     fn new(k: i32, seed: u64, infer_aleatoric_variance_scale: bool) -> Self {
         Self {
             inner: ennbo::ENNFitter::new(k),
@@ -29,7 +27,6 @@ impl PyENNStatefulFitter {
     }
 
     #[pyo3(signature = (x, y, yvar=None, y_bounds=None))]
-    #[doc = "kiss-coverage-off"]
     fn tell(
         &mut self,
         x: PyReadonlyArray2<f64>,
@@ -49,13 +46,11 @@ impl PyENNStatefulFitter {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    #[doc = "kiss-coverage-off"]
     fn y_std<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
         Ok(self.inner.y_std().to_pyarray_bound(py))
     }
 
     #[pyo3(signature = (model, num_fit_candidates=None, num_fit_samples=None, params_warm_start=None, affine_calibrate=false))]
-    #[doc = "kiss-coverage-off"]
     fn ask(
         &mut self,
         model: &PyEpistemicNearestNeighbors,
@@ -79,7 +74,6 @@ impl PyENNStatefulFitter {
     }
 
     #[pyo3(signature = (a, b, c))]
-    #[doc = "kiss-coverage-off"]
     fn set_calibrator_abc(
         &mut self,
         a: PyReadonlyArray1<f64>,
@@ -92,7 +86,6 @@ impl PyENNStatefulFitter {
     }
 
     #[allow(clippy::type_complexity)]
-    #[doc = "kiss-coverage-off"]
     fn affine_coeffs<'py>(
         &self,
         py: Python<'py>,
@@ -112,7 +105,6 @@ impl PyENNStatefulFitter {
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (model, x, scales, exclude_nearest=false, observation_noise=false))]
-    #[doc = "kiss-coverage-off"]
     fn posterior_calibrated<'py>(
         &self,
         py: Python<'py>,
@@ -144,7 +136,6 @@ impl PyENNStatefulFitter {
 
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[pyo3(signature = (model, x, scales, function_seeds, exclude_nearest=false, observation_noise=false))]
-    #[doc = "kiss-coverage-off"]
     fn function_draw_calibrated<'py>(
         &self,
         py: Python<'py>,
@@ -188,7 +179,6 @@ fn posterior_flags(exclude_nearest: bool, observation_noise: bool) -> ennbo::Pos
 #[pyfunction]
 #[pyo3(signature = (model, k, epistemic, aleatoric, num_fit_samples, seed, observation_noise=false))]
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-#[doc = "kiss-coverage-off"]
 pub fn fit_model_affine<'py>(
     py: Python<'py>,
     model: &PyEpistemicNearestNeighbors,

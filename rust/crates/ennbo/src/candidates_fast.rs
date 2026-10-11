@@ -1,4 +1,3 @@
-//! `RAASPDriver.FAST`: binomial perturbation count, uniform in the trust region.
 
 use ndarray::{Array1, Array2, ArrayView1};
 use rand::Rng;

@@ -1,4 +1,3 @@
-//! ENN-surrogate keys of the Python config-override dict.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -6,8 +5,6 @@ use std::path::PathBuf;
 
 use crate::py_optimizer::{optional_bool, optional_usize};
 
-/// Every ENN-surrogate key `parse_enn_overrides` reads. Any one of them present builds an
-/// `EnnOverrides`, which the optimizer rejects when there is no ENN surrogate.
 pub(crate) const ENN_OVERRIDE_KEYS: &[&str] = &[
     "index_driver",
     "num_fit_samples",
@@ -27,7 +24,6 @@ fn to_py_err(e: ennbo::ENNError) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
-#[doc = "kiss-coverage-off"]
 fn parse_fit_samples(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<Option<ennbo::enn_overrides::FitOverride>> {
@@ -57,7 +53,6 @@ fn parse_fit_samples(
     }
 }
 
-#[doc = "kiss-coverage-off"]
 fn optional_string(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<String>> {
     match dict.get_item(key)? {
         Some(v) => Ok(Some(v.extract()?)),
@@ -65,7 +60,6 @@ fn optional_string(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult
     }
 }
 
-#[doc = "kiss-coverage-off"]
 fn any_enn_key(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<bool> {
     for key in ENN_OVERRIDE_KEYS {
         if dict.contains(*key)? {
@@ -75,7 +69,6 @@ fn any_enn_key(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<bool> {
     Ok(false)
 }
 
-#[doc = "kiss-coverage-off"]
 pub(crate) fn parse_enn_overrides(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<Option<ennbo::EnnOverrides>> {

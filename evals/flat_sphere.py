@@ -62,7 +62,6 @@ class FlatSphereAggregate:
 
 
 def gaussian_loglik(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> float:
-    """Mean Gaussian predictive log-likelihood (larger is better)."""
     return float(-gaussian_nll(y, mu, se))
 
 
@@ -97,7 +96,6 @@ def _build_sphere_enn(
 
 
 def run_flat_sphere_seed(config: FlatSphereConfig) -> FlatSphereSeedResult:
-    """Fit ENN on sphere DGP; score loglik and rmse on a held-out test set."""
     if config.num_obs < 1:
         raise ValueError("num_obs must be >= 1")
     if config.num_test < 1:
@@ -137,7 +135,6 @@ def run_flat_sphere_seed(config: FlatSphereConfig) -> FlatSphereSeedResult:
 
 
 def run_flat_sphere_over_seeds(config: FlatSphereConfig) -> FlatSphereAggregate:
-    """Run sphere scoring for ``seed .. seed+num_seeds-1`` and aggregate."""
     if config.num_seeds < 1:
         raise ValueError("num_seeds must be >= 1")
     results = [
@@ -178,7 +175,6 @@ def format_flat_sphere_eval_line(result: FlatSphereAggregate) -> str:
 
 
 def run_flat_sphere_eval(config: FlatSphereConfig | None = None) -> FlatSphereAggregate:
-    """Aggregate sphere metrics and print the EVAL line."""
     cfg = FlatSphereConfig() if config is None else config
     result = run_flat_sphere_over_seeds(cfg)
     print(

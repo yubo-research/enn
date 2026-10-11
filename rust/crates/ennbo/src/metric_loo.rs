@@ -1,4 +1,3 @@
-//! Leave-one-out ENN log-likelihood for a diagonal metric.
 
 use ndarray::ArrayView2;
 

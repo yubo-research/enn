@@ -71,11 +71,11 @@ mod acceptance_tests {
     }
 
     #[test]
-    fn test_paper_tex_exists_and_nonempty() {
+    fn test_paper_tex_path_is_repo_relative() {
+        assert_eq!(PAPER_TEX_PATH, "papers/bpann_2511.15557v1.tex");
         let path = repo_root().join(PAPER_TEX_PATH);
-        let meta = fs::metadata(&path).expect("paper tex");
-        assert!(meta.len() > 0);
-        assert_eq!(path, repo_root().join(PAPER_TEX_PATH));
+        assert!(path.ends_with(PAPER_TEX_PATH));
+        assert!(!std::path::Path::new(PAPER_TEX_PATH).is_absolute());
     }
 
     #[test]

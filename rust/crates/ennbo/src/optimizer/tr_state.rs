@@ -53,7 +53,6 @@ impl TrustRegionState {
         }
     }
 
-    /// Observations accounted for by the TuRBO length-adaptation state (0 for Morbo).
     pub fn turbo_prev_num_obs(&self) -> usize {
         match self {
             TrustRegionState::Turbo(t) => t.prev_num_obs(),
@@ -74,7 +73,6 @@ impl TrustRegionState {
         }
     }
 
-    /// Single-objective restart: drop the local length baseline as well as the length.
     pub fn restart_local(&mut self) {
         match self {
             TrustRegionState::Turbo(t) => t.restart_local(),
@@ -211,7 +209,6 @@ impl TrustRegionState {
         }
     }
 
-    /// TuRBO trust-region update from the newly told batch only (O(batch), not O(history)).
     pub fn tell_update_new_batch(
         &mut self,
         y_new: &ArrayView2<f64>,

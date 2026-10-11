@@ -1,4 +1,3 @@
-//! Arm selection from a candidate set.
 
 use ndarray::{Array2, ArrayView2};
 use rand::seq::SliceRandom;
@@ -10,7 +9,6 @@ use crate::error::ENNError;
 use crate::optimizer::Optimizer;
 use crate::util::argmax_random_tie;
 
-/// Select arms randomly.
 pub(super) fn select_with_random(
     x_cand: &ArrayView2<f64>,
     num_arms: usize,
@@ -23,7 +21,6 @@ pub(super) fn select_with_random(
     Ok(select_by_indices(x_cand, &indices))
 }
 
-/// Select arms via Thompson sampling (posterior draw).
 pub(super) fn select_with_thompson(
     optimizer: &Optimizer,
     surrogate: &(dyn crate::surrogate::Surrogate + Send + Sync),
@@ -87,7 +84,6 @@ pub(super) fn select_with_thompson(
     Ok(select_by_indices(x_cand, &indices))
 }
 
-/// Select arms via UCB (upper confidence bound).
 pub(super) fn select_with_ucb(
     optimizer: &Optimizer,
     surrogate: &(dyn crate::surrogate::Surrogate + Send + Sync),
@@ -119,7 +115,6 @@ pub(super) fn select_with_ucb(
     Ok(select_by_indices(x_cand, &indices))
 }
 
-/// Select arms via Pareto frontier.
 pub(super) fn select_with_pareto(
     surrogate: &(dyn crate::surrogate::Surrogate + Send + Sync),
     x_cand: &ArrayView2<f64>,
@@ -135,7 +130,6 @@ pub(super) fn select_with_pareto(
     Ok(select_by_indices(x_cand, &indices))
 }
 
-/// Select arms using acquisition function.
 pub(super) fn select_arms(
     optimizer: &Optimizer,
     x_cand: &ArrayView2<f64>,
@@ -161,7 +155,6 @@ pub(super) fn select_arms(
     }
 }
 
-/// Select rows by indices.
 pub(super) fn select_by_indices(x: &ArrayView2<f64>, indices: &[usize]) -> Array2<f64> {
     use ndarray::Axis;
     let rows: Vec<_> = indices.iter().map(|&i| x.row(i).to_owned()).collect();

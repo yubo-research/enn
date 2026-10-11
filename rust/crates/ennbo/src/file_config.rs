@@ -1,4 +1,3 @@
-//! File-backed ennbo configuration (`~/.ennbo/config.toml`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,13 +7,11 @@ use serde::{Deserialize, Serialize};
 
 static CONFIG_PATH_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-/// Override the config file path (tests / ops tools). Pass `None` to restore the default.
 pub fn set_config_path(path: Option<PathBuf>) {
     *CONFIG_PATH_OVERRIDE.write().expect("config path lock") = path;
     install_bpann_tuning_from_config();
 }
 
-/// Load `~/.ennbo/config.toml` (or the override), creating the BPANN section, and return the path.
 pub fn ensure_config_file() -> PathBuf {
     install_bpann_tuning_from_config();
     let cfg = Config::new();
@@ -22,7 +19,6 @@ pub fn ensure_config_file() -> PathBuf {
     cfg.path().to_path_buf()
 }
 
-/// Default path: `~/.ennbo/config.toml`.
 pub fn default_config_path() -> PathBuf {
     home_dir().join(".ennbo").join("config.toml")
 }
@@ -42,7 +38,6 @@ fn active_config_path() -> PathBuf {
         .unwrap_or_else(default_config_path)
 }
 
-/// Tunable BPANN parameters persisted under `[bpann]` in the config file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BpannConfig {
@@ -51,26 +46,17 @@ pub struct BpannConfig {
     pub search_rows_per_fragment: usize,
     pub small_fragment_merge_rows: usize,
     pub search_fragment_budget_max: usize,
-    /// When set, used as the k-means build seed; otherwise the batch start row is used.
     pub build_seed: Option<u64>,
-    /// Rows of pending observations before an index flush is scheduled.
     pub pending_flush_threshold: usize,
-    /// Hard pending cap (soft-sync on caller). `None` means the key was absent in TOML;
-    /// resolved to `max(DEFAULT_PENDING_HARD_FLUSH_THRESHOLD, soft)` on load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_hard_flush_threshold: Option<usize>,
-    /// Batch size at or below which builds use a single row-ID leaf (no k-means tree).
     pub structured_build_row_limit: usize,
-    /// Beam width used during approximate tree traversal.
     pub search_beam_width: usize,
-    /// Max indexed rows using exhaustive leaf search; build stores no skip edges at or below.
     pub exhaustive_search_row_limit: usize,
-    /// Max indexed rows using skip-refinement search; build stores skip edges in the middle band.
     pub skip_refinement_row_limit: usize,
 }
 
 impl Default for BpannConfig {
-    /// Mirror the compiled-in BPANN defaults so the values live in exactly one place.
     fn default() -> Self {
         ennbo_bpann::BpannTuning::default().into()
     }
@@ -96,12 +82,10 @@ impl From<ennbo_bpann::BpannTuning> for BpannConfig {
 }
 
 impl BpannConfig {
-    /// Validate all tunable fields. Returns an error describing the first violation.
     pub fn validate(&self) -> Result<(), String> {
         self.to_tuning().validate()
     }
 
-    /// Resolve the hard pending cap: absent key → `max(DEFAULT_HARD, soft)`.
     pub fn resolved_pending_hard_flush_threshold(&self) -> usize {
         self.pending_hard_flush_threshold.unwrap_or_else(|| {
             std::cmp::max(
@@ -129,18 +113,12 @@ impl BpannConfig {
     }
 }
 
-/// Root document for `~/.ennbo/config.toml`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ConfigFile {
     pub bpann: BpannConfig,
 }
 
-/// File-backed configuration object.
-///
-/// Each parameter accessor re-reads `~/.ennbo/config.toml` (or the path from
-/// [`set_config_path`]). If the file is missing, it is created with defaults.
-/// Invalid files fall back to defaults.
 #[derive(Debug, Clone)]
 pub struct Config {
     path: PathBuf,
@@ -153,14 +131,12 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Config for the active path (`set_config_path` override or `~/.ennbo/config.toml`).
     pub fn new() -> Self {
         Self {
             path: active_config_path(),
         }
     }
 
-    /// Config for an explicit path (does not change the process-wide override).
     pub fn with_path(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
@@ -169,9 +145,6 @@ impl Config {
         &self.path
     }
 
-    /// Ensure the config file exists, then load and validate it.
-    ///
-    /// Parse errors or invalid parameter values fall back to defaults.
     pub fn load(&self) -> ConfigFile {
         self.ensure_exists();
         let file = match fs::read_to_string(&self.path) {
@@ -185,9 +158,6 @@ impl Config {
         }
     }
 
-    /// Write `file` to this config path, creating parent directories as needed.
-    ///
-    /// Rejects invalid BPANN parameter values.
     pub fn save(&self, file: &ConfigFile) -> Result<(), String> {
         file.bpann.validate()?;
         if let Some(parent) = self.path.parent() {
@@ -253,11 +223,6 @@ impl Config {
     }
 }
 
-/// Install BPANN tuning so the `ennbo-bpann` crate reads values via [`Config`].
-///
-/// Snapshot once at install time. Reloading the TOML inside the provider (old
-/// behavior) put disk I/O on every `current_tuning()` — including per-query
-/// search mode selection — and dominated TuRBO ask time.
 pub fn install_bpann_tuning_from_config() {
     let cached = Config::new().load().bpann.to_tuning();
     ennbo_bpann::set_tuning_provider(Box::new(move || cached));

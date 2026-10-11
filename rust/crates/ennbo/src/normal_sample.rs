@@ -1,4 +1,3 @@
-//! `ENNNormal.sample` and `confidence_interval` with the y-bounds warp.
 
 use ndarray::{Array2, ArrayD};
 use rand::rngs::StdRng;

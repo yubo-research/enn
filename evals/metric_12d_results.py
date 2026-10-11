@@ -1,4 +1,3 @@
-"""Per-seed checkpoint results of ``evals/metric_12d.py`` and their mean ± SE over seeds."""
 
 from __future__ import annotations
 
@@ -20,7 +19,6 @@ class CheckpointResult:
 
 @dataclass(frozen=True)
 class CheckpointSummary:
-    """One model and checkpoint aggregated over seeds."""
 
     model: str
     num_obs: int
@@ -31,7 +29,6 @@ class CheckpointSummary:
 
 
 def format_seed_line(seed: int, result: CheckpointResult) -> str:
-    """Per-seed progress line; deliberately not an EVAL line."""
     return (
         f"{format_plain('seed', seed)} "
         f"{format_plain('model', result.model)} "
@@ -59,7 +56,6 @@ def format_eval_line(summary: CheckpointSummary) -> str:
 
 
 def summarize(results: list[CheckpointResult]) -> list[CheckpointSummary]:
-    """Mean ± SE over seeds per (model, n), in first-seen order."""
     groups: dict[tuple[str, int], list[CheckpointResult]] = {}
     for r in results:
         groups.setdefault((r.model, r.num_obs), []).append(r)

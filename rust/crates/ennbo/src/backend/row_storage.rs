@@ -1,4 +1,3 @@
-//! Dense row-major storage for ENN observation columns.
 
 use ndarray::{Array1, Array2, ArrayView2, Axis};
 

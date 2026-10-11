@@ -1,4 +1,3 @@
-//! NumPy ziggurat tables for `Generator.standard_normal`.
 #![allow(clippy::unreadable_literal, clippy::excessive_precision)]
 
 pub static KI_DOUBLE: [u64; 256] = [

@@ -1,6 +1,3 @@
-//! Binned first-order Sobol indices used by AUTO metric learning.
-//!
-//! This is the `metric_stream` estimator, not `calculate_sobol_indices`.
 
 pub const MIN_DEPENDENCE_ROWS: usize = 100;
 pub const DEPENDENCE_Z: f64 = 3.0;
@@ -25,7 +22,6 @@ fn stable_ranks(col: &[f64]) -> Vec<usize> {
     rank
 }
 
-/// `sobol_index` for one `y` column. `x` is row-major `n * d`.
 pub fn sobol_index(x: &[f64], n: usize, d: usize, y: &[f64], num_bins: Option<usize>) -> Vec<f64> {
     let b = num_bins.unwrap_or_else(|| (n as f64).sqrt().floor().max(2.0) as usize);
     let mean = y.iter().sum::<f64>() / n as f64;

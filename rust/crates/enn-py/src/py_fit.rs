@@ -1,4 +1,3 @@
-//! Parameter fitting Python bindings.
 
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
@@ -8,18 +7,15 @@ use rand::SeedableRng;
 
 use crate::py_model::{PyENNParams, PyEpistemicNearestNeighbors};
 
-/// One-shot proof that `EpistemicNearestNeighbors.add` appended rows to one model.
 #[pyclass(name = "ENNAddToken", frozen)]
 #[derive(Clone, Copy)]
 pub struct PyAddToken {
     pub(crate) inner: ennbo::AddToken,
 }
 
-/// Tell the rows of `token`'s `add` to the model's incremental fitter, then fit.
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(name = "enn_fit_incremental")]
 #[pyo3(signature = (model, token, k, seed, num_fit_candidates=None, num_fit_samples=None, params_warm_start=None))]
-#[doc = "kiss-coverage-off"]
 pub fn enn_fit_incremental_py(
     mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
     token: &PyAddToken,
@@ -44,11 +40,9 @@ pub fn enn_fit_incremental_py(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-/// Python wrapper for subsample_loglik
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(name = "subsample_loglik")]
 #[pyo3(signature = (model, x, y, k_values, epistemic_scales, aleatoric_scales, p=None, seed=0, y_std=None))]
-#[doc = "kiss-coverage-off"]
 pub fn subsample_loglik_py(
     model: &PyEpistemicNearestNeighbors,
     x: PyReadonlyArray2<f64>,

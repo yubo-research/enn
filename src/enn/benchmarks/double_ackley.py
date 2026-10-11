@@ -5,7 +5,6 @@ from enn._rust import DoubleAckley as _RustDoubleAckley
 
 
 class DoubleAckley:
-    """Facade over the Rust DoubleAckley benchmark. The only field is the Rust object."""
 
     def __init__(self, noise: float, rng: Generator):
         seed = int(rng.integers(0, 2**63 - 1))

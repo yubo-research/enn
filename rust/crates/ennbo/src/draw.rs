@@ -1,44 +1,18 @@
-//! Data structures for ENN internal computations and draws.
 
 use ndarray::{Array2, Array3};
 
-/// Internal state from a weighted posterior computation.
-///
-/// This holds the intermediate results from computing weighted statistics
-/// for the ENN posterior, which can be used for sampling.
-///
-/// # Fields
-///
-/// * `idx` - Indices of neighbors used for each query point
-/// * `w_normalized` - Normalized weights for each neighbor, shape (n_query, k, num_metrics)
-/// * `l2` - L2 norm of weights for each query point, shape (n_query, num_metrics)
-/// * `mu` - Predictive mean for each query point, shape (n_query, num_metrics)
-/// * `se` - Predictive standard error for each query point, shape (n_query, num_metrics)
-/// * `se_epi` - Epistemic standard error component, shape (n_query, num_metrics)
-/// * `se_ale` - Aleatoric standard error component, shape (n_query, num_metrics)
-///
-/// Function draws scale the correlated neighbor noise field by `se_epi` and, when
-/// `se_ale > 0` (observation noise on), add independent `se_ale * N(0,1)` per query.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DrawInternals {
-    /// Neighbor indices for each query point.
     pub idx: Vec<Vec<usize>>,
-    /// Normalized weights for each neighbor of each query point, shape (n_query, k, num_metrics).
     pub w_normalized: Array3<f64>,
-    /// L2 norm of weights for each query point, shape (n_query, num_metrics).
     pub l2: Array2<f64>,
-    /// Predictive means, shape (n_query, num_metrics).
     pub mu: Array2<f64>,
-    /// Predictive standard errors, shape (n_query, num_metrics).
     pub se: Array2<f64>,
-    /// Epistemic standard error component, shape (n_query, num_metrics).
     pub se_epi: Array2<f64>,
-    /// Aleatoric standard error component, shape (n_query, num_metrics).
     pub se_ale: Array2<f64>,
 }
 
 impl DrawInternals {
-    /// Create new DrawInternals.
     pub fn new(
         idx: Vec<Vec<usize>>,
         w_normalized: Array3<f64>,
@@ -59,42 +33,24 @@ impl DrawInternals {
         }
     }
 
-    /// Get the number of query points.
     pub fn n_queries(&self) -> usize {
         self.mu.nrows()
     }
 
-    /// Get the number of neighbors per query.
     pub fn n_neighbors(&self) -> usize {
         self.w_normalized.shape()[1]
     }
 }
 
-/// Data about neighbors for query points.
-///
-/// Holds the distances, indices, and target values for neighbors
-/// of multiple query points.
-///
-/// # Fields
-///
-/// * `dist2s` - Squared distances to neighbors, shape (n_query, k)
-/// * `idx` - Indices of neighbors for each query point
-/// * `y_neighbors` - Target values for neighbors, shape (n_query, k, num_metrics)
-/// * `k` - Number of neighbors
 #[derive(Debug, Clone, PartialEq)]
 pub struct NeighborData {
-    /// Squared distances to neighbors, shape (n_query, k).
     pub dist2s: Array2<f64>,
-    /// Indices of neighbors for each query point.
     pub idx: Vec<Vec<usize>>,
-    /// Target values for neighbors, shape (n_query, k, num_metrics).
     pub y_neighbors: Array2<f64>,
-    /// Number of neighbors.
     pub k: usize,
 }
 
 impl NeighborData {
-    /// Create new NeighborData.
     pub fn new(
         dist2s: Array2<f64>,
         idx: Vec<Vec<usize>>,
@@ -109,48 +65,31 @@ impl NeighborData {
         }
     }
 
-    /// Get the number of query points.
     pub fn n_queries(&self) -> usize {
         self.dist2s.nrows()
     }
 
-    /// Get the number of neighbors.
     pub fn k(&self) -> usize {
         self.k
     }
 
-    /// Check if there are no neighbors.
     pub fn is_empty(&self) -> bool {
         self.k == 0
     }
 }
 
-/// Data for conditional posterior computation.
-///
-/// Combines training data with what-if scenarios.
-///
-/// # Fields
-///
-/// * `x` - Input features
-/// * `y` - Target values
-/// * `yvar` - Optional observation noise variance
 #[derive(Debug, Clone, PartialEq)]
 pub struct Candidates {
-    /// Input features.
     pub x: Array2<f64>,
-    /// Target values.
     pub y: Array2<f64>,
-    /// Optional observation noise variance.
     pub yvar: Option<Array2<f64>>,
 }
 
 impl Candidates {
-    /// Create new Candidates without noise.
     pub fn new(x: Array2<f64>, y: Array2<f64>) -> Self {
         Self { x, y, yvar: None }
     }
 
-    /// Create new Candidates with noise.
     pub fn with_noise(x: Array2<f64>, y: Array2<f64>, yvar: Array2<f64>) -> Self {
         Self {
             x,
@@ -159,28 +98,22 @@ impl Candidates {
         }
     }
 
-    /// Get the number of candidates.
     pub fn len(&self) -> usize {
         self.x.nrows()
     }
 
-    /// Check if there are no candidates.
     pub fn is_empty(&self) -> bool {
         self.x.is_empty()
     }
 }
 
-/// Internal state from conditional posterior computation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConditionalPosteriorDrawInternals {
-    /// Base draw internals.
     pub base_internals: DrawInternals,
-    /// What-if candidate data.
     pub whatif_candidates: Candidates,
 }
 
 impl ConditionalPosteriorDrawInternals {
-    /// Create new ConditionalPosteriorDrawInternals.
     pub fn new(base_internals: DrawInternals, whatif_candidates: Candidates) -> Self {
         Self {
             base_internals,

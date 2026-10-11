@@ -1,19 +1,3 @@
-//! Incremental B+ANN-style tree: one BPANN index that grows a row at a time.
-//!
-//! A new row descends from the root to the leaf whose centroid is nearest,
-//! updating the running-mean centroid of every page on the way. A leaf holding
-//! more than [`TREE_LEAF_CAPACITY`] rows splits into equal halves at the median of a
-//! projection ([`median_split`]), and an internal page with more than [`TREE_FANOUT`]
-//! children splits by weighted 2-means, pushing the new sibling into its parent as in
-//! a B+ tree. Depth stays `O(log N)`, so an insert costs `O(log N)` and the index is
-//! ready for a query after every insert.
-//!
-//! Every page lives in a disk-backed [`TreeStore`]: its row ids (a leaf) or child page
-//! ids (an internal page), the scaled `f32` coordinates of a leaf's rows (4 bytes per
-//! coordinate, half the `f64` observation file) or an internal page's running-mean
-//! child centroids, and its subtree row count, radius and parent. Splits never fault
-//! observation pages back in, scoring a leaf reads one slot, and resident memory is
-//! bounded by the store's budget rather than growing with the number of rows.
 
 use std::path::PathBuf;
 
@@ -45,23 +29,18 @@ fn nearest(block: &[f32], v: &[f32]) -> usize {
     best.0
 }
 
-/// Largest distance from `c` to the points `g` (positions into `points`).
 fn max_dist(points: &[&[f32]], g: &[usize], c: &[f32]) -> f32 {
     g.iter().map(|&i| dist(points[i], c)).fold(0.0, f32::max)
 }
 
-/// The incremental tree: its header and the store holding every page.
 pub struct Tree {
     pub header: IndexHeader,
     pub store: TreeStore,
     pub index_dir: PathBuf,
-    /// Whether every leaf block holds its rows' coordinates (false for a tree read
-    /// back from `pages.bin` until [`Tree::fill_blocks`] runs).
     pub(crate) rows_cached: bool,
 }
 
 impl Tree {
-    /// A tree with no pages yet; its scratch files live in `index_dir`.
     pub fn empty(num_dim: usize, index_dir: PathBuf) -> Result<Self, BpannError> {
         Ok(Self {
             header: IndexHeader {
@@ -77,7 +56,6 @@ impl Tree {
         })
     }
 
-    /// A one-leaf tree holding `row` with coordinates `v`.
     pub fn new_tree(row: u32, v: &[f32], num_dim: usize, index_dir: PathBuf) -> Result<Self, BpannError> {
         let mut tree = Self::empty(num_dim, index_dir)?;
         let id = tree.store.alloc(Kind::Leaf)?;
@@ -97,7 +75,6 @@ impl Tree {
         self.store.num_pages()
     }
 
-    /// A copy of the tree in new scratch files.
     pub fn try_clone(&self) -> Result<Self, BpannError> {
         Ok(Self {
             header: self.header.clone(),
@@ -107,7 +84,6 @@ impl Tree {
         })
     }
 
-    /// Every indexed row id, ascending (reads every leaf).
     pub fn leaf_row_ids(&self) -> Vec<u32> {
         let mut ids: Vec<u32> = (0..self.num_pages() as u32)
             .filter(|&p| self.store.is_leaf(p))
@@ -117,7 +93,6 @@ impl Tree {
         ids
     }
 
-    /// Insert `row` (scaled coordinates `v`) into the tree.
     pub fn insert_row(&mut self, row: u32, v: &[f32]) -> Result<(), BpannError> {
         let mut path: Vec<(u32, usize)> = Vec::new();
         let mut cur = self.header.root_page_id;
@@ -166,7 +141,6 @@ impl Tree {
         self.attach_sibling(path, (leaf, ca), (new_id, cb))
     }
 
-    /// Record that `old` was split into `old` and `new`, updating the parent (or growing a new root).
     fn attach_sibling(
         &mut self,
         path: &mut Vec<(u32, usize)>,

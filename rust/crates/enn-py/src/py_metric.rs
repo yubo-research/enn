@@ -1,4 +1,3 @@
-//! Python bindings for AUTO metric state on an ENN model.
 
 use ndarray::Array2;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
@@ -8,7 +7,6 @@ use pyo3::prelude::*;
 use crate::py_model::PyEpistemicNearestNeighbors;
 
 #[pyclass]
-#[doc = "kiss-coverage-off"]
 pub struct MetricSnapshot {
     #[pyo3(get)]
     pub num_seen: usize,
@@ -29,7 +27,6 @@ pub struct MetricSnapshot {
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn metric_snapshot(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> Option<MetricSnapshot> {
     model.inner.metric_snapshot().map(|snap| MetricSnapshot {
         num_seen: snap.num_seen,
@@ -45,7 +42,6 @@ pub fn metric_snapshot(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> Option<
 
 #[pyfunction]
 #[pyo3(signature = (model, weights, rebuild_drift=None))]
-#[doc = "kiss-coverage-off"]
 pub fn metric_set_weights(
     mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
     weights: PyReadonlyArray1<f64>,
@@ -71,7 +67,6 @@ fn flat_xy(x: &Array2<f64>, y: &Array2<f64>) -> (Vec<f64>, Vec<f64>, usize, usiz
 
 #[pyfunction]
 #[pyo3(signature = (x, y, tied=None, floor=None))]
-#[doc = "kiss-coverage-off"]
 pub fn dependence_weights<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
@@ -98,7 +93,6 @@ pub fn dependence_weights<'py>(
 
 #[pyfunction]
 #[pyo3(signature = (x, y, k, tied=None))]
-#[doc = "kiss-coverage-off"]
 pub fn auto_weights<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
@@ -117,7 +111,6 @@ pub fn auto_weights<'py>(
 
 #[pyfunction]
 #[pyo3(signature = (x, y, num_bins=None))]
-#[doc = "kiss-coverage-off"]
 pub fn sobol_index<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
@@ -133,7 +126,6 @@ pub fn sobol_index<'py>(
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn weight_drift(weights: PyReadonlyArray1<f64>, built: PyReadonlyArray1<f64>) -> PyResult<f64> {
     let w: Vec<f64> = weights.as_array().iter().copied().collect();
     let b: Vec<f64> = built.as_array().iter().copied().collect();
@@ -148,13 +140,11 @@ pub fn weight_drift(weights: PyReadonlyArray1<f64>, built: PyReadonlyArray1<f64>
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn auto_uses_learned_metric(heldout_gain: f64) -> bool {
     ennbo::metric_auto::auto_uses_learned_metric(heldout_gain)
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn metric_tied(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> PyResult<Vec<Vec<usize>>> {
     model
         .inner
@@ -165,7 +155,6 @@ pub fn metric_tied(model: PyRef<'_, PyEpistemicNearestNeighbors>) -> PyResult<Ve
 
 #[pyfunction]
 #[pyo3(signature = (model, refit_growth=None, rebuild_drift=None, seed=None, reservoir_capacity=None, tied_dims=None))]
-#[doc = "kiss-coverage-off"]
 pub fn metric_configure(
     mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
     refit_growth: Option<f64>,
@@ -199,13 +188,11 @@ pub fn metric_configure(
 
 #[pyfunction]
 #[pyo3(signature = (n, num_cells=None))]
-#[doc = "kiss-coverage-off"]
 pub fn null_sd(n: usize, num_cells: Option<usize>) -> f64 {
     ennbo::metric_sobol::null_sd(n, num_cells)
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn group_sobol_index(x: PyReadonlyArray2<f64>, y: PyReadonlyArray1<f64>) -> f64 {
     let x = x.as_array();
     let y = y.as_array();
@@ -216,7 +203,6 @@ pub fn group_sobol_index(x: PyReadonlyArray2<f64>, y: PyReadonlyArray1<f64>) -> 
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn loo_loglik(
     x: PyReadonlyArray2<f64>,
     y: PyReadonlyArray2<f64>,
@@ -231,14 +217,12 @@ pub fn loo_loglik(
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn validate_tied_dims(tied: Vec<Vec<i64>>, num_dim: usize) -> PyResult<()> {
     ennbo::metric_weights::validate_tied_dims_signed(&tied, num_dim)
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 #[pyclass]
-#[doc = "kiss-coverage-off"]
 pub struct PyReservoir {
     inner: ennbo::reservoir::RowReservoir,
 }

@@ -9,8 +9,6 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ENNFitConfig:
-    """Scale-search settings. ``num_fit_samples=None`` freezes the scales, and then the
-    other settings do not apply. ``infer_aleatoric_variance_scale=None`` means True."""
 
     num_fit_samples: int | None = None
     num_fit_candidates: int | None = None

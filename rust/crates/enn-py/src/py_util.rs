@@ -1,12 +1,9 @@
-//! Utility functions Python bindings.
 
 use ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
-/// Python wrapper for standardize_y
 #[pyfunction(name = "standardize_y")]
-#[doc = "kiss-coverage-off"]
 pub fn standardize_y_py<'py>(py: Python<'py>, y: PyReadonlyArray1<f64>) -> PyResult<(f64, f64)> {
     let y_arr = y.as_array();
 
@@ -16,10 +13,8 @@ pub fn standardize_y_py<'py>(py: Python<'py>, y: PyReadonlyArray1<f64>) -> PyRes
     Ok((center, scale))
 }
 
-/// Python wrapper for pareto_front_2d_maximize
 #[pyfunction(name = "pareto_front_2d_maximize")]
 #[pyo3(signature = (a, b, idx=None))]
-#[doc = "kiss-coverage-off"]
 pub fn pareto_front_2d_maximize_py<'py>(
     py: Python<'py>,
     a: PyReadonlyArray1<f64>,
@@ -54,9 +49,7 @@ pub fn pareto_front_2d_maximize_py<'py>(
     Ok(front.into_pyarray_bound(py))
 }
 
-/// Python wrapper for calculate_sobol_indices
 #[pyfunction(name = "calculate_sobol_indices")]
-#[doc = "kiss-coverage-off"]
 pub fn calculate_sobol_indices_py<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
@@ -69,10 +62,8 @@ pub fn calculate_sobol_indices_py<'py>(
     Ok(Array1::from_vec(sobol.to_vec()).into_pyarray_bound(py))
 }
 
-/// Python helper for deterministic Sobol sequence generation.
 #[pyfunction(name = "sobol_sequence")]
 #[pyo3(signature = (dimension, num_points, seed=0))]
-#[doc = "kiss-coverage-off"]
 pub fn sobol_sequence_py<'py>(
     py: Python<'py>,
     dimension: usize,
@@ -94,10 +85,8 @@ mod kiss_coverage_tests {
     }
 }
 
-/// Python wrapper for arms_from_pareto_fronts (returns selected candidate rows).
 #[pyfunction(name = "arms_from_pareto_fronts")]
 #[pyo3(signature = (x_cand, mu, se, num_arms, seed))]
-#[doc = "kiss-coverage-off"]
 pub fn arms_from_pareto_fronts_py<'py>(
     py: Python<'py>,
     x_cand: PyReadonlyArray2<f64>,
@@ -143,18 +132,14 @@ pub fn arms_from_pareto_fronts_py<'py>(
     Ok(out.into_pyarray_bound(py))
 }
 
-/// Override ennbo config path (`None` restores `~/.ennbo/config.toml`).
 #[pyfunction(name = "set_config_path")]
 #[pyo3(signature = (path=None))]
-#[doc = "kiss-coverage-off"]
 pub fn set_config_path_py(path: Option<&str>) -> PyResult<()> {
     ennbo::set_config_path(path.map(std::path::PathBuf::from));
     Ok(())
 }
 
-/// Ensure `~/.ennbo/config.toml` (or override) exists and return its path.
 #[pyfunction(name = "ensure_config_file")]
-#[doc = "kiss-coverage-off"]
 pub fn ensure_config_file_py() -> PyResult<String> {
     Ok(ennbo::ensure_config_file().display().to_string())
 }

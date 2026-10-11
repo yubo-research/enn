@@ -1,4 +1,3 @@
-//! Posterior computation for ENN model.
 
 mod dual_api;
 mod draw_compute;
@@ -19,7 +18,6 @@ use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::stats::WeightedStats;
 use crate::traits::PosteriorComputation;
 
-/// Split total variance into `se`, `se_epi`, and `se_ale` per the EPS_VAR floor rule.
 pub(crate) fn se_from_variance_components(
     epistemic_var: f64,
     aleatoric_var: f64,
@@ -239,14 +237,12 @@ fn assign_posterior_results(
         .assign(&internals.se_ale.slice_axis(Axis(0), ndarray::Slice::from(..)));
 }
 
-/// Data for weighted posterior computation.
 pub struct WeightedPosteriorData<'a> {
     pub dist2s: &'a ArrayView2<'a, f64>,
     pub idx: &'a [Vec<usize>],
     pub y_neighbors: &'a ArrayView2<'a, f64>,
     pub params: &'a ENNParams,
     pub observation_noise: bool,
-    /// When set, use this instead of gathering from model (for conditional with whatif).
     pub yvar_neighbors_override: Option<&'a Array2<f64>>,
 }
 

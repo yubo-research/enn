@@ -23,7 +23,6 @@ class ENNStorage(Enum):
 
 
 def enn_storage_to_wire(storage: ENNStorage) -> str:
-    """Encode a storage kind. The wire name is the enum member name."""
     if not isinstance(storage, ENNStorage):
         raise ValueError(f"enn_storage must be an ENNStorage, got {storage!r}")
     return storage.name
@@ -37,7 +36,6 @@ def validate_enn_placement(
     scale_x: ENNScaleX,
     metric_learning: ENNMetricLearning,
 ) -> None:
-    """Check the placement options. Each wire encoder rejects a wrong type."""
     from enn._rust import validate_enn_placement as rust_validate
 
     rust_validate(
@@ -76,8 +74,6 @@ class ENNSurrogateConfig:
             )
 
     def _check_tied_dims(self) -> None:
-        """Only ``ENNMetricLearning.AUTO`` reads ``tied_dims``. The range check against the
-        problem dimension runs when the optimizer is built."""
         if not self.tied_dims:
             return
         if self.metric_learning is not ENNMetricLearning.AUTO:

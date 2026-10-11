@@ -1,14 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[doc = "kiss-coverage-off"]
 pub fn blas_libs_present(dir: &Path) -> bool {
     ["libblas.so", "libopenblas.so", "libopenblas.so.0"]
         .iter()
         .any(|name| dir.join(name).exists())
 }
 
-#[doc = "kiss-coverage-off"]
 pub fn install_patchelf_if_needed() {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/install_patchelf_root.sh");
     let status = Command::new("bash")
@@ -21,7 +19,6 @@ pub fn install_patchelf_if_needed() {
     );
 }
 
-#[doc = "kiss-coverage-off"]
 pub fn emit_linux_rpath_link_args() {
     println!("cargo:rerun-if-env-changed=CONDA_PREFIX");
     if !cfg!(target_os = "linux") {

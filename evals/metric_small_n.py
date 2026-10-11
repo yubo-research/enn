@@ -1,18 +1,3 @@
-"""Small-n eval: when does metric learning beat no metric learning, and does AUTO pick right?
-
-Four 12-d targets on x ~ U[0,1]^12 with noise 0.1 N(0,1):
-
-- ``two_hi``: sin(6 pi x0) + sin(6 pi x1) (the ``metric_12d`` target; 2 of 12 inputs matter)
-- ``two_lo``: sin(2 pi x0) + sin(2 pi x1) (same, lower frequency)
-- ``sphere``: -4 |x - 0.5|^2 (all 12 inputs matter equally)
-- ``lin3``: x0 + 2 x1 - x2 (3 of 12 inputs matter)
-
-For each target and seed, rows stream to each n in ``n_grid`` through three BPANN_DISK
-models: ``bpann_disk`` (NONE), ``bpann_disk_scale_x`` (divide inputs by their running standard
-deviations) and ``bpann_disk_auto`` (Sobol/Var(x) weights, applied only if their leave-one-out
-gain over the best isotropic metric is positive). ``gain`` is AUTO's latest gain (``na`` before
-its first refit at 100 rows) and ``on`` whether AUTO used the learned metric.
-"""
 
 from __future__ import annotations
 
@@ -111,7 +96,6 @@ def format_eval_line(r: SmallNResult) -> str:
 def run_stream(
     function: str, seed: int, model: str, work_dir: str, config: SmallNConfig
 ) -> list[SmallNResult]:
-    """Stream one target/seed through one model; one result per checkpoint."""
     stream = replace(config.stream, seed=seed)
     rng = np.random.default_rng(seed)
     x, y = make_data(function, max(stream.n_grid), rng)
@@ -142,7 +126,6 @@ def run_stream(
 
 
 def summarize(results: list[SmallNResult]) -> list[str]:
-    """Mean test loglik over seeds per (function, n, model), and AUTO's on-fraction."""
     lines = []
     keys = sorted({(r.function, r.num_obs) for r in results}, key=lambda t: (t[0], t[1]))
     for function, n in keys:

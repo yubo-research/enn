@@ -1,4 +1,3 @@
-//! In-memory ENN backend (dev / small N).
 
 use ndarray::{Array1, Array2, ArrayView2, Axis};
 use std::sync::Mutex;
@@ -71,7 +70,6 @@ impl InMemoryEnnBackend {
         self.train_x_rows.nrows()
     }
 
-    #[doc = "kiss-coverage-off"]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

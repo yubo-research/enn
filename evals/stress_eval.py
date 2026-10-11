@@ -76,7 +76,6 @@ def _parse_eq_kv_tail(tail: str) -> dict[str, str]:
 
 
 def format_enn_eval_line(line: str) -> str | None:
-    """Rewrite an ENN stress metric row, or return None if it is not one."""
     if not line.startswith("n = "):
         return None
     kv = _parse_spaced_kv(line)
@@ -90,7 +89,6 @@ def format_enn_eval_line(line: str) -> str | None:
 
 
 def format_ts_eval_line(line: str, num_obs: int) -> str | None:
-    """Rewrite a draw-stress posterior row, or return None if it is not one."""
     if not line.startswith("posterior"):
         return None
     method, _, tail = line.partition(" ")
@@ -138,7 +136,6 @@ def stream_stress_stdout(
 
 
 def run_enn_stress_eval(*, index_type: str, num_obs: int, work_dir: str | None = None) -> None:
-    """Run ENN stress and prefix metric rows with ``EVAL:``."""
     cmd = [
         sys.executable,
         str(REPO_ROOT / "ops" / "stress.py"),
@@ -168,7 +165,6 @@ def run_draw_stress_eval(
     index_type: str = "flat",
     work_dir: str | None = None,
 ) -> None:
-    """Run draw stress and prefix ``posterior...`` rows with ``EVAL:``."""
     cmd = [
         sys.executable,
         str(REPO_ROOT / "ops" / "stress.py"),
@@ -197,7 +193,6 @@ def run_draw_stress_eval(
 
 
 def emit_turbo_enn_line(line: str, *, y_best_holder: list[float | None]) -> None:
-    """Pass through turbo-enn rows; capture the trailing ``y_best=`` summary."""
     if line.startswith(TURBO_ENN_Y_BEST_PREFIX):
         y_best_holder[0] = float(line[len(TURBO_ENN_Y_BEST_PREFIX) :])
         return
@@ -211,7 +206,6 @@ def run_turbo_enn_stress_eval(
     num_ask: int = TURBO_ENN_NUM_ASK,
     work_dir: str | None = None,
 ) -> None:
-    """Run turbo-enn stress; end with ``EVAL: SMALLER(time_seconds) LARGER(y_best)``."""
     cmd = [
         sys.executable,
         str(REPO_ROOT / "ops" / "stress.py"),

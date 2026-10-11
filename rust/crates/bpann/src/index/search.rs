@@ -40,7 +40,6 @@ pub fn score_leaf_rows(
     Ok(scored)
 }
 
-/// Score a contiguous half-open row span via mmap (range empty-leaf path).
 pub fn score_leaf_range(
     store: Option<&MmapSearchStore<'_>>,
     query: &[f32],

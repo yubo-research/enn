@@ -62,8 +62,6 @@ pub(crate) fn persist_index_files(
     persist_index_files_with(index_dir, header, |w| write_pages_index(pages, header.num_dim, w), skip_edges)
 }
 
-/// Keep the current `path` (if any) as `backup` without reading it into memory: a
-/// hard link where the filesystem allows one, else a streamed copy.
 fn keep_backup(path: &Path, backup: &Path) -> Result<bool, BpannError> {
     if !path.exists() {
         return Ok(false);
@@ -75,7 +73,6 @@ fn keep_backup(path: &Path, backup: &Path) -> Result<bool, BpannError> {
     Ok(true)
 }
 
-/// Restore `path` from `backup` if one was kept, else leave `path` alone; drop the backup.
 fn restore_backup(path: &Path, backup: &Path, kept: bool, failed: bool) {
     if kept && failed {
         let _ = fs::rename(backup, path);
@@ -83,9 +80,6 @@ fn restore_backup(path: &Path, backup: &Path, kept: bool, failed: bool) {
     let _ = fs::remove_file(backup);
 }
 
-/// Atomically replace `pages.bin` (written by `write_pages`), `skip_edges.bin` and
-/// `header.json`; on failure the previous files are put back. Nothing is buffered
-/// in memory beyond the writer's buffer.
 pub(crate) fn persist_index_files_with(
     index_dir: &Path,
     header: &IndexHeader,

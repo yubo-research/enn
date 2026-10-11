@@ -1,4 +1,3 @@
-//! Morbo trust region: Chebyshev scalarization over an inner TuRBO trust region.
 
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use rand::Rng;
@@ -81,7 +80,6 @@ impl MorboTrustRegion {
         self.num_metrics
     }
 
-    #[doc = "kiss-coverage-off"]
     pub fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -167,7 +165,6 @@ impl MorboTrustRegion {
         )
     }
 
-    /// Chebyshev scores using the min and max of `y` itself.
     pub fn scalarize_local(&self, y: &ArrayView2<f64>) -> Result<Array1<f64>, TrustRegionError> {
         let m = y.ncols();
         let mut y_min = Array1::from_elem(m, f64::INFINITY);
@@ -189,12 +186,10 @@ impl MorboTrustRegion {
         )
     }
 
-    #[doc = "kiss-coverage-off"]
     fn empty_ranges_ok() -> Result<(), TrustRegionError> {
         Ok(())
     }
 
-    #[doc = "kiss-coverage-off"]
     fn y_ranges_or_err(&self) -> Result<(&Array1<f64>, &Array1<f64>), TrustRegionError> {
         self.y_min
             .as_ref()
@@ -206,7 +201,6 @@ impl MorboTrustRegion {
             })
     }
 
-    #[doc = "kiss-coverage-off"]
     pub fn update_ranges_incremental(
         &mut self,
         y_new: &ArrayView2<f64>,

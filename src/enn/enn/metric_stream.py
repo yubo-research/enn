@@ -1,4 +1,3 @@
-"""Thin wrappers around the Rust AUTO metric estimators."""
 
 from __future__ import annotations
 
@@ -21,7 +20,6 @@ def _seed_of(seed) -> int:
 
 
 class Reservoir:
-    """Uniform sample of up to ``capacity`` rows. ``seed`` is a NumPy PCG64 seed."""
 
     def __init__(
         self, capacity: int, num_dim: int, seed: int, num_outputs: int = 1

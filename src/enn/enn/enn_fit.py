@@ -21,7 +21,6 @@ def subsample_loglik(
     rng: Any,
     y_std: np.ndarray | None = None,
 ) -> list[float]:
-    """Compute subsample log-likelihood using Rust backend."""
     from .enn_class import EpistemicNearestNeighbors as PyENN
 
     x_array = np.asarray(x, dtype=float)
@@ -65,18 +64,6 @@ def enn_fit(
     params_warm_start: Any | None = None,
     incremental: ENNAddToken | None = None,
 ) -> Any:
-    """Fit ENN hyperparameters via ENNStatefulFitter tell/ask.
-
-    Batch mode (``incremental`` is None): tell the full model and ask once.
-    ``k`` and ``rng`` build a new fitter on every call.
-
-    Incremental mode: ``incremental`` must be the token just returned by
-    ``model.add``. The Rust model consumes that token and tells only the rows
-    of that ``add``, so a stale, foreign, or repeated token cannot be told.
-    The first incremental call freezes ``k`` and the seed drawn from ``rng``
-    on the Rust model. A later incremental call must draw that same seed and
-    pass that same ``k``. Any other pair raises ``ValueError``.
-    """
     from .enn_class import EpistemicNearestNeighbors as PyENN
 
     if not isinstance(model, PyENN):
