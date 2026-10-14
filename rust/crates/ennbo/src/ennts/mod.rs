@@ -160,10 +160,6 @@ impl EnnTs {
         add::add_y(self, series_id, timestamps, y)
     }
 
-    /// Build the neighbor graph once from the windows stored so far.
-    ///
-    /// Search builds it if this was not called. Calling it after a run of
-    /// short series inserts avoids updating the graph once per series.
     pub fn sync_index(&self) -> Result<(), ENNError> {
         ann::sync(self)
     }
