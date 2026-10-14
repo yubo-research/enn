@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from enn_helpers import enn_all_train_rows
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_x_scaling import ENNScaleX
 from enn.enn.enn_params import ENNParams
-
-from enn_helpers import enn_all_train_rows
+from enn.turbo.config.enn_x_scaling import ENNScaleX
 
 
 @pytest.mark.parametrize("scale_x", [ENNScaleX.OFF, ENNScaleX.ON])
@@ -93,7 +92,7 @@ def test_zero_row_add_does_not_change_empty_model_yvar_contract(scale_x):
 
     assert len(incremental) == len(fresh) == 1
     inc_x, inc_y, inc_yvar = enn_all_train_rows(incremental)
-    fresh_x, fresh_y, fresh_yvar = enn_all_train_rows(fresh)
+    fresh_x, fresh_y, _fresh_yvar = enn_all_train_rows(fresh)
     np.testing.assert_allclose(inc_x, fresh_x)
     np.testing.assert_allclose(inc_y, fresh_y)
     assert inc_yvar is None

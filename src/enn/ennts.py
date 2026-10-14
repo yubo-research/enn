@@ -83,6 +83,9 @@ class ENNTS:
             _target_matrix(y),
         )
 
+    def sync_index(self) -> None:
+        self._inner.sync_index()
+
     def search(
         self,
         query: np.ndarray,

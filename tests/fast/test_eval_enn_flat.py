@@ -3,11 +3,12 @@ from __future__ import annotations
 import io
 import os
 from types import SimpleNamespace
+from typing import Self
 
 import pytest
 
-from evals.short import eval_enn_flat as mod
 from evals import stress_eval as shared
+from evals.short import eval_enn_flat as mod
 
 
 class _FakePopen:
@@ -15,7 +16,7 @@ class _FakePopen:
         self.stdout = io.StringIO("".join(lines))
         self._rc = rc
 
-    def __enter__(self) -> _FakePopen:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:

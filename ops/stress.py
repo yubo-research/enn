@@ -1044,7 +1044,7 @@ def turbo_enn_ask_stops(num_obs: int, num_ask: int) -> tuple[int, ...]:
         lo = (stops[-1] + 1) if stops else 1
         hi = num_obs - (num_ask - i - 1)
         assert lo <= hi, f"no room for stop {i}: lo={lo} hi={hi}"
-        cand = int(round(float(value)))
+        cand = round(float(value))
         cand = min(max(cand, lo), hi)
         stops.append(cand)
     assert len(stops) == num_ask, f"expected {num_ask} stops, got {len(stops)}"

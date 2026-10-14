@@ -21,13 +21,13 @@ class ENNMetricLearning(Enum):
 
 def scale_x_to_wire(scale_x: ENNScaleX) -> bool:
     if not isinstance(scale_x, ENNScaleX):
-        raise ValueError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
+        raise TypeError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
     return scale_x is ENNScaleX.ON
 
 
 def metric_learning_to_wire(metric_learning: ENNMetricLearning) -> str:
     if not isinstance(metric_learning, ENNMetricLearning):
-        raise ValueError(
+        raise TypeError(
             f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}"
         )
     return metric_learning.name

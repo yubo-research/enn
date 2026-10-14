@@ -156,7 +156,6 @@ def test_compare_help_and_usage_errors_skip_numpy(tmp_path: Path) -> None:
 
 def test_compare_cli_delegates_to_sweep(monkeypatch, tmp_path: Path) -> None:
     import ops.qa_ts_lib as lib
-
     from ops.qa_ts import main
 
     seen: dict = {}

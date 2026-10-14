@@ -110,6 +110,10 @@ impl PyENNTS {
             .map_err(to_py)
     }
 
+    fn sync_index(&self) -> PyResult<()> {
+        self.inner.sync_index().map_err(to_py)
+    }
+
     #[pyo3(signature = (query, cutoff, k=None, require_target=true))]
     fn search<'py>(
         &self,

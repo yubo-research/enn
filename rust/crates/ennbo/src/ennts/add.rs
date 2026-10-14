@@ -4,9 +4,10 @@ use ndarray::ArrayView2;
 
 use crate::error::ENNError;
 
+use super::ann::hash_tables_serve;
 use super::lsh::LshFamily;
 use super::metric::{self, MORPH_PER_WINDOW};
-use super::store::{complete_window, insert_bucket, target_of, Posting};
+use super::store::{fill_window, insert_bucket, write_target, Posting};
 use super::EnnTs;
 
 pub(super) fn auto_timestamps(
@@ -224,15 +225,38 @@ fn append_rows(
         .map(|s| s.ts.len())
         .unwrap_or(0);
     let metrics = model.metrics;
+    let dim = x.ncols();
+    let n = timestamps.len();
+    {
+        let series = model.series.entry(series_id).or_default();
+        series.ts.reserve(start + n);
+        series.x.reserve((start + n) * dim);
+        if metrics > 0 {
+            series.y.reserve((start + n) * metrics);
+            series.known.reserve(start + n);
+        }
+    }
+    let mut row_buf = Vec::new();
+    let mut y_buf = vec![0.0; metrics];
     for (i, &ts) in timestamps.iter().enumerate() {
-        let row = x.row(i).to_vec();
         {
-            let series = model.series.entry(series_id).or_default();
-            series.push_x(ts, &row, metrics);
+            let series = model.series.get_mut(&series_id).ok_or_else(|| {
+                ENNError::InvalidParameter(format!("unknown series {series_id}"))
+            })?;
+            let row = x.row(i);
+            if let Some(slice) = row.as_slice() {
+                series.push_x(ts, slice, metrics);
+            } else {
+                row_buf.clear();
+                row_buf.extend(row.iter().copied());
+                series.push_x(ts, &row_buf, metrics);
+            }
         }
         model.n_obs += 1;
         if let Some(yv) = y {
-            record_new_target(model, series_id, &yv.row(i).to_vec())?;
+            y_buf.clear();
+            y_buf.extend(yv.row(i).iter().copied());
+            record_new_target(model, series_id, &y_buf)?;
         }
     }
     Ok(start)
@@ -271,64 +295,66 @@ fn check_increasing(last: Option<i64>, timestamps: &[i64]) -> Result<(), ENNErro
 }
 
 fn index_new_windows(model: &mut EnnTs, series_id: u64, start: usize) -> Result<(), ENNError> {
-    let pending = pending_windows(model, series_id, start)?;
-    for (pos, end_ts, window) in pending {
-        let probe = Posting {
+    let dim = model
+        .dim
+        .ok_or_else(|| ENNError::InvalidParameter("dimension is unset".into()))?;
+    let lookback = model.lookback;
+    let cadence = model.config.cadence;
+    let width = lookback * dim;
+    let series_len = model
+        .series
+        .get(&series_id)
+        .ok_or_else(|| ENNError::InvalidParameter(format!("unknown series {series_id}")))?
+        .ts
+        .len();
+    let extra = series_len.saturating_sub(start);
+    model.windows.reserve(model.windows.len() + extra);
+    model.window_rows.reserve(model.window_rows.len() + extra * width);
+    model.window_scale_gen.reserve(model.window_scale_gen.len() + extra);
+    model.metric_observed.reserve(model.metric_observed.len() + extra);
+    let mut window = vec![0.0; width];
+    let mut target = Vec::new();
+    for pos in start..series_len {
+        let end_ts = {
+            let series = model.series.get(&series_id).ok_or_else(|| {
+                ENNError::InvalidParameter(format!("unknown series {series_id}"))
+            })?;
+            if !fill_window(series, pos, lookback, cadence, dim, &mut window) {
+                continue;
+            }
+            series.ts[pos]
+        };
+        let posting = Posting {
             series_id,
             end_pos: pos,
             end_ts,
         };
-        let y = target_of(model, probe);
-        if let Some(row) = &y {
-            metric::note_window(model, &window, row)?;
+        let labeled = write_target(model, posting, &mut target);
+        if labeled {
+            metric::note_window(model, &window, &target)?;
         }
-        insert_posting(model, series_id, pos, end_ts, &window, y.is_some())?;
+        insert_posting(model, posting, &window, labeled)?;
     }
     Ok(())
 }
 
-fn pending_windows(
-    model: &EnnTs,
-    series_id: u64,
-    start: usize,
-) -> Result<Vec<(usize, i64, Vec<f64>)>, ENNError> {
-    let dim = model
-        .dim
-        .ok_or_else(|| ENNError::InvalidParameter("dimension is unset".into()))?;
-    let series = model
-        .series
-        .get(&series_id)
-        .ok_or_else(|| ENNError::InvalidParameter(format!("unknown series {series_id}")))?;
-    let mut pending = Vec::new();
-    for pos in start..series.ts.len() {
-        if let Some(window) =
-            complete_window(series, pos, model.lookback, model.config.cadence, dim)
-        {
-            pending.push((pos, series.ts[pos], window));
-        }
-    }
-    Ok(pending)
-}
-
 fn insert_posting(
     model: &mut EnnTs,
-    series_id: u64,
-    pos: usize,
-    end_ts: i64,
+    posting: Posting,
     window: &[f64],
     observed: bool,
 ) -> Result<(), ENNError> {
-    let posting = Posting {
-        series_id,
-        end_pos: pos,
-        end_ts,
-    };
+    let hash = hash_tables_serve(model.windows.len() + 1);
     let gen = metric::current_gen(model)?;
-    let keys = metric::keys_for_gen(model, window, gen)?;
     model.windows.push(posting);
     model.window_rows.extend_from_slice(window);
     model.window_scale_gen.push(gen);
     model.metric_observed.push(u8::from(observed));
+    if !hash {
+        metric::release_hash_tables(model);
+        return Ok(());
+    }
+    let keys = metric::keys_for_gen(model, window, gen)?;
     for (table, key) in keys.into_iter().enumerate() {
         let bucket = model.buckets[table].entry(key).or_default();
         insert_bucket(bucket, posting);

@@ -1,6 +1,7 @@
 use crate::error::ENNError;
 use crate::metric_auto::{AutoMetric, MetricLearning};
 
+use super::ann::hash_tables_serve;
 use super::lsh::LshFamily;
 use super::store::{insert_bucket, remove_bucket, target_of, window_of, Posting};
 use super::EnnTs;
@@ -135,7 +136,16 @@ pub(super) fn dist2(left: &[f64], right: &[f64], scale: &[f64]) -> Result<f64, E
     Ok(sum.max(0.0))
 }
 
+pub(super) fn release_hash_tables(model: &mut EnnTs) {
+    model.morph_queue.clear();
+    compact(model);
+}
+
 pub(super) fn advance(model: &mut EnnTs, steps: usize) -> Result<(), ENNError> {
+    if !hash_tables_serve(model.windows.len()) {
+        release_hash_tables(model);
+        return Ok(());
+    }
     let mut left = steps;
     while left > 0 {
         let Some(index) = model.morph_queue.pop_front() else {
@@ -161,6 +171,10 @@ fn adopt(model: &mut EnnTs, x_scale: Vec<f64>) -> Result<(), ENNError> {
     }
     model.scale_gens.push(x_scale);
     model.scale_epoch = model.scale_epoch.saturating_add(1);
+    if !hash_tables_serve(model.windows.len()) {
+        release_hash_tables(model);
+        return Ok(());
+    }
     let latest = current_gen(model)?;
     model.morph_queue.clear();
     for index in 0..model.windows.len() {

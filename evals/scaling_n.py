@@ -15,10 +15,10 @@ from enn.enn.enn_fitter import ENNStatefulFitter
 from evals.flat_sphere import gaussian_loglik, rmse
 from evals.metric_12d import (
     BATCH,
-    K,
     NUM_FIT_CANDIDATES,
     NUM_FIT_SAMPLES,
     NUM_TEST,
+    K,
     build_model,
     make_data,
 )

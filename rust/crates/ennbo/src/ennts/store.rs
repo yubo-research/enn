@@ -78,26 +78,68 @@ impl SeriesBuf {
     }
 }
 
-pub(super) fn complete_window(
+pub(super) fn fill_window(
     series: &SeriesBuf,
     end_pos: usize,
     lookback: usize,
     cadence: i64,
     dim: usize,
-) -> Option<Vec<f64>> {
-    if lookback == 0 || end_pos + 1 < lookback {
-        return None;
+    out: &mut [f64],
+) -> bool {
+    if lookback == 0 || end_pos + 1 < lookback || out.len() != lookback * dim {
+        return false;
+    }
+    if series.x.len() < series.ts.len() * dim {
+        return false;
     }
     let end_ts = series.ts[end_pos];
     for i in 0..lookback {
         let pos = end_pos + 1 - lookback + i;
-        let age = i64::try_from(lookback - 1 - i).ok()?;
-        let expected = end_ts.checked_sub(cadence.checked_mul(age)?)?;
+        let Ok(age) = i64::try_from(lookback - 1 - i) else {
+            return false;
+        };
+        let Some(step) = cadence.checked_mul(age) else {
+            return false;
+        };
+        let Some(expected) = end_ts.checked_sub(step) else {
+            return false;
+        };
         if series.ts[pos] != expected {
-            return None;
+            return false;
         }
     }
-    series.window(end_pos, lookback, dim).ok()
+    let start_pos = end_pos + 1 - lookback;
+    for (i, pos) in (start_pos..=end_pos).enumerate() {
+        let start = pos * dim;
+        out[i * dim..(i + 1) * dim].copy_from_slice(&series.x[start..start + dim]);
+    }
+    true
+}
+
+pub(super) fn write_target(model: &EnnTs, posting: Posting, buf: &mut Vec<f64>) -> bool {
+    let Some(step) = model.config.horizon.checked_mul(model.config.cadence) else {
+        return false;
+    };
+    let Some(target_ts) = posting.end_ts.checked_add(step) else {
+        return false;
+    };
+    let Some(series) = model.series.get(&posting.series_id) else {
+        return false;
+    };
+    let Some(pos) = series.pos_of(target_ts) else {
+        return false;
+    };
+    if series.known.get(pos).copied() != Some(1) || series.ts.is_empty() {
+        return false;
+    }
+    let metrics = series.y.len() / series.ts.len();
+    if metrics == 0 || pos * metrics + metrics > series.y.len() {
+        return false;
+    }
+    let start = pos * metrics;
+    buf.clear();
+    buf.extend_from_slice(&series.y[start..start + metrics]);
+    true
 }
 
 pub(super) fn has_target(model: &EnnTs, posting: Posting) -> bool {

@@ -10,7 +10,7 @@ class ENNIndexDriver(Enum):
 
 def index_driver_to_wire(driver: ENNIndexDriver) -> str:
     if not isinstance(driver, ENNIndexDriver):
-        raise ValueError(f"index_driver must be an ENNIndexDriver, got {driver!r}")
+        raise TypeError(f"index_driver must be an ENNIndexDriver, got {driver!r}")
     return driver.name
 
 

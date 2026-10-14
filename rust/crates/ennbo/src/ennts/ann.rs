@@ -13,6 +13,10 @@ use super::{EnnTs, QueryOptions};
 use crate::error::ENNError;
 
 pub(super) const TREE_MIN_WINDOWS: usize = 2_048;
+
+pub(super) fn hash_tables_serve(n_windows: usize) -> bool {
+    n_windows <= TREE_MIN_WINDOWS
+}
 const HNSW_SPEC: &str = "HNSW16";
 
 pub(super) struct Cache {
@@ -336,6 +340,59 @@ mod tests {
             ((i as f64) * 0.013 + (j as f64) * 0.37).sin()
         });
         assert_same_neighbors(&x, n, 40, 4);
+    }
+
+    #[test]
+    fn learned_metric_above_the_graph_threshold_matches_exact_nearest() {
+        let n = 2_200;
+        let mut rng = StdRng::seed_from_u64(19);
+        let x = Array2::from_shape_fn((n, 10), |(_, _)| rng.gen::<f64>() - 0.5);
+        let mut cfg = EnnTsConfig::new(5);
+        cfg.metric_learning = crate::metric_auto::MetricLearning::Auto;
+        let mut model = EnnTs::new(cfg).unwrap();
+        let ts: Vec<i64> = (0..n as i64).collect();
+        let y = Array2::from_shape_fn((n, 1), |(i, _)| x[[i, 0]]);
+        model.add(0, &ts, x.view(), Some(y.view())).unwrap();
+        assert!(model.num_windows() > TREE_MIN_WINDOWS);
+        assert_eq!(model.metric_morph_remaining(), 0);
+        let query = window_query(&x, 80, 5);
+        let opts = QueryOptions {
+            cutoff: n as i64,
+            k: 1,
+            require_target: true,
+        };
+        let approx = model.search(query.view(), &opts).unwrap();
+        let exact = model.search_exact(query.view(), &opts).unwrap();
+        assert_eq!(approx.end_timestamp, exact.end_timestamp);
+        assert_eq!(approx.series_id, exact.series_id);
+    }
+
+    #[test]
+    fn small_adds_past_the_graph_threshold_match_exact_nearest() {
+        let n = 2_600;
+        let x = Array2::from_shape_fn((n, 4), |(i, j)| ((i as f64) * 0.017 + (j as f64)).sin());
+        let mut model = EnnTs::new(EnnTsConfig::new(5)).unwrap();
+        let y = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);
+        let mut start = 0usize;
+        while start < n {
+            let stop = (start + 7).min(n);
+            let ts: Vec<i64> = (start as i64..stop as i64).collect();
+            let rows = ndarray::s![start..stop, ..];
+            model
+                .add(0, &ts, x.slice(rows), Some(y.slice(rows)))
+                .unwrap();
+            start = stop;
+        }
+        assert!(model.num_windows() > TREE_MIN_WINDOWS);
+        let query = window_query(&x, 40, 5);
+        let opts = QueryOptions {
+            cutoff: n as i64,
+            k: 1,
+            require_target: true,
+        };
+        let approx = model.search(query.view(), &opts).unwrap();
+        let exact = model.search_exact(query.view(), &opts).unwrap();
+        assert_eq!(approx.end_timestamp, exact.end_timestamp);
     }
 
     #[test]

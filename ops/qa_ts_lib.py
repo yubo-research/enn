@@ -265,6 +265,7 @@ def _fill_ennts(model: ENNTS, series: list) -> None:
     for sid, t0, x, y in series:
         stamps = np.arange(int(t0), int(t0) + len(y), dtype=np.int64)
         model.add(int(sid), x, np.asarray(y, dtype=float).reshape(-1, 1), stamps)
+    model.sync_index()
 
 
 def _timed(work):

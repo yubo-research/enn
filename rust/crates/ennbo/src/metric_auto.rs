@@ -64,6 +64,33 @@ pub fn auto_uses_learned_metric(heldout_gain: f64) -> bool {
     heldout_gain.is_finite() && heldout_gain > AUTO_MIN_HELDOUT_GAIN
 }
 
+struct OneBlasThread {
+    previous: i32,
+}
+
+impl OneBlasThread {
+    fn enter() -> Self {
+        extern "C" {
+            fn openblas_get_num_threads() -> i32;
+            fn openblas_set_num_threads(num_threads: i32);
+        }
+        unsafe {
+            let previous = openblas_get_num_threads();
+            openblas_set_num_threads(1);
+            Self { previous }
+        }
+    }
+}
+
+impl Drop for OneBlasThread {
+    fn drop(&mut self) {
+        extern "C" {
+            fn openblas_set_num_threads(num_threads: i32);
+        }
+        unsafe { openblas_set_num_threads(self.previous) }
+    }
+}
+
 pub fn auto_weights(
     x: &[f64],
     n: usize,
@@ -73,6 +100,7 @@ pub fn auto_weights(
     k: usize,
     tied: &[Vec<usize>],
 ) -> Result<(Vec<f64>, f64), ENNError> {
+    let _blas = OneBlasThread::enter();
     validate_tied_dims(tied, d)?;
     if too_few_rows(n) {
         return Ok((vec![1.0; d], f64::NEG_INFINITY));

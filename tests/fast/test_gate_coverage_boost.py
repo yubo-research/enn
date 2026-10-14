@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-
 import numpy as np
 import pytest
+
 
 def test_enn_reexport_and_fitter_surface():
     import enn.enn.enn as enn_mod

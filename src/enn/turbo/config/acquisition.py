@@ -27,9 +27,9 @@ def acquisition_kind(acq: object) -> str:
 
 __all__ = [
     "AcquisitionConfig",
-    "acquisition_kind",
     "DrawAcquisitionConfig",
     "ParetoAcquisitionConfig",
     "RandomAcquisitionConfig",
     "UCBAcquisitionConfig",
+    "acquisition_kind",
 ]

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -51,7 +51,9 @@ class SmallNConfig:
     functions: tuple[str, ...] = tuple(FUNCTIONS)
     seeds: tuple[int, ...] = SEEDS
     models: tuple[str, ...] = MODELS
-    stream: Metric12dConfig = Metric12dConfig(n_grid=N_GRID)
+    stream: Metric12dConfig = field(
+        default_factory=lambda: Metric12dConfig(n_grid=N_GRID)
+    )
 
 
 @dataclass(frozen=True)

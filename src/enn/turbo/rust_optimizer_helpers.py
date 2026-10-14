@@ -14,6 +14,7 @@ from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .config.trust_region import NoTRConfig, TurboTRConfig
 
+
 def _acquisition_to_override(config: OptimizerConfig) -> dict[str, Any]:
     return {"acquisition": acquisition_kind(config.acquisition)}
 
@@ -122,9 +123,7 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
 def is_rust_supported_config(config: OptimizerConfig) -> bool:
     if isinstance(config.surrogate, ENNSurrogateConfig):
         return True
-    if isinstance(config.surrogate, NoSurrogateConfig):
-        return True
-    return False
+    return bool(isinstance(config.surrogate, NoSurrogateConfig))
 
 
 def _is_lhd_only_config(config: OptimizerConfig) -> bool:
