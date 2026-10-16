@@ -15,6 +15,7 @@ pub(super) struct Candidate {
     pub end_ts: i64,
     pub dist2: f64,
     pub target: Vec<f64>,
+    pub anchor: Vec<f64>,
 }
 
 pub struct SearchBatch {
@@ -110,13 +111,42 @@ pub(super) fn candidate(
         None => vec![f64::NAN; model.metrics],
     };
     let scale = metric::latest_scale(model)?;
-    let dist2 = metric::dist2(window, &window_of(model, posting)?, scale)?;
+    let stored = window_of(model, posting)?;
+    let dist2 = metric::dist2(window, &stored, scale)?;
+    let anchor = last_row(&stored, model.dim.unwrap_or(0), model.config.horizon);
     Ok(Some(Candidate {
         series_id: posting.series_id,
         end_ts: posting.end_ts,
         dist2,
         target,
+        anchor,
     }))
+}
+
+pub(super) fn last_row(window: &[f64], dim: usize, horizon: i64) -> Vec<f64> {
+    if dim == 0 || window.len() < dim || !window.len().is_multiple_of(dim) {
+        return Vec::new();
+    }
+    let rows = window.len() / dim;
+    let mut out = window[window.len() - dim..].to_vec();
+    if rows < 168 {
+        return out;
+    }
+    for period in [24_i64, 168] {
+        let lag = period - horizon;
+        if lag <= 0 {
+            continue;
+        }
+        let Ok(lag_u) = usize::try_from(lag) else {
+            continue;
+        };
+        if lag_u >= rows {
+            continue;
+        }
+        let row = rows - 1 - lag_u;
+        out.push(window[row * dim]);
+    }
+    out
 }
 
 fn exact_postings(model: &EnnTs, options: &QueryOptions) -> Result<Vec<Posting>, ENNError> {

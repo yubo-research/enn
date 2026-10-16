@@ -1,9 +1,10 @@
 use ndarray::{Array1, Array2, ArrayView2};
 
 use crate::error::ENNError;
-use crate::posterior_formula::posterior_from_neighbors;
+use crate::posterior_formula::{noise_field_variance, posterior_from_neighbors};
 
-use super::search::{rank_all, Candidate};
+use super::local_linear;
+use super::search::{last_row, rank_all, Candidate};
 use super::{EnnTs, QueryOptions};
 
 pub struct PosteriorArrays {
@@ -38,6 +39,12 @@ pub(super) fn posterior(
         out.se.row_mut(i).assign(&moments.se.row(0));
         out.se_epi.row_mut(i).assign(&moments.se_epi.row(0));
         out.se_ale.row_mut(i).assign(&moments.se_ale.row(0));
+        let query_anchor = last_row(
+            &queries.row(i).to_vec(),
+            model.dim.unwrap_or(0),
+            model.config.horizon,
+        );
+        apply_local_linear(&mut out, i, row, &query_anchor, &scale, model);
     }
     Ok(out)
 }
@@ -102,4 +109,42 @@ fn row_moments(
         observation_noise,
         &y_scale.view(),
     )
+}
+
+fn apply_local_linear(
+    out: &mut PosteriorArrays,
+    row_index: usize,
+    row: &[Candidate],
+    query_anchor: &[f64],
+    scale: &[f64],
+    model: &EnnTs,
+) {
+    if query_anchor.is_empty() {
+        return;
+    }
+    let anchors: Vec<Vec<f64>> = row.iter().map(|cand| cand.anchor.clone()).collect();
+    let weights: Vec<f64> = row
+        .iter()
+        .map(|cand| {
+            let var = noise_field_variance(
+                model.config.epistemic_variance_scale * cand.dist2,
+                model.config.aleatoric_variance_scale,
+                0.0,
+            );
+            1.0 / var
+        })
+        .collect();
+    for (m, &scale_m) in scale.iter().enumerate() {
+        let targets: Vec<f64> = row
+            .iter()
+            .map(|cand| cand.target.get(m).copied().unwrap_or(f64::NAN))
+            .collect();
+        let Some(mu) = local_linear::at_query(query_anchor, &anchors, &targets, &weights) else {
+            continue;
+        };
+        let cap = 8.0 * scale_m;
+        if (mu - out.mu[[row_index, m]]).abs() <= cap {
+            out.mu[[row_index, m]] = mu;
+        }
+    }
 }

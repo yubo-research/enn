@@ -1,5 +1,6 @@
 mod add;
 mod ann;
+mod local_linear;
 mod lsh;
 mod metric;
 mod predict;

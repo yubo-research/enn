@@ -95,6 +95,30 @@ fn separate_series_do_not_form_a_window() {
 }
 
 #[test]
+fn local_linear_extrapolates_a_line() {
+    let mut cfg = EnnTsConfig::new(4);
+    cfg.k = 8;
+    cfg.bucket_width = 1.0e9;
+    cfg.num_tables = 2;
+    cfg.num_projections = 2;
+    cfg.aleatoric_variance_scale = 0.0;
+    cfg.epistemic_variance_scale = 0.0;
+    let mut model = EnnTs::new(cfg).unwrap();
+    let n = 40;
+    let ts: Vec<i64> = (0..n as i64).collect();
+    let x = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);
+    let y = Array2::from_shape_fn((n, 1), |(i, _)| 2.0 * i as f64 + 2.0);
+    model.add(0, &ts, x.view(), Some(y.view())).unwrap();
+    let mut q = Array2::zeros((1, 4));
+    for i in 0..4 {
+        q[[0, i]] = (33 + i) as f64;
+    }
+    let post = model.posterior(q.view(), 36, Some(8), false).unwrap();
+    let mu = post.mu[[0, 0]];
+    assert!((mu - 76.0).abs() < 1.0, "mu={mu}");
+}
+
+#[test]
 fn posterior_mean_matches_available_target() {
     let mut model = EnnTs::new(wide_config()).unwrap();
     let (ts, x, y) = column_series(6);

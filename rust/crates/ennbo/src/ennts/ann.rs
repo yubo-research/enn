@@ -182,14 +182,27 @@ fn take_neighbors(
             None if options.require_target => continue,
             None => vec![f64::NAN; model.metrics],
         };
+        let anchor = anchor_from_rows(model, near.index as usize, width);
         cands.push(Candidate {
             series_id: near.series_id,
             end_ts: near.end_ts,
             dist2: near.dist,
             target,
+            anchor,
         });
     }
     Ok(cands)
+}
+
+fn anchor_from_rows(model: &EnnTs, index: usize, width: usize) -> Vec<f64> {
+    let dim = model.dim.unwrap_or(0);
+    let Some(offset) = index.checked_mul(width) else {
+        return Vec::new();
+    };
+    let Some(stored) = model.window_rows.get(offset..offset + width) else {
+        return Vec::new();
+    };
+    search::last_row(stored, dim, model.config.horizon)
 }
 
 fn consider(best: &mut Vec<Near>, k: usize, near: Near) {
