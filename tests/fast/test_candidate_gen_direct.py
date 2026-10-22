@@ -7,10 +7,10 @@ from enn.turbo.config.candidate_rv import CandidateRV
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_surrogate_config import ENNStorage, ENNSurrogateConfig
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
-from enn.turbo.config.tr_length_config import TRLengthConfig
-from enn.turbo.rust_optimizer_helpers import _config_to_rust_overrides
 from enn.turbo.config.factory import turbo_enn_config, turbo_zero_config
+from enn.turbo.config.tr_length_config import TRLengthConfig
 from enn.turbo.config.turbo_tr_config import TurboTRConfig
+from enn.turbo.rust_optimizer_helpers import _config_to_rust_overrides
 
 
 def test_turbo_factories_leave_the_sampler_to_rust():

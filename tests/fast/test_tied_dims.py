@@ -7,7 +7,11 @@ from enn.enn import metric_stream as ms
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_surrogate_config import ENNStorage
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX, validate_tied_dims
+from enn.turbo.config.enn_x_scaling import (
+    ENNMetricLearning,
+    ENNScaleX,
+    validate_tied_dims,
+)
 
 
 def _mixed(n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:

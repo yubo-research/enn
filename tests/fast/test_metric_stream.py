@@ -105,7 +105,7 @@ def test_auto_weights_gain_sign_tracks_signal() -> None:
     np.testing.assert_allclose(w, ms.dependence_weights(x, y))
     assert gain > 0.3
     rng = np.random.default_rng(2)
-    w_sphere, gain_sphere = ms.auto_weights(
+    _w_sphere, gain_sphere = ms.auto_weights(
         x, ((x - 0.5) ** 2).sum(1) + 0.01 * rng.standard_normal(400), 5
     )
     assert gain_sphere < 0.05

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from enn._rust import EpistemicNearestNeighbors as RustENN
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.mbpann import (
     AUTO_MIN_HELDOUT_GAIN,
@@ -13,7 +14,6 @@ from enn.enn.mbpann import (
     MBPANNMetric,
     auto_uses_learned_metric,
 )
-from enn._rust import EpistemicNearestNeighbors as RustENN
 from enn.turbo.config.enn_index_driver import ENNIndexDriver, index_driver_to_wire
 from enn.turbo.config.enn_surrogate_config import ENNStorage, ENNSurrogateConfig
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
@@ -54,7 +54,7 @@ def test_scale_x_and_metric_learning_are_separate_enums() -> None:
 
 
 def test_set_weights_rescales_or_rebuilds_and_neighbors_follow_metric(tmp_path) -> None:
-    x, y, model = _model(tmp_path)
+    x, _y, model = _model(tmp_path)
     metric = model.metric
     assert metric.set_weights(np.array([4.0, 1.0, 0.1])) is True
     assert metric.set_weights(np.array([4.0, 1.0, 0.12])) is False
@@ -138,9 +138,9 @@ def test_scale_x_and_metric_learning_require_matching_driver(tmp_path) -> None:
                 work_dir=tmp_path,
                 enn_storage=ENNStorage.DISK,
             )
-    with pytest.raises(ValueError, match="ENNScaleX"):
+    with pytest.raises(TypeError, match="ENNScaleX"):
         EpistemicNearestNeighbors(x, y, scale_x=True)
-    with pytest.raises(ValueError, match="ENNMetricLearning"):
+    with pytest.raises(TypeError, match="ENNMetricLearning"):
         EpistemicNearestNeighbors(x, y, metric_learning=True)
     with pytest.raises(ValueError, match="Unknown index_driver"):
         RustENN(x, y, index_driver="exact", metric_learning="auto")
@@ -188,7 +188,7 @@ def test_optimizer_config_forwards_scale_x_and_metric_learning() -> None:
         ).scale_x
         == ENNScaleX.ON
     )
-    with pytest.raises(ValueError, match="ENNScaleX"):
+    with pytest.raises(TypeError, match="ENNScaleX"):
         ENNSurrogateConfig(scale_x=True)
     for scale_x, expected in ((ENNScaleX.OFF, False), (ENNScaleX.ON, True)):
         config = OptimizerConfig(surrogate=ENNSurrogateConfig(scale_x=scale_x))
@@ -200,7 +200,7 @@ def test_optimizer_config_forwards_scale_x_and_metric_learning() -> None:
 
 
 def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:
-    x, y, model = _model(tmp_path)
+    x, _y, model = _model(tmp_path)
     model.metric.set_weights(np.array([100.0, 1.0, 0.01]))
     model.persist_index_to_disk()
     del model

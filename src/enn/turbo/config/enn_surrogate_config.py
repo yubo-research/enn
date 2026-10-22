@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 
 import numpy as np
@@ -25,7 +25,7 @@ class ENNStorage(Enum):
 def enn_storage_to_wire(storage: ENNStorage) -> str:
     """Encode a storage kind. The wire name is the enum member name."""
     if not isinstance(storage, ENNStorage):
-        raise ValueError(f"enn_storage must be an ENNStorage, got {storage!r}")
+        raise TypeError(f"enn_storage must be an ENNStorage, got {storage!r}")
     return storage.name
 
 
@@ -52,7 +52,7 @@ def validate_enn_placement(
 @dataclass(frozen=True)
 class ENNSurrogateConfig:
     k: int | None = None
-    fit: ENNFitConfig = ENNFitConfig()
+    fit: ENNFitConfig = field(default_factory=ENNFitConfig)
     scale_x: ENNScaleX = ENNScaleX.OFF
     metric_learning: ENNMetricLearning = ENNMetricLearning.NONE
     tied_dims: tuple = ()

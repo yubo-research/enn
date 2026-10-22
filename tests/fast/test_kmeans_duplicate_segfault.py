@@ -15,7 +15,6 @@ from enn.enn.enn_params import ENNParams
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_surrogate_config import ENNStorage
 
-
 STRUCTURED_BUILD_ROW_LIMIT = 1024
 DUPLICATE_X = [1.0, 2.0, 3.0]
 QUERY = np.array([[1.0, 2.0, 3.0]])

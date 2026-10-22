@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .multi_objective_config import MultiObjectiveConfig
 from .rescalarize import Rescalarize
@@ -11,8 +11,8 @@ from .turbo_tr_config import TRLengthConfig
 @dataclass(frozen=True)
 class MorboTRConfig:
     multi_objective: MultiObjectiveConfig
-    length: TRLengthConfig = TRLengthConfig()
-    rescale_policy: RescalePolicyConfig = RescalePolicyConfig()
+    length: TRLengthConfig = field(default_factory=TRLengthConfig)
+    rescale_policy: RescalePolicyConfig = field(default_factory=RescalePolicyConfig)
     noise_aware: bool = False
 
     @property

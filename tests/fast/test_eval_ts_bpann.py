@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import io
 from types import SimpleNamespace
+from typing import Self
 
 import pytest
 
-from evals.short import eval_ts_bpann as mod
 from evals import stress_eval as shared
+from evals.short import eval_ts_bpann as mod
 
 
 class _FakePopen:
@@ -14,7 +15,7 @@ class _FakePopen:
         self.stdout = io.StringIO("".join(lines))
         self._rc = rc
 
-    def __enter__(self) -> _FakePopen:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -38,10 +39,10 @@ def test_evaluate_sweeps_bpann_and_exit(
         return _FakePopen(
             [
                 f"num_dim=10 num_obs={num_obs} num_test=100 seed=0\n",
-                "posterior avg_likelihood=0.1 argmin_rms=0.2 "
-                "argmin_hit_rate=0.0300 eval_s=0.01\n",
-                "posterior_function_draw avg_likelihood=0.3 argmin_rms=0.4 "
-                "argmin_hit_rate=0.0400 eval_s=0.02\n",
+                ("posterior avg_likelihood=0.1 argmin_rms=0.2 "
+                "argmin_hit_rate=0.0300 eval_s=0.01\n"),
+                ("posterior_function_draw avg_likelihood=0.3 argmin_rms=0.4 "
+                "argmin_hit_rate=0.0400 eval_s=0.02\n"),
             ],
             0,
         )

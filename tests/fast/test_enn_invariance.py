@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_x_scaling import ENNScaleX
 from enn.enn.enn_params import ENNParams
+from enn.turbo.config.enn_x_scaling import ENNScaleX
 
 
 def _params(

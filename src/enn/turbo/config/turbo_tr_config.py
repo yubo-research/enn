@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .tr_length_config import TRLengthConfig
 
 
 @dataclass(frozen=True)
 class TurboTRConfig:
-    length: TRLengthConfig = TRLengthConfig()
+    length: TRLengthConfig = field(default_factory=TRLengthConfig)
     noise_aware: bool = False
 
     @property

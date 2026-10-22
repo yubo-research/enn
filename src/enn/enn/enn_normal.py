@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 
 from enn._rust import ENNNormal as _RustENNNormal
-
-if TYPE_CHECKING:
-    pass
 
 
 class ENNNormal:

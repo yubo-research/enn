@@ -63,7 +63,7 @@ def run_eval_remote(eval_id: str) -> tuple[int, str]:
 async def _call_one(call: RemoteCall, eval_id: str) -> EvalResult:
     try:
         rc, output = await call(eval_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return eval_id, 1, f"{type(exc).__name__}: {exc}\n"
     return eval_id, rc, output
 

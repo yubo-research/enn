@@ -23,12 +23,14 @@ def _default_acquisition():
 
 @dataclass(frozen=True)
 class OptimizerConfig:
-    trust_region: TrustRegionConfig = TurboTRConfig()
-    candidates: CandidateGenConfig = CandidateGenConfig()
-    init: InitConfig = InitConfig()
-    surrogate: SurrogateConfig = NoSurrogateConfig()
+    trust_region: TrustRegionConfig = field(default_factory=TurboTRConfig)
+    candidates: CandidateGenConfig = field(default_factory=CandidateGenConfig)
+    init: InitConfig = field(default_factory=InitConfig)
+    surrogate: SurrogateConfig = field(default_factory=NoSurrogateConfig)
     acquisition: AcquisitionConfig = field(default_factory=_default_acquisition)
-    observation_history: ObservationHistoryConfig = ObservationHistoryConfig()
+    observation_history: ObservationHistoryConfig = field(
+        default_factory=ObservationHistoryConfig
+    )
 
     def __post_init__(self) -> None:
         from .validation import validate_optimizer_config

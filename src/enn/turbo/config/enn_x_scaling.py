@@ -38,14 +38,14 @@ class ENNMetricLearning(Enum):
 def scale_x_to_wire(scale_x: ENNScaleX) -> bool:
     """Encode a scale_x choice as the boolean Rust expects."""
     if not isinstance(scale_x, ENNScaleX):
-        raise ValueError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
+        raise TypeError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
     return scale_x is ENNScaleX.ON
 
 
 def metric_learning_to_wire(metric_learning: ENNMetricLearning) -> str:
     """Encode a metric-learning mode. The wire name is the enum member name."""
     if not isinstance(metric_learning, ENNMetricLearning):
-        raise ValueError(
+        raise TypeError(
             f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}"
         )
     return metric_learning.name

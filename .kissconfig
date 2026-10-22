@@ -11,7 +11,6 @@ orphan_allowed = []
 [test]
 test_coverage_threshold = 80
 test_coverage_scope = "by_file"
-max_num_tests = 2000
 num_jobs = 4
 watch_settle_seconds = 1.0
 pytest_plugins = []
@@ -23,6 +22,7 @@ max_unit_test_seconds = [
 ]
 
 [python]
+max_num_tests = 2000
 statements_per_function = 34
 positional_args = 7
 keyword_only_args = 6
@@ -48,6 +48,7 @@ dependency_depth = 9
 cycle_size = 0
 
 [rust]
+max_num_tests = 2000
 statements_per_function = 63
 arguments = 10
 max_indentation = 6
