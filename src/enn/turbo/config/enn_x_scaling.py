@@ -29,6 +29,7 @@ class ENNMetricLearning(Enum):
       leave-one-out validation shows they beat the best isotropic metric; otherwise distances
       are those of ``NONE`` (``MBPANNMetric``). Each group in ``tied_dims`` gets one weight
       from its joint Sobol index, not divided by ``Var(x)``, shared by its dimensions.
+      ``CatEncoder.encode`` supplies that grouping for each categorical variable.
     """
 
     NONE = auto()
@@ -51,7 +52,9 @@ def metric_learning_to_wire(metric_learning: ENNMetricLearning) -> str:
     return metric_learning.name
 
 
-def validate_tied_dims(tied_dims: Sequence[Sequence[int]] | None, num_dim: int) -> tuple[tuple[int, ...], ...]:
+def validate_tied_dims(
+    tied_dims: Sequence[Sequence[int]] | None, num_dim: int
+) -> tuple[tuple[int, ...], ...]:
     """Groups of tied input dimensions (e.g. the one-hot columns of one categorical variable).
 
     ``scale_x`` leaves tied dimensions unscaled, and ``ENNMetricLearning.AUTO`` gives each group

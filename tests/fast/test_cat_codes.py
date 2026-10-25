@@ -58,6 +58,7 @@ def test_hash_width_ignores_cardinality_and_column_count() -> None:
     encoded = wide.encode(values)
     assert encoded.shape == (5, 17)
     assert wide.tied_dims() == (tuple(range(1, 17)),)
+    assert encoded.tied_dims == wide.tied_dims()
     assert wide.styles == ()
     np.testing.assert_array_equal(encoded[:, 0], 1.0)
     np.testing.assert_array_equal(encoded, wide.encode(values))

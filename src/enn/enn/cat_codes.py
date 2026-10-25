@@ -15,8 +15,10 @@ ENN behaves as before. To encode, mark each column with ``DimKind`` and choose
 ordinal member until there is an encoding for ordered levels.
 
 Per-variable blocks are multiplied by ``separation`` (default 10) so a
-mismatch is long compared with ENN's aleatoric floor. Pass the result of
-``encode`` to ``EpistemicNearestNeighbors`` with ``tied_dims``.
+mismatch is long compared with ENN's aleatoric floor. ``encode`` records
+the columns of each categorical variable. Metric learning gives those
+columns one shared weight. An explicit ``tied_dims`` must list that same
+grouping.
 
 ``code_dim`` forces every categorical column to one Rademacher width.
 ``hash_dim`` instead folds every categorical column into one shared vector.
@@ -40,6 +42,7 @@ from enn.enn.cat_block import (
     width_in_range,
     write_onehot,
 )
+from enn.enn.cat_ties import attach_tied_dims
 
 __all__ = ["CatEncoder", "CatEncoding", "DimKind", "column_plan", "log_code_width"]
 
@@ -276,7 +279,8 @@ class CatEncoder:
     def tied_dims(self) -> tuple[tuple[int, ...], ...]:
         """One group per categorical variable, or one group for a hash.
 
-        Tied columns stay at scale 1 under ``scale_x`` and share one metric weight.
+        ``encode`` copies this onto the array. Tied columns stay at scale 1
+        under ``scale_x`` and share one metric weight.
         """
         if self.hash_dim:
             start = sum(block[1] for block in self._blocks)
@@ -290,16 +294,19 @@ class CatEncoder:
         return tuple(groups)
 
     def encode(self, x) -> np.ndarray:
-        """Return ``(n, num_dim)`` float64 rows."""
+        """Return ``(n, num_dim)`` float64 rows.
+
+        ``tied_dims`` on the result is the categorical grouping. Metric learning
+        uses it when no other grouping is passed. A row slice keeps it. A
+        column slice, or ``numpy.array(..., copy=True)``, drops it.
+        """
         rows = _as_matrix(x, len(self.kinds))
         out = np.empty((rows.shape[0], self.num_dim), dtype=np.float64)
         if self.hash_dim:
             _write_hash(out, rows, self)
-            return out
-        cursor = 0
-        for block in self._blocks:
-            cursor = _write_block(out, rows, block, cursor, self.seed, self.separation)
-        return out
+        else:
+            _write_blocks(out, rows, self._blocks, self.seed, self.separation)
+        return attach_tied_dims(out, self.tied_dims())
 
     def snap(self, encoded, domains: Sequence[np.ndarray]) -> np.ndarray:
         """Nearest domain id for each categorical column of ``encoded``.
@@ -371,3 +378,9 @@ def _nearest(
     if style == "onehot":
         return snap_onehot(piece, domain, width)
     return snap_code(piece, domain, var, width, seed, separation)
+
+
+def _write_blocks(out, rows, blocks, seed: int, separation: float) -> None:
+    cursor = 0
+    for block in blocks:
+        cursor = _write_block(out, rows, block, cursor, seed, separation)
