@@ -79,6 +79,20 @@ def test_calculate_sobol_indices_dtype_preservation():
     assert S.shape == (d,) and S.dtype == np.float32
 
 
+@pytest.mark.parametrize(
+    "dtype", [np.int32, np.int64, np.uint64, np.float32, np.float64]
+)
+def test_calculate_sobol_indices_numeric_representation_invariance(dtype):
+    rng = np.random.default_rng(42)
+    x = rng.integers(0, 10, size=(50, 3))
+    y = x[:, 0] + 0.1 * x[:, 1]
+    expected = calculate_sobol_indices(x.astype(np.float64), y)
+    actual = calculate_sobol_indices(x.astype(dtype), y)
+    assert expected[0] > 0.9
+    assert np.issubdtype(actual.dtype, np.floating)
+    np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-8)
+
+
 def test_arms_from_pareto_fronts_selects_fronts_in_order():
     x_cand = np.arange(12, dtype=float).reshape(6, 2)
     mu, se = (
