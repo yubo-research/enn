@@ -8,7 +8,6 @@
 //! row references a little per later insert ([`crate::index::tree_morph`]).
 
 use std::fs;
-use std::sync::Arc;
 
 use ndarray::Array1;
 
@@ -18,12 +17,6 @@ use crate::index::IncrementalIndex;
 
 /// Present in `work_dir` while the index is expressed in a caller-set metric.
 pub const METRIC_MARKER_FILE: &str = "metric_x_scale.json";
-
-fn scale_f32(values: &mut [f32], ratio: &[f64]) {
-    for (v, &r) in values.iter_mut().zip(ratio) {
-        *v = (f64::from(*v) * r) as f32;
-    }
-}
 
 impl IncrementalIndex {
     /// Multiply every stored coordinate by `ratio`; a re-partition in progress
@@ -66,26 +59,17 @@ impl BpannBackend {
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))
     }
 
-    fn rescale_small_n_cache(&self, ratio: &[f64]) {
-        let mut guard = self.small_n_x_cache.lock().expect("small_n_x_cache");
-        if let Some((n, data)) = guard.take() {
-            let mut flat = data.to_vec();
-            for row in flat.chunks_mut(self.num_dim) {
-                scale_f32(row, ratio);
-            }
-            *guard = Some((n, Arc::from(flat.into_boxed_slice())));
-        }
-    }
-
     /// Switch to metric `x_scale` (distance uses `x / x_scale`) by rescaling the
-    /// stored index in place. The partition is kept, so no rows are re-read.
+    /// stored index in place. The partition is kept; the exhaustive-search
+    /// cache is reloaded lazily from the original training rows to avoid
+    /// cumulative rounding during rescaling.
     pub fn rescale_metric(&mut self, x_scale: &Array1<f64>) -> Result<(), BpannError> {
         self.validate_metric_scale(x_scale)?;
         let ratio: Vec<f64> = (0..self.num_dim)
             .map(|j| self.current_scale(j) / x_scale[j])
             .collect();
         self.index.rescale_coords(&ratio);
-        self.rescale_small_n_cache(&ratio);
+        *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.scale_x = true;
         self.x_scale = x_scale.to_owned();
         self.write_metric_marker()

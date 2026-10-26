@@ -41,9 +41,9 @@ pub struct BpannBackend {
     indexed_rows_written: usize,
     index_dirty: Mutex<bool>,
     num_obs_counter: obs::NumObsCounter,
-    /// Resident flat `N·D` f32 train cache for the small-N search path.
-    /// Invalidated on append. Arc so parallel queries share one buffer.
-    pub(crate) small_n_x_cache: Mutex<Option<(usize, Arc<[f32]>)>>,
+    /// Resident flat `N·D` f64 train cache for the small-N search path.
+    /// Invalidated on append and metric changes. Arc so parallel queries share one buffer.
+    pub(crate) small_n_x_cache: Mutex<Option<(usize, Arc<[f64]>)>>,
 }
 
 impl BpannBackend {
@@ -536,4 +536,3 @@ pub fn open_rejects_record_stride(num_dim: usize) -> Result<(), BpannError> {
     }
     Ok(())
 }
-

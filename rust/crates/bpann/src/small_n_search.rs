@@ -1,15 +1,17 @@
 //! In-RAM exhaustive search for small/mid observation counts (N ≤ 8192).
+//! Keep coordinates and distances in f64: f32 can erase continuous-distance
+//! differences beside large, tied one-hot categorical contributions.
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use crate::distance::{bpann_row_to_f32, l2_sq_f32};
+use crate::distance::row_sq_l2;
 use crate::merge::{
     find_query_train_id_flat, merge_topk_precomputed_dist_with_self,
 };
 use rayon::prelude::*;
 
-/// When `len() ≤` this, search uses a resident flat f32 matrix + heap top-k.
+/// When `len() ≤` this, search uses a resident flat f64 matrix + heap top-k.
 ///
 /// Covers turbo-enn mid checkpoints (N=1232, N=3000) under `--tell-all`, and
 /// bridges the post-4096 immature indexed+pending window without riding
@@ -18,56 +20,59 @@ pub const SMALL_N_INCORE_SEARCH_LIMIT: usize = 8192;
 
 /// Total order wrapper so squared distances can live in a binary heap.
 #[derive(Copy, Clone, Debug)]
-pub struct OrderedF32(pub f32);
+pub struct OrderedFloat<T = f32>(pub T);
 
-impl PartialEq for OrderedF32 {
+/// Retain the original name for f32 index search callers.
+pub use OrderedFloat as OrderedF32;
+
+impl<T: PartialEq> PartialEq for OrderedFloat<T> {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
-impl Eq for OrderedF32 {}
-impl PartialOrd for OrderedF32 {
+impl<T: PartialEq> Eq for OrderedFloat<T> {}
+impl<T: PartialOrd> PartialOrd for OrderedFloat<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
-impl Ord for OrderedF32 {
+impl<T: PartialOrd> Ord for OrderedFloat<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.partial_cmp(&other.0).unwrap_or(Ordering::Equal)
     }
 }
 
-/// k-smallest squared-L2 neighbors against a flat `N·D` f32 matrix (max-heap of size k).
+/// k-smallest squared-L2 neighbors against a flat `N·D` f64 matrix (max-heap of size k).
 pub fn topk_flat_sq_l2(
-    query: &[f32],
-    flat: &[f32],
+    query: &[f64],
+    flat: &[f64],
     n: usize,
     d: usize,
     k: usize,
-) -> Vec<(u32, f32)> {
+) -> Vec<(u32, f64)> {
     assert_eq!(query.len(), d);
     assert_eq!(flat.len(), n * d);
     if k == 0 || n == 0 {
         return Vec::new();
     }
     let k = k.min(n);
-    let mut heap: BinaryHeap<(OrderedF32, u32)> = BinaryHeap::with_capacity(k);
+    let mut heap: BinaryHeap<(OrderedFloat<f64>, u32)> = BinaryHeap::with_capacity(k);
     for i in 0..n {
         let row = &flat[i * d..(i + 1) * d];
-        let dist = l2_sq_f32(query, row);
+        let dist = row_sq_l2(query.into(), row.into(), false, ndarray::ArrayView1::from(&[]));
         let id = i as u32;
         if heap.len() < k {
-            heap.push((OrderedF32(dist), id));
-        } else if let Some(&(OrderedF32(worst), _)) = heap.peek() {
+            heap.push((OrderedFloat(dist), id));
+        } else if let Some(&(OrderedFloat(worst), _)) = heap.peek() {
             if dist < worst {
                 heap.pop();
-                heap.push((OrderedF32(dist), id));
+                heap.push((OrderedFloat(dist), id));
             }
         }
     }
-    let mut out: Vec<(u32, f32)> = heap
+    let mut out: Vec<(u32, f64)> = heap
         .into_iter()
-        .map(|(OrderedF32(d), id)| (id, d))
+        .map(|(OrderedFloat(d), id)| (id, d))
         .collect();
     out.sort_by(|a, b| {
         a.1.partial_cmp(&b.1)
@@ -79,7 +84,7 @@ pub fn topk_flat_sq_l2(
 
 /// Parameters for [`score_queries_flat`].
 pub struct ScoreQueriesFlat<'a> {
-    pub flat: &'a [f32],
+    pub flat: &'a [f64],
     pub total: usize,
     pub num_dim: usize,
     pub scale_x: bool,
@@ -107,11 +112,11 @@ pub fn score_queries_flat(
     query_rows
         .par_iter()
         .map(|query_buf| {
-            let mut query_f32 = Vec::with_capacity(num_dim);
-            bpann_row_to_f32(query_buf, scale_x, x_scale, &mut query_f32);
-            let leg = topk_flat_sq_l2(&query_f32, flat, total, num_dim, pool_k);
+            let mut query_f64 = Vec::with_capacity(num_dim);
+            scaled_row(query_buf, scale_x, x_scale, &mut query_f64);
+            let leg = topk_flat_sq_l2(&query_f64, flat, total, num_dim, pool_k);
             let self_id = if exclude_nearest {
-                find_query_train_id_flat(flat, total, num_dim, &query_f32)
+                find_query_train_id_flat(flat, total, num_dim, &query_f64)
             } else {
                 None
             };
@@ -135,11 +140,18 @@ pub fn score_queries_flat(
         .collect()
 }
 
-/// Load or build the resident flat f32 train cache for small-N search.
+fn scaled_row(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f64>) {
+    out.clear();
+    out.extend(row.iter().enumerate().map(|(j, &v)| {
+        if scale_x { v / x_scale[j] } else { v }
+    }));
+}
+
+/// Load or build the resident flat f64 train cache for small-N search.
 pub fn load_or_build_small_n_cache(
     backend: &crate::backend::BpannBackend,
     n: usize,
-) -> Result<std::sync::Arc<[f32]>, crate::error::BpannError> {
+) -> Result<std::sync::Arc<[f64]>, crate::error::BpannError> {
     assert!(n <= SMALL_N_INCORE_SEARCH_LIMIT);
     {
         let guard = backend.small_n_x_cache.lock().expect("small_n_x_cache");
@@ -154,10 +166,10 @@ pub fn load_or_build_small_n_cache(
     let x_scale = backend.x_scale.as_slice().unwrap();
     for i in 0..n {
         let row = backend.train_x.mmap_row_slice(i)?;
-        bpann_row_to_f32(row, backend.scale_x, x_scale, &mut buf);
+        scaled_row(row, backend.scale_x, x_scale, &mut buf);
         flat.extend_from_slice(&buf);
     }
-    let arc: std::sync::Arc<[f32]> = std::sync::Arc::from(flat.into_boxed_slice());
+    let arc: std::sync::Arc<[f64]> = std::sync::Arc::from(flat.into_boxed_slice());
     *backend.small_n_x_cache.lock().expect("small_n_x_cache") =
         Some((n, std::sync::Arc::clone(&arc)));
     Ok(arc)
@@ -177,7 +189,7 @@ mod tests {
     #[test]
     fn topk_flat_empty_and_basic() {
         assert!(topk_flat_sq_l2(&[0.0], &[], 0, 1, 1).is_empty());
-        let flat = [0.0f32, 1.0, 2.0];
+        let flat = [0.0f64, 1.0, 2.0];
         let hits = topk_flat_sq_l2(&[0.0], &flat, 3, 1, 2);
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].0, 0);
@@ -188,7 +200,7 @@ mod tests {
     #[test]
     fn topk_flat_prefers_closer_2d_rows() {
 
-        let flat = [0.0f32, 0.0, 3.0, 0.0, 1.0, 0.0];
+        let flat = [0.0f64, 0.0, 3.0, 0.0, 1.0, 0.0];
         let hits = topk_flat_sq_l2(&[0.0, 0.0], &flat, 3, 2, 2);
         assert_eq!(hits.iter().map(|h| h.0).collect::<Vec<_>>(), vec![0, 2]);
         assert!((hits[0].1 - 0.0).abs() < 1e-6);
@@ -197,7 +209,7 @@ mod tests {
 
     #[test]
     fn score_queries_flat_exclude_nearest_skips_self() {
-        let flat = [0.0f32, 0.0, 1.0, 0.0, 4.0, 0.0];
+        let flat = [0.0f64, 0.0, 1.0, 0.0, 4.0, 0.0];
         let out = score_queries_flat(
             &[vec![0.0, 0.0]],
             &ScoreQueriesFlat {
