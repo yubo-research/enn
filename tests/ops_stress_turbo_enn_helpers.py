@@ -44,7 +44,7 @@ class RecordingTurboOpt:
 class RecordingObjective:
     """Zero-valued objective that optionally records eval batch sizes."""
 
-    bounds = [-1.0, 1.0]
+    bounds = (-1.0, 1.0)
 
     def __init__(self, *, events: list[str] | None = None) -> None:
         self.events = events

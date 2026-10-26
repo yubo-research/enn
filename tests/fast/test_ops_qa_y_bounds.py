@@ -6,15 +6,15 @@ import numpy as np
 import pytest
 from click.testing import CliRunner
 
-_FAST_KWARGS = dict(
-    n_train=24,
-    n_test=30,
-    k=3,
-    num_fit_candidates=4,
-    num_fit_samples=3,
-    num_draws=16,
-    seed=0,
-)
+_FAST_KWARGS = {
+    "n_train": 24,
+    "n_test": 30,
+    "k": 3,
+    "num_fit_candidates": 4,
+    "num_fit_samples": 3,
+    "num_draws": 16,
+    "seed": 0,
+}
 
 _EVAL_RE = re.compile(
     r"EVAL: model = (unbounded|y_bounds_\([^)]+\)) "

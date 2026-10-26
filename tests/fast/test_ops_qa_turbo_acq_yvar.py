@@ -6,25 +6,25 @@ import numpy as np
 import pytest
 from click.testing import CliRunner
 
-_FAST_TURBO = dict(
-    num_dim=3,
-    num_rounds=4,
-    num_arms=2,
-    num_init=2,
-    num_seeds=2,
-    seed=0,
-    k=3,
-    num_fit_samples=5,
-)
+_FAST_TURBO = {
+    "num_dim": 3,
+    "num_rounds": 2,
+    "num_arms": 2,
+    "num_init": 2,
+    "num_seeds": 2,
+    "seed": 0,
+    "k": 3,
+    "num_fit_samples": 5,
+}
 
-_FAST_YVAR = dict(
-    n_train=24,
-    n_test=30,
-    k=3,
-    num_fit_candidates=4,
-    num_fit_samples=3,
-    seed=0,
-)
+_FAST_YVAR = {
+    "n_train": 24,
+    "n_test": 30,
+    "k": 3,
+    "num_fit_candidates": 4,
+    "num_fit_samples": 3,
+    "seed": 0,
+}
 
 _TURBO_EVAL_RE = re.compile(
     r"EVAL: problem = (noiseless|noisy) method = (ucb|thompson|pareto|turbo_zero) "

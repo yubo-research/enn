@@ -7,6 +7,7 @@ from collections.abc import Sequence
 import numpy as np
 
 from enn import _rust
+from enn.enn.cat_ties import resolve_tied_groups
 
 
 def _y2(y: np.ndarray) -> np.ndarray:
@@ -82,9 +83,9 @@ def dependence_weights(
     floor: float | None = None,
     tied: Sequence[Sequence[int]] = (),
 ) -> np.ndarray:
+    groups = [list(g) for g in resolve_tied_groups(x, tied)]
     x = np.asarray(x, dtype=float)
     y = _y2(y)
-    groups = [list(map(int, g)) for g in tied]
     used = None if floor is None else float(floor)
     return np.asarray(_rust.dependence_weights(x, y, groups, used), dtype=float)
 
@@ -100,8 +101,8 @@ def loo_loglik(x: np.ndarray, y: np.ndarray, a: np.ndarray, k: int) -> float:
 def auto_weights(
     x: np.ndarray, y: np.ndarray, k: int, tied: Sequence[Sequence[int]] = ()
 ) -> tuple[np.ndarray, float]:
+    groups = [list(g) for g in resolve_tied_groups(x, tied)]
     x = np.asarray(x, dtype=float)
     y = _y2(y)
-    groups = [list(map(int, g)) for g in tied]
     w, gain = _rust.auto_weights(x, y, int(k), groups)
     return np.asarray(w, dtype=float), float(gain)

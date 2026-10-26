@@ -5,8 +5,8 @@ import pytest
 from enn_helpers import enn_all_train_rows
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_x_scaling import ENNScaleX
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+from enn.turbo.config.enn_x_scaling import ENNScaleX
 
 
 def _params(

@@ -24,6 +24,7 @@ from enn.turbo.config.enn_x_scaling import (
     scale_x_to_wire,
 )
 
+from .cat_ties import resolve_tied_groups
 from .enn_class_support import _to_rust_seeds
 from .mbpann import MBPANNMetric
 
@@ -118,12 +119,10 @@ class EpistemicNearestNeighbors(_EnnRustView):
             scale_x=scale_x,
             metric_learning=metric_learning,
         )
-        train_x, train_y, train_yvar = self._coerce_inputs(
-            train_x, train_y, train_yvar
-        )
+        groups = [list(g) for g in resolve_tied_groups(train_x, tied_dims)]
+        train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
-        groups = [] if tied_dims is None else [list(map(int, g)) for g in tied_dims]
         rust_kwargs: dict[str, Any] = {
             "train_x": train_x,
             "train_y": train_y,

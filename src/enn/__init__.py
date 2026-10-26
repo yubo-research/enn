@@ -22,6 +22,9 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "CandidateRV": (".turbo.optimizer_config", "CandidateRV"),
     "InitStrategy": (".turbo.optimizer_config", "InitStrategy"),
     "AcqType": (".turbo.optimizer_config", "AcqType"),
+    "CatEncoder": (".enn.cat_codes", "CatEncoder"),
+    "CatEncoding": (".enn.cat_codes", "CatEncoding"),
+    "DimKind": (".enn.cat_codes", "DimKind"),
 }
 
 

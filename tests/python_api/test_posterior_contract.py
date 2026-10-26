@@ -28,7 +28,7 @@ class TestPosteriorContract:
 
     def test_posterior_exists_and_callable(self):
         assert hasattr(EpistemicNearestNeighbors, "posterior")
-        assert callable(getattr(EpistemicNearestNeighbors, "posterior"))
+        assert callable(EpistemicNearestNeighbors.posterior)
 
     def test_posterior_returns_mu_se(self, simple_model, query):
         params = ENNParams(
@@ -55,7 +55,7 @@ class TestBatchPosteriorContract:
 
     def test_batch_posterior_exists_and_callable(self):
         assert hasattr(EpistemicNearestNeighbors, "batch_posterior")
-        assert callable(getattr(EpistemicNearestNeighbors, "batch_posterior"))
+        assert callable(EpistemicNearestNeighbors.batch_posterior)
 
     def test_batch_posterior_signature(self):
         sig = inspect.signature(EpistemicNearestNeighbors.batch_posterior)
@@ -96,7 +96,7 @@ class TestConditionalPosteriorContract:
 
     def test_conditional_posterior_exists_and_callable(self):
         assert hasattr(EpistemicNearestNeighbors, "conditional_posterior")
-        assert callable(getattr(EpistemicNearestNeighbors, "conditional_posterior"))
+        assert callable(EpistemicNearestNeighbors.conditional_posterior)
 
     def test_conditional_posterior_signature(self):
         sig = inspect.signature(EpistemicNearestNeighbors.conditional_posterior)
@@ -160,7 +160,7 @@ class TestPosteriorFunctionDrawContract:
 
     def test_posterior_function_draw_exists_and_callable(self):
         assert hasattr(EpistemicNearestNeighbors, "posterior_function_draw")
-        assert callable(getattr(EpistemicNearestNeighbors, "posterior_function_draw"))
+        assert callable(EpistemicNearestNeighbors.posterior_function_draw)
 
     def test_posterior_function_draw_signature(self):
         sig = inspect.signature(EpistemicNearestNeighbors.posterior_function_draw)
@@ -192,7 +192,7 @@ class TestPosteriorFunctionDrawContract:
     def test_conditional_posterior_function_draw_exists_and_callable(self):
         assert hasattr(EpistemicNearestNeighbors, "conditional_posterior_function_draw")
         assert callable(
-            getattr(EpistemicNearestNeighbors, "conditional_posterior_function_draw")
+            EpistemicNearestNeighbors.conditional_posterior_function_draw
         )
 
     def test_conditional_posterior_function_draw_returns_draws_and_idx(

@@ -85,9 +85,11 @@ fn disk_auto_optimizer(dir: &std::path::Path, num_dim: usize, seed: u64) -> Opti
         work_dir: dir.to_path_buf(),
     };
     let mut cfg = turbo_enn_config();
+    // Scale fitting does not affect coordinate sampling or AUTO side lengths.
+    cfg.acquisition = crate::config::AcquisitionConfig::Pareto;
     cfg.surrogate = SurrogateConfig::ENN(ENNSurrogateConfig {
         k: crate::NeighborCount::new(10).unwrap(),
-        fit_samples: crate::FitSamples::draw(4, 4).unwrap(),
+        fit_samples: crate::FitSamples::Frozen,
         layout,
         ..Default::default()
     });
@@ -99,11 +101,13 @@ fn disk_auto_optimizer(dir: &std::path::Path, num_dim: usize, seed: u64) -> Opti
 #[test]
 fn raasp_rates_stay_uniform_under_unequal_auto_weights() {
     let dir = tempfile::TempDir::new().unwrap();
-    let num_dim = 20;
+    // Use more dimensions than draws so uniform selection remains observable.
+    let num_dim = 40;
     let mut opt = disk_auto_optimizer(dir.path(), num_dim, 3);
     let mut rng = StdRng::seed_from_u64(4);
-    let x = Array2::from_shape_fn((300, num_dim), |_| rng.gen::<f64>());
-    let y = Array2::from_shape_fn((300, 1), |(i, _)| (6.0 * x[[i, 0]]).sin());
+    // Stay above AUTO's 100-row learning boundary without fitting extra rows.
+    let x = Array2::from_shape_fn((120, num_dim), |_| rng.gen::<f64>());
+    let y = Array2::from_shape_fn((120, 1), |(i, _)| (6.0 * x[[i, 0]]).sin());
     opt.tell(&x.view(), &y.view(), None).unwrap();
 
     let s = opt.surrogate().and_then(|s| s.lengthscales()).expect("DiskAuto sides");
@@ -112,7 +116,7 @@ fn raasp_rates_stay_uniform_under_unequal_auto_weights() {
 
     let center = Array1::from_elem(num_dim, 0.5);
     let (lb, ub) = opt.trust_region().compute_bounds_1d(&center.view(), Some(&s.view()));
-    let num_candidates = 4000;
+    let num_candidates = 1000;
     let cand =
         draw_turbo_candidates(&mut opt, &center.view(), &lb, &ub, num_candidates, &mut rng).unwrap();
     let rates: Vec<f64> = (0..num_dim)
@@ -122,6 +126,9 @@ fn raasp_rates_stay_uniform_under_unequal_auto_weights() {
         })
         .collect();
     let mean = rates.iter().sum::<f64>() / num_dim as f64;
+    // The default RAASP driver draws 20 times with replacement.
+    let expected = 1.0 - (1.0 - 1.0 / num_dim as f64).powi(20);
+    assert!((mean - expected).abs() < 0.02, "expected {expected}, got {mean}");
     for (j, r) in rates.iter().enumerate() {
         assert!((r - mean).abs() < 0.06, "dim {j} rate {r} vs mean {mean}");
     }

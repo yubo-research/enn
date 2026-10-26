@@ -29,6 +29,7 @@ class ENNMetricLearning(Enum):
       leave-one-out validation shows they beat the best isotropic metric; otherwise distances
       are those of ``NONE`` (``MBPANNMetric``). Each group in ``tied_dims`` gets one weight
       from its joint Sobol index, not divided by ``Var(x)``, shared by its dimensions.
+      ``CatEncoder.encode`` supplies that grouping for each categorical variable.
     """
 
     NONE = auto()
@@ -38,20 +39,22 @@ class ENNMetricLearning(Enum):
 def scale_x_to_wire(scale_x: ENNScaleX) -> bool:
     """Encode a scale_x choice as the boolean Rust expects."""
     if not isinstance(scale_x, ENNScaleX):
-        raise ValueError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
+        raise TypeError(f"scale_x must be an ENNScaleX, got {scale_x!r}")
     return scale_x is ENNScaleX.ON
 
 
 def metric_learning_to_wire(metric_learning: ENNMetricLearning) -> str:
     """Encode a metric-learning mode. The wire name is the enum member name."""
     if not isinstance(metric_learning, ENNMetricLearning):
-        raise ValueError(
+        raise TypeError(
             f"metric_learning must be an ENNMetricLearning, got {metric_learning!r}"
         )
     return metric_learning.name
 
 
-def validate_tied_dims(tied_dims: Sequence[Sequence[int]] | None, num_dim: int) -> tuple[tuple[int, ...], ...]:
+def validate_tied_dims(
+    tied_dims: Sequence[Sequence[int]] | None, num_dim: int
+) -> tuple[tuple[int, ...], ...]:
     """Groups of tied input dimensions (e.g. the one-hot columns of one categorical variable).
 
     ``scale_x`` leaves tied dimensions unscaled, and ``ENNMetricLearning.AUTO`` gives each group

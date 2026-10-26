@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_x_scaling import ENNScaleX
 from enn.enn.enn_class_support import (
     enn_index_neighbor_distances_and_indices,
     enn_neighbor_distances_and_indices,
@@ -14,6 +13,7 @@ from enn.enn.enn_hash import (
     normal_hash_batch_multi_seed_fast,
 )
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_x_scaling import ENNScaleX
 
 
 def _enn(

@@ -13,7 +13,6 @@ import numpy as np
 from enn import create_optimizer, turbo_enn_config, turbo_zero_config
 from enn.benchmarks import Ackley
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config import (
@@ -24,6 +23,7 @@ from enn.turbo.config import (
     ENNSurrogateConfig,
     TurboTRConfig,
 )
+from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.turbo.optimizer_config import CandidateRV
 
 NUM_DIM = 99

@@ -4,10 +4,15 @@ import numpy as np
 import pytest
 
 from enn.enn import metric_stream as ms
+from enn.enn.cat_codes import CatEncoder, DimKind
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_surrogate_config import ENNStorage
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX, validate_tied_dims
+from enn.turbo.config.enn_x_scaling import (
+    ENNMetricLearning,
+    ENNScaleX,
+    validate_tied_dims,
+)
 
 
 def _mixed(n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
@@ -15,8 +20,37 @@ def _mixed(n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     cat = rng.integers(0, 3, n)
     x = np.column_stack([10 * rng.random(n), rng.random(n), np.eye(3)[cat]])
-    y = np.sin(0.4 * x[:, 0]) + np.array([0.0, 1.0, -1.0])[cat] + 0.05 * rng.standard_normal(n)
+    y = (
+        np.sin(0.4 * x[:, 0])
+        + np.array([0.0, 1.0, -1.0])[cat]
+        + 0.05 * rng.standard_normal(n)
+    )
     return x, y
+
+
+def _encoded_mixed(n: int, seed: int = 0):
+    """Continuous signal, continuous noise, one-hot category, Rademacher category."""
+    rng = np.random.default_rng(seed)
+    small = rng.integers(0, 3, n)
+    wide = rng.integers(0, 20, n)
+    raw = np.column_stack([10 * rng.random(n), rng.random(n), small, wide])
+    encoder = CatEncoder(
+        (
+            DimKind.CONTINUOUS,
+            DimKind.CONTINUOUS,
+            DimKind.CATEGORICAL,
+            DimKind.CATEGORICAL,
+        ),
+        (None, None, 3, 20),
+        seed=1,
+    )
+    signal = np.array([0.0, 1.2, -1.1])[small] + np.where(wide % 2 == 0, 0.8, -0.8)
+    y = np.sin(0.4 * raw[:, 0]) + signal + 0.05 * rng.standard_normal(n)
+    return encoder, encoder.encode(raw), y
+
+
+def _weights_constant(weights: np.ndarray, group: tuple[int, ...]) -> None:
+    assert np.unique(weights[list(group)]).size == 1
 
 
 def test_group_sobol_index_sees_category_effect() -> None:
@@ -34,14 +68,79 @@ def test_dependence_weights_share_one_unscaled_weight_per_group() -> None:
     w = ms.dependence_weights(x, y, tied=tied)
     assert w[2] == w[3] == w[4]
     s = np.array([ms.sobol_index(x, y)[0], ms.group_sobol_index(x[:, 2:5], y)])
-    np.testing.assert_allclose(w[[0, 2]] * [x[:, 0].var(), 1.0], 3 * s / s.sum(), rtol=1e-3)
+    np.testing.assert_allclose(
+        w[[0, 2]] * [x[:, 0].var(), 1.0], 3 * s / s.sum(), rtol=1e-3
+    )
     assert w[1] < 1e-3 * w[2]
     fallback = ms.dependence_weights(x, np.ones(1000), tied=tied)
-    np.testing.assert_allclose(fallback, [1 / x[:, 0].var(), 1 / x[:, 1].var(), 1, 1, 1])
-    np.testing.assert_array_equal(ms.dependence_weights(x, y), ms.dependence_weights(x, y, tied=()))
+    np.testing.assert_allclose(
+        fallback, [1 / x[:, 0].var(), 1 / x[:, 1].var(), 1, 1, 1]
+    )
+    np.testing.assert_array_equal(
+        ms.dependence_weights(x, y), ms.dependence_weights(x, y, tied=())
+    )
     w_auto, gain = ms.auto_weights(x, y, 10, tied=tied)
     np.testing.assert_array_equal(w_auto, w)
     assert gain > 0
+
+
+def test_encoded_categoricals_share_one_weight_per_variable() -> None:
+    encoder, x, y = _encoded_mixed(800)
+    assert encoder.styles == ("onehot", "code")
+    assert x.tied_dims == encoder.tied_dims()
+    assert x[:4].tied_dims == encoder.tied_dims()
+    assert x[:, :1].tied_dims == ()
+    w = ms.dependence_weights(x, y)
+    for group in encoder.tied_dims():
+        _weights_constant(w, group)
+    assert w[2] > 10 * w[1]
+    assert w[encoder.tied_dims()[1][0]] > 10 * w[1]
+    plain = np.array(x, copy=True)
+    untied = ms.dependence_weights(plain, y)
+    assert np.unique(untied[list(encoder.tied_dims()[1])]).size > 1
+    with pytest.raises(ValueError, match="categorical blocks"):
+        ms.dependence_weights(x, y, tied=((0, 1),))
+    np.testing.assert_array_equal(
+        w, ms.dependence_weights(x, y, tied=encoder.tied_dims())
+    )
+
+
+def test_model_ties_encoded_categoricals(tmp_path) -> None:
+    encoder, x, y = _encoded_mixed(400)
+    model = EpistemicNearestNeighbors(
+        x[:200],
+        y[:200, None],
+        metric_learning=ENNMetricLearning.AUTO,
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=tmp_path,
+        enn_storage=ENNStorage.DISK,
+    )
+    assert model.tied_dims == encoder.tied_dims()
+    model.add(x[200:], y[200:, None])
+    metric = model.metric
+    assert metric.uses_learned_metric
+    for group in encoder.tied_dims():
+        _weights_constant(metric.weights, group)
+    copied = np.array(x[:30], copy=True)
+    plain = EpistemicNearestNeighbors(copied, y[:30, None])
+    assert plain.tied_dims == ()
+    with pytest.raises(ValueError, match="categorical blocks"):
+        EpistemicNearestNeighbors(x[:30], y[:30, None], tied_dims=[[0, 1]])
+
+
+def test_scale_x_uses_encoded_categorical_groups() -> None:
+    encoder, x, y = _encoded_mixed(400)
+    model = EpistemicNearestNeighbors(x[:200], y[:200, None], scale_x=ENNScaleX.ON)
+    assert model.tied_dims == encoder.tied_dims()
+    model.add(x[200:], y[200:, None])
+    scale = model._x_scale[0]
+    tied = [j for group in encoder.tied_dims() for j in group]
+    np.testing.assert_array_equal(scale[tied], 1.0)
+    assert scale[0] > 1.0
+    matched = EpistemicNearestNeighbors(
+        x[:20], y[:20, None], tied_dims=encoder.tied_dims(), scale_x=ENNScaleX.ON
+    )
+    assert matched.tied_dims == encoder.tied_dims()
 
 
 def test_validate_tied_dims() -> None:
@@ -49,7 +148,12 @@ def test_validate_tied_dims() -> None:
     assert validate_tied_dims([np.array([2, 3]), [0]], 4) == ((2, 3), (0,))
     with pytest.raises(TypeError):
         validate_tied_dims([[1.5]], 4)
-    for bad, match in [([[]], "non-empty"), ([[1, 4]], r"\[0, 4\)"), ([[-1]], r"\[0, 4\)"), ([[0, 1], [1, 2]], "disjoint")]:
+    for bad, match in [
+        ([[]], "non-empty"),
+        ([[1, 4]], r"\[0, 4\)"),
+        ([[-1]], r"\[0, 4\)"),
+        ([[0, 1], [1, 2]], "disjoint"),
+    ]:
         with pytest.raises(ValueError, match=match):
             validate_tied_dims(bad, 4)
 
@@ -63,7 +167,12 @@ def test_scale_x_leaves_tied_dims_unscaled(tmp_path, driver) -> None:
         else {}
     )
     model = EpistemicNearestNeighbors(
-        x[:300], y[:300, None], tied_dims=[[2, 3, 4]], scale_x=ENNScaleX.ON, index_driver=driver, **kw
+        x[:300],
+        y[:300, None],
+        tied_dims=[[2, 3, 4]],
+        scale_x=ENNScaleX.ON,
+        index_driver=driver,
+        **kw,
     )
     assert model.tied_dims == ((2, 3, 4),)
     model.add(x[300:], y[300:, None])
@@ -73,7 +182,9 @@ def test_scale_x_leaves_tied_dims_unscaled(tmp_path, driver) -> None:
     q = x[:4] + 0.01
     for i in range(len(q)):
         d2 = (((x - q[i]) / scale) ** 2).sum(axis=1)
-        np.testing.assert_array_equal(model.neighbors(q[i], 5), np.argsort(d2, kind="stable")[:5])
+        np.testing.assert_array_equal(
+            model.neighbors(q[i], 5), np.argsort(d2, kind="stable")[:5]
+        )
     with pytest.raises(ValueError, match="disjoint"):
         EpistemicNearestNeighbors(x, y[:, None], tied_dims=[[2, 3], [3, 4]])
 
@@ -98,4 +209,6 @@ def test_auto_metric_ties_group_weights(tmp_path) -> None:
     q = x[:3] + 0.01
     for i in range(len(q)):
         d2 = ((x - q[i]) ** 2) @ w
-        np.testing.assert_array_equal(model.neighbors(q[i], 5), np.argsort(d2, kind="stable")[:5])
+        np.testing.assert_array_equal(
+            model.neighbors(q[i], 5), np.argsort(d2, kind="stable")[:5]
+        )

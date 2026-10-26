@@ -148,8 +148,7 @@ def fit_affine_calibrator(
     from enn._rust import fit_model_affine
 
     samples = int(num_samples)
-    if samples < 0:
-        samples = 0
+    samples = max(samples, 0)
     seed = int(rng.integers(0, 2**63 - 1))
     a, b, c = fit_model_affine(
         model.rust_backend,

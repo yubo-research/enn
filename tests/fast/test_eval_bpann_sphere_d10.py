@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from evals.short import eval_bpann_sphere_d10 as mod
 from evals import flat_sphere as fs
+from evals.short import eval_bpann_sphere_d10 as mod
 from ops.stress import MeanSE
 
 

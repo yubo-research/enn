@@ -393,7 +393,9 @@ mod acceptance_tests {
 
     #[test]
     fn test_large_scale_batched_recall_default_flush() {
-        let n = 100_000usize;
+        // Cross the in-core boundary and several default hard-flush intervals.
+        // The Python large-scale integration test also covers 100,000 rows.
+        let n = 2 * SMALL_N_INCORE_SEARCH_LIMIT + DEFAULT_PENDING_HARD_FLUSH_THRESHOLD;
         let d = 10usize;
         let k = 9usize;
         let batch = 200usize;

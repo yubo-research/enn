@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
@@ -129,7 +130,7 @@ class ProblemSpec:
 
             def objective(x: np.ndarray) -> np.ndarray:
                 y = ackley(x)
-                return y.reshape(-1, 1) if np.ndim(y) == 1 else y.reshape(-1, 1)
+                return np.reshape(y, (-1, 1))
 
             return objective
 

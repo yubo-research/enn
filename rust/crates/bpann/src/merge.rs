@@ -45,19 +45,19 @@ pub fn find_query_train_id(train_x: &MmapColumnStore, query: &[f64]) -> Option<u
     None
 }
 
-/// Exact float match of `query` in a flat f32 train matrix.
-pub fn find_query_train_id_flat(
-    flat: &[f32],
+/// Exact float match of `query` in a flat train matrix.
+pub fn find_query_train_id_flat<T: PartialEq>(
+    flat: &[T],
     total: usize,
     num_dim: usize,
-    query_f32: &[f32],
+    query: &[T],
 ) -> Option<u32> {
-    if query_f32.len() != num_dim {
+    if query.len() != num_dim {
         return None;
     }
     for i in 0..total {
         let off = i * num_dim;
-        if flat[off..off + num_dim] == *query_f32 {
+        if flat[off..off + num_dim] == *query {
             return Some(i as u32);
         }
     }
@@ -123,9 +123,9 @@ pub fn merge_topk_precomputed_dist(
     merge_topk_precomputed_dist_with_self(leg_a, leg_b, k_out, pool_k, exclude_nearest, None)
 }
 
-pub fn merge_topk_precomputed_dist_with_self(
-    leg_a: &[(u32, f32)],
-    leg_b: &[(u32, f32)],
+pub fn merge_topk_precomputed_dist_with_self<T: Copy + Into<f64>>(
+    leg_a: &[(u32, T)],
+    leg_b: &[(u32, T)],
     k_out: usize,
     pool_k: usize,
     exclude_nearest: bool,
@@ -135,7 +135,7 @@ pub fn merge_topk_precomputed_dist_with_self(
     for &(id, dist) in leg_a.iter().chain(leg_b.iter()) {
         use std::collections::hash_map::Entry;
         if let Entry::Vacant(e) = seen.entry(id) {
-            e.insert(f64::from(dist));
+            e.insert(dist.into());
         }
     }
     let mut ranked: Vec<(u32, f64)> = seen.into_iter().collect();
