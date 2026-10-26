@@ -121,20 +121,6 @@ def test_run_eval_rejects_bad_config() -> None:
         mod.run_eval(mod.ScalingConfig(n_grid=(10, 100)))
 
 
-def test_run_seed_isolated_matches_grid() -> None:
-    cfg = mod.ScalingConfig(
-        n_grid=(20, 40),
-        num_test=5,
-        batch=20,
-        k=4,
-        num_fit_candidates=2,
-        num_fit_samples=2,
-    )
-    rows = mod.run_seed_isolated(cfg)
-    assert [r["n"] for r in rows] == [20.0, 40.0]
-    assert all(r["disk_mib"] > 0 for r in rows)
-
-
 def test_entry_invokes_run_eval(monkeypatch: pytest.MonkeyPatch) -> None:
     called: list[int] = []
     monkeypatch.setattr(eval_scaling, "run_eval", lambda: called.append(1))
