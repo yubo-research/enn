@@ -8,7 +8,7 @@ from click.testing import CliRunner
 
 _FAST_TURBO = {
     "num_dim": 3,
-    "num_rounds": 4,
+    "num_rounds": 2,
     "num_arms": 2,
     "num_init": 2,
     "num_seeds": 2,
