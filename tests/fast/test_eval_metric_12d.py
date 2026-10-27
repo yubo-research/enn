@@ -7,14 +7,9 @@ import numpy as np
 import pytest
 
 from enn.enn.mbpann import MBPANNMetric
+from enn.evals import metric_12d as mod
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
-from evals import metric_12d as mod
-from evals.long import eval_metric_12d_bpann_disk as long_bpann_disk
-from evals.long import eval_metric_12d_bpann_disk_auto as long_bpann_disk_auto
-from evals.long import eval_metric_12d_flat as long_flat
-from evals.long import eval_metric_12d_flat_scale_x as long_flat_scale_x
-from evals.short import eval_metric_12d as short_entry
 from ops.stress import MeanSE
 
 TINY = mod.Metric12dConfig(
@@ -54,9 +49,14 @@ def test_build_model_drivers_scale_x_and_metric_learning() -> None:
         assert bpann_scaled.scale_x == ENNScaleX.ON
         assert bpann_scaled.metric_learning == ENNMetricLearning.NONE
         assert bpann.scale_x == ENNScaleX.OFF
-        assert flat._index_driver == ENNIndexDriver.FLAT and flat.scale_x == ENNScaleX.OFF
+        assert (
+            flat._index_driver == ENNIndexDriver.FLAT and flat.scale_x == ENNScaleX.OFF
+        )
         assert flat.metric_learning == ENNMetricLearning.NONE
-        assert scaled._index_driver == ENNIndexDriver.FLAT and scaled.scale_x == ENNScaleX.ON
+        assert (
+            scaled._index_driver == ENNIndexDriver.FLAT
+            and scaled.scale_x == ENNScaleX.ON
+        )
         assert bpann._index_driver == ENNIndexDriver.BPANN_DISK
         assert bpann.metric_learning == ENNMetricLearning.NONE
         assert auto._index_driver == ENNIndexDriver.BPANN_DISK
@@ -66,7 +66,9 @@ def test_build_model_drivers_scale_x_and_metric_learning() -> None:
             mod.build_model("nope", x, y, work_dir)
 
 
-def test_advance_adds_rows_in_batches_and_auto_refits_inside_add(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_advance_adds_rows_in_batches_and_auto_refits_inside_add(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(mod, "enn_fit", lambda *a, **kw: None)
     cfg = mod.Metric12dConfig(batch=40)
     x, y = mod.make_data(260, np.random.default_rng(4))
@@ -98,7 +100,9 @@ def test_format_eval_line_mean_pm_se() -> None:
 
 
 def test_format_seed_line_is_not_an_eval_line() -> None:
-    line = mod.format_seed_line(3, mod.CheckpointResult("flat", 30, -1.25, 0.5, 0.01, 0.002))
+    line = mod.format_seed_line(
+        3, mod.CheckpointResult("flat", 30, -1.25, 0.5, 0.01, 0.002)
+    )
     assert line == (
         "seed = 3 model = flat n = 30 loglik = -1.2500 nrmse = 0.5000 "
         "add_s = 0.0100 query_s = 0.0020"
@@ -116,7 +120,9 @@ def test_summarize_mean_and_se_per_model_and_n() -> None:
     assert (first.model, first.num_obs, second.num_obs) == ("a", 10, 20)
     assert first.loglik == MeanSE(2.0, 1.0)
     assert first.add_s == MeanSE(2.0, 1.0)
-    assert first.nrmse.mean == pytest.approx(0.2) and first.nrmse.se == pytest.approx(0.1)
+    assert first.nrmse.mean == pytest.approx(0.2) and first.nrmse.se == pytest.approx(
+        0.1
+    )
     assert second.loglik == MeanSE(5.0, 0.0)
 
 
@@ -144,7 +150,10 @@ def test_run_eval_streams_each_seed(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run_model(name, work_dir, config, data):
         assert data is mod.make_data
         seen.append((name, config.seed, work_dir))
-        return [mod.CheckpointResult(name, n, float(config.seed), 0.0, 1.0, 1.0) for n in config.n_grid]
+        return [
+            mod.CheckpointResult(name, n, float(config.seed), 0.0, 1.0, 1.0)
+            for n in config.n_grid
+        ]
 
     monkeypatch.setattr(mod, "run_model", fake_run_model)
     cfg = mod.Metric12dConfig(n_grid=(10, 30), seed=5, num_seeds=3)
@@ -154,7 +163,10 @@ def test_run_eval_streams_each_seed(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
     assert len({work_dir for _, _, work_dir in seen}) == 3
     assert [(r.model, r.num_obs) for r in results] == [
-        ("flat", 10), ("flat", 30), ("bpann_disk", 10), ("bpann_disk", 30)
+        ("flat", 10),
+        ("flat", 30),
+        ("bpann_disk", 10),
+        ("bpann_disk", 30),
     ]
     assert results[0].loglik == MeanSE(6.0, 1.0 / np.sqrt(3.0))
 
@@ -179,43 +191,11 @@ def test_run_eval_rejects_bad_grid() -> None:
         mod.run_eval(mod.Metric12dConfig(n_grid=(10, 30), num_rows=20))
 
 
-LONG_ENTRIES = (
-    long_flat,
-    long_flat_scale_x,
-    long_bpann_disk,
-    long_bpann_disk_auto,
-)
-
-
-def test_long_entries_cover_each_model_once() -> None:
-    assert tuple(e.MODEL for e in LONG_ENTRIES) == mod.MODELS
-    assert all(e.run_eval is mod.run_eval for e in LONG_ENTRIES)
-
-
-@pytest.mark.parametrize("entry", LONG_ENTRIES, ids=lambda e: e.MODEL)
-def test_long_entry_runs_only_its_model(entry, monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[dict[str, object]] = []
-    monkeypatch.setattr(entry, "run_eval", lambda **kwargs: seen.append(kwargs))
-    entry.evaluate()
-    assert seen == [{"models": (entry.MODEL,)}]
-
-
 def test_single_model_run_matches_combined_run() -> None:
     combined = mod.run_eval(TINY, models=("flat", "flat_scale_x"))
     single = mod.run_eval(TINY, models=("flat_scale_x",))
     assert [(s.num_obs, s.loglik, s.nrmse) for s in single] == [
         (s.num_obs, s.loglik, s.nrmse) for s in combined if s.model == "flat_scale_x"
-    ]
-
-
-def test_short_entry_runs_long_config_up_to_1e5(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[mod.Metric12dConfig] = []
-    monkeypatch.setattr(short_entry, "run_eval", seen.append)
-    short_entry.evaluate()
-    assert seen == [
-        mod.Metric12dConfig(
-            n_grid=(10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000), num_rows=1000000
-        )
     ]
 
 

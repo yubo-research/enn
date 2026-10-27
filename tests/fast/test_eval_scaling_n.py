@@ -6,9 +6,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from evals import scaling_n as mod
-from evals.scaling_fit import TERMS, RegFit, TermTest, best_term
-from evals.short import eval_scaling
+from enn.evals import scaling_n as mod
+from enn.evals.scaling_fit import TERMS, RegFit, TermTest, best_term
+from evals.long import eval_scaling
 from ops.stress import MeanSE
 
 _HAS_PROC = Path("/proc/self/status").is_file()

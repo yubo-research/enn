@@ -7,19 +7,13 @@ def test_list_eval_names_includes_known_evals() -> None:
     from ops.evaluate import list_eval_names
 
     names = list_eval_names()
-    assert "short/turbo_enn" in names
-    assert "short/enn_flat" in names
-    assert "short/flat_sphere_d10" in names
-    assert "short/flat_sphere_d100" in names
-    assert "short/flat_sphere_d1000" in names
-    assert "short/bpann_sphere_d10" in names
-    assert "short/bpann_sphere_d100" in names
-    assert "short/bpann_sphere_d1000" in names
-    assert "short/bpann_persist_stability" in names
-    assert "short/y_bounds" in names
-    assert "short/turbo_acq" in names
-    assert "short/y_var_noise" in names
-    assert "long/enn_bpann_disk" in names
+    assert names == [
+        "long/prediction",
+        "long/scaling",
+        "long/semantic_benchmark",
+        "short/optimization",
+        "short/prediction",
+    ]
     assert names == sorted(names)
     assert all("/stress" not in name for name in names)
     assert all(not name.rsplit("/", 1)[-1].startswith("stress") for name in names)
@@ -68,9 +62,9 @@ def test_run_invokes_evaluate(monkeypatch) -> None:
         return evaluate_fn
 
     monkeypatch.setattr(evaluate, "load_evaluate", fake_load)
-    result = CliRunner().invoke(evaluate.cli, ["run", "short/turbo_enn"])
+    result = CliRunner().invoke(evaluate.cli, ["run", "short/optimization"])
     assert result.exit_code == 0, result.output
-    assert called == ["short/turbo_enn"]
+    assert called == ["short/optimization"]
 
 
 def test_run_prefix_runs_all_selected(monkeypatch) -> None:
@@ -94,27 +88,26 @@ def test_run_prefix_runs_all_selected(monkeypatch) -> None:
         assert all(name.startswith("short/") for name in called)
 
     called.clear()
-    result = CliRunner().invoke(evaluate.cli, ["run", "short/bpann_sphere_d10"])
+    result = CliRunner().invoke(evaluate.cli, ["run", "short/prediction"])
     assert result.exit_code == 0, result.output
-    assert called == evaluate.list_eval_names("short/bpann_sphere_d10")
-    assert len(called) == 3
+    assert called == evaluate.list_eval_names("short/prediction")
+    assert len(called) == 1
 
 
-def test_ensure_repo_on_sys_path_adds_repo_root(monkeypatch) -> None:
+def test_ensure_repo_on_sys_path_adds_repo_and_sources(monkeypatch) -> None:
     import sys
 
     from ops import evaluate
 
-    root = str(evaluate.REPO_ROOT)
-    monkeypatch.setattr(sys, "path", [p for p in sys.path if p != root])
-    assert root not in sys.path
+    roots = [str(evaluate.REPO_ROOT / "src"), str(evaluate.REPO_ROOT)]
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p not in roots])
     evaluate.ensure_repo_on_sys_path()
-    assert sys.path[0] == root
+    assert sys.path[:2] == roots
     evaluate.ensure_repo_on_sys_path()
-    assert sys.path.count(root) == 1
+    assert all(sys.path.count(root) == 1 for root in roots)
 
 
-def test_load_evaluate_turbo_enn_without_preexisting_pythonpath(
+def test_load_evaluate_optimization_without_preexisting_pythonpath(
     monkeypatch,
 ) -> None:
     import sys
@@ -125,7 +118,7 @@ def test_load_evaluate_turbo_enn_without_preexisting_pythonpath(
     monkeypatch.setattr(
         sys,
         "path",
-        [p for p in sys.path if p not in (root, str(evaluate.REPO_ROOT / "evals"))],
+        [p for p in sys.path if p not in (root, str(evaluate.REPO_ROOT / "src"))],
     )
-    evaluate_fn = evaluate.load_evaluate("short/turbo_enn")
+    evaluate_fn = evaluate.load_evaluate("short/optimization")
     assert callable(evaluate_fn)

@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from evals import scaling_fit as mod
+from enn.evals import scaling_fit as mod
 
 NS = [100.0, 300.0, 1000.0, 3000.0, 10000.0, 30000.0, 100000.0] * 3
 
@@ -16,7 +16,9 @@ def _noisy(fn, seed: int = 0, sd: float = 0.01) -> list[float]:
 
 
 def test_ols_exact_coefficients() -> None:
-    ys = [2.0 + 0.5 * math.log(n) + 0.1 * n / 1000 - 0.001 * (n / 1000) ** 2 for n in NS]
+    ys = [
+        2.0 + 0.5 * math.log(n) + 0.1 * n / 1000 - 0.001 * (n / 1000) ** 2 for n in NS
+    ]
     fit = mod.ols(NS, ys)
     assert fit.intercept == pytest.approx(2.0)
     assert fit.tests["lnN"].coef == pytest.approx(0.5)

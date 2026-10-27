@@ -3,13 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from evals import metric_12d
-from evals import metric_ranges as mod
-from evals.long import eval_metric_ranges_bpann_disk as long_bpann_disk
-from evals.long import eval_metric_ranges_bpann_disk_auto as long_bpann_disk_auto
-from evals.long import eval_metric_ranges_flat as long_flat
-from evals.long import eval_metric_ranges_flat_scale_x as long_flat_scale_x
-from evals.short import eval_metric_ranges as short_entry
+from enn.evals import metric_12d
+from enn.evals import metric_ranges as mod
 
 TINY = metric_12d.Metric12dConfig(
     n_grid=(10, 30),
@@ -58,36 +53,7 @@ def test_run_eval_passes_ranges_data_to_stream(monkeypatch: pytest.MonkeyPatch) 
     )
     assert mod.run_eval(TINY) == []
     assert mod.run_eval(TINY, models=("bpann_disk",)) == []
-    assert seen == [(TINY, metric_12d.MODELS, mod.make_data), (TINY, ("bpann_disk",), mod.make_data)]
-
-
-LONG_ENTRIES = (
-    long_flat,
-    long_flat_scale_x,
-    long_bpann_disk,
-    long_bpann_disk_auto,
-)
-
-
-def test_long_entries_cover_each_model_once() -> None:
-    assert tuple(e.MODEL for e in LONG_ENTRIES) == metric_12d.MODELS
-    assert all(e.run_eval is mod.run_eval for e in LONG_ENTRIES)
-
-
-@pytest.mark.parametrize("entry", LONG_ENTRIES, ids=lambda e: e.MODEL)
-def test_long_entry_runs_only_its_model(entry, monkeypatch: pytest.MonkeyPatch) -> None:
-    seen = []
-    monkeypatch.setattr(entry, "run_eval", lambda **kwargs: seen.append(kwargs))
-    entry.evaluate()
-    assert seen == [{"models": (entry.MODEL,)}]
-
-
-def test_short_entry_runs_long_config_up_to_1e5(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen = []
-    monkeypatch.setattr(short_entry, "run_eval", seen.append)
-    short_entry.evaluate()
     assert seen == [
-        metric_12d.Metric12dConfig(
-            n_grid=(10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000), num_rows=1000000
-        )
+        (TINY, metric_12d.MODELS, mod.make_data),
+        (TINY, ("bpann_disk",), mod.make_data),
     ]

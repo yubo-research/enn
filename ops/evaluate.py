@@ -16,10 +16,11 @@ EVAL_BUCKETS = ("long", "short")
 
 
 def ensure_repo_on_sys_path() -> None:
-    """So ``from evals...`` works when invoking ``./ops/evaluate.py`` directly."""
-    root = str(REPO_ROOT)
-    if root not in sys.path:
-        sys.path.insert(0, root)
+    """Make local sources and ops importable when invoking this script directly."""
+    for directory in (REPO_ROOT, REPO_ROOT / "src"):
+        root = str(directory)
+        if root not in sys.path:
+            sys.path.insert(0, root)
 
 
 def _name_from_stem(stem: str) -> str:
@@ -57,11 +58,15 @@ def eval_module_path(eval_id: str) -> Path:
         return entries[eval_id]
 
     # Bare name: unique match on the name segment after ``bucket/``.
-    matches = [path for eid, path in entries.items() if eid.rsplit("/", 1)[-1] == eval_id]
+    matches = [
+        path for eid, path in entries.items() if eid.rsplit("/", 1)[-1] == eval_id
+    ]
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        raise click.ClickException(f"ambiguous eval name {eval_id!r}; use short/... or long/...")
+        raise click.ClickException(
+            f"ambiguous eval name {eval_id!r}; use short/... or long/..."
+        )
     raise click.ClickException(f"missing eval module: {eval_id}")
 
 

@@ -4,20 +4,20 @@ import csv
 import inspect
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
+from _reports.semantic_features import eval_lunar_benchmark
+from enn import SemanticInputTransform
 from ops.evaluate import cli, load_evaluate
 
 
-@pytest.mark.parametrize("name", ["semantic_benchmark", "lunar_benchmark"])
-def test_benchmark_entry_point_accepts_no_arguments(name):
-    evaluate = load_evaluate(f"short/{name}")
+def test_benchmark_entry_point_accepts_no_arguments():
+    evaluate = load_evaluate("long/semantic_benchmark")
     inspect.signature(evaluate).bind()
 
 
 def test_semantic_benchmark_runs_through_evaluator(monkeypatch, tmp_path):
-    evaluate = load_evaluate("short/semantic_benchmark")
+    evaluate = load_evaluate("long/semantic_benchmark")
     calls = []
 
     def run_case(seed, dimensions):
@@ -28,7 +28,7 @@ def test_semantic_benchmark_runs_through_evaluator(monkeypatch, tmp_path):
     monkeypatch.setitem(evaluate.__globals__, "run_case", run_case)
     monkeypatch.setitem(evaluate.__globals__, "summarize", lambda rows: rows)
     monkeypatch.setattr("ops.evaluate.load_evaluate", lambda name: evaluate)
-    result = CliRunner().invoke(cli, ["run", "short/semantic_benchmark"])
+    result = CliRunner().invoke(cli, ["run", "long/semantic_benchmark"])
     assert result.exit_code == 0, result.output
     assert calls == [(seed, d) for d in (50, 100, 200) for seed in range(5)]
     for filename in ("semantic_raw.csv", "semantic_summary.csv"):
@@ -39,8 +39,10 @@ def test_semantic_benchmark_runs_through_evaluator(monkeypatch, tmp_path):
 
 
 def test_lunar_benchmark_uses_moved_assets():
-    evaluate = load_evaluate("short/lunar_benchmark")
+    evaluate = eval_lunar_benchmark.evaluate
     root = evaluate.__globals__["ROOT"]
-    assert root == Path(__file__).resolve().parents[2] / "evals" / "short"
-    transform = evaluate.__globals__["lunar_projection"]()
+    assert (
+        root == Path(__file__).resolve().parents[2] / "_reports" / "semantic_features"
+    )
+    transform = SemanticInputTransform.load(root / "lunar_projection.npz")
     assert transform is not None

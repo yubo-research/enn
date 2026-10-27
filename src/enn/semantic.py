@@ -19,7 +19,7 @@ def _description(name, description):
     return description.strip() if description and description.strip() else name
 
 
-def _projection(embeddings, dimensions):
+def _projection(embeddings, variance_cutoff):
     vectors = np.asarray(embeddings, dtype=float)
     if vectors.ndim != 2 or vectors.shape[1] == 0 or not np.isfinite(vectors).all():
         raise ValueError("embeddings must be a finite nonempty matrix")
@@ -27,8 +27,15 @@ def _projection(embeddings, dimensions):
     vectors = vectors / np.where(norms > 0, norms, 1)
     vectors -= vectors.mean(axis=0)
     u, singular, _ = np.linalg.svd(vectors, full_matrices=False)
-    rank = np.count_nonzero(singular > max(vectors.shape) * np.finfo(float).eps)
-    retained = min(dimensions, rank)
+    singular = singular[singular > max(vectors.shape) * np.finfo(float).eps]
+    cumulative = np.cumsum(singular**2)
+    retained = (
+        int(np.searchsorted(cumulative, variance_cutoff * cumulative[-1])) + 1
+        if cumulative.size and cumulative[-1] > 0
+        else 0
+    )
+    if variance_cutoff == 1:
+        retained = singular.size
     projection = u[:, :retained] * singular[:retained]
     for column in projection.T:
         column *= 1 if column[np.argmax(np.abs(column))] >= 0 else -1
@@ -42,6 +49,8 @@ class SemanticInputTransform:
 
     Bounds have shape (D, 2). ``relative_weight`` is the expected semantic/original
     squared-distance ratio for independent inputs with equal normalized variance.
+    ``variance_cutoff`` retains the shortest SVD prefix explaining this fraction
+    of the variance above the numerical-rank tolerance.
     An optional encoder implements ``encode(texts)``; default construction alone
     imports sentence-transformers. Inference and loading require only NumPy.
     """
@@ -50,6 +59,7 @@ class SemanticInputTransform:
     bounds: np.ndarray
     model: str
     relative_weight: float
+    variance_cutoff: float
     projection: np.ndarray
 
     def __init__(
@@ -59,7 +69,7 @@ class SemanticInputTransform:
         descriptions=None,
         *,
         model="sentence-transformers/all-MiniLM-L6-v2",
-        dimensions=8,
+        variance_cutoff=0.9,
         relative_weight=0.25,
         encoder=None,
     ):
@@ -67,7 +77,8 @@ class SemanticInputTransform:
         object.__setattr__(self, "bounds", np.array(bounds, dtype=float, copy=True))
         object.__setattr__(self, "model", model)
         object.__setattr__(self, "relative_weight", float(relative_weight))
-        self._validate_definition(dimensions)
+        object.__setattr__(self, "variance_cutoff", float(variance_cutoff))
+        self._validate_definition()
         descriptions = (
             [None] * len(self.names) if descriptions is None else descriptions
         )
@@ -84,11 +95,11 @@ class SemanticInputTransform:
             raise ValueError("encoder returned the wrong number of variables")
         rows = [unique_texts.index(text) for text in texts]
         object.__setattr__(
-            self, "projection", _projection(embeddings[rows], dimensions)
+            self, "projection", _projection(embeddings[rows], self.variance_cutoff)
         )
         self._freeze()
 
-    def _validate_definition(self, dimensions):
+    def _validate_definition(self):
         if (
             not self.names
             or any(not isinstance(n, str) or not n.strip() for n in self.names)
@@ -101,12 +112,8 @@ class SemanticInputTransform:
             or np.any(self.bounds[:, 1] <= self.bounds[:, 0])
         ):
             raise ValueError("bounds must be finite increasing pairs, one per variable")
-        if (
-            not isinstance(dimensions, int)
-            or isinstance(dimensions, bool)
-            or dimensions < 1
-        ):
-            raise ValueError("dimensions must be a positive integer")
+        if not np.isfinite(self.variance_cutoff) or not 0 < self.variance_cutoff <= 1:
+            raise ValueError("variance_cutoff must be finite and in (0, 1]")
         if not np.isfinite(self.relative_weight) or self.relative_weight < 0:
             raise ValueError("relative_weight must be finite and nonnegative")
 
@@ -153,6 +160,7 @@ class SemanticInputTransform:
                 "names": self.names,
                 "model": self.model,
                 "relative_weight": self.relative_weight,
+                "variance_cutoff": self.variance_cutoff,
                 "version": 1,
             }
         )
@@ -176,6 +184,9 @@ class SemanticInputTransform:
             object.__setattr__(
                 result, "relative_weight", float(meta["relative_weight"])
             )
+            object.__setattr__(
+                result, "variance_cutoff", float(meta.get("variance_cutoff", 0.9))
+            )
             object.__setattr__(result, "bounds", data["bounds"].copy())
             object.__setattr__(result, "projection", data["projection"].copy())
         if (
@@ -184,6 +195,6 @@ class SemanticInputTransform:
             or not np.isfinite(result.projection).all()
         ):
             raise ValueError("invalid cached projection")
-        result._validate_definition(max(1, result.projection.shape[1]))
+        result._validate_definition()
         result._freeze()
         return result

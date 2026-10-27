@@ -2,7 +2,7 @@
 
 import pytest
 
-from evals import scaling_n as mod
+from enn.evals import scaling_n as mod
 
 
 @pytest.mark.slow

@@ -1,5 +1,6 @@
 """Semantic features use metadata and bounds, never observations or targets."""
 
+import json
 import sys
 
 import numpy as np
@@ -21,7 +22,7 @@ def make_transform(**kwargs):
 
 
 def test_projection_geometry_and_order():
-    transform = make_transform()
+    transform = make_transform(variance_cutoff=1)
     assert transform.projection.shape == (3, 2)
     np.testing.assert_allclose(np.sum(transform.projection**2), 2)
     np.testing.assert_allclose(np.sum(transform.weighted_projection**2), 0.75)
@@ -36,16 +37,29 @@ def test_projection_geometry_and_order():
         transform.transform(x, names=["a", "a", "b"])
 
 
-def test_cache_load_without_sentence_runtime(tmp_path, monkeypatch):
-    transform = make_transform()
+@pytest.mark.parametrize("legacy", [False, True])
+def test_cache_load_without_sentence_runtime(tmp_path, monkeypatch, legacy):
+    transform = make_transform(variance_cutoff=1)
     path = tmp_path / "projection.npz"
     transform.save(path)
+    with np.load(path) as data:
+        metadata = json.loads(str(data["metadata"]))
+    assert metadata["variance_cutoff"] == 1
+    if legacy:
+        metadata.pop("variance_cutoff")
+        np.savez(
+            path,
+            bounds=transform.bounds,
+            projection=transform.projection,
+            metadata=json.dumps(metadata),
+        )
     monkeypatch.setitem(sys.modules, "sentence_transformers", None)
     restored = SemanticInputTransform.load(path)
     np.testing.assert_array_equal(
         restored.transform([[1, 0, 2]]), transform.transform([[1, 0, 2]])
     )
     assert restored.names == transform.names
+    assert restored.variance_cutoff == (0.9 if legacy else 1)
     assert not restored.projection.flags.writeable
 
 
@@ -58,14 +72,19 @@ def test_descriptions_files_fallback_and_degeneracy(tmp_path):
     degenerate = make_transform(descriptions=["same"] * 3)
     assert degenerate.projection.shape == (3, 0)
     assert degenerate.transform([[0, 1, 2]]).shape == (1, 3)
-    limited = make_transform(dimensions=1, relative_weight=0)
+    limited = make_transform(variance_cutoff=0.9, relative_weight=0)
     np.testing.assert_array_equal(limited.transform([[1, 1, 1]])[:, 3:], 0)
 
 
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"dimensions": 0},
+        {"variance_cutoff": 0},
+        {"variance_cutoff": -0.1},
+        {"variance_cutoff": float("nan")},
+        {"variance_cutoff": float("inf")},
+        {"variance_cutoff": float("-inf")},
+        {"variance_cutoff": 1.01},
         {"relative_weight": -1},
         {"relative_weight": float("nan")},
         {"descriptions": [None]},
@@ -74,6 +93,33 @@ def test_descriptions_files_fallback_and_degeneracy(tmp_path):
 def test_invalid_metadata_configuration(kwargs):
     with pytest.raises(ValueError):
         make_transform(**kwargs)
+
+
+@pytest.mark.parametrize("cutoff,columns", [(0.5, 1), (0.9, 1), (0.98, 2), (1, 2)])
+def test_variance_cutoff_selects_shortest_prefix(cutoff, columns):
+    # The normalized, centered encoder vectors have 97.66% in the first factor.
+    transform = make_transform(variance_cutoff=cutoff)
+    assert transform.projection.shape == (3, columns)
+    np.testing.assert_allclose(np.sum(transform.projection**2), columns)
+    np.testing.assert_allclose(np.sum(transform.weighted_projection**2), 0.75)
+    assert transform.transform([[0, 1, 2]]).shape == (1, 3 + columns)
+    assert make_transform().variance_cutoff == 0.9
+
+
+def test_full_cutoff_keeps_small_numerically_nonzero_components():
+    class UnequalEncoder:
+        def encode(self, texts):
+            return np.array(
+                [[1, 1e-10, 0], [1, -1e-10, 0], [1, 0, 1e-5], [1, 0, -1e-5]]
+            )
+
+    transform = SemanticInputTransform(
+        ["a", "b", "c", "d"],
+        [[0, 1]] * 4,
+        variance_cutoff=1,
+        encoder=UnequalEncoder(),
+    )
+    assert transform.projection.shape == (4, 3)
 
 
 def test_enn_paths_match_explicit_augmentation():

@@ -24,9 +24,9 @@ def _collect(names, call):
 def test_eval_command_runs_exact_eval_id() -> None:
     from ops.evaluate_modal import eval_command
 
-    cmd = eval_command("short/bpann_sphere_d10")
+    cmd = eval_command("short/prediction")
     assert cmd[0] == sys.executable
-    assert cmd[-1] == "short/bpann_sphere_d10"
+    assert cmd[-1] == "short/prediction"
     assert "load_evaluate" in cmd[2]
 
 
@@ -100,19 +100,19 @@ def test_run_model_command_and_alias(monkeypatch) -> None:
 
     monkeypatch.setattr(evaluate_modal, "run_on_modal", fake_run_on_modal)
     for command in ("run-model", "rm"):
-        result = CliRunner().invoke(evaluate.cli, [command, "short/y_"])
+        result = CliRunner().invoke(evaluate.cli, [command, "short/pred"])
         assert result.exit_code == 0, result.output
         assert "fake output" in result.output
-    assert seen == [evaluate.list_eval_names("short/y_")] * 2
+    assert seen == [evaluate.list_eval_names("short/pred")] * 2
 
 
 def test_run_model_command_fails_when_an_eval_fails(monkeypatch) -> None:
     from ops import evaluate, evaluate_modal
 
     monkeypatch.setattr(evaluate_modal, "run_on_modal", lambda names, echo: names[:1])
-    result = CliRunner().invoke(evaluate.cli, ["rm", "short/y_"])
+    result = CliRunner().invoke(evaluate.cli, ["rm", "short/pred"])
     assert result.exit_code != 0
-    assert "evals failed: short/y_bounds" in result.output
+    assert "evals failed: short/prediction" in result.output
 
 
 def test_run_model_unknown_prefix_fails() -> None:

@@ -3,7 +3,12 @@
 import numpy as np
 import pytest
 
-from evals.short.tlunar import DESCRIPTIONS, NAMES, TurboLunarPolicy, controller_weights
+from _reports.semantic_features.tlunar import (
+    DESCRIPTIONS,
+    NAMES,
+    TurboLunarPolicy,
+    controller_weights,
+)
 
 
 def test_controller_metadata_and_weight_mapping():
