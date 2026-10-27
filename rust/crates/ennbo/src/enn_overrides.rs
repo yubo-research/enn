@@ -72,6 +72,8 @@ pub struct EnnOverrides {
     pub work_dir: Option<PathBuf>,
     pub metric_learning: Option<MetricLearning>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
+    /// Weighted semantic projection for centered unit inputs.
+    pub semantic_projection: Option<ndarray::Array2<f64>>,
 }
 
 impl EnnOverrides {
@@ -98,6 +100,9 @@ impl EnnOverrides {
             }
         }
         enn.layout = self.layout(&enn.layout)?;
+        if let Some(p) = &self.semantic_projection {
+            enn.semantic_projection = Some(Box::new(p.clone()));
+        }
         if let Some(yb) = self.y_bounds.clone() {
             enn.y_bounds = Some(yb);
         }

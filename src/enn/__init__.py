@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._lazy import lazy_getattr
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
+    "SemanticInputTransform": (".semantic", "SemanticInputTransform"),
     "EpistemicNearestNeighbors": (".enn.enn_class", "EpistemicNearestNeighbors"),
     "ENNStatefulFitter": (".enn.enn_fitter", "ENNStatefulFitter"),
     "AffineCalibrator": (".enn.affine_calibrator", "AffineCalibrator"),

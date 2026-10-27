@@ -108,6 +108,8 @@ pub mod strategy;
 #[allow(missing_docs)]
 pub mod surrogate;
 #[allow(missing_docs)]
+pub mod semantic;
+#[allow(missing_docs)]
 pub mod surrogate_affine;
 pub(crate) mod surrogate_state;
 #[allow(missing_docs)]

@@ -6,6 +6,8 @@ from enum import Enum, auto
 
 import numpy as np
 
+from enn.semantic import SemanticInputTransform
+
 from .enn_fit_config import ENNFitConfig
 from .enn_index_driver import ENNIndexDriver, index_driver_to_wire
 from .enn_x_scaling import (
@@ -59,6 +61,7 @@ class ENNSurrogateConfig:
     index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
     enn_storage: ENNStorage | None = None
     work_dir: str | os.PathLike[str] | None = None
+    input_transform: SemanticInputTransform | None = field(default=None, kw_only=True)
     y_bounds: np.ndarray | None = None
 
     def __post_init__(self) -> None:
@@ -71,9 +74,7 @@ class ENNSurrogateConfig:
         )
         self._check_tied_dims()
         if self.y_bounds is not None:
-            object.__setattr__(
-                self, "y_bounds", np.asarray(self.y_bounds, dtype=float)
-            )
+            object.__setattr__(self, "y_bounds", np.asarray(self.y_bounds, dtype=float))
 
     def _check_tied_dims(self) -> None:
         """Only ``ENNMetricLearning.AUTO`` reads ``tied_dims``. The range check against the

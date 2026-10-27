@@ -33,6 +33,7 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
             layout,
             y_bounds: None,
             tied_dims: Vec::new(),
+            semantic_projection: None,
         };
     }
     cfg.candidates = CandidateConfig {

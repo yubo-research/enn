@@ -36,7 +36,9 @@ class ENNStatefulFitter:
         *,
         seed: int | None = None,
         infer_aleatoric_variance_scale: bool = True,
+        input_transform=None,
     ) -> None:
+        self.input_transform = input_transform
         if seed is None:
             if rng is None:
                 raise TypeError("ENNStatefulFitter requires rng or seed")
@@ -67,6 +69,8 @@ class ENNStatefulFitter:
         y_bounds: np.ndarray | None = None,
     ) -> None:
         x_array = np.asarray(x, dtype=float)
+        if self.input_transform is not None:
+            x_array = self.input_transform.transform(x_array)
         y_array = np.asarray(y, dtype=float)
         if y_array.ndim == 1:
             y_array = y_array.reshape(-1, 1)
@@ -97,6 +101,8 @@ class ENNStatefulFitter:
         if not isinstance(model, PyENN):
             raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
 
+        if self.input_transform is not model.input_transform:
+            raise ValueError("fitter and model must share the same input transform")
         rust_result = self._rust.ask(
             model.rust_backend,
             None if num_fit_candidates is None else int(num_fit_candidates),
@@ -158,7 +164,7 @@ class ENNStatefulFitter:
         flags = flags if flags is not None else PosteriorFlags()
         mu, se, se_epi, se_ale, idx = self._rust.posterior_calibrated(
             model.rust_backend,
-            np.asarray(x, dtype=float),
+            model.transform_inputs(np.asarray(x, dtype=float)),
             self._fit_scales(params),
             flags.exclude_nearest,
             flags.observation_noise,
@@ -182,7 +188,7 @@ class ENNStatefulFitter:
         flags = flags if flags is not None else PosteriorFlags()
         draws, idx = self._rust.function_draw_calibrated(
             model.rust_backend,
-            np.asarray(x, dtype=float),
+            model.transform_inputs(np.asarray(x, dtype=float)),
             self._fit_scales(params),
             _to_rust_seeds(function_seeds),
             flags.exclude_nearest,

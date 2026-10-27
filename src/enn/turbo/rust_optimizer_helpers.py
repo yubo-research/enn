@@ -84,6 +84,8 @@ def _metric_overrides(surrogate: ENNSurrogateConfig, overrides: dict[str, Any]) 
     overrides["metric_learning"] = metric_learning_to_wire(surrogate.metric_learning)
     if surrogate.tied_dims:
         overrides["tied_dims"] = [list(g) for g in surrogate.tied_dims]
+    if surrogate.input_transform is not None:
+        overrides["semantic_projection"] = surrogate.input_transform.weighted_projection
     if surrogate.fit.affine_calibrate:
         overrides["affine_calibrate"] = True
 

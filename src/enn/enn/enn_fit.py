@@ -44,7 +44,7 @@ def subsample_loglik(
 
     return _rust_subsample_loglik(
         model.rust_backend,
-        x_array,
+        model.transform_inputs(x_array),
         y_array,
         k_values,
         epi_scales,
@@ -83,7 +83,7 @@ def enn_fit(
         raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
 
     if incremental is None:
-        fitter = ENNStatefulFitter(k=k, rng=rng)
+        fitter = ENNStatefulFitter(k=k, rng=rng, input_transform=model.input_transform)
         x_all, y_all, yvar_all = model.train_rows_at(list(range(len(model))))
         y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
         fitter.tell(x_all, y_all, yvar_all, y_bounds=y_bounds)
@@ -103,7 +103,9 @@ def enn_fit(
         incremental,
         int(k),
         int(rng.integers(0, 2**63 - 1)),
-        num_fit_candidates=None if num_fit_candidates is None else int(num_fit_candidates),
+        num_fit_candidates=None
+        if num_fit_candidates is None
+        else int(num_fit_candidates),
         num_fit_samples=num_fit_samples,
         params_warm_start=rust_params(params_warm_start),
     )

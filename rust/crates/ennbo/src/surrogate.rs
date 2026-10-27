@@ -90,6 +90,8 @@ pub struct ENNSurrogateConfig {
     pub y_bounds: Option<Array2<f64>>,
     /// Groups of tied input dimensions. Only `MetricLearning::Auto` reads them.
     pub tied_dims: Vec<Vec<usize>>,
+    /// Weighted semantic projection applied to centered unit-bound inputs.
+    pub semantic_projection: Option<Box<Array2<f64>>>,
 }
 
 impl Default for ENNSurrogateConfig {
@@ -100,6 +102,7 @@ impl Default for ENNSurrogateConfig {
             layout: EnnLayout::memory(IndexDriver::Flat, false),
             y_bounds: None,
             tied_dims: Vec::new(),
+            semantic_projection: None,
         }
     }
 }
@@ -107,6 +110,7 @@ impl Default for ENNSurrogateConfig {
 impl ENNSurrogateConfig {
     /// Reject `tied_dims` that would be ignored or that do not fit `num_dim` inputs.
     pub fn validate(&self, num_dim: usize) -> Result<(), ENNError> {
+        crate::semantic::validate(self.semantic_projection.as_deref(), num_dim, &self.layout)?;
         if self.tied_dims.is_empty() {
             return Ok(());
         }
@@ -291,12 +295,13 @@ impl Surrogate for ENNSurrogate {
 
     fn observation_row_x(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
         let model = self.fitted_model()?;
-        model.rows().row_x(idx)
+        let row = model.rows().row_x(idx)?;
+        Ok(crate::semantic::original_row(row, self.config.semantic_projection.as_deref()))
     }
 
     fn observation_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
         let model = self.fitted_model()?;
-        
+
         model.row_y_natural(idx)
     }
 
@@ -352,7 +357,7 @@ impl Surrogate for ENNSurrogate {
         for i in 0..n {
             x.row_mut(i).assign(&model.rows().row_x(i)?);
         }
-        Ok(Some(x))
+        Ok(Some(crate::semantic::original_rows(x, self.config.semantic_projection.as_deref())))
     }
 
     fn fit(
@@ -367,7 +372,8 @@ impl Surrogate for ENNSurrogate {
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
         let warm = self.state.params().copied();
         self.state = FitState::Unfitted;
-        self.start_model(x, y, yvar, warm, &mut local_rng)
+        let features = crate::semantic::augment(x, self.config.semantic_projection.as_deref())?;
+        self.start_model(&features.view(), y, yvar, warm, &mut local_rng)
     }
 
     fn fit_append(
@@ -380,7 +386,8 @@ impl Surrogate for ENNSurrogate {
         let mut seed_bytes = [0u8; 32];
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
-        self.fit_append_internal(x_new, y_new, yvar_new, &mut local_rng)
+        let features = crate::semantic::augment(x_new, self.config.semantic_projection.as_deref())?;
+        self.fit_append_internal(&features.view(), y_new, yvar_new, &mut local_rng)
     }
 
     fn schedule_background_flush(&self) -> Result<(), ENNError> {
@@ -393,9 +400,9 @@ impl Surrogate for ENNSurrogate {
 
     fn wait_for_background_flush(&self) -> Result<(), ENNError> {
         if let Some(model) = self.state.model() {
-            
-            
-            
+
+
+
             model.backend.wait_for_flush()
         } else {
             Ok(())
@@ -429,6 +436,8 @@ impl Surrogate for ENNSurrogate {
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {
         let model = self.fitted_model()?;
         let params = self.params_or_default()?;
+        let features = crate::semantic::augment(x, self.config.semantic_projection.as_deref())?;
+        let x = &features.view();
 
         let flags = PosteriorFlags::new();
         let posterior = model.posterior(x, &params, &flags)?;
@@ -457,8 +466,10 @@ impl Surrogate for ENNSurrogate {
     ) -> Result<Array3<f64>, ENNError> {
         let model = self.fitted_model()?;
         let params = self.params_or_default()?;
+        let features = crate::semantic::augment(x, self.config.semantic_projection.as_deref())?;
+        let x = &features.view();
 
-        
+
         let mut seed_bytes = [0u8; 8];
         rng.fill_bytes(&mut seed_bytes);
         let base_seed = u64::from_le_bytes(seed_bytes) as i64;
@@ -504,11 +515,11 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         surrogate.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
 
-        
+
         assert!(surrogate.model().is_some());
         assert!(surrogate.params().is_some());
 
-        
+
         let x_query = array![[0.5, 0.5]];
         let pred = surrogate.predict(&x_query.view()).unwrap();
         assert_eq!(pred.mu.shape(), &[1, 1]);
@@ -789,7 +800,7 @@ mod tests {
         sur.fit(&x0.view(), &y0.view(), None, &mut rng).unwrap();
         assert!(sur.params().is_some(), "initial fit must set params");
 
-        
+
         let before = std::fs::metadata(dir.path().join("indexed_rows.bin"))
             .ok()
             .map(|m| m.len());
@@ -808,7 +819,7 @@ mod tests {
         );
         assert_eq!(sur.model().expect("model").len(), 23);
 
-        
+
         sur.wait_for_background_flush().unwrap();
         let after_wait = std::fs::metadata(dir.path().join("indexed_rows.bin"))
             .ok()

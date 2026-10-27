@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import sys
 from contextlib import asynccontextmanager
 
@@ -53,7 +54,10 @@ def test_format_result_marks_status_and_frames_output() -> None:
         "===== end short/a =====",
     ]
     bad = format_result("short/b", 2, "")
-    assert bad.splitlines() == ["===== short/b (FAILED rc=2) =====", "===== end short/b ====="]
+    assert bad.splitlines() == [
+        "===== short/b (FAILED rc=2) =====",
+        "===== end short/b =====",
+    ]
 
 
 def test_run_all_prints_each_eval_atomically_in_completion_order() -> None:
@@ -117,3 +121,16 @@ def test_run_model_unknown_prefix_fails() -> None:
     result = CliRunner().invoke(evaluate.cli, ["rm", "does_not_exist_xyz"])
     assert result.exit_code != 0
     assert "no evals match" in result.output
+
+
+def test_local_helpers_do_not_import_modal() -> None:
+    code = (
+        "import sys; sys.modules['modal'] = None; "
+        "from ops.evaluate_modal import eval_command, format_result; "
+        "assert eval_command('short/x')[-1] == 'short/x'; "
+        "assert 'ok' in format_result('short/x', 0, '')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
