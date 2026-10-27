@@ -22,6 +22,7 @@ pub(crate) const ENN_OVERRIDE_KEYS: &[&str] = &[
     "tied_dims",
     "affine_calibrate",
     "semantic_projection",
+    "semantic_only",
 ];
 
 fn to_py_err(e: ennbo::ENNError) -> PyErr {
@@ -108,6 +109,7 @@ pub(crate) fn parse_enn_overrides(
             .map(|s| metric_learning_from_wire(&s))
             .transpose()?,
         tied_dims,
+        semantic_only: optional_bool(dict, "semantic_only")?,
         semantic_projection: dict.get_item("semantic_projection")?
             .map(|v| Ok::<_, PyErr>(v.extract::<numpy::PyReadonlyArray2<f64>>()?.as_array().to_owned()))
             .transpose()?,

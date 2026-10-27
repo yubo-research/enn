@@ -62,6 +62,7 @@ class ENNSurrogateConfig:
     enn_storage: ENNStorage | None = None
     work_dir: str | os.PathLike[str] | None = None
     input_transform: SemanticInputTransform | None = field(default=None, kw_only=True)
+    semantic_only: bool = field(default=False, kw_only=True)
     y_bounds: np.ndarray | None = None
 
     def __post_init__(self) -> None:
@@ -73,6 +74,8 @@ class ENNSurrogateConfig:
             metric_learning=self.metric_learning,
         )
         self._check_tied_dims()
+        if self.semantic_only and self.input_transform is None:
+            raise ValueError("semantic_only requires input_transform")
         if self.y_bounds is not None:
             object.__setattr__(self, "y_bounds", np.asarray(self.y_bounds, dtype=float))
 

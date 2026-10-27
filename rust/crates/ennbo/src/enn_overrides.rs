@@ -73,6 +73,7 @@ pub struct EnnOverrides {
     pub metric_learning: Option<MetricLearning>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
     /// Weighted semantic projection for centered unit inputs.
+    pub semantic_only: Option<bool>,
     pub semantic_projection: Option<ndarray::Array2<f64>>,
 }
 
@@ -100,6 +101,9 @@ impl EnnOverrides {
             }
         }
         enn.layout = self.layout(&enn.layout)?;
+        if let Some(only) = self.semantic_only {
+            enn.semantic_only = only;
+        }
         if let Some(p) = &self.semantic_projection {
             enn.semantic_projection = Some(Box::new(p.clone()));
         }

@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parent
-METHODS = ["baseline", "semantic", "shuffled"]
+METHODS = ["real", "semantic_only", "both", "shuffled"]
 SCENARIOS = ["A_related", "B_independent", "C_permuted"]
 
 
@@ -52,21 +52,21 @@ def tables(rows):
     for metric in ["nrmse", "loglik"]:
         lines = []
         for scenario in SCENARIOS:
-            for count in [50, 100, 200, 500]:
-                cells = [scenario[0], str(count)]
+            for count in [30, 100, 300, 1000]:
+                cells = [f"S{SCENARIOS.index(scenario) + 1}", str(count)]
                 cells.extend(metric_cells(rows, scenario, count, metric))
                 lines.append(" & ".join(cells) + r" \\")
         (ROOT / f"{metric}_table.tex").write_text(table_body(lines))
     lines = []
     for scenario in SCENARIOS:
-        baseline = seed_values(rows, scenario, "baseline", "nrmse")
+        baseline = seed_values(rows, scenario, "real", "nrmse")
         for method in METHODS[1:]:
             values = seed_values(rows, scenario, method, "nrmse")
             change = 100 * (values / baseline - 1)
             mean, se = mean_se(change)
             delta, delta_se = mean_se(values - baseline)
             lines.append(
-                f"{scenario[0]} & {method} & ${mean:+.2f} \\pm {se:.2f}$ & ${delta:+.3f} \\pm {delta_se:.3f}$"
+                f"S{SCENARIOS.index(scenario) + 1} & {method} & ${mean:+.2f} \\pm {se:.2f}$ & ${delta:+.3f} \\pm {delta_se:.3f}$"
                 + r" \\"
             )
     (ROOT / "paired_table.tex").write_text(table_body(lines))
@@ -74,20 +74,20 @@ def tables(rows):
 
 def plot(rows):
     figure, axes = plt.subplots(2, 3, figsize=(9, 4.8), sharex=True)
-    colors = ["#555555", "#0072b2", "#d55e00"]
+    colors = ["#555555", "#0072b2", "#009e73", "#d55e00"]
     for column, scenario in enumerate(SCENARIOS):
         for row, metric in enumerate(["nrmse", "loglik"]):
             for method, color in zip(METHODS, colors):
                 results = [
                     mean_se(seed_values(rows, scenario, method, metric, count))
-                    for count in [50, 100, 200, 500]
+                    for count in [30, 100, 300, 1000]
                 ]
                 axes[row, column].errorbar(
-                    [50, 100, 200, 500],
+                    [30, 100, 300, 1000],
                     [r[0] for r in results],
                     yerr=[r[1] for r in results],
                     color=color,
-                    label=method,
+                    label=method.replace("_", " ").capitalize(),
                     marker="o",
                     capsize=2,
                     linewidth=1,
@@ -95,9 +95,11 @@ def plot(rows):
             axes[row, column].grid(alpha=0.2)
             axes[row, column].set_xscale("log")
             axes[row, column].set_xticks(
-                [50, 100, 200, 500], ["50", "100", "200", "500"]
+                [30, 100, 300, 1000], ["30", "100", "300", "1000"]
             )
-        axes[0, column].set_title(scenario.replace("_", ": "))
+        axes[0, column].set_title(
+            ["S1: Aligned", "S2: Independent", "S3: Permuted"][column]
+        )
         axes[1, column].set_xlabel("Training observations")
     axes[0, 0].set_ylabel("NRMSE (lower is better)")
     axes[1, 0].set_ylabel("LogLik (higher is better)")

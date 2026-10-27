@@ -1,6 +1,6 @@
 """Paired high-dimensional ENN regression benchmark; run from repository root.
 
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src python short/evals/semantic_benchmark.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src python ops/evaluate.py run short/semantic_benchmark
 Install sentence-transformers to construct the cached projections on the first run.
 """
 
@@ -47,7 +47,7 @@ def objective(x, weights):
 
 def problem(seed, dimensions):
     rng = np.random.default_rng(seed)
-    x = rng.uniform(size=(756, dimensions))
+    x = rng.uniform(size=(1256, dimensions))
     group_weights = rng.normal(size=(8, 3))
     group_weights -= group_weights.mean(axis=0)
     aligned = group_weights[np.arange(dimensions) % 8]
@@ -56,12 +56,12 @@ def problem(seed, dimensions):
     return x, aligned / scale, unrelated / scale, rng.permutation(dimensions)
 
 
-def evaluate(x, y, train_count, features):
+def evaluate_prediction(y, train_count, features):
     z = features
     model = EpistemicNearestNeighbors(z[:train_count], y[:train_count])
-    post = model.posterior(z[500:], params=ENNParams(8, 1.0, 0.0))
-    residual = (post.mu - y[500:]).ravel()
-    std = y[500:].std()
+    post = model.posterior(z[1000:], params=ENNParams(8, 1.0, 0.0))
+    residual = (post.mu - y[1000:]).ravel()
+    std = y[1000:].std()
     variance = np.maximum(post.se.ravel() ** 2, 1e-12)
     rmse = np.sqrt(np.mean(residual**2)) / std
     loglik = np.mean(
@@ -73,7 +73,11 @@ def evaluate(x, y, train_count, features):
 def run_case(seed, dimensions):
     transform = projection_for(dimensions)
     x, aligned, unrelated, permutation = problem(seed, dimensions)
-    features = {"baseline": x - 0.5, "semantic": transform.transform(x)}
+    features = {
+        "real": x - 0.5,
+        "semantic_only": transform.transform(x)[:, dimensions:],
+        "both": transform.transform(x),
+    }
     shuffled = transform.transform(x[:, permutation])[:, dimensions:]
     features["shuffled"] = np.concatenate((x - 0.5, shuffled), axis=1)
     rows = []
@@ -83,9 +87,9 @@ def run_case(seed, dimensions):
         ("C_permuted", aligned[permutation]),
     ]:
         y = objective(x, weights)
-        for count in [50, 100, 200, 500]:
+        for count in [30, 100, 300, 1000]:
             for method, values in features.items():
-                nrmse, loglik = evaluate(x, y, count, values)
+                nrmse, loglik = evaluate_prediction(y, count, values)
                 rows.append(
                     {
                         "seed": seed,
@@ -132,7 +136,7 @@ def write_csv(path, rows):
         writer.writerows(rows)
 
 
-def main():
+def evaluate():
     rows = []
     for dimensions in [50, 100, 200]:
         for seed in range(5):
@@ -143,4 +147,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    evaluate()

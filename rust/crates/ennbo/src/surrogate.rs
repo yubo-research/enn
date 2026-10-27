@@ -90,6 +90,8 @@ pub struct ENNSurrogateConfig {
     pub y_bounds: Option<Array2<f64>>,
     /// Groups of tied input dimensions. Only `MetricLearning::Auto` reads them.
     pub tied_dims: Vec<Vec<usize>>,
+    /// Use only the projected features, retaining original observations separately.
+    pub semantic_only: bool,
     /// Weighted semantic projection applied to centered unit-bound inputs.
     pub semantic_projection: Option<Box<Array2<f64>>>,
 }
@@ -102,6 +104,7 @@ impl Default for ENNSurrogateConfig {
             layout: EnnLayout::memory(IndexDriver::Flat, false),
             y_bounds: None,
             tied_dims: Vec::new(),
+            semantic_only: false,
             semantic_projection: None,
         }
     }
@@ -110,9 +113,12 @@ impl Default for ENNSurrogateConfig {
 impl ENNSurrogateConfig {
     /// Reject `tied_dims` that would be ignored or that do not fit `num_dim` inputs.
     pub fn validate(&self, num_dim: usize) -> Result<(), ENNError> {
-        crate::semantic::validate(self.semantic_projection.as_deref(), num_dim, &self.layout)?;
+        crate::semantic::validate(self.semantic_projection.as_deref(), num_dim, self.semantic_only)?;
         if self.tied_dims.is_empty() {
             return Ok(());
+        }
+        if self.semantic_projection.is_some() {
+            return Err(ENNError::InvalidParameter("tied dimensions with semantic features are unsupported".into()));
         }
         if self.layout.metric_learning() != MetricLearning::Auto {
             return Err(ENNError::InvalidParameter(
@@ -133,6 +139,7 @@ impl ENNSurrogateConfig {
 pub struct ENNSurrogate {
     config: ENNSurrogateConfig,
     state: FitState,
+    original_x: Option<Array2<f64>>,
 }
 
 impl ENNSurrogate {
@@ -140,6 +147,7 @@ impl ENNSurrogate {
         Self {
             config,
             state: FitState::Unfitted,
+            original_x: None,
         }
     }
 
@@ -294,6 +302,12 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn observation_row_x(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
+        if let Some(x) = &self.original_x {
+            if idx >= x.nrows() {
+                return Err(ENNError::InvalidParameter("observation index out of range".into()));
+            }
+            return Ok(x.row(idx).to_owned());
+        }
         let model = self.fitted_model()?;
         let row = model.rows().row_x(idx)?;
         Ok(crate::semantic::original_row(row, self.config.semantic_projection.as_deref()))
@@ -345,6 +359,9 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
+        if let Some(x) = &self.original_x {
+            return Ok(Some(x.clone()));
+        }
         let model = match self.state.model() {
             Some(m) => m,
             None => return Ok(None),
@@ -372,8 +389,11 @@ impl Surrogate for ENNSurrogate {
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
         let warm = self.state.params().copied();
         self.state = FitState::Unfitted;
-        let features = crate::semantic::augment(x, self.config.semantic_projection.as_deref())?;
-        self.start_model(&features.view(), y, yvar, warm, &mut local_rng)
+        self.original_x = None;
+        let features = crate::semantic::features(x, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
+        self.start_model(&features.view(), y, yvar, warm, &mut local_rng)?;
+        self.original_x = self.config.semantic_only.then(|| x.to_owned());
+        Ok(())
     }
 
     fn fit_append(
@@ -386,8 +406,16 @@ impl Surrogate for ENNSurrogate {
         let mut seed_bytes = [0u8; 32];
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
-        let features = crate::semantic::augment(x_new, self.config.semantic_projection.as_deref())?;
-        self.fit_append_internal(&features.view(), y_new, yvar_new, &mut local_rng)
+        let features = crate::semantic::features(x_new, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
+        self.fit_append_internal(&features.view(), y_new, yvar_new, &mut local_rng)?;
+        if self.config.semantic_only {
+            self.original_x = Some(match self.original_x.take() {
+                Some(x) => ndarray::concatenate(ndarray::Axis(0), &[x.view(), x_new.view()])
+                    .map_err(|e| ENNError::InvalidParameter(e.to_string()))?,
+                None => x_new.to_owned(),
+            });
+        }
+        Ok(())
     }
 
     fn schedule_background_flush(&self) -> Result<(), ENNError> {
@@ -426,6 +454,7 @@ impl Surrogate for ENNSurrogate {
             None => None,
         };
         self.state = FitState::Unfitted;
+        self.original_x = None;
         if let Some(work_dir) = owned_store {
             ennbo_bpann::bpann_remove_store(&work_dir)
                 .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
@@ -436,7 +465,7 @@ impl Surrogate for ENNSurrogate {
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {
         let model = self.fitted_model()?;
         let params = self.params_or_default()?;
-        let features = crate::semantic::augment(x, self.config.semantic_projection.as_deref())?;
+        let features = crate::semantic::features(x, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
         let x = &features.view();
 
         let flags = PosteriorFlags::new();
@@ -466,7 +495,7 @@ impl Surrogate for ENNSurrogate {
     ) -> Result<Array3<f64>, ENNError> {
         let model = self.fitted_model()?;
         let params = self.params_or_default()?;
-        let features = crate::semantic::augment(x, self.config.semantic_projection.as_deref())?;
+        let features = crate::semantic::features(x, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
         let x = &features.view();
 
 
@@ -489,7 +518,10 @@ impl Surrogate for ENNSurrogate {
             return None;
         }
         let weights = self.state.model()?.metric_weights()?;
-        Some(Array1::from(crate::metric_weights::trust_region_sides(weights)))
+        let weights = crate::semantic::original_weights(
+            weights, self.config.semantic_projection.as_deref(), self.config.semantic_only,
+        );
+        Some(Array1::from(crate::metric_weights::trust_region_sides(&weights)))
     }
 }
 
