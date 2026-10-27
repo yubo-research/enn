@@ -28,7 +28,11 @@ BATCHES = (500, 2000)
 
 def stream(x, y, batch, metric_learning):
     model = EpistemicNearestNeighbors(
-        x[:batch], y[:batch], metric_learning=metric_learning, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="mbt_")
+        x[:batch],
+        y[:batch],
+        weighting=(metric_learning is ENNMetricLearning.AUTO),
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=tempfile.mkdtemp(prefix="mbt_"),
     )
     for lo in range(batch, len(x), batch):
         model.add(x[lo : lo + batch], y[lo : lo + batch])
@@ -38,7 +42,9 @@ def stream(x, y, batch, metric_learning):
 
 
 def timed_query(model, xq):
-    p = ENNParams(k_num_neighbors=K, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1)
+    p = ENNParams(
+        k_num_neighbors=K, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
     t0 = time.perf_counter()
     idx = model.batch_posterior(xq, [p], flags=PosteriorFlags()).idx
     return time.perf_counter() - t0, np.asarray(idx)
@@ -58,18 +64,31 @@ def one(n, batch, rng):
     w = np.exp(rng.uniform(-2, 2, D))
     rows = []
     for how in ("rescale", "rebuild_in_place", "bpann_copy"):
-        metric_learning = ENNMetricLearning.OFF if how == "bpann_copy" else ENNMetricLearning.ON
+        metric_learning = (
+            ENNMetricLearning.NONE if how == "bpann_copy" else ENNMetricLearning.AUTO
+        )
         model = stream(x, y, batch, metric_learning)
         t0 = time.perf_counter()
         if how == "bpann_copy":
             model = stream(x * np.sqrt(w), y, n, metric_learning)
             q_scale = np.sqrt(w)
         else:
-            model.rust_backend.set_metric_scale(1.0 / np.sqrt(w), rebuild=how != "rescale")
+            model.rust_backend.set_metric_scale(
+                1.0 / np.sqrt(w), rebuild=how != "rescale"
+            )
             q_scale = np.ones(D)
         change = time.perf_counter() - t0
         q_sec, idx = timed_query(model, xq * q_scale)
-        rows.append(dict(n=n, batch=batch, how=how, change_sec=change, query_sec=q_sec, recall=recall(idx, x, xq, w)))
+        rows.append(
+            dict(
+                n=n,
+                batch=batch,
+                how=how,
+                change_sec=change,
+                query_sec=q_sec,
+                recall=recall(idx, x, xq, w),
+            )
+        )
         print(rows[-1], flush=True)
     return rows
 

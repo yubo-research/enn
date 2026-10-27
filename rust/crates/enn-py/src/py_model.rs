@@ -54,32 +54,21 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, scale_x=false, index_driver="FLAT", work_dir=None, enn_storage=None, y_bounds=None, metric_learning="none", tied_dims=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None, weighting=false, index_driver="FLAT", work_dir=None, y_bounds=None, tied_dims=None))]
     #[allow(clippy::too_many_arguments)]
     #[doc = "kiss-coverage-off"]
     fn new(
         train_x: PyReadonlyArrayDyn<f64>,
         train_y: PyReadonlyArrayDyn<f64>,
         train_yvar: Option<PyReadonlyArrayDyn<f64>>,
-        scale_x: bool,
+        weighting: bool,
         index_driver: &str,
         work_dir: Option<&str>,
-        enn_storage: Option<&str>,
         y_bounds: Option<PyReadonlyArray2<f64>>,
-        metric_learning: &str,
         tied_dims: Option<Vec<Vec<usize>>>,
     ) -> PyResult<Self> {
         let driver = crate::py_layout::index_driver_from_wire(index_driver)?;
-        let metric_learning = crate::py_layout::metric_learning_from_wire(metric_learning)?;
-        let explicit = crate::py_layout::enn_storage_optional(enn_storage)?;
-        let work_dir = work_dir.map(PathBuf::from);
-        let layout = ennbo::EnnLayout::try_from_parts(
-            driver,
-            explicit,
-            work_dir,
-            scale_x,
-            metric_learning,
-        )
+        let layout = ennbo::EnnLayout::new(driver, work_dir.map(PathBuf::from), weighting)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_x = owned_matrix("train_x", train_x)?;
@@ -88,33 +77,15 @@ impl PyEpistemicNearestNeighbors {
             Some(v) => Some(owned_matrix("train_yvar", v)?),
             None => None,
         };
-        let train_y_auto = train_y.clone();
-        let mut model = ennbo::EpistemicNearestNeighbors::new_with_storage(
-            train_x.clone(),
+        let model = ennbo::EpistemicNearestNeighbors::new_configured(
+            train_x,
             train_y,
             train_yvar,
             layout,
             y_bounds,
+            tied_dims.unwrap_or_default(),
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let groups = tied_dims.unwrap_or_default();
-        if metric_learning == ennbo::metric_auto::MetricLearning::Auto {
-            model
-                .enable_auto_metric(
-                    groups.clone(),
-                    &train_x.view(),
-                    &train_y_auto.view(),
-                )
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        } else if !groups.is_empty() {
-            let dims: Vec<usize> = groups.iter().flatten().copied().collect();
-            model
-                .set_unscaled_dims(dims)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        }
-        model
-            .set_tied_groups(groups)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner: model, incremental: ennbo::IncrementalFit::new() })
     }
 
@@ -440,8 +411,14 @@ impl PyEpistemicNearestNeighbors {
 
     #[getter]
     #[doc = "kiss-coverage-off"]
+    fn weighting(&self) -> bool {
+        self.inner.weighting()
+    }
+
+    #[getter]
+    #[doc = "kiss-coverage-off"]
     fn scale_x(&self) -> bool {
-        self.inner.is_scale_x()
+        self.inner.index_driver() == ennbo::IndexDriver::Flat && self.inner.is_scale_x()
     }
 
     #[getter]

@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn create_optimizer_enn_rejects_tied_dims_without_auto_metric() {
+    fn create_optimizer_enn_rejects_out_of_range_tied_dims() {
         let overrides = ConfigOverrides {
             enn: Some(crate::EnnOverrides {
                 tied_dims: Some(vec![vec![0, 99]]),
@@ -158,6 +158,6 @@ mod tests {
         let err = create_optimizer_enn_with_overrides(bounds, None, Some(3), 0, Some(&overrides))
             .err()
             .expect("ignored tied_dims must be rejected");
-        assert!(err.to_string().contains("tied_dims require"), "{err}");
+        assert!(err.to_string().contains("tied_dims entries"), "{err}");
     }
 }

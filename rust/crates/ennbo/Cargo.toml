@@ -12,6 +12,9 @@ readme = "README.md"
 build = "src/ennbo_build.rs"
 
 [dependencies]
+candle-core = "0.9.1"
+sentence-transformers-rs = { git = "https://github.com/jwnz/sentence-transformers-rs", rev = "2800040c8b14445cd33b34da3d477ae03ec00beb" }
+url = "2"
 ennbo-bpann = { workspace = true }
 faiss = { version = "0.13.0" }
 ndarray = { workspace = true }

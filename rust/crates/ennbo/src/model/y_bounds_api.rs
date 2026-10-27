@@ -1,12 +1,11 @@
 //! y_bounds construction, warp ingress, and naturalized row gathers (kiss split).
 
 use ndarray::{Array1, Array2, ArrayView2};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::EpistemicNearestNeighbors;
 use crate::backend::{EnnBackend, EnnStorage, TrainRowsAtResult};
 use crate::error::ENNError;
-use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
 use crate::y_bounds::{
@@ -18,23 +17,13 @@ impl EpistemicNearestNeighbors {
     pub fn new_empty_with_y_bounds(
         num_dim: usize,
         num_metrics: usize,
-        driver: IndexDriver,
-        storage: EnnStorage,
-        work_dir: Option<PathBuf>,
+        layout: EnnLayout,
         pending_flush_threshold: Option<usize>,
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
-        let layout = EnnLayout::try_from_parts(
-            driver,
-            Some(storage),
-            work_dir,
-            false,
-            MetricLearning::None,
-        )?;
         let stored_work_dir = layout
             .work_dir()
-            .map(|p| p.to_path_buf())
-            .or_else(EnnStorage::work_dir_from_env);
+            .map(|p| p.to_path_buf());
         let meta_text = stored_work_dir
             .as_ref()
             .filter(|p| layout.storage() == EnnStorage::Disk && p.join("metadata.json").exists())
@@ -46,16 +35,17 @@ impl EpistemicNearestNeighbors {
             &layout,
             pending_flush_threshold,
         )?;
-        let model = Self {
+        let scale_x = layout.scale_x();
+        let auto = layout.metric_learning() == MetricLearning::Auto;
+        let mut model = Self {
             layout,
             backend,
             num_obs: 0,
             num_dim,
             num_metrics,
-            scale_x: false,
+            scale_x,
             x_scale: Array1::ones(num_dim),
             metric_fixed: false,
-            built_x_scale: Array1::ones(num_dim),
             unscaled_dims: Vec::new(),
             y_scale: Array1::ones(num_metrics),
             y_bounds,
@@ -68,6 +58,9 @@ impl EpistemicNearestNeighbors {
             auto_metric: None,
             tied_groups: Vec::new(),
         };
+        if auto {
+            model.enable_auto_metric(Vec::new(), &Array2::zeros((0, num_dim)).view(), &Array2::zeros((0, num_metrics)).view())?;
+        }
         model.persist_y_bounds_metadata()?;
         Ok(model)
     }
@@ -222,21 +215,18 @@ fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<bool
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::IndexDriver;
-    use ndarray::array;
+        use ndarray::array;
 
     #[test]
     fn new_empty_with_y_bounds_stores_and_exposes_bounds() {
         let bounds = array![[0.0, 1.0]];
         let model = EpistemicNearestNeighbors::new_empty_with_y_bounds(
-            1,
-            1,
-            IndexDriver::Flat,
-            EnnStorage::InMemory,
-            None,
-            None,
-            Some(bounds.clone()),
-        )
+        1,
+        1,
+        EnnLayout::flat(false),
+        None,
+        Some(bounds.clone()),
+    )
         .unwrap();
         assert!(crate::y_bounds::bounds_match(model.y_bounds(), &bounds));
         assert_eq!(model.len(), 0);
@@ -251,7 +241,7 @@ mod tests {
             train_x,
             train_y.clone(),
             None,
-            crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+            crate::layout::EnnLayout::flat(false),
             Some(bounds),
         )
         .unwrap();

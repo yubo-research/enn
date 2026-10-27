@@ -7,8 +7,6 @@ from enn.enn.cat_codes import CatEncoder, CatEncoding, DimKind
 from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 
 def _sparse_categories():
@@ -30,9 +28,8 @@ def _model(x, y, path):
     return EpistemicNearestNeighbors(
         x,
         y,
-        metric_learning=ENNMetricLearning.AUTO,
+        weighting=True,
         index_driver=ENNIndexDriver.BPANN_DISK,
-        enn_storage=ENNStorage.DISK,
         work_dir=path,
     )
 

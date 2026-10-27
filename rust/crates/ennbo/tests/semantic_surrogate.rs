@@ -1,6 +1,6 @@
 //! Semantic features affect only the surrogate, preserving observation coordinates.
 use ennbo::surrogate::{ENNSurrogate, ENNSurrogateConfig, Surrogate};
-use ennbo::{FitSamples, IndexDriver, EnnLayout};
+use ennbo::{FitSamples, EnnLayout};
 use ndarray::array;
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -58,11 +58,11 @@ fn check_feature_mode(semantic_only: bool) {
 fn semantic_config_accepts_adaptive_scaling_and_rejects_nonfinite_projection() {
     let mut config = ENNSurrogateConfig {
         semantic_projection: Some(Box::new(array![[1.0], [-1.0]])),
-        layout: EnnLayout::memory(IndexDriver::Flat, true),
+        layout: EnnLayout::flat(true),
         ..Default::default()
     };
     assert!(config.validate(2).is_ok());
-    config.layout = EnnLayout::memory(IndexDriver::Flat, false);
+    config.layout = EnnLayout::flat(false);
     config.semantic_projection = Some(Box::new(array![[f64::NAN], [0.0]]));
     assert!(config.validate(2).is_err());
 }

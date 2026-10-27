@@ -44,10 +44,8 @@ def test_build_model_drivers_scale_x_and_metric_learning() -> None:
         scaled = mod.build_model("flat_scale_x", x, y, work_dir)
         bpann = mod.build_model("bpann_disk", x, y, work_dir)
         auto = mod.build_model("bpann_disk_auto", x, y, work_dir)
-        bpann_scaled = mod.build_model("bpann_disk_scale_x", x, y, work_dir)
-        assert bpann_scaled._index_driver == ENNIndexDriver.BPANN_DISK
-        assert bpann_scaled.scale_x == ENNScaleX.ON
-        assert bpann_scaled.metric_learning == ENNMetricLearning.NONE
+        with pytest.raises(ValueError, match="unknown model"):
+            mod.build_model("bpann_disk_scale_x", x, y, work_dir)
         assert bpann.scale_x == ENNScaleX.OFF
         assert (
             flat._index_driver == ENNIndexDriver.FLAT and flat.scale_x == ENNScaleX.OFF
@@ -175,7 +173,6 @@ def test_bpann_models_and_metric_learning_modes() -> None:
     assert mod.MODELS == ("flat", "flat_scale_x", "bpann_disk", "bpann_disk_auto")
     assert mod.BPANN_METRIC_LEARNING == {
         "bpann_disk": ENNMetricLearning.NONE,
-        "bpann_disk_scale_x": ENNMetricLearning.NONE,
         "bpann_disk_auto": ENNMetricLearning.AUTO,
     }
 

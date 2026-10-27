@@ -61,12 +61,12 @@ def test_nonpositive_k_is_rejected_before_any_tell(k):
         _rust.create_optimizer_enn(_BOUNDS, k, 3, 0)
 
 
-def test_tied_dims_are_rejected_without_auto_metric():
-    with pytest.raises(ValueError, match="tied_dims require"):
+def test_out_of_range_tied_dims_are_rejected():
+    with pytest.raises(ValueError, match="tied_dims entries"):
         _rust.create_optimizer_enn(
             _BOUNDS, None, 3, 0, config_overrides={"tied_dims": [[0, 99]]}
         )
-    with pytest.raises(ValueError, match="tied_dims require"):
+    with pytest.raises(ValueError, match="disjoint"):
         ENNSurrogateConfig(tied_dims=((0, 99), (0,)))
 
 

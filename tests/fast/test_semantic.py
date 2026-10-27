@@ -315,3 +315,28 @@ def test_surrogate_metadata_preserves_positional_y_bounds():
     parameters = inspect.signature(ENNSurrogateConfig).parameters
     assert parameters["input_transform"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["y_bounds"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+
+
+def test_default_encoder_uses_native_backend_without_python_runtime(monkeypatch):
+    from enn import _rust
+
+    calls = []
+
+    def encode(texts, model):
+        calls.append((texts, model))
+        return np.eye(len(texts))
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+    monkeypatch.setattr(_rust, "semantic_encode", encode)
+    transform = SemanticInputTransform(
+        ["a", "b", "c"], [[0, 1]] * 3, descriptions=["shared", "other", "shared"]
+    )
+    assert calls == [(["shared", "other"], "sentence-transformers/all-MiniLM-L6-v2")]
+    np.testing.assert_allclose(transform.projection[0], transform.projection[2])
+    transform.transform([[0.1, 0.2, 0.3]])
+    assert len(calls) == 1
+
+
+def test_native_encoder_rejects_unsupported_model_without_download():
+    with pytest.raises(ValueError, match="unsupported sentence-transformers-rs model"):
+        SemanticInputTransform(["a"], [[0, 1]], model="unknown/model")

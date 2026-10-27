@@ -249,3 +249,29 @@ def test_public_names() -> None:
     assert enn.CatEncoding.AUTO is CatEncoding.AUTO
     assert enn.DimKind.CONTINUOUS is DimKind.CONTINUOUS
     assert enn.DimKind.CATEGORICAL is DimKind.CATEGORICAL
+
+
+def test_integer_category_identity_survives_values_above_float_precision():
+    labels = np.array([[2**53], [2**53 + 1], [-(2**63)], [2**63 - 1]], dtype=np.int64)
+    encoder = CatEncoder(
+        [DimKind.CATEGORICAL], encoding=CatEncoding.RADEMACHER, code_dim=64
+    )
+    codes = encoder.encode(labels)
+    assert not np.array_equal(codes[0], codes[1])
+    np.testing.assert_array_equal(encoder.snap(codes, [labels[:, 0]]), labels)
+
+
+def test_mixed_object_rows_preserve_large_category_labels():
+    labels = np.array([2**53, 2**53 + 1, -(2**63), 2**63 - 1], dtype=np.int64)
+    rows = np.empty((4, 2), dtype=object)
+    rows[:, 0] = [0.25, 0.5, 0.75, 1.0]
+    rows[:, 1] = labels
+    encoder = CatEncoder(
+        [DimKind.CONTINUOUS, DimKind.CATEGORICAL],
+        encoding=CatEncoding.RADEMACHER,
+        code_dim=64,
+    )
+    codes = encoder.encode(rows)
+    np.testing.assert_array_equal(codes[:, 0], rows[:, 0])
+    assert not np.array_equal(codes[0, 1:], codes[1, 1:])
+    np.testing.assert_array_equal(encoder.snap(codes, [labels])[:, 0], labels)

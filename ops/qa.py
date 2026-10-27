@@ -23,7 +23,6 @@ from enn.turbo.config import (
     ENNSurrogateConfig,
     TurboTRConfig,
 )
-from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.turbo.optimizer_config import CandidateRV
 
 NUM_DIM = 99
@@ -83,7 +82,6 @@ def build_ackley_enn_surrogate(index_driver: ENNIndexDriver) -> ENNSurrogateConf
         "index_driver": index_driver,
     }
     if index_driver == ENNIndexDriver.BPANN_DISK:
-        enn_kwargs["enn_storage"] = ENNStorage.DISK
         enn_kwargs["work_dir"] = tempfile.mkdtemp(prefix="qa_ackley_bpann_")
     return ENNSurrogateConfig(**enn_kwargs)
 
@@ -239,9 +237,7 @@ def gaussian_nll(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> float:
     return float(0.5 * np.mean(np.log(2.0 * np.pi * var) + (y_arr - mu_arr) ** 2 / var))
 
 
-def frac_out_of_open_interval(
-    values: np.ndarray, lo: float, hi: float
-) -> float:
+def frac_out_of_open_interval(values: np.ndarray, lo: float, hi: float) -> float:
     flat = np.asarray(values, dtype=float).ravel()
     out = np.zeros(flat.shape, dtype=bool)
     if np.isfinite(lo):
@@ -616,9 +612,7 @@ def sweep_turbo_acq(
     num_fit_samples: int,
 ) -> list[TurboAcqMetrics]:
     """Run acquisition methods over seeds; return aggregated metrics."""
-    methods: list[tuple[AcqType | None, bool]] = [
-        (acq, False) for acq in acq_types
-    ]
+    methods: list[tuple[AcqType | None, bool]] = [(acq, False) for acq in acq_types]
     if include_turbo_zero:
         methods.append((None, True))
     out: list[TurboAcqMetrics] = []
@@ -710,7 +704,9 @@ def run_turbo_acq(
 @click.option("--num-init", type=int, default=TURBO_ACQ_NUM_INIT, show_default=True)
 @click.option("--num-seeds", type=int, default=TURBO_ACQ_NUM_SEEDS, show_default=True)
 @click.option("--seed", type=int, default=SEED, show_default=True)
-@click.option("--no-noisy", "include_noisy", is_flag=True, flag_value=False, default=True)
+@click.option(
+    "--no-noisy", "include_noisy", is_flag=True, flag_value=False, default=True
+)
 @click.option(
     "--no-turbo-zero",
     "include_turbo_zero",
@@ -901,8 +897,7 @@ def echo_y_var_noise_metrics(metrics: YVarNoiseMetrics) -> None:
 
 def echo_y_var_se_ale_point(scale: float, mean_se_ale: float) -> None:
     click.echo(
-        f"EVAL: yvar_scale = {scale:.04f} "
-        f"LARGER(mean_se_ale) = {mean_se_ale:.04f}"
+        f"EVAL: yvar_scale = {scale:.04f} LARGER(mean_se_ale) = {mean_se_ale:.04f}"
     )
 
 
@@ -919,9 +914,7 @@ def run_y_var_noise(
     yvar_scales: Sequence[float] = Y_VAR_SWEEP,
 ) -> tuple[list[YVarNoiseMetrics], list[tuple[float, float]]]:
     """Compare matched vs mismatched train_yvar; probe se_ale vs yvar scale."""
-    click.echo(
-        f"num_train={n_train} num_test={n_test} k={k} sigma={sigma:.04f}"
-    )
+    click.echo(f"num_train={n_train} num_test={n_test} k={k} sigma={sigma:.04f}")
     matched, none_m, wrong = compare_y_var_noise(
         n_train=n_train,
         n_test=n_test,

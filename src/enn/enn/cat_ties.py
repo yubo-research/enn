@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import operator
-
 import numpy as np
 
 
@@ -40,19 +38,16 @@ def _groups_on(values) -> tuple[tuple[int, ...], ...]:
     return ()
 
 
-def resolve_tied_groups(values, tied_dims):
-    """Grouping for metric learning.
+def resolve_tied_groups(values, tied_dims, *, semantic_only=False):
+    """Resolve tie metadata using Rust's feature-coordinate policy."""
+    from enn._rust import resolve_tied_groups as resolve
 
-    Empty ``tied_dims`` keeps the categorical blocks on ``values``. An
-    explicit grouping must list those same blocks.
-    """
-    carried = _groups_on(values)
-    if tied_dims is None or len(tied_dims) == 0:
-        return carried
-    explicit = tuple(tuple(operator.index(j) for j in group) for group in tied_dims)
-    if carried and explicit != carried:
-        raise ValueError("tied_dims do not match the categorical blocks on x")
-    return explicit
+    groups = resolve(
+        [list(g) for g in _groups_on(values)],
+        None if tied_dims is None else [list(g) for g in tied_dims],
+        semantic_only,
+    )
+    return tuple(tuple(g) for g in groups)
 
 
 def attach_tied_dims(

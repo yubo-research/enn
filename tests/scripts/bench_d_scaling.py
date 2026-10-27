@@ -6,7 +6,6 @@ import pandas as pd
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
 from enn.enn.enn_params import ENNParams
-from enn.turbo.config.enn_x_scaling import ENNScaleX
 
 
 def benchmark_d_scaling(ds=None, n=1000, num_candidates=5000):
@@ -20,7 +19,6 @@ def benchmark_d_scaling(ds=None, n=1000, num_candidates=5000):
         print(f"Running D={d}...")
         row = {"D": d}
 
-
         rng = np.random.default_rng(0)
         train_x = rng.random((n, d))
         train_y = rng.random((n, 1))
@@ -31,11 +29,9 @@ def benchmark_d_scaling(ds=None, n=1000, num_candidates=5000):
             aleatoric_variance_scale=0.1,
         )
 
-
         t0 = time.perf_counter()
-        model = EpistemicNearestNeighbors(train_x, train_y, scale_x=ENNScaleX.ON)
+        model = EpistemicNearestNeighbors(train_x, train_y, weighting=True)
         row["ENN_Init (s)"] = time.perf_counter() - t0
-
 
         t0 = time.perf_counter()
         _, _ = enn_neighbor_distances_and_indices(
@@ -50,7 +46,6 @@ def benchmark_d_scaling(ds=None, n=1000, num_candidates=5000):
 
     df = pd.DataFrame(results)
     print("\n" + df.to_string(index=False))
-
 
     print("\nEmpirical scaling (log-log slope vs D):")
     for col in df.columns[1:]:

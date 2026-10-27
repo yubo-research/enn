@@ -108,8 +108,8 @@ impl EnnBackend {
         pending_flush_threshold: Option<usize>,
     ) -> Result<Self, ENNError> {
         match layout {
-            EnnLayout::Memory { driver, .. } => Ok(Self::InMemory(Box::new(
-                InMemoryEnnBackend::new_empty(num_dim, num_metrics, *driver)?,
+            EnnLayout::Memory { .. } => Ok(Self::InMemory(Box::new(
+                InMemoryEnnBackend::new_empty(num_dim, num_metrics, IndexDriver::Flat)?,
             ))),
             EnnLayout::Disk { work_dir, .. } | EnnLayout::DiskAuto { work_dir } => {
                 let inner = match pending_flush_threshold {
@@ -135,20 +135,20 @@ impl EnnBackend {
         x_scale: Array1<f64>,
     ) -> Result<Self, ENNError> {
         match layout {
-            EnnLayout::Memory { driver, scale_x } => Self::new_in_memory(
+            EnnLayout::Memory { scale_x } => Self::new_in_memory(
                 train_x,
                 train_y,
                 train_yvar,
                 *scale_x,
                 x_scale,
-                *driver,
+                IndexDriver::Flat,
             ),
-            EnnLayout::Disk { work_dir, scale_x } => Self::new_disk(
+            EnnLayout::Disk { work_dir } => Self::new_disk(
                 work_dir.clone(),
                 train_x,
                 train_y,
                 train_yvar,
-                *scale_x,
+                false,
                 x_scale,
             ),
             EnnLayout::DiskAuto { work_dir } => Self::new_disk(
@@ -420,14 +420,7 @@ mod backend_dispatch_tests {
 
     #[test]
     fn disk_bpann_new_empty_without_work_dir_errors() {
-        use crate::metric_auto::MetricLearning;
-        let err = EnnLayout::try_from_parts(
-            IndexDriver::BpAnnDisk,
-            Some(EnnStorage::Disk),
-            None,
-            false,
-            MetricLearning::None,
-        );
+        let err = EnnLayout::new(IndexDriver::BpAnnDisk, None, false);
         assert!(err.unwrap_err().to_string().contains("work_dir"));
     }
 

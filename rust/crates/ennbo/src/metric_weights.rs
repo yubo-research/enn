@@ -189,3 +189,28 @@ pub fn trust_region_sides(weights: &[f64]) -> Vec<f64> {
 pub fn too_few_rows(n: usize) -> bool {
     n < MIN_DEPENDENCE_ROWS
 }
+
+/// Resolve carried categorical groups against explicit feature groups.
+/// Semantic-only projections remove the original categorical column identity.
+pub fn resolve_tied_groups(carried: &[Vec<usize>], explicit: Option<&[Vec<usize>]>, semantic_only: bool) -> Result<Vec<Vec<usize>>, ENNError> {
+    let carried = if semantic_only { &[][..] } else { carried };
+    match explicit.filter(|g| !g.is_empty()) {
+        None => Ok(carried.to_vec()),
+        Some(groups) if !carried.is_empty() && groups != carried => Err(ENNError::InvalidParameter("tied_dims do not match the categorical blocks on x".into())),
+        Some(groups) => Ok(groups.to_vec()),
+    }
+}
+
+#[cfg(test)]
+mod tied_feature_tests {
+    use super::resolve_tied_groups;
+    #[test]
+    fn projected_ties_do_not_inherit_removed_categorical_columns() {
+        let carried = vec![vec![2, 3, 4]];
+        let projected = vec![vec![0, 1]];
+        assert_eq!(resolve_tied_groups(&carried, None, false).unwrap(), carried);
+        assert!(resolve_tied_groups(&carried, Some(&projected), false).is_err());
+        assert!(resolve_tied_groups(&carried, None, true).unwrap().is_empty());
+        assert_eq!(resolve_tied_groups(&carried, Some(&projected), true).unwrap(), projected);
+    }
+}

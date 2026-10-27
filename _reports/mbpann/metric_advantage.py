@@ -59,7 +59,11 @@ def make_data(seed):
 
 def new_model(x, y, metric_learning):
     return EpistemicNearestNeighbors(
-        x, y.reshape(-1, 1), metric_learning=metric_learning, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="madv_")
+        x,
+        y.reshape(-1, 1),
+        weighting=(metric_learning is ENNMetricLearning.AUTO),
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=tempfile.mkdtemp(prefix="madv_"),
     )
 
 
@@ -68,7 +72,12 @@ def gaussian_ll(mu, se, y):
 
 
 def predict(model, xq):
-    params = [ENNParams(k_num_neighbors=K, epistemic_variance_scale=e, aleatoric_variance_scale=a) for e, a in GRID]
+    params = [
+        ENNParams(
+            k_num_neighbors=K, epistemic_variance_scale=e, aleatoric_variance_scale=a
+        )
+        for e, a in GRID
+    ]
     post = model.batch_posterior(xq, params, flags=PosteriorFlags())
     return post.mu[:, :, 0], post.se[:, :, 0], np.asarray(post.idx, dtype=np.int64)
 
@@ -91,9 +100,9 @@ def run(seed):
     (train, val, test), rng = make_data(seed)
     x, y = train
     models = {
-        "bpann_disk": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.OFF),
-        "mbpann_identity": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.ON),
-        "mbpann_learned": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.ON),
+        "bpann_disk": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.NONE),
+        "mbpann_identity": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.AUTO),
+        "mbpann_learned": new_model(x[:BATCH], y[:BATCH], ENNMetricLearning.AUTO),
     }
     helper = MBPANNMetric(models["mbpann_learned"])
     metric = Metric(D)

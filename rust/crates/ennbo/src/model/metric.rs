@@ -4,22 +4,12 @@ use ndarray::Array1;
 
 use super::{EpistemicNearestNeighbors, scale_from_moments};
 use crate::error::ENNError;
-use crate::index::{is_disk_index_driver, IndexDriver};
-
-/// Disk `scale_x`: largest per-dimension `|log(new / applied)|` left unapplied after an `add`.
-pub const SCALE_X_RESCALE_TOL: f64 = 0.01;
-/// Disk `scale_x`: largest per-dimension `|log(new / built)|` served by an in-place rescale;
-/// beyond it the index is re-partitioned (same rule as `MBPANNMetric`'s default).
-pub const SCALE_X_REBUILD_DRIFT: f64 = std::f64::consts::LN_2;
-
-fn max_log_ratio(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(u, v)| (u / v).ln().abs())
-        .fold(0.0, f64::max)
-}
+use crate::index::IndexDriver;
 
 impl EpistemicNearestNeighbors {
+    /// User weighting policy, independent of the currently selected AUTO weights.
+    pub fn weighting(&self) -> bool { self.layout.weighting() }
+
     /// Index used for neighbor search.
     pub fn index_driver(&self) -> IndexDriver {
         self.backend_driver()
@@ -54,12 +44,9 @@ impl EpistemicNearestNeighbors {
         x_scale
     }
 
-    /// Move `scale_x` to `data_x_scale(n)`: incrementally for disk BPANN, else by a lazy rebuild.
+    /// Refresh FLAT data scaling and rebuild its index lazily.
     pub(crate) fn refresh_data_x_scale(&mut self, n: usize) -> Result<(), ENNError> {
         let x_scale = self.data_x_scale(n);
-        if is_disk_index_driver(self.backend.driver()) {
-            return self.apply_incremental_x_scale(x_scale);
-        }
         self.x_scale = x_scale;
         self.backend.mark_index_stale();
         Ok(())
@@ -79,21 +66,6 @@ impl EpistemicNearestNeighbors {
             return Ok(());
         }
         self.refresh_data_x_scale(self.num_obs)
-    }
-
-    /// Incremental `scale_x` for disk BPANN: move the index to the data-moment scale
-    /// `x_scale` without re-reading rows, unless it drifted far from the partition's scale.
-    pub(crate) fn apply_incremental_x_scale(&mut self, x_scale: Array1<f64>) -> Result<(), ENNError> {
-        if max_log_ratio(&x_scale, &self.x_scale) <= SCALE_X_RESCALE_TOL {
-            return Ok(());
-        }
-        let rebuild = max_log_ratio(&x_scale, &self.built_x_scale) > SCALE_X_REBUILD_DRIFT;
-        self.backend.set_metric_scale(&x_scale, rebuild)?;
-        if rebuild {
-            self.built_x_scale = x_scale.clone();
-        }
-        self.x_scale = x_scale;
-        Ok(())
     }
 
     /// Set per-dimension distance scales: distances use `x / x_scale`.
@@ -198,8 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn disk_scale_x_tracks_moments_incrementally() {
-        let dir = tempfile::TempDir::new().unwrap();
+    fn flat_weighting_tracks_moments_after_adds() {
         let widths = [0.01, 1.0, 100.0];
         let mut x = rows(3000, 3, 5);
         for mut row in x.rows_mut() {
@@ -212,7 +183,7 @@ mod tests {
             x.slice(ndarray::s![..20, ..]).to_owned(),
             y.slice(ndarray::s![..20, ..]).to_owned(),
             None,
-            crate::layout::EnnLayout::disk(dir.path().to_path_buf(), true),
+            crate::layout::EnnLayout::flat(true),
             None,
         )
         .unwrap();
@@ -225,8 +196,7 @@ mod tests {
         }
         let applied = model.x_scale_row().row(0).to_owned();
         let std = column_std(&x);
-        assert!(super::max_log_ratio(&applied, &std) <= super::SCALE_X_RESCALE_TOL + 1e-9);
-        assert!(super::max_log_ratio(&model.built_x_scale, &std) <= super::SCALE_X_REBUILD_DRIFT);
+        assert!((&applied - &std).iter().all(|v| v.abs() < 1e-9));
         let q = rows(5, 3, 6) * &Array1::from(widths.to_vec());
         let got = model.neighbors(&q.view(), 4, false).unwrap();
         for r in 0..q.nrows() {
@@ -253,8 +223,8 @@ mod tests {
             )
             .unwrap()
         };
-        let flat = open(crate::layout::EnnLayout::memory(IndexDriver::Flat, true));
-        let disk = open(crate::layout::EnnLayout::disk(dir.path().to_path_buf(), true));
+        let flat = open(crate::layout::EnnLayout::flat(true));
+        let disk = open(crate::layout::EnnLayout::disk(dir.path().to_path_buf(), false));
         for mut model in [flat, disk] {
             assert!(model.set_unscaled_dims(vec![3]).is_err());
             model.set_unscaled_dims(vec![2]).unwrap();
@@ -265,7 +235,7 @@ mod tests {
             let std = column_std(&x);
             let applied = model.x_scale_row().row(0).to_owned();
             assert_eq!(applied[2], 1.0);
-            assert!((applied[0] / std[0]).ln().abs() <= super::SCALE_X_RESCALE_TOL + 1e-9);
+            if model.weighting() { assert!((applied[0] / std[0]).ln().abs() <= 1e-9); }
             let q = rows(5, 3, 8);
             let got = model.neighbors(&q.view(), 4, false).unwrap();
             for r in 0..q.nrows() {

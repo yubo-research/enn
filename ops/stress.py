@@ -18,7 +18,6 @@ from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage
 
 INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "bpann_disk")
 DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"bpann_disk"})
@@ -144,7 +143,6 @@ def run_disk_rss_stress(
         empty_y,
         index_driver=index_driver,
         work_dir=work_dir,
-        enn_storage=ENNStorage.DISK,
     )
     baseline_after_init = max_rss_bytes()
 
@@ -357,7 +355,6 @@ def reopen_disk_bpann_enn(work_dir: str) -> tuple[EpistemicNearestNeighbors, dic
         np.empty((0, num_metrics), dtype=float),
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=work_dir,
-        enn_storage=ENNStorage.DISK,
     )
     model.ensure_index_sync()
     return model, meta
@@ -427,10 +424,7 @@ def run_enn_add_stress(
     }
     if cfg.work_dir is not None:
         model_kwargs["work_dir"] = cfg.work_dir
-        model_kwargs["enn_storage"] = ENNStorage.DISK
     model = EpistemicNearestNeighbors(**model_kwargs)
-
-
 
     model.add(empty_x, empty_y)
 
@@ -439,7 +433,6 @@ def run_enn_add_stress(
     checkpoint_list = sorted(checkpoints)
     next_checkpoint_i = 0
     last_heartbeat_t = time.perf_counter()
-
 
     segment_lib_s = 0.0
 
@@ -450,10 +443,6 @@ def run_enn_add_stress(
             and checkpoint_list[next_checkpoint_i] <= current_n
         ):
             cp = checkpoint_list[next_checkpoint_i]
-
-
-
-
 
             if index_driver not in DISK_DEFER_SYNC_DRIVERS:
                 t_sync = time.perf_counter()
@@ -786,7 +775,6 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         if config.work_dir is None:
             raise ValueError("bpann_disk requires work_dir")
         model_kwargs["work_dir"] = config.work_dir
-        model_kwargs["enn_storage"] = ENNStorage.DISK
     elif config.work_dir is not None:
         raise ValueError("work_dir requires bpann_disk")
     model = EpistemicNearestNeighbors(**model_kwargs)
@@ -822,7 +810,6 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     )
 
     t2 = time.perf_counter()
-
 
     function_seeds = function_seeds_for_sample(config.seed + 4, config.num_draws)
     fn_draws, _idx = model.posterior_function_draw(
@@ -1064,7 +1051,7 @@ def build_turbo_enn_optimizer_config(
     """Build turbo_enn config matching compare's single-metric Ackley path.
 
     Overrides only ``num_init`` (fixed at ``TURBO_ENN_NUM_INIT`` for the stress CLI).
-    For ``BPANN_DISK``, both ``enn_storage=ENNStorage.DISK`` and ``work_dir`` are required.
+    For ``BPANN_DISK``, ``work_dir`` is required.
     """
     from enn.turbo.config import (
         AcqType,
@@ -1084,7 +1071,6 @@ def build_turbo_enn_optimizer_config(
     if index_driver == ENNIndexDriver.BPANN_DISK:
         if work_dir is None:
             raise ValueError("bpann_disk requires work_dir")
-        enn_kwargs["enn_storage"] = ENNStorage.DISK
         enn_kwargs["work_dir"] = work_dir
     elif work_dir is not None:
         raise ValueError("work_dir requires bpann_disk")

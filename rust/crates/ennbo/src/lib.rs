@@ -334,3 +334,18 @@ pub use y_bounds::is_identity_bounds;
 pub use y_bounds::unbounded_bounds;
 /// Check that y bounds have shape `(num_metrics, 2)`.
 pub use y_bounds::validate_bounds;
+
+pub mod semantic_projection;
+
+pub mod categorical;
+
+pub mod categorical_plan;
+pub mod categorical_encoder;
+pub mod input_history;
+
+mod input_history_disk;
+
+mod categorical_values;
+
+pub mod semantic_text;
+pub mod semantic_encoder;

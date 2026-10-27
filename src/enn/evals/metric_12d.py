@@ -6,9 +6,8 @@ after each batch. At every checkpoint each model refits its ENN hyperparameters 
 ``enn_fit``. ``bpann_disk`` uses raw distances (``ENNMetricLearning.NONE``);
 ``bpann_disk_auto`` (``ENNMetricLearning.AUTO``) refits Sobol/Var(x) metric weights on a
 reservoir sample inside ``add`` and applies them only when leave-one-out validation prefers
-them to the best isotropic metric. ``build_model`` also accepts ``bpann_disk_scale_x``, which
-divides each input by its running standard deviation, updated incrementally on every ``add``
-(``ENNScaleX.ON`` with BPANN_DISK); it is not in the default ``MODELS``.
+them to the best isotropic metric. ``weighting`` enables FLAT data scaling or
+BPANN AUTO learning; disk data scaling is unsupported.
 
 ``add_s`` is wall time from the previous checkpoint to this one: adds (including AUTO's metric
 refits), syncs, and hyperparameter fit. ``query_s`` is one posterior call on the test set.
@@ -38,8 +37,7 @@ from enn.evals.metric_12d_results import (
 )
 from enn.evals.metrics import gaussian_loglik, rmse
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 from ops.stress import DRAW_FLAGS
 
 NUM_DIM = 12
@@ -72,7 +70,6 @@ MODELS: tuple[str, ...] = (
 )
 BPANN_METRIC_LEARNING: dict[str, ENNMetricLearning] = {
     "bpann_disk": ENNMetricLearning.NONE,
-    "bpann_disk_scale_x": ENNMetricLearning.NONE,
     "bpann_disk_auto": ENNMetricLearning.AUTO,
 }
 WORK_DIR_PREFIX = "enn_metric_12d_"
@@ -111,7 +108,7 @@ def build_model(
     if name == "flat":
         return EpistemicNearestNeighbors(x, y)
     if name == "flat_scale_x":
-        return EpistemicNearestNeighbors(x, y, scale_x=ENNScaleX.ON)
+        return EpistemicNearestNeighbors(x, y, weighting=True)
     if name not in BPANN_METRIC_LEARNING:
         raise ValueError(f"unknown model {name!r}")
     model_dir = os.path.join(work_dir, name)
@@ -119,11 +116,9 @@ def build_model(
     return EpistemicNearestNeighbors(
         x,
         y,
-        scale_x=ENNScaleX.ON if name == "bpann_disk_scale_x" else ENNScaleX.OFF,
-        metric_learning=BPANN_METRIC_LEARNING[name],
+        weighting=name == "bpann_disk_auto",
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=model_dir,
-        enn_storage=ENNStorage.DISK,
     )
 
 

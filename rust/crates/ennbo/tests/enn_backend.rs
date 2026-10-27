@@ -1,6 +1,6 @@
 //! Integration tests for EnnBackend dispatch and disk storage.
 
-use ennbo::{EnnStorage, EpistemicNearestNeighbors, IndexDriver};
+use ennbo::{EpistemicNearestNeighbors, IndexDriver};
 use ndarray::array;
 use tempfile::TempDir;
 
@@ -31,11 +31,9 @@ fn new_empty_in_memory_accepts_incremental_add() {
     let mut model = EpistemicNearestNeighbors::new_empty(
         2,
         1,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
+        ennbo::EnnLayout::new(IndexDriver::Flat, None, false).unwrap(),
         None,
-            None,
-        )
+    )
     .unwrap();
     model
         .add(&array![[1.0, 2.0]].view(), &array![[3.0]].view(), None)
@@ -103,18 +101,12 @@ fn kiss_disk_bpann_static_coverage_names() {
 #[test]
 fn disk_storage_rejects_non_disk_driver() {
     let dir = TempDir::new().expect("tempdir");
-    let err = ennbo::EnnLayout::try_from_parts(
-        IndexDriver::Flat,
-        Some(EnnStorage::Disk),
-        Some(dir.path().to_path_buf()),
-        false,
-        ennbo::metric_auto::MetricLearning::None,
-    );
-    assert!(err.unwrap_err().to_string().contains("BpAnnDisk"));
+    let err = ennbo::EnnLayout::new(IndexDriver::Flat, Some(dir.path().to_path_buf()), false);
+    assert!(err.unwrap_err().to_string().contains("FLAT"));
 }
 
 #[test]
-fn scale_x_accepts_bpann_disk() {
+fn weighting_selects_auto_for_bpann_disk() {
     let dir = TempDir::new().expect("tempdir");
     let model = EpistemicNearestNeighbors::new_with_storage(
         array![[0.0, 0.0], [2.0, 20.0]],
@@ -123,9 +115,10 @@ fn scale_x_accepts_bpann_disk() {
         ennbo::EnnLayout::disk(dir.path().to_path_buf(), true),
         None,
     )
-    .expect("scale_x + BpAnnDisk must succeed");
-    assert!(model.is_scale_x());
-    assert_eq!(model.x_scale_row().row(0).to_vec(), vec![1.0, 10.0]);
+    .expect("weighted BPANN_DISK must succeed");
+    assert!(model.weighting());
+    assert!(model.metric_learning_auto());
+    assert_eq!(model.x_scale_row().row(0).to_vec(), vec![1.0, 1.0]);
 }
 
 #[test]

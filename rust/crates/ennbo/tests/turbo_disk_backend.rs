@@ -25,7 +25,7 @@ fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> Optimize
     if let SurrogateConfig::ENN(ref mut enn) = cfg.surrogate {
         let layout = match storage {
             EnnStorage::Disk => ennbo::EnnLayout::disk(work_dir.expect("disk work_dir"), false),
-            EnnStorage::InMemory => ennbo::EnnLayout::memory(ennbo::IndexDriver::Flat, false),
+            EnnStorage::InMemory => ennbo::EnnLayout::flat(false),
         };
         *enn = ENNSurrogateConfig {
             k: ennbo::NeighborCount::new(3).unwrap(),

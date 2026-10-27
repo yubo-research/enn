@@ -15,7 +15,7 @@ from enn.enn.mbpann import (
     auto_uses_learned_metric,
 )
 from enn.turbo.config.enn_index_driver import ENNIndexDriver, index_driver_to_wire
-from enn.turbo.config.enn_surrogate_config import ENNStorage, ENNSurrogateConfig
+from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 from enn.turbo.config.optimizer_config import OptimizerConfig
 from enn.turbo.rust_optimizer_helpers import _config_to_rust_overrides
@@ -33,10 +33,9 @@ def _model(
     model = EpistemicNearestNeighbors(
         x,
         y,
-        metric_learning=metric_learning,
+        weighting=(metric_learning is ENNMetricLearning.AUTO),
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
-        enn_storage=ENNStorage.DISK,
     )
     return x, y, model
 
@@ -118,85 +117,59 @@ def test_bpann_disk_without_metric_learning_rejects_metric_updates(tmp_path) -> 
     np.testing.assert_array_equal(model.neighbors(q, 5), _exact(x, q, np.ones(3), 5))
 
 
-def test_scale_x_and_metric_learning_require_matching_driver(tmp_path) -> None:
+def test_weighting_and_directory_contract(tmp_path) -> None:
     x, y = _data(10)
-    for mode in (ENNMetricLearning.AUTO,):
-        with pytest.raises(
-            ValueError,
-            match="BpAnnDisk",
-        ):
-            EpistemicNearestNeighbors(x, y, metric_learning=mode)
-        with pytest.raises(
-            ValueError, match="scale_x=false"
-        ):
-            EpistemicNearestNeighbors(
-                x,
-                y,
-                scale_x=ENNScaleX.ON,
-                metric_learning=mode,
-                index_driver=ENNIndexDriver.BPANN_DISK,
-                work_dir=tmp_path,
-                enn_storage=ENNStorage.DISK,
-            )
-    with pytest.raises(TypeError, match="ENNScaleX"):
-        EpistemicNearestNeighbors(x, y, scale_x=True)
-    with pytest.raises(TypeError, match="ENNMetricLearning"):
-        EpistemicNearestNeighbors(x, y, metric_learning=True)
+    for wrapper, driver in [
+        (EpistemicNearestNeighbors, ENNIndexDriver.BPANN_DISK),
+        (RustENN, "BPANN_DISK"),
+    ]:
+        with pytest.raises(ValueError, match="work_dir"):
+            wrapper(x, y, index_driver=driver, weighting=True)
+        with pytest.raises(TypeError):
+            wrapper(x, y, scale_x=True)
+        with pytest.raises(TypeError):
+            wrapper(x, y, metric_learning="AUTO")
+        with pytest.raises(TypeError):
+            wrapper(x, y, enn_storage="MEMORY")
     with pytest.raises(ValueError, match="Unknown index_driver"):
-        RustENN(x, y, index_driver="exact", metric_learning="auto")
-    with pytest.raises(ValueError, match="Unknown index_driver"):
-        RustENN(x, y, index_driver="mbpann_disk", work_dir=str(tmp_path))
+        RustENN(x, y, index_driver="exact")
+    with pytest.raises(ValueError, match="FLAT"):
+        EpistemicNearestNeighbors(x, y, work_dir=tmp_path)
 
 
-def test_bpann_disk_scale_x_tracks_data_scales_incrementally(tmp_path) -> None:
+def test_disk_weighting_preserves_neighbor_metric_through_adds(tmp_path) -> None:
     rng = np.random.default_rng(3)
     widths = np.array([0.01, 1.0, 100.0])
-    x = rng.random((2000, 3)) * widths
-    y = rng.random((2000, 1))
+    x = rng.random((400, 3)) * widths
+    y = rng.random((400, 1))
     model = EpistemicNearestNeighbors(
         x[:10],
         y[:10],
-        scale_x=ENNScaleX.ON,
+        weighting=True,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
-        enn_storage=ENNStorage.DISK,
     )
-    assert model.scale_x == ENNScaleX.ON
-    for lo in range(10, 2000, 199):
-        model.add(x[lo : lo + 199], y[lo : lo + 199])
-        model.ensure_index_sync()
-    applied = model._x_scale[0]
-    np.testing.assert_allclose(applied, x.std(axis=0), rtol=0.011)
+    assert model.weighting and model.metric is not None
+    for lo in range(10, 400, 99):
+        model.add(x[lo : lo + 99], y[lo : lo + 99])
     q = rng.random((1, 3)) * widths
     np.testing.assert_array_equal(
-        model.neighbors(q, 5), _exact(x, q, 1.0 / applied**2, 5)
+        model.neighbors(q, 5), _exact(x, q, model.metric.weights, 5)
     )
 
 
-def test_optimizer_config_forwards_scale_x_and_metric_learning() -> None:
-    auto_surrogate = ENNSurrogateConfig(
-        metric_learning=ENNMetricLearning.AUTO,
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        enn_storage=ENNStorage.DISK,
-        work_dir="/tmp/enn_auto",
-        scale_x=ENNScaleX.OFF,
+def test_optimizer_config_forwards_only_weighting_and_directory() -> None:
+    for weighting in [False, True]:
+        config = OptimizerConfig(surrogate=ENNSurrogateConfig(weighting=weighting))
+        sent = _config_to_rust_overrides(config)
+        assert sent["weighting"] is weighting
+        assert not {"scale_x", "metric_learning", "enn_storage"}.intersection(sent)
+    disk = ENNSurrogateConfig(
+        weighting=True, index_driver=ENNIndexDriver.BPANN_DISK, work_dir="/tmp/enn_auto"
     )
-    assert auto_surrogate.metric_learning == ENNMetricLearning.AUTO
-    assert (
-        ENNSurrogateConfig(
-            scale_x=ENNScaleX.ON, index_driver=ENNIndexDriver.BPANN_DISK
-        ).scale_x
-        == ENNScaleX.ON
-    )
-    with pytest.raises(TypeError, match="ENNScaleX"):
-        ENNSurrogateConfig(scale_x=True)
-    for scale_x, expected in ((ENNScaleX.OFF, False), (ENNScaleX.ON, True)):
-        config = OptimizerConfig(surrogate=ENNSurrogateConfig(scale_x=scale_x))
-        assert _config_to_rust_overrides(config).get("scale_x") is expected
-    none_cfg = OptimizerConfig(surrogate=ENNSurrogateConfig())
-    assert _config_to_rust_overrides(none_cfg)["metric_learning"] == "NONE"
-    auto_cfg = OptimizerConfig(surrogate=auto_surrogate)
-    assert _config_to_rust_overrides(auto_cfg)["metric_learning"] == "AUTO"
+    sent = _config_to_rust_overrides(OptimizerConfig(surrogate=disk))
+    assert sent["work_dir"] == "/tmp/enn_auto"
+    assert sent["index_driver"] == "BPANN_DISK" and sent["weighting"]
 
 
 def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:
@@ -207,10 +180,9 @@ def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:
     reopened = EpistemicNearestNeighbors(
         np.zeros((0, 3)),
         np.zeros((0, 1)),
-        metric_learning=ENNMetricLearning.AUTO,
+        weighting=True,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
-        enn_storage=ENNStorage.DISK,
     )
     q = np.array([[0.5, 0.5, 0.5]])
     np.testing.assert_array_equal(reopened.neighbors(q, 5), _exact(x, q, np.ones(3), 5))
@@ -230,10 +202,9 @@ def _stream(tmp_path, f, n: int, batch: int = 50, seed: int = 0):
     model = EpistemicNearestNeighbors(
         x[:batch],
         y[:batch],
-        metric_learning=ENNMetricLearning.AUTO,
+        weighting=True,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
-        enn_storage=ENNStorage.DISK,
     )
     counts = [model.metric.num_refits]
     for lo in range(batch, n, batch):
@@ -262,10 +233,9 @@ def test_refit_growth_and_capacity_reach_the_rust_policy(tmp_path) -> None:
     model = EpistemicNearestNeighbors(
         x[:50],
         y[:50],
-        metric_learning=ENNMetricLearning.AUTO,
+        weighting=True,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
-        enn_storage=ENNStorage.DISK,
     )
     MBPANNMetric(model, refit_growth=3.0)
     counts = [model.metric.num_refits]
@@ -277,10 +247,9 @@ def test_refit_growth_and_capacity_reach_the_rust_policy(tmp_path) -> None:
     small = EpistemicNearestNeighbors(
         x[:5],
         y[:5],
-        metric_learning=ENNMetricLearning.AUTO,
+        weighting=True,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path / "small",
-        enn_storage=ENNStorage.DISK,
     )
     MBPANNMetric(small, reservoir_capacity=8, seed=3)
     with pytest.raises(ValueError, match="reservoir_capacity"):

@@ -100,3 +100,21 @@ __all__ = [
     "create_optimizer_zero",
     "create_optimizer_lhd",
 ]
+
+semantic_projection = _ext.util.semantic_projection
+semantic_weighted = _ext.util.semantic_weighted
+semantic_transform = _ext.util.semantic_transform
+semantic_inverse = _ext.util.semantic_inverse
+
+cat_log_width = _ext.util.cat_log_width
+
+CatEncoder = _ext.util.CatEncoder
+cat_column_plan = _ext.util.cat_column_plan
+
+InputHistory = _ext.util.InputHistory
+
+resolve_tied_groups = _ext.model.resolve_tied_groups
+
+semantic_texts = _ext.util.semantic_texts
+semantic_encode = _ext.util.semantic_encode
+semantic_text_projection = _ext.util.semantic_text_projection

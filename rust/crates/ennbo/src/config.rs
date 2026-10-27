@@ -450,7 +450,7 @@ mod tests {
             enn: Some(EnnOverrides {
                 index_driver: Some(IndexDriver::Flat),
                 fit: Some(draw_override(123, 456)),
-                scale_x: Some(true),
+                weighting: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
@@ -475,7 +475,7 @@ mod tests {
     fn test_config_overrides_scale_x_apply() {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
-                scale_x: Some(true),
+                weighting: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
@@ -534,7 +534,7 @@ mod tests {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
                 fit: Some(draw_override(7, 11)),
-                scale_x: Some(true),
+                weighting: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
@@ -556,7 +556,6 @@ mod tests {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
                 index_driver: Some(IndexDriver::BpAnnDisk),
-                enn_storage: Some(EnnStorage::Disk),
                 work_dir: Some(PathBuf::from("/tmp/enn_work")),
                 ..Default::default()
             }),

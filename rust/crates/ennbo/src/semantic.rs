@@ -66,6 +66,11 @@ pub fn original_rows(x: Array2<f64>, projection: Option<&Array2<f64>>) -> Array2
     }
 }
 
+/// Width of the input representation; ties always index this representation.
+pub fn feature_count(projection: Option<&Array2<f64>>, dimensions: usize, semantic_only: bool) -> usize {
+    match projection { Some(p) if semantic_only => p.ncols(), Some(p) => dimensions + p.ncols(), None => dimensions }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

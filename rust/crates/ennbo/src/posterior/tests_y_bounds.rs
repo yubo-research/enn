@@ -1,7 +1,6 @@
 //! Dual warped/natural posterior API under non-identity y_bounds.
 
 use super::*;
-use crate::backend::EnnStorage;
 use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use ndarray::array;
@@ -14,7 +13,7 @@ fn logit_unit_model() -> EpistemicNearestNeighbors {
         train_x,
         train_y,
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::flat(false),
         Some(bounds),
     )
     .unwrap()
@@ -154,7 +153,7 @@ fn y_bounds_edge_lower_only_log_warp_roundtrip_and_oob() {
         train_x.clone(),
         train_y.clone(),
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::flat(false),
         Some(bounds.clone()),
     )
     .unwrap();
@@ -171,7 +170,7 @@ fn y_bounds_edge_lower_only_log_warp_roundtrip_and_oob() {
         train_x,
         array![[-0.1], [2.0], [1.0]],
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::flat(false),
         Some(bounds),
     );
     assert!(oob.is_err(), "y <= lower must be rejected for (0, inf)");
@@ -186,7 +185,7 @@ fn y_bounds_edge_upper_only_neglog_warp_and_samples_in_bounds() {
         train_x,
         train_y,
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::flat(false),
         Some(bounds),
     )
     .unwrap();
@@ -210,7 +209,7 @@ fn y_bounds_edge_near_open_endpoints_logit() {
         train_x,
         train_y.clone(),
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::flat(false),
         Some(bounds),
     )
     .unwrap();
@@ -229,9 +228,7 @@ fn y_bounds_edge_empty_model_y_scale_row_is_ones() {
     let model = EpistemicNearestNeighbors::new_empty_with_y_bounds(
         1,
         1,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
-        None,
+        crate::layout::EnnLayout::new(IndexDriver::Flat, None, false).unwrap(),
         None,
         Some(array![[0.0, 1.0]]),
     )
@@ -250,7 +247,7 @@ fn y_bounds_edge_identity_equals_storage() {
         train_x,
         train_y.clone(),
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::flat(false),
         None,
     )
     .unwrap();

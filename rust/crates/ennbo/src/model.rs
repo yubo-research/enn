@@ -41,8 +41,6 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) x_scale: Array1<f64>,
     /// True once a caller-set metric owns `x_scale` (BPANN_DISK with metric learning).
     pub(crate) metric_fixed: bool,
-    /// Disk `scale_x`: the `x_scale` the BPANN partition was last built under.
-    pub(crate) built_x_scale: Array1<f64>,
     /// Dimensions `scale_x` leaves at scale 1 (e.g. one-hot categories).
     pub(crate) unscaled_dims: Vec<usize>,
     pub(crate) y_scale: Array1<f64>,
@@ -113,14 +111,14 @@ impl EpistemicNearestNeighbors {
         train_x: Array2<f64>,
         train_y: Array2<f64>,
         train_yvar: Option<Array2<f64>>,
-        scale_x: bool,
+        weighting: bool,
         driver: IndexDriver,
     ) -> Result<Self, ENNError> {
         Self::new_with_storage(
             train_x,
             train_y,
             train_yvar,
-            EnnLayout::memory(driver, scale_x),
+            EnnLayout::new(driver, None, weighting)?,
             None,
         )
     }
@@ -138,13 +136,24 @@ impl EpistemicNearestNeighbors {
         layout: EnnLayout,
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
+        Self::new_configured(train_x, train_y, train_yvar, layout, y_bounds, Vec::new())
+    }
+
+    /// Construct a model and initialize backend-specific weighting and tied features in Rust.
+    pub fn new_configured(
+        train_x: Array2<f64>, train_y: Array2<f64>, train_yvar: Option<Array2<f64>>,
+        layout: EnnLayout, y_bounds: Option<Array2<f64>>, tied_dims: Vec<Vec<usize>>,
+    ) -> Result<Self, ENNError> {
+        crate::metric_weights::validate_tied_dims(&tied_dims, train_x.ncols())?;
+        let auto_rows = (layout.metric_learning() == crate::metric_auto::MetricLearning::Auto)
+            .then(|| (train_x.clone(), train_y.clone()));
         let scale_x = layout.scale_x();
         let storage = layout.storage();
         let work_dir = layout.work_dir().map(std::path::Path::to_path_buf);
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
         let num_dim = train_x.ncols();
         let mut num_metrics = train_y.ncols();
-        let disk_work_dir = work_dir.clone().or_else(EnnStorage::work_dir_from_env);
+        let disk_work_dir = work_dir.clone();
         let disk_reopen = matches!(storage, EnnStorage::Disk)
             && train_x.nrows() == 0
             && train_y.nrows() == 0
@@ -203,7 +212,6 @@ impl EpistemicNearestNeighbors {
             num_dim,
             num_metrics,
             scale_x,
-            built_x_scale: x_scale.clone(),
             x_scale,
             metric_fixed: false,
             unscaled_dims: Vec::new(),
@@ -222,23 +230,25 @@ impl EpistemicNearestNeighbors {
             sync_obs_stats_from_backend(&mut model)?;
         }
         model.persist_y_bounds_metadata()?;
+        model.set_tied_groups(tied_dims.clone())?;
+        if let Some((x, y)) = auto_rows {
+            model.enable_auto_metric(tied_dims, &x.view(), &y.view())?;
+        } else {
+            model.set_unscaled_dims(tied_dims.into_iter().flatten().collect())?;
+        }
         Ok(model)
     }
 
     pub fn new_empty(
         num_dim: usize,
         num_metrics: usize,
-        driver: IndexDriver,
-        storage: EnnStorage,
-        work_dir: Option<PathBuf>,
+        layout: EnnLayout,
         pending_flush_threshold: Option<usize>,
     ) -> Result<Self, ENNError> {
         Self::new_empty_with_y_bounds(
             num_dim,
             num_metrics,
-            driver,
-            storage,
-            work_dir,
+            layout,
             pending_flush_threshold,
             None,
         )
@@ -514,7 +524,6 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
         model.x_sum = x_sum;
         model.x_sumsq = x_sumsq;
         model.x_scale = model.data_x_scale(n);
-        model.built_x_scale = model.x_scale.clone();
     }
     model.backend
         .ensure_index_sync(model.scale_x, &model.x_scale)?;
@@ -617,13 +626,11 @@ mod tests {
     #[test]
     fn test_new_empty_and_row_accessors() {
         let mut model = EpistemicNearestNeighbors::new_empty(
-            2,
-            1,
-            IndexDriver::Flat,
-            EnnStorage::InMemory,
-            None,
-            None,
-        )
+        2,
+        1,
+        crate::layout::EnnLayout::new(IndexDriver::Flat, None, false).unwrap(),
+        None,
+    )
         .unwrap();
         model
             .add(&array![[1.0, 2.0]].view(), &array![[3.0]].view(), None)
@@ -688,6 +695,5 @@ mod tests {
         drop(built);
         let reopened = open(Array2::zeros((0, 2)), Array2::zeros((0, 1)));
         assert_eq!(stats(&reopened), expected);
-        assert_eq!(reopened.x_scale, reopened.built_x_scale);
     }
 }

@@ -1,6 +1,6 @@
 //! Shared disk backend streaming smoke test body.
 
-use ennbo::{EnnStorage, EpistemicNearestNeighbors, IndexDriver};
+use ennbo::{EpistemicNearestNeighbors, IndexDriver};
 use ndarray::Array2;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -37,9 +37,7 @@ pub fn run_disk_streaming_crosses_flush_threshold(driver: IndexDriver) {
     let mut model = EpistemicNearestNeighbors::new_empty(
         STREAMING_D,
         1,
-        driver,
-        EnnStorage::Disk,
-        Some(dir.path().to_path_buf()),
+        ennbo::EnnLayout::new(driver, Some(dir.path().to_path_buf()), false).unwrap(),
         Some(STREAMING_FLUSH_THRESHOLD),
     )
     .expect("new_empty disk");
@@ -62,9 +60,7 @@ pub fn run_disk_streaming_add_sync_search(driver: IndexDriver) {
     let mut model = EpistemicNearestNeighbors::new_empty(
         STREAMING_D,
         1,
-        driver,
-        EnnStorage::Disk,
-        Some(dir.path().to_path_buf()),
+        ennbo::EnnLayout::new(driver, Some(dir.path().to_path_buf()), false).unwrap(),
         None,
     )
     .expect("new_empty disk");

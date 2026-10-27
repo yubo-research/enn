@@ -7,10 +7,7 @@ from enn.enn import metric_stream as ms
 from enn.enn.cat_codes import CatEncoder, DimKind
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.turbo.config.enn_x_scaling import (
-    ENNMetricLearning,
-    ENNScaleX,
     validate_tied_dims,
 )
 
@@ -110,10 +107,9 @@ def test_model_ties_encoded_categoricals(tmp_path) -> None:
     model = EpistemicNearestNeighbors(
         x[:200],
         y[:200, None],
-        metric_learning=ENNMetricLearning.AUTO,
+        weighting=True,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
-        enn_storage=ENNStorage.DISK,
     )
     assert model.tied_dims == encoder.tied_dims()
     model.add(x[200:], y[200:, None])
@@ -130,7 +126,7 @@ def test_model_ties_encoded_categoricals(tmp_path) -> None:
 
 def test_scale_x_uses_encoded_categorical_groups() -> None:
     encoder, x, y = _encoded_mixed(400)
-    model = EpistemicNearestNeighbors(x[:200], y[:200, None], scale_x=ENNScaleX.ON)
+    model = EpistemicNearestNeighbors(x[:200], y[:200, None], weighting=True)
     assert model.tied_dims == encoder.tied_dims()
     model.add(x[200:], y[200:, None])
     scale = model._x_scale[0]
@@ -138,7 +134,7 @@ def test_scale_x_uses_encoded_categorical_groups() -> None:
     np.testing.assert_array_equal(scale[tied], 1.0)
     assert scale[0] > 1.0
     matched = EpistemicNearestNeighbors(
-        x[:20], y[:20, None], tied_dims=encoder.tied_dims(), scale_x=ENNScaleX.ON
+        x[:20], y[:20, None], tied_dims=encoder.tied_dims(), weighting=True
     )
     assert matched.tied_dims == encoder.tied_dims()
 
@@ -161,24 +157,28 @@ def test_validate_tied_dims() -> None:
 @pytest.mark.parametrize("driver", [ENNIndexDriver.FLAT, ENNIndexDriver.BPANN_DISK])
 def test_scale_x_leaves_tied_dims_unscaled(tmp_path, driver) -> None:
     x, y = _mixed(600)
-    kw = (
-        {"work_dir": tmp_path, "enn_storage": ENNStorage.DISK}
-        if driver == ENNIndexDriver.BPANN_DISK
-        else {}
-    )
+    kw = {"work_dir": tmp_path} if driver == ENNIndexDriver.BPANN_DISK else {}
     model = EpistemicNearestNeighbors(
         x[:300],
         y[:300, None],
         tied_dims=[[2, 3, 4]],
-        scale_x=ENNScaleX.ON,
+        weighting=True,
         index_driver=driver,
         **kw,
     )
     assert model.tied_dims == ((2, 3, 4),)
     model.add(x[300:], y[300:, None])
     scale = model._x_scale[0]
-    np.testing.assert_array_equal(scale[2:], 1.0)
-    np.testing.assert_allclose(scale[:2], x[:, :2].std(axis=0), rtol=0.011)
+    if driver == ENNIndexDriver.FLAT:
+        np.testing.assert_array_equal(scale[2:], 1.0)
+    if driver == ENNIndexDriver.FLAT:
+        np.testing.assert_allclose(scale[:2], x[:, :2].std(axis=0), rtol=0.011)
+    else:
+        assert (
+            model.metric.weights[2]
+            == model.metric.weights[3]
+            == model.metric.weights[4]
+        )
     q = x[:4] + 0.01
     for i in range(len(q)):
         d2 = (((x - q[i]) / scale) ** 2).sum(axis=1)
@@ -195,10 +195,9 @@ def test_auto_metric_ties_group_weights(tmp_path) -> None:
         x[:50],
         y[:50, None],
         tied_dims=[[2, 3, 4]],
-        metric_learning=ENNMetricLearning.AUTO,
+        weighting=True,
         index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
-        enn_storage=ENNStorage.DISK,
     )
     for lo in range(50, 700, 50):
         model.add(x[lo : lo + 50], y[lo : lo + 50, None])

@@ -489,7 +489,7 @@ mod tests {
             train_x,
             train_y,
             None,
-            crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+            crate::layout::EnnLayout::flat(false),
             Some(bounds),
         )
         .unwrap();

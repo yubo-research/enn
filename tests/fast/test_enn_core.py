@@ -6,7 +6,6 @@ from enn_helpers import enn_all_train_rows
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
-from enn.turbo.config.enn_x_scaling import ENNScaleX
 
 
 def _params(
@@ -189,7 +188,7 @@ def test_batch_posterior_exclude_nearest_mixed_self_novel_k_equals_n():
     train_x = rng.standard_normal((n, d)) * 10.0
     train_y = rng.standard_normal((n, 1))
     train_yvar = 0.01 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar, scale_x=ENNScaleX.ON)
+    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar, weighting=True)
     x_query = np.vstack([train_x[:5], rng.standard_normal((5, d)) * 10.0])
     params = ENNParams(
         k_num_neighbors=k, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -286,22 +285,18 @@ def test_add_updates_y_scale_for_posterior_se():
     rng = np.random.default_rng(42)
     d = 3
 
-
     x_init = rng.random((5, d))
     y_init = rng.random((5, 1)) * 0.1
 
     model_incremental = EpistemicNearestNeighbors(x_init, y_init)
 
-
     x_new = rng.random((3, d))
     y_new = rng.random((3, 1)) * 100
     model_incremental.add(x_new, y_new)
 
-
     all_x = np.vstack([x_init, x_new])
     all_y = np.vstack([y_init, y_new])
     model_fresh = EpistemicNearestNeighbors(all_x, all_y)
-
 
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
@@ -311,10 +306,7 @@ def test_add_updates_y_scale_for_posterior_se():
     post_incremental = model_incremental.posterior(x_test, params=params)
     post_fresh = model_fresh.posterior(x_test, params=params)
 
-
     np.testing.assert_allclose(post_incremental.mu, post_fresh.mu, rtol=1e-6)
-
-
 
     np.testing.assert_allclose(post_incremental.se, post_fresh.se, rtol=0.01)
 
@@ -328,12 +320,12 @@ def test_incremental_add_scale_x_matches_fresh_model():
     x_new = rng.standard_normal((5, d))
     y_new = rng.standard_normal((5, 1))
 
-    model_incremental = EpistemicNearestNeighbors(x_init, y_init, scale_x=ENNScaleX.ON)
+    model_incremental = EpistemicNearestNeighbors(x_init, y_init, weighting=True)
     model_incremental.add(x_new, y_new)
 
     all_x = np.vstack([x_init, x_new])
     all_y = np.vstack([y_init, y_new])
-    model_fresh = EpistemicNearestNeighbors(all_x, all_y, scale_x=ENNScaleX.ON)
+    model_fresh = EpistemicNearestNeighbors(all_x, all_y, weighting=True)
 
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1

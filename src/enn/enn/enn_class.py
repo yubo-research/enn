@@ -5,24 +5,15 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from enn._rust import ENNAddToken
+from enn._rust import ENNAddToken, InputHistory
 from enn._rust import EpistemicNearestNeighbors as _RustENN
 from enn.turbo.config.enn_index_driver import (
     ENNIndexDriver,
     index_driver_from_wire,
     index_driver_to_wire,
 )
-from enn.turbo.config.enn_surrogate_config import (
-    ENNStorage,
-    enn_storage_to_wire,
-    validate_enn_placement,
-)
-from enn.turbo.config.enn_x_scaling import (
-    ENNMetricLearning,
-    ENNScaleX,
-    metric_learning_to_wire,
-    scale_x_to_wire,
-)
+from enn.turbo.config.enn_surrogate_config import validate_enn_placement
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
 
 from .cat_ties import resolve_tied_groups
 from .enn_class_support import _to_rust_seeds
@@ -59,6 +50,10 @@ class _EnnRustView:
         return ENNMetricLearning.NONE
 
     @property
+    def weighting(self) -> bool:
+        return bool(self._rust_model.weighting)
+
+    @property
     def metric(self) -> MBPANNMetric | None:
         if self.metric_learning != ENNMetricLearning.AUTO:
             return None
@@ -93,6 +88,8 @@ def _finalize_function_draw(
 
 class EpistemicNearestNeighbors(_EnnRustView):
     input_transform: SemanticInputTransform | None = None
+    semantic_only: bool = False
+    _original_inputs = None
 
     @staticmethod
     def _coerce_inputs(train_x, train_y, train_yvar):
@@ -110,32 +107,32 @@ class EpistemicNearestNeighbors(_EnnRustView):
         tied_dims: Sequence[Sequence[int]] | None = None,
         input_transform: SemanticInputTransform | None = None,
         *,
-        scale_x: ENNScaleX = ENNScaleX.OFF,
-        metric_learning: ENNMetricLearning = ENNMetricLearning.NONE,
+        weighting: bool = False,
         index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
         work_dir: str | os.PathLike[str] | None = None,
-        enn_storage: ENNStorage | None = None,
         y_bounds: np.ndarray | None = None,
+        semantic_only: bool = False,
     ) -> None:
         if input_transform is not None:
             self.input_transform = input_transform
-            if (
-                scale_x is not ENNScaleX.OFF
-                or metric_learning is not ENNMetricLearning.NONE
-                or tied_dims
-            ):
-                raise ValueError(
-                    "semantic inputs require fixed scaling and no tied dimensions"
-                )
-            train_x = input_transform.transform(train_x)
+        if semantic_only:
+            self.semantic_only = True
+        original_inputs = np.asarray(train_x, dtype=float) if semantic_only else None
+        groups = [
+            list(g)
+            for g in resolve_tied_groups(
+                train_x, tied_dims, semantic_only=semantic_only
+            )
+        ]
+        if input_transform is not None:
+            train_x = input_transform.transform(train_x, semantic_only=semantic_only)
+        elif semantic_only:
+            raise ValueError("semantic_only requires input_transform")
         validate_enn_placement(
             index_driver=index_driver,
-            enn_storage=enn_storage,
             work_dir=work_dir,
-            scale_x=scale_x,
-            metric_learning=metric_learning,
+            weighting=weighting,
         )
-        groups = [list(g) for g in resolve_tied_groups(train_x, tied_dims)]
         train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
@@ -143,18 +140,17 @@ class EpistemicNearestNeighbors(_EnnRustView):
             "train_x": train_x,
             "train_y": train_y,
             "train_yvar": train_yvar,
-            "scale_x": scale_x_to_wire(scale_x),
+            "weighting": weighting,
             "index_driver": index_driver_to_wire(index_driver),
-            "metric_learning": metric_learning_to_wire(metric_learning),
             "tied_dims": groups,
         }
         if work_dir is not None:
             rust_kwargs["work_dir"] = os.fspath(work_dir)
-        if enn_storage is not None:
-            rust_kwargs["enn_storage"] = enn_storage_to_wire(enn_storage)
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
+        if semantic_only:
+            self._original_inputs = InputHistory(original_inputs, self._rust_model)
 
     def add(
         self,
@@ -163,10 +159,17 @@ class EpistemicNearestNeighbors(_EnnRustView):
         yvar: np.ndarray | None = None,
     ) -> ENNAddToken:
         x, y, yvar = self._coerce_inputs(x, y, yvar)
-        return self._rust_model.add(self.transform_inputs(x), y, yvar)
+        token = self._rust_model.add(self.transform_inputs(x), y, yvar)
+        if self._original_inputs is not None:
+            self._original_inputs.append(x)
+        return token
 
     def transform_inputs(self, x):
-        return x if self.input_transform is None else self.input_transform.transform(x)
+        return (
+            x
+            if self.input_transform is None
+            else self.input_transform.transform(x, semantic_only=self.semantic_only)
+        )
 
     def ensure_index_sync(self) -> None:
         self._rust_model.ensure_index_sync()
@@ -183,7 +186,9 @@ class EpistemicNearestNeighbors(_EnnRustView):
         idx = [int(i) for i in np.asarray(indices, dtype=int).ravel()]
         x, y, yvar = self._rust_model.train_rows_at(idx)
         x_arr = np.asarray(x, dtype=float)
-        if self.input_transform is not None:
+        if self._original_inputs is not None:
+            x_arr = self._original_inputs.gather(idx)
+        elif self.input_transform is not None:
             x_arr = self.input_transform.inverse(x_arr)
         y_arr = np.asarray(y, dtype=float)
         yvar_arr = None if yvar is None else np.asarray(yvar, dtype=float)

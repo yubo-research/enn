@@ -16,13 +16,11 @@ from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNScaleX
 
 
-def _enn(
-    train_x, *, scale_x=ENNScaleX.OFF, index_driver=ENNIndexDriver.FLAT, train_y=None
-):
+def _enn(train_x, *, weighting=False, index_driver=ENNIndexDriver.FLAT, train_y=None):
     if train_y is None:
         train_y = np.zeros((train_x.shape[0], 1), dtype=float)
     return EpistemicNearestNeighbors(
-        train_x, train_y, scale_x=scale_x, index_driver=index_driver
+        train_x, train_y, weighting=weighting, index_driver=index_driver
     )
 
 
@@ -108,7 +106,7 @@ def test_enn_neighbor_search_init_and_search():
 def test_enn_index_neighbor_search_matches_faiss_when_no_ties(scale_x):
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    enn = _enn(train_x, scale_x=scale_x)
+    enn = _enn(train_x, weighting=(scale_x is ENNScaleX.ON))
     query = rng.standard_normal((5, 3))
     search_k = 3
     faiss_d2, faiss_idx = enn_neighbor_distances_and_indices(
@@ -191,7 +189,7 @@ def test_enn_neighbor_search_exclude_nearest():
 def test_enn_neighbor_search_with_scaling():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    enn = _enn(train_x, scale_x=ENNScaleX.ON)
+    enn = _enn(train_x, weighting=True)
     query = rng.standard_normal((5, 3))
     dist2s, idx = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=False

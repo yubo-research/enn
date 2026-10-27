@@ -209,7 +209,6 @@ impl DiskBackendHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::EnnStorage;
     use crate::index::IndexDriver;
     use crate::EpistemicNearestNeighbors;
     use ndarray::Array2;
@@ -225,13 +224,11 @@ mod tests {
 
     fn disk_model(dir: &TempDir, n: usize, dim: usize) -> EpistemicNearestNeighbors {
         let mut model = EpistemicNearestNeighbors::new_empty(
-            dim,
-            1,
-            IndexDriver::BpAnnDisk,
-            EnnStorage::Disk,
-            Some(dir.path().to_path_buf()),
-            Some(1),
-        )
+        dim,
+        1,
+        crate::layout::EnnLayout::new(IndexDriver::BpAnnDisk, Some(dir.path().to_path_buf()), false).unwrap(),
+        Some(1),
+    )
         .expect("new_empty");
         let x = Array2::from_shape_fn((n, dim), |(i, j)| (i + j) as f64);
         let y = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);

@@ -14,11 +14,9 @@ pub(crate) const ENN_OVERRIDE_KEYS: &[&str] = &[
     "freeze_params",
     "num_fit_candidates",
     "infer_aleatoric_variance",
-    "scale_x",
+    "weighting",
     "y_bounds",
-    "enn_storage",
     "work_dir",
-    "metric_learning",
     "tied_dims",
     "affine_calibrate",
     "semantic_projection",
@@ -81,7 +79,7 @@ fn any_enn_key(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<bool> {
 pub(crate) fn parse_enn_overrides(
     dict: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<Option<ennbo::EnnOverrides>> {
-    use crate::py_layout::{enn_storage_from_wire, index_driver_from_wire, metric_learning_from_wire};
+    use crate::py_layout::index_driver_from_wire;
 
     if !any_enn_key(dict)? {
         return Ok(None);
@@ -99,15 +97,9 @@ pub(crate) fn parse_enn_overrides(
             .map(|s| index_driver_from_wire(&s))
             .transpose()?,
         fit: parse_fit_samples(dict)?,
-        scale_x: optional_bool(dict, "scale_x")?,
+        weighting: optional_bool(dict, "weighting")?,
         y_bounds,
-        enn_storage: optional_string(dict, "enn_storage")?
-            .map(|s| enn_storage_from_wire(&s))
-            .transpose()?,
         work_dir: optional_string(dict, "work_dir")?.map(PathBuf::from),
-        metric_learning: optional_string(dict, "metric_learning")?
-            .map(|s| metric_learning_from_wire(&s))
-            .transpose()?,
         tied_dims,
         semantic_only: optional_bool(dict, "semantic_only")?,
         semantic_projection: dict.get_item("semantic_projection")?

@@ -3,7 +3,6 @@
 use std::fs;
 use std::time::Instant;
 
-use ennbo::backend::EnnStorage;
 use ennbo::index::IndexDriver;
 use ennbo::EpistemicNearestNeighbors;
 use ndarray::{Array2, ArrayView2};
@@ -42,9 +41,7 @@ fn build_multi_batch_disk_model(
     let mut model = EpistemicNearestNeighbors::new_empty(
         dim,
         1,
-        IndexDriver::BpAnnDisk,
-        EnnStorage::Disk,
-        Some(work_dir.to_path_buf()),
+        ennbo::EnnLayout::new(IndexDriver::BpAnnDisk, Some(work_dir.to_path_buf()), false).unwrap(),
         Some(1000),
     )
     .expect("new_empty");
@@ -154,9 +151,7 @@ fn schedule_soft_sync_leaves_pages_unchanged_until_persist() {
     let mut model = EpistemicNearestNeighbors::new_empty(
         dim,
         1,
-        IndexDriver::BpAnnDisk,
-        EnnStorage::Disk,
-        Some(work_dir.clone()),
+        ennbo::EnnLayout::new(IndexDriver::BpAnnDisk, Some(work_dir.clone()), false).unwrap(),
         Some(50),
     )
     .expect("new_empty");

@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 
 from enn import SemanticInputTransform, create_optimizer
-from enn.turbo.config import ENNIndexDriver, ENNMetricLearning, ENNSurrogateConfig
-from enn.turbo.config.enn_surrogate_config import ENNStorage
+from enn.turbo.config import ENNIndexDriver, ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config
 
 
@@ -20,9 +19,8 @@ def test_semantic_auto_optimizer_observations_and_predictions(tmp_path, only):
     config = turbo_enn_config(
         enn=ENNSurrogateConfig(
             index_driver=ENNIndexDriver.BPANN_DISK,
-            enn_storage=ENNStorage.DISK,
             work_dir=tmp_path / "index",
-            metric_learning=ENNMetricLearning.AUTO,
+            weighting=True,
             input_transform=transform,
             semantic_only=only,
         ),

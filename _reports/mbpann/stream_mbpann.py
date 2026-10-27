@@ -57,14 +57,20 @@ def metric_sequence(x, y, rng):
 
 
 def query_idx(model, xq, exclude_self):
-    p = ENNParams(k_num_neighbors=K, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1)
+    p = ENNParams(
+        k_num_neighbors=K, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
     flags = PosteriorFlags(exclude_nearest=exclude_self)
     return np.asarray(model.batch_posterior(xq, [p], flags=flags).idx, dtype=np.int64)
 
 
 def new_model(x, y, metric_learning):
     return EpistemicNearestNeighbors(
-        x, y.reshape(-1, 1), metric_learning=metric_learning, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp(prefix="mbpann_")
+        x,
+        y.reshape(-1, 1),
+        weighting=(metric_learning is ENNMetricLearning.AUTO),
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=tempfile.mkdtemp(prefix="mbpann_"),
     )
 
 
@@ -76,14 +82,16 @@ class BpannCopy:
 
     def add(self, lo, hi):
         if self.model is None:
-            self.model = new_model(self.x[:hi] * self.s, self.y[:hi], ENNMetricLearning.OFF)
+            self.model = new_model(
+                self.x[:hi] * self.s, self.y[:hi], ENNMetricLearning.NONE
+            )
         else:
             self.model.add(self.x[lo:hi] * self.s, self.y[lo:hi].reshape(-1, 1))
         self.model.ensure_index_sync()
 
     def set_metric(self, a, n):
         self.s = np.sqrt(a)
-        self.model = new_model(self.x[:n] * self.s, self.y[:n], ENNMetricLearning.OFF)
+        self.model = new_model(self.x[:n] * self.s, self.y[:n], ENNMetricLearning.NONE)
         self.model.ensure_index_sync()
 
     def query(self, xq, exclude_self):
@@ -92,11 +100,17 @@ class BpannCopy:
 
 class Mbpann:
     def __init__(self, x, y, rebuild_drift):
-        self.x, self.y, self.drift, self.model, self.metric = x, y, rebuild_drift, None, None
+        self.x, self.y, self.drift, self.model, self.metric = (
+            x,
+            y,
+            rebuild_drift,
+            None,
+            None,
+        )
 
     def add(self, lo, hi):
         if self.model is None:
-            self.model = new_model(self.x[:hi], self.y[:hi], ENNMetricLearning.ON)
+            self.model = new_model(self.x[:hi], self.y[:hi], ENNMetricLearning.AUTO)
             self.metric = MBPANNMetric(self.model, rebuild_drift=self.drift)
         else:
             self.model.add(self.x[lo:hi], self.y[lo:hi].reshape(-1, 1))
@@ -178,7 +192,9 @@ def run_method(key, meth, seq, data, loo_sets):
             row = evaluate(meth, (a_eval, seq[n][1]), data, n, loo_sets[n])
             row.update(method=key, n=n, add_sec=t_add, metric_sec=t_metric)
             if isinstance(meth, Mbpann) and meth.metric is not None:
-                row.update(rebuilds=meth.metric.num_rebuilds, rescales=meth.metric.num_rescales)
+                row.update(
+                    rebuilds=meth.metric.num_rebuilds, rescales=meth.metric.num_rescales
+                )
             rows.append(row)
     return rows
 
@@ -186,7 +202,9 @@ def run_method(key, meth, seq, data, loo_sets):
 def run(name, seed):
     x, y, xt, yt, rng = make_data(name, seed)
     seq = metric_sequence(x, y, rng)
-    loo_sets = {n: np.sort(rng.choice(n, size=N_LOO, replace=False)) for n in CHECKPOINTS}
+    loo_sets = {
+        n: np.sort(rng.choice(n, size=N_LOO, replace=False)) for n in CHECKPOINTS
+    }
     out = []
     for key, meth in methods(x, y, seq[N_TRAIN][0]).items():
         rows = run_method(key, meth, seq, (x, y, xt, yt), loo_sets)
@@ -194,7 +212,9 @@ def run(name, seed):
             r.update(problem=name, seed=seed)
         last = rows[-1]
         print(
-            name, seed, key,
+            name,
+            seed,
+            key,
             f"loo={last['loo']:.3f}/{last['loo_exact']:.3f} test={last['test']:.3f}/{last['test_exact']:.3f}",
             f"recall={last['recall']:.3f} add={last['add_sec']:.2f}s metric={last['metric_sec']:.2f}s "
             f"query={last['query_sec']:.2f}s",

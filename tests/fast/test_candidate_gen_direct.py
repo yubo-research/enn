@@ -5,8 +5,7 @@ import pytest
 from enn.turbo.config.candidate_gen_config import CandidateGenConfig
 from enn.turbo.config.candidate_rv import CandidateRV
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage, ENNSurrogateConfig
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
+from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config, turbo_zero_config
 from enn.turbo.config.tr_length_config import TRLengthConfig
 from enn.turbo.config.turbo_tr_config import TurboTRConfig
@@ -67,27 +66,12 @@ def test_length_order_is_checked_when_both_ends_are_set():
         TRLengthConfig(length_min=2.0, length_max=1.0)
 
 
-def test_disk_flat_and_auto_on_flat_are_rejected():
-    with pytest.raises(ValueError, match="BpAnnDisk"):
-        ENNSurrogateConfig(
-            index_driver=ENNIndexDriver.FLAT,
-            enn_storage=ENNStorage.DISK,
-            work_dir="/tmp/enn",
-        )
-    with pytest.raises(ValueError, match="scale_x=false"):
-        ENNSurrogateConfig(
-            index_driver=ENNIndexDriver.FLAT,
-            metric_learning=ENNMetricLearning.AUTO,
-        )
-    with pytest.raises(ValueError, match="does not select storage"):
-        ENNSurrogateConfig(
-            index_driver=ENNIndexDriver.BPANN_DISK,
-            work_dir="/tmp/enn",
-        )
+def test_backend_selects_storage_and_requires_disk_directory():
+    with pytest.raises(ValueError, match="FLAT"):
+        ENNSurrogateConfig(index_driver=ENNIndexDriver.FLAT, work_dir="/tmp/enn")
+    with pytest.raises(ValueError, match="work_dir"):
+        ENNSurrogateConfig(index_driver=ENNIndexDriver.BPANN_DISK)
     ENNSurrogateConfig(
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        enn_storage=ENNStorage.DISK,
-        work_dir="/tmp/enn",
-        metric_learning=ENNMetricLearning.AUTO,
-        scale_x=ENNScaleX.OFF,
+        index_driver=ENNIndexDriver.BPANN_DISK, work_dir="/tmp/enn", weighting=True
     )
+    ENNSurrogateConfig(weighting=True, tied_dims=((0, 1),))

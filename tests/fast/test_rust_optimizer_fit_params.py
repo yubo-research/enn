@@ -80,7 +80,9 @@ def test_both_fit_params_passed_to_rust_overrides():
 
 def test_rust_optimizer_passes_bpann_disk_index_driver():
     config = turbo_enn_config(
-        enn=ENNSurrogateConfig(index_driver=ENNIndexDriver.BPANN_DISK)
+        enn=ENNSurrogateConfig(
+            index_driver=ENNIndexDriver.BPANN_DISK, work_dir="/tmp/enn_boundary"
+        )
     )
     overrides = _config_to_rust_overrides(config)
 
@@ -109,13 +111,17 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
     y = np.array([0.2, 1.5, -0.4, 0.7, 0.1], dtype=float)
     query = np.array([[0.55, 0.45, 0.35, 0.25]], dtype=float)
 
-    def query_mu(seed: int, num_fit_samples: int | None) -> tuple[np.ndarray, np.ndarray]:
+    def query_mu(
+        seed: int, num_fit_samples: int | None
+    ) -> tuple[np.ndarray, np.ndarray]:
         if num_fit_samples is None:
             fit = ENNFitConfig()
         else:
             fit = ENNFitConfig(num_fit_samples=num_fit_samples, num_fit_candidates=30)
         cfg = turbo_enn_config(enn=ENNSurrogateConfig(k=3, fit=fit), num_init=2)
-        opt = create_optimizer(bounds=bounds, config=cfg, rng=np.random.default_rng(seed))
+        opt = create_optimizer(
+            bounds=bounds, config=cfg, rng=np.random.default_rng(seed)
+        )
         told = np.asarray(opt.tell(x, y), dtype=float)
         at_query = np.asarray(opt._inner.posterior_mu(query), dtype=float)
         return told, at_query

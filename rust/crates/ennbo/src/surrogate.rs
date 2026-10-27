@@ -9,23 +9,10 @@ use crate::fit_samples::FitSamples;
 use crate::fitter::ENNFitter;
 use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
-use crate::metric_auto::MetricLearning;
 use crate::model::EpistemicNearestNeighbors;
 use crate::neighbor_count::NeighborCount;
 use crate::params::{ENNParams, PosteriorFlags};
 use crate::surrogate_state::{AppendInput, AppendPlan, FitState, ScaleFit};
-
-fn enable_auto_if_configured(
-    model: &mut EpistemicNearestNeighbors,
-    config: &ENNSurrogateConfig,
-    x: &ArrayView2<f64>,
-    y: &ArrayView2<f64>,
-) -> Result<(), ENNError> {
-    if config.layout.metric_learning() == MetricLearning::Auto {
-        model.enable_auto_metric(config.tied_dims.clone(), x, y)?;
-    }
-    Ok(())
-}
 
 #[derive(Debug, Clone)]
 pub struct SurrogatePrediction {
@@ -88,7 +75,7 @@ pub struct ENNSurrogateConfig {
     pub layout: EnnLayout,
     /// Optional per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
     pub y_bounds: Option<Array2<f64>>,
-    /// Groups of tied input dimensions. Only `MetricLearning::Auto` reads them.
+    /// Groups in feature coordinates, preserved with any weighting policy.
     pub tied_dims: Vec<Vec<usize>>,
     /// Use only the projected features, retaining original observations separately.
     pub semantic_only: bool,
@@ -101,7 +88,7 @@ impl Default for ENNSurrogateConfig {
         Self {
             k: NeighborCount::default(),
             fit_samples: FitSamples::default(),
-            layout: EnnLayout::memory(IndexDriver::Flat, false),
+            layout: EnnLayout::flat(false),
             y_bounds: None,
             tied_dims: Vec::new(),
             semantic_only: false,
@@ -117,15 +104,8 @@ impl ENNSurrogateConfig {
         if self.tied_dims.is_empty() {
             return Ok(());
         }
-        if self.semantic_projection.is_some() {
-            return Err(ENNError::InvalidParameter("tied dimensions with semantic features are unsupported".into()));
-        }
-        if self.layout.metric_learning() != MetricLearning::Auto {
-            return Err(ENNError::InvalidParameter(
-                "tied_dims require metric_learning=Auto".into(),
-            ));
-        }
-        crate::metric_weights::validate_tied_dims(&self.tied_dims, num_dim)
+        let dimensions = crate::semantic::feature_count(self.semantic_projection.as_deref(), num_dim, self.semantic_only);
+        crate::metric_weights::validate_tied_dims(&self.tied_dims, dimensions)
     }
 
     fn default_params(&self) -> Result<ENNParams, ENNError> {
@@ -182,12 +162,13 @@ impl ENNSurrogate {
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<EpistemicNearestNeighbors, ENNError> {
-        EpistemicNearestNeighbors::new_with_storage(
+        EpistemicNearestNeighbors::new_configured(
             x.to_owned(),
             y.to_owned(),
             yvar.map(|v| v.to_owned()),
             self.config.layout.clone(),
             self.config.y_bounds.clone(),
+            self.config.tied_dims.clone(),
         )
     }
 
@@ -257,8 +238,7 @@ impl ENNSurrogate {
         warm: Option<ENNParams>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
-        let mut model = self.construct_model(x_new, y_new, yvar_new)?;
-        enable_auto_if_configured(&mut model, &self.config, x_new, y_new)?;
+        let model = self.construct_model(x_new, y_new, yvar_new)?;
         self.state = match self.config.fit_samples {
             FitSamples::Frozen => FitState::Frozen {
                 model,
@@ -1022,8 +1002,7 @@ mod tests {
             tied_dims: vec![vec![0, 1]],
             ..Default::default()
         };
-        let err = cfg.validate(2).unwrap_err();
-        assert!(err.to_string().contains("metric_learning=Auto"), "{err}");
+        cfg.validate(2).unwrap();
         cfg.layout = EnnLayout::DiskAuto {
             work_dir: std::path::PathBuf::from("/tmp/unused"),
         };
@@ -1042,7 +1021,7 @@ mod tests {
         assert_eq!(fitted_sides(auto("a"), None).unwrap().to_vec(), vec![1.0, 1.0]);
         let s = fitted_sides(auto("b"), Some(&[1.0, 4.0])).unwrap();
         assert!((s[0] - 2.0).abs() < 1e-12 && (s[1] - 0.5).abs() < 1e-12);
-        assert!(fitted_sides(EnnLayout::memory(IndexDriver::Flat, false), None).is_none());
+        assert!(fitted_sides(EnnLayout::flat(false), None).is_none());
         let disk = EnnLayout::disk(dir.path().join("disk"), false);
         assert!(fitted_sides(disk, None).is_none());
         let unfitted = ENNSurrogate::new(ENNSurrogateConfig {

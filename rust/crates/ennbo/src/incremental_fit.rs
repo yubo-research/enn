@@ -151,7 +151,6 @@ impl IncrementalFit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::IndexDriver;
     use crate::layout::EnnLayout;
     use ndarray::Array2;
 
@@ -160,7 +159,7 @@ mod tests {
             Array2::zeros((0, 2)),
             Array2::zeros((0, 1)),
             None,
-            EnnLayout::memory(IndexDriver::Flat, false),
+            EnnLayout::flat(false),
             None,
         )
         .unwrap()

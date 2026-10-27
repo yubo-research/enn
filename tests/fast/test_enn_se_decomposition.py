@@ -57,9 +57,7 @@ def test_se_decomposition_yvar_without_observation_noise():
     flags = PosteriorFlags(observation_noise=False)
     params = _params()
 
-    model_yvar = EpistemicNearestNeighbors(
-        train_x, train_y, train_yvar=train_yvar
-    )
+    model_yvar = EpistemicNearestNeighbors(train_x, train_y, train_yvar=train_yvar)
     model_plain = EpistemicNearestNeighbors(train_x, train_y)
 
     post_yvar = model_yvar.posterior(query, params=params, flags=flags)
@@ -125,7 +123,7 @@ def test_rust_posterior_tuple_contract():
     train_x = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
     train_y = np.array([[0.0], [1.0]], dtype=float)
     query = np.array([[0.5, 0.5]], dtype=float)
-    rs_model = RustENN(train_x, train_y, scale_x=False, index_driver="FLAT")
+    rs_model = RustENN(train_x, train_y, weighting=False, index_driver="FLAT")
     out = rs_model.posterior(
         query,
         k_num_neighbors=2,

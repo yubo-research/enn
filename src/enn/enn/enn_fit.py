@@ -83,7 +83,12 @@ def enn_fit(
         raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
 
     if incremental is None:
-        fitter = ENNStatefulFitter(k=k, rng=rng, input_transform=model.input_transform)
+        fitter = ENNStatefulFitter(
+            k=k,
+            rng=rng,
+            input_transform=model.input_transform,
+            semantic_only=model.semantic_only,
+        )
         x_all, y_all, yvar_all = model.train_rows_at(list(range(len(model))))
         y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
         fitter.tell(x_all, y_all, yvar_all, y_bounds=y_bounds)

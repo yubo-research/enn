@@ -5,42 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 import numpy as np
-
-
-def _description(name, description):
-    if description and description.startswith("file://"):
-        uri = urlparse(description)
-        if uri.netloc not in ("", "localhost"):
-            raise ValueError("description files must be local")
-        description = Path(unquote(uri.path)).read_text(encoding="utf-8")
-    return description.strip() if description and description.strip() else name
-
-
-def _projection(embeddings, variance_cutoff):
-    vectors = np.asarray(embeddings, dtype=float)
-    if vectors.ndim != 2 or vectors.shape[1] == 0 or not np.isfinite(vectors).all():
-        raise ValueError("embeddings must be a finite nonempty matrix")
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    vectors = vectors / np.where(norms > 0, norms, 1)
-    vectors -= vectors.mean(axis=0)
-    u, singular, _ = np.linalg.svd(vectors, full_matrices=False)
-    singular = singular[singular > max(vectors.shape) * np.finfo(float).eps]
-    cumulative = np.cumsum(singular**2)
-    retained = (
-        int(np.searchsorted(cumulative, variance_cutoff * cumulative[-1])) + 1
-        if cumulative.size and cumulative[-1] > 0
-        else 0
-    )
-    if variance_cutoff == 1:
-        retained = singular.size
-    projection = u[:, :retained] * singular[:retained]
-    for column in projection.T:
-        column *= 1 if column[np.argmax(np.abs(column))] >= 0 else -1
-    norm = np.linalg.norm(projection)
-    return projection * np.sqrt(retained) / norm if norm else projection
 
 
 @dataclass(frozen=True, eq=False, init=False)
@@ -51,8 +17,9 @@ class SemanticInputTransform:
     squared-distance ratio for independent inputs with equal normalized variance.
     ``variance_cutoff`` retains the shortest SVD prefix explaining this fraction
     of the variance above the numerical-rank tolerance.
-    An optional encoder implements ``encode(texts)``; default construction alone
-    imports sentence-transformers. Inference and loading require only NumPy.
+    An optional encoder implements ``encode(texts)``. Default construction uses
+    sentence-transformers-rs on the CPU and caches downloaded Hugging Face model
+    files. Inference and loading never load the sentence transformer.
     """
 
     names: tuple[str, ...]
@@ -79,23 +46,23 @@ class SemanticInputTransform:
         object.__setattr__(self, "relative_weight", float(relative_weight))
         object.__setattr__(self, "variance_cutoff", float(variance_cutoff))
         self._validate_definition()
-        descriptions = (
-            [None] * len(self.names) if descriptions is None else descriptions
+        from enn._rust import (
+            semantic_encode,
+            semantic_text_projection,
+            semantic_texts,
         )
-        if len(descriptions) != len(self.names):
-            raise ValueError("one description is required per variable")
-        texts = [_description(n, d) for n, d in zip(self.names, descriptions)]
-        if encoder is None:
-            from sentence_transformers import SentenceTransformer
 
-            encoder = SentenceTransformer(model, device="cpu")
-        unique_texts = list(dict.fromkeys(texts))
-        embeddings = np.asarray(encoder.encode(unique_texts), dtype=float)
-        if embeddings.ndim != 2 or embeddings.shape[0] != len(unique_texts):
-            raise ValueError("encoder returned the wrong number of variables")
-        rows = [unique_texts.index(text) for text in texts]
+        texts, rows = semantic_texts(self.names, descriptions)
+        embeddings = np.asarray(
+            semantic_encode(texts, model) if encoder is None else encoder.encode(texts),
+            dtype=float,
+        )
+        if embeddings.ndim != 2:
+            raise ValueError("encoder must return a two-dimensional embedding matrix")
         object.__setattr__(
-            self, "projection", _projection(embeddings[rows], self.variance_cutoff)
+            self,
+            "projection",
+            semantic_text_projection(embeddings, rows, self.variance_cutoff),
         )
         self._freeze()
 
@@ -123,12 +90,11 @@ class SemanticInputTransform:
 
     @property
     def weighted_projection(self):
-        rank = self.projection.shape[1]
-        return self.projection * np.sqrt(
-            self.relative_weight * len(self.names) / max(rank, 1)
-        )
+        from enn._rust import semantic_weighted
 
-    def transform(self, x, *, names=None):
+        return semantic_weighted(self.projection, self.relative_weight)
+
+    def transform(self, x, *, names=None, semantic_only=False):
         """Transform rows in definition order, or explicitly reorder named columns."""
         values = np.asarray(x, dtype=float)
         if (
@@ -141,18 +107,20 @@ class SemanticInputTransform:
             if len(names) != len(self.names) or set(names) != set(self.names):
                 raise ValueError("input names must match the problem definition")
             values = values[..., [list(names).index(n) for n in self.names]]
-        normalized = (values - self.bounds[:, 0]) / np.diff(
-            self.bounds, axis=1
-        ).ravel() - 0.5
-        return np.concatenate(
-            (normalized, normalized @ self.weighted_projection), axis=-1
+        from enn._rust import semantic_transform
+
+        result = semantic_transform(
+            np.atleast_2d(values), self.bounds, self.weighted_projection, semantic_only
         )
+        return result[0] if values.ndim == 1 else result
 
     def inverse(self, z):
         """Recover original numerical columns from augmented rows."""
-        return (np.asarray(z)[..., : len(self.names)] + 0.5) * np.diff(
-            self.bounds, axis=1
-        ).ravel() + self.bounds[:, 0]
+        from enn._rust import semantic_inverse
+
+        values = np.asarray(z, dtype=float)
+        result = semantic_inverse(np.atleast_2d(values), self.bounds)
+        return result[0] if values.ndim == 1 else result
 
     def save(self, path):
         metadata = json.dumps(

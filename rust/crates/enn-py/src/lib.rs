@@ -20,6 +20,8 @@ pub mod py_fit;
 pub mod py_fitter;
 pub mod py_hash;
 pub mod py_layout;
+pub mod py_cat_encoder;
+pub mod py_semantic;
 pub mod py_hypervolume;
 pub mod py_metric;
 pub mod py_model;

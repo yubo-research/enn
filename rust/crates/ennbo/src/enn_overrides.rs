@@ -3,12 +3,10 @@
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-use crate::backend::EnnStorage;
 use crate::error::ENNError;
 use crate::fit_samples::{FitSamples, ScaleSearch};
 use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
-use crate::metric_auto::MetricLearning;
 use crate::surrogate::ENNSurrogateConfig;
 
 /// Scale-search overrides. Each `Some` field replaces the search setting.
@@ -66,11 +64,9 @@ pub enum FitOverride {
 pub struct EnnOverrides {
     pub index_driver: Option<IndexDriver>,
     pub fit: Option<FitOverride>,
-    pub scale_x: Option<bool>,
+    pub weighting: Option<bool>,
     pub y_bounds: Option<ndarray::Array2<f64>>,
-    pub enn_storage: Option<EnnStorage>,
     pub work_dir: Option<PathBuf>,
-    pub metric_learning: Option<MetricLearning>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
     /// Weighted semantic projection for centered unit inputs.
     pub semantic_only: Option<bool>,
@@ -79,15 +75,9 @@ pub struct EnnOverrides {
 
 impl EnnOverrides {
     fn layout(&self, layout: &EnnLayout) -> Result<EnnLayout, ENNError> {
-        EnnLayout::try_from_parts(
-            self.index_driver.unwrap_or(layout.index_driver()),
-            Some(self.enn_storage.unwrap_or(layout.storage())),
-            self.work_dir
-                .clone()
-                .or_else(|| layout.work_dir().map(|p| p.to_path_buf())),
-            self.scale_x.unwrap_or(layout.scale_x()),
-            self.metric_learning.unwrap_or(layout.metric_learning()),
-        )
+        let driver = self.index_driver.unwrap_or(layout.index_driver());
+        let dir = self.work_dir.clone().or_else(|| (driver == layout.index_driver()).then(|| layout.work_dir().map(|p| p.to_path_buf())).flatten());
+        EnnLayout::new(driver, dir, self.weighting.unwrap_or(layout.weighting()))
     }
 
     /// Return `base` with every set field replaced.
@@ -126,7 +116,7 @@ mod tests {
         let base = ENNSurrogateConfig::default();
         let overrides = EnnOverrides {
             fit: Some(FitOverride::Frozen),
-            scale_x: Some(true),
+            weighting: Some(true),
             tied_dims: Some(vec![vec![0, 1]]),
             ..Default::default()
         };
@@ -162,11 +152,10 @@ mod tests {
     }
 
     #[test]
-    fn layout_rejects_auto_metric_in_memory() {
-        let overrides = EnnOverrides {
-            metric_learning: Some(MetricLearning::Auto),
-            ..Default::default()
-        };
+    fn disk_override_requires_directory_and_selects_auto_weighting() {
+        let mut overrides = EnnOverrides { index_driver: Some(IndexDriver::BpAnnDisk), weighting: Some(true), ..Default::default() };
         assert!(overrides.layout(&ENNSurrogateConfig::default().layout).is_err());
+        overrides.work_dir = Some("rows".into());
+        assert!(matches!(overrides.layout(&ENNSurrogateConfig::default().layout).unwrap(), EnnLayout::DiskAuto { .. }));
     }
 }

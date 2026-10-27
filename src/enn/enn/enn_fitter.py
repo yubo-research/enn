@@ -37,8 +37,10 @@ class ENNStatefulFitter:
         seed: int | None = None,
         infer_aleatoric_variance_scale: bool = True,
         input_transform=None,
+        semantic_only=False,
     ) -> None:
         self.input_transform = input_transform
+        self.semantic_only = semantic_only
         if seed is None:
             if rng is None:
                 raise TypeError("ENNStatefulFitter requires rng or seed")
@@ -70,7 +72,9 @@ class ENNStatefulFitter:
     ) -> None:
         x_array = np.asarray(x, dtype=float)
         if self.input_transform is not None:
-            x_array = self.input_transform.transform(x_array)
+            x_array = self.input_transform.transform(
+                x_array, semantic_only=self.semantic_only
+            )
         y_array = np.asarray(y, dtype=float)
         if y_array.ndim == 1:
             y_array = y_array.reshape(-1, 1)

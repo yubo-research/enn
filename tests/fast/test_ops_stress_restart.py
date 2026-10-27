@@ -6,9 +6,7 @@ import struct
 
 import pytest
 
-_STRESS_ROW_RE = re.compile(
-    r"n = \d+ query_s = \d+\.\d{4} segment_s = \d+\.\d{4}"
-)
+_STRESS_ROW_RE = re.compile(r"n = \d+ query_s = \d+\.\d{4} segment_s = \d+\.\d{4}")
 
 
 def test_format_config_header_restart():
@@ -35,7 +33,7 @@ def test_load_num_obs_existing(tmp_path):
         "num_obs": 42,
         "num_dim": 10,
         "num_metrics": 1,
-        "scale_x": False,
+        "weighting": False,
         "index_backend": "bpann_disk",
         "indexed_rows": 42,
     }

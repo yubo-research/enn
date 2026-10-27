@@ -41,7 +41,6 @@ import numpy as np
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config.enn_index_driver import ENNIndexDriver, index_driver_to_wire
-from enn.turbo.config.enn_surrogate_config import ENNStorage
 
 _DEFAULT_NUM_OBS = 100_000
 _DEFAULT_NUM_QUERY = 10_000
@@ -74,7 +73,6 @@ def _empty_model(num_dim: int, *, driver: ENNIndexDriver, work_dir: str | None):
     empty_yvar = np.empty((0, 1))
     kwargs: dict = {"index_driver": driver}
     if driver == ENNIndexDriver.BPANN_DISK:
-        kwargs["enn_storage"] = ENNStorage.DISK
         kwargs["work_dir"] = work_dir
     return EpistemicNearestNeighbors(empty_x, empty_y, empty_yvar, **kwargs)
 
@@ -101,7 +99,9 @@ def _build(
     return TimedBuild(model=model, add_sec=add_sec, sync_sec=sync_sec)
 
 
-def _time_posterior(model: EpistemicNearestNeighbors, query_x: np.ndarray, params: ENNParams) -> float:
+def _time_posterior(
+    model: EpistemicNearestNeighbors, query_x: np.ndarray, params: ENNParams
+) -> float:
     flags = PosteriorFlags(observation_noise=True)
     t0 = time.perf_counter()
     _ = model.posterior(query_x, params=params, flags=flags)
@@ -180,9 +180,7 @@ def main(
     _print_row("FLAT", index_driver_to_wire(ENNIndexDriver.FLAT), flat, flat_query)
 
     if skip_bpann:
-        click.echo(
-            "Skipped BPANN_DISK. FLAT query_sec above is the slow exact path."
-        )
+        click.echo("Skipped BPANN_DISK. FLAT query_sec above is the slow exact path.")
         return
 
     with tempfile.TemporaryDirectory(prefix="enn_repro_bpann_") as work_dir:

@@ -12,11 +12,9 @@ from _reports.semantic_features.tlunar import DESCRIPTIONS, NAMES, tlunar_fn
 from enn import SemanticInputTransform, create_optimizer
 from enn.turbo.config import (
     ENNIndexDriver,
-    ENNMetricLearning,
     ENNSurrogateConfig,
     turbo_enn_config,
 )
-from enn.turbo.config.enn_surrogate_config import ENNStorage
 from evals.long.eval_semantic_benchmark import evaluate_prediction, write_csv
 
 ROOT = Path(__file__).resolve().parent
@@ -79,9 +77,8 @@ def optimizer(method, seed, directory):
     transform = None if method == "real" else lunar_projection()
     surrogate = ENNSurrogateConfig(
         index_driver=ENNIndexDriver.BPANN_DISK,
-        enn_storage=ENNStorage.DISK,
         work_dir=directory,
-        metric_learning=ENNMetricLearning.AUTO,
+        weighting=True,
         input_transform=transform,
         semantic_only=method == "semantic_only",
     )
