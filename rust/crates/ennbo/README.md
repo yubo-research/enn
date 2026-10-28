@@ -87,6 +87,11 @@ ties in Rust, so direct callers and Python callers use the same policy.
 
 `categorical_encoder::CatEncoder` plans, encodes, and snaps categorical blocks;
 `semantic_projection` constructs projections and transforms bounded inputs.
+`semantic_relationships::projection` constructs a shared input-output projection
+from text embeddings and row indices (inputs followed by outputs). Each output
+contributes one cosine-weighted input direction. Set the resulting projection,
+scaled with `semantic_projection::weighted`, as `ENNSurrogateConfig::semantic_projection`
+and keep `semantic_only` false to append features while preserving input variables.
 Semantic features can augment or replace ordinary coordinates, with weighting
 and ties enabled independently. Surrogate tie groups refer to feature coordinates.
 

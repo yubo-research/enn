@@ -118,3 +118,4 @@ resolve_tied_groups = _ext.model.resolve_tied_groups
 semantic_texts = _ext.util.semantic_texts
 semantic_encode = _ext.util.semantic_encode
 semantic_text_projection = _ext.util.semantic_text_projection
+semantic_input_output_projection = _ext.util.semantic_input_output_projection

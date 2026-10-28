@@ -336,6 +336,7 @@ pub use y_bounds::unbounded_bounds;
 pub use y_bounds::validate_bounds;
 
 pub mod semantic_projection;
+pub mod semantic_relationships;
 
 pub mod categorical;
 

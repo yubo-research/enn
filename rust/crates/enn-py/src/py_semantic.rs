@@ -28,6 +28,20 @@ pub fn semantic_encode<'py>(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// Construct shared input-output features from deduplicated text embeddings.
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub fn semantic_input_output_projection<'py>(
+    py: Python<'py>,
+    embeddings: PyReadonlyArray2<f64>,
+    rows: Vec<usize>,
+    input_count: usize,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    ennbo::semantic_relationships::projection(&embeddings.as_array(), &rows, input_count)
+        .map(|v| v.into_pyarray_bound(py))
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Restore original variable ordering before projection construction.
 #[pyfunction]
 #[doc = "kiss-coverage-off"]

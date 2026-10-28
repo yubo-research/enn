@@ -37,6 +37,7 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_texts, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_encode, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_text_projection, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_input_output_projection, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_projection, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_weighted, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_transform, m)?)?;

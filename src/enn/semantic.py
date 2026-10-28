@@ -40,31 +40,78 @@ class SemanticInputTransform:
         relative_weight=0.25,
         encoder=None,
     ):
-        object.__setattr__(self, "names", tuple(names))
-        object.__setattr__(self, "bounds", np.array(bounds, dtype=float, copy=True))
-        object.__setattr__(self, "model", model)
-        object.__setattr__(self, "relative_weight", float(relative_weight))
-        object.__setattr__(self, "variance_cutoff", float(variance_cutoff))
-        self._validate_definition()
-        from enn._rust import (
-            semantic_encode,
-            semantic_text_projection,
-            semantic_texts,
-        )
+        self._set_definition(names, bounds, model, relative_weight, variance_cutoff)
+        from enn._rust import semantic_text_projection, semantic_texts
 
         texts, rows = semantic_texts(self.names, descriptions)
-        embeddings = np.asarray(
-            semantic_encode(texts, model) if encoder is None else encoder.encode(texts),
-            dtype=float,
-        )
-        if embeddings.ndim != 2:
-            raise ValueError("encoder must return a two-dimensional embedding matrix")
+        embeddings = self._encode(texts, encoder)
         object.__setattr__(
             self,
             "projection",
             semantic_text_projection(embeddings, rows, self.variance_cutoff),
         )
         self._freeze()
+
+    @classmethod
+    def from_input_output(
+        cls,
+        names,
+        bounds,
+        output_names,
+        descriptions=None,
+        output_descriptions=None,
+        *,
+        model="sentence-transformers/all-MiniLM-L6-v2",
+        relative_weight=0.25,
+        encoder=None,
+    ):
+        """Append shared x-y features, one cosine-weighted input sum per output.
+
+        This is an alternative to the x-x prior built by the normal constructor.
+        All output features are shared by all surrogate outputs. Descriptions
+        follow the same fallback and file URI rules as input descriptions.
+        Construction uses only metadata; observed targets are never required.
+        The returned fixed transform supports the same models, optimizers, and
+        save/load operations. Keep the default ``semantic_only=False`` to retain
+        original inputs alongside this prior. No variance truncation is applied.
+        """
+        from enn._rust import semantic_input_output_projection
+        from enn.semantic_relationships import relationship_texts
+
+        result = cls.__new__(cls)
+        result._set_definition(names, bounds, model, relative_weight, 1.0)
+        texts, rows = relationship_texts(
+            result.names, output_names, descriptions, output_descriptions
+        )
+        embeddings = result._encode(texts, encoder)
+        object.__setattr__(
+            result,
+            "projection",
+            semantic_input_output_projection(embeddings, rows, len(result.names)),
+        )
+        result._freeze()
+        return result
+
+    def _set_definition(self, names, bounds, model, relative_weight, variance_cutoff):
+        object.__setattr__(self, "names", tuple(names))
+        object.__setattr__(self, "bounds", np.array(bounds, dtype=float, copy=True))
+        object.__setattr__(self, "model", model)
+        object.__setattr__(self, "relative_weight", float(relative_weight))
+        object.__setattr__(self, "variance_cutoff", float(variance_cutoff))
+        self._validate_definition()
+
+    def _encode(self, texts, encoder):
+        from enn._rust import semantic_encode
+
+        embeddings = np.asarray(
+            semantic_encode(texts, self.model)
+            if encoder is None
+            else encoder.encode(texts),
+            dtype=float,
+        )
+        if embeddings.ndim != 2:
+            raise ValueError("encoder must return a two-dimensional embedding matrix")
+        return embeddings
 
     def _validate_definition(self):
         if (

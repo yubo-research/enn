@@ -15,7 +15,11 @@ class Encoder:
         return np.array([[len(t), t.count("a"), t.count("b")] for t in texts])
 
 
-def make_transform(**kwargs):
+def make_transform(relationships=False, **kwargs):
+    if relationships:
+        return SemanticInputTransform.from_input_output(
+            ["a", "b", "ab"], [[0, 2]] * 3, ["a", "ab"], encoder=Encoder(), **kwargs
+        )
     return SemanticInputTransform(
         ["a", "b", "ab"], [[0, 2]] * 3, encoder=Encoder(), **kwargs
     )
@@ -122,11 +126,12 @@ def test_full_cutoff_keeps_small_numerically_nonzero_components():
     assert transform.projection.shape == (4, 3)
 
 
-def test_enn_paths_match_explicit_augmentation():
-    transform = make_transform()
+@pytest.mark.parametrize("relationships", [False, True])
+def test_enn_paths_match_explicit_augmentation(relationships):
+    transform = make_transform(relationships)
     rng = np.random.default_rng(2)
     x = rng.uniform(0, 2, (12, 3))
-    y = rng.normal(size=(12, 1))
+    y = rng.normal(size=(12, 2 if relationships else 1))
     model = EpistemicNearestNeighbors(x[:10], y[:10], input_transform=transform)
     manual = EpistemicNearestNeighbors(transform.transform(x[:10]), y[:10])
     model.add(x[10:], y[10:])
@@ -157,10 +162,11 @@ def test_enn_paths_match_explicit_augmentation():
     np.testing.assert_array_equal(draws, expected)
 
 
-def test_conditional_draws_and_fitter_use_same_features():
+@pytest.mark.parametrize("relationships", [False, True])
+def test_conditional_draws_and_fitter_use_same_features(relationships):
     from enn import ENNStatefulFitter
 
-    transform = make_transform()
+    transform = make_transform(relationships)
     x = np.random.default_rng(3).uniform(0, 2, (15, 3))
     y = np.sin(x[:, :1])
     model = EpistemicNearestNeighbors(x, y, input_transform=transform)
@@ -212,14 +218,15 @@ def test_single_variable_and_zero_embeddings():
         zero.transform([[float("nan"), 0]])
 
 
-def test_optimizer_keeps_original_bounds_and_observations():
+@pytest.mark.parametrize("relationships", [False, True])
+def test_optimizer_keeps_original_bounds_and_observations(relationships):
     from enn import create_optimizer
     from enn.turbo.config.acq_type import AcqType
     from enn.turbo.config.enn_fit_config import ENNFitConfig
     from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig
     from enn.turbo.config.factory import turbo_enn_config
 
-    transform = make_transform()
+    transform = make_transform(relationships)
     config = turbo_enn_config(
         enn=ENNSurrogateConfig(
             input_transform=transform,
@@ -254,10 +261,11 @@ def test_optimizer_keeps_original_bounds_and_observations():
         )
 
 
-def test_fit_helpers_accept_semantic_model():
+@pytest.mark.parametrize("relationships", [False, True])
+def test_fit_helpers_accept_semantic_model(relationships):
     from enn.enn.enn_fit import enn_fit, subsample_loglik
 
-    transform = make_transform()
+    transform = make_transform(relationships)
     x = np.random.default_rng(4).uniform(0, 2, (15, 3))
     y = np.cos(x[:, :1])
     model = EpistemicNearestNeighbors(x, y, input_transform=transform)

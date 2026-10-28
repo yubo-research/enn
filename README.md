@@ -107,3 +107,40 @@ The `model=` argument accepts upstream's supported model presets (including
 MiniLM, MPNet, LaBSE, BGE, and multilingual E5). Other models require an explicit
 `encoder=` object implementing `encode(texts)`; unsupported presets raise a
 `ValueError` before downloading files.
+
+Use `SemanticInputTransform.from_input_output` for an additional prior based on
+relationships between input parameters and output metrics:
+
+```python
+from enn import SemanticInputTransform, EpistemicNearestNeighbors
+
+transform = SemanticInputTransform.from_input_output(
+    names=["heater_power", "fan_speed"],
+    bounds=[[0, 100], [0, 3000]],
+    output_names=["temperature", "energy"],
+    descriptions=["Power supplied to the heater", "Cooling fan rotation speed"],
+    output_descriptions=["Chamber temperature", "Total electrical energy consumed"],
+    relative_weight=0.25,
+)
+# train_x and train_y are your observed inputs and outputs.
+model = EpistemicNearestNeighbors(train_x, train_y, input_transform=transform)
+```
+
+For each output, the transform constructs a rank-one projection whose input
+weights are proportional to the cosine similarities between input and output
+text embeddings. It shares all output projections across the surrogate models,
+appending one feature per output to the centered, bound-normalized inputs. The
+combined projection is scaled to squared energy equal to the output count before
+applying `relative_weight`; zero embeddings contribute zero similarities, and an
+entirely zero projection remains zero. Signed similarities are retained. Original
+input columns remain available, so data can learn relationships absent from the
+prior. Use the default `semantic_only=False` for this behavior.
+
+This constructor needs no objective observations and uses one embedding call
+with descriptions deduplicated across inputs and outputs. Description fallbacks,
+local file URIs, `encoder=`, caching, and optimizer `input_transform=` work as
+with the existing x-x constructor. `transform.save` and `SemanticInputTransform.load`
+preserve the fixed projection without loading an encoder. There is no SVD cutoff
+for x-y features. The ordinary `SemanticInputTransform(...)` constructor continues
+to build the existing x-x prior. Semantic similarity expresses a prior, rather
+than evidence of causal influence; prediction improvements remain a hypothesis.
