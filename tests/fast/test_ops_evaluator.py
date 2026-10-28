@@ -11,6 +11,7 @@ def test_list_eval_names_includes_known_evals() -> None:
         "long/prediction",
         "long/scaling",
         "long/semantic_benchmark",
+        "long/semantic_outputs",
         "short/optimization",
         "short/prediction",
     ]
