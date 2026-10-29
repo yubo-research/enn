@@ -20,10 +20,16 @@
 //! exact queries between any two adds. Rows regroup within a page's leaves and whole
 //! subtrees regroup between pages, so rows reach distant leaves over successive laps.
 
+use std::cell::RefCell;
+
 use crate::distance::l2_sq_f32;
 use crate::index::split::weighted_mean;
 use crate::index::tree::{Tree, TREE_FANOUT, TREE_LEAF_CAPACITY};
 use crate::index::tree_counts::dist;
+
+thread_local! {
+    static PROJ: RefCell<Vec<(f32, usize)>> = const { RefCell::new(Vec::new()) };
+}
 
 /// Sweeps over the page slots scheduled by one [`Morph::schedule`]. Uniform 12-d with
 /// ten dimensions shrunk 1000x: after 16 laps queries are about 2x slower than on a
@@ -147,51 +153,83 @@ fn slot_in_parent(tree: &Tree, page: u32) -> Option<(u32, usize)> {
     Some((parent, tree.store.ids(parent).iter().position(|&k| k == page)?))
 }
 
-/// Split `members` (positions into `points`) into the `cut` with the lowest projection
-/// onto the line through two far-apart members, and the rest.
-fn split_at(points: &[&[f32]], members: &[usize], cut: usize) -> (Vec<usize>, Vec<usize>) {
-    let farthest = |anchor: &[f32]| {
-        let far = members.iter().map(|&i| (l2_sq_f32(points[i], anchor), i)).max_by(|x, y| x.0.total_cmp(&y.0));
-        points[far.expect("members").1]
-    };
-    let a = farthest(points[members[0]]);
-    let b = farthest(a);
+fn farthest_point<'a>(points: &[&'a [f32]], members: &[usize], anchor: &[f32]) -> &'a [f32] {
+    let mut best_i = members[0];
+    let mut best_d = l2_sq_f32(points[best_i], anchor);
+    for &i in &members[1..] {
+        let d = l2_sq_f32(points[i], anchor);
+        if !d.total_cmp(&best_d).is_lt() {
+            best_d = d;
+            best_i = i;
+        }
+    }
+    points[best_i]
+}
+
+/// Rearrange `members` so the `cut` lowest projections come first. The projection is
+/// onto the line through two far-apart members. Order inside each side matches
+/// `select_nth_unstable_by` on `(projection, index)`.
+fn split_inplace(points: &[&[f32]], members: &mut [usize], cut: usize) {
+    let a = farthest_point(points, members, points[members[0]]);
+    let b = farthest_point(points, members, a);
     let dir: Vec<f32> = b.iter().zip(a).map(|(&x, &y)| x - y).collect();
-    let mut proj: Vec<(f32, usize)> =
-        members.iter().map(|&i| (points[i].iter().zip(&dir).map(|(&x, &d)| x * d).sum(), i)).collect();
-    proj.select_nth_unstable_by(cut, |x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
-    let right = proj.split_off(cut);
-    (proj.into_iter().map(|p| p.1).collect(), right.into_iter().map(|p| p.1).collect())
+    PROJ.with(|buf| {
+        let mut proj = buf.borrow_mut();
+        proj.clear();
+        proj.reserve(members.len());
+        for &i in members.iter() {
+            let s = points[i].iter().zip(&dir).map(|(&x, &d)| x * d).sum();
+            proj.push((s, i));
+        }
+        proj.select_nth_unstable_by(cut, |x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+        for (slot, &(_, i)) in members.iter_mut().zip(proj.iter()) {
+            *slot = i;
+        }
+    });
 }
 
 /// Split `members` (at least `parts`) into `parts` groups whose sizes differ by at
 /// most one, by recursive bisection.
-fn bisect(points: &[&[f32]], members: Vec<usize>, parts: usize, out: &mut Vec<Vec<usize>>) {
+fn bisect(points: &[&[f32]], members: &mut [usize], parts: usize, out: &mut Vec<Vec<usize>>) {
     if parts <= 1 {
-        out.push(members);
+        out.push(members.to_vec());
         return;
     }
     let left_parts = parts / 2;
-    let (left, right) = split_at(points, &members, members.len() * left_parts / parts);
+    let cut = members.len() * left_parts / parts;
+    split_inplace(points, members, cut);
+    let (left, right) = members.split_at_mut(cut);
     bisect(points, left, left_parts, out);
     bisect(points, right, parts - left_parts, out);
 }
 
 fn groups_of(points: &[&[f32]], parts: usize) -> Vec<Vec<usize>> {
+    let mut members: Vec<usize> = (0..points.len()).collect();
     let mut out = Vec::with_capacity(parts);
-    bisect(points, (0..points.len()).collect(), parts, &mut out);
+    bisect(points, &mut members, parts, &mut out);
     out
+}
+
+fn scatter_value(points: &[&[f32]], weights: &[f64], groups: &[Vec<usize>]) -> f64 {
+    let mut total = 0.0f64;
+    for group in groups {
+        let center = weighted_mean(points, weights, group);
+        for &i in group {
+            total += weights[i] * f64::from(l2_sq_f32(points[i], &center));
+        }
+    }
+    total
 }
 
 /// Weighted sum of squared distances of `points` to the weighted mean of their group.
 /// For child centroids weighted by row counts, this is the part of the rows' squared
 /// distances to their page mean that regrouping the children can change.
-fn scatter(points: &[&[f32]], weights: &[f64], groups: &[Vec<usize>]) -> f64 {
-    let group_scatter = |g: &Vec<usize>| {
-        let c = weighted_mean(points, weights, g);
-        g.iter().map(|&i| weights[i] * f64::from(l2_sq_f32(points[i], &c))).sum::<f64>()
-    };
-    groups.iter().map(group_scatter).sum()
+fn scatter(points: &[&[f32]], weights: &[f64], groups: &[Vec<usize>]) -> (f64, Vec<Vec<f32>>) {
+    let centers: Vec<_> = groups.iter().map(|g| weighted_mean(points, weights, g)).collect();
+    let value = groups.iter().zip(&centers).map(|(g, c)| {
+        g.iter().map(|&i| weights[i] * f64::from(l2_sq_f32(points[i], c))).sum::<f64>()
+    }).sum();
+    (value, centers)
 }
 
 /// Groups of consecutive positions with the given sizes.
@@ -212,22 +250,30 @@ fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
     let d = tree.store.num_dim();
     let deep = small_subtree_leaves(tree, page);
     let leaves = deep.clone().unwrap_or_else(|| children_of_kind(tree, page, true).iter().map(|l| l.1).collect());
-    let rows: Vec<u32> = leaves.iter().flat_map(|&l| tree.store.ids(l).to_vec()).collect();
-    let vs: Vec<f32> = leaves.iter().flat_map(|&l| tree.store.block(l).to_vec()).collect();
-    if leaves.len() < 2 || rows.len() < leaves.len() || !tree.rows_cached() {
+    if leaves.len() < 2 || !tree.rows_cached() {
+        return 0;
+    }
+    let mut rows = Vec::new();
+    let mut vs = Vec::new();
+    for &leaf in &leaves {
+        rows.extend_from_slice(tree.store.ids(leaf));
+        vs.extend_from_slice(tree.store.block(leaf));
+    }
+    if rows.len() < leaves.len() {
         return 0;
     }
     let points: Vec<&[f32]> = vs.chunks_exact(d).collect();
     let ones = vec![1.0; points.len()];
     let groups = groups_of(&points, leaves.len());
     let now = runs(leaves.iter().map(|&l| tree.store.len(l)));
-    if scatter(&points, &ones, &groups) >= scatter(&points, &ones, &now) {
+    let (proposed, centers) = scatter(&points, &ones, &groups);
+    let current = scatter_value(&points, &ones, &now);
+    if proposed >= current {
         return rows.len();
     }
-    for (&id, group) in leaves.iter().zip(groups) {
+    for ((&id, group), c) in leaves.iter().zip(groups).zip(centers) {
         let Some((parent, slot)) = slot_in_parent(tree, id) else { continue };
         let mine: Vec<&[f32]> = group.iter().map(|&i| points[i]).collect();
-        let c = weighted_mean(&mine, &vec![1.0; mine.len()], &(0..mine.len()).collect::<Vec<_>>());
         let s = &mut tree.store;
         s.entry_mut(parent, slot).copy_from_slice(&c);
         s.set_count(id, mine.len());
@@ -248,21 +294,21 @@ fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
 fn repartition_internal(tree: &mut Tree, parent: u32) -> usize {
     let d = tree.store.num_dim();
     let members = children_of_kind(tree, parent, false);
-    let kids: Vec<u32> = members.iter().flat_map(|m| tree.store.ids(m.1).to_vec()).collect();
-    let flat: Vec<f32> = members.iter().flat_map(|m| tree.store.block(m.1).to_vec()).collect();
     if members.len() < 2 {
         return 0;
     }
+    let kids: Vec<u32> = members.iter().flat_map(|m| tree.store.ids(m.1).to_vec()).collect();
+    let flat: Vec<f32> = members.iter().flat_map(|m| tree.store.block(m.1).to_vec()).collect();
     let cents: Vec<&[f32]> = flat.chunks_exact(d).collect();
     let weights: Vec<f64> = kids.iter().map(|&k| tree.store.count(k) as f64).collect();
     let groups = groups_of(&cents, members.len());
     let now = runs(members.iter().map(|m| tree.store.len(m.1)));
-    if scatter(&cents, &weights, &groups) >= scatter(&cents, &weights, &now) {
+    let (proposed, centers) = scatter(&cents, &weights, &groups);
+    if proposed >= scatter(&cents, &weights, &now).0 {
         return kids.len();
     }
-    for (&(slot, id), group) in members.iter().zip(groups) {
+    for ((&(slot, id), group), c) in members.iter().zip(groups).zip(centers) {
         let s = &mut tree.store;
-        let c = weighted_mean(&cents, &weights, &group);
         let r = group.iter().map(|&i| dist(cents[i], &c) + s.radius(kids[i])).fold(0.0, f32::max);
         let group_cents: Vec<f32> = group.iter().flat_map(|&i| cents[i].iter().copied()).collect();
         let group_kids: Vec<u32> = group.iter().map(|&i| kids[i]).collect();

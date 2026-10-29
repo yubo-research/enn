@@ -19,6 +19,26 @@ pub(crate) struct FaissBackend {
 extern "C" {
     fn faiss_set_distance_compute_blas_threshold(value: i32);
     fn omp_set_num_threads(num_threads: i32);
+    fn omp_get_max_threads() -> i32;
+}
+
+/// Keep small searches serial, restoring the caller's OpenMP budget on exit.
+struct SerialSearch(i32);
+
+const SERIAL_FLAT_COMPONENT_LIMIT: usize = 3_000_000;
+
+impl SerialSearch {
+    fn new() -> Self {
+        let previous = unsafe { omp_get_max_threads() };
+        unsafe { omp_set_num_threads(1) };
+        Self(previous)
+    }
+}
+
+impl Drop for SerialSearch {
+    fn drop(&mut self) {
+        unsafe { omp_set_num_threads(self.0) };
+    }
 }
 
 #[cfg(test)]
@@ -130,7 +150,12 @@ impl FaissBackend {
     ) -> Result<(ndarray::Array2<f64>, ndarray::Array2<i64>), IndexError> {
         let n_query = queries_scaled.nrows();
         let q = arr2_rows_to_f32(queries_scaled);
-        let res = self.inner.search(&q, k_eff).map_err(faiss_map_err)?;
+        let res = {
+            let components = self.len().saturating_mul(n_query).saturating_mul(self.num_dim);
+            let _budget = (components <= SERIAL_FLAT_COMPONENT_LIMIT).then(SerialSearch::new);
+            self.inner.search(&q, k_eff)
+        }
+        .map_err(faiss_map_err)?;
         let labels: Vec<i64> = res.labels.iter().map(|l| l.to_native()).collect();
         let (d, i) = unpack_batch_search(n_query, k_eff, &res.distances, &labels);
         Ok(pad_neighbor_cols_to_search_k(d, i, search_k))
@@ -489,6 +514,20 @@ mod faiss_backend_tests {
 mod flat_search_tests {
     use super::*;
     use ndarray::Array2;
+
+    #[test]
+    fn small_flat_search_restores_openmp_budget() {
+        let train = Array2::zeros((30, 3));
+        let mut backend = FaissBackend::new(3, &train.view()).unwrap();
+        let previous = unsafe { omp_get_max_threads() };
+        {
+            let _budget = SerialSearch::new();
+            assert_eq!(unsafe { omp_get_max_threads() }, 1);
+        }
+        assert_eq!(unsafe { omp_get_max_threads() }, previous);
+        backend.search(&train.view(), 3, 3).unwrap();
+        assert_eq!(unsafe { omp_get_max_threads() }, previous);
+    }
 
     #[test]
     fn prefer_faiss_simd_distances_raises_blas_threshold() {

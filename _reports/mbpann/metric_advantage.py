@@ -23,6 +23,7 @@ Recall@10 is against exact neighbors under each model's own metric.
 Usage: PYTHONPATH=src:reports/iaml python reports/mbpann/metric_advantage.py OUT.json [seeds]
 """
 
+import itertools
 import json
 import sys
 import tempfile
@@ -54,7 +55,7 @@ def make_data(seed):
     y = f(x) + 0.1 * rng.standard_normal(len(x))
     y = (y - y[:N_TRAIN].mean()) / y[:N_TRAIN].std()
     s = np.cumsum([0, N_TRAIN, N_VAL, N_TEST])
-    return [(x[lo:hi], y[lo:hi]) for lo, hi in zip(s[:-1], s[1:])], rng
+    return [(x[lo:hi], y[lo:hi]) for lo, hi in itertools.pairwise(s)], rng
 
 
 def new_model(x, y, metric_learning):
@@ -87,13 +88,13 @@ def score(model, weights, train, val, test):
     best = int(np.argmax(gaussian_ll(mu_v, se_v, val[1]).mean(1)))
     mu_t, se_t, idx_t = predict(model, test[0])
     ex = knn(test[0], train[0], K, weights)
-    return dict(
-        test_ll=float(gaussian_ll(mu_t[best], se_t[best], test[1]).mean()),
-        test_rmse=float(np.sqrt(np.mean((mu_t[best] - test[1]) ** 2))),
-        recall=float(np.mean([len(set(u) & set(v)) / K for u, v in zip(idx_t, ex)])),
-        epi=float(GRID[best][0]),
-        ale=float(GRID[best][1]),
-    )
+    return {
+        "test_ll": float(gaussian_ll(mu_t[best], se_t[best], test[1]).mean()),
+        "test_rmse": float(np.sqrt(np.mean((mu_t[best] - test[1]) ** 2))),
+        "recall": float(np.mean([len(set(u) & set(v)) / K for u, v in zip(idx_t, ex)])),
+        "epi": float(GRID[best][0]),
+        "ale": float(GRID[best][1]),
+    }
 
 
 def run(seed):

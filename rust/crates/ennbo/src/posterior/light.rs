@@ -1,6 +1,6 @@
 //! Fused posterior fast path when yvar is absent and observation_noise is off.
 
-use ndarray::{Array2, ArrayView2, Axis};
+use ndarray::{Array2, ArrayView1, ArrayView2, ArrayViewMut1, Axis};
 
 use crate::error::{ENNError, EPS_VAR};
 use crate::model::EpistemicNearestNeighbors;
@@ -40,7 +40,71 @@ fn neighbor_search_k(
     })
 }
 
-fn fuse_neighbors_to_mu_se(
+#[inline]
+pub(super) fn fill_neighbor_weights(distances: ArrayView1<f64>, params: &ENNParams, weights: &mut [f64]) -> f64 {
+    let mut norm = 0.0;
+    for (weight, &distance) in weights.iter_mut().zip(distances.iter()) {
+        *weight = 1.0 / (EPS_VAR + params.epistemic_variance_scale * distance + params.aleatoric_variance_scale);
+        norm += *weight;
+    }
+    1.0 / norm
+}
+
+/// Accumulate outputs in neighbor order, reading each contiguous target row once.
+pub(super) fn fill_neighbor_means(
+    train_y: ArrayView2<f64>, indices: ArrayView1<i64>, weights: &[f64],
+    inv_norm: f64, mut means: ArrayViewMut1<f64>,
+) {
+    means.fill(0.0);
+    if let (Some(targets), Some(output)) = (train_y.as_slice(), means.as_slice_mut()) {
+        let metrics = output.len();
+        if metrics == 1 {
+            fill_fixed_neighbor_means::<1>(targets, indices, weights, inv_norm, output);
+            return;
+        }
+        if metrics == 6 {
+            fill_fixed_neighbor_means::<6>(targets, indices, weights, inv_norm, output);
+            return;
+        }
+        for (j, &index) in indices.iter().enumerate() {
+            let normalized = weights[j] * inv_norm;
+            let start = index as usize * metrics;
+            let row = &targets[start..start + metrics];
+            for (mean, &target) in output.iter_mut().zip(row) {
+                *mean += normalized * target;
+            }
+        }
+    } else {
+        for (j, &index) in indices.iter().enumerate() {
+            let normalized = weights[j] * inv_norm;
+            let row = train_y.row(index as usize);
+            for (mean, &target) in means.iter_mut().zip(row.iter()) {
+                *mean += normalized * target;
+            }
+        }
+    }
+}
+
+
+/// Keep common scalar and six-output accumulators in registers across neighbors.
+fn fill_fixed_neighbor_means<const M: usize>(
+    targets: &[f64], indices: ArrayView1<i64>, weights: &[f64],
+    inv_norm: f64, output: &mut [f64],
+) {
+    let mut means = [0.0; M];
+    for (j, &index) in indices.iter().enumerate() {
+        let normalized = weights[j] * inv_norm;
+        let start = index as usize * M;
+        let row = &targets[start..start + M];
+        for m in 0..M {
+            means[m] += normalized * row[m];
+        }
+    }
+    output.copy_from_slice(&means);
+}
+
+
+pub(super) fn fuse_neighbors_to_mu_se(
     model: &EpistemicNearestNeighbors,
     dist2s: &ArrayView2<f64>,
     idx: &ArrayView2<i64>,
@@ -50,8 +114,6 @@ fn fuse_neighbors_to_mu_se(
     let k = dist2s.ncols();
     let num_metrics = model.num_metrics();
     let y_scale = model.y_scale();
-    let epistemic_scale = params.epistemic_variance_scale;
-    let aleatoric_scale = params.aleatoric_variance_scale;
 
     let mut mu = Array2::zeros((n_query, num_metrics));
     let mut se = Array2::zeros((n_query, num_metrics));
@@ -64,35 +126,28 @@ fn fuse_neighbors_to_mu_se(
         let dist_row = dist2s.row(i);
         let idx_row = idx.row(i);
 
-        let mut norm = 0.0;
-        for j in 0..k {
-            let var_total = EPS_VAR + epistemic_scale * dist_row[j] + aleatoric_scale;
-            w[j] = 1.0 / var_total;
-            norm += w[j];
-        }
-        let inv_norm = 1.0 / norm;
+        let inv_norm = fill_neighbor_weights(dist_row, params, &mut w);
         let se_base = inv_norm.max(EPS_VAR).sqrt();
 
         for j in 0..k {
             idx_out[[i, j]] = idx_row[j];
         }
 
-        for m in 0..num_metrics {
-            let mut mu_val = 0.0;
-            let y_scale_m = y_scale[m];
-            if let Some(train_y_view) = model.train_y_view_opt() {
+        if let Some(train_y) = model.train_y_view_opt() {
+            fill_neighbor_means(train_y, idx_row, &w, inv_norm, mu.row_mut(i));
+        } else {
+            for m in 0..num_metrics {
+                let mut mean = 0.0;
                 for j in 0..k {
-                    let w_norm = w[j] * inv_norm;
-                    mu_val += w_norm * train_y_view[[idx_row[j] as usize, m]];
+                    let normalized = w[j] * inv_norm;
+                    let row = model.rows().row_y(idx_row[j] as usize).expect("row_y");
+                    mean += normalized * row[m];
                 }
-            } else {
-                for j in 0..k {
-                    let w_norm = w[j] * inv_norm;
-                    let y_row = model.rows().row_y(idx_row[j] as usize).expect("row_y");
-                    mu_val += w_norm * y_row[m];
-                }
+                mu[[i, m]] = mean;
             }
-            mu[[i, m]] = mu_val;
+        }
+        for m in 0..num_metrics {
+            let y_scale_m = y_scale[m];
             let se_val = se_base * y_scale_m;
             se[[i, m]] = se_val;
             se_epi[[i, m]] = se_val;

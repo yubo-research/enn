@@ -80,14 +80,14 @@ def one(n, batch, rng):
         change = time.perf_counter() - t0
         q_sec, idx = timed_query(model, xq * q_scale)
         rows.append(
-            dict(
-                n=n,
-                batch=batch,
-                how=how,
-                change_sec=change,
-                query_sec=q_sec,
-                recall=recall(idx, x, xq, w),
-            )
+            {
+                "n": n,
+                "batch": batch,
+                "how": how,
+                "change_sec": change,
+                "query_sec": q_sec,
+                "recall": recall(idx, x, xq, w),
+            }
         )
         print(rows[-1], flush=True)
     return rows

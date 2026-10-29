@@ -1,9 +1,12 @@
 //! Posterior computation for ENN model.
 
+mod batch_light;
+pub use batch_light::small_flat_selection_means;
 mod dual_api;
 mod draw_compute;
 mod light;
 mod neighbor;
+mod small_flat;
 pub mod neighbor_dist;
 pub(crate) use neighbor::index_search;
 
@@ -14,6 +17,7 @@ use self::light::idx_nested_to_array2;
 use self::neighbor::{get_conditional_neighbor_data, get_neighbor_data};
 use crate::draw::DrawInternals;
 use crate::error::{ENNError, EPS_VAR};
+use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::stats::WeightedStats;
@@ -60,6 +64,15 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
             ));
         }
 
+        let k_values: std::collections::HashSet<i32> =
+            paramss.iter().map(|p| p.k_num_neighbors).collect();
+        if k_values.len() > 1
+            && !self.has_yvar()
+            && !flags.observation_noise
+            && self.backend_driver() == IndexDriver::Flat
+        {
+            return batch_light::compute_mixed_posterior_light(self, x, paramss, flags);
+        }
         let batch_size = x.nrows();
         let num_params = paramss.len();
 
@@ -67,9 +80,6 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         let mut se_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
         let mut se_epi_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
         let mut se_ale_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
-
-        let k_values: std::collections::HashSet<i32> =
-            paramss.iter().map(|p| p.k_num_neighbors).collect();
 
         let idx = if k_values.len() == 1 && self.num_obs() > 0 {
             compute_batch_with_shared_neighbors(

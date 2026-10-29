@@ -12,8 +12,9 @@ hyperparameter fits of ``evals/metric_12d.py`` / ``evals/metric_ranges.py``; per
 import sys
 import tempfile
 
-from evals import metric_12d
 from reports.bpann_disk_writeup.bench import DATA, run_model
+
+from evals import metric_12d
 
 MODELS = ("flat", "flat_scale_x", "bpann_disk", "bpann_disk_auto")
 
@@ -21,7 +22,10 @@ MODELS = ("flat", "flat_scale_x", "bpann_disk", "bpann_disk_auto")
 def main() -> None:
     tag, first, num = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
     cfg = metric_12d.Metric12dConfig()
-    print(f"eval={tag} seeds={first}..{first + num - 1} models={','.join(MODELS)} batch={cfg.batch} k={cfg.k}", flush=True)
+    print(
+        f"eval={tag} seeds={first}..{first + num - 1} models={','.join(MODELS)} batch={cfg.batch} k={cfg.k}",
+        flush=True,
+    )
     for seed in range(first, first + num):
         with tempfile.TemporaryDirectory(prefix="enn_tree_morph_") as work_dir:
             for name in MODELS:

@@ -13,9 +13,6 @@ use crate::mmap_store::MmapColumnStore;
 use crate::observation::{
     self as obs, TrainRowsAt, INDEX_BACKEND, MAX_NUM_DIM, MAX_RECORD_STRIDE,
 };
-use crate::small_n_search::{
-    score_queries_flat, ScoreQueriesFlat, SMALL_N_INCORE_SEARCH_LIMIT,
-};
 
 mod flush_thresholds;
 
@@ -365,35 +362,10 @@ impl BpannBackend {
         let mut indices = Array2::from_elem((n_query, k_eff), -1i64);
         let scale_x = self.scale_x;
         let x_scale_vec = self.x_scale.as_slice().unwrap().to_vec();
-        let num_dim = self.num_dim;
         let query_rows: Vec<Vec<f64>> = (0..n_query)
             .map(|q| queries.row(q).to_vec())
             .collect();
 
-
-        if total <= SMALL_N_INCORE_SEARCH_LIMIT {
-            let flat = crate::small_n_search::load_or_build_small_n_cache(self, total)?;
-            let per_query = score_queries_flat(
-                &query_rows,
-                &ScoreQueriesFlat {
-                    flat: &flat,
-                    total,
-                    num_dim,
-                    scale_x,
-                    x_scale: &x_scale_vec,
-                    k_eff,
-                    pool_k,
-                    exclude_nearest,
-                },
-            );
-            for (q, (dist_row, idx_row)) in per_query.into_iter().enumerate() {
-                for j in 0..k_eff {
-                    dist2s[[q, j]] = dist_row[j];
-                    indices[[q, j]] = idx_row[j];
-                }
-            }
-            return Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices));
-        }
 
         search_indexed_and_pending(
             self,
@@ -407,7 +379,7 @@ impl BpannBackend {
                 exclude_nearest,
                 scale_x,
                 x_scale: &x_scale_vec,
-                num_dim,
+                num_dim: self.num_dim,
             },
         )?;
         Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices))

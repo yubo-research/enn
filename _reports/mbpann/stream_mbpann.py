@@ -166,14 +166,14 @@ def evaluate(meth, metric, data, n, loo_rows):
     ex_loo = np.array([r[r != i][:K] for r, i in zip(ex_loo, loo_rows)])
     ex_test = knn(xt, x[:n], K, a_eval)
     recall = np.mean([len(set(u) & set(v)) / K for u, v in zip(test_idx, ex_test)])
-    return dict(
-        loo=mean_ll(x[loo_rows], y[loo_rows], x, y, loo_idx, a_eval, c),
-        test=mean_ll(xt, yt, x, y, test_idx, a_eval, c),
-        loo_exact=mean_ll(x[loo_rows], y[loo_rows], x, y, ex_loo, a_eval, c),
-        test_exact=mean_ll(xt, yt, x, y, ex_test, a_eval, c),
-        recall=float(recall),
-        query_sec=q_sec,
-    )
+    return {
+        "loo": mean_ll(x[loo_rows], y[loo_rows], x, y, loo_idx, a_eval, c),
+        "test": mean_ll(xt, yt, x, y, test_idx, a_eval, c),
+        "loo_exact": mean_ll(x[loo_rows], y[loo_rows], x, y, ex_loo, a_eval, c),
+        "test_exact": mean_ll(xt, yt, x, y, ex_test, a_eval, c),
+        "recall": float(recall),
+        "query_sec": q_sec,
+    }
 
 
 def run_method(key, meth, seq, data, loo_sets):

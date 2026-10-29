@@ -8,7 +8,6 @@ import sys
 import time
 
 import numpy as np
-
 from iaml_core import Adam, BpannPool, Metric, fit_exact, fit_on_pools, mean_ll, rerank
 
 K = 10
@@ -25,7 +24,10 @@ def f_sparse(x):
 
 def f_friedman(x):
     return (
-        10 * np.sin(np.pi * x[:, 0] * x[:, 1]) + 20 * (x[:, 2] - 0.5) ** 2 + 10 * x[:, 3] + 5 * x[:, 4],
+        10 * np.sin(np.pi * x[:, 0] * x[:, 1])
+        + 20 * (x[:, 2] - 0.5) ** 2
+        + 10 * x[:, 3]
+        + 5 * x[:, 4],
         1.0,
     )
 
@@ -39,7 +41,12 @@ def f_iso(x):
     return np.sin(2 * np.pi * x).sum(1), 0.1
 
 
-PROBLEMS = {"sparse": (f_sparse, 10), "friedman": (f_friedman, 10), "aniso": (f_aniso, 6), "iso": (f_iso, 5)}
+PROBLEMS = {
+    "sparse": (f_sparse, 10),
+    "friedman": (f_friedman, 10),
+    "aniso": (f_aniso, 6),
+    "iso": (f_iso, 5),
+}
 
 
 def make_data(name, seed):
@@ -97,7 +104,9 @@ class Pooled:
         if self.index is None:
             self.index = BpannPool(x[:n], y[:n])
             self.rows_indexed += n
-            fit_on_pools(self.m, x[:n], y[:n], self.index.query(x[:n], K * self.mult, True), K)
+            fit_on_pools(
+                self.m, x[:n], y[:n], self.index.query(x[:n], K * self.mult, True), K
+            )
             return
         if self.online:
             pool = self.index.query(x[lo:n], K * self.mult, exclude_self=False)
@@ -108,10 +117,14 @@ class Pooled:
         self.index.add(x[lo:n], y[lo:n])
         self.rows_indexed += BATCH
         if not self.online:
-            fit_on_pools(self.m, x[:n], y[:n], self.index.query(x[:n], K * self.mult, True), K)
+            fit_on_pools(
+                self.m, x[:n], y[:n], self.index.query(x[:n], K * self.mult, True), K
+            )
 
     def loo_nbr(self, x, y, n):
-        return rerank(x[:n], x, self.index.query(x[:n], K * self.mult, True), K, self.m.a)
+        return rerank(
+            x[:n], x, self.index.query(x[:n], K * self.mult, True), K, self.m.a
+        )
 
     def test_nbr(self, x, n, xt):
         return rerank(xt, x, self.index.query(xt, K * self.mult, False), K, self.m.a)
@@ -138,23 +151,31 @@ def run(name, seed):
         for n in range(BATCH, N_TRAIN + 1, BATCH):
             meth.update(x, y, n)
             if n in CHECKPOINTS:
-                loo = mean_ll(x[:n], y[:n], x, y, meth.loo_nbr(x, y, n), meth.m.a, meth.m.c)
+                loo = mean_ll(
+                    x[:n], y[:n], x, y, meth.loo_nbr(x, y, n), meth.m.a, meth.m.c
+                )
                 tst = mean_ll(xt, yt, x, y, meth.test_nbr(x, n, xt), meth.m.a, meth.m.c)
                 rows.append(
-                    dict(
-                        problem=name,
-                        seed=seed,
-                        method=key,
-                        n=n,
-                        loo=loo,
-                        test=tst,
-                        rows_indexed=meth.rows_indexed,
-                        seconds=time.time() - t0,
-                        a=(meth.m.a / meth.m.a.max()).tolist(),
-                        c=meth.m.c,
-                    )
+                    {
+                        "problem": name,
+                        "seed": seed,
+                        "method": key,
+                        "n": n,
+                        "loo": loo,
+                        "test": tst,
+                        "rows_indexed": meth.rows_indexed,
+                        "seconds": time.time() - t0,
+                        "a": (meth.m.a / meth.m.a.max()).tolist(),
+                        "c": meth.m.c,
+                    }
                 )
-        print(name, seed, key, f"loo={rows[-1]['loo']:.3f} test={rows[-1]['test']:.3f}", flush=True)
+        print(
+            name,
+            seed,
+            key,
+            f"loo={rows[-1]['loo']:.3f} test={rows[-1]['test']:.3f}",
+            flush=True,
+        )
     return rows
 
 

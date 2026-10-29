@@ -144,3 +144,70 @@ preserve the fixed projection without loading an encoder. There is no SVD cutoff
 for x-y features. The ordinary `SemanticInputTransform(...)` constructor continues
 to build the existing x-x prior. Semantic similarity expresses a prior, rather
 than evidence of causal influence; prediction improvements remain a hypothesis.
+
+`AdaptiveSemanticENN` is an optional Python wrapper for learning from a stream of
+complete numerical observations. It adapts a separate supervised input geometry
+and signed output factors while preserving the supplied metadata definitions:
+
+```python
+from enn import AdaptiveSemanticENN
+
+model = AdaptiveSemanticENN(input_transform=transform, capacity=300)
+model.add(train_x, train_y)  # At least 12 rows in the initial batch; y is 2-D.
+model.add(next_x, next_y)
+posterior = model.posterior(test_x)
+```
+
+Pass `output_projection=` to adapt a `SemanticOutputProjection` as well. Each
+`add` refits on a uniform replay sample of at most `capacity` rows, using separate
+rows for fitting, candidate selection, and variance calibration. Candidates
+include the fixed prior, supervised linear and quadratic-gradient geometries,
+and independent, semantic, or learned output sharing. `model.choice` exposes the
+selection. Learned input maps retain the metadata projection's factor count;
+x-x still initializes that count with its variance cutoff (default 0.9).
+A raw-input candidate makes zero semantic mixing available during selection. Both fixed and learned
+input distances use a square matrix root, keeping the indexed input dimension
+constant without discarding original coordinates. The public metadata transform
+keeps its existing augmented-feature representation.
+This is bounded replay with an epoch refit on every batch, suitable
+for stationary streams; it does not preserve a full-history index or favor
+recent observations under drift. It returns marginal means and standard errors,
+without joint covariance or optimizer integration. Its optional linear mean is
+disabled by default. Run `python ops/evaluate.py run short/adapt_xx` (or
+`short/adapt_xy`, `short/adapt_yy`) for the controlled synthetic evaluations.
+The larger comparison is reproducible with
+`PYTHONPATH=src:. python scripts/evaluate_adapt.py`; see `report-adapt.pdf` for
+results and limitations.
+
+Adaptation shares each geometry's ENN index and transformed validation inputs
+across neighbor counts. Mixed-count Flat batches use the scalar posterior fast
+path. A small-workload certificate shares float64 neighbors when it proves
+membership in every original float32 candidate set; ambiguous boundaries retain
+separate searches. Small Flat searches run serially and restore the
+caller's OpenMP thread budget afterward; larger searches retain parallelism.
+By default, geometry weights 3 and 30 are tuned. Pass
+`model.add(x, y, geometry_weight=30)` on each update to hold that mixing weight
+fixed while retaining every geometry family, output operator, neighbor count,
+and factor rank. This reduces selection work but can change the chosen model;
+metadata embedding weights remain unchanged. Replay sampling, data splits, and
+variance calibration retain the same protocol in both modes. Final refits only
+compute their selected maps. Reproduce the runtime and prediction comparison with
+`PYTHONPATH=src:. python scripts/benchmark_adapt.py --output DIR`;
+`--reference DIR` loads a saved `adaptive_model.py` and, when present, its saved
+native extension. Add `--geometry-weight 30` to measure fixed-weight updates.
+See `report-adapt-speed.pdf` for measurements, the assessment
+of recursive updates, and a bootstrap sensitivity analysis of learned geometry.
+
+BPANN disk queries use the same tree search at every observation count. Fast
+candidates receive float64 distance refinement with ten additional candidates at every N; a conservative rounding-error
+bound requests float64 leaf scoring when the boundary is ambiguous. The bound
+tracks metric rescaling and underflow, independently of N. The former 8,192-row
+exhaustive-search transition is removed. AUTO continues fitting and
+updating throughout the stream; its leave-one-out calculation shares neighbors
+and grid weights across output columns. Approximate tree search retains its
+logarithmically growing leaf budget. Accepted repartitions reuse centroids from
+their acceptance calculation, avoiding duplicate weighted means. Repartitioning
+receives one leaf of work credit per added row, spreading all 16 passes over
+more additions. Refits, coordinate rescaling and I/O can still cause latency
+spikes; the measured tradeoffs through one million rows are in
+`report-smooth-adapt.pdf`.

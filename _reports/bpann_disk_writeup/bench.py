@@ -15,10 +15,10 @@ import tempfile
 import time
 
 import numpy as np
+from evals.flat_sphere import gaussian_loglik, rmse
 
 from enn.enn.enn_fit import enn_fit
 from evals import metric_12d, metric_ranges
-from evals.flat_sphere import gaussian_loglik, rmse
 from ops.stress import DRAW_FLAGS
 
 MODELS = ("flat", "bpann_disk", "bpann_disk_auto")
@@ -49,7 +49,11 @@ def run_model(name, work_dir, cfg, make_data, seed):
         model = stream_rows(model, name, work_dir, x, y, lo=lo, hi=hi, batch=cfg.batch)
         t1 = time.perf_counter()
         params = enn_fit(
-            model, k=cfg.k, num_fit_candidates=cfg.num_fit_candidates, num_fit_samples=cfg.num_fit_samples, rng=fit_rng
+            model,
+            k=cfg.k,
+            num_fit_candidates=cfg.num_fit_candidates,
+            num_fit_samples=cfg.num_fit_samples,
+            rng=fit_rng,
         )
         t2 = time.perf_counter()
         post = model.posterior(x_test, params=params, flags=DRAW_FLAGS)
@@ -73,7 +77,10 @@ def run_model(name, work_dir, cfg, make_data, seed):
 def main() -> None:
     tag, first, num = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
     cfg = metric_12d.Metric12dConfig()
-    print(f"eval={tag} seeds={first}..{first + num - 1} models={','.join(MODELS)} batch={cfg.batch} k={cfg.k}", flush=True)
+    print(
+        f"eval={tag} seeds={first}..{first + num - 1} models={','.join(MODELS)} batch={cfg.batch} k={cfg.k}",
+        flush=True,
+    )
     for seed in range(first, first + num):
         with tempfile.TemporaryDirectory(prefix="enn_bpann_writeup_") as work_dir:
             for name in MODELS:

@@ -16,6 +16,7 @@ pub mod enn_py_build {
     define_enn_py_build_api!(link_rpath);
 }
 pub mod link_rpath;
+pub mod py_adaptive;
 pub mod py_fit;
 pub mod py_fitter;
 pub mod py_hash;

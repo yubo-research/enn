@@ -72,6 +72,7 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[doc = "kiss-coverage-off"]
 pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_model::PyEpistemicNearestNeighbors>()?;
+    m.add_function(wrap_pyfunction!(crate::py_adaptive::small_flat_selection_means, m)?)?;
     m.add_class::<crate::py_model::PyENNParams>()?;
     m.add_function(wrap_pyfunction!(crate::py_model::train_rows_at_warped, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_layout::validate_enn_placement_py, m)?)?;

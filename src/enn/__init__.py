@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._lazy import lazy_getattr
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
+    "AdaptiveSemanticENN": (".adaptive", "AdaptiveSemanticENN"),
     "SemanticOutputProjection": (".semantic_outputs", "SemanticOutputProjection"),
     "SemanticMultiOutputENN": (".semantic_multi_output", "SemanticMultiOutputENN"),
     "SemanticInputTransform": (".semantic", "SemanticInputTransform"),

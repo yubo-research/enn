@@ -236,6 +236,51 @@ mod tests {
     }
 
     #[test]
+    fn rescale_replaces_loose_radii_with_exact_bounds() {
+        let x = random_rows(4500, 3, 9);
+        let scale = Array1::from(vec![0.05, 1.0, 8.0]);
+        let dir = TempDir::new().unwrap();
+        let mut backend = backend_with_rows(&dir, &x);
+        let before = page_radii(&backend);
+        backend.rescale_metric(&scale).unwrap();
+        let after = page_radii(&backend);
+        let grow = scale.iter().map(|s| 1.0 / s).fold(0.0, f64::max) as f32;
+        assert_eq!(before.len(), after.len());
+        assert!(leaves_fit(&backend));
+        for (&old, &new) in before.iter().zip(&after) {
+            assert!(new <= old * grow * 1.001 + 1e-3, "{new} exceeds loose bound {}", old * grow);
+        }
+        let tighter = before.iter().zip(&after).filter(|(&old, &new)| new < old * grow * 0.8).count();
+        assert!(tighter > before.len() / 2, "{tighter} of {} radii are below 0.8 of the max-factor bound", before.len());
+    }
+
+    fn page_radii(backend: &BpannBackend) -> Vec<f32> {
+        let tree = backend.index.tree.as_ref().expect("tree");
+        (0..tree.num_pages() as u32).map(|id| tree.store.radius(id)).collect()
+    }
+
+    fn leaves_fit(backend: &BpannBackend) -> bool {
+        let tree = backend.index.tree.as_ref().expect("tree");
+        let dim = tree.store.num_dim();
+        for page in 0..tree.num_pages() as u32 {
+            if !tree.store.is_leaf(page) {
+                continue;
+            }
+            let Some(parent) = tree.store.parent(page) else { continue };
+            let Some(slot) = tree.store.ids(parent).iter().position(|&child| child == page) else { continue };
+            let centroid = &tree.store.block(parent)[slot * dim..(slot + 1) * dim];
+            let radius = tree.store.radius(page);
+            let outside = tree.store.block(page).chunks_exact(dim).any(|row| {
+                crate::index::tree_counts::dist(row, centroid) > radius * 1.0001 + 1e-4
+            });
+            if outside {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[test]
     fn rejects_bad_scale_and_discards_on_reopen() {
         let x = random_rows(50, 2, 3);
         let dir = TempDir::new().unwrap();

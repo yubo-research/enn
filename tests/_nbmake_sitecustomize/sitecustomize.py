@@ -7,5 +7,5 @@ try:
         )
 
     _li._load_ips_psutil = _disable_psutil_net_if_addrs
-except Exception:
-    pass
+except ImportError:
+    _li = None

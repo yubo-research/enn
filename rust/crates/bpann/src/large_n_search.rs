@@ -1,15 +1,12 @@
-//! Large-N BPANN search: indexed fragments + pending mmap brute-force leg.
+//! BPANN search at every N: indexed tree plus pending mmap rows.
 
 use ndarray::Array2;
 use rayon::prelude::*;
 
 use crate::backend::BpannBackend;
-use crate::distance::bpann_row_to_f32;
 use crate::error::BpannError;
-use crate::index::{bpann_brute_force_topk_mmap, MmapSearchStore};
-use crate::merge::{
-    bpann_merge_topk_candidates, find_query_train_id, merge_topk_precomputed_dist_with_self,
-};
+use crate::index::MmapSearchStore;
+use crate::merge::{find_query_train_id, merge_topk_precomputed_dist_with_self};
 use crate::mmap_store::MmapColumnStore;
 
 pub struct SearchPendingArgs<'a> {
@@ -23,9 +20,9 @@ pub struct SearchPendingArgs<'a> {
 }
 
 #[doc = "kiss-coverage-off"]
-fn merge_pending_unscaled(
-    leg_a: &[(u32, f32)],
-    leg_b: &[(u32, f32)],
+fn merge_pending(
+    leg_a: &[(u32, f64)],
+    leg_b: &[(u32, f64)],
     train_x: &MmapColumnStore,
     query_buf: &[f64],
     k_eff: usize,
@@ -36,7 +33,7 @@ fn merge_pending_unscaled(
         let zero = leg_a
             .iter()
             .chain(leg_b.iter())
-            .find(|(_, d)| f64::from(*d) <= 1e-15)
+            .find(|(_, d)| *d <= 1e-15)
             .map(|(id, _)| *id);
         zero.or_else(|| find_query_train_id(train_x, query_buf))
     } else {
@@ -50,6 +47,30 @@ fn merge_pending_unscaled(
         exclude_nearest,
         self_id,
     )
+}
+
+/// Pending rows use the same f64 ranking as tree leaves, including after a reset.
+fn pending_topk(
+    train_x: &MmapColumnStore, start: usize, end: usize, query: &[f64],
+    k: usize, scale_x: bool, x_scale: &[f64],
+) -> Result<Vec<(u32, f64)>, BpannError> {
+    use crate::small_n_search::OrderedFloat;
+    let mut heap = std::collections::BinaryHeap::with_capacity(k + 1);
+    for row in start..end {
+        let distance = crate::distance::row_sq_l2(
+            ndarray::ArrayView1::from(query),
+            ndarray::ArrayView1::from(train_x.mmap_row_slice(row)?),
+            scale_x, ndarray::ArrayView1::from(x_scale),
+        );
+        let candidate = (OrderedFloat(distance), row as u32);
+        if heap.len() < k {
+            heap.push(candidate);
+        } else if heap.peek().is_some_and(|worst| candidate < *worst) {
+            heap.pop();
+            heap.push(candidate);
+        }
+    }
+    Ok(heap.into_sorted_vec().into_iter().map(|(distance, row)| (row, distance.0)).collect())
 }
 
 pub fn search_indexed_and_pending(
@@ -66,7 +87,7 @@ pub fn search_indexed_and_pending(
         exclude_nearest,
         scale_x,
         x_scale: x_scale_vec,
-        num_dim,
+        num_dim: _,
     } = args;
     let indexed = backend.index.indexed_rows;
     let pending_start = indexed;
@@ -80,54 +101,31 @@ pub fn search_indexed_and_pending(
     let per_query: Vec<(Vec<f64>, Vec<i64>)> = query_rows
         .par_iter()
         .map(|query_buf| {
-            let mut query_f32 = Vec::with_capacity(num_dim);
-            bpann_row_to_f32(query_buf, scale_x, x_scale_vec, &mut query_f32);
             let store = MmapSearchStore {
                 train_x,
                 scale_x,
                 x_scale: x_scale_vec,
             };
 
-            let leg_a = if indexed > 0 && backend.index.tree.is_some() {
-                backend
-                    .index
-                    .search_candidates(&query_f32, index_k.max(1), Some(&store))
-                    .expect("search_candidates")
+            let leg_a = if let Some(tree) = backend.index.tree.as_ref().filter(|_| indexed > 0) {
+                crate::index::tree_search::search_tree_refined(
+                    tree,
+                    query_buf, index_k.max(1), &store,
+                ).expect("search_tree_refined")
             } else {
                 Vec::new()
             };
 
             let leg_b = if has_pending {
-                bpann_brute_force_topk_mmap(
-                    train_x,
-                    pending_start,
-                    total,
-                    query_buf,
-                    pool_k,
-                    scale_x,
-                    x_scale_vec,
-                )
-                .expect("bpann_brute_force_topk_mmap")
+                pending_topk(train_x, pending_start, total, query_buf, pool_k, scale_x, x_scale_vec)
+                    .expect("pending_topk")
             } else {
                 Vec::new()
             };
 
-            let merged = if scale_x {
-                bpann_merge_topk_candidates(
-                    train_x,
-                    query_buf,
-                    &leg_a,
-                    &leg_b,
-                    k_eff,
-                    pool_k,
-                    exclude_nearest,
-                    scale_x,
-                    x_scale_vec,
-                )
-                .expect("bpann_merge_topk_candidates")
-            } else {
-                merge_pending_unscaled(&leg_a, &leg_b, train_x, query_buf, k_eff, pool_k, exclude_nearest)
-            };
+            let merged = merge_pending(
+                &leg_a, &leg_b, train_x, query_buf, k_eff, pool_k, exclude_nearest,
+            );
             let mut dist_row = vec![f64::INFINITY; k_eff];
             let mut idx_row = vec![-1i64; k_eff];
             for (j, (id, dist)) in merged.into_iter().enumerate() {

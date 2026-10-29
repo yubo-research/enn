@@ -10,7 +10,6 @@ import json
 import sys
 
 import numpy as np
-
 import stream
 from iaml_core import knn, mean_ll
 
@@ -20,7 +19,10 @@ for name in ("sparse", "friedman", "aniso"):
         x, y, xt, yt = stream.make_data(name, seed)
         n = stream.N_TRAIN
         d = x.shape[1]
-        learners = {"A_pool10": stream.Pooled(d, 10), "C_online10": stream.Pooled(d, 10, online=True)}
+        learners = {
+            "A_pool10": stream.Pooled(d, 10),
+            "C_online10": stream.Pooled(d, 10, online=True),
+        }
         for key, meth in learners.items():
             for m in range(stream.BATCH, n + 1, stream.BATCH):
                 meth.update(x, y, m)
@@ -30,18 +32,25 @@ for name in ("sparse", "friedman", "aniso"):
             rec = {}
             for mult in (1, 3, 10, 30):
                 pool = meth.index.query(xt, stream.K * mult, exclude_self=False)
-                rec[mult] = float(np.mean([len(set(p) & set(e)) / stream.K for p, e in zip(pool, exact_test)]))
-            rows.append(
-                dict(
-                    problem=name,
-                    seed=seed,
-                    learner=key,
-                    recall=rec,
-                    loo_pooled=mean_ll(x, y, x, y, meth.loo_nbr(x, y, n), a, c),
-                    loo_exact=mean_ll(x, y, x, y, exact_loo, a, c),
-                    test_pooled=mean_ll(xt, yt, x, y, meth.test_nbr(x, n, xt), a, c),
-                    test_exact=mean_ll(xt, yt, x, y, exact_test, a, c),
+                rec[mult] = float(
+                    np.mean(
+                        [
+                            len(set(p) & set(e)) / stream.K
+                            for p, e in zip(pool, exact_test)
+                        ]
+                    )
                 )
+            rows.append(
+                {
+                    "problem": name,
+                    "seed": seed,
+                    "learner": key,
+                    "recall": rec,
+                    "loo_pooled": mean_ll(x, y, x, y, meth.loo_nbr(x, y, n), a, c),
+                    "loo_exact": mean_ll(x, y, x, y, exact_loo, a, c),
+                    "test_pooled": mean_ll(xt, yt, x, y, meth.test_nbr(x, n, xt), a, c),
+                    "test_exact": mean_ll(xt, yt, x, y, exact_test, a, c),
+                }
             )
             print(json.dumps(rows[-1]), flush=True)
 with open(sys.argv[1], "w") as fh:

@@ -9,6 +9,9 @@ pub fn posterior_row_sq_l2(
     scale_x: bool,
     x_scale: ArrayView1<f64>,
 ) -> f64 {
+    if let (Some(x), Some(y), Some(scale)) = (x.as_slice(), y.as_slice(), x_scale.as_slice()) {
+        return posterior_slice_sq_l2(x, y, scale_x.then_some(scale));
+    }
     let mut acc = 0.0;
     if scale_x {
         for i in 0..x.len() {
@@ -23,6 +26,23 @@ pub fn posterior_row_sq_l2(
         }
     }
     acc.max(0.0)
+}
+
+#[inline]
+pub(super) fn posterior_slice_sq_l2(x: &[f64], y: &[f64], scale: Option<&[f64]>) -> f64 {
+    let mut distance = 0.0;
+    if let Some(scale) = scale {
+        for ((&x, &y), &s) in x.iter().zip(y).zip(scale) {
+            let delta = x / s - y / s;
+            distance += delta * delta;
+        }
+    } else {
+        for (&x, &y) in x.iter().zip(y) {
+            let delta = x - y;
+            distance += delta * delta;
+        }
+    }
+    distance.max(0.0)
 }
 
 #[cfg(test)]

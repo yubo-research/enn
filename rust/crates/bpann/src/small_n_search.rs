@@ -1,6 +1,6 @@
-//! In-RAM exhaustive search for small/mid observation counts (N ≤ 8192).
-//! Keep coordinates and distances in f64: f32 can erase continuous-distance
-//! differences beside large, tied one-hot categorical contributions.
+//! Explicit exhaustive-search utilities retained for API compatibility.
+//! The BPANN backend itself uses tree traversal at every observation count.
+//! These utilities keep coordinates and distances in f64.
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -11,11 +11,7 @@ use crate::merge::{
 };
 use rayon::prelude::*;
 
-/// When `len() ≤` this, search uses a resident flat f64 matrix + heap top-k.
-///
-/// Covers turbo-enn mid checkpoints (N=1232, N=3000) under `--tell-all`, and
-/// bridges the post-4096 immature indexed+pending window without riding
-/// late in-core O(N) cost up to 16k (which relocates the cum-mean peak).
+/// Legacy exhaustive-cache utility limit; not a backend search dispatch boundary.
 pub const SMALL_N_INCORE_SEARCH_LIMIT: usize = 8192;
 
 /// Total order wrapper so squared distances can live in a binary heap.

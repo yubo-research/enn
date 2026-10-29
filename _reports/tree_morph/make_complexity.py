@@ -68,13 +68,12 @@ def rows_for(tag):
 def write_dat(path, header, lines):
     with open(path, "w") as f:
         f.write(" ".join(header) + "\n")
-        for line in lines:
-            f.write(" ".join(f"{v:.6g}" for v in line) + "\n")
+        f.writelines(" ".join(f"{v:.6g}" for v in line) + "\n" for line in lines)
 
 
 def latex_n(n):
     """1e5 -> $10^{5}$, 3e5 -> $3\\times10^5$."""
-    power = int(math.floor(math.log10(n)))
+    power = math.floor(math.log10(n))
     lead = n // 10**power
     return f"$10^{{{power}}}$" if lead == 1 else f"${lead}\\times10^{power}$"
 

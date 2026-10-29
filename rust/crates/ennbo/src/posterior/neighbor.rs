@@ -135,8 +135,15 @@ pub(crate) fn index_search(
             Array2::from_elem((n_query, k_out), -1i64),
         ));
     }
+    if !exclude_nearest && k_out <= n_obs {
+        if let Some(neighbors) = super::small_flat::SmallFlatNeighbors::new(model, x, k_out)
+            .and_then(|cache| cache.neighbors(k_out))
+        {
+            return Ok(neighbors);
+        }
+    }
     /// Cap Faiss oversample at `n_obs` (Faiss repeats the last id; the index API pads with (-1, inf)).
-    const FAISS_F64_OVERSAMPLE: i32 = 32;
+    const FAISS_F64_OVERSAMPLE: i32 = super::small_flat::F64_OVERSAMPLE as i32;
     let n_obs_i = n_obs as i32;
     let fetch_k = if model.backend_driver() == IndexDriver::Flat {
         search_k

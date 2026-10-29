@@ -14,7 +14,6 @@ import glob
 import os
 
 import numpy as np
-
 from reports.bpann_disk_writeup.make_report import load, mean_se
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -31,7 +30,12 @@ N_GRID = (10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 300000, 1000000)
 
 def seeds_of(rows, tag, num_seeds, models):
     """The seeds of a complete run: every (model, n) must have ``num_seeds`` of them."""
-    short = [(m, n, sorted(rows.get((m, n), {}))) for m, _ in models for n in N_GRID if len(rows.get((m, n), {})) != num_seeds]
+    short = [
+        (m, n, sorted(rows.get((m, n), {})))
+        for m, _ in models
+        for n in N_GRID
+        if len(rows.get((m, n), {})) != num_seeds
+    ]
     if short:
         raise ValueError(f"{tag}: incomplete run, e.g. {short[0]}")
     return sorted(rows[("flat", N_GRID[0])])
@@ -47,7 +51,10 @@ def write_data(tag, data, timing, models, suffix=""):
         out = []
         for n in N_GRID:
             d = data[(model, n)]
-            ll, nr = mean_se([r["loglik"] for r in d.values()]), mean_se([r["nrmse"] for r in d.values()])
+            ll, nr = (
+                mean_se([r["loglik"] for r in d.values()]),
+                mean_se([r["nrmse"] for r in d.values()]),
+            )
             out.append([n, *ll, *nr, *per_point(timing[(model, n)][0])])
         np.savetxt(
             os.path.join(HERE, f"d_{tag}_{model}{suffix}.dat"),
@@ -66,7 +73,10 @@ def paired(da, db, key="loglik"):
 
 def not_dominated(vals, higher):
     """True when no other printed number is strictly better."""
-    return [not any((o > v if higher else o < v) for j, o in enumerate(vals) if j != i) for i, v in enumerate(vals)]
+    return [
+        not any((o > v if higher else o < v) for j, o in enumerate(vals) if j != i)
+        for i, v in enumerate(vals)
+    ]
 
 
 def paired_not_dominated(seed_maps, higher):
@@ -98,14 +108,14 @@ def bold_math(expr, best):
 def _table_row(label, stats, flags):
     ll, nr, add, fit, q = stats
     ll_best, nr_best, add_best, fit_best, q_best = flags
-    tex_ll = "${:+.3f}\\pm{:.3f}$".format(ll[0], ll[1])
-    tex_nr = "${:.4f}\\pm{:.4f}$".format(nr[0], nr[1])
+    tex_ll = f"${ll[0]:+.3f}\\pm{ll[1]:.3f}$"
+    tex_nr = f"${nr[0]:.4f}\\pm{nr[1]:.4f}$"
     return (
         f"{label} & {bold_math(tex_ll, ll_best)} "
         f"& {bold_math(tex_nr, nr_best)} "
-        "& " + bold_math("${:.1f}$".format(add), add_best) + " "
-        "& " + bold_math("${:.2f}$".format(fit), fit_best) + " "
-        "& " + bold_math("${:.3f}$".format(q), q_best) + "\\\\"
+        "& " + bold_math(f"${add:.1f}$", add_best) + " "
+        "& " + bold_math(f"${fit:.2f}$", fit_best) + " "
+        "& " + bold_math(f"${q:.3f}$", q_best) + "\\\\"
     )
 
 
@@ -125,9 +135,23 @@ def write_table(data_by_tag, timing_by_tag):
         rows = []
         for model, label in MODELS:
             d = data_by_tag[tag][(model, n)]
-            ll, nr = mean_se([r["loglik"] for r in d.values()]), mean_se([r["nrmse"] for r in d.values()])
+            ll, nr = (
+                mean_se([r["loglik"] for r in d.values()]),
+                mean_se([r["nrmse"] for r in d.values()]),
+            )
             add, fit, q = per_point(timing_by_tag[tag][(model, n)][0])
-            rows.append((label, ll, nr, add, fit, q, {s: r["loglik"] for s, r in d.items()}, {s: r["nrmse"] for s, r in d.items()}))
+            rows.append(
+                (
+                    label,
+                    ll,
+                    nr,
+                    add,
+                    fit,
+                    q,
+                    {s: r["loglik"] for s, r in d.items()},
+                    {s: r["nrmse"] for s, r in d.items()},
+                )
+            )
         ll_best = paired_not_dominated([r[6] for r in rows], True)
         nr_best = paired_not_dominated([r[7] for r in rows], False)
         add_best = not_dominated([r[3] for r in rows], False)
@@ -148,7 +172,12 @@ def write_table(data_by_tag, timing_by_tag):
                     (ll_best[i], nr_best[i], add_best[i], fit_best[i], q_best[i]),
                 )
             )
-    head = ["\\begin{tabular}{@{}lrrrrr@{}}", "\\toprule", "Model & log-lik & nRMSE & add & fit & query \\\\", "\\midrule"]
+    head = [
+        "\\begin{tabular}{@{}lrrrrr@{}}",
+        "\\toprule",
+        "Model & log-lik & nRMSE & add & fit & query \\\\",
+        "\\midrule",
+    ]
     with open(os.path.join(HERE, "t_main.tex"), "w") as f:
         f.write("\n".join(head + lines + ["\\bottomrule", "\\end{tabular}"]) + "\n")
 
@@ -160,7 +189,9 @@ def summary(tag, data, timing):
             ll = mean_se([r["loglik"] for r in data[(model, n)].values()])
             nr = mean_se([r["nrmse"] for r in data[(model, n)].values()])
             add, fit, q = per_point(timing[(model, n)][0])
-            parts.append(f"{model}: ll {ll[0]:+.4f}±{ll[1]:.4f} nr {nr[0]:.4f}±{nr[1]:.4f} add {add:.2f}us fit {fit:.3f}s q {q:.4f}ms")
+            parts.append(
+                f"{model}: ll {ll[0]:+.4f}±{ll[1]:.4f} nr {nr[0]:.4f}±{nr[1]:.4f} add {add:.2f}us fit {fit:.3f}s q {q:.4f}ms"
+            )
         print(f"[{tag}] n={n} | " + " | ".join(parts))
         pairs = [
             ("AUTO-NONE", data[("bpann_disk_auto", n)], data[("bpann_disk", n)]),
@@ -168,7 +199,13 @@ def summary(tag, data, timing):
             ("FLATsx-FLAT", data[("flat_scale_x", n)], data[("flat", n)]),
             ("NONE-FLAT", data[("bpann_disk", n)], data[("flat", n)]),
         ]
-        print(f"[{tag}] n={n}   " + "; ".join(f"{k} {m:+.4f}±{s:.4f} ({c}/{t} >0)" for k, (m, s, c, t) in ((k, paired(a, b)) for k, a, b in pairs)))
+        print(
+            f"[{tag}] n={n}   "
+            + "; ".join(
+                f"{k} {m:+.4f}±{s:.4f} ({c}/{t} >0)"
+                for k, (m, s, c, t) in ((k, paired(a, b)) for k, a, b in pairs)
+            )
+        )
         a = timing[("bpann_disk_auto", n)][0]
         print(
             f"[{tag}] n={n}   AUTO seed0 refits={a['refits']} rescales={a['rescales']} rebuilds={a['rebuilds']} "
@@ -177,7 +214,9 @@ def summary(tag, data, timing):
     for model, _ in MODELS:
         tot_add = sum(timing[(model, n)][0]["add"] for n in N_GRID)
         tot_fit = sum(timing[(model, n)][0]["fit"] for n in N_GRID)
-        print(f"[{tag}] seed-0 {model}: total add {tot_add:.1f}s total fit {tot_fit:.1f}s")
+        print(
+            f"[{tag}] seed-0 {model}: total add {tot_add:.1f}s total fit {tot_fit:.1f}s"
+        )
 
 
 def main():
@@ -187,8 +226,14 @@ def main():
         seeds = seeds_of(data, tag, 10, MODELS)
         timing = load([os.path.join(HERE, f"timing_{tag}.out")])
         seeds_of(timing, tag, 1, MODELS)
-        diff = max(abs(timing[k][0][c] - data[k][0][c]) for k in timing for c in ("loglik", "nrmse"))
-        print(f"[{tag}] seeds={seeds}; timing run vs 10-seed run, seed 0: max |diff| loglik/nrmse = {diff:.2g}")
+        diff = max(
+            abs(timing[k][0][c] - data[k][0][c])
+            for k in timing
+            for c in ("loglik", "nrmse")
+        )
+        print(
+            f"[{tag}] seeds={seeds}; timing run vs 10-seed run, seed 0: max |diff| loglik/nrmse = {diff:.2g}"
+        )
         write_data(tag, data, timing, MODELS)
         summary(tag, data, timing)
         data_by_tag[tag], timing_by_tag[tag] = data, timing

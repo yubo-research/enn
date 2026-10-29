@@ -39,6 +39,8 @@ impl Tree {
             let r = self.subtree_radius(root, &c, 0);
             self.store.set_radius(root, r);
         }
+        self.coordinate_relative_error = f32::EPSILON as f64;
+        self.coordinate_absolute_error = f32::MIN_POSITIVE as f64;
         self.rows_cached = true;
         Ok(())
     }
@@ -74,11 +76,18 @@ impl Tree {
         r
     }
 
-    /// Multiply every stored coordinate by `ratio` (one factor per dimension); radii
-    /// grow by the largest factor so they stay upper bounds.
+    /// Multiply every stored coordinate by `ratio` (one factor per dimension).
+    /// Cached trees then replace each radius with the exact bound in the scaled
+    /// coordinates. Without cached leaf rows, radii grow by the largest factor so
+    /// they remain upper bounds.
     pub fn scale_rows(&mut self, ratio: &[f64]) {
         let dim = ratio.len().max(1);
-        let grow = ratio.iter().copied().fold(0.0f64, f64::max) as f32;
+        let maximum = ratio.iter().copied().fold(0.0f64, f64::max);
+        let grow = maximum as f32;
+        self.coordinate_relative_error =
+            (1.0 + self.coordinate_relative_error) * (1.0 + 4.0 * f32::EPSILON as f64) - 1.0;
+        self.coordinate_absolute_error =
+            self.coordinate_absolute_error * maximum + f32::MIN_POSITIVE as f64;
         for page in 0..self.num_pages() as u32 {
             for row in self.store.block_mut(page).chunks_mut(dim) {
                 for (v, &r) in row.iter_mut().zip(ratio) {
@@ -88,6 +97,18 @@ impl Tree {
             let r = self.store.radius(page);
             self.store.set_radius(page, r * grow);
         }
+        self.refresh_radii();
+    }
+
+    /// Replace every page radius with the exact subtree bound around its current centroid.
+    fn refresh_radii(&mut self) {
+        if !self.rows_cached || self.num_pages() == 0 {
+            return;
+        }
+        let root = self.header.root_page_id;
+        let centroid = self.page_centroid(root);
+        let radius = self.subtree_radius(root, &centroid, 0);
+        self.store.set_radius(root, radius);
     }
 
     /// Recompute every subtree count and parent from the root, for a tree whose pages

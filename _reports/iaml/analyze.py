@@ -44,7 +44,9 @@ def _metric_tables(g, nmax, prefix):
 
 def _cost_table(rows, nmax, prefix):
     fh = open(f"{prefix}_cost.tex", "w")
-    fh.write("\\begin{tabular}{lrr}\\toprule\nMethod & rows (re)indexed & fit+index seconds\\\\\\midrule\n")
+    fh.write(
+        "\\begin{tabular}{lrr}\\toprule\nMethod & rows (re)indexed & fit+index seconds\\\\\\midrule\n"
+    )
     for m in ORDER:
         rs = [r for r in rows if r["method"] == m and r["n"] == nmax]
         fh.write(
@@ -71,7 +73,13 @@ def _test_figure(rows, g, prefix):
     for ax, p in zip(axs, PROBS):
         for m in ORDER:
             mu = [mse([r["test"] for r in g[(p, m, n)]])[0] for n in ns]
-            ax.plot(ns, mu, marker="o", ms=3, label=LABEL[m].replace("$", "").replace("K'", "K'"))
+            ax.plot(
+                ns,
+                mu,
+                marker="o",
+                ms=3,
+                label=LABEL[m].replace("$", "").replace("K'", "K'"),
+            )
         ax.set_xscale("log")
         ax.set_title(p)
         ax.set_xlabel("n (observations seen)")
@@ -84,11 +92,20 @@ def _test_figure(rows, g, prefix):
 
 def _weights_table(rows, nmax, prefix):
     fh = open(f"{prefix}_weights.tex", "w")
-    rs = [r for r in rows if r["problem"] == "sparse" and r["n"] == nmax and r["seed"] == 0]
-    fh.write("\\begin{tabular}{l" + "r" * 10 + "}\\toprule\nMethod & " + " & ".join(f"$x_{i}$" for i in range(10)))
+    rs = [
+        r
+        for r in rows
+        if r["problem"] == "sparse" and r["n"] == nmax and r["seed"] == 0
+    ]
+    fh.write(
+        "\\begin{tabular}{l"
+        + "r" * 10
+        + "}\\toprule\nMethod & "
+        + " & ".join(f"$x_{i}$" for i in range(10))
+    )
     fh.write("\\\\\\midrule\n")
     for m in ORDER:
-        r = [q for q in rs if q["method"] == m][0]
+        r = next(q for q in rs if q["method"] == m)
         fh.write(LABEL[m] + " & " + " & ".join(f"{v:.2g}" for v in r["a"]) + "\\\\\n")
     fh.write("\\bottomrule\\end{tabular}\n")
     fh.close()
@@ -96,12 +113,17 @@ def _weights_table(rows, nmax, prefix):
 
 def recall_table(rows, fh):
     fh.write("\\begin{tabular}{llrrrrrr}\\toprule\n")
-    fh.write("Problem & Learner & R@$k$ & R@$3k$ & R@$10k$ & R@$30k$ & test (pool) & test (exact)\\\\\\midrule\n")
+    fh.write(
+        "Problem & Learner & R@$k$ & R@$3k$ & R@$10k$ & R@$30k$ & test (pool) & test (exact)\\\\\\midrule\n"
+    )
     for p in ("sparse", "friedman", "aniso"):
         for lrn in ("A_pool10", "C_online10"):
             rs = [r for r in rows if r["problem"] == p and r["learner"] == lrn]
             rec = [np.mean([r["recall"][str(mm)] for r in rs]) for mm in (1, 3, 10, 30)]
-            tp, te = mse([r["test_pooled"] for r in rs]), mse([r["test_exact"] for r in rs])
+            tp, te = (
+                mse([r["test_pooled"] for r in rs]),
+                mse([r["test_exact"] for r in rs]),
+            )
             fh.write(
                 f"{p} & {LABEL[lrn]} & "
                 + " & ".join(f"{v:.2f}" for v in rec)

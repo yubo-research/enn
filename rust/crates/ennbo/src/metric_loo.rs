@@ -18,7 +18,8 @@ fn variance(col: &[f64]) -> f64 {
     if var > MIN_VAR { var } else { 1.0 }
 }
 
-fn column_loglik(z: &[f64], ycol: &[f64], a_scaled: &[f64], n: usize, d: usize, k: usize) -> f64 {
+/// Geometry is shared by all output columns in one metric evaluation.
+fn loo_neighbors(z: &[f64], a_scaled: &[f64], n: usize, d: usize, k: usize) -> (Vec<usize>, Vec<f64>) {
     let mut row_a = vec![0.0; n];
     let mut az = vec![0.0; n * d];
     for r in 0..n {
@@ -57,27 +58,41 @@ fn column_loglik(z: &[f64], ycol: &[f64], a_scaled: &[f64], n: usize, d: usize, 
             }
         }
     }
-    let mut best = f64::NEG_INFINITY;
+    (nbr, d2n)
+}
+
+/// Reuse each grid point's weights across outputs; each column still chooses its own maximum.
+fn joint_loglik(columns: &[Vec<f64>], nbr: &[usize], d2n: &[f64], n: usize, k: usize) -> f64 {
+    let m = columns.len();
+    let mut best = vec![f64::NEG_INFINITY; m];
+    let mut sums = vec![0.0; m];
+    let mut wysums = vec![0.0; m];
     for &scale in &SCALE_GRID {
         for &noise in &NOISE_GRID {
-            let mut sum = 0.0;
+            sums.fill(0.0);
             for i in 0..n {
                 let mut wsum = 0.0;
-                let mut wysum = 0.0;
+                wysums.fill(0.0);
                 for t in 0..k {
                     let w = 1.0 / (EPS + (d2n[i * k + t] * scale).max(0.0) + noise);
                     wsum += w;
-                    wysum += w * ycol[nbr[i * k + t]];
+                    for (sum, column) in wysums.iter_mut().zip(columns) {
+                        *sum += w * column[nbr[i * k + t]];
+                    }
                 }
-                let mu = wysum / wsum;
                 let var = 1.0 / wsum + noise;
-                let err = ycol[i] - mu;
-                sum += -0.5 * (2.0 * std::f64::consts::PI * var).ln() - 0.5 * err * err / var;
+                let norm = -0.5 * (2.0 * std::f64::consts::PI * var).ln();
+                for ((sum, &wy), column) in sums.iter_mut().zip(&wysums).zip(columns) {
+                    let err = column[i] - wy / wsum;
+                    *sum += norm - 0.5 * err * err / var;
+                }
             }
-            best = best.max(sum / n as f64);
+            for (best, sum) in best.iter_mut().zip(&sums) {
+                *best = best.max(sum / n as f64);
+            }
         }
     }
-    best
+    best.iter().sum::<f64>() / m as f64
 }
 
 pub fn loo_loglik(x: &[f64], n: usize, d: usize, y: &[f64], m: usize, a: &[f64], k: usize) -> f64 {
@@ -96,19 +111,34 @@ pub fn loo_loglik(x: &[f64], n: usize, d: usize, y: &[f64], m: usize, a: &[f64],
         }
     }
     let a_scaled: Vec<f64> = (0..d).map(|j| a[j] * spr[j]).collect();
-    let mut total = 0.0;
+    let (nbr, d2n) = loo_neighbors(&z, &a_scaled, n, d, kk);
+    let mut columns = Vec::with_capacity(m);
     for col in 0..m {
         let raw: Vec<f64> = (0..n).map(|i| y[i * m + col]).collect();
         let yvar = variance(&raw);
         let ymean = raw.iter().sum::<f64>() / n as f64;
         let yz: Vec<f64> = raw.iter().map(|v| (v - ymean) / yvar.sqrt()).collect();
-        total += column_loglik(&z, &yz, &a_scaled, n, d, kk);
+        columns.push(yz);
     }
-    total / m as f64
+    joint_loglik(&columns, &nbr, &d2n, n, kk)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shared_geometry_preserves_each_output_score() {
+        let (n, d, m) = (30, 3, 3);
+        let x: Vec<f64> = (0..n*d).map(|i| (i as f64 * 0.3).sin()).collect();
+        let y: Vec<f64> = (0..n*m).map(|i| (i as f64 * 0.1).cos()).collect();
+        let weights = [0.1, 1.0, 3.0];
+        let joint = super::loo_loglik(&x, n, d, &y, m, &weights, 10);
+        let separate: f64 = (0..m).map(|j| {
+            let column: Vec<f64> = (0..n).map(|i| y[i*m+j]).collect();
+            super::loo_loglik(&x, n, d, &column, 1, &weights, 10)
+        }).sum::<f64>() / m as f64;
+        assert_eq!(joint, separate);
+    }
+
     #[test]
     fn partial_select_matches_full_sort_top_k() {
         let mut dist: Vec<(f64, usize)> = (0..50).map(|i| ((i * 17 % 50) as f64, i)).collect();

@@ -58,6 +58,8 @@ pub struct Tree {
     /// Whether every leaf block holds its rows' coordinates (false for a tree read
     /// back from `pages.bin` until [`Tree::fill_blocks`] runs).
     pub(crate) rows_cached: bool,
+    pub(crate) coordinate_relative_error: f64,
+    pub(crate) coordinate_absolute_error: f64,
 }
 
 impl Tree {
@@ -74,6 +76,8 @@ impl Tree {
             store: TreeStore::create(&index_dir, num_dim)?,
             index_dir,
             rows_cached: true,
+            coordinate_relative_error: f32::EPSILON as f64,
+            coordinate_absolute_error: f32::MIN_POSITIVE as f64,
         })
     }
 
@@ -104,6 +108,8 @@ impl Tree {
             store: self.store.try_clone()?,
             index_dir: self.index_dir.clone(),
             rows_cached: self.rows_cached,
+            coordinate_relative_error: self.coordinate_relative_error,
+            coordinate_absolute_error: self.coordinate_absolute_error,
         })
     }
 
