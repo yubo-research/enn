@@ -22,14 +22,7 @@ pub fn projection(
         ));
     }
     let mut unit = embeddings.to_owned();
-    for mut row in unit.rows_mut() {
-        let scale = row.iter().copied().map(f64::abs).fold(0.0_f64, f64::max);
-        if scale > 0.0 {
-            row /= scale;
-            let norm = row.dot(&row).sqrt();
-            row /= norm;
-        }
-    }
+    crate::semantic_projection::normalize_rows(&mut unit);
     let output_count = rows.len() - input_count;
     let mut result = Array2::from_shape_fn((input_count, output_count), |(j, i)| {
         unit.row(rows[j])

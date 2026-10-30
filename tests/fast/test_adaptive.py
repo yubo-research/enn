@@ -416,3 +416,17 @@ def test_raw_candidate_has_zero_semantic_mixing():
     basis = AdaptiveBasis(problem.x, problem.y, problem.input_transform, None)
     features = basis.features(problem.x, AdaptChoice("raw", 0, "independent", 3))
     np.testing.assert_array_equal(features, problem.x)
+
+
+@pytest.mark.parametrize("geometry", ["linear", "quadratic"])
+def test_constant_input_uses_unit_scale_when_it_changes_at_query(geometry):
+    x = np.column_stack((np.linspace(0, 1, 30), np.zeros(30)))
+    basis = AdaptiveBasis(x, np.sin(x[:, :1]), None, None)
+    choice = AdaptChoice(geometry, 3, "independent", 10)
+    query = np.array([[0.5, 0.0], [0.5, 1.0]])
+    features = basis.features(query, choice)
+    np.testing.assert_allclose(np.sum((features[1] - features[0]) ** 2), 1.0)
+    model = AdaptivePredictor(basis, x, np.sin(x[:, :1]), choice, False)
+    posterior = model.posterior(query)
+    assert np.isfinite(posterior.mu).all()
+    assert np.max(posterior.se) < 10

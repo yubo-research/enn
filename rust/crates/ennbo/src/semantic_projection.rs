@@ -16,12 +16,7 @@ pub fn projection(embeddings: &ArrayView2<f64>, cutoff: f64) -> Result<Array2<f6
         ));
     }
     let mut vectors = embeddings.to_owned();
-    for mut row in vectors.rows_mut() {
-        let norm = row.dot(&row).sqrt();
-        if norm > 0.0 {
-            row /= norm;
-        }
-    }
+    normalize_rows(&mut vectors);
     let mean = vectors
         .mean_axis(Axis(0))
         .ok_or_else(|| ENNError::InvalidParameter("empty embeddings".into()))?;
@@ -62,6 +57,19 @@ pub fn projection(embeddings: &ArrayView2<f64>, cutoff: f64) -> Result<Array2<f6
         result *= (retained as f64).sqrt() / norm;
     }
     Ok(result)
+}
+
+/// Normalize finite embedding rows without squaring their original magnitudes.
+/// Scaling first avoids overflow and underflow; zero rows remain zero.
+pub(crate) fn normalize_rows(vectors: &mut Array2<f64>) {
+    for mut row in vectors.rows_mut() {
+        let scale = row.iter().copied().map(f64::abs).fold(0.0_f64, f64::max);
+        if scale > 0.0 {
+            row /= scale;
+            let norm = row.dot(&row).sqrt();
+            row /= norm;
+        }
+    }
 }
 
 /// Scale semantic energy relative to the original coordinate energy.
@@ -150,5 +158,31 @@ mod tests {
         assert!(projection(&array![[f64::NAN]].view(), 0.9).is_err());
         assert!(weighted(&p.view(), -1.0).is_err());
         assert!(validate_bounds(&array![[1., 0.]].view(), 1).is_err());
+    }
+
+    #[test]
+    fn finite_row_rescaling_preserves_projection_geometry() {
+        for embeddings in [
+            array![[1., 0.], [0., 1.], [0., 0.]],
+            array![[1., 2.], [1., 2.], [-1., -2.]],
+            array![[1., 2.], [1., 2.], [1., 2.]],
+            Array2::zeros((3, 2)),
+        ] {
+            let expected = projection(&embeddings.view(), 1.0).unwrap();
+            let gram = expected.dot(&expected.t());
+            for scales in [[1e300; 3], [1e-300; 3], [1e300, 1e-300, 1.0]] {
+                let mut scaled = embeddings.clone();
+                for (mut row, scale) in scaled.rows_mut().into_iter().zip(scales) {
+                    row *= scale;
+                }
+                let actual = projection(&scaled.view(), 1.0).unwrap();
+                assert_eq!(actual.dim(), expected.dim());
+                assert!(actual.dot(&actual.t()).iter().zip(gram.iter())
+                    .all(|(a, b)| (a - b).abs() < 1e-12));
+            }
+        }
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(projection(&array![[value, 0.], [0., 1.]].view(), 1.0).is_err());
+        }
     }
 }

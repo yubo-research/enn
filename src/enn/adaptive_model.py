@@ -47,6 +47,8 @@ class AdaptiveBasis:
     ``geometry`` and ``output`` restrict final refits to the selected maps.
     ``linear_mean=False`` also skips an unused ridge trend. Selection bases leave
     the map restrictions unset to prepare the complete candidate family.
+    Exactly constant fit columns use unit scale so later changes are not
+    magnified by the numerical standard-deviation floor.
     """
 
     def __init__(
@@ -63,7 +65,11 @@ class AdaptiveBasis:
         self.input_transform = input_transform
         self.x_mean = x.mean(axis=0)
         centered_x = x - self.x_mean
-        self.x_scale = np.maximum(np.sqrt(np.mean(centered_x**2, axis=0)), 1e-12)
+        self.x_scale = np.where(
+            np.ptp(x, axis=0) == 0,
+            1.0,
+            np.maximum(np.sqrt(np.mean(centered_x**2, axis=0)), 1e-12),
+        )
         self.y_mean = y.mean(axis=0)
         centered_y = y - self.y_mean
         self.constant = np.ptp(y, axis=0) == 0
