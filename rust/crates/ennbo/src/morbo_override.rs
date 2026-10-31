@@ -1,4 +1,3 @@
-
 use crate::morbo_trust_region::Rescalarize;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

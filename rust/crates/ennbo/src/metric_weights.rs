@@ -1,4 +1,3 @@
-
 use crate::error::ENNError;
 use crate::metric_sobol::{
     group_cell_count, group_sobol_index, null_sd, sobol_index, DEPENDENCE_Z, MIN_DEPENDENCE_ROWS,
@@ -187,11 +186,17 @@ pub fn too_few_rows(n: usize) -> bool {
     n < MIN_DEPENDENCE_ROWS
 }
 
-pub fn resolve_tied_groups(carried: &[Vec<usize>], explicit: Option<&[Vec<usize>]>, semantic_only: bool) -> Result<Vec<Vec<usize>>, ENNError> {
+pub fn resolve_tied_groups(
+    carried: &[Vec<usize>],
+    explicit: Option<&[Vec<usize>]>,
+    semantic_only: bool,
+) -> Result<Vec<Vec<usize>>, ENNError> {
     let carried = if semantic_only { &[][..] } else { carried };
     match explicit.filter(|g| !g.is_empty()) {
         None => Ok(carried.to_vec()),
-        Some(groups) if !carried.is_empty() && groups != carried => Err(ENNError::InvalidParameter("tied_dims do not match the categorical blocks on x".into())),
+        Some(groups) if !carried.is_empty() && groups != carried => Err(
+            ENNError::InvalidParameter("tied_dims do not match the categorical blocks on x".into()),
+        ),
         Some(groups) => Ok(groups.to_vec()),
     }
 }
@@ -205,7 +210,12 @@ mod tied_feature_tests {
         let projected = vec![vec![0, 1]];
         assert_eq!(resolve_tied_groups(&carried, None, false).unwrap(), carried);
         assert!(resolve_tied_groups(&carried, Some(&projected), false).is_err());
-        assert!(resolve_tied_groups(&carried, None, true).unwrap().is_empty());
-        assert_eq!(resolve_tied_groups(&carried, Some(&projected), true).unwrap(), projected);
+        assert!(resolve_tied_groups(&carried, None, true)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            resolve_tied_groups(&carried, Some(&projected), true).unwrap(),
+            projected
+        );
     }
 }

@@ -1,4 +1,3 @@
-
 use ndarray::{Array, ArrayD, IxDyn};
 
 use crate::hash::{unique_index_inverse, HashError};
@@ -20,7 +19,11 @@ fn philox_normal(seed: u64, index: i64, metric: usize) -> f64 {
     ndtri(u)
 }
 
-pub fn philox_normal_hash(function_seeds: &[i64], data_indices: &[i64], num_metrics: i64) -> Result<ArrayD<f64>, HashError> {
+pub fn philox_normal_hash(
+    function_seeds: &[i64],
+    data_indices: &[i64],
+    num_metrics: i64,
+) -> Result<ArrayD<f64>, HashError> {
     if num_metrics <= 0 {
         return Err(HashError::InvalidNumMetrics(num_metrics));
     }
@@ -40,5 +43,9 @@ pub fn philox_normal_hash(function_seeds: &[i64], data_indices: &[i64], num_metr
             flat[dst..dst + num_metrics].copy_from_slice(&cache[src..src + num_metrics]);
         }
     }
-    Ok(Array::from_shape_vec(IxDyn(&[function_seeds.len(), data_indices.len(), num_metrics]), flat).expect("shape"))
+    Ok(Array::from_shape_vec(
+        IxDyn(&[function_seeds.len(), data_indices.len(), num_metrics]),
+        flat,
+    )
+    .expect("shape"))
 }

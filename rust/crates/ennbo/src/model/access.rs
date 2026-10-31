@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView2};
 
 use super::EpistemicNearestNeighbors;
@@ -74,8 +73,7 @@ impl<'a> EnnIndexAccess<'a> {
             return crate::posterior::index_search(self.model, x, search_k, exclude_nearest);
         }
         let fetch_k = ((search_k as usize) + 1).min(n_obs);
-        let (dist, idx) =
-            crate::posterior::index_search(self.model, x, fetch_k as i32, true)?;
+        let (dist, idx) = crate::posterior::index_search(self.model, x, fetch_k as i32, true)?;
         let k_out = (search_k as usize).min(idx.ncols());
         Ok(trim_search_cols(dist, idx, k_out))
     }
@@ -90,10 +88,7 @@ impl<'a> EnnRowAccess<'a> {
         Self { model }
     }
 
-    pub fn train_rows_at(
-        &self,
-        indices: &[usize],
-    ) -> Result<TrainRowsAtResult, ENNError> {
+    pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAtResult, ENNError> {
         self.model.backend.train_rows_at(indices)
     }
 
@@ -109,7 +104,6 @@ impl<'a> EnnRowAccess<'a> {
         self.model.backend.row_yvar(i)
     }
 }
-
 
 fn trim_search_cols(
     dist: Array2<f64>,

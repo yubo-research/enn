@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, Array3, ArrayView2};
 
 pub(crate) fn transpose_num_samples_last(draws: Array3<f64>) -> Array3<f64> {
@@ -81,8 +80,7 @@ impl EpistemicNearestNeighbors {
         function_seeds: &[i64],
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
-        let (draws, idx) =
-            self.posterior_function_draw_warped(x, params, function_seeds, flags)?;
+        let (draws, idx) = self.posterior_function_draw_warped(x, params, function_seeds, flags)?;
         Ok((self.publish_draws(draws), idx))
     }
 
@@ -104,14 +102,8 @@ impl EpistemicNearestNeighbors {
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
         let (y_z, _) = self.warp_observations(y_whatif, None)?;
-        let internals = compute_conditional_posterior_internals(
-            self,
-            x,
-            x_whatif,
-            &y_z.view(),
-            params,
-            flags,
-        )?;
+        let internals =
+            compute_conditional_posterior_internals(self, x, x_whatif, &y_z.view(), params, flags)?;
         Ok(ENNNormal::new(
             internals.mu.into_dyn(),
             internals.se.into_dyn(),
@@ -129,8 +121,7 @@ impl EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        let mut out =
-            self.conditional_posterior_warped(x_whatif, y_whatif, x, params, flags)?;
+        let mut out = self.conditional_posterior_warped(x_whatif, y_whatif, x, params, flags)?;
         self.naturalize_enn_normal(&mut out)?;
         Ok(out)
     }

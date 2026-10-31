@@ -12,7 +12,10 @@ use crate::normal_sample::{confidence_interval, sample_normal, z_crit};
 use crate::philox_hash::philox_normal_hash;
 
 fn close(got: f64, expect: f64) {
-    assert!((got - expect).abs() <= 1e-12 * expect.abs().max(1.0), "{got} vs {expect}");
+    assert!(
+        (got - expect).abs() <= 1e-12 * expect.abs().max(1.0),
+        "{got} vs {expect}"
+    );
 }
 
 #[test]

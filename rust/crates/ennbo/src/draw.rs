@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, Array3};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,7 +134,15 @@ mod tests {
         let mu = array![[1.0, 1.0], [2.0, 2.0]];
         let se = array![[0.1, 0.1], [0.2, 0.2]];
 
-        let internals = DrawInternals::new(idx.clone(), w, l2, mu, se.clone(), se, array![[0.0, 0.0], [0.0, 0.0]]);
+        let internals = DrawInternals::new(
+            idx.clone(),
+            w,
+            l2,
+            mu,
+            se.clone(),
+            se,
+            array![[0.0, 0.0], [0.0, 0.0]],
+        );
 
         assert_eq!(internals.n_queries(), 2);
         assert_eq!(internals.n_neighbors(), 2);

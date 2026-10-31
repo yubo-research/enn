@@ -1,4 +1,3 @@
-
 use ndarray::{ArrayView1, ArrayView2};
 use thiserror::Error;
 
@@ -16,7 +15,6 @@ pub fn hypervolume_2d_max(
     y: &ArrayView2<f64>,
     ref_point: &ArrayView1<f64>,
 ) -> Result<f64, HypervolumeError> {
-
     if y.ndim() != 2 {
         return Err(HypervolumeError::InvalidDimension(y.shape().to_vec()));
     }
@@ -27,14 +25,12 @@ pub fn hypervolume_2d_max(
         return Err(HypervolumeError::InvalidRefPoint(ref_point.len()));
     }
 
-
     if y.nrows() == 0 {
         return Ok(0.0);
     }
 
     let ref0 = ref_point[0];
     let ref1 = ref_point[1];
-
 
     let mut dominating: Vec<(f64, f64)> = Vec::with_capacity(y.nrows());
     for row in y.rows() {
@@ -45,15 +41,11 @@ pub fn hypervolume_2d_max(
         }
     }
 
-
     if dominating.is_empty() {
         return Ok(0.0);
     }
 
-
-
     dominating.sort_by(|a, b| b.0.total_cmp(&a.0));
-
 
     let mut hv = 0.0;
     let mut best_y1 = ref1;
@@ -61,18 +53,15 @@ pub fn hypervolume_2d_max(
     for i in 0..dominating.len() {
         let (x0, y1) = dominating[i];
 
-
         if y1 > best_y1 {
             best_y1 = y1;
         }
-
 
         let x_next = if i + 1 < dominating.len() {
             dominating[i + 1].0
         } else {
             ref0
         };
-
 
         hv += (x0 - x_next) * (best_y1 - ref1);
     }

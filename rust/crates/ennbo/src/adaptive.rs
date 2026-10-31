@@ -3,6 +3,7 @@ use crate::adaptive_geometry::invalid;
 use crate::adaptive_predictor::{Choice, Epoch};
 use crate::adaptive_scales::{ColumnScales, STATIONARY_FORGET};
 use crate::adaptive_selection::fit_epoch;
+use crate::adaptive_weight::{GeometryWeight, PRIOR_WEIGHT};
 use crate::error::ENNError;
 use ndarray::{Array2, Axis};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
@@ -15,6 +16,8 @@ pub struct AdaptiveSemanticENN {
     rng: StdRng,
     sample: Option<(Array2<f64>, Array2<f64>, Vec<f64>)>,
     scales: Option<ColumnScales>,
+    weight_state: Option<GeometryWeight>,
+    direction: Option<Array2<f64>>,
     epoch: Option<Epoch>,
     pub num_seen: usize,
     pub num_refits: usize,
@@ -45,6 +48,8 @@ impl AdaptiveSemanticENN {
             rng: StdRng::seed_from_u64(seed),
             sample: None,
             scales: None,
+            weight_state: None,
+            direction: None,
             epoch: None,
             num_seen: 0,
             num_refits: 0,
@@ -65,6 +70,20 @@ impl AdaptiveSemanticENN {
     ) -> Result<(), ENNError> {
         self.validate(&x, &y, weight)?;
         let count = x.nrows();
+        let mut next_weight = self.weight_state.clone();
+        if weight.is_none() {
+            let state =
+                next_weight.get_or_insert_with(|| GeometryWeight::new(x.ncols(), y.ncols()));
+            let direction = self.direction.clone();
+            for row in 0..count {
+                state.observe(x.row(row), y.row(row), direction.as_ref());
+            }
+        }
+        let geometry_weight = weight.unwrap_or_else(|| {
+            next_weight
+                .as_ref()
+                .map_or(PRIOR_WEIGHT, GeometryWeight::weight)
+        });
         let scales = self.updated_scales(&x, &y)?;
         let learned = scales.as_ref().map(ColumnScales::coefficients);
         let mut rng = self.rng.clone();
@@ -95,11 +114,13 @@ impl AdaptiveSemanticENN {
             &self.metadata,
             self.linear_mean,
             &self.adaptation,
-            weight,
+            Some(geometry_weight),
             learned.as_ref(),
         )?;
         self.sample = Some(sample);
         self.scales = scales;
+        self.weight_state = next_weight;
+        self.direction = Some(active_direction(&epoch));
         self.epoch = Some(epoch);
         self.rng = rng;
         self.num_seen += count;
@@ -124,9 +145,10 @@ impl AdaptiveSemanticENN {
         let Some(bounds) = &self.metadata.bounds else {
             return Ok(None);
         };
-        let mut state = self.scales.clone().unwrap_or_else(|| {
-            ColumnScales::new(projection, y.ncols(), STATIONARY_FORGET)
-        });
+        let mut state = self
+            .scales
+            .clone()
+            .unwrap_or_else(|| ColumnScales::new(projection, y.ncols(), STATIONARY_FORGET));
         state.observe_rows(x, y, bounds)?;
         Ok(Some(state))
     }
@@ -134,6 +156,13 @@ impl AdaptiveSemanticENN {
     #[cfg(test)]
     pub(crate) fn column_scale(&self) -> Option<ndarray::Array1<f64>> {
         self.scales.as_ref().map(ColumnScales::coefficients)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn learned_weight(&self) -> f64 {
+        self.weight_state
+            .as_ref()
+            .map_or(PRIOR_WEIGHT, GeometryWeight::weight)
     }
 
     fn validate(
@@ -191,5 +220,14 @@ impl AdaptiveSemanticENN {
             return Ok((empty.clone(), empty));
         }
         epoch.posterior(x)
+    }
+}
+
+fn active_direction(epoch: &Epoch) -> Array2<f64> {
+    let basis = &epoch.predictor.basis;
+    if epoch.predictor.choice.geometry == "quadratic" {
+        basis.quadratic.clone()
+    } else {
+        basis.linear.clone()
     }
 }

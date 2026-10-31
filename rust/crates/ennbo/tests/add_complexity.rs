@@ -16,7 +16,11 @@ fn row_f64(i: usize) -> f64 {
     f64::from(u32::try_from(i).unwrap_or(u32::MAX))
 }
 
-fn cached_array<F>(cache: &OnceLock<Mutex<HashMap<usize, Array2<f64>>>>, n: usize, build: F) -> Array2<f64>
+fn cached_array<F>(
+    cache: &OnceLock<Mutex<HashMap<usize, Array2<f64>>>>,
+    n: usize,
+    build: F,
+) -> Array2<f64>
 where
     F: FnOnce(usize) -> Array2<f64>,
 {
@@ -116,8 +120,7 @@ fn timed_single_row_adds_with_yvar(
             ],
         )
         .unwrap();
-        let y = Array2::from_shape_vec((1, 1), vec![fi.mul_add(0.013, 10_000.0).cos()])
-            .unwrap();
+        let y = Array2::from_shape_vec((1, 1), vec![fi.mul_add(0.013, 10_000.0).cos()]).unwrap();
         let yvar = if with_yvar {
             Some(deterministic_yvar(1))
         } else {
@@ -167,7 +170,9 @@ fn flat_growth_violation(
         .map(|(_, t)| *t)
         .expect("baseline row count must be measured");
     if baseline_secs <= 0.0 {
-        return Some(format!("baseline timing must be positive: {measurements:?}"));
+        return Some(format!(
+            "baseline timing must be positive: {measurements:?}"
+        ));
     }
 
     let budget_secs = baseline_secs * MAX_SECS_PER_BASELINE_SEC;
@@ -198,10 +203,7 @@ fn assert_flat_growth_for_config(scale_x: bool, with_yvar: bool) {
         let measurements = measure_flat_growth(scale_x, with_yvar);
         last_measurements.clone_from(&measurements);
         if let Some(message) = flat_growth_violation(&measurements, scale_x, with_yvar) {
-            assert!(
-                attempt + 1 != MAX_MEASUREMENT_ATTEMPTS,
-                "{message}",
-            );
+            assert!(attempt + 1 != MAX_MEASUREMENT_ATTEMPTS, "{message}",);
             continue;
         }
         return;

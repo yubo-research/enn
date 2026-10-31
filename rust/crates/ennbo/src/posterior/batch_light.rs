@@ -1,4 +1,3 @@
-
 use ndarray::{Array3, ArrayView1, ArrayView2, Axis};
 
 use super::light::{

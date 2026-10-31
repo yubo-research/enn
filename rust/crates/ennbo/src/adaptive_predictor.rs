@@ -39,13 +39,8 @@ impl Predictor {
         let features = basis.features(x, &choice.geometry, choice.weight)?;
         let target = basis.target(x, y, linear_mean);
         let scaled = choice.geometry == "scales";
-        let mut model = EpistemicNearestNeighbors::new(
-            features,
-            target,
-            None,
-            scaled,
-            IndexDriver::Flat,
-        )?;
+        let mut model =
+            EpistemicNearestNeighbors::new(features, target, None, scaled, IndexDriver::Flat)?;
         if scaled {
             install_column_scale(&mut model, &basis.column_scale)?;
         }

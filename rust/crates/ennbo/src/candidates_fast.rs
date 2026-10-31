@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView1};
 use rand::Rng;
 

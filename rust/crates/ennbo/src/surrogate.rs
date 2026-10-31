@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, Array3, ArrayView2};
 use rand::RngCore;
 use rand::SeedableRng;
@@ -90,11 +89,19 @@ impl Default for ENNSurrogateConfig {
 
 impl ENNSurrogateConfig {
     pub fn validate(&self, num_dim: usize) -> Result<(), ENNError> {
-        crate::semantic::validate(self.semantic_projection.as_deref(), num_dim, self.semantic_only)?;
+        crate::semantic::validate(
+            self.semantic_projection.as_deref(),
+            num_dim,
+            self.semantic_only,
+        )?;
         if self.tied_dims.is_empty() {
             return Ok(());
         }
-        let dimensions = crate::semantic::feature_count(self.semantic_projection.as_deref(), num_dim, self.semantic_only);
+        let dimensions = crate::semantic::feature_count(
+            self.semantic_projection.as_deref(),
+            num_dim,
+            self.semantic_only,
+        );
         crate::metric_weights::validate_tied_dims(&self.tied_dims, dimensions)
     }
 
@@ -103,7 +110,6 @@ impl ENNSurrogateConfig {
             ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
         })
     }
-
 }
 
 pub struct ENNSurrogate {
@@ -176,7 +182,11 @@ impl ENNSurrogate {
         Ok(())
     }
 
-    fn apply_plan(&mut self, plan: AppendPlan, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
+    fn apply_plan(
+        &mut self,
+        plan: AppendPlan,
+        rng: &mut rand::rngs::StdRng,
+    ) -> Result<(), ENNError> {
         if plan.sync {
             self.fitted_model()?.ensure_index_sync()?;
         }
@@ -184,7 +194,9 @@ impl ENNSurrogate {
             self.search_scales(rng)?;
         }
         if plan.release {
-            self.fitted_model()?.index_access().release_observation_pages()?;
+            self.fitted_model()?
+                .index_access()
+                .release_observation_pages()?;
         }
         Ok(())
     }
@@ -201,7 +213,8 @@ impl ENNSurrogate {
             FitState::Frozen { model, .. } => model.add(x_new, y_new, yvar_new)?,
             FitState::Searched { model, fit } => {
                 model.add(x_new, y_new, yvar_new)?;
-                fit.fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
+                fit.fitter
+                    .tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
             }
         }
         let has_params = self.state.params().is_some();
@@ -322,8 +335,12 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
-        let Some(model) = self.state.model() else { return Ok(None); };
-        if model.is_empty() { return Ok(None); }
+        let Some(model) = self.state.model() else {
+            return Ok(None);
+        };
+        if model.is_empty() {
+            return Ok(None);
+        }
         let indices: Vec<_> = (0..model.len()).collect();
         if let Some(x) = &self.original_x {
             return Ok(Some(x.gather(&indices)?));
@@ -344,10 +361,17 @@ impl Surrogate for ENNSurrogate {
         let warm = self.state.params().copied();
         self.state = FitState::Unfitted;
         self.original_x = None;
-        let features = crate::semantic::features(x, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
+        let features = crate::semantic::features(
+            x,
+            self.config.semantic_projection.as_deref(),
+            self.config.semantic_only,
+        )?;
         self.start_model(&features.view(), y, yvar, warm, &mut local_rng)?;
         if self.config.semantic_projection.is_some() {
-            self.original_x = Some(crate::input_history::InputHistory::for_model(x.to_owned(), self.fitted_model()?)?);
+            self.original_x = Some(crate::input_history::InputHistory::for_model(
+                x.to_owned(),
+                self.fitted_model()?,
+            )?);
         }
         Ok(())
     }
@@ -362,12 +386,19 @@ impl Surrogate for ENNSurrogate {
         let mut seed_bytes = [0u8; 32];
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
-        let features = crate::semantic::features(x_new, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
+        let features = crate::semantic::features(
+            x_new,
+            self.config.semantic_projection.as_deref(),
+            self.config.semantic_only,
+        )?;
         self.fit_append_internal(&features.view(), y_new, yvar_new, &mut local_rng)?;
         if let Some(history) = &mut self.original_x {
             history.append(x_new)?;
         } else if self.config.semantic_projection.is_some() {
-            self.original_x = Some(crate::input_history::InputHistory::for_model(x_new.to_owned(), self.fitted_model()?)?);
+            self.original_x = Some(crate::input_history::InputHistory::for_model(
+                x_new.to_owned(),
+                self.fitted_model()?,
+            )?);
         }
         Ok(())
     }
@@ -382,9 +413,6 @@ impl Surrogate for ENNSurrogate {
 
     fn wait_for_background_flush(&self) -> Result<(), ENNError> {
         if let Some(model) = self.state.model() {
-
-
-
             model.backend.wait_for_flush()
         } else {
             Ok(())
@@ -403,7 +431,10 @@ impl Surrogate for ENNSurrogate {
         let owned_store = match self.state.model() {
             Some(model) => {
                 model.backend.wait_for_flush()?;
-                self.config.layout.work_dir().map(std::path::Path::to_path_buf)
+                self.config
+                    .layout
+                    .work_dir()
+                    .map(std::path::Path::to_path_buf)
             }
             None => None,
         };
@@ -419,7 +450,11 @@ impl Surrogate for ENNSurrogate {
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {
         let model = self.fitted_model()?;
         let params = self.params_or_default()?;
-        let features = crate::semantic::features(x, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
+        let features = crate::semantic::features(
+            x,
+            self.config.semantic_projection.as_deref(),
+            self.config.semantic_only,
+        )?;
         let x = &features.view();
 
         let flags = PosteriorFlags::new();
@@ -435,7 +470,8 @@ impl Surrogate for ENNSurrogate {
             .map_err(|e| ENNError::InvalidParameter(format!("Shape error: {}", e)))?;
 
         if let Some(cal) = self.state.calibrator() {
-            let (mu, se) = crate::surrogate_affine::apply_prediction(cal, mu, se, model.y_bounds())?;
+            let (mu, se) =
+                crate::surrogate_affine::apply_prediction(cal, mu, se, model.y_bounds())?;
             return Ok(SurrogatePrediction { mu, se });
         }
         Ok(SurrogatePrediction { mu, se })
@@ -449,9 +485,12 @@ impl Surrogate for ENNSurrogate {
     ) -> Result<Array3<f64>, ENNError> {
         let model = self.fitted_model()?;
         let params = self.params_or_default()?;
-        let features = crate::semantic::features(x, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
+        let features = crate::semantic::features(
+            x,
+            self.config.semantic_projection.as_deref(),
+            self.config.semantic_only,
+        )?;
         let x = &features.view();
-
 
         let mut seed_bytes = [0u8; 8];
         rng.fill_bytes(&mut seed_bytes);
@@ -459,10 +498,21 @@ impl Surrogate for ENNSurrogate {
         let function_seeds: Vec<i64> = (0..num_samples as i64).map(|i| base_seed + i).collect();
 
         if let Some(cal) = self.state.calibrator() {
-            return crate::surrogate_affine::calibrated_sample(model, &params, cal, x, num_samples, rng);
+            return crate::surrogate_affine::calibrated_sample(
+                model,
+                &params,
+                cal,
+                x,
+                num_samples,
+                rng,
+            );
         }
-        let (draws, _) =
-            model.posterior_function_draw_warped(x, &params, &function_seeds, &Default::default())?;
+        let (draws, _) = model.posterior_function_draw_warped(
+            x,
+            &params,
+            &function_seeds,
+            &Default::default(),
+        )?;
 
         Ok(draws)
     }
@@ -473,9 +523,13 @@ impl Surrogate for ENNSurrogate {
         }
         let weights = self.state.model()?.metric_weights()?;
         let weights = crate::semantic::original_weights(
-            weights, self.config.semantic_projection.as_deref(), self.config.semantic_only,
+            weights,
+            self.config.semantic_projection.as_deref(),
+            self.config.semantic_only,
         );
-        Some(Array1::from(crate::metric_weights::trust_region_sides(&weights)))
+        Some(Array1::from(crate::metric_weights::trust_region_sides(
+            &weights,
+        )))
     }
 }
 
@@ -501,10 +555,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         surrogate.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
 
-
         assert!(surrogate.model().is_some());
         assert!(surrogate.params().is_some());
-
 
         let x_query = array![[0.5, 0.5]];
         let pred = surrogate.predict(&x_query.view()).unwrap();
@@ -531,7 +583,12 @@ mod tests {
         assert_eq!(params.epistemic_variance_scale, 1.0);
         assert_eq!(params.aleatoric_variance_scale, 0.0);
         surrogate
-            .fit_append(&array![[0.2, 0.2]].view(), &array![[0.3]].view(), None, &mut rng)
+            .fit_append(
+                &array![[0.2, 0.2]].view(),
+                &array![[0.3]].view(),
+                None,
+                &mut rng,
+            )
             .unwrap();
         let params = surrogate.params().unwrap();
         assert_eq!(params.epistemic_variance_scale, 1.0);
@@ -555,9 +612,14 @@ mod tests {
             search.affine_calibrate = true;
         }
         let mut on = ENNSurrogate::new(on_cfg);
-        off_a.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1)).unwrap();
-        off_b.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1)).unwrap();
-        on.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1)).unwrap();
+        off_a
+            .fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1))
+            .unwrap();
+        off_b
+            .fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1))
+            .unwrap();
+        on.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(1))
+            .unwrap();
         let a = off_a.predict(&query.view()).unwrap();
         let b = off_b.predict(&query.view()).unwrap();
         let c = on.predict(&query.view()).unwrap();
@@ -593,14 +655,26 @@ mod tests {
         sur_inc
             .fit(&x1.view(), &y1.view(), Some(&yvar1.view()), &mut rng_a)
             .unwrap();
-        let v_inc = sur_inc.model().unwrap().rows().row_yvar(0).unwrap().unwrap()[[0]];
+        let v_inc = sur_inc
+            .model()
+            .unwrap()
+            .rows()
+            .row_yvar(0)
+            .unwrap()
+            .unwrap()[[0]];
 
         let mut rng_b = StdRng::seed_from_u64(11);
         let mut sur_full = ENNSurrogate::new(config);
         sur_full
             .fit(&x1.view(), &y1.view(), Some(&yvar1.view()), &mut rng_b)
             .unwrap();
-        let v_full = sur_full.model().unwrap().rows().row_yvar(0).unwrap().unwrap()[[0]];
+        let v_full = sur_full
+            .model()
+            .unwrap()
+            .rows()
+            .row_yvar(0)
+            .unwrap()
+            .unwrap()[[0]];
 
         assert!(
             (v_inc - v_full).abs() < 1e-9,
@@ -654,21 +728,14 @@ mod tests {
         let y = array![[0.1], [0.2], [0.8], [0.9]];
         let bounds = array![[0.0, 1.0]];
         let mut fit_nat = crate::fitter::ENNFitter::new(2);
-        fit_nat
-            .tell(&x.view(), &y.view(), None, None)
-            .unwrap();
+        fit_nat.tell(&x.view(), &y.view(), None, None).unwrap();
         let nat_std = fit_nat.y_std()[0];
         let y_z = crate::y_bounds::warp_y(y.view(), &bounds).unwrap();
         let mut fit_z = crate::fitter::ENNFitter::new(2);
-        fit_z
-            .tell(&x.view(), &y_z.view(), None, None)
-            .unwrap();
+        fit_z.tell(&x.view(), &y_z.view(), None, None).unwrap();
         let z_std = fit_z.y_std()[0];
 
-        assert!(
-            (nat_std - 0.35355).abs() < 0.01,
-            "natural y_std={nat_std}"
-        );
+        assert!((nat_std - 0.35355).abs() < 0.01, "natural y_std={nat_std}");
         assert!(z_std > 1.5, "warped y_std={z_std}");
 
         let mut fit_bounded = crate::fitter::ENNFitter::new(2);
@@ -754,14 +821,16 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(7);
         let x = Array2::from_shape_fn((4_096, 2), |(i, j)| (i + j) as f64 * 0.001);
         let y = Array2::from_shape_fn((4_096, 1), |(i, _)| (i as f64) * 0.01);
-        sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
+        sur.fit_append(&x.view(), &y.view(), None, &mut rng)
+            .unwrap();
         sur.wait_for_background_flush().unwrap();
         let n = sur.model().expect("model").len();
         assert!(
             indexed_rows(dir.path()) < n,
             "first bulk disk tell must leave the index short of {n} rows"
         );
-        sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
+        sur.fit_append(&x.view(), &y.view(), None, &mut rng)
+            .unwrap();
         sur.wait_for_background_flush().unwrap();
         assert_eq!(indexed_rows(dir.path()), sur.model().expect("model").len());
     }
@@ -784,7 +853,6 @@ mod tests {
         sur.fit(&x0.view(), &y0.view(), None, &mut rng).unwrap();
         assert!(sur.params().is_some(), "initial fit must set params");
 
-
         let before = std::fs::metadata(dir.path().join("indexed_rows.bin"))
             .ok()
             .map(|m| m.len());
@@ -802,7 +870,6 @@ mod tests {
             "streaming one-row disk fit_append must not rewrite indexed_rows.bin"
         );
         assert_eq!(sur.model().expect("model").len(), 23);
-
 
         sur.wait_for_background_flush().unwrap();
         let after_wait = std::fs::metadata(dir.path().join("indexed_rows.bin"))
@@ -829,9 +896,15 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(5);
         let x0 = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let y0 = array![[0.0], [1.0], [0.5], [2.0]];
-        sur.fit_append(&x0.view(), &y0.view(), None, &mut rng).unwrap();
-        sur.fit_append(&array![[0.5, 0.5]].view(), &array![[0.7]].view(), None, &mut rng)
+        sur.fit_append(&x0.view(), &y0.view(), None, &mut rng)
             .unwrap();
+        sur.fit_append(
+            &array![[0.5, 0.5]].view(),
+            &array![[0.7]].view(),
+            None,
+            &mut rng,
+        )
+        .unwrap();
         let other = dir.path().join("not_bpann.txt");
         std::fs::write(&other, "keep").unwrap();
 
@@ -840,7 +913,8 @@ mod tests {
 
         let x1 = array![[0.2, 0.2], [0.8, 0.3], [0.4, 0.9]];
         let y1 = array![[3.0], [4.0], [5.0]];
-        sur.fit_append(&x1.view(), &y1.view(), None, &mut rng).unwrap();
+        sur.fit_append(&x1.view(), &y1.view(), None, &mut rng)
+            .unwrap();
         assert_eq!(sur.observation_count(), Some(3));
         let ys = sur.observations_y().unwrap().unwrap();
         assert_eq!(ys, y1);
@@ -865,7 +939,10 @@ mod tests {
 
         let x_query = array![[0.5, 0.5]];
         let mu = sur.predict(&x_query.view()).unwrap().mu[[0, 0]];
-        assert!(mu > 0.0 && mu < 1.0, "natural mu must lie in open (0,1); got {mu}");
+        assert!(
+            mu > 0.0 && mu < 1.0,
+            "natural mu must lie in open (0,1); got {mu}"
+        );
     }
 
     #[test]
@@ -883,7 +960,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(3);
         sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
 
-        let batch = Surrogate::observations_y(&sur).unwrap().expect("observations");
+        let batch = Surrogate::observations_y(&sur)
+            .unwrap()
+            .expect("observations");
         assert_eq!(batch.shape(), &[4, 1]);
         for i in 0..4 {
             let row = Surrogate::observation_row_y(&sur, i).unwrap();
@@ -928,7 +1007,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(5);
         let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let y = array![[0.0], [1.0], [0.5], [2.0]];
-        sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
+        sur.fit_append(&x.view(), &y.view(), None, &mut rng)
+            .unwrap();
         if let Some(w) = weights {
             let FitState::Searched { model, .. } = &mut sur.state else {
                 panic!("Draw config must reach the Searched state");
@@ -956,7 +1036,8 @@ mod tests {
             if use_fit {
                 sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
             } else {
-                sur.fit_append(&x.view(), &y.view(), None, &mut rng).unwrap();
+                sur.fit_append(&x.view(), &y.view(), None, &mut rng)
+                    .unwrap();
             }
             sur.model().unwrap().metric_snapshot().map(|s| s.num_seen)
         };
@@ -988,7 +1069,10 @@ mod tests {
         let auto = |name: &str| EnnLayout::DiskAuto {
             work_dir: dir.path().join(name),
         };
-        assert_eq!(fitted_sides(auto("a"), None).unwrap().to_vec(), vec![1.0, 1.0]);
+        assert_eq!(
+            fitted_sides(auto("a"), None).unwrap().to_vec(),
+            vec![1.0, 1.0]
+        );
         let s = fitted_sides(auto("b"), Some(&[1.0, 4.0])).unwrap();
         assert!((s[0] - 2.0).abs() < 1e-12 && (s[1] - 0.5).abs() < 1e-12);
         assert!(fitted_sides(EnnLayout::flat(false), None).is_none());

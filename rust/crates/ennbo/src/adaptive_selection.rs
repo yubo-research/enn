@@ -2,6 +2,7 @@ use crate::adaptive_basis::{Basis, Metadata};
 use crate::adaptive_geometry::invalid;
 use crate::adaptive_predictor::{Choice, Epoch, Predictor};
 use crate::adaptive_scales::bake;
+use crate::adaptive_weight::PRIOR_WEIGHT;
 use crate::error::ENNError;
 use crate::params::{ENNParams, PosteriorFlags};
 use ndarray::{s, Array1, Array2, Array3, Axis, Ix3};
@@ -94,9 +95,7 @@ fn geometries(
         choices.insert(choices.len().min(2), ("scales", 1.0));
     }
     for geometry in ["linear", "quadratic"] {
-        for weight in weight.map_or_else(|| vec![3.0, 30.0], |v| vec![v]) {
-            choices.push((geometry, weight));
-        }
+        choices.push((geometry, weight.unwrap_or(PRIOR_WEIGHT)));
     }
     choices
 }
@@ -201,4 +200,27 @@ pub(crate) fn fit_epoch(
         floor,
         calibration,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn directional(choices: &[(&str, f64)], name: &str) -> Vec<f64> {
+        choices
+            .iter()
+            .filter(|choice| choice.0 == name)
+            .map(|choice| choice.1)
+            .collect()
+    }
+
+    #[test]
+    fn linear_and_quadratic_are_scored_at_one_weight() {
+        let open = geometries(&Metadata::default(), "all", None, false);
+        assert_eq!(directional(&open, "linear"), vec![PRIOR_WEIGHT]);
+        assert_eq!(directional(&open, "quadratic"), vec![PRIOR_WEIGHT]);
+        let pinned = geometries(&Metadata::default(), "all", Some(30.0), false);
+        assert_eq!(directional(&pinned, "linear"), vec![30.0]);
+        assert_eq!(directional(&pinned, "quadratic"), vec![30.0]);
+    }
 }

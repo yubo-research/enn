@@ -1,10 +1,10 @@
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use rand::RngCore;
 
-use crate::trust_region_config::TrustRegionConfig;
 use crate::error::ENNError;
 use crate::morbo_trust_region::{MorboTrustRegion, Rescalarize};
 use crate::trust_region::{TrustRegionError, TurboTrustRegion};
+use crate::trust_region_config::TrustRegionConfig;
 
 #[derive(Debug)]
 pub enum TrustRegionState {
@@ -19,9 +19,9 @@ impl TrustRegionState {
         rng: &mut dyn RngCore,
     ) -> Result<Self, TrustRegionError> {
         match config {
-            TrustRegionConfig::Turbo(cfg) => {
-                Ok(TrustRegionState::Turbo(TurboTrustRegion::new(num_dim, *cfg)))
-            }
+            TrustRegionConfig::Turbo(cfg) => Ok(TrustRegionState::Turbo(TurboTrustRegion::new(
+                num_dim, *cfg,
+            ))),
             TrustRegionConfig::Morbo(settings) => Ok(TrustRegionState::Morbo(Box::new(
                 MorboTrustRegion::new(num_dim, settings.clone(), rng)?,
             ))),
@@ -249,9 +249,9 @@ mod tests {
 
     use ndarray::array;
 
-    use crate::trust_region_config::TrustRegionConfig;
     use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
     use crate::trust_region::TRLengthConfig;
+    use crate::trust_region_config::TrustRegionConfig;
 
     #[test]
     fn trust_region_state_morbo_from_config() {

@@ -1,12 +1,11 @@
-
 mod batch_light;
 pub use batch_light::small_flat_selection_means;
-mod dual_api;
 mod draw_compute;
+mod dual_api;
 mod light;
 mod neighbor;
-mod small_flat;
 pub mod neighbor_dist;
+mod small_flat;
 pub(crate) use neighbor::index_search;
 
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
@@ -46,7 +45,6 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-
         self.posterior_warped(x, params, flags)
     }
 
@@ -153,14 +151,8 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
             );
         }
         let (y_z, _) = self.warp_observations(y_whatif, None)?;
-        let internals = compute_conditional_posterior_internals(
-            self,
-            x,
-            x_whatif,
-            &y_z.view(),
-            params,
-            flags,
-        )?;
+        let internals =
+            compute_conditional_posterior_internals(self, x, x_whatif, &y_z.view(), params, flags)?;
         let draws = draw_from_internals(self, &internals, function_seeds)?;
         Ok((self.publish_draws(draws), internals.idx))
     }
@@ -239,12 +231,16 @@ fn assign_posterior_results(
     se_all
         .slice_axis_mut(Axis(0), slice)
         .assign(&internals.se.slice_axis(Axis(0), ndarray::Slice::from(..)));
-    se_epi_all
-        .slice_axis_mut(Axis(0), slice)
-        .assign(&internals.se_epi.slice_axis(Axis(0), ndarray::Slice::from(..)));
-    se_ale_all
-        .slice_axis_mut(Axis(0), slice)
-        .assign(&internals.se_ale.slice_axis(Axis(0), ndarray::Slice::from(..)));
+    se_epi_all.slice_axis_mut(Axis(0), slice).assign(
+        &internals
+            .se_epi
+            .slice_axis(Axis(0), ndarray::Slice::from(..)),
+    );
+    se_ale_all.slice_axis_mut(Axis(0), slice).assign(
+        &internals
+            .se_ale
+            .slice_axis(Axis(0), ndarray::Slice::from(..)),
+    );
 }
 
 pub struct WeightedPosteriorData<'a> {
@@ -280,12 +276,15 @@ pub fn compute_weighted_posterior(
         for i in 0..n_query {
             for (j, &neighbor_idx) in data.idx[i].iter().enumerate() {
                 if neighbor_idx < n_train {
-                    let yvar_row = model.rows().row_yvar(neighbor_idx).expect("row_yvar").expect("yvar");
+                    let yvar_row = model
+                        .rows()
+                        .row_yvar(neighbor_idx)
+                        .expect("row_yvar")
+                        .expect("yvar");
                     for m in 0..model.num_metrics() {
                         yvar_neighbors[[i * k + j, m]] = yvar_row[m];
                     }
                 }
-
             }
         }
         Some(yvar_neighbors)
@@ -325,7 +324,14 @@ fn stats_from_neighbor_weights(
     aleatoric_scale: f64,
     y_scale: &ArrayView1<f64>,
     y_scale_sq: &[f64],
-) -> (Array3<f64>, Array2<f64>, Array2<f64>, Array2<f64>, Array2<f64>, Array2<f64>) {
+) -> (
+    Array3<f64>,
+    Array2<f64>,
+    Array2<f64>,
+    Array2<f64>,
+    Array2<f64>,
+    Array2<f64>,
+) {
     let yvar_ref = yvar_neighbors.as_ref();
     let mut w_normalized = Array3::zeros((n_query, k, num_metrics));
     let mut l2 = Array2::zeros((n_query, num_metrics));
@@ -394,11 +400,9 @@ pub fn compute_weighted_stats_impl(
     let k = dist2s.ncols();
     let num_metrics = y_scale.len();
 
-
     let epistemic_scale = params.epistemic_variance_scale;
     let aleatoric_scale = params.aleatoric_variance_scale;
     let y_scale_sq: Vec<f64> = y_scale.iter().map(|&v| v * v).collect();
-
 
     let mut var_epi = Array2::zeros((n_query, k));
     for (i, mut row) in var_epi.rows_mut().into_iter().enumerate() {
@@ -407,7 +411,6 @@ pub fn compute_weighted_stats_impl(
             *v = epistemic_scale * dist_row[j];
         }
     }
-
 
     let mut w = Array2::zeros((n_query * k, num_metrics));
     let yvar_ref = yvar_neighbors.as_ref();

@@ -69,19 +69,13 @@ fn faiss_map_err(e: FaissError) -> IndexError {
 }
 
 impl FaissBackend {
-    pub(crate) fn new(
-        num_dim: usize,
-        train_scaled: &ArrayView2<f64>,
-    ) -> Result<Self, IndexError> {
+    pub(crate) fn new(num_dim: usize, train_scaled: &ArrayView2<f64>) -> Result<Self, IndexError> {
         prefer_faiss_simd_distances();
         let inner = Self::make_index(num_dim, train_scaled)?;
         Ok(Self { inner, num_dim })
     }
 
-    fn make_index(
-        num_dim: usize,
-        train_scaled: &ArrayView2<f64>,
-    ) -> Result<IndexImpl, IndexError> {
+    fn make_index(num_dim: usize, train_scaled: &ArrayView2<f64>) -> Result<IndexImpl, IndexError> {
         let mut index =
             index_factory(num_dim as u32, faiss_spec(), MetricType::L2).map_err(faiss_map_err)?;
         if train_scaled.nrows() > 0 {
@@ -138,7 +132,10 @@ impl FaissBackend {
         let n_query = queries_scaled.nrows();
         let q = arr2_rows_to_f32(queries_scaled);
         let res = {
-            let components = self.len().saturating_mul(n_query).saturating_mul(self.num_dim);
+            let components = self
+                .len()
+                .saturating_mul(n_query)
+                .saturating_mul(self.num_dim);
             let _budget = (components <= SERIAL_FLAT_COMPONENT_LIMIT).then(SerialSearch::new);
             self.inner.search(&q, k_eff)
         }
@@ -203,8 +200,7 @@ impl MmapColumnStore {
             .set_len(new_len as u64)
             .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
         self.mmap = unsafe {
-            MmapMut::map_mut(&self.file)
-                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?
+            MmapMut::map_mut(&self.file).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
         };
         Ok(())
     }
@@ -233,9 +229,8 @@ impl MmapColumnStore {
             .map_err(|e| ENNError::InvalidParameter(e.to_string()))?
             .len();
         let row_bytes = ncols * std::mem::size_of::<f64>();
-        let nrows = known_nrows.unwrap_or_else(|| {
-            (len as usize).checked_div(row_bytes).unwrap_or(0)
-        });
+        let nrows =
+            known_nrows.unwrap_or_else(|| (len as usize).checked_div(row_bytes).unwrap_or(0));
         if known_nrows.is_some() && nrows * row_bytes > len as usize {
             return Err(ENNError::InvalidParameter(format!(
                 "known_nrows {nrows} exceeds train file bytes {len}"
@@ -270,13 +265,11 @@ impl MmapColumnStore {
         let byte_len = n * std::mem::size_of::<f64>();
         let dst = &mut self.mmap[offset..offset + byte_len];
 
-
         let contiguous = rows.as_standard_layout();
         let src = contiguous
             .as_slice()
             .expect("as_standard_layout yields a contiguous f64 slice");
-        let src_bytes =
-            unsafe { std::slice::from_raw_parts(src.as_ptr() as *const u8, byte_len) };
+        let src_bytes = unsafe { std::slice::from_raw_parts(src.as_ptr() as *const u8, byte_len) };
         dst.copy_from_slice(src_bytes);
         self.nrows = new_nrows;
         Ok(())
@@ -294,9 +287,8 @@ impl MmapColumnStore {
         let byte_start = start * std::mem::size_of::<f64>();
         let byte_end = byte_start + row_bytes;
         let bytes = &self.mmap[byte_start..byte_end];
-        let slice: &[f64] = unsafe {
-            std::slice::from_raw_parts(bytes.as_ptr() as *const f64, self.ncols)
-        };
+        let slice: &[f64] =
+            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const f64, self.ncols) };
         Ok(slice)
     }
 
@@ -312,11 +304,7 @@ impl MmapColumnStore {
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn mmap_row_range(
-        &self,
-        start: usize,
-        end: usize,
-    ) -> Result<Array2<f64>, ENNError> {
+    pub(crate) fn mmap_row_range(&self, start: usize, end: usize) -> Result<Array2<f64>, ENNError> {
         if start > end {
             return Err(ENNError::InvalidParameter(format!(
                 "mmap_row_range: start {start} > end {end}"
@@ -353,13 +341,9 @@ mod faiss_backend_tests {
         let train = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let mut backend = FaissBackend::new(2, &train.view()).unwrap();
         assert_eq!(backend.len(), 3);
-        backend
-            .add(&array![[1.0, 1.0]].view(), 3)
-            .unwrap();
+        backend.add(&array![[1.0, 1.0]].view(), 3).unwrap();
         assert_eq!(backend.len(), 4);
-        let (d, i) = backend
-            .search(&array![[0.0, 0.0]].view(), 2, 2)
-            .unwrap();
+        let (d, i) = backend.search(&array![[0.0, 0.0]].view(), 2, 2).unwrap();
         assert_eq!(i[[0, 0]], 0);
         assert!(d[[0, 0]] < 1e-5);
         backend.rebuild(&train.view()).unwrap();
@@ -386,7 +370,8 @@ mod faiss_backend_tests {
         use tempfile::TempDir;
 
         let dir = TempDir::new().expect("tempdir");
-        let store = MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        let store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
         assert_eq!(store.ncols, 2);
     }
 
@@ -395,7 +380,8 @@ mod faiss_backend_tests {
         use tempfile::TempDir;
 
         let dir = TempDir::new().expect("tempdir");
-        let store = MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        let store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
         assert_eq!(store.row_bytes(), 16);
     }
 
@@ -404,7 +390,8 @@ mod faiss_backend_tests {
         use tempfile::TempDir;
 
         let dir = TempDir::new().expect("tempdir");
-        let store = MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        let store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
         assert_eq!(store.bytes_for_rows(4), 64);
     }
 
@@ -549,10 +536,4 @@ mod flat_search_tests {
             }
         }
     }
-
-
-
-
-
-
 }

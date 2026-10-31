@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -125,8 +124,12 @@ impl EpistemicNearestNeighbors {
     }
 
     pub fn new_configured(
-        train_x: Array2<f64>, train_y: Array2<f64>, train_yvar: Option<Array2<f64>>,
-        layout: EnnLayout, y_bounds: Option<Array2<f64>>, tied_dims: Vec<Vec<usize>>,
+        train_x: Array2<f64>,
+        train_y: Array2<f64>,
+        train_yvar: Option<Array2<f64>>,
+        layout: EnnLayout,
+        y_bounds: Option<Array2<f64>>,
+        tied_dims: Vec<Vec<usize>>,
     ) -> Result<Self, ENNError> {
         crate::metric_weights::validate_tied_dims(&tied_dims, train_x.ncols())?;
         let auto_rows = (layout.metric_learning() == crate::metric_auto::MetricLearning::Auto)
@@ -153,7 +156,6 @@ impl EpistemicNearestNeighbors {
             None
         };
 
-
         if disk_reopen {
             if let Some(text) = meta_text.as_deref() {
                 if let Some(persisted) =
@@ -163,12 +165,7 @@ impl EpistemicNearestNeighbors {
                 }
             }
         }
-        let y_bounds = resolve_y_bounds(
-            y_bounds.as_ref(),
-            num_metrics,
-            meta_text.as_deref(),
-        )?;
-
+        let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics, meta_text.as_deref())?;
 
         let original_y = (!crate::y_bounds::is_identity_bounds(&y_bounds)).then(|| train_y.clone());
         let (train_y, train_yvar) = if disk_reopen {
@@ -182,13 +179,8 @@ impl EpistemicNearestNeighbors {
             Self::init_stats(&train_x, &train_y, scale_x);
 
         let stored_work_dir = disk_work_dir.clone();
-        let backend = EnnBackend::from_layout(
-            &layout,
-            train_x,
-            train_y,
-            train_yvar,
-            x_scale.clone(),
-        )?;
+        let backend =
+            EnnBackend::from_layout(&layout, train_x, train_y, train_yvar, x_scale.clone())?;
 
         let mut model = Self {
             original_y: None,
@@ -232,13 +224,7 @@ impl EpistemicNearestNeighbors {
         layout: EnnLayout,
         pending_flush_threshold: Option<usize>,
     ) -> Result<Self, ENNError> {
-        Self::new_empty_with_y_bounds(
-            num_dim,
-            num_metrics,
-            layout,
-            pending_flush_threshold,
-            None,
-        )
+        Self::new_empty_with_y_bounds(num_dim, num_metrics, layout, pending_flush_threshold, None)
     }
 
     fn validate_add(
@@ -293,7 +279,9 @@ impl EpistemicNearestNeighbors {
             self.backend.wait_for_flush()?;
             self.backend
                 .append_rows(x, &y_z.view(), yvar_view.as_ref())?;
-            if let Some(history) = &mut self.original_y { history.append(y)?; }
+            if let Some(history) = &mut self.original_y {
+                history.append(y)?;
+            }
             accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y_z.view());
             let n = self.backend.len();
             self.y_scale = scale_from_moments(n, self.num_metrics, &self.y_sum, &self.y_sumsq, 0.0);
@@ -490,7 +478,10 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
     if n == 0 {
         return Ok(());
     }
-    let (mut y_sum, mut y_sumsq) = (Array1::zeros(model.num_metrics), Array1::zeros(model.num_metrics));
+    let (mut y_sum, mut y_sumsq) = (
+        Array1::zeros(model.num_metrics),
+        Array1::zeros(model.num_metrics),
+    );
     let (mut x_sum, mut x_sumsq) = (Array1::zeros(model.num_dim), Array1::zeros(model.num_dim));
     for start in (0..n).step_by(STATS_CHUNK_ROWS) {
         let indices: Vec<usize> = (start..(start + STATS_CHUNK_ROWS).min(n)).collect();
@@ -508,7 +499,8 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
         model.x_sumsq = x_sumsq;
         model.x_scale = model.data_x_scale(n);
     }
-    model.backend
+    model
+        .backend
         .ensure_index_sync(model.scale_x, &model.x_scale)?;
     Ok(())
 }
@@ -609,11 +601,11 @@ mod tests {
     #[test]
     fn test_new_empty_and_row_accessors() {
         let mut model = EpistemicNearestNeighbors::new_empty(
-        2,
-        1,
-        crate::layout::EnnLayout::new(IndexDriver::Flat, None, false).unwrap(),
-        None,
-    )
+            2,
+            1,
+            crate::layout::EnnLayout::new(IndexDriver::Flat, None, false).unwrap(),
+            None,
+        )
         .unwrap();
         model
             .add(&array![[1.0, 2.0]].view(), &array![[3.0]].view(), None)
@@ -672,7 +664,13 @@ mod tests {
         };
         let built = open(x, y);
         let stats = |m: &EpistemicNearestNeighbors| {
-            (m.num_obs, m.y_sum.clone(), m.y_sumsq.clone(), m.x_sum.clone(), m.x_sumsq.clone())
+            (
+                m.num_obs,
+                m.y_sum.clone(),
+                m.y_sumsq.clone(),
+                m.x_sum.clone(),
+                m.x_sumsq.clone(),
+            )
         };
         let expected = stats(&built);
         drop(built);

@@ -2,7 +2,6 @@
 
 use super::{select_with_thompson, select_with_ucb};
 use crate::config::{turbo_enn_config, InitStrategy, SurrogateConfig};
-use approx::relative_eq;
 use crate::error::ENNError;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
 use crate::optimizer::Optimizer;
@@ -10,6 +9,7 @@ use crate::strategy::Strategy;
 use crate::surrogate::{Surrogate, SurrogatePrediction};
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::TrustRegionConfig;
+use approx::relative_eq;
 use ndarray::{array, Array1, Array2, Array3, ArrayView2};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
@@ -62,25 +62,46 @@ impl Surrogate for TieSurrogate {
         _yvar_new: Option<&ArrayView2<f64>>,
         _rng: &mut dyn RngCore,
     ) -> Result<(), ENNError> {
-        Err(ENNError::InvalidParameter("fit_append not supported".into()))
+        Err(ENNError::InvalidParameter(
+            "fit_append not supported".into(),
+        ))
     }
-    fn fitted_num_metrics(&self) -> Option<usize> { None }
-    fn observation_count(&self) -> Option<usize> { None }
+    fn fitted_num_metrics(&self) -> Option<usize> {
+        None
+    }
+    fn observation_count(&self) -> Option<usize> {
+        None
+    }
     fn observation_row_x(&self, _idx: usize) -> Result<Array1<f64>, ENNError> {
         Err(ENNError::InvalidParameter("unsupported".into()))
     }
     fn observation_row_y(&self, _idx: usize) -> Result<Array1<f64>, ENNError> {
         Err(ENNError::InvalidParameter("unsupported".into()))
     }
-    fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError> { Ok(None) }
-    fn naturalize_observations_y(&self, y_warped: Array2<f64>) -> Array2<f64> { y_warped }
-    fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> { Ok(y.to_owned()) }
-    fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> { Ok(None) }
-    fn schedule_background_flush(&self) -> Result<(), ENNError> { Ok(()) }
-    fn wait_for_background_flush(&self) -> Result<(), ENNError> { Ok(()) }
-    fn release_observation_pages(&self) -> Result<(), ENNError> { Ok(()) }
-    fn clear_observations(&mut self) -> Result<(), ENNError> { Ok(()) }
-
+    fn observations_y(&self) -> Result<Option<Array2<f64>>, ENNError> {
+        Ok(None)
+    }
+    fn naturalize_observations_y(&self, y_warped: Array2<f64>) -> Array2<f64> {
+        y_warped
+    }
+    fn warp_observations_y(&self, y: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
+        Ok(y.to_owned())
+    }
+    fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
+        Ok(None)
+    }
+    fn schedule_background_flush(&self) -> Result<(), ENNError> {
+        Ok(())
+    }
+    fn wait_for_background_flush(&self) -> Result<(), ENNError> {
+        Ok(())
+    }
+    fn release_observation_pages(&self) -> Result<(), ENNError> {
+        Ok(())
+    }
+    fn clear_observations(&mut self) -> Result<(), ENNError> {
+        Ok(())
+    }
 }
 
 fn morbo_optimizer_scalarize_ready(seed: u64) -> Optimizer {
@@ -93,8 +114,7 @@ fn morbo_optimizer_scalarize_ready(seed: u64) -> Optimizer {
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
     });
-    let mut opt =
-        Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
+    let mut opt = Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
     let y_fit = array![[1.0, 2.0], [2.0, 1.0], [1.5, 1.5]];
     let y_inc = array![2.0, 1.0];
     let morbo = opt.trust_region_mut().morbo_mut().expect("morbo tr");
@@ -106,12 +126,7 @@ fn morbo_optimizer_scalarize_ready(seed: u64) -> Optimizer {
 #[test]
 fn morbo_thompson_tie_break_should_vary_with_rng() {
     let opt = morbo_optimizer_scalarize_ready(10);
-    let x_cand = array![
-        [0.11, 0.21],
-        [0.12, 0.22],
-        [0.13, 0.23],
-        [0.14, 0.24],
-    ];
+    let x_cand = array![[0.11, 0.21], [0.12, 0.22], [0.13, 0.23], [0.14, 0.24],];
     let sur = TieSurrogate {
         sample_value: 1.0,
         mu: 0.0,
@@ -343,20 +358,9 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
     });
-    let mut opt =
-        Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
-    let x = array![
-        [0.1, 0.1],
-        [0.9, 0.1],
-        [0.1, 0.9],
-        [0.5, 0.5],
-    ];
-    let y = array![
-        [0.1, 0.9],
-        [0.9, 0.1],
-        [0.2, 0.8],
-        [0.5, 0.5],
-    ];
+    let mut opt = Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
+    let x = array![[0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.5, 0.5],];
+    let y = array![[0.1, 0.9], [0.9, 0.1], [0.2, 0.8], [0.5, 0.5],];
     opt.tell(&x.view(), &y.view(), None).unwrap();
 
     let morbo = opt.trust_region().morbo().expect("morbo");
@@ -371,7 +375,6 @@ fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
         ymax[0] > 0.7 && ymax[0] < 1.0 && ymax[1] > 0.7 && ymax[1] < 1.0,
         "tell ranges not natural: ymax={ymax:?}"
     );
-
 
     let y_all = opt.y_obs().expect("y_obs");
     opt.trust_region_mut().restart(Some(&mut rng));

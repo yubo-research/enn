@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::distributions::{Bernoulli, Uniform};
 use rand::rngs::StdRng;
@@ -81,14 +80,12 @@ pub fn generate_candidates<R: Rng + ?Sized>(
                 for i in 0..num_candidates {
                     let sample = engine.sample(rng)?;
                     for j in 0..num_dim {
-
                         let unit = sample[j];
                         candidates[[i, j]] = lower_1d[j] + unit * (upper_1d[j] - lower_1d[j]);
                     }
                 }
                 Ok(candidates)
             } else {
-
                 generate_uniform(&lower_1d, &upper_1d, num_candidates, rng)
             }
         }
@@ -116,12 +113,13 @@ pub fn generate_sobol_masked<R: Rng + ?Sized>(
 ) -> Result<Array2<f64>, ENNError> {
     let num_dim = x_center.len();
     if num_dim == 0 {
-        return Err(ENNError::InvalidParameter("num_dim must be > 0".to_string()));
+        return Err(ENNError::InvalidParameter(
+            "num_dim must be > 0".to_string(),
+        ));
     }
     let prob = (num_pert as f64 / num_dim as f64).min(1.0);
-    let bern = Bernoulli::new(prob).map_err(|e| {
-        ENNError::InvalidParameter(format!("binomial mask: {e}"))
-    })?;
+    let bern = Bernoulli::new(prob)
+        .map_err(|e| ENNError::InvalidParameter(format!("binomial mask: {e}")))?;
     let mut candidates = Array2::zeros((num_candidates, num_dim));
     for i in 0..num_candidates {
         for j in 0..num_dim {
@@ -313,7 +311,6 @@ pub fn generate_lhd<R: Rng + ?Sized>(
         let upper = bounds[[j, 1]];
         let range = upper - lower;
 
-
         let mut perm: Vec<usize> = (0..num_samples).collect();
 
         for i in (1..num_samples).rev() {
@@ -349,7 +346,6 @@ mod tests {
         let unit = to_unit(&x.view(), &bounds.view());
         let back = from_unit(&unit.view(), &bounds.view());
 
-
         for i in 0..x.nrows() {
             for j in 0..x.ncols() {
                 assert!((back[[i, j]] - x[[i, j]]).abs() < 1e-10);
@@ -368,7 +364,6 @@ mod tests {
         assert_eq!(candidates.nrows(), 10);
         assert_eq!(candidates.ncols(), 2);
 
-
         for i in 0..candidates.nrows() {
             for j in 0..candidates.ncols() {
                 assert!(candidates[[i, j]] >= lower[j]);
@@ -386,7 +381,6 @@ mod tests {
 
         assert_eq!(samples.nrows(), 5);
         assert_eq!(samples.ncols(), 2);
-
 
         for i in 0..samples.nrows() {
             for j in 0..samples.ncols() {
@@ -407,11 +401,9 @@ mod tests {
         assert_eq!(sample1.len(), 2);
         assert_eq!(sample2.len(), 2);
 
-
         for v in &sample1 {
             assert!(*v >= 0.0 && *v < 1.0);
         }
-
 
         assert_ne!(sample1, sample2);
     }
@@ -548,7 +540,10 @@ mod tests {
         let out = run();
         let out2 = run();
         assert_eq!(out.shape(), &[3, 3]);
-        assert!(out.iter().zip(out2.iter()).all(|(a, b)| (a - b).abs() < 1e-15));
+        assert!(out
+            .iter()
+            .zip(out2.iter())
+            .all(|(a, b)| (a - b).abs() < 1e-15));
         assert!(out.iter().all(|&v| (0.0..=1.0).contains(&v)));
     }
 
@@ -570,8 +565,6 @@ mod tests {
 
     #[test]
     fn test_sobol_engine_matches_scipy_reference_points() {
-
-
         let expected = [
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.5, 0.5, 0.5, 0.5, 0.5],

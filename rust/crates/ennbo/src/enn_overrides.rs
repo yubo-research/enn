@@ -1,4 +1,3 @@
-
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
@@ -23,7 +22,10 @@ impl SearchOverrides {
 
     pub fn apply(&self, base: FitSamples) -> Result<ScaleSearch, ENNError> {
         let mut search = match (base.search(), self.num_fit_samples) {
-            (Some(s), Some(n)) => ScaleSearch { num_fit_samples: n, ..s },
+            (Some(s), Some(n)) => ScaleSearch {
+                num_fit_samples: n,
+                ..s
+            },
             (Some(s), None) => s,
             (None, Some(n)) => ScaleSearch::with_samples(n),
             (None, None) => {
@@ -66,7 +68,11 @@ pub struct EnnOverrides {
 impl EnnOverrides {
     fn layout(&self, layout: &EnnLayout) -> Result<EnnLayout, ENNError> {
         let driver = self.index_driver.unwrap_or(layout.index_driver());
-        let dir = self.work_dir.clone().or_else(|| (driver == layout.index_driver()).then(|| layout.work_dir().map(|p| p.to_path_buf())).flatten());
+        let dir = self.work_dir.clone().or_else(|| {
+            (driver == layout.index_driver())
+                .then(|| layout.work_dir().map(|p| p.to_path_buf()))
+                .flatten()
+        });
         EnnLayout::new(driver, dir, self.weighting.unwrap_or(layout.weighting()))
     }
 
@@ -126,7 +132,10 @@ mod tests {
         assert!(SearchOverrides::default().is_empty());
         let base = FitSamples::draw(5, 7).unwrap();
         let s = only_cal.apply(base).unwrap();
-        assert_eq!((s.num_fit_samples.get(), s.num_fit_candidates.get()), (5, 7));
+        assert_eq!(
+            (s.num_fit_samples.get(), s.num_fit_candidates.get()),
+            (5, 7)
+        );
         assert!(s.affine_calibrate);
         assert!(only_cal.apply(FitSamples::Frozen).is_err());
         let counted = SearchOverrides {
@@ -142,9 +151,20 @@ mod tests {
 
     #[test]
     fn disk_override_requires_directory_and_selects_auto_weighting() {
-        let mut overrides = EnnOverrides { index_driver: Some(IndexDriver::BpAnnDisk), weighting: Some(true), ..Default::default() };
-        assert!(overrides.layout(&ENNSurrogateConfig::default().layout).is_err());
+        let mut overrides = EnnOverrides {
+            index_driver: Some(IndexDriver::BpAnnDisk),
+            weighting: Some(true),
+            ..Default::default()
+        };
+        assert!(overrides
+            .layout(&ENNSurrogateConfig::default().layout)
+            .is_err());
         overrides.work_dir = Some("rows".into());
-        assert!(matches!(overrides.layout(&ENNSurrogateConfig::default().layout).unwrap(), EnnLayout::DiskAuto { .. }));
+        assert!(matches!(
+            overrides
+                .layout(&ENNSurrogateConfig::default().layout)
+                .unwrap(),
+            EnnLayout::DiskAuto { .. }
+        ));
     }
 }

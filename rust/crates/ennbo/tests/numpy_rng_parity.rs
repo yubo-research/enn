@@ -1,12 +1,15 @@
-use ennbo::numpy_pcg::NumpyPcg64;
 use ennbo::ndtri::ndtri;
+use ennbo::numpy_pcg::NumpyPcg64;
 use ennbo::numpy_seed::seed_sequence_u64;
 use ennbo::philox::NumpyPhilox;
 
 #[test]
 fn philox_seed_123_matches_numpy_key_and_random() {
     let key = seed_sequence_u64(123, 2);
-    assert_eq!(key, [12_770_025_807_176_811_766, 11_695_957_281_888_622_767]);
+    assert_eq!(
+        key,
+        [12_770_025_807_176_811_766, 11_695_957_281_888_622_767]
+    );
     let mut rng = NumpyPhilox::from_seed(123);
     let got = [rng.random(), rng.random(), rng.random(), rng.random()];
     let expect = [

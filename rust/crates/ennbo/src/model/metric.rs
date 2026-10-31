@@ -1,12 +1,13 @@
-
 use ndarray::Array1;
 
-use super::{EpistemicNearestNeighbors, scale_from_moments};
+use super::{scale_from_moments, EpistemicNearestNeighbors};
 use crate::error::ENNError;
 use crate::index::IndexDriver;
 
 impl EpistemicNearestNeighbors {
-    pub fn weighting(&self) -> bool { self.layout.weighting() }
+    pub fn weighting(&self) -> bool {
+        self.layout.weighting()
+    }
 
     pub fn index_driver(&self) -> IndexDriver {
         self.backend_driver()
@@ -58,7 +59,11 @@ impl EpistemicNearestNeighbors {
         self.refresh_data_x_scale(self.num_obs)
     }
 
-    pub fn set_metric_scale(&mut self, x_scale: Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
+    pub fn set_metric_scale(
+        &mut self,
+        x_scale: Array1<f64>,
+        rebuild: bool,
+    ) -> Result<(), ENNError> {
         if self.auto_metric.is_none() {
             return Err(ENNError::InvalidParameter(
                 "set_metric_scale requires metric_learning=AUTO".into(),
@@ -98,7 +103,9 @@ mod tests {
     fn exact_topk(x: &Array2<f64>, q: &[f64], scale: &Array1<f64>, k: usize) -> Vec<usize> {
         let mut d: Vec<(f64, usize)> = (0..x.nrows())
             .map(|i| {
-                let s = (0..q.len()).map(|j| ((q[j] - x[[i, j]]) / scale[j]).powi(2)).sum();
+                let s = (0..q.len())
+                    .map(|j| ((q[j] - x[[i, j]]) / scale[j]).powi(2))
+                    .sum();
                 (s, i)
             })
             .collect();
@@ -121,8 +128,12 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(model.set_metric_scale(Array1::from(vec![1.0]), false).is_err());
-        assert!(model.set_metric_scale(Array1::from(vec![1.0, -1.0, 1.0]), false).is_err());
+        assert!(model
+            .set_metric_scale(Array1::from(vec![1.0]), false)
+            .is_err());
+        assert!(model
+            .set_metric_scale(Array1::from(vec![1.0, -1.0, 1.0]), false)
+            .is_err());
         model
             .enable_auto_metric(
                 vec![],
@@ -146,7 +157,9 @@ mod tests {
             let exact = exact_topk(&x, &q.row(r).to_vec(), &scale, 4);
             assert_eq!(got.row(r).to_vec(), exact);
         }
-        model.set_metric_scale(Array1::from(vec![1.0, 1.0, 0.5]), true).unwrap();
+        model
+            .set_metric_scale(Array1::from(vec![1.0, 1.0, 0.5]), true)
+            .unwrap();
         assert!(model.is_scale_x());
     }
 
@@ -175,7 +188,11 @@ mod tests {
         for lo in (20..3000).step_by(245) {
             let hi = (lo + 245).min(3000);
             model
-                .add(&x.slice(ndarray::s![lo..hi, ..]), &y.slice(ndarray::s![lo..hi, ..]), None)
+                .add(
+                    &x.slice(ndarray::s![lo..hi, ..]),
+                    &y.slice(ndarray::s![lo..hi, ..]),
+                    None,
+                )
                 .unwrap();
             model.ensure_index_sync().unwrap();
         }
@@ -185,7 +202,10 @@ mod tests {
         let q = rows(5, 3, 6) * &Array1::from(widths.to_vec());
         let got = model.neighbors(&q.view(), 4, false).unwrap();
         for r in 0..q.nrows() {
-            assert_eq!(got.row(r).to_vec(), exact_topk(&x, &q.row(r).to_vec(), &applied, 4));
+            assert_eq!(
+                got.row(r).to_vec(),
+                exact_topk(&x, &q.row(r).to_vec(), &applied, 4)
+            );
         }
     }
 
@@ -209,22 +229,34 @@ mod tests {
             .unwrap()
         };
         let flat = open(crate::layout::EnnLayout::flat(true));
-        let disk = open(crate::layout::EnnLayout::disk(dir.path().to_path_buf(), false));
+        let disk = open(crate::layout::EnnLayout::disk(
+            dir.path().to_path_buf(),
+            false,
+        ));
         for mut model in [flat, disk] {
             assert!(model.set_unscaled_dims(vec![3]).is_err());
             model.set_unscaled_dims(vec![2]).unwrap();
             assert_eq!(model.x_scale[2], 1.0);
             model
-                .add(&x.slice(ndarray::s![300.., ..]), &y.slice(ndarray::s![300.., ..]), None)
+                .add(
+                    &x.slice(ndarray::s![300.., ..]),
+                    &y.slice(ndarray::s![300.., ..]),
+                    None,
+                )
                 .unwrap();
             let std = column_std(&x);
             let applied = model.x_scale_row().row(0).to_owned();
             assert_eq!(applied[2], 1.0);
-            if model.weighting() { assert!((applied[0] / std[0]).ln().abs() <= 1e-9); }
+            if model.weighting() {
+                assert!((applied[0] / std[0]).ln().abs() <= 1e-9);
+            }
             let q = rows(5, 3, 8);
             let got = model.neighbors(&q.view(), 4, false).unwrap();
             for r in 0..q.nrows() {
-                assert_eq!(got.row(r).to_vec(), exact_topk(&x, &q.row(r).to_vec(), &applied, 4));
+                assert_eq!(
+                    got.row(r).to_vec(),
+                    exact_topk(&x, &q.row(r).to_vec(), &applied, 4)
+                );
             }
         }
     }
@@ -239,6 +271,8 @@ mod tests {
             IndexDriver::Flat,
         )
         .unwrap();
-        assert!(model.set_metric_scale(Array1::from(vec![1.0, 1.0]), false).is_err());
+        assert!(model
+            .set_metric_scale(Array1::from(vec![1.0, 1.0]), false)
+            .is_err());
     }
 }

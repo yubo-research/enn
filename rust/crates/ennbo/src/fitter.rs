@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
 use rand::seq::index::sample;
 use rand::Rng;
@@ -285,8 +284,7 @@ impl ENNFitter {
         }
         if self.y_count == 0 {
             return Err(ENNError::InvalidParameter(
-                "tell must be called before ask to initialize incremental y statistics"
-                    .to_string(),
+                "tell must be called before ask to initialize incremental y statistics".to_string(),
             ));
         }
         let mut paramss = self.build_random_param_candidates(
@@ -305,9 +303,7 @@ impl ENNFitter {
                     0.0
                 },
             )
-            .map_err(|e| {
-                ENNError::InvalidParameter(format!("Invalid warm-start params: {e}"))
-            })?;
+            .map_err(|e| ENNError::InvalidParameter(format!("Invalid warm-start params: {e}")))?;
             paramss.push(warm_params);
         }
         let indices: Vec<usize> = {
@@ -373,11 +369,17 @@ mod tests {
         let y = array![[0.0]];
         assert!(fitter.tell(&x.view(), &y.view(), None, None).is_err());
         let yvar = array![[0.1, 0.2]];
-        assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar.view()), None).is_err());
+        assert!(fitter
+            .tell(&x.view(), &y.view(), Some(&yvar.view()), None)
+            .is_err());
         let yvar_bad = array![[f64::INFINITY]];
-        assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_bad.view()), None).is_err());
+        assert!(fitter
+            .tell(&x.view(), &y.view(), Some(&yvar_bad.view()), None)
+            .is_err());
         let yvar_neg = array![[-0.1], [-0.1]];
-        assert!(fitter.tell(&x.view(), &y.view(), Some(&yvar_neg.view()), None).is_err());
+        assert!(fitter
+            .tell(&x.view(), &y.view(), Some(&yvar_neg.view()), None)
+            .is_err());
     }
 
     #[test]
@@ -392,7 +394,14 @@ mod tests {
         let y = array![[0.0], [1.0]];
         fitter.tell(&x_bad.view(), &y.view(), None, None).unwrap();
         let mut rng = StdRng::seed_from_u64(0);
-        let err = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap_err();
+        let err = fitter
+            .ask(
+                &model,
+                &crate::fit_samples::test_search(3, 5, true),
+                None,
+                &mut rng,
+            )
+            .unwrap_err();
         assert!(
             err.to_string().contains("feature dimensions"),
             "unexpected error: {err}"
@@ -413,25 +422,40 @@ mod tests {
     fn ask_uses_explicit_warm_start() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0], [2.0]];
-        let model =
-            EpistemicNearestNeighbors::new(train_x.clone(), train_y.clone(), None, false, IndexDriver::Flat)
-                .unwrap();
+        let model = EpistemicNearestNeighbors::new(
+            train_x.clone(),
+            train_y.clone(),
+            None,
+            false,
+            IndexDriver::Flat,
+        )
+        .unwrap();
         let warm = ENNParams::new(2, 2.5, 0.3).unwrap();
         let search = crate::fit_samples::test_search(2, 1, true);
         let ask = |seed: u64, warm: Option<&ENNParams>| {
             let mut fitter = ENNFitter::new(2);
-            fitter.tell(&train_x.view(), &train_y.view(), None, None).unwrap();
-            fitter.ask(&model, &search, warm, &mut StdRng::seed_from_u64(seed)).unwrap()
+            fitter
+                .tell(&train_x.view(), &train_y.view(), None, None)
+                .unwrap();
+            fitter
+                .ask(&model, &search, warm, &mut StdRng::seed_from_u64(seed))
+                .unwrap()
         };
         let mut warm_won = false;
         for seed in 0..20 {
             let cold = ask(seed, None);
             let p = ask(seed, Some(&warm));
             assert_eq!(p.k_num_neighbors, 2);
-            assert!(p == cold || p == warm, "seed {seed}: {p:?} is neither {cold:?} nor {warm:?}");
+            assert!(
+                p == cold || p == warm,
+                "seed {seed}: {p:?} is neither {cold:?} nor {warm:?}"
+            );
             warm_won |= p == warm;
         }
-        assert!(warm_won, "the warm start never beat the single random candidate");
+        assert!(
+            warm_won,
+            "the warm start never beat the single random candidate"
+        );
     }
 
     #[test]
@@ -448,7 +472,12 @@ mod tests {
         let warm = ENNParams::new(2, 2.5, 9.9).unwrap();
         let mut rng = StdRng::seed_from_u64(8);
         let p = fitter
-            .ask(&model, &crate::fit_samples::test_search(2, 2, false), Some(&warm), &mut rng)
+            .ask(
+                &model,
+                &crate::fit_samples::test_search(2, 2, false),
+                Some(&warm),
+                &mut rng,
+            )
             .unwrap();
         assert_eq!(p.aleatoric_variance_scale, 0.0);
     }
@@ -462,7 +491,14 @@ mod tests {
                 .unwrap();
         let mut fitter = ENNFitter::new(3);
         let mut rng = StdRng::seed_from_u64(1);
-        let p = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap();
+        let p = fitter
+            .ask(
+                &model,
+                &crate::fit_samples::test_search(3, 5, true),
+                None,
+                &mut rng,
+            )
+            .unwrap();
         assert_eq!(p.k_num_neighbors, 3);
         assert!((p.epistemic_variance_scale - 1.0).abs() < 1e-12);
         assert!((p.aleatoric_variance_scale - 0.0).abs() < 1e-12);
@@ -470,13 +506,7 @@ mod tests {
 
     #[test]
     fn incremental_y_std_matches_batch_std() {
-        let train_x = array![
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [0.5, 0.5]
-        ];
+        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5]];
         let train_y = array![[0.0], [1.0], [1.0], [2.0], [1.5]];
         let _model = EpistemicNearestNeighbors::new(
             train_x.clone(),
@@ -496,9 +526,15 @@ mod tests {
         let inc_std = fitter.y_std();
         for (a, b) in inc_std.iter().zip(batch_std.iter()) {
             if *b > 1e-10 {
-                assert!((a - b).abs() < 1e-10, "incremental std {a} vs batch std {b}");
+                assert!(
+                    (a - b).abs() < 1e-10,
+                    "incremental std {a} vs batch std {b}"
+                );
             } else {
-                assert!((*a - 1.0).abs() < 1e-10, "zero-variance metric should clamp to 1.0");
+                assert!(
+                    (*a - 1.0).abs() < 1e-10,
+                    "zero-variance metric should clamp to 1.0"
+                );
             }
         }
     }
@@ -519,7 +555,10 @@ mod tests {
             (got - want).abs() < 1e-12,
             "tell must warp under y_bounds: got {got} want {want}"
         );
-        assert!(got > 1.5, "warped std should exceed natural (~0.35), got {got}");
+        assert!(
+            got > 1.5,
+            "warped std should exceed natural (~0.35), got {got}"
+        );
     }
 
     #[test]
@@ -528,7 +567,9 @@ mod tests {
         let x = array![[0.0, 0.0]];
         let y = array![[1.5]];
         let bounds = array![[0.0, 1.0]];
-        assert!(fitter.tell(&x.view(), &y.view(), None, Some(&bounds)).is_err());
+        assert!(fitter
+            .tell(&x.view(), &y.view(), None, Some(&bounds))
+            .is_err());
     }
 
     #[test]
@@ -537,7 +578,9 @@ mod tests {
         let y = array![[1.0], [2.0]];
         fitter.update_y(&y.view());
         let mut rng = StdRng::seed_from_u64(0);
-        let cands = fitter.build_random_param_candidates(3, true, &mut rng).unwrap();
+        let cands = fitter
+            .build_random_param_candidates(3, true, &mut rng)
+            .unwrap();
         assert_eq!(cands.len(), 3);
     }
 }

@@ -199,6 +199,60 @@ fn column_scales_store_factors_and_reject_failed_batches() {
 }
 
 #[test]
+fn explicit_weight_stays_fixed_and_skips_the_recursion() {
+    let x = Array2::from_shape_fn((40, 2), |(i, j)| ((i + 3 * j) as f64).sin());
+    let y = x.slice(s![.., ..1]).to_owned();
+    let mut model =
+        AdaptiveSemanticENN::new(Metadata::default(), 30, 1, false, "all".into()).unwrap();
+    model
+        .add(
+            x.slice(s![..20, ..]).to_owned(),
+            y.slice(s![..20, ..]).to_owned(),
+            Some(30.0),
+        )
+        .unwrap();
+    model
+        .add(
+            x.slice(s![20.., ..]).to_owned(),
+            y.slice(s![20.., ..]).to_owned(),
+            Some(30.0),
+        )
+        .unwrap();
+    let choice = model.choice().unwrap();
+    assert!(choice.weight == 0.0 || choice.weight == 30.0);
+    assert!((model.learned_weight() - 3.0).abs() < 1e-12);
+}
+
+#[test]
+fn later_rows_score_directional_geometries_at_the_running_weight() {
+    let x = Array2::from_shape_fn((240, 2), |(i, j)| {
+        ((i as f64 + 0.2 * j as f64) * 0.05).sin()
+    });
+    let y = x.column(0).insert_axis(Axis(1)).to_owned();
+    let mut model =
+        AdaptiveSemanticENN::new(Metadata::default(), 80, 2, false, "all".into()).unwrap();
+    model
+        .add(
+            x.slice(s![..24, ..]).to_owned(),
+            y.slice(s![..24, ..]).to_owned(),
+            None,
+        )
+        .unwrap();
+    assert!((model.learned_weight() - 3.0).abs() < 1e-12);
+    model
+        .add(
+            x.slice(s![24.., ..]).to_owned(),
+            y.slice(s![24.., ..]).to_owned(),
+            None,
+        )
+        .unwrap();
+    let choice = model.choice().unwrap();
+    assert!(choice.geometry == "linear" || choice.geometry == "quadratic");
+    assert!((choice.weight - model.learned_weight()).abs() < 1e-12);
+    assert!(model.learned_weight() > 3.0);
+}
+
+#[test]
 fn constant_input_uses_unit_scale_at_query() {
     let x = Array2::from_shape_fn((30, 2), |(i, j)| if j == 0 { i as f64 / 30.0 } else { 0.0 });
     let y = x.slice(s![.., ..1]).mapv(f64::sin);

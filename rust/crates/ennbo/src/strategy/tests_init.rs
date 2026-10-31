@@ -99,9 +99,7 @@ fn test_select_arms_acquisition_branches() {
         Optimizer::new_with_strategy(bounds.clone(), cfg_ucb, Strategy::turbo(), &mut rng).unwrap();
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.8, 0.2]];
     let y_fit = array![[0.0], [1.0], [0.5], [0.4]];
-    opt_ucb
-        .tell(&x_fit.view(), &y_fit.view(), None)
-        .unwrap();
+    opt_ucb.tell(&x_fit.view(), &y_fit.view(), None).unwrap();
     let out_ucb = select_arms(&opt_ucb, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_ucb.nrows(), 2);
 
@@ -117,9 +115,7 @@ fn test_select_arms_acquisition_branches() {
     cfg_pareto.acquisition = AcquisitionConfig::Pareto;
     let mut opt_pareto =
         Optimizer::new_with_strategy(bounds, cfg_pareto, Strategy::turbo(), &mut rng).unwrap();
-    opt_pareto
-        .tell(&x_fit.view(), &y_fit.view(), None)
-        .unwrap();
+    opt_pareto.tell(&x_fit.view(), &y_fit.view(), None).unwrap();
     let out_pareto = select_arms(&opt_pareto, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_pareto.nrows(), 2);
 }

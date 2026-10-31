@@ -29,7 +29,13 @@ fn kiss_faiss_backend_helper_names_in_source() {
 
 #[test]
 fn kiss_knn_mod_dispatch_names_in_source() {
-    for name in ["KnnBackend", "rebuild", "add", "search", "memory_usage_bytes"] {
+    for name in [
+        "KnnBackend",
+        "rebuild",
+        "add",
+        "search",
+        "memory_usage_bytes",
+    ] {
         assert!(KNN_MOD_SRC.contains(name), "missing {name} in knn/mod.rs");
     }
 }
@@ -73,7 +79,12 @@ fn kiss_disk_bpann_helper_names_in_source() {
             "missing {name} in disk_bpann/enn_backend.rs"
         );
     }
-    for name in ["append_rows", "train_rows_at", "load_indexed_rows", "mmap_gather"] {
+    for name in [
+        "append_rows",
+        "train_rows_at",
+        "load_indexed_rows",
+        "mmap_gather",
+    ] {
         assert!(
             DISK_BPANN_SRC.contains(name) || DISK_OBSERVATION_SRC.contains(name),
             "missing {name} in disk bpann/observation sources"

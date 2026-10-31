@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, Array3, ArrayView2};
 use rand::Rng;
 
@@ -103,7 +102,8 @@ pub fn calibrated_function_draw(
     flags: &PosteriorFlags,
     cal: Option<&AffineCalibrator>,
 ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
-    let (mut draws, idx) = model.posterior_function_draw_warped(x, params, function_seeds, flags)?;
+    let (mut draws, idx) =
+        model.posterior_function_draw_warped(x, params, function_seeds, flags)?;
     model.naturalize_draws_3d(&mut draws);
     if let Some(cal) = cal {
         let post = model.posterior(x, params, flags)?;

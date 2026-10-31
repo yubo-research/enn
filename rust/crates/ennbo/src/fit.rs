@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
 use rand::seq::index::sample;
 use rand::Rng;
@@ -51,7 +50,6 @@ fn compute_single_loglik(
     mu_i: &ArrayView2<f64>,
     se_i: &ArrayView2<f64>,
 ) -> f64 {
-
     if !mu_i.iter().all(|v| v.is_finite()) || !se_i.iter().all(|v| v.is_finite()) {
         return f64::NEG_INFINITY;
     }
@@ -67,7 +65,6 @@ fn compute_single_loglik(
             let se_ij = se_i[[i, j]];
             let var_scaled = se_ij * se_ij;
 
-
             loglik += -0.5 * (2.0 * std::f64::consts::PI * var_scaled).ln()
                 - 0.5 * (y_ij - mu_ij).powi(2) / var_scaled;
         }
@@ -76,7 +73,6 @@ fn compute_single_loglik(
     if loglik.is_finite() {
         loglik
     } else {
-
         f64::NEG_INFINITY
     }
 }
@@ -121,7 +117,6 @@ pub fn subsample_loglik<R: Rng>(
         return Ok(vec![0.0; paramss.len()]);
     }
 
-
     if !y.iter().all(|v| v.is_finite()) {
         return Ok(vec![f64::NEG_INFINITY; paramss.len()]);
     }
@@ -133,7 +128,6 @@ pub fn subsample_loglik<R: Rng>(
     } else {
         sample(rng, n, p_actual).into_iter().collect()
     };
-
 
     let num_metrics = y.ncols();
     let num_dim = x.ncols();
@@ -152,7 +146,6 @@ pub fn subsample_loglik<R: Rng>(
     let num_params = paramss.len();
     let num_outputs = y_sel.ncols();
 
-
     let expected_shape = vec![num_params, p_actual, num_outputs];
     let mu_shape = post.mu.shape().to_vec();
     let se_shape = post.se.shape().to_vec();
@@ -163,7 +156,6 @@ pub fn subsample_loglik<R: Rng>(
         });
     }
 
-
     let y_std_computed: Array1<f64> = if let Some(ys) = y_std {
         ys.to_owned()
     } else {
@@ -173,7 +165,6 @@ pub fn subsample_loglik<R: Rng>(
         .iter()
         .map(|&v| if v.is_finite() && v > 0.0 { v } else { 1.0 })
         .collect();
-
 
     let mut y_scaled = Array2::zeros(y_sel.raw_dim());
 
@@ -192,10 +183,8 @@ pub fn subsample_loglik<R: Rng>(
         }
     }
 
-
     let mut logliks = Vec::with_capacity(num_params);
     for pi in 0..num_params {
-
         let start_idx = pi * p_actual;
         let mu_i = mu_scaled.slice(ndarray::s![start_idx..start_idx + p_actual, ..]);
         let se_i = se_scaled.slice(ndarray::s![start_idx..start_idx + p_actual, ..]);
@@ -242,9 +231,16 @@ mod tests {
         let mut rng2 = StdRng::seed_from_u64(99);
         let all: Vec<usize> = (0..model.len()).collect();
         let (full_x, full_y, _) = model.rows().train_rows_at(&all).unwrap();
-        let via_views =
-            subsample_loglik(&model, &full_x.view(), &full_y.view(), &paramss, 2, &mut rng2, None)
-                .unwrap();
+        let via_views = subsample_loglik(
+            &model,
+            &full_x.view(),
+            &full_y.view(),
+            &paramss,
+            2,
+            &mut rng2,
+            None,
+        )
+        .unwrap();
         assert_eq!(via_model.len(), via_views.len());
         assert!(via_model[0].is_finite());
         assert!(via_views[0].is_finite());
@@ -279,7 +275,14 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap();
+        let result = fitter
+            .ask(
+                &model,
+                &crate::fit_samples::test_search(3, 5, true),
+                None,
+                &mut rng,
+            )
+            .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -298,7 +301,12 @@ mod tests {
         let warm_start = ENNParams::new(2, 1.5, 0.2).unwrap();
 
         let result = fitter
-            .ask(&model, &crate::fit_samples::test_search(3, 5, true), Some(&warm_start), &mut rng)
+            .ask(
+                &model,
+                &crate::fit_samples::test_search(3, 5, true),
+                Some(&warm_start),
+                &mut rng,
+            )
             .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
@@ -314,7 +322,14 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, false), None, &mut rng).unwrap();
+        let result = fitter
+            .ask(
+                &model,
+                &crate::fit_samples::test_search(3, 5, false),
+                None,
+                &mut rng,
+            )
+            .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -335,7 +350,14 @@ mod tests {
         let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
         fitter.reset_y_stats(&ty.view());
 
-        let result = fitter.ask(&model, &crate::fit_samples::test_search(3, 5, true), None, &mut rng).unwrap();
+        let result = fitter
+            .ask(
+                &model,
+                &crate::fit_samples::test_search(3, 5, true),
+                None,
+                &mut rng,
+            )
+            .unwrap();
 
         assert_eq!(result.k_num_neighbors, 2);
         assert!(result.epistemic_variance_scale > 0.0);
@@ -439,7 +461,6 @@ mod tests {
 
     #[test]
     fn test_compute_single_loglik_overflow_sum_is_neg_infinity() {
-
         let y = array![[1e308]];
         let mu = array![[-1e308]];
         let se = array![[1e-308]];
@@ -484,13 +505,27 @@ mod tests {
         let (x_z, y_z, _) = model.rows().train_rows_at(&all).unwrap();
         let (_, y_nat, _) = model.train_rows_at(&all).unwrap();
         let mut rng_z = StdRng::seed_from_u64(7);
-        let via_warped =
-            subsample_loglik(&model, &x_z.view(), &y_z.view(), &paramss, 5, &mut rng_z, None)
-                .unwrap();
+        let via_warped = subsample_loglik(
+            &model,
+            &x_z.view(),
+            &y_z.view(),
+            &paramss,
+            5,
+            &mut rng_z,
+            None,
+        )
+        .unwrap();
         let mut rng_nat = StdRng::seed_from_u64(7);
-        let via_natural =
-            subsample_loglik(&model, &x_z.view(), &y_nat.view(), &paramss, 5, &mut rng_nat, None)
-                .unwrap();
+        let via_natural = subsample_loglik(
+            &model,
+            &x_z.view(),
+            &y_nat.view(),
+            &paramss,
+            5,
+            &mut rng_nat,
+            None,
+        )
+        .unwrap();
 
         assert!(
             (via_model[0] - via_warped[0]).abs() < 1e-9,
@@ -505,5 +540,4 @@ mod tests {
             via_natural[0]
         );
     }
-
 }

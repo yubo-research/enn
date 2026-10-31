@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, ArrayView1, ArrayView2, ArrayViewMut1, Axis};
 
 use crate::error::{ENNError, EPS_VAR};
@@ -7,7 +6,13 @@ use crate::params::{ENNParams, PosteriorFlags};
 
 use super::{empty_posterior_internals, index_search};
 
-pub(crate) type PosteriorLightOut = (Array2<f64>, Array2<f64>, Array2<f64>, Array2<f64>, Array2<i64>);
+pub(crate) type PosteriorLightOut = (
+    Array2<f64>,
+    Array2<f64>,
+    Array2<f64>,
+    Array2<f64>,
+    Array2<i64>,
+);
 
 pub(crate) fn idx_nested_to_array2(idx: &[Vec<usize>]) -> Array2<i64> {
     let n_query = idx.len();
@@ -40,18 +45,28 @@ fn neighbor_search_k(
 }
 
 #[inline]
-pub(super) fn fill_neighbor_weights(distances: ArrayView1<f64>, params: &ENNParams, weights: &mut [f64]) -> f64 {
+pub(super) fn fill_neighbor_weights(
+    distances: ArrayView1<f64>,
+    params: &ENNParams,
+    weights: &mut [f64],
+) -> f64 {
     let mut norm = 0.0;
     for (weight, &distance) in weights.iter_mut().zip(distances.iter()) {
-        *weight = 1.0 / (EPS_VAR + params.epistemic_variance_scale * distance + params.aleatoric_variance_scale);
+        *weight = 1.0
+            / (EPS_VAR
+                + params.epistemic_variance_scale * distance
+                + params.aleatoric_variance_scale);
         norm += *weight;
     }
     1.0 / norm
 }
 
 pub(super) fn fill_neighbor_means(
-    train_y: ArrayView2<f64>, indices: ArrayView1<i64>, weights: &[f64],
-    inv_norm: f64, mut means: ArrayViewMut1<f64>,
+    train_y: ArrayView2<f64>,
+    indices: ArrayView1<i64>,
+    weights: &[f64],
+    inv_norm: f64,
+    mut means: ArrayViewMut1<f64>,
 ) {
     means.fill(0.0);
     if let (Some(targets), Some(output)) = (train_y.as_slice(), means.as_slice_mut()) {
@@ -83,10 +98,12 @@ pub(super) fn fill_neighbor_means(
     }
 }
 
-
 fn fill_fixed_neighbor_means<const M: usize>(
-    targets: &[f64], indices: ArrayView1<i64>, weights: &[f64],
-    inv_norm: f64, output: &mut [f64],
+    targets: &[f64],
+    indices: ArrayView1<i64>,
+    weights: &[f64],
+    inv_norm: f64,
+    output: &mut [f64],
 ) {
     let mut means = [0.0; M];
     for (j, &index) in indices.iter().enumerate() {
@@ -99,7 +116,6 @@ fn fill_fixed_neighbor_means<const M: usize>(
     }
     output.copy_from_slice(&means);
 }
-
 
 pub(super) fn fuse_neighbors_to_mu_se(
     model: &EpistemicNearestNeighbors,
@@ -192,8 +208,7 @@ pub(crate) fn compute_posterior_light(
         ));
     }
 
-    let (dist2s_full, idx_full) =
-        index_search(model, x, search_k as i32, flags.exclude_nearest)?;
+    let (dist2s_full, idx_full) = index_search(model, x, search_k as i32, flags.exclude_nearest)?;
 
     let available_k = if flags.exclude_nearest {
         search_k.saturating_sub(1)
@@ -231,8 +246,7 @@ mod tests {
         let n = 32;
         let d = 4;
         let m = 2;
-        let train_x =
-            Array2::from_shape_fn((n, d), |(i, j)| (i as f64 * 0.1) + (j as f64 * 0.01));
+        let train_x = Array2::from_shape_fn((n, d), |(i, j)| (i as f64 * 0.1) + (j as f64 * 0.01));
         let train_y = Array2::from_shape_fn((n, m), |(i, j)| (i as f64) + (j as f64));
         let model = EpistemicNearestNeighbors::new(
             train_x.clone(),
@@ -251,10 +265,22 @@ mod tests {
 
         assert_eq!(mu_light.shape(), full.mu.shape());
         assert_eq!(se_light.shape(), full.se.shape());
-        assert!((mu_light - &full.mu).mapv(f64::abs).iter().all(|&d| d < 1e-12));
-        assert!((se_light - &full.se).mapv(f64::abs).iter().all(|&d| d < 1e-12));
-        assert!((se_epi_light - &full.se_epi).mapv(f64::abs).iter().all(|&d| d < 1e-12));
-        assert!((se_ale_light - &full.se_ale).mapv(f64::abs).iter().all(|&d| d < 1e-12));
+        assert!((mu_light - &full.mu)
+            .mapv(f64::abs)
+            .iter()
+            .all(|&d| d < 1e-12));
+        assert!((se_light - &full.se)
+            .mapv(f64::abs)
+            .iter()
+            .all(|&d| d < 1e-12));
+        assert!((se_epi_light - &full.se_epi)
+            .mapv(f64::abs)
+            .iter()
+            .all(|&d| d < 1e-12));
+        assert!((se_ale_light - &full.se_ale)
+            .mapv(f64::abs)
+            .iter()
+            .all(|&d| d < 1e-12));
         assert_eq!(idx_light, idx_nested_to_array2(&full.idx));
     }
 
@@ -363,13 +389,8 @@ mod tests {
         let flags = PosteriorFlags::new();
         let all: Vec<usize> = (0..model.len()).collect();
         let (tx, _, _) = model.rows().train_rows_at(&all).unwrap();
-        let (mu, se, _se_epi, _se_ale, idx) = compute_posterior_light(
-            &model,
-            &tx.view(),
-            &params,
-            &flags,
-        )
-        .unwrap();
+        let (mu, se, _se_epi, _se_ale, idx) =
+            compute_posterior_light(&model, &tx.view(), &params, &flags).unwrap();
         assert_eq!(mu.ncols(), 2);
         assert_eq!(se.ncols(), 2);
         assert_eq!(idx.ncols(), 2);

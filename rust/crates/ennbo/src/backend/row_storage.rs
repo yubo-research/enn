@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView2, Axis};
 
 use crate::error::ENNError;
@@ -26,8 +25,11 @@ impl RowStorage {
     }
 
     pub(crate) fn view(&self) -> ndarray::ArrayView2<'_, f64> {
-        ndarray::ArrayView2::from_shape((self.nrows, self.ncols), &self.buf[..self.nrows * self.ncols])
-            .expect("row-major view")
+        ndarray::ArrayView2::from_shape(
+            (self.nrows, self.ncols),
+            &self.buf[..self.nrows * self.ncols],
+        )
+        .expect("row-major view")
     }
 
     pub(crate) fn gather_rows(&self, indices: &[usize]) -> Array2<f64> {

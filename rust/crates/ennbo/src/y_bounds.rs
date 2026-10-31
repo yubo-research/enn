@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, ArrayView2, Zip};
 
 use crate::error::ENNError;
@@ -322,9 +321,8 @@ pub fn load_y_bounds_from_metadata_text(
             _ => {}
         }
     }
-    let end = end.ok_or_else(|| {
-        ENNError::InvalidParameter("y_bounds array not closed".to_string())
-    })?;
+    let end =
+        end.ok_or_else(|| ENNError::InvalidParameter("y_bounds array not closed".to_string()))?;
     let inner = &after[1..end];
     let mut bounds = Array2::zeros((num_metrics, 2));
     let mut metric = 0usize;
@@ -339,9 +337,9 @@ pub fn load_y_bounds_from_metadata_text(
                 "y_bounds expected [lo,hi] pair".to_string(),
             ));
         }
-        let close = rest.find(']').ok_or_else(|| {
-            ENNError::InvalidParameter("y_bounds pair not closed".to_string())
-        })?;
+        let close = rest
+            .find(']')
+            .ok_or_else(|| ENNError::InvalidParameter("y_bounds pair not closed".to_string()))?;
         let pair = &rest[1..close];
         let mut parts = pair.splitn(2, ',');
         let lo_tok = parts
@@ -416,11 +414,7 @@ mod tests {
 
     #[test]
     fn log_and_neglog_and_logit_roundtrip() {
-        let b = array![
-            [0.0, f64::INFINITY],
-            [f64::NEG_INFINITY, 5.0],
-            [0.0, 1.0]
-        ];
+        let b = array![[0.0, f64::INFINITY], [f64::NEG_INFINITY, 5.0], [0.0, 1.0]];
         let y = array![[0.1, 4.0, 0.25], [2.0, 1.0, 0.75]];
         let z = warp_y(y.view(), &b).unwrap();
         let y2 = inv_y(z.view(), &b);
@@ -483,7 +477,6 @@ mod tests {
 
     #[test]
     fn d_inv_dz_matches_inverse_of_d_warp_dy() {
-
         assert!((d_inv_dz(1.5, f64::NEG_INFINITY, f64::INFINITY) - 1.0).abs() < 1e-15);
 
         let y = 3.0_f64;
@@ -491,7 +484,10 @@ mod tests {
         let z = (y - a).ln();
         let dinv = d_inv_dz(z, a, f64::INFINITY);
         let dwarp = d_warp_dy(y, a, f64::INFINITY).unwrap();
-        assert!((dinv * dwarp - 1.0).abs() < 1e-12, "dinv={dinv} dwarp={dwarp}");
+        assert!(
+            (dinv * dwarp - 1.0).abs() < 1e-12,
+            "dinv={dinv} dwarp={dwarp}"
+        );
 
         let b = 5.0_f64;
         let y = 2.0_f64;

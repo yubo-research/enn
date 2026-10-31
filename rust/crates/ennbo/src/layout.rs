@@ -73,8 +73,6 @@ impl EnnLayout {
             _ => MetricLearning::None,
         }
     }
-
-
 }
 
 #[cfg(test)]

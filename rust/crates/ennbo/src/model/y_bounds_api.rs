@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::Path;
 
@@ -7,15 +6,25 @@ use crate::backend::{EnnBackend, EnnStorage, TrainRowsAtResult};
 use crate::error::ENNError;
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
-use crate::y_bounds::{
-    is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar,
-};
+use crate::y_bounds::{is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar};
 
 impl EpistemicNearestNeighbors {
-    pub(crate) fn store_original_outputs(&mut self, rows: Option<Array2<f64>>, reopen: bool) -> Result<(), ENNError> {
+    pub(crate) fn store_original_outputs(
+        &mut self,
+        rows: Option<Array2<f64>>,
+        reopen: bool,
+    ) -> Result<(), ENNError> {
         if let Some(rows) = rows {
-            let rows = if reopen { Array2::zeros((0, self.num_metrics)) } else { rows };
-            self.original_y = Some(crate::input_history::InputHistory::for_named_model(rows, self, "original_outputs.bin")?);
+            let rows = if reopen {
+                Array2::zeros((0, self.num_metrics))
+            } else {
+                rows
+            };
+            self.original_y = Some(crate::input_history::InputHistory::for_named_model(
+                rows,
+                self,
+                "original_outputs.bin",
+            )?);
         }
         Ok(())
     }
@@ -27,20 +36,14 @@ impl EpistemicNearestNeighbors {
         pending_flush_threshold: Option<usize>,
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
-        let stored_work_dir = layout
-            .work_dir()
-            .map(|p| p.to_path_buf());
+        let stored_work_dir = layout.work_dir().map(|p| p.to_path_buf());
         let meta_text = stored_work_dir
             .as_ref()
             .filter(|p| layout.storage() == EnnStorage::Disk && p.join("metadata.json").exists())
             .and_then(|p| std::fs::read_to_string(p.join("metadata.json")).ok());
         let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics, meta_text.as_deref())?;
-        let backend = EnnBackend::empty_from_layout(
-            num_dim,
-            num_metrics,
-            &layout,
-            pending_flush_threshold,
-        )?;
+        let backend =
+            EnnBackend::empty_from_layout(num_dim, num_metrics, &layout, pending_flush_threshold)?;
         let scale_x = layout.scale_x();
         let auto = layout.metric_learning() == MetricLearning::Auto;
         let mut model = Self {
@@ -66,10 +69,18 @@ impl EpistemicNearestNeighbors {
             tied_groups: Vec::new(),
         };
         if auto {
-            model.enable_auto_metric(Vec::new(), &Array2::zeros((0, num_dim)).view(), &Array2::zeros((0, num_metrics)).view())?;
+            model.enable_auto_metric(
+                Vec::new(),
+                &Array2::zeros((0, num_dim)).view(),
+                &Array2::zeros((0, num_metrics)).view(),
+            )?;
         }
         if !is_identity_bounds(&model.y_bounds) {
-            model.original_y = Some(crate::input_history::InputHistory::for_named_model(Array2::zeros((0, num_metrics)), &model, "original_outputs.bin")?);
+            model.original_y = Some(crate::input_history::InputHistory::for_named_model(
+                Array2::zeros((0, num_metrics)),
+                &model,
+                "original_outputs.bin",
+            )?);
         }
         model.persist_y_bounds_metadata()?;
         Ok(model)
@@ -124,15 +135,18 @@ impl EpistemicNearestNeighbors {
         &self.y_bounds
     }
 
-    pub fn train_rows_at(
-        &self,
-        indices: &[usize],
-    ) -> Result<TrainRowsAtResult, ENNError> {
+    pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAtResult, ENNError> {
         let (x, y_z, yvar_z) = self.rows().train_rows_at(indices)?;
         if is_identity_bounds(&self.y_bounds) {
             return Ok((x, y_z, yvar_z));
         }
-        let y = self.original_y.as_ref().ok_or_else(|| crate::error::ENNError::InvalidParameter("missing original outputs".into()))?.gather(indices)?;
+        let y = self
+            .original_y
+            .as_ref()
+            .ok_or_else(|| {
+                crate::error::ENNError::InvalidParameter("missing original outputs".into())
+            })?
+            .gather(indices)?;
         let yvar = match yvar_z {
             Some(zv) => {
                 let mut yv = Array2::zeros(zv.raw_dim());
@@ -210,7 +224,8 @@ fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<bool
         ));
     };
     if new_text != text {
-        std::fs::write(&meta_path, new_text).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        std::fs::write(&meta_path, new_text)
+            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
     }
     Ok(true)
 }
@@ -218,18 +233,18 @@ fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<bool
 #[cfg(test)]
 mod tests {
     use super::*;
-        use ndarray::array;
+    use ndarray::array;
 
     #[test]
     fn new_empty_with_y_bounds_stores_and_exposes_bounds() {
         let bounds = array![[0.0, 1.0]];
         let model = EpistemicNearestNeighbors::new_empty_with_y_bounds(
-        1,
-        1,
-        EnnLayout::flat(false),
-        None,
-        Some(bounds.clone()),
-    )
+            1,
+            1,
+            EnnLayout::flat(false),
+            None,
+            Some(bounds.clone()),
+        )
         .unwrap();
         assert!(crate::y_bounds::bounds_match(model.y_bounds(), &bounds));
         assert_eq!(model.len(), 0);

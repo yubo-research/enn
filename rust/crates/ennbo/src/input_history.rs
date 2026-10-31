@@ -17,7 +17,11 @@ impl InputHistory {
     ) -> Result<Self, ENNError> {
         Self::for_named_model(rows, model, "original_inputs.bin")
     }
-    pub(crate) fn for_named_model(rows: Array2<f64>, model: &EpistemicNearestNeighbors, filename: &str) -> Result<Self, ENNError> {
+    pub(crate) fn for_named_model(
+        rows: Array2<f64>,
+        model: &EpistemicNearestNeighbors,
+        filename: &str,
+    ) -> Result<Self, ENNError> {
         if let Some(directory) = model.layout.work_dir() {
             let disk = DiskInputs::open(directory, filename, &rows.view(), model.len())?;
             return Ok(Self {

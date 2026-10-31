@@ -1,5 +1,5 @@
-use ndarray::array;
 use ennbo::{create_optimizer_enn, turbo_enn_config};
+use ndarray::array;
 
 fn main() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];

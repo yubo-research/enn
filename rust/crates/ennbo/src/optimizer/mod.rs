@@ -1,4 +1,3 @@
-
 mod incumbent;
 pub mod obs_access;
 mod observation_delta;
@@ -123,7 +122,8 @@ impl Optimizer {
         let mut seed_bytes = [0u8; 8];
         rng.fill_bytes(&mut seed_bytes);
         let sobol_seed_base = u64::from_le_bytes(seed_bytes) % (1u64 << 31);
-        let owned_rng = StdRng::from_rng(rng).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        let owned_rng =
+            StdRng::from_rng(rng).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
         let num_metrics = tr_state.num_metrics();
         let tracker_m = match &config.surrogate {
             SurrogateConfig::ENN(enn_config) => tracker_m_from_enn_k(enn_config.k),
@@ -183,7 +183,10 @@ impl Optimizer {
             }
         }
         let unit = result?;
-        Ok(crate::candidates::from_unit(&unit.view(), &self.bounds.view()))
+        Ok(crate::candidates::from_unit(
+            &unit.view(),
+            &self.bounds.view(),
+        ))
     }
 
     pub fn tell(
@@ -249,9 +252,10 @@ impl Optimizer {
                 got: vec![x_natural.nrows(), x_natural.ncols()],
             });
         }
-        let surrogate = self.surrogate.as_ref().ok_or_else(|| {
-            ENNError::InvalidParameter("No surrogate".to_string())
-        })?;
+        let surrogate = self
+            .surrogate
+            .as_ref()
+            .ok_or_else(|| ENNError::InvalidParameter("No surrogate".to_string()))?;
         let x_unit = crate::candidates::to_unit(x_natural, &self.bounds.view());
         let pred = surrogate.predict(&x_unit.view())?;
         Ok(pred.mu)
@@ -316,7 +320,10 @@ impl Optimizer {
 
     pub fn x_obs(&self) -> Option<Array2<f64>> {
         let unit = self.x_obs_unit()?;
-        Some(crate::candidates::from_unit(&unit.view(), &self.bounds.view()))
+        Some(crate::candidates::from_unit(
+            &unit.view(),
+            &self.bounds.view(),
+        ))
     }
 
     pub fn y_obs(&self) -> Option<Array2<f64>> {

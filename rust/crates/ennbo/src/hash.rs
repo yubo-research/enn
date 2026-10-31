@@ -1,4 +1,3 @@
-
 use ndarray::{Array, ArrayD, IxDyn};
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -47,7 +46,8 @@ pub fn box_muller(u1: f64, u2: f64) -> f64 {
 #[inline(always)]
 pub fn normal_for_seed_index_metric(seed_u64: u64, unique_idx: i64, metric: usize) -> f64 {
     let unique_u64 = unique_idx as u64;
-    let base = (seed_u64.wrapping_mul(SEED_PRIME).wrapping_add(unique_u64)).wrapping_mul(SEED_PRIME);
+    let base =
+        (seed_u64.wrapping_mul(SEED_PRIME).wrapping_add(unique_u64)).wrapping_mul(SEED_PRIME);
     let metric_u64 = metric as u64;
     let combined1 = base.wrapping_add(metric_u64);
     let r1 = splitmix64(combined1);
@@ -117,7 +117,6 @@ pub fn normal_hash_batch_multi_seed_fast(
 
     let (unique_indices, inverse) = unique_index_inverse(data_indices);
 
-
     let mut flat = vec![0.0f64; num_seeds * row_len];
     flat.par_chunks_mut(row_len)
         .zip(function_seeds.par_iter())
@@ -159,7 +158,6 @@ mod tests {
 
     #[test]
     fn test_splitmix64_known_value() {
-
         let x = 0x123456789ABCDEF0u64;
         let result = splitmix64(x);
 
@@ -169,7 +167,6 @@ mod tests {
 
     #[test]
     fn test_u64_to_f53_range() {
-
         for x in [0u64, u64::MAX, 0x123456789ABCDEF0] {
             let f = u64_to_f53(x);
             assert!(
@@ -183,7 +180,6 @@ mod tests {
 
     #[test]
     fn test_box_muller_finite() {
-
         let n = box_muller(0.5, 0.5);
         assert!(n.is_finite());
     }
@@ -255,7 +251,6 @@ mod tests {
         data_indices: &[i64],
         num_metrics: i64,
     ) -> Result<ArrayD<f64>, HashError> {
-
         if num_metrics <= 0 {
             return Err(HashError::InvalidNumMetrics(num_metrics));
         }

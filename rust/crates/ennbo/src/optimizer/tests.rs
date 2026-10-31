@@ -88,9 +88,7 @@ fn test_tell() {
     let candidates = optimizer.ask(5).unwrap();
     let y = array![[1.0], [2.0], [3.0], [4.0], [5.0]];
 
-    optimizer
-        .tell(&candidates.view(), &y.view(), None)
-        .unwrap();
+    optimizer.tell(&candidates.view(), &y.view(), None).unwrap();
 
     assert!(optimizer.telemetry().dt_tell > 0.0);
 }
@@ -158,12 +156,7 @@ fn test_noise_aware_config_and_incumbent_after_tell() {
         create_optimizer_enn_with_overrides(bounds, Some(3), Some(0), 0, Some(&overrides)).unwrap();
     assert!(opt.config().noise_aware);
 
-    let x = array![
-        [0.2, 0.3],
-        [0.4, 0.5],
-        [0.6, 0.7],
-        [0.8, 0.9],
-    ];
+    let x = array![[0.2, 0.3], [0.4, 0.5], [0.6, 0.7], [0.8, 0.9],];
     let y = array![[0.0], [1.0], [2.0], [0.5]];
     opt.tell(&x.view(), &y.view(), None).unwrap();
     assert!(opt.incumbent_x_unit().is_some());
@@ -172,8 +165,6 @@ fn test_noise_aware_config_and_incumbent_after_tell() {
 
 #[test]
 fn reset_incumbent_tracker_desyncs_count_from_obs() {
-
-
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let overrides = ConfigOverrides {
         noise_aware: Some(true),
@@ -193,8 +184,7 @@ fn reset_incumbent_tracker_desyncs_count_from_obs() {
 #[test]
 fn local_restart_drops_rows_and_asks_a_new_lhd() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-    let mut opt =
-        create_optimizer_enn_with_overrides(bounds, Some(3), Some(4), 0, None).unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(bounds, Some(3), Some(4), 0, None).unwrap();
     let x = opt.ask(4).unwrap();
     let y = ndarray::Array2::from_elem((4, 1), 1.0);
     opt.tell(&x.view(), &y.view(), None).unwrap();
@@ -244,8 +234,7 @@ fn turbo_length_restart_keeps_incumbent_tracker_synced() {
 #[test]
 fn collapse_keeps_posterior_until_the_next_ask() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-    let mut opt =
-        create_optimizer_enn_with_overrides(bounds, Some(3), Some(1), 0, None).unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(bounds, Some(3), Some(1), 0, None).unwrap();
     let x0 = opt.ask(1).unwrap();
     opt.tell(&x0.view(), &array![[100.0]].view(), None).unwrap();
     let mut last_x = x0;
@@ -291,7 +280,11 @@ fn ask_lies_within_natural_bounds_and_rejects_zero_arms() {
     opt.tell(&x.view(), &ndarray::Array2::ones((4, 1)).view(), None)
         .unwrap();
     assert!(opt
-        .tell(&x.view(), &ndarray::Array2::ones((4, 1)).view(), Some(&ndarray::Array2::ones((4, 1)).view()))
+        .tell(
+            &x.view(),
+            &ndarray::Array2::ones((4, 1)).view(),
+            Some(&ndarray::Array2::ones((4, 1)).view())
+        )
         .is_err());
 }
 

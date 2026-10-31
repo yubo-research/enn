@@ -78,12 +78,16 @@ impl Basis {
     ) -> Result<Array2<f64>, ENNError> {
         let d = x.ncols();
         if geometry == "scales" {
-            let bounds = self.metadata.bounds.as_ref().ok_or_else(|| {
-                invalid("column scales require input bounds")
-            })?;
-            let projection = self.metadata.input.as_ref().ok_or_else(|| {
-                invalid("column scales require a projection")
-            })?;
+            let bounds = self
+                .metadata
+                .bounds
+                .as_ref()
+                .ok_or_else(|| invalid("column scales require input bounds"))?;
+            let projection = self
+                .metadata
+                .input
+                .as_ref()
+                .ok_or_else(|| invalid("column scales require a projection"))?;
             let z = crate::adaptive_scales::centered(x, bounds);
             let factors = z.dot(projection);
             return ndarray::concatenate(Axis(1), &[z.view(), factors.view()]).map_err(invalid);

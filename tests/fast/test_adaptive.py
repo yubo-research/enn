@@ -121,7 +121,8 @@ def test_fixed_weight_and_immutable_metadata(adaptation, linear_mean):
     before = projection.loadings.copy()
     model = AdaptiveSemanticENN(
         output_projection=projection, adaptation=adaptation, linear_mean=linear_mean
-    ).add(problem.x, problem.y, geometry_weight=30)
+    ).add(problem.x[:60], problem.y[:60], geometry_weight=30)
+    model.add(problem.x[60:], problem.y[60:], geometry_weight=30)
     assert model.choice.weight in (0, 30)
     assert 0 <= model.choice.alpha <= 1
     np.testing.assert_array_equal(projection.loadings, before)

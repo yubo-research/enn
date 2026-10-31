@@ -1,4 +1,3 @@
-
 use ndarray::{Array2, ArrayView2};
 
 use crate::index::IndexDriver;

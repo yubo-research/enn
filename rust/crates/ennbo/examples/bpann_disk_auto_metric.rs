@@ -1,5 +1,5 @@
-use ndarray::array;
 use ennbo::{EpistemicNearestNeighbors, IndexDriver};
+use ndarray::array;
 
 fn main() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];

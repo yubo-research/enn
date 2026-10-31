@@ -1,6 +1,6 @@
 use ennbo::util::argmax_random_tie;
-use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 #[test]
 fn argmax_random_tie_empty_slice() {

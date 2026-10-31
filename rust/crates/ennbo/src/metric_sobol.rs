@@ -1,4 +1,3 @@
-
 pub const MIN_DEPENDENCE_ROWS: usize = 100;
 pub const DEPENDENCE_Z: f64 = 3.0;
 

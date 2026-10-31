@@ -1,8 +1,8 @@
 //! Semantic features affect only the surrogate, preserving observation coordinates.
 use ennbo::surrogate::{ENNSurrogate, ENNSurrogateConfig, Surrogate};
-use ennbo::{FitSamples, EnnLayout};
+use ennbo::{EnnLayout, FitSamples};
 use ndarray::array;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{rngs::StdRng, SeedableRng};
 
 #[test]
 fn semantic_fit_append_prediction_and_samples_match_explicit_features() {
@@ -32,26 +32,42 @@ fn check_feature_mode(semantic_only: bool) {
     });
     let mut rng = StdRng::seed_from_u64(4);
     actual.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
-    manual.fit(&features.view(), &y.view(), None, &mut rng).unwrap();
+    manual
+        .fit(&features.view(), &y.view(), None, &mut rng)
+        .unwrap();
     let more = array![[0.25, 0.6]];
     let more_y = array![[0.4]];
     let more_z = ennbo::semantic::features(&more.view(), Some(&projection), semantic_only).unwrap();
-    actual.fit_append(&more.view(), &more_y.view(), None, &mut rng).unwrap();
-    manual.fit_append(&more_z.view(), &more_y.view(), None, &mut rng).unwrap();
+    actual
+        .fit_append(&more.view(), &more_y.view(), None, &mut rng)
+        .unwrap();
+    manual
+        .fit_append(&more_z.view(), &more_y.view(), None, &mut rng)
+        .unwrap();
     let a = actual.predict(&more.view()).unwrap();
     let b = manual.predict(&more_z.view()).unwrap();
     assert_eq!(a.mu, b.mu);
     assert_eq!(a.se, b.se);
-    let a = actual.sample(&more.view(), 2, &mut StdRng::seed_from_u64(8)).unwrap();
-    let b = manual.sample(&more_z.view(), 2, &mut StdRng::seed_from_u64(8)).unwrap();
+    let a = actual
+        .sample(&more.view(), 2, &mut StdRng::seed_from_u64(8))
+        .unwrap();
+    let b = manual
+        .sample(&more_z.view(), 2, &mut StdRng::seed_from_u64(8))
+        .unwrap();
     assert_eq!(a, b);
     assert_eq!(actual.observations_x().unwrap().unwrap().ncols(), 2);
-    assert!((actual.observation_row_x(4).unwrap() - more.row(0)).iter().all(|v| v.abs() < 1e-15));
+    assert!((actual.observation_row_x(4).unwrap() - more.row(0))
+        .iter()
+        .all(|v| v.abs() < 1e-15));
     assert!(actual.lengthscales().is_none());
     actual.clear_observations().unwrap();
     assert!(actual.observations_x().unwrap().is_none());
-    actual.fit_append(&more.view(), &more_y.view(), None, &mut rng).unwrap();
-    assert!((actual.observations_x().unwrap().unwrap() - more).iter().all(|v| v.abs() < 1e-15));
+    actual
+        .fit_append(&more.view(), &more_y.view(), None, &mut rng)
+        .unwrap();
+    assert!((actual.observations_x().unwrap().unwrap() - more)
+        .iter()
+        .all(|v| v.abs() < 1e-15));
 }
 
 #[test]
