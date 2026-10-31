@@ -22,14 +22,15 @@ fn invalid(message: impl std::fmt::Display) -> ENNError {
 impl DiskInputs {
     pub(crate) fn open(
         directory: &Path,
+        filename: &str,
         rows: &ArrayView2<f64>,
         expected_rows: usize,
     ) -> Result<Self, ENNError> {
-        let path = directory.join("original_inputs.bin");
+        let path = directory.join(filename);
         let reopen = rows.nrows() == 0 && path.exists();
         if !reopen && rows.nrows() != expected_rows {
             return Err(invalid(
-                "missing original rows for semantic-only disk model",
+                "missing original rows for disk model",
             ));
         }
         let mut file = OpenOptions::new()

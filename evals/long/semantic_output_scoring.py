@@ -24,14 +24,14 @@ def select_model(x, y, validation, definition, settings):
     """Select by validation NRMSE; zero sharing is available to every method."""
     best, best_score = None, np.inf
     names, embeddings = definition
-    ranks, alphas = settings
+    cutoffs, alphas = settings
     scale = np.maximum(y.std(axis=0), 1e-12)
-    for rank in ranks:
+    for cutoff in cutoffs:
         projection = SemanticOutputProjection.from_embeddings(
-            names, embeddings, rank=rank
+            names, embeddings, variance_cutoff=cutoff
         )
         for alpha in alphas:
-            if alpha == 0 and rank != ranks[0]:
+            if alpha == 0 and cutoff != cutoffs[0]:
                 continue
             model = SemanticMultiOutputENN(projection, alpha=alpha, folds=3).fit(x, y)
             score = scores(validation[1], model.posterior(validation[0]), scale)[

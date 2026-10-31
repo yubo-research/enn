@@ -66,9 +66,9 @@ def evaluate_model(projection, alpha, data, n):
     }, test_metrics
 
 
-def run_setting(projection_pair, n, seed, case, rank):
+def run_setting(projection_pair, n, seed, case, variance_cutoff):
     data = problem(seed, n, case)
-    variants = projections(*projection_pair, data[1][:n], seed, case, rank)
+    variants = projections(*projection_pair, data[1][:n], seed, case, variance_cutoff)
     base, individual = evaluate_model(variants["semantic"], 0, data, n)
     rows = [dict(method="independent", alpha=0, **base)]
     per_output = [
@@ -97,7 +97,7 @@ def run_setting(projection_pair, n, seed, case, rank):
         rows.extend(candidates)
         selected = min(candidates, key=lambda item: item["validation_nrmse"])
         rows.append(dict(selected, method=method + "_selected"))
-    key = {"n": n, "seed": seed, "case": case, "rank": rank}
+    key = {"n": n, "seed": seed, "case": case, "variance_cutoff": variance_cutoff}
     return [dict(key, **row) for row in rows], [dict(key, **row) for row in per_output]
 
 
@@ -127,7 +127,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seeds", type=int, default=30)
     parser.add_argument("--sizes", type=int, nargs="+", default=[30, 100, 300])
-    parser.add_argument("--ranks", type=int, nargs="+", default=[4])
+    parser.add_argument(
+        "--variance-cutoffs", type=float, nargs="+", default=[0.3, 0.9, 1]
+    )
     parser.add_argument("--cases", nargs="+", default=list(CASES), choices=list(CASES))
     parser.add_argument("--directory", type=Path, default=Path("_reports/yy"))
     args = parser.parse_args()
@@ -135,15 +137,17 @@ def main():
     projection_pair = metadata(args.directory)
     rows, individual = [], []
     started = perf_counter()
-    for rank, n in product(args.ranks, args.sizes):
+    for variance_cutoff, n in product(args.variance_cutoffs, args.sizes):
         for seed in range(args.seeds):
             for case in args.cases:
-                new, outputs = run_setting(projection_pair, n, seed, case, rank)
+                new, outputs = run_setting(
+                    projection_pair, n, seed, case, variance_cutoff
+                )
                 rows.extend(new)
                 individual.extend(outputs)
             write_csv(args.directory / "raw.csv", rows)
             print(
-                f"rank={rank} n={n} seed={seed} elapsed={perf_counter() - started:.1f}s",
+                f"variance_cutoff={variance_cutoff} n={n} seed={seed} elapsed={perf_counter() - started:.1f}s",
                 flush=True,
             )
     write_csv(args.directory / "per_output.csv", individual)

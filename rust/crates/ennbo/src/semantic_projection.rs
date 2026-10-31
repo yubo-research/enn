@@ -17,6 +17,11 @@ pub fn projection(embeddings: &ArrayView2<f64>, cutoff: f64) -> Result<Array2<f6
     }
     let mut vectors = embeddings.to_owned();
     normalize_rows(&mut vectors);
+    centered_projection(vectors, cutoff)
+}
+
+/// Center without renormalizing row magnitudes, then build scaled SVD factors.
+pub fn centered_projection(mut vectors: Array2<f64>, cutoff: f64) -> Result<Array2<f64>, ENNError> {
     let mean = vectors
         .mean_axis(Axis(0))
         .ok_or_else(|| ENNError::InvalidParameter("empty embeddings".into()))?;
@@ -24,20 +29,12 @@ pub fn projection(embeddings: &ArrayView2<f64>, cutoff: f64) -> Result<Array2<f6
     let (u, singular, _) = vectors
         .svd(true, false)
         .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-    let rank = singular
-        .iter()
-        .filter(|v| **v > vectors.nrows().max(vectors.ncols()) as f64 * f64::EPSILON)
-        .count();
-    let total: f64 = singular.iter().take(rank).map(|v| v * v).sum();
-    let mut retained = rank;
-    let mut cumulative = 0.0;
-    for (j, v) in singular.iter().take(rank).enumerate() {
-        cumulative += v * v;
-        if cutoff < 1.0 && cumulative >= cutoff * total {
-            retained = j + 1;
-            break;
-        }
-    }
+    let retained = retention_count(
+        singular.as_slice().unwrap(),
+        vectors.nrows(),
+        vectors.ncols(),
+        cutoff,
+    )?;
     let mut result = u
         .ok_or_else(|| ENNError::InvalidParameter("SVD returned no vectors".into()))?
         .slice(s![.., ..retained])
@@ -57,6 +54,63 @@ pub fn projection(embeddings: &ArrayView2<f64>, cutoff: f64) -> Result<Array2<f6
         result *= (retained as f64).sqrt() / norm;
     }
     Ok(result)
+}
+
+/// Shared shortest squared-singular-value prefix above the numerical-rank tolerance.
+pub fn retention_count(
+    singular: &[f64],
+    rows: usize,
+    columns: usize,
+    cutoff: f64,
+) -> Result<usize, ENNError> {
+    if !cutoff.is_finite() || cutoff <= 0.0 || cutoff > 1.0 {
+        return Err(ENNError::InvalidParameter(
+            "variance_cutoff must be finite and in (0, 1]".into(),
+        ));
+    }
+    let rank = singular
+        .iter()
+        .filter(|v| **v > rows.max(columns) as f64 * f64::EPSILON)
+        .count();
+    let total: f64 = singular.iter().take(rank).map(|v| v * v).sum();
+    let mut retained = rank;
+    let mut cumulative = 0.0;
+    for (j, v) in singular.iter().take(rank).enumerate() {
+        cumulative += v * v;
+        if cutoff < 1.0 && cumulative >= cutoff * total {
+            retained = j + 1;
+            break;
+        }
+    }
+    Ok(retained)
+}
+
+/// Uncentered orthonormal output factors, capped to avoid the identity projector.
+pub fn output_projection(
+    embeddings: &ArrayView2<f64>,
+    cutoff: f64,
+) -> Result<Array2<f64>, ENNError> {
+    if embeddings.nrows() < 2
+        || embeddings.ncols() == 0
+        || embeddings.iter().any(|v| !v.is_finite())
+    {
+        return Err(ENNError::InvalidParameter(
+            "embeddings must be finite nonempty rows, one per output".into(),
+        ));
+    }
+    let mut vectors = embeddings.to_owned();
+    normalize_rows(&mut vectors);
+    let (u, singular, _) = vectors
+        .svd(true, false)
+        .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+    let count = retention_count(
+        singular.as_slice().unwrap(),
+        vectors.nrows(),
+        vectors.ncols(),
+        cutoff,
+    )?
+    .min(vectors.nrows() - 1);
+    Ok(u.unwrap().slice(s![.., ..count]).to_owned())
 }
 
 /// Normalize finite embedding rows without squaring their original magnitudes.
@@ -121,20 +175,6 @@ pub fn validate_bounds(bounds: &ArrayView2<f64>, dimensions: usize) -> Result<()
     Ok(())
 }
 
-/// Recover originals when their coordinates are included in the representation.
-pub fn inverse(z: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
-    validate_bounds(bounds, bounds.nrows())?;
-    if z.ncols() < bounds.nrows() {
-        return Err(ENNError::InvalidParameter(
-            "semantic-only features are not invertible".into(),
-        ));
-    }
-    Ok(Array2::from_shape_fn(
-        (z.nrows(), bounds.nrows()),
-        |(i, j)| (z[[i, j]] + 0.5) * (bounds[[j, 1]] - bounds[[j, 0]]) + bounds[[j, 0]],
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,7 +188,7 @@ mod tests {
         let bounds = array![[0., 2.], [0., 2.], [0., 2.]];
         let x = array![[0., 1., 2.]];
         let z = transform(&x.view(), &bounds.view(), &p, false).unwrap();
-        assert_eq!(inverse(&z.view(), &bounds.view()).unwrap(), x);
+        assert_eq!(z.ncols(), 5);
         assert_eq!(
             transform(&x.view(), &bounds.view(), &p, true)
                 .unwrap()
@@ -177,7 +217,10 @@ mod tests {
                 }
                 let actual = projection(&scaled.view(), 1.0).unwrap();
                 assert_eq!(actual.dim(), expected.dim());
-                assert!(actual.dot(&actual.t()).iter().zip(gram.iter())
+                assert!(actual
+                    .dot(&actual.t())
+                    .iter()
+                    .zip(gram.iter())
                     .all(|(a, b)| (a - b).abs() < 1e-12));
             }
         }

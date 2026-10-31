@@ -42,7 +42,7 @@ def interval(values):
 
 
 def paired(frame):
-    keys = ["case", "n", "rank", "seed"]
+    keys = ["case", "n", "variance_cutoff", "seed"]
     baseline = frame[frame.method == "independent"].set_index(keys)
     result = frame.copy()
     for metric in ("nrmse", "clean_nrmse", "loglik", "coverage95"):
@@ -53,12 +53,12 @@ def paired(frame):
     return result
 
 
-def select(frame, case, method="semantic", alpha=1, n=100, rank=4):
+def select(frame, case, method="semantic", alpha=1, n=100, variance_cutoff=0.9):
     selected = frame[
         (frame.case == case)
         & (frame.method == method)
         & (frame.n == n)
-        & (frame["rank"] == rank)
+        & (frame["variance_cutoff"] == variance_cutoff)
     ]
     if not method.endswith("selected"):
         selected = selected[selected.alpha == alpha]
@@ -135,25 +135,26 @@ def learning_rows(frame, case, label):
     return lines
 
 
-def rank_table(frame, extra):
+def cutoff_table(frame):
     lines = []
     for case, label in (("aligned_noisy", "Aligned, noisy"), ("opposing", "Opposing")):
-        for rank in (1, 3, 4, 8):
-            source = frame if rank == 4 else extra
-            full = select(source, case, rank=rank)
-            chosen = select(source, case, "semantic_selected", rank=rank)
+        for variance_cutoff in (0.3, 0.9, 1):
+            full = select(frame, case, variance_cutoff=variance_cutoff)
+            chosen = select(
+                frame, case, "semantic_selected", variance_cutoff=variance_cutoff
+            )
             lines.append(
                 " & ".join(
                     [
                         label,
-                        str(rank),
+                        str(variance_cutoff),
                         interval(full.delta_nrmse),
                         interval(chosen.delta_nrmse),
                     ]
                 )
                 + r" \\"
             )
-    (ROOT / "rank_table.tex").write_text("\n".join(lines) + "\n")
+    (ROOT / "cutoff_table.tex").write_text("\n".join(lines) + "\n")
 
 
 def figure(frame):
@@ -260,9 +261,9 @@ def descriptions():
 def summaries(frame):
     rows = []
     for key, group in frame.groupby(
-        ["case", "n", "rank", "method", "alpha"], sort=False
+        ["case", "n", "variance_cutoff", "method", "alpha"], sort=False
     ):
-        row = dict(zip(("case", "n", "rank", "method", "alpha"), key))
+        row = dict(zip(("case", "n", "variance_cutoff", "method", "alpha"), key))
         row["count"] = len(group)
         for metric in ("nrmse", "clean_nrmse", "loglik", "coverage95", "delta_nrmse"):
             mean, half = (
@@ -341,17 +342,17 @@ def numbers(frame):
     )
 
 
-def validate(frame, ranks, sizes, cases):
-    keys = ["case", "n", "rank", "seed", "method", "alpha"]
+def validate(frame, cutoffs, sizes, cases):
+    keys = ["case", "n", "variance_cutoff", "seed", "method", "alpha"]
     assert not frame.duplicated(keys).any()
-    assert len(frame) == len(ranks) * len(sizes) * len(cases) * 30 * 26
+    assert len(frame) == len(cutoffs) * len(sizes) * len(cases) * 30 * 26
     assert set(frame.seed) == set(range(30))
     assert set(frame.n) == set(sizes)
-    assert set(frame["rank"]) == set(ranks)
+    assert set(frame["variance_cutoff"]) == set(cutoffs)
     assert set(frame.case) == set(cases)
     assert np.isfinite(frame.select_dtypes(include="number")).all().all()
     assert frame.coverage95.between(0, 1).all()
-    for _, group in frame.groupby(["case", "n", "rank", "seed"]):
+    for _, group in frame.groupby(["case", "n", "variance_cutoff", "seed"]):
         for method in METHODS:
             candidates = group[group.method == method]
             chosen = group[group.method == method + "_selected"].iloc[0]
@@ -360,12 +361,10 @@ def validate(frame, ranks, sizes, cases):
 
 def main():
     frame = pd.read_csv(ROOT / "raw.csv")
-    extra = pd.read_csv("_reports/yy_rank/raw.csv")
-    validate(frame, [4], [30, 100, 300], CASES)
-    validate(extra, [1, 3, 8], [100], ["aligned_noisy", "opposing"])
-    frame, extra = paired(frame), paired(extra)
+    validate(frame, [0.3, 0.9, 1], [30, 100, 300], CASES)
+    frame = paired(frame)
     tables(frame)
-    rank_table(frame, extra)
+    cutoff_table(frame)
     figure(frame)
     diagnostics()
     descriptions()

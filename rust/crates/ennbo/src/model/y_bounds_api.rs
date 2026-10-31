@@ -9,10 +9,18 @@ use crate::error::ENNError;
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
 use crate::y_bounds::{
-    inv_y, is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar,
+    is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar,
 };
 
 impl EpistemicNearestNeighbors {
+    pub(crate) fn store_original_outputs(&mut self, rows: Option<Array2<f64>>, reopen: bool) -> Result<(), ENNError> {
+        if let Some(rows) = rows {
+            let rows = if reopen { Array2::zeros((0, self.num_metrics)) } else { rows };
+            self.original_y = Some(crate::input_history::InputHistory::for_named_model(rows, self, "original_outputs.bin")?);
+        }
+        Ok(())
+    }
+
     /// Empty model with optional `y_bounds` (`None` → unbounded; disk may load later via reopen).
     pub fn new_empty_with_y_bounds(
         num_dim: usize,
@@ -38,6 +46,7 @@ impl EpistemicNearestNeighbors {
         let scale_x = layout.scale_x();
         let auto = layout.metric_learning() == MetricLearning::Auto;
         let mut model = Self {
+            original_y: None,
             layout,
             backend,
             num_obs: 0,
@@ -60,6 +69,9 @@ impl EpistemicNearestNeighbors {
         };
         if auto {
             model.enable_auto_metric(Vec::new(), &Array2::zeros((0, num_dim)).view(), &Array2::zeros((0, num_metrics)).view())?;
+        }
+        if !is_identity_bounds(&model.y_bounds) {
+            model.original_y = Some(crate::input_history::InputHistory::for_named_model(Array2::zeros((0, num_metrics)), &model, "original_outputs.bin")?);
         }
         model.persist_y_bounds_metadata()?;
         Ok(model)
@@ -125,7 +137,7 @@ impl EpistemicNearestNeighbors {
         if is_identity_bounds(&self.y_bounds) {
             return Ok((x, y_z, yvar_z));
         }
-        let y = inv_y(y_z.view(), &self.y_bounds);
+        let y = self.original_y.as_ref().ok_or_else(|| crate::error::ENNError::InvalidParameter("missing original outputs".into()))?.gather(indices)?;
         let yvar = match yvar_z {
             Some(zv) => {
                 let mut yv = Array2::zeros(zv.raw_dim());
@@ -149,12 +161,10 @@ impl EpistemicNearestNeighbors {
 
     /// Public single-row y in natural units.
     pub fn row_y_natural(&self, i: usize) -> Result<Array1<f64>, ENNError> {
-        let y_z = self.rows().row_y(i)?;
-        if is_identity_bounds(&self.y_bounds) {
-            return Ok(y_z);
+        if let Some(history) = &self.original_y {
+            return Ok(history.gather(&[i])?.row(0).to_owned());
         }
-        let y2 = inv_y(y_z.insert_axis(ndarray::Axis(0)).view(), &self.y_bounds);
-        Ok(y2.row(0).to_owned())
+        self.rows().row_y(i)
     }
 }
 

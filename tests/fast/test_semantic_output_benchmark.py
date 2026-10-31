@@ -14,7 +14,7 @@ from evals.long.semantic_output_scoring import benchmark_method, scores
 
 def definition():
     return SemanticOutputProjection.from_embeddings(
-        ["a", "b", "c"], [[1, 0], [1, 0], [0, 1]], rank=2
+        ["a", "b", "c"], [[1, 0], [1, 0], [0, 1]]
     )
 
 
@@ -41,7 +41,7 @@ def test_selection_ignores_test_labels(monkeypatch):
     )
     p = definition()
     x, y = synthetic_problem(3, 2, p, "A_aligned", 16)
-    arguments = ((8, 12, 16), (p.names, p.embeddings), ([1, 2], [0, 0.3, 1]))
+    arguments = ((8, 12, 16), (p.names, p.embeddings), ([0.3, 0.9, 1], [0, 0.3, 1]))
     original, _ = benchmark_method(x, y, *arguments)
     y[12:] += 100
     changed, _ = benchmark_method(x, y, *arguments)
@@ -89,9 +89,24 @@ def test_opposing_effects_within_identical_descriptions():
     p = SemanticOutputProjection.from_embeddings(
         ["a", "b", "c", "d", "e"],
         np.eye(4)[np.arange(5) % 4],
-        rank=2,
+        variance_cutoff=0.9,
     )
     _, aligned = synthetic_problem(2, 20, p, "A_aligned", 100)
     _, opposing = synthetic_problem(2, 20, p, "C_opposing", 100)
     assert np.corrcoef(aligned.T)[0, 4] > 0.8
     assert np.corrcoef(opposing.T)[0, 4] < -0.8
+
+
+def test_yy_controls_use_cutoff_including_training_pca():
+    from evals.long.yy_problem import NAMES, projections
+
+    projection = SemanticOutputProjection.from_embeddings(
+        NAMES, np.eye(4)[np.arange(16) % 4]
+    )
+    y = np.random.default_rng(3).normal(size=(30, 16))
+    widths = []
+    for cutoff in (0.3, 0.9, 1):
+        variants = projections(projection, projection, y, 0, "aligned_noisy", cutoff)
+        assert all(p.loadings.shape[1] < 16 for p in variants.values())
+        widths.append(variants["pca"].loadings.shape[1])
+    assert widths[0] < widths[1] <= widths[2]

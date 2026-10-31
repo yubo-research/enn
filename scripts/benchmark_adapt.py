@@ -1,7 +1,7 @@
 """Record paired adaptation quality and steady-state update latency.
 
 Run with PYTHONPATH=src:. python scripts/benchmark_adapt.py --output DIR.
-Use --reference DIR to load a saved adaptive_model.py for a paired comparison.
+Use --reference DIR with saved adaptive.py and adaptive_model.py for a paired comparison.
 Run each version separately, on an otherwise idle machine.
 Use --geometry-weight 30 to evaluate the opt-in fixed-weight update policy.
 """
@@ -30,15 +30,15 @@ def load_reference(directory):
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
         enn.enn_rust = module
-    import enn.adaptive
-
-    spec = importlib.util.spec_from_file_location(
-        "adapt_reference", directory / "adaptive_model.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    enn.adaptive.select_predictor = module.select_predictor
+    for name in ("adaptive_model", "adaptive"):
+        spec = importlib.util.spec_from_file_location(
+            f"enn.{name}", directory / f"{name}.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        setattr(enn, name, module)
+    enn.AdaptiveSemanticENN = module.AdaptiveSemanticENN
 
 
 def measure(kind, case, seed, counts, geometry_weight):

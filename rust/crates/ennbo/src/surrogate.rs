@@ -119,7 +119,7 @@ impl ENNSurrogateConfig {
 pub struct ENNSurrogate {
     config: ENNSurrogateConfig,
     state: FitState,
-    original_x: Option<Array2<f64>>,
+    original_x: Option<crate::input_history::InputHistory>,
 }
 
 impl ENNSurrogate {
@@ -283,14 +283,9 @@ impl Surrogate for ENNSurrogate {
 
     fn observation_row_x(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
         if let Some(x) = &self.original_x {
-            if idx >= x.nrows() {
-                return Err(ENNError::InvalidParameter("observation index out of range".into()));
-            }
-            return Ok(x.row(idx).to_owned());
+            return Ok(x.gather(&[idx])?.row(0).to_owned());
         }
-        let model = self.fitted_model()?;
-        let row = model.rows().row_x(idx)?;
-        Ok(crate::semantic::original_row(row, self.config.semantic_projection.as_deref()))
+        self.fitted_model()?.rows().row_x(idx)
     }
 
     fn observation_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
@@ -339,22 +334,13 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn observations_x(&self) -> Result<Option<Array2<f64>>, ENNError> {
+        let Some(model) = self.state.model() else { return Ok(None); };
+        if model.is_empty() { return Ok(None); }
+        let indices: Vec<_> = (0..model.len()).collect();
         if let Some(x) = &self.original_x {
-            return Ok(Some(x.clone()));
+            return Ok(Some(x.gather(&indices)?));
         }
-        let model = match self.state.model() {
-            Some(m) => m,
-            None => return Ok(None),
-        };
-        let n = model.len();
-        if n == 0 {
-            return Ok(None);
-        }
-        let mut x = Array2::zeros((n, model.num_dim()));
-        for i in 0..n {
-            x.row_mut(i).assign(&model.rows().row_x(i)?);
-        }
-        Ok(Some(crate::semantic::original_rows(x, self.config.semantic_projection.as_deref())))
+        Ok(Some(model.rows().train_rows_at(&indices)?.0))
     }
 
     fn fit(
@@ -372,7 +358,9 @@ impl Surrogate for ENNSurrogate {
         self.original_x = None;
         let features = crate::semantic::features(x, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
         self.start_model(&features.view(), y, yvar, warm, &mut local_rng)?;
-        self.original_x = self.config.semantic_only.then(|| x.to_owned());
+        if self.config.semantic_projection.is_some() {
+            self.original_x = Some(crate::input_history::InputHistory::for_model(x.to_owned(), self.fitted_model()?)?);
+        }
         Ok(())
     }
 
@@ -388,12 +376,10 @@ impl Surrogate for ENNSurrogate {
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
         let features = crate::semantic::features(x_new, self.config.semantic_projection.as_deref(), self.config.semantic_only)?;
         self.fit_append_internal(&features.view(), y_new, yvar_new, &mut local_rng)?;
-        if self.config.semantic_only {
-            self.original_x = Some(match self.original_x.take() {
-                Some(x) => ndarray::concatenate(ndarray::Axis(0), &[x.view(), x_new.view()])
-                    .map_err(|e| ENNError::InvalidParameter(e.to_string()))?,
-                None => x_new.to_owned(),
-            });
+        if let Some(history) = &mut self.original_x {
+            history.append(x_new)?;
+        } else if self.config.semantic_projection.is_some() {
+            self.original_x = Some(crate::input_history::InputHistory::for_model(x_new.to_owned(), self.fitted_model()?)?);
         }
         Ok(())
     }

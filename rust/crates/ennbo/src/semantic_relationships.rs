@@ -1,15 +1,16 @@
-//! Fixed rank-one input projections for each output, shared by all surrogates.
+//! Centered cosine SVD input-output projections shared by all surrogates.
 use crate::error::ENNError;
 use ndarray::{Array2, ArrayView2};
 
 /// Construct columns proportional to input-output cosine similarities.
 /// Rows map ordered inputs followed by outputs into deduplicated embeddings.
-/// The combined squared energy equals the output count, matching the relative
+/// The combined squared energy equals the retained width, matching the relative
 /// weight convention of the x-x projection. Zero embeddings contribute no prior.
 pub fn projection(
     embeddings: &ArrayView2<f64>,
     rows: &[usize],
     input_count: usize,
+    cutoff: f64,
 ) -> Result<Array2<f64>, ENNError> {
     if input_count == 0
         || input_count >= rows.len()
@@ -24,18 +25,12 @@ pub fn projection(
     let mut unit = embeddings.to_owned();
     crate::semantic_projection::normalize_rows(&mut unit);
     let output_count = rows.len() - input_count;
-    let mut result = Array2::from_shape_fn((input_count, output_count), |(j, i)| {
+    let result = Array2::from_shape_fn((input_count, output_count), |(j, i)| {
         unit.row(rows[j])
             .dot(&unit.row(rows[input_count + i]))
             .clamp(-1.0, 1.0)
     });
-    let scale = result.iter().copied().map(f64::abs).fold(0.0_f64, f64::max);
-    if scale > 0.0 {
-        result /= scale;
-        let norm = result.iter().map(|v| v * v).sum::<f64>().sqrt();
-        result *= (output_count as f64).sqrt() / norm;
-    }
-    Ok(result)
+    crate::semantic_projection::centered_projection(result, cutoff)
 }
 
 #[cfg(test)]
@@ -44,36 +39,16 @@ mod tests {
     use ndarray::array;
 
     #[test]
-    fn cosine_columns_preserve_relevance_sign_and_order() {
+    fn centered_cosines_preserve_signed_geometry() {
         let embeddings = array![[2., 0.], [0., 3.], [-4., 0.]];
-        let p = projection(&embeddings.view(), &[0, 1, 0, 2], 2).unwrap();
-        assert_eq!(p, array![[1., -1.], [0., 0.]]);
-        let reordered = projection(&embeddings.view(), &[1, 0, 2, 0], 2).unwrap();
-        assert_eq!(reordered, array![[0., 0.], [-1., 1.]]);
-        let duplicated = projection(&array![[2., 0.]].view(), &[0, 0, 0], 2).unwrap();
-        assert!((duplicated[[0, 0]] - 0.5_f64.sqrt()).abs() < 1e-15);
-        assert_eq!(duplicated[[0, 0]], duplicated[[1, 0]]);
-    }
-
-    #[test]
-    fn zero_and_extreme_vectors_remain_finite() {
-        let embeddings = array![[f64::MAX, 0.], [0., f64::MIN_POSITIVE], [0., 0.]];
-        assert_eq!(
-            projection(&embeddings.slice(ndarray::s![..2, ..]), &[0, 1, 0, 1], 2).unwrap(),
-            array![[1., 0.], [0., 1.]]
-        );
-        assert_eq!(
-            projection(&embeddings.view(), &[0, 1, 2], 2).unwrap(),
-            Array2::<f64>::zeros((2, 1))
-        );
-        assert_eq!(
-            projection(&array![[0., 0.]].view(), &[0, 0], 1).unwrap(),
-            array![[0.]]
-        );
-        assert_eq!(
-            projection(&array![[1., 0.], [1e-300, 1.]].view(), &[0, 1], 1).unwrap(),
-            array![[1.]]
-        );
+        let p = projection(&embeddings.view(), &[0, 1, 0, 2], 2, 1.0).unwrap();
+        assert_eq!(p.dim(), (2, 1));
+        assert!((p[[0, 0]] + p[[1, 0]]).abs() < 1e-12);
+        assert!((p.iter().map(|v| v * v).sum::<f64>() - 1.0).abs() < 1e-12);
+        let same = projection(&array![[2., 0.]].view(), &[0, 0, 0], 2, 0.9).unwrap();
+        assert_eq!(same.dim(), (2, 0));
+        let zero = projection(&Array2::zeros((2, 2)).view(), &[0, 1], 1, 1.0).unwrap();
+        assert_eq!(zero.dim(), (1, 0));
     }
 
     #[test]
@@ -88,7 +63,7 @@ mod tests {
             (Array2::zeros((1, 0)), vec![0, 0], 1),
             (Array2::zeros((0, 2)), vec![0, 0], 1),
         ] {
-            assert!(projection(&embeddings.view(), &rows, inputs).is_err());
+            assert!(projection(&embeddings.view(), &rows, inputs, 0.9).is_err());
         }
     }
 }

@@ -36,8 +36,9 @@ pub fn semantic_input_output_projection<'py>(
     embeddings: PyReadonlyArray2<f64>,
     rows: Vec<usize>,
     input_count: usize,
+    cutoff: f64,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-    ennbo::semantic_relationships::projection(&embeddings.as_array(), &rows, input_count)
+    ennbo::semantic_relationships::projection(&embeddings.as_array(), &rows, input_count, cutoff)
         .map(|v| v.into_pyarray_bound(py))
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
@@ -96,18 +97,6 @@ pub fn semantic_transform<'py>(
     .map(|v| v.into_pyarray_bound(py))
     .map_err(|e| PyValueError::new_err(e.to_string()))
 }
-#[pyfunction]
-#[doc = "kiss-coverage-off"]
-pub fn semantic_inverse<'py>(
-    py: Python<'py>,
-    z: PyReadonlyArray2<f64>,
-    bounds: PyReadonlyArray2<f64>,
-) -> PyResult<Bound<'py, PyArray2<f64>>> {
-    ennbo::semantic_projection::inverse(&z.as_array(), &bounds.as_array())
-        .map(|v| v.into_pyarray_bound(py))
-        .map_err(|e| PyValueError::new_err(e.to_string()))
-}
-
 /// Original input rows for noninvertible feature representations.
 #[pyclass(name = "InputHistory")]
 pub struct PyInputHistory {
@@ -142,4 +131,17 @@ impl PyInputHistory {
             .map(|v| v.into_pyarray_bound(py))
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
+}
+
+/// Uncentered output projector with the shared variance retention rule.
+#[pyfunction]
+#[doc = "kiss-coverage-off"]
+pub fn semantic_output_projection<'py>(
+    py: Python<'py>,
+    embeddings: PyReadonlyArray2<f64>,
+    cutoff: f64,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    ennbo::semantic_projection::output_projection(&embeddings.as_array(), cutoff)
+        .map(|v| v.into_pyarray_bound(py))
+        .map_err(|e| PyValueError::new_err(e.to_string()))
 }

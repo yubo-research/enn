@@ -31,6 +31,7 @@ pub fn pymodule_hash(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[doc = "kiss-coverage-off"]
 pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_semantic::PyInputHistory>()?;
+    m.add_class::<crate::py_adaptive::PyAdaptiveSemanticENN>()?;
     m.add_class::<crate::py_cat_encoder::PyCatEncoder>()?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_log_width, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_column_plan, m)?)?;
@@ -41,7 +42,7 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_projection, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_weighted, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_transform, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_inverse, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_output_projection, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::standardize_y_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::pareto_front_2d_maximize_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::calculate_sobol_indices_py, m)?)?;

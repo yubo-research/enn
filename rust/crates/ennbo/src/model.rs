@@ -32,6 +32,7 @@ pub use access::{EnnIndexAccess, EnnRowAccess};
 
 /// Epistemic Nearest Neighbors model.
 pub struct EpistemicNearestNeighbors {
+    original_y: Option<crate::input_history::InputHistory>,
     pub(crate) layout: EnnLayout,
     pub(crate) backend: EnnBackend,
     pub(crate) num_obs: usize,
@@ -186,6 +187,7 @@ impl EpistemicNearestNeighbors {
         )?;
 
 
+        let original_y = (!crate::y_bounds::is_identity_bounds(&y_bounds)).then(|| train_y.clone());
         let (train_y, train_yvar) = if disk_reopen {
             (train_y, train_yvar)
         } else {
@@ -206,6 +208,7 @@ impl EpistemicNearestNeighbors {
         )?;
 
         let mut model = Self {
+            original_y: None,
             layout,
             backend,
             num_obs,
@@ -229,6 +232,7 @@ impl EpistemicNearestNeighbors {
         if disk_reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;
         }
+        model.store_original_outputs(original_y, disk_reopen)?;
         model.persist_y_bounds_metadata()?;
         model.set_tied_groups(tied_dims.clone())?;
         if let Some((x, y)) = auto_rows {
@@ -306,6 +310,7 @@ impl EpistemicNearestNeighbors {
             self.backend.wait_for_flush()?;
             self.backend
                 .append_rows(x, &y_z.view(), yvar_view.as_ref())?;
+            if let Some(history) = &mut self.original_y { history.append(y)?; }
             accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y_z.view());
             let n = self.backend.len();
             self.y_scale = scale_from_moments(n, self.num_metrics, &self.y_sum, &self.y_sumsq, 0.0);

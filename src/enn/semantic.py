@@ -62,10 +62,11 @@ class SemanticInputTransform:
         output_descriptions=None,
         *,
         model="sentence-transformers/all-MiniLM-L6-v2",
+        variance_cutoff=0.9,
         relative_weight=0.25,
         encoder=None,
     ):
-        """Append shared x-y features, one cosine-weighted input sum per output.
+        """Append shared x-y features, centered cosine SVD factors.
 
         This is an alternative to the x-x prior built by the normal constructor.
         All output features are shared by all surrogate outputs. Descriptions
@@ -73,13 +74,13 @@ class SemanticInputTransform:
         Construction uses only metadata; observed targets are never required.
         The returned fixed transform supports the same models, optimizers, and
         save/load operations. Keep the default ``semantic_only=False`` to retain
-        original inputs alongside this prior. No variance truncation is applied.
+        original inputs alongside this prior. The variance cutoff selects the retained factor count.
         """
         from enn._rust import semantic_input_output_projection
         from enn.semantic_relationships import relationship_texts
 
         result = cls.__new__(cls)
-        result._set_definition(names, bounds, model, relative_weight, 1.0)
+        result._set_definition(names, bounds, model, relative_weight, variance_cutoff)
         texts, rows = relationship_texts(
             result.names, output_names, descriptions, output_descriptions
         )
@@ -87,7 +88,9 @@ class SemanticInputTransform:
         object.__setattr__(
             result,
             "projection",
-            semantic_input_output_projection(embeddings, rows, len(result.names)),
+            semantic_input_output_projection(
+                embeddings, rows, len(result.names), result.variance_cutoff
+            ),
         )
         result._freeze()
         return result
@@ -159,14 +162,6 @@ class SemanticInputTransform:
         result = semantic_transform(
             np.atleast_2d(values), self.bounds, self.weighted_projection, semantic_only
         )
-        return result[0] if values.ndim == 1 else result
-
-    def inverse(self, z):
-        """Recover original numerical columns from augmented rows."""
-        from enn._rust import semantic_inverse
-
-        values = np.asarray(z, dtype=float)
-        result = semantic_inverse(np.atleast_2d(values), self.bounds)
         return result[0] if values.ndim == 1 else result
 
     def save(self, path):

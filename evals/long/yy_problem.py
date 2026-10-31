@@ -42,11 +42,11 @@ def metadata(directory):
     """Cache the actual pretrained encoder output, independent of sample seed."""
     directory = Path(directory)
     paraphrase = SemanticOutputProjection.from_metadata(
-        NAMES, DESCRIPTIONS, rank=4, cache_dir=directory / "cache"
+        NAMES, DESCRIPTIONS, cache_dir=directory / "cache"
     )
     exact_texts = tuple(DESCRIPTIONS[4 * (j // 4)] for j in range(16))
     exact = SemanticOutputProjection.from_metadata(
-        NAMES, exact_texts, rank=4, cache_dir=directory / "cache"
+        NAMES, exact_texts, cache_dir=directory / "cache"
     )
     paraphrase.save(directory / "paraphrase_projection.npz")
     exact.save(directory / "repeated_projection.npz")
@@ -78,25 +78,26 @@ def problem(seed, n, case):
     return x, clean + CASES[case] * noise, clean
 
 
-def projections(paraphrase, exact, y, seed, case, rank=4):
-    """The PCA-derived control row-normalizes training-only PCA loading vectors."""
+def projections(paraphrase, exact, y, seed, case, variance_cutoff=0.9):
+    """The PCA control applies the same cutoff to training-only output embeddings."""
     rng = np.random.default_rng(seed + 10000)
     order = np.arange(16).reshape(4, 4).T.ravel()
     semantic = paraphrase.embeddings
     if case == "misleading":
         semantic = semantic[order]
     z = (y - y.mean(axis=0)) / y.std(axis=0)
-    _, _, vt = np.linalg.svd(z, full_matrices=False)
     embeddings = {
         "semantic": semantic,
         "shuffled": semantic[rng.permutation(16)],
         "random": rng.normal(size=semantic.shape),
-        "pca": vt[:rank].T,
+        "pca": z.T,
         "repeated": exact.embeddings[order]
         if case == "misleading"
         else exact.embeddings,
     }
     return {
-        name: SemanticOutputProjection.from_embeddings(NAMES, values, rank=rank)
+        name: SemanticOutputProjection.from_embeddings(
+            NAMES, values, variance_cutoff=variance_cutoff
+        )
         for name, values in embeddings.items()
     }

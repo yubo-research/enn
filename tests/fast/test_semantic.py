@@ -36,7 +36,6 @@ def test_projection_geometry_and_order():
     np.testing.assert_array_equal(
         z, transform.transform(x[:, [2, 0, 1]], names=["ab", "a", "b"])
     )
-    np.testing.assert_allclose(transform.inverse(z), x)
     with pytest.raises(ValueError):
         transform.transform(x, names=["a", "a", "b"])
 

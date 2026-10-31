@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from enn._rust import semantic_encode, semantic_texts
+from enn._rust import semantic_encode, semantic_output_projection, semantic_texts
 
 
 def _output_names(names):
@@ -21,14 +21,11 @@ def _output_names(names):
     return names
 
 
-def _rank(rank, outputs):
-    if rank is None:
-        return min(2, outputs - 1)
-    if isinstance(rank, bool) or not isinstance(rank, (int, np.integer)):
-        raise TypeError("rank must be an integer")
-    if not 0 < rank < outputs:
-        raise ValueError("rank must be positive and smaller than the output count")
-    return int(rank)
+def _cutoff(value):
+    value = float(value)
+    if not np.isfinite(value) or not 0 < value <= 1:
+        raise ValueError("variance_cutoff must be finite and in (0, 1]")
+    return value
 
 
 def _normalized(embeddings, outputs):
@@ -52,7 +49,7 @@ class SemanticOutputProjection:
 
     Use ``from_metadata`` for pretrained embeddings; ``from_embeddings`` supports
     controlled ablations. Numerically zero singular directions are discarded.
-    Omitted rank uses min(2, output_count - 1).
+    The variance cutoff defaults to 0.9; at most output_count - 1 factors remain.
     Zero embeddings produce no factors and the wrapper falls back to independent
     outputs. Repeated descriptions retain their common direction.
     """
@@ -81,14 +78,12 @@ class SemanticOutputProjection:
         object.__setattr__(self, "loadings", loadings)
 
     @classmethod
-    def from_embeddings(cls, names, embeddings, *, rank=None):
+    def from_embeddings(cls, names, embeddings, *, variance_cutoff=0.9):
         names = _output_names(names)
-        rank = _rank(rank, len(names))
+        variance_cutoff = _cutoff(variance_cutoff)
         embeddings = _normalized(embeddings, len(names))
-        u, singular, _ = np.linalg.svd(embeddings, full_matrices=False)
-        tolerance = np.finfo(float).eps * max(embeddings.shape) * singular[0]
-        count = min(rank, int(np.sum(singular > tolerance)))
-        return cls(names, embeddings, u[:, :count])
+        loadings = semantic_output_projection(embeddings, variance_cutoff)
+        return cls(names, embeddings, loadings)
 
     @classmethod
     def from_metadata(
@@ -96,21 +91,23 @@ class SemanticOutputProjection:
         names,
         descriptions=None,
         *,
-        rank=None,
+        variance_cutoff=0.9,
         model="sentence-transformers/all-MiniLM-L6-v2",
         encoder=None,
         cache_dir=None,
     ):
-        """Encode once; optional disk cache keys include texts, model, and rank.
+        """Encode once; optional disk cache keys include texts, model, and cutoff.
 
         A custom encoder is never looked up in the automatic cache because its
         identity is unknown. Save/load its projection explicitly instead.
         Descriptions fall back to names and support file URIs like input metadata.
         """
         names = _output_names(names)
-        rank = _rank(rank, len(names))
+        variance_cutoff = _cutoff(variance_cutoff)
         texts, rows = semantic_texts(names, descriptions)
-        path = _cache_path(cache_dir, names, texts, rows, model, rank, encoder)
+        path = _cache_path(
+            cache_dir, names, texts, rows, model, variance_cutoff, encoder
+        )
         if path is not None and path.exists():
             return cls.load(path)
         encoded = (
@@ -119,7 +116,9 @@ class SemanticOutputProjection:
         encoded = np.asarray(encoded, dtype=float)
         if encoded.ndim != 2 or encoded.shape[0] != len(texts):
             raise ValueError("encoder must return one embedding row per text")
-        result = cls.from_embeddings(names, encoded[rows], rank=rank)
+        result = cls.from_embeddings(
+            names, encoded[rows], variance_cutoff=variance_cutoff
+        )
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
             result.save(path)
@@ -143,8 +142,8 @@ class SemanticOutputProjection:
             return cls(tuple(data["names"]), data["embeddings"], data["loadings"])
 
 
-def _cache_path(directory, names, texts, rows, model, rank, encoder):
+def _cache_path(directory, names, texts, rows, model, variance_cutoff, encoder):
     if directory is None or encoder is not None:
         return None
-    key = json.dumps([1, names, texts, list(map(int, rows)), model, rank])
+    key = json.dumps([2, names, texts, list(map(int, rows)), model, variance_cutoff])
     return Path(directory) / (sha256(key.encode()).hexdigest() + ".npz")

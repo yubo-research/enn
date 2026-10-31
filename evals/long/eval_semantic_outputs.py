@@ -72,7 +72,7 @@ def run_case(dimensions, outputs, n, seed, directory):
                 ([1], [0])
                 if method == "independent"
                 else (
-                    [rank for rank in (1, 2, 4, 8) if rank < outputs],
+                    [0.3, 0.9, 1],
                     [0, 0.1, 0.3, 1],
                 )
             )

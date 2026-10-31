@@ -49,7 +49,7 @@ def make_problem(kind, case, seed, count=428):
             y = np.column_stack([np.sin((i + 1) * x[:, i % 3] * 3) for i in range(6)])
         embeddings = [[1, 0]] * 3 + [[0, 1]] * 3
         projection = SemanticOutputProjection.from_embeddings(
-            [f"y{i}" for i in range(6)], embeddings, rank=2
+            [f"y{i}" for i in range(6)], embeddings
         )
         return AdaptProblem(x, y + rng.normal(0, 0.1, y.shape), None, projection)
     nuisance = np.roll(active, 8)

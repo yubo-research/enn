@@ -20,7 +20,7 @@ class OutputEncoder:
 
 def projection():
     return SemanticOutputProjection.from_embeddings(
-        ["a", "b", "c"], [[1, 0], [1, 0], [0, 1]], rank=2
+        ["a", "b", "c"], [[1, 0], [1, 0], [0, 1]]
     )
 
 
@@ -34,11 +34,9 @@ def test_uncentered_projection_and_degeneracy(tmp_path):
     p = projection()
     np.testing.assert_allclose(p.loadings.T @ p.loadings, np.eye(2))
     np.testing.assert_allclose(np.linalg.norm(p.embeddings, axis=1), 1)
-    same = SemanticOutputProjection.from_embeddings(["a", "b"], [[1, 2]] * 2, rank=1)
+    same = SemanticOutputProjection.from_embeddings(["a", "b"], [[1, 2]] * 2)
     np.testing.assert_allclose(same.loadings @ same.loadings.T, np.full((2, 2), 0.5))
-    zero = SemanticOutputProjection.from_embeddings(
-        ["a", "b"], np.zeros((2, 2)), rank=1
-    )
+    zero = SemanticOutputProjection.from_embeddings(["a", "b"], np.zeros((2, 2)))
     assert zero.loadings.shape == (2, 0)
     path = tmp_path / "outputs.npz"
     p.save(path)
@@ -57,7 +55,7 @@ def test_metadata_fallback_and_disk_cache(tmp_path, monkeypatch):
         return OutputEncoder().encode(texts)
 
     monkeypatch.setattr(semantic_outputs, "semantic_encode", encode)
-    kwargs = {"rank": 1, "cache_dir": tmp_path}
+    kwargs = {"variance_cutoff": 0.9, "cache_dir": tmp_path}
     first = SemanticOutputProjection.from_metadata(["a", "b"], [None, ""], **kwargs)
     second = SemanticOutputProjection.from_metadata(["a", "b"], **kwargs)
     assert calls == [["a", "b"]]
@@ -66,10 +64,12 @@ def test_metadata_fallback_and_disk_cache(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
-@pytest.mark.parametrize("rank", [0, 3, -1])
-def test_invalid_ranks(rank):
+@pytest.mark.parametrize("variance_cutoff", [0, 3, -1, np.nan, np.inf])
+def test_invalid_cutoffs(variance_cutoff):
     with pytest.raises(ValueError):
-        SemanticOutputProjection.from_embeddings(["a", "b", "c"], np.eye(3), rank=rank)
+        SemanticOutputProjection.from_embeddings(
+            ["a", "b", "c"], np.eye(3), variance_cutoff=variance_cutoff
+        )
 
 
 @pytest.mark.parametrize(
@@ -178,5 +178,32 @@ def test_two_outputs_have_a_valid_default_rank():
     direct = SemanticOutputProjection.from_embeddings(names, np.eye(2))
     metadata = SemanticOutputProjection.from_metadata(names, encoder=OutputEncoder())
     assert direct.loadings.shape == metadata.loadings.shape == (2, 1)
-    with pytest.raises(ValueError):
-        SemanticOutputProjection.from_embeddings(names, np.eye(2), rank=2)
+    assert SemanticOutputProjection.from_embeddings(
+        names, np.eye(2), variance_cutoff=1
+    ).loadings.shape == (2, 1)
+
+
+def test_cutoff_changes_width_and_cache_identity(tmp_path, monkeypatch):
+    from enn import semantic_outputs
+
+    calls = []
+
+    def encode(texts, model):
+        calls.append(texts)
+        return np.array([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+
+    monkeypatch.setattr(semantic_outputs, "semantic_encode", encode)
+    names = ["a", "b", "c"]
+    narrow = SemanticOutputProjection.from_metadata(
+        names, variance_cutoff=0.3, cache_dir=tmp_path
+    )
+    wide = SemanticOutputProjection.from_metadata(
+        names, variance_cutoff=0.9, cache_dir=tmp_path
+    )
+    cached = SemanticOutputProjection.from_metadata(
+        names, variance_cutoff=0.9, cache_dir=tmp_path
+    )
+    assert narrow.loadings.shape == (3, 1)
+    assert wide.loadings.shape == cached.loadings.shape == (3, 2)
+    assert len(calls) == 2
+    assert len(list(tmp_path.glob("*.npz"))) == 2

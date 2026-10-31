@@ -16,7 +16,7 @@ def output_projection(outputs, directory):
     return SemanticOutputProjection.from_metadata(
         [f"metric_{j}" for j in range(outputs)],
         [DESCRIPTIONS[j % len(DESCRIPTIONS)] for j in range(outputs)],
-        rank=min(2, outputs - 1),
+        variance_cutoff=0.9,
         cache_dir=directory,
     )
 

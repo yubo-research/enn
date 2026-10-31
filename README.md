@@ -126,26 +126,23 @@ transform = SemanticInputTransform.from_input_output(
 model = EpistemicNearestNeighbors(train_x, train_y, input_transform=transform)
 ```
 
-For each output, the transform constructs a rank-one projection whose input
-weights are proportional to the cosine similarities between input and output
-text embeddings. It shares all output projections across the surrogate models,
-appending one feature per output to the centered, bound-normalized inputs. The
-combined projection is scaled to squared energy equal to the output count before
-applying `relative_weight`; zero embeddings contribute zero similarities, and an
-entirely zero projection remains zero. Signed similarities are retained. Original
-input columns remain available, so data can learn relationships absent from the
-prior. Use the default `semantic_only=False` for this behavior.
+The transform builds signed cosine similarities between input and output text
+embeddings, centers their columns, and retains the shortest SVD prefix reaching
+`variance_cutoff` (default 0.9). It preserves cosine magnitudes before the SVD.
+The retained factors have squared energy equal to their count before applying
+`relative_weight`. Zero or constant similarities produce no factors. Original
+input columns remain available with the default `semantic_only=False`.
 
 This constructor needs no objective observations and uses one embedding call
 with descriptions deduplicated across inputs and outputs. Description fallbacks,
 local file URIs, `encoder=`, caching, and optimizer `input_transform=` work as
 with the existing x-x constructor. `transform.save` and `SemanticInputTransform.load`
-preserve the fixed projection without loading an encoder. There is no SVD cutoff
-for x-y features. The ordinary `SemanticInputTransform(...)` constructor continues
+preserve the fixed projection without loading an encoder. All three priors use the same SVD variance cutoff. Output priors use an
+uncentered SVD with orthonormal columns, capped at `n_outputs - 1` factors. The ordinary `SemanticInputTransform(...)` constructor continues
 to build the existing x-x prior. Semantic similarity expresses a prior, rather
 than evidence of causal influence; prediction improvements remain a hypothesis.
 
-`AdaptiveSemanticENN` is an optional Python wrapper for learning from a stream of
+`AdaptiveSemanticENN` is an optional wrapper around Rust adaptation for learning from a stream of
 complete numerical observations. It adapts a separate supervised input geometry
 and signed output factors while preserving the supplied metadata definitions:
 
@@ -164,7 +161,12 @@ rows for fitting, candidate selection, and variance calibration. Candidates
 include the fixed prior, supervised linear and quadratic-gradient geometries,
 and independent, semantic, or learned output sharing. `model.choice` exposes the
 selection. Learned input maps retain the metadata projection's factor count;
-x-x still initializes that count with its variance cutoff (default 0.9).
+all priors initialize their count with the shared variance cutoff (default 0.9).
+Semantic and learned output operators use `(1-alpha) I + alpha L Lᵀ`, with
+`alpha` fitted on selection rows and exposed as `model.choice.alpha`. The low-rank
+candidate remains the projector alone. Replay, splitting, fitting, selection, and
+calibration run in Rust; Python wraps the public API.
+Model read-back returns stored original input and output rows, including on disk.
 A raw-input candidate makes zero semantic mixing available during selection. Both fixed and learned
 input distances use a square matrix root, keeping the indexed input dimension
 constant without discarding original coordinates. The public metadata transform
@@ -190,11 +192,11 @@ By default, geometry weights 3 and 30 are tuned. Pass
 fixed while retaining every geometry family, output operator, neighbor count,
 and factor rank. This reduces selection work but can change the chosen model;
 metadata embedding weights remain unchanged. Replay sampling, data splits, and
-variance calibration retain the same protocol in both modes. Final refits only
-compute their selected maps. Reproduce the runtime and prediction comparison with
+variance calibration retain the same protocol in both modes. Reproduce the runtime
+and prediction comparison with
 `PYTHONPATH=src:. python scripts/benchmark_adapt.py --output DIR`;
-`--reference DIR` loads a saved `adaptive_model.py` and, when present, its saved
-native extension. Add `--geometry-weight 30` to measure fixed-weight updates.
+`--reference DIR` loads saved `adaptive.py` and `adaptive_model.py` files and,
+when present, their saved native extension. Add `--geometry-weight 30` to measure fixed-weight updates.
 See `report-adapt-speed.pdf` for measurements, the assessment
 of recursive updates, and a bootstrap sensitivity analysis of learned geometry.
 

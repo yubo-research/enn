@@ -350,3 +350,11 @@ mod categorical_values;
 
 pub mod semantic_text;
 pub mod semantic_encoder;
+
+pub mod adaptive;
+pub mod adaptive_basis;
+mod adaptive_geometry;
+mod adaptive_predictor;
+mod adaptive_selection;
+#[cfg(test)]
+mod adaptive_tests;

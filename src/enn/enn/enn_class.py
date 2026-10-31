@@ -117,7 +117,9 @@ class EpistemicNearestNeighbors(_EnnRustView):
             self.input_transform = input_transform
         if semantic_only:
             self.semantic_only = True
-        original_inputs = np.asarray(train_x, dtype=float) if semantic_only else None
+        original_inputs = (
+            np.asarray(train_x, dtype=float) if input_transform is not None else None
+        )
         groups = [
             list(g)
             for g in resolve_tied_groups(
@@ -149,7 +151,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
-        if semantic_only:
+        if input_transform is not None:
             self._original_inputs = InputHistory(original_inputs, self._rust_model)
 
     def add(
@@ -188,8 +190,6 @@ class EpistemicNearestNeighbors(_EnnRustView):
         x_arr = np.asarray(x, dtype=float)
         if self._original_inputs is not None:
             x_arr = self._original_inputs.gather(idx)
-        elif self.input_transform is not None:
-            x_arr = self.input_transform.inverse(x_arr)
         y_arr = np.asarray(y, dtype=float)
         yvar_arr = None if yvar is None else np.asarray(yvar, dtype=float)
         return x_arr, y_arr, yvar_arr

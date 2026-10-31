@@ -19,8 +19,12 @@ impl InputHistory {
         rows: Array2<f64>,
         model: &EpistemicNearestNeighbors,
     ) -> Result<Self, ENNError> {
+        Self::for_named_model(rows, model, "original_inputs.bin")
+    }
+    /// Store a separate original observation matrix alongside a disk model.
+    pub(crate) fn for_named_model(rows: Array2<f64>, model: &EpistemicNearestNeighbors, filename: &str) -> Result<Self, ENNError> {
         if let Some(directory) = model.layout.work_dir() {
-            let disk = DiskInputs::open(directory, &rows.view(), model.len())?;
+            let disk = DiskInputs::open(directory, filename, &rows.view(), model.len())?;
             return Ok(Self {
                 rows: Array2::zeros((0, rows.ncols())),
                 disk: Some(disk),
