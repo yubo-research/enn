@@ -1,10 +1,8 @@
-//! Index-free mean-only selection for the bounded semantic adaptation wrapper.
 
 use numpy::{IntoPyArray, PyArray3, PyReadonlyArray2};
 use pyo3::prelude::*;
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn small_flat_selection_means<'py>(
     py: Python<'py>,
     train_x: PyReadonlyArray2<f64>,
@@ -26,7 +24,6 @@ type MarginalArrays<'py> = (
     Bound<'py, numpy::PyArray2<f64>>,
 );
 
-/// Public adaptive model; Python owns only array and metadata marshalling.
 #[pyclass(name = "AdaptiveSemanticENN")]
 pub struct PyAdaptiveSemanticENN {
     inner: ennbo::adaptive::AdaptiveSemanticENN,
@@ -35,7 +32,6 @@ pub struct PyAdaptiveSemanticENN {
 impl PyAdaptiveSemanticENN {
     #[new]
     #[pyo3(signature = (bounds, input, output, capacity, seed, linear_mean, adaptation))]
-    #[doc = "kiss-coverage-off"]
     fn new(
         bounds: Option<PyReadonlyArray2<f64>>,
         input: Option<PyReadonlyArray2<f64>>,
@@ -55,7 +51,6 @@ impl PyAdaptiveSemanticENN {
             .map_err(value_error)
     }
     #[pyo3(signature = (x, y, weight=None))]
-    #[doc = "kiss-coverage-off"]
     fn add(
         &mut self,
         py: Python<'_>,
@@ -67,7 +62,6 @@ impl PyAdaptiveSemanticENN {
         py.allow_threads(|| self.inner.add(x, y, weight))
             .map_err(value_error)
     }
-    #[doc = "kiss-coverage-off"]
     fn posterior<'py>(
         &self,
         py: Python<'py>,
@@ -79,7 +73,6 @@ impl PyAdaptiveSemanticENN {
             .map_err(value_error)
     }
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn choice(&self) -> Option<(String, f64, String, usize, f64)> {
         self.inner.choice().map(|c| {
             (
@@ -92,17 +85,14 @@ impl PyAdaptiveSemanticENN {
         })
     }
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn num_seen(&self) -> usize {
         self.inner.num_seen
     }
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn num_refits(&self) -> usize {
         self.inner.num_refits
     }
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn num_retained(&self) -> usize {
         self.inner.num_retained()
     }

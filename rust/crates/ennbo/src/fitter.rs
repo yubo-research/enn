@@ -1,4 +1,3 @@
-//! Stateful ENN hyperparameter fitting with incremental statistics.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
 use rand::seq::index::sample;
@@ -11,7 +10,6 @@ use crate::model::EpistemicNearestNeighbors;
 use crate::params::ENNParams;
 use crate::y_bounds::{bounds_match, is_identity_bounds, validate_bounds, warp_y, warp_yvar};
 
-/// Stateful ENN fitter: running `y` moments and warm-start params.
 pub struct ENNFitter {
     k: i32,
     params: Option<ENNParams>,
@@ -19,9 +17,7 @@ pub struct ENNFitter {
     y_sumsq: Array1<f64>,
     y_count: usize,
     num_metrics: usize,
-    /// Feature width from the first `tell`; must match the model at `ask`.
     num_dim: Option<usize>,
-    /// Optional output bounds; when set, `tell` accumulates warped-z moments.
     y_bounds: Option<Array2<f64>>,
     calibrator: Option<AffineCalibrator>,
 }
@@ -45,13 +41,11 @@ impl ENNFitter {
         self.calibrator.as_ref()
     }
 
-    /// Replace the stored calibrator with rows `(a, b, c)`.
     pub fn set_calibrator_rows(&mut self, rows: ArrayView2<f64>) -> Result<(), ENNError> {
         self.calibrator = Some(AffineCalibrator::from_rows(rows)?);
         Ok(())
     }
 
-    /// Store a calibrator from coefficient vectors. The `(3, m)` layout is built here.
     pub fn set_calibrator_abc(
         &mut self,
         a: ArrayView1<f64>,
@@ -152,10 +146,6 @@ impl ENNFitter {
         None
     }
 
-    /// Register a batch for incremental `y_std`.
-    ///
-    /// Pass natural-unit `y` / `yvar`. When `y_bounds` is non-identity, values are
-    /// warped to z before updating moments (fit stays in warped space).
     pub fn tell(
         &mut self,
         x: &ArrayView2<f64>,
@@ -269,7 +259,6 @@ impl ENNFitter {
         Ok(best)
     }
 
-    /// Score `search.num_fit_candidates` random scales plus the warm start, keep the best.
     pub fn ask<R: Rng>(
         &mut self,
         model: &EpistemicNearestNeighbors,

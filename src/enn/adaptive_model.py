@@ -1,5 +1,3 @@
-"""Public description of the candidate selected by native adaptation."""
-
 from dataclasses import dataclass
 
 

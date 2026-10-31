@@ -1,11 +1,4 @@
-"""Reproduce y-y experiments from the repository root.
-
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 RAYON_NUM_THREADS=1 PYTHONPATH=src:. python evals/long/eval_semantic_outputs.py
-Pass --full for the requested 3 x 3 x 4 dimension/output/training-size grid.
-The default is a repeated-seed pilot, with four cases and all four controls.
-Memory records Python allocations per method and process peak RSS, including
-native code. RSS is a cumulative high-water mark, not a per-method increment.
-"""
+_CLI_DESCRIPTION = "Reproduce y-y experiments from the repository root.\n\nOPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 RAYON_NUM_THREADS=1 PYTHONPATH=src:. python evals/long/eval_semantic_outputs.py\nPass --full for the requested 3 x 3 x 4 dimension/output/training-size grid.\nThe default is a repeated-seed pilot, with four cases and all four controls.\nMemory records Python allocations per method and process peak RSS, including\nnative code. RSS is a cumulative high-water mark, not a per-method increment.\n"
 
 import argparse
 import csv
@@ -34,7 +27,6 @@ def write_rows(path, rows):
 
 
 def summarize(rows):
-    """Uncertainty is across seeds, never across correlated output columns."""
     groups = {}
     for row in rows:
         key = tuple(
@@ -133,7 +125,7 @@ def evaluate(full=False, seeds=3, directory=ROOT):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=_CLI_DESCRIPTION)
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--seeds", type=int, default=3)
     parser.add_argument("--directory", type=Path, default=ROOT)

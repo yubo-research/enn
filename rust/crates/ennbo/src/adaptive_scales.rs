@@ -1,16 +1,13 @@
-//! Constant-size column scales for a fixed semantic projection.
 use crate::adaptive_geometry::invalid;
 use crate::error::ENNError;
 use ndarray::{Array1, Array2, ArrayView1};
 use ndarray_linalg::Inverse;
 
-/// Stationary streams keep every accepted row. A smaller factor uses the same update.
 pub(crate) const STATIONARY_FORGET: f64 = 1.0;
 const SHRINK_ROWS: f64 = 12.0;
 const RIDGE_RATE: f64 = 0.03;
 const METADATA_MULTIPLIER: f64 = 1.0;
 
-/// Gram and cross matrices for one nonnegative multiplier per projection column.
 #[derive(Clone)]
 pub(crate) struct ColumnScales {
     projection: Array2<f64>,
@@ -79,7 +76,6 @@ impl ColumnScales {
         Ok(())
     }
 
-    /// Nonnegative multipliers, shrunk toward the metadata column weight.
     pub(crate) fn coefficients(&self) -> Array1<f64> {
         let factors = self.gram.nrows();
         let prior = Array1::from_elem(factors, METADATA_MULTIPLIER);

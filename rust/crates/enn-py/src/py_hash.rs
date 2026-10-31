@@ -1,13 +1,10 @@
-//! Hash-based RNG Python bindings.
 
 use ndarray::IxDyn;
 use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-/// Python wrapper for the NumPy Philox reference hash.
 #[pyfunction(name = "normal_hash_batch_multi_seed")]
-#[doc = "kiss-coverage-off"]
 pub fn normal_hash_batch_multi_seed_py<'py>(
     py: Python<'py>,
     function_seeds: PyReadonlyArray1<i64>,
@@ -34,9 +31,7 @@ pub fn normal_hash_batch_multi_seed_py<'py>(
     }
 }
 
-/// Python wrapper for normal_hash_batch_multi_seed_fast
 #[pyfunction(name = "normal_hash_batch_multi_seed_fast")]
-#[doc = "kiss-coverage-off"]
 pub fn normal_hash_batch_multi_seed_fast_py<'py>(
     py: Python<'py>,
     function_seeds: PyReadonlyArray1<i64>,

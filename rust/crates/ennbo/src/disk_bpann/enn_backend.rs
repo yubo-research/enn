@@ -1,4 +1,3 @@
-//! Disk-backed ENN backend wrapping the standalone `ennbo-bpann` crate.
 
 use std::path::PathBuf;
 
@@ -124,8 +123,6 @@ impl DiskBpannEnnBackend {
             .map_err(bpann_err)
     }
 
-    /// Metric learning change: rescale the index in place, and with `rebuild` also
-    /// re-partition it in place over the following adds.
     pub fn set_metric_scale(&mut self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
         let result = if rebuild {
             self.inner.rebuild_metric(x_scale)
@@ -253,14 +250,12 @@ impl DiskBpannEnnBackend {
         self.inner.defer_append_indexing()
     }
 
-    /// Build soft-sync fragments without mutating the published index.
     pub(crate) fn soft_sync_build_detached(
         &self,
     ) -> Result<Option<ennbo_bpann::IncrementalIndex>, ENNError> {
         ennbo_bpann::soft_sync_build(&self.inner).map_err(bpann_err)
     }
 
-    /// Publish a detached soft-sync result (short exclusive critical section).
     pub(crate) fn soft_sync_publish_detached(
         &mut self,
         built: ennbo_bpann::IncrementalIndex,

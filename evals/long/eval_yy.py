@@ -1,7 +1,4 @@
-"""Reproduce the y-y mechanism study; run from the repository root.
-
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 RAYON_NUM_THREADS=1 PYTHONPATH=src:. python evals/long/eval_yy.py
-"""
+_CLI_DESCRIPTION = "Reproduce the y-y mechanism study; run from the repository root.\n\nOPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 RAYON_NUM_THREADS=1 PYTHONPATH=src:. python evals/long/eval_yy.py\n"
 
 import argparse
 import csv
@@ -124,7 +121,7 @@ def environment(directory, args, elapsed):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=_CLI_DESCRIPTION)
     parser.add_argument("--seeds", type=int, default=30)
     parser.add_argument("--sizes", type=int, nargs="+", default=[30, 100, 300])
     parser.add_argument(

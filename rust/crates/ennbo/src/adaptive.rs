@@ -1,4 +1,3 @@
-//! Bounded uniform priority replay with transactional epoch refits.
 use crate::adaptive_basis::Metadata;
 use crate::adaptive_geometry::invalid;
 use crate::adaptive_predictor::{Choice, Epoch};
@@ -8,7 +7,6 @@ use crate::error::ENNError;
 use ndarray::{Array2, Axis};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
-/// Online semantic adaptation with bounded replay and held-out calibration.
 pub struct AdaptiveSemanticENN {
     metadata: Metadata,
     capacity: usize,
@@ -18,13 +16,10 @@ pub struct AdaptiveSemanticENN {
     sample: Option<(Array2<f64>, Array2<f64>, Vec<f64>)>,
     scales: Option<ColumnScales>,
     epoch: Option<Epoch>,
-    /// Total accepted observations.
     pub num_seen: usize,
-    /// Number of completed epochs.
     pub num_refits: usize,
 }
 impl AdaptiveSemanticENN {
-    /// Configure immutable metadata and replay policy.
     pub fn new(
         metadata: Metadata,
         capacity: usize,
@@ -55,16 +50,13 @@ impl AdaptiveSemanticENN {
             num_refits: 0,
         })
     }
-    /// Current replay size.
     pub fn num_retained(&self) -> usize {
         self.sample.as_ref().map_or(0, |s| s.0.nrows())
     }
-    /// Selected candidate, available after the first successful update.
     pub fn choice(&self) -> Option<&Choice> {
         self.epoch.as_ref().map(|e| &e.predictor.choice)
     }
 
-    /// Refit an epoch, committing replay and random state only after success.
     pub fn add(
         &mut self,
         x: Array2<f64>,
@@ -139,7 +131,6 @@ impl AdaptiveSemanticENN {
         Ok(Some(state))
     }
 
-    /// Learned multipliers, when input adaptation is active.
     #[cfg(test)]
     pub(crate) fn column_scale(&self) -> Option<ndarray::Array1<f64>> {
         self.scales.as_ref().map(ColumnScales::coefficients)
@@ -185,7 +176,6 @@ impl AdaptiveSemanticENN {
         Ok(())
     }
 
-    /// Predict calibrated marginal means and standard errors.
     pub fn posterior(&self, x: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
         let epoch = self
             .epoch

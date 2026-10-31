@@ -1,10 +1,3 @@
-//! `pages.bin` for the incremental tree, written, compared and read one page at a
-//! time so that persisting or reopening a tree never holds it in memory.
-//!
-//! The format is the one [`crate::index::page`] defines: internal pages carry their
-//! child centroids, and each leaf its row ids and centroid (its entry in the parent,
-//! or the mean of its rows for a lone root leaf). Leaf coordinates are not stored;
-//! a reopened tree reads them back from the observation file ([`Tree::fill_blocks`]).
 
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -22,7 +15,6 @@ fn invalid(e: impl ToString) -> BpannError {
     BpannError::InvalidParameter(e.to_string())
 }
 
-/// A writer that checks the bytes written against a reader instead of storing them.
 struct Compare<R: Read> {
     reader: R,
     equal: bool,
@@ -50,7 +42,6 @@ fn read_u32(r: &mut impl Read) -> std::io::Result<u32> {
 }
 
 impl Tree {
-    /// Page `id` as a persisted [`Page`].
     pub fn page(&self, id: u32) -> Page {
         let s = &self.store;
         let d = s.num_dim();
@@ -77,7 +68,6 @@ impl Tree {
         }
     }
 
-    /// Write `pages.bin` to `w`.
     pub fn write_pages(&self, w: &mut impl Write) -> std::io::Result<()> {
         w.write_all(&(self.num_pages() as u32).to_le_bytes())?;
         for id in 0..self.num_pages() as u32 {
@@ -88,17 +78,14 @@ impl Tree {
         Ok(())
     }
 
-    /// Every page serialized, concatenated.
     pub fn page_bytes(&self) -> Vec<u8> {
         (0..self.num_pages() as u32).flat_map(|id| self.page(id).serialize(self.header.num_dim)).collect()
     }
 
-    /// Write `header.json`, `pages.bin` and an empty `skip_edges.bin` atomically.
     pub fn persist(&self) -> Result<(), BpannError> {
         persist_index_files_with(&self.index_dir, &self.header, |w| self.write_pages(w), &HashMap::new())
     }
 
-    /// Whether the files on disk are exactly what [`Self::persist`] would write.
     pub fn on_disk_index_matches(&self) -> Result<bool, BpannError> {
         let file = File::open(self.index_dir.join("pages.bin")).map_err(invalid)?;
         let mut cmp = Compare {
@@ -112,7 +99,6 @@ impl Tree {
         Ok(cmp.equal && at_end && skip == skip_edges_bytes(&HashMap::new()))
     }
 
-    /// Bytes of the persisted index files in `index_dir`.
     pub fn persisted_bytes(index_dir: &Path) -> usize {
         ["header.json", "pages.bin", "skip_edges.bin"]
             .iter()
@@ -121,9 +107,6 @@ impl Tree {
             .sum()
     }
 
-    /// Read the tree persisted in `index_dir`. `None` if it is not an incremental
-    /// row-id tree (e.g. one written by an older fragment layout); leaf blocks are
-    /// empty until [`Self::fill_blocks`].
     pub fn open_persisted(index_dir: &Path) -> Result<Option<Self>, BpannError> {
         let text = fs::read_to_string(index_dir.join("header.json")).map_err(invalid)?;
         let header: IndexHeader = serde_json::from_str(&text).map_err(invalid)?;
@@ -147,7 +130,6 @@ impl Tree {
         Ok(tree.recount().then_some(tree))
     }
 
-    /// Put a persisted page in its slot, marked unvisited for [`Self::recount`].
     fn load_page(&mut self, page: Page) -> bool {
         let (id, kind, ids, block) = match page {
             Page::Leaf {

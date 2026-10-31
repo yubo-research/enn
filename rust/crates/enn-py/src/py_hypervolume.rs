@@ -1,12 +1,9 @@
-//! Hypervolume calculation Python bindings.
 
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-/// Python wrapper for hypervolume_2d_max
 #[pyfunction(name = "hypervolume_2d_max")]
-#[doc = "kiss-coverage-off"]
 pub fn hypervolume_2d_max_py<'py>(
     py: Python<'py>,
     y: PyReadonlyArray2<f64>,

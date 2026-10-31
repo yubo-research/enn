@@ -1,5 +1,3 @@
-"""Paired online semantic adaptation benchmark, with independent test scoring."""
-
 import json
 import time
 from dataclasses import asdict

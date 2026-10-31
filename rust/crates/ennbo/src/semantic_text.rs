@@ -1,9 +1,7 @@
-//! Resolve semantic metadata once and preserve its original row ordering.
 use crate::error::ENNError;
 use ndarray::{Array2, ArrayView2, Axis};
 use std::collections::HashMap;
 
-/// Unique descriptions and the embedding row for each original variable.
 pub fn prepare(
     names: &[String],
     descriptions: Option<&[Option<String>]>,
@@ -48,7 +46,6 @@ fn description_text(name: &str, description: &str) -> Result<String, ENNError> {
     .to_owned())
 }
 
-/// Expand deduplicated embeddings before constructing a projection.
 pub fn project(
     embeddings: &ArrayView2<f64>,
     rows: &[usize],

@@ -1,4 +1,3 @@
-//! BPANN search at every N: indexed tree plus pending mmap rows.
 
 use ndarray::Array2;
 use rayon::prelude::*;
@@ -19,7 +18,6 @@ pub struct SearchPendingArgs<'a> {
     pub num_dim: usize,
 }
 
-#[doc = "kiss-coverage-off"]
 fn merge_pending(
     leg_a: &[(u32, f64)],
     leg_b: &[(u32, f64)],
@@ -49,7 +47,6 @@ fn merge_pending(
     )
 }
 
-/// Pending rows use the same f64 ranking as tree leaves, including after a reset.
 fn pending_topk(
     train_x: &MmapColumnStore, start: usize, end: usize, query: &[f64],
     k: usize, scale_x: bool, x_scale: &[f64],

@@ -1,34 +1,18 @@
-//! Process-wide BPANN tuning values.
-//!
-//! Defaults match the historical hardcoded defaults. When the `ennbo` crate is
-//! used, it installs a provider that reads `~/.ennbo/config.toml`.
 
 use std::sync::RwLock;
 
-/// Minimum allowed `index_compact_fragment_max` (matches compaction clamp floor).
 pub const INDEX_COMPACT_FRAGMENT_MAX_MIN: usize = 3;
 
-/// Default rows of pending observations before an index flush is scheduled.
 pub const DEFAULT_PENDING_FLUSH_THRESHOLD: usize = 250;
 
-/// Default hard cap on pending rows before soft sync runs on the calling thread.
-///
-/// Equal to `4 × DEFAULT_PENDING_FLUSH_THRESHOLD`. Must stay `>=` the soft threshold.
 pub const DEFAULT_PENDING_HARD_FLUSH_THRESHOLD: usize = 3000;
 
-/// Default max indexed rows for exhaustive leaf search (and no skip edges at build).
 pub const DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT: usize = 2500;
 
-/// Default max indexed rows for skip-refinement search (and skip-edge build).
 pub const DEFAULT_SKIP_REFINEMENT_ROW_LIMIT: usize = 150_000;
 
-/// Default max batch size for row-id-only leaf builds (mmap score path).
-///
-/// Matches the historical hardcoded cutoff in `build_batch` on main. Batches
-/// larger than this use full in-memory leaf vectors.
 pub const DEFAULT_STRUCTURED_BUILD_ROW_LIMIT: usize = 1024;
 
-/// Snapshot of tunable BPANN parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BpannTuning {
     pub index_compact_rows_per_fragment: usize,
@@ -38,14 +22,10 @@ pub struct BpannTuning {
     pub search_fragment_budget_max: usize,
     pub build_seed: Option<u64>,
     pub pending_flush_threshold: usize,
-    /// Hard pending cap: soft-sync on the caller when `pending >=` this value.
     pub pending_hard_flush_threshold: usize,
     pub structured_build_row_limit: usize,
     pub search_beam_width: usize,
-    /// Max indexed rows using exhaustive leaf search; build stores no skip edges at or below.
     pub exhaustive_search_row_limit: usize,
-    /// Max indexed rows using skip-refinement search; build stores skip edges in
-    /// `(exhaustive_search_row_limit, skip_refinement_row_limit]`.
     pub skip_refinement_row_limit: usize,
 }
 
@@ -70,7 +50,6 @@ impl Default for BpannTuning {
 }
 
 impl BpannTuning {
-    /// Validate all tunable fields. Returns an error describing the first violation.
     pub fn validate(&self) -> Result<(), String> {
         let checks = [
             (
@@ -130,21 +109,15 @@ impl BpannTuning {
         Ok(())
     }
 
-    /// Whether build should store skip edges for this indexed-row count.
-    ///
-    /// On-disk skip edges reflect build-time limits; search uses call-time limits
-    /// and may take the skip-refinement path with empty edges until rebuild.
     pub fn rows_need_skip_edges(&self, row_count: usize) -> bool {
         row_count > self.exhaustive_search_row_limit
             && row_count <= self.skip_refinement_row_limit
     }
 
-    /// Whether search should scan all leaves exhaustively for this row count.
     pub fn use_exhaustive_search(&self, rows: usize) -> bool {
         rows <= self.exhaustive_search_row_limit
     }
 
-    /// Whether search should use skip-refinement (non-exhaustive, within skip band).
     pub fn use_skip_refinement_search(&self, rows: usize) -> bool {
         !self.use_exhaustive_search(rows) && rows <= self.skip_refinement_row_limit
     }
@@ -154,19 +127,14 @@ type TuningProvider = Box<dyn Fn() -> BpannTuning + Send + Sync>;
 
 static TUNING_PROVIDER: RwLock<Option<TuningProvider>> = RwLock::new(None);
 
-/// Install a provider consulted on every tuning access.
 pub fn set_tuning_provider(provider: TuningProvider) {
     *TUNING_PROVIDER.write().expect("tuning provider lock") = Some(provider);
 }
 
-/// Clear any installed provider (tests).
 pub fn clear_tuning_provider() {
     *TUNING_PROVIDER.write().expect("tuning provider lock") = None;
 }
 
-/// Current tuning: from the provider if set, otherwise compiled-in defaults.
-///
-/// If the provider returns an invalid snapshot, falls back to defaults.
 pub fn current_tuning() -> BpannTuning {
     let tuning = if let Some(provider) = TUNING_PROVIDER.read().expect("tuning provider lock").as_ref()
     {

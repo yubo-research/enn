@@ -1,8 +1,3 @@
-//! Incremental hyperparameter fitting tied to a model's `add` calls.
-//!
-//! `IncrementalFit::add` appends rows to the model and returns an [`AddToken`].
-//! The next `ask` must present that exact token, so only the rows of the latest
-//! `add` are told to the fitter, once. The first `ask` freezes `k` and the seed.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -18,7 +13,6 @@ use crate::params::ENNParams;
 
 static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Proof that one `add` appended rows to one model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AddToken {
     owner: u64,
@@ -32,22 +26,15 @@ struct FrozenFitter {
     seed: u64,
 }
 
-/// Fit options for one incremental `ask`.
 #[derive(Debug, Clone, Copy)]
 pub struct IncrementalAsk {
-    /// Neighbor count; must equal the one frozen by the first `ask`.
     pub k: i32,
-    /// Fitter seed; must equal the one frozen by the first `ask`.
     pub seed: u64,
-    /// Random candidates per `ask` (`None` uses [`crate::fit_samples::DEFAULT_FIT_CANDIDATES`]).
     pub num_fit_candidates: Option<usize>,
-    /// Draws per `ask` (`None` uses [`crate::fit_samples::DEFAULT_FIT_SAMPLES`]).
     pub num_fit_samples: Option<usize>,
-    /// Warm-start parameters.
     pub params_warm_start: Option<ENNParams>,
 }
 
-/// Incremental-fit state for one model: the frozen fitter and the pending `add`.
 pub struct IncrementalFit {
     owner: u64,
     generation: u64,
@@ -71,7 +58,6 @@ impl IncrementalFit {
         }
     }
 
-    /// Append rows to `model` and make them the only rows the next `ask` may tell.
     pub fn add(
         &mut self,
         model: &mut EpistemicNearestNeighbors,
@@ -117,7 +103,6 @@ impl IncrementalFit {
         }
     }
 
-    /// Tell the rows of `token`'s `add`, then fit and return parameters.
     pub fn ask(
         &mut self,
         model: &EpistemicNearestNeighbors,

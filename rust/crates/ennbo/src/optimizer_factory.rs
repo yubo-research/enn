@@ -1,4 +1,3 @@
-//! Factory functions for creating optimizers with preset configs.
 
 use ndarray::Array2;
 use rand::rngs::StdRng;
@@ -13,9 +12,7 @@ use crate::neighbor_count::NeighborCount;
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
 
-/// Default neighbor count when `k` is omitted.
 pub const DEFAULT_ENN_K: i32 = 10;
-/// Default initialization budget when `num_init` is omitted.
 pub const DEFAULT_NUM_INIT: usize = 10;
 
 fn resolve_k(k: Option<i32>) -> Result<NeighborCount, ENNError> {
@@ -26,10 +23,6 @@ fn resolve_num_init(num_init: Option<usize>) -> usize {
     num_init.unwrap_or(DEFAULT_NUM_INIT)
 }
 
-/// Create an optimizer for TuRBO-ENN.
-///
-/// `k` and `num_init` use [`DEFAULT_ENN_K`] and [`DEFAULT_NUM_INIT`] when omitted.
-/// `seed` initializes the optimizer's owned `StdRng` once.
 pub fn create_optimizer_enn(
     bounds: Array2<f64>,
     k: Option<i32>,
@@ -39,7 +32,6 @@ pub fn create_optimizer_enn(
     create_optimizer_enn_with_overrides(bounds, k, num_init, seed, None)
 }
 
-/// Create TuRBO-ENN with optional config overrides (for future Python pass-through).
 pub fn create_optimizer_enn_with_overrides(
     bounds: Array2<f64>,
     k: Option<i32>,
@@ -61,7 +53,6 @@ pub fn create_optimizer_enn_with_overrides(
     Optimizer::new_with_strategy(bounds, config, strategy, &mut rng)
 }
 
-/// Create an optimizer for TuRBO-ZERO.
 pub fn create_optimizer_zero(
     bounds: Array2<f64>,
     num_init: Option<usize>,
@@ -70,7 +61,6 @@ pub fn create_optimizer_zero(
     create_optimizer_zero_with_overrides(bounds, num_init, seed, None)
 }
 
-/// Create TuRBO-ZERO with optional config overrides.
 pub fn create_optimizer_zero_with_overrides(
     bounds: Array2<f64>,
     num_init: Option<usize>,
@@ -88,7 +78,6 @@ pub fn create_optimizer_zero_with_overrides(
     Optimizer::new_with_strategy(bounds, config, strategy, &mut rng)
 }
 
-/// Create an optimizer for LHD-only.
 pub fn create_optimizer_lhd(
     bounds: Array2<f64>,
     num_init: Option<usize>,
@@ -97,7 +86,6 @@ pub fn create_optimizer_lhd(
     create_optimizer_lhd_with_overrides(bounds, num_init, seed, None)
 }
 
-/// Create LHD-only with optional config overrides.
 pub fn create_optimizer_lhd_with_overrides(
     bounds: Array2<f64>,
     num_init: Option<usize>,

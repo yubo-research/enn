@@ -2,7 +2,6 @@ use ndarray::{Array2, ArrayView2};
 
 use crate::error::ENNError;
 
-/// Result of an append-only observation batch.
 #[derive(Debug, Clone)]
 pub struct ObservationDelta {
     pub old_n: usize,

@@ -1,4 +1,3 @@
-//! Cephes `ndtri`, matching SciPy `special.ndtri` on ordinary inputs.
 #![allow(clippy::excessive_precision)]
 
 fn polevl(x: f64, coef: &[f64]) -> f64 {

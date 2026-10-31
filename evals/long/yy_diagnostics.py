@@ -1,5 +1,3 @@
-"""Independent numerical checks of the output-sharing experiment."""
-
 import json
 from pathlib import Path
 

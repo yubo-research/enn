@@ -1,5 +1,3 @@
-"""Optional semantic output sharing with row-wise out-of-fold calibration."""
-
 from dataclasses import dataclass
 
 import numpy as np
@@ -10,8 +8,6 @@ from enn.enn.enn_params import ENNParams
 
 @dataclass(frozen=True)
 class OutputPosterior:
-    """Marginal Gaussian predictions in original units; no joint covariance."""
-
     mu: np.ndarray
     se: np.ndarray
 
@@ -35,7 +31,6 @@ class _OutputModels:
         )
 
     def predict(self, x, alpha):
-        """Use a triangle-inequality SD envelope for correlated component errors."""
         posterior = self.independent.posterior(x, params=self.params)
         independent, independent_se = posterior.mu, posterior.se
         if self.latent and alpha > 0:
@@ -67,18 +62,6 @@ def _training_rows(x, y, outputs):
 
 
 class SemanticMultiOutputENN:
-    """Blend independent and semantic latent ENNs with fixed hyperparameters.
-
-    ``projection`` is a SemanticOutputProjection built solely from metadata.
-    ``fit`` refits all scaling and ENNs within each row fold, calibrates marginal
-    variances, then trains on all supplied rows. Select rank, alpha, and params
-    on separate validation data or nested CV. Do not change them after fitting.
-    At alpha=0 means reproduce independent ENNs (uncertainties are calibrated).
-    Scalar output and latent predictions are batched through the existing ENN
-    multi-output API to reuse neighbor searches. Constant training outputs remain
-    at their training mean.
-    """
-
     def __init__(self, projection, *, alpha=0.3, params=None, folds=5, seed=0):
         if not np.isfinite(alpha) or not 0 <= alpha <= 1:
             raise ValueError("alpha must be finite and in [0, 1]")
@@ -112,7 +95,6 @@ class SemanticMultiOutputENN:
         )
 
     def fit(self, x, y):
-        """Refit row folds and estimate a per-output Gaussian likelihood scale."""
         x, y = _training_rows(x, y, len(self.projection.names))
         if self._folds > len(x):
             raise ValueError("fold count cannot exceed training row count")

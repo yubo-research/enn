@@ -1,36 +1,27 @@
-//! How the ENN scale search runs, or that it does not run.
 
 use std::num::NonZeroUsize;
 
 use crate::error::ENNError;
 
-/// Draw count in the default ENN surrogate config.
 pub const DEFAULT_FIT_SAMPLES: NonZeroUsize = match NonZeroUsize::new(10) {
     Some(n) => n,
     None => panic!("10 is nonzero"),
 };
 
-/// Candidate count in the default ENN surrogate config.
 pub const DEFAULT_FIT_CANDIDATES: NonZeroUsize = match NonZeroUsize::new(30) {
     Some(n) => n,
     None => panic!("30 is nonzero"),
 };
 
-/// Settings read only by the scale search.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScaleSearch {
-    /// Observations sampled to score each candidate.
     pub num_fit_samples: NonZeroUsize,
-    /// Random scale candidates scored per search.
     pub num_fit_candidates: NonZeroUsize,
-    /// Search the aleatoric scale too; otherwise it stays 0.
     pub infer_aleatoric_variance: bool,
-    /// Fit an affine calibrator after the search.
     pub affine_calibrate: bool,
 }
 
 impl ScaleSearch {
-    /// Default search with `num_fit_samples` draws.
     pub fn with_samples(num_fit_samples: NonZeroUsize) -> Self {
         Self {
             num_fit_samples,
@@ -40,7 +31,6 @@ impl ScaleSearch {
         }
     }
 
-    /// Default search with these counts. `None` takes the default; zero is rejected.
     pub fn from_counts(
         num_fit_samples: Option<usize>,
         num_fit_candidates: Option<usize>,
@@ -60,15 +50,9 @@ impl Default for ScaleSearch {
     }
 }
 
-/// Fit-sample policy for an ENN surrogate.
-///
-/// `Frozen` is the Python `num_fit_samples is None` contract: skip the scale search and
-/// keep epistemic scale 1 and aleatoric scale 0. Search settings exist only under `Draw`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FitSamples {
-    /// Skip the scale search.
     Frozen,
-    /// Run the scale search with these settings.
     Draw(ScaleSearch),
 }
 
@@ -79,7 +63,6 @@ impl Default for FitSamples {
 }
 
 impl FitSamples {
-    /// `None` means frozen. `Some(n)` is a default search with `n` draws. Zero is rejected.
     pub fn from_count(count: Option<usize>) -> Result<Self, ENNError> {
         match count {
             None => Ok(Self::Frozen),
@@ -87,17 +70,14 @@ impl FitSamples {
         }
     }
 
-    /// Default search with `num_fit_samples` draws and `num_fit_candidates` candidates.
     pub fn draw(num_fit_samples: usize, num_fit_candidates: usize) -> Result<Self, ENNError> {
         ScaleSearch::from_counts(Some(num_fit_samples), Some(num_fit_candidates)).map(Self::Draw)
     }
 
-    /// Draw count, or `None` when frozen.
     pub fn count(self) -> Option<usize> {
         self.search().map(|s| s.num_fit_samples.get())
     }
 
-    /// Search settings, or `None` when frozen.
     pub fn search(self) -> Option<ScaleSearch> {
         match self {
             Self::Frozen => None,
@@ -105,19 +85,16 @@ impl FitSamples {
         }
     }
 
-    /// Whether the scale search is skipped.
     pub fn is_frozen(self) -> bool {
         matches!(self, Self::Frozen)
     }
 }
 
-/// Reject a zero draw count.
 pub fn nonzero_samples(n: usize) -> Result<NonZeroUsize, ENNError> {
     NonZeroUsize::new(n)
         .ok_or_else(|| ENNError::InvalidParameter("num_fit_samples must be > 0, got 0".into()))
 }
 
-/// Reject a zero candidate count.
 pub fn nonzero_candidates(n: usize) -> Result<NonZeroUsize, ENNError> {
     NonZeroUsize::new(n)
         .ok_or_else(|| ENNError::InvalidParameter("num_fit_candidates must be > 0, got 0".into()))

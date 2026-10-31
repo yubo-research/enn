@@ -1,4 +1,3 @@
-//! Posterior draw computation helpers.
 
 use ndarray::Array3;
 use rayon::prelude::*;
@@ -32,7 +31,7 @@ pub(crate) fn draw_from_internals(
         return Ok(draws);
     }
 
-    
+
     let idx_array: Vec<i64> = internals.idx.iter().flatten().map(|&i| i as i64).collect();
     let (unique_indices, inverse) = unique_index_inverse(&idx_array);
     let n_unique = unique_indices.len();
@@ -61,7 +60,6 @@ pub(crate) fn draw_from_internals(
     )
 }
 
-#[doc = "kiss-coverage-off"]
 #[allow(clippy::too_many_arguments)]
 fn draw_from_internals_multi(
     internals: &DrawInternals,
@@ -136,7 +134,6 @@ fn draw_from_internals_multi(
     Ok(draws)
 }
 
-/// Specialized fused draw path for the common single-metric case.
 fn draw_from_internals_m1(
     internals: &DrawInternals,
     function_seeds: &[i64],

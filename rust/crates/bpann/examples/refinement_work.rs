@@ -1,4 +1,3 @@
-//! Compare numerical refinement pools with unchanged growing trees and float64 ranking.
 use std::io::Write;
 use std::time::Instant;
 use ennbo_bpann::index::search::MmapSearchStore;

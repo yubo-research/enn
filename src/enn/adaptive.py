@@ -1,5 +1,3 @@
-"""Python API for Rust-owned bounded replay semantic adaptation."""
-
 import numpy as np
 
 from enn._rust import AdaptiveSemanticENN as _NativeAdaptive
@@ -8,19 +6,6 @@ from enn.semantic_multi_output import OutputPosterior
 
 
 class AdaptiveSemanticENN:
-    """Fit geometry, output sharing, and uncertainty in bounded replay epochs.
-
-    The initial batch needs at least 12 rows. Uniform priority sampling retains
-    at most ``capacity`` rows. Each refit uses a fresh 60/20/20 fit, selection,
-    and calibration split; calibration labels never influence the fitted mean
-    of the replay geometries. Column-scale multipliers use every accepted row.
-    Semantic and learned output projectors mix with
-    identity using a weight fitted on selection rows. ``choice.alpha`` reports
-    that weight. Metadata remains immutable; learned input maps retain its
-    factor width. Column scales keep those loadings and update one nonnegative
-    multiplier per factor from constant-size sufficient statistics.
-    """
-
     def __init__(
         self,
         *,
@@ -70,7 +55,6 @@ class AdaptiveSemanticENN:
         return None if value is None else AdaptChoice(*value)
 
     def add(self, x, y, *, geometry_weight=None):
-        """Refit, tuning geometry weights 3 and 30 or using a supplied weight."""
         if isinstance(geometry_weight, (bool, np.bool_)) or (
             geometry_weight is not None
             and not isinstance(geometry_weight, (int, float, np.integer, np.floating))

@@ -1,4 +1,3 @@
-//! Fused posterior fast path when yvar is absent and observation_noise is off.
 
 use ndarray::{Array2, ArrayView1, ArrayView2, ArrayViewMut1, Axis};
 
@@ -50,7 +49,6 @@ pub(super) fn fill_neighbor_weights(distances: ArrayView1<f64>, params: &ENNPara
     1.0 / norm
 }
 
-/// Accumulate outputs in neighbor order, reading each contiguous target row once.
 pub(super) fn fill_neighbor_means(
     train_y: ArrayView2<f64>, indices: ArrayView1<i64>, weights: &[f64],
     inv_norm: f64, mut means: ArrayViewMut1<f64>,
@@ -86,7 +84,6 @@ pub(super) fn fill_neighbor_means(
 }
 
 
-/// Keep common scalar and six-output accumulators in registers across neighbors.
 fn fill_fixed_neighbor_means<const M: usize>(
     targets: &[f64], indices: ArrayView1<i64>, weights: &[f64],
     inv_norm: f64, output: &mut [f64],
@@ -158,7 +155,6 @@ pub(super) fn fuse_neighbors_to_mu_se(
     (mu, se, se_epi, se_ale, idx_out)
 }
 
-/// Fused index_search + mu/se for the no-yvar, no-observation-noise posterior path.
 pub(crate) fn compute_posterior_light(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,

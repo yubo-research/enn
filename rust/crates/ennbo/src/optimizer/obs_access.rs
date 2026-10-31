@@ -3,7 +3,6 @@ use ndarray::{Array1, Array2};
 use super::Optimizer;
 use crate::error::ENNError;
 
-/// Public accessor for optimizer observation row reads (kiss external-test surface).
 pub struct ObsAccess<'a> {
     opt: &'a Optimizer,
 }
@@ -39,7 +38,6 @@ impl<'a> ObsAccess<'a> {
             .ok_or_else(|| ENNError::InvalidParameter(format!("observation index {idx} out of range")))
     }
 
-    /// Observation values in warped storage units.
     pub(crate) fn y_obs_warped(&self) -> Option<Array2<f64>> {
         if let Some(surrogate) = self.opt.surrogate() {
             let y_nat = surrogate.observations_y().ok().flatten()?;

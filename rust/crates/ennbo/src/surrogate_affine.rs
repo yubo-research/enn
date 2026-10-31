@@ -1,4 +1,3 @@
-//! Fit and apply an affine calibrator inside the TuRBO-ENN surrogate.
 
 use ndarray::{Array2, Array3, ArrayView2};
 use rand::Rng;

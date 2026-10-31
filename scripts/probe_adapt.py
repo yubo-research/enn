@@ -1,5 +1,3 @@
-"""Measure replay saturation without claiming exact full-history updates."""
-
 import json
 import time
 from pathlib import Path

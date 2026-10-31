@@ -1,4 +1,3 @@
-//! Preserve categorical integer identity while allowing continuous float coordinates.
 use crate::categorical_plan::invalid;
 use crate::error::ENNError;
 
@@ -32,12 +31,9 @@ impl CatValue for f64 {
     }
 }
 
-/// One mixed input cell, preserving exact category ids beside continuous values.
 #[derive(Clone, Copy)]
 pub enum InputValue {
-    /// Continuous coordinate or an integer-valued floating category.
     Number(f64),
-    /// Exact categorical label.
     Category(i64),
 }
 impl CatValue for InputValue {

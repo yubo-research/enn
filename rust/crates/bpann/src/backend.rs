@@ -38,8 +38,6 @@ pub struct BpannBackend {
     indexed_rows_written: usize,
     index_dirty: Mutex<bool>,
     num_obs_counter: obs::NumObsCounter,
-    /// Resident flat `N·D` f64 train cache for the small-N search path.
-    /// Invalidated on append and metric changes. Arc so parallel queries share one buffer.
     pub(crate) small_n_x_cache: Mutex<Option<(usize, Arc<[f64]>)>>,
 }
 
@@ -247,7 +245,6 @@ impl BpannBackend {
         self.insert_unindexed_rows()
     }
 
-    /// Insert every not-yet-indexed row into the tree (`O(log N)` per row).
     fn insert_unindexed_rows(&mut self) -> Result<(), BpannError> {
         let x_rows_inserted = self.len().saturating_sub(self.index.indexed_rows);
         self.index.ensure_sync_for_backend(
@@ -265,15 +262,6 @@ impl BpannBackend {
         Ok(())
     }
 
-    /// Soft sync: insert any unindexed rows into the in-memory tree and write
-    /// `indexed_rows.bin`. Does not write `pages.bin` / `skip_edges.bin` and does
-    /// not clear `index_dirty` (hard persist alone clears disk-dirty).
-    ///
-    /// `append_rows` already inserts each new row, so rows are unindexed only after
-    /// an index reset (metric or scale change) or a reopen. Observation pages are
-    /// released, and `indexed_rows.bin` rewritten, once per
-    /// `pending_hard_flush_threshold` rows rather than per call; a hard persist
-    /// always writes it.
     pub fn ensure_index_sync(&mut self) -> Result<(), BpannError> {
         if self.index.indexed_rows < self.len() {
             self.insert_unindexed_rows()?;
@@ -286,7 +274,6 @@ impl BpannBackend {
         Ok(())
     }
 
-    /// Remap observation mmaps so faulted/dirty pages leave process RSS.
     pub fn release_observation_pages(&mut self) -> Result<(), BpannError> {
         self.rows_since_release = 0;
         self.train_x.release_resident_pages()?;
@@ -397,7 +384,6 @@ impl BpannBackend {
         self.train_x.mmap_row_slice(i)
     }
 
-    /// Y (and optional yvar) row slices without touching `train_x`.
     pub fn mmap_row_y_and_yvar(
         &self,
         i: usize,
@@ -435,7 +421,6 @@ impl BpannBackend {
 }
 
 
-/// Drop trailing neighbor columns that are invalid (`idx < 0`) in every query row.
 fn trim_trailing_invalid_neighbor_cols(
     dist2s: Array2<f64>,
     indices: Array2<i64>,
@@ -464,8 +449,6 @@ fn trim_trailing_invalid_neighbor_cols(
     }
 }
 
-/// Build a soft-sync result under a shared borrow (no publish).
-/// Readers may search the live index concurrently while this runs.
 pub fn soft_sync_build(backend: &BpannBackend) -> Result<Option<IncrementalIndex>, BpannError> {
     let end = backend.len();
     if backend.index.indexed_rows >= end {
@@ -482,7 +465,6 @@ pub fn soft_sync_build(backend: &BpannBackend) -> Result<Option<IncrementalIndex
     Ok(Some(working))
 }
 
-/// Publish a detached soft-sync result under exclusive borrow.
 pub fn soft_sync_publish(backend: &mut BpannBackend, built: IncrementalIndex) {
     backend.index = built;
     backend

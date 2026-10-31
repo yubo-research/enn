@@ -17,7 +17,6 @@ from .types.telemetry import Telemetry
 
 
 def _tell_estimate(inner: Any, x_native: np.ndarray, y_in: np.ndarray) -> np.ndarray:
-    """Posterior mean at the points just told. Raw y if there is no surrogate."""
     if not inner.has_surrogate():
         return y_in
     x = np.asarray(x_native, dtype=float)
@@ -30,8 +29,6 @@ def _tell_estimate(inner: Any, x_native: np.ndarray, y_in: np.ndarray) -> np.nda
 
 
 class RustOptimizer:
-    """Facade over the Rust optimizer. The only field is the Rust object."""
-
     def __init__(self, inner: Any) -> None:
         self._inner = inner
 
@@ -104,7 +101,6 @@ def create_optimizer(
     config: OptimizerConfig,
     rng: Generator,
 ) -> Any:
-    """Create a Rust optimizer. `rng` is used only to draw the construction seed."""
     if not is_rust_supported_config(config):
         raise ValueError(f"Unsupported optimizer config: {type(config.surrogate)}")
 

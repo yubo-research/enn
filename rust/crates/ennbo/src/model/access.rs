@@ -1,4 +1,3 @@
-//! Focused accessors for ENN row and index operations (kiss method-count split).
 
 use ndarray::{Array1, Array2, ArrayView2};
 
@@ -6,7 +5,6 @@ use super::EpistemicNearestNeighbors;
 use crate::backend::TrainRowsAtResult;
 use crate::error::ENNError;
 
-/// Index search and sync operations on an ENN model.
 pub struct EnnIndexAccess<'a> {
     model: &'a EpistemicNearestNeighbors,
 }
@@ -42,7 +40,6 @@ impl<'a> EnnIndexAccess<'a> {
         self.model.backend.index_len()
     }
 
-    #[doc = "kiss-coverage-off"]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -84,7 +81,6 @@ impl<'a> EnnIndexAccess<'a> {
     }
 }
 
-/// Row gather operations on an ENN model.
 pub struct EnnRowAccess<'a> {
     model: &'a EpistemicNearestNeighbors,
 }
@@ -115,7 +111,6 @@ impl<'a> EnnRowAccess<'a> {
 }
 
 
-#[doc = "kiss-coverage-off"]
 fn trim_search_cols(
     dist: Array2<f64>,
     idx: Array2<i64>,

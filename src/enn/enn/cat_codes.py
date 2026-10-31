@@ -1,30 +1,3 @@
-"""Optional numeric codes for categorical columns.
-
-A category id is a label, not a magnitude. Leave every column continuous and
-ENN behaves as before. To encode, mark each column with ``DimKind`` and choose
-``CatEncoding``:
-
-- ``ONE_HOT``: one column per category, ids ``0 .. C-1``.
-- ``RADEMACHER``: a fixed-width sign vector. Same category, same vector.
-  Different categories land nearly the same distance apart.
-- ``AUTO``: one-hot when that block is no longer than the Rademacher block,
-  and Rademacher otherwise. With the default cap that change happens at 16
-  categories.
-
-``DimKind`` is the place an ordinal kind would be added later. It has no
-ordinal member until there is an encoding for ordered levels.
-
-Per-variable blocks are multiplied by ``separation`` (default 10) so a
-mismatch is long compared with ENN's aleatoric floor. ``encode`` records
-the columns of each categorical variable. Metric learning gives those
-columns one shared weight. An explicit ``tied_dims`` must list that same
-grouping.
-
-``code_dim`` forces every categorical column to one Rademacher width.
-``hash_dim`` instead folds every categorical column into one shared vector.
-Those two options are alternatives to a per-column ``cards`` plan.
-"""
-
 from __future__ import annotations
 
 from enum import Enum, auto
@@ -63,12 +36,6 @@ def column_plan(card, encoding=CatEncoding.AUTO, dim_cap=48):
 
 
 class CatEncoder:
-    """Mixed-column categorical representation, implemented entirely in Rust.
-
-    Continuous columns pass through. Categorical columns become one-hot or
-    Rademacher blocks, or a shared hash. Encoding attaches each block's tie group.
-    """
-
     def __init__(
         self,
         kinds,

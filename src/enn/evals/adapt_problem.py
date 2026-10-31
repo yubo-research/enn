@@ -1,5 +1,3 @@
-"""Frozen synthetic streams for testing adaptation of imperfect semantic priors."""
-
 from dataclasses import dataclass
 
 import numpy as np
@@ -24,11 +22,6 @@ class AdaptProblem:
 
 
 def make_problem(kind, case, seed, count=428):
-    """No target observations enter metadata; test rows follow the 300-row stream.
-
-    Signed embeddings are controlled mechanism probes, not pretrained language
-    embeddings. The opposing yy case changes response signs, not descriptions.
-    """
     rng = np.random.default_rng(seed)
     dimensions = 3 if kind == "yy" else 16
     x = rng.uniform(size=(count, dimensions))

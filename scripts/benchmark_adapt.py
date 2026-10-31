@@ -1,10 +1,4 @@
-"""Record paired adaptation quality and steady-state update latency.
-
-Run with PYTHONPATH=src:. python scripts/benchmark_adapt.py --output DIR.
-Use --reference DIR with saved adaptive.py and adaptive_model.py for a paired comparison.
-Run each version separately, on an otherwise idle machine.
-Use --geometry-weight 30 to evaluate the opt-in fixed-weight update policy.
-"""
+_CLI_DESCRIPTION = "Record paired adaptation quality and steady-state update latency.\n\nRun with PYTHONPATH=src:. python scripts/benchmark_adapt.py --output DIR.\nUse --reference DIR with saved adaptive.py and adaptive_model.py for a paired comparison.\nRun each version separately, on an otherwise idle machine.\nUse --geometry-weight 30 to evaluate the opt-in fixed-weight update policy.\n"
 
 import argparse
 import hashlib
@@ -105,7 +99,7 @@ def benchmark(seeds, geometry_weight):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=_CLI_DESCRIPTION)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--reference", type=Path)
     parser.add_argument("--seeds", type=int, default=10)

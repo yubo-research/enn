@@ -1,4 +1,3 @@
-//! AUTO metric policy: reservoir, refit schedule, rescale versus re-partition.
 
 use crate::error::ENNError;
 use crate::metric_loo::loo_loglik;
@@ -14,7 +13,6 @@ pub const AUTO_K: usize = 10;
 pub const AUTO_REFIT_GROWTH: f64 = 1.5;
 pub const AUTO_RESCALE_TOL: f64 = 0.01;
 
-/// `None` leaves the metric fixed. `Auto` learns a diagonal metric from a reservoir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MetricLearning {
     #[default]
@@ -41,8 +39,6 @@ fn floored_log(w: &[f64]) -> Vec<f64> {
         .collect()
 }
 
-/// The leave-one-out Gram matrix is temporary. Return those pages so a later
-/// resident-set reading does not keep them.
 fn release_loo_pages() {
     #[cfg(target_os = "linux")]
     {
@@ -151,7 +147,6 @@ impl AutoMetric {
         &self.tied
     }
 
-    /// Update only the fields that are `Some`. Omitted fields stay as they are.
     pub fn configure(
         &mut self,
         refit_growth: Option<f64>,

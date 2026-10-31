@@ -1,13 +1,10 @@
-//! Positive ENN neighbor count.
 
 use crate::error::ENNError;
 
-/// Neighbor count `k` of an ENN surrogate. Zero and negative counts are not representable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NeighborCount(i32);
 
 impl NeighborCount {
-    /// Reject `k < 1`.
     pub fn new(k: i32) -> Result<Self, ENNError> {
         if k < 1 {
             return Err(ENNError::InvalidParameter(format!(
@@ -17,12 +14,10 @@ impl NeighborCount {
         Ok(Self(k))
     }
 
-    /// `k` as the `i32` that `ENNParams` and `ENNFitter` take.
     pub fn get(self) -> i32 {
         self.0
     }
 
-    /// `k` as a count.
     pub fn as_usize(self) -> usize {
         self.0 as usize
     }

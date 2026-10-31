@@ -1,5 +1,3 @@
-"""Render measured tables and curves for the two-column adaptation report."""
-
 import json
 from pathlib import Path
 

@@ -1,5 +1,3 @@
-"""Resolve input and output metadata together for one embedding call."""
-
 from enn._rust import semantic_texts
 
 

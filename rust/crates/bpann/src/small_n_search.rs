@@ -1,6 +1,3 @@
-//! Explicit exhaustive-search utilities retained for API compatibility.
-//! The BPANN backend itself uses tree traversal at every observation count.
-//! These utilities keep coordinates and distances in f64.
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -11,14 +8,11 @@ use crate::merge::{
 };
 use rayon::prelude::*;
 
-/// Legacy exhaustive-cache utility limit; not a backend search dispatch boundary.
 pub const SMALL_N_INCORE_SEARCH_LIMIT: usize = 8192;
 
-/// Total order wrapper so squared distances can live in a binary heap.
 #[derive(Copy, Clone, Debug)]
 pub struct OrderedFloat<T = f32>(pub T);
 
-/// Retain the original name for f32 index search callers.
 pub use OrderedFloat as OrderedF32;
 
 impl<T: PartialEq> PartialEq for OrderedFloat<T> {
@@ -38,7 +32,6 @@ impl<T: PartialOrd> Ord for OrderedFloat<T> {
     }
 }
 
-/// k-smallest squared-L2 neighbors against a flat `N·D` f64 matrix (max-heap of size k).
 pub fn topk_flat_sq_l2(
     query: &[f64],
     flat: &[f64],
@@ -78,7 +71,6 @@ pub fn topk_flat_sq_l2(
     out
 }
 
-/// Parameters for [`score_queries_flat`].
 pub struct ScoreQueriesFlat<'a> {
     pub flat: &'a [f64],
     pub total: usize,
@@ -90,7 +82,6 @@ pub struct ScoreQueriesFlat<'a> {
     pub exclude_nearest: bool,
 }
 
-/// Score every query against a flat train matrix; return per-query (dists, ids).
 pub fn score_queries_flat(
     query_rows: &[Vec<f64>],
     args: &ScoreQueriesFlat<'_>,
@@ -143,7 +134,6 @@ fn scaled_row(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f64>) {
     }));
 }
 
-/// Load or build the resident flat f64 train cache for small-N search.
 pub fn load_or_build_small_n_cache(
     backend: &crate::backend::BpannBackend,
     n: usize,

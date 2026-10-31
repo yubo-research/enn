@@ -1,13 +1,9 @@
-"""Tie groups carried on arrays from ``CatEncoder.encode``."""
-
 from __future__ import annotations
 
 import numpy as np
 
 
 class _EncodedRows(np.ndarray):
-    """Encoded rows. ``tied_dims`` groups the columns of one categorical variable."""
-
     tied_dims: tuple[tuple[int, ...], ...] = ()
 
     def __new__(cls, values: np.ndarray, tied_dims: tuple[tuple[int, ...], ...]):
@@ -39,7 +35,6 @@ def _groups_on(values) -> tuple[tuple[int, ...], ...]:
 
 
 def resolve_tied_groups(values, tied_dims, *, semantic_only=False):
-    """Resolve tie metadata using Rust's feature-coordinate policy."""
     from enn._rust import resolve_tied_groups as resolve
 
     groups = resolve(
@@ -53,5 +48,4 @@ def resolve_tied_groups(values, tied_dims, *, semantic_only=False):
 def attach_tied_dims(
     values: np.ndarray, tied_dims: tuple[tuple[int, ...], ...]
 ) -> np.ndarray:
-    """Return ``values`` labeled with ``tied_dims``."""
     return _EncodedRows(values, tied_dims)

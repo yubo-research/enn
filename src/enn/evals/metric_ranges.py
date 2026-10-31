@@ -1,13 +1,3 @@
-"""Streaming eval on a 12-d problem whose inputs have very different ranges.
-
-u ~ U[0,1]^12 and x_i = s_i u_i with ranges s_i = 10^linspace(-2, 2, 12), so the widest input
-spans 10^4 times the narrowest. The target y = sum_i (u_i - 0.5) + 0.1 eps depends on every
-input equally in its own units, so the ideal diagonal metric is known: weights a_i ∝ 1 / s_i^2,
-which is what ``scale_x=ON`` applies up to a common factor. Unweighted distances are dominated by
-the widest inputs. Models, streaming protocol, seeds and output lines are those of
-``src/enn/evals/metric_12d.py``; only the data differ.
-"""
-
 from __future__ import annotations
 
 import numpy as np

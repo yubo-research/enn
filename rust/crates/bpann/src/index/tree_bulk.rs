@@ -1,12 +1,3 @@
-//! One-pass (bulk) construction of the incremental tree from many rows at once,
-//! used when an empty tree must index many rows (a metric rebuild or a reopen
-//! without a usable persisted tree).
-//!
-//! Rows are split recursively, in parallel, by [`median_split`] until at most
-//! [`TREE_LEAF_CAPACITY`] remain, the split rule an overflowing leaf uses. Each
-//! internal page takes up to [`TREE_FANOUT`] nodes of that binary tree as children
-//! (always expanding the largest), so the result has the same page limits, counts,
-//! blocks and radii as a tree grown row by row and keeps growing incrementally.
 
 use std::cmp::{Ordering, Reverse};
 
@@ -20,16 +11,10 @@ use crate::index::tree_counts::dist;
 use crate::index::tree_store::Kind;
 use crate::small_n_search::OrderedF32;
 
-/// An empty tree indexes at least this many rows in one bulk build, not row by row.
-/// Fewer rows insert row by row in well under 0.1 s, so only large rebuilds use it.
 pub const BULK_BUILD_MIN_ROWS: usize = 65_536;
 
-/// Coordinate bytes a bulk build may hold at once; later rows insert one at a time,
-/// so a rebuild's memory does not grow with the number of rows.
 pub const BULK_BUILD_MAX_BYTES: usize = 256 << 20;
 
-/// Rows one bulk build takes: [`BULK_BUILD_MAX_BYTES`] of `f32` coordinates, and
-/// never fewer than [`BULK_BUILD_MIN_ROWS`].
 pub fn bulk_build_max_rows(num_dim: usize) -> usize {
     (BULK_BUILD_MAX_BYTES / (4 * num_dim.max(1))).max(BULK_BUILD_MIN_ROWS)
 }
@@ -48,11 +33,8 @@ impl Node {
     }
 }
 
-/// Nodes with at least this many rows are split with parallel passes.
 const PARALLEL_SPLIT_MIN_ROWS: usize = 32_768;
 
-/// Put rows `perm` (positions into `order` / `buf`) first-to-last, moving the
-/// coordinates in `buf` along with the row ids in `order`.
 fn apply_perm(order: &mut [usize], buf: &mut [f32], dim: usize, perm: &[usize]) {
     if perm.len() < PARALLEL_SPLIT_MIN_ROWS {
         let new_order: Vec<usize> = perm.iter().map(|&p| order[p]).collect();
@@ -72,8 +54,6 @@ fn apply_perm(order: &mut [usize], buf: &mut [f32], dim: usize, perm: &[usize]) 
     buf.par_chunks_mut(dim).zip(new_buf.par_chunks(dim)).for_each(|(b, n)| b.copy_from_slice(n));
 }
 
-/// [`median_split`] of the rows in `buf` (row-major, one row per entry of `order`;
-/// same result), reordering both so the left half comes first; returns its size.
 fn split_rows(order: &mut [usize], buf: &mut [f32], dim: usize) -> usize {
     if order.len() < PARALLEL_SPLIT_MIN_ROWS {
         let points: Vec<&[f32]> = buf.chunks_exact(dim).collect();
@@ -119,7 +99,6 @@ fn partition(order: &mut [usize], buf: &mut [f32], start: usize, dim: usize) -> 
     Node::Split(Box::new(a), Box::new(b), n)
 }
 
-/// Up to [`TREE_FANOUT`] descendants of `node` covering all its rows.
 fn children(node: &Node) -> Vec<&Node> {
     let mut kids = vec![node];
     while kids.len() < TREE_FANOUT {
@@ -133,7 +112,6 @@ fn children(node: &Node) -> Vec<&Node> {
     kids
 }
 
-/// A page just built: its id, centroid, radius and row count.
 #[derive(Clone, Debug)]
 struct Emitted {
     page_id: u32,
@@ -142,7 +120,6 @@ struct Emitted {
     count: usize,
 }
 
-/// Build the internal page over `kids` (holding `count` rows) in `tree`.
 fn push_internal(tree: &mut Tree, kids: &[Emitted], count: usize) -> Result<Emitted, BpannError> {
     let centroids: Vec<&[f32]> = kids.iter().map(|k| k.centroid.as_slice()).collect();
     let weights: Vec<f64> = kids.iter().map(|k| k.count as f64).collect();
@@ -173,7 +150,6 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
-    /// Emit `node`'s pages in post-order.
     fn emit(&mut self, node: &Node) -> Result<Emitted, BpannError> {
         let Node::Leaf { start, len } = node else {
             let kids = children(node).into_iter().map(|k| self.emit(k)).collect::<Result<Vec<_>, _>>()?;
@@ -199,9 +175,6 @@ impl Builder<'_> {
     }
 }
 
-/// Tree over `rows` (row-major scaled coordinates `vs`, reordered in place), with
-/// every block filled. Holds `vs` and a few words per row in memory, so callers
-/// bound the number of rows ([`bulk_build_max_rows`]).
 pub fn bulk_build(
     rows: &[u32],
     vs: &mut [f32],
@@ -277,4 +250,3 @@ mod tests {
         }
     }
 }
-

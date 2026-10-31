@@ -1,20 +1,15 @@
-//! Trust-region configuration variants for the optimizer.
 
 use crate::error::ENNError;
 use crate::morbo_trust_region::MorboTRSettings;
 use crate::trust_region::TRLengthConfig;
 
-/// Which trust-region family a config override selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrustRegionKind {
-    /// Single-objective TuRBO.
     Turbo,
-    /// Multi-objective MORBO.
     Morbo,
 }
 
 impl TrustRegionKind {
-    /// Accept only the two wire spellings Python sends.
     pub fn parse(name: &str) -> Result<Self, ENNError> {
         match name {
             "turbo" => Ok(Self::Turbo),
@@ -26,7 +21,6 @@ impl TrustRegionKind {
     }
 }
 
-/// Trust-region configuration (TuRBO or Morbo).
 #[derive(Debug, Clone)]
 pub enum TrustRegionConfig {
     Turbo(TRLengthConfig),

@@ -1,10 +1,8 @@
-//! Complete categorical encoder binding with no independent encoding policy.
 use ennbo::categorical_plan::{CatEncoding, CatOptions};
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[doc = "kiss-coverage-off"]
 fn encoding(name: &str) -> PyResult<CatEncoding> {
     match name {
         "ONE_HOT" => Ok(CatEncoding::OneHot),
@@ -15,7 +13,6 @@ fn encoding(name: &str) -> PyResult<CatEncoding> {
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn cat_column_plan(card: usize, name: &str, cap: usize) -> PyResult<(usize, &'static str)> {
     ennbo::categorical_plan::column_plan(card, encoding(name)?, cap)
         .map_err(|e| PyValueError::new_err(e.to_string()))
@@ -33,7 +30,6 @@ impl PyCatEncoder {
     #[new]
     #[pyo3(signature = (kinds, cards, name, code_dim, hash_dim, seed, dim_cap, separation))]
     #[allow(clippy::too_many_arguments)]
-    #[doc = "kiss-coverage-off"]
     fn new(
         kinds: Vec<bool>,
         cards: Option<Vec<Option<usize>>>,
@@ -62,7 +58,6 @@ impl PyCatEncoder {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn styles(&self) -> Vec<&'static str> {
         self.inner
             .blocks
@@ -72,7 +67,6 @@ impl PyCatEncoder {
             .collect()
     }
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn code_dims(&self) -> Vec<usize> {
         self.inner
             .blocks
@@ -81,11 +75,9 @@ impl PyCatEncoder {
             .map(|b| b.width)
             .collect()
     }
-    #[doc = "kiss-coverage-off"]
     fn tied_dims(&self) -> Vec<Vec<usize>> {
         self.inner.tied_dims()
     }
-    #[doc = "kiss-coverage-off"]
     fn encode<'py>(
         &self,
         py: Python<'py>,
@@ -103,7 +95,6 @@ impl PyCatEncoder {
             .map(|v| v.into_pyarray_bound(py))
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
-    #[doc = "kiss-coverage-off"]
     fn snap<'py>(
         &self,
         py: Python<'py>,
@@ -118,12 +109,10 @@ impl PyCatEncoder {
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn cat_log_width(card: usize, cap: usize) -> PyResult<usize> {
     ennbo::categorical::log_code_width(card, cap).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-#[doc = "kiss-coverage-off"]
 fn mixed_inputs(
     py: Python<'_>,
     values: &Bound<'_, PyAny>,

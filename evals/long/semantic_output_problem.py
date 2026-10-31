@@ -1,5 +1,3 @@
-"""Synthetic output-sharing cases and cached pretrained metric descriptions."""
-
 import numpy as np
 
 from enn import SemanticOutputProjection
@@ -22,12 +20,6 @@ def output_projection(outputs, directory):
 
 
 def synthetic_problem(seed, dimensions, projection, scenario, count):
-    """A is an oracle-aligned positive control, not evidence on real tasks.
-
-    B has independent output functions; C flips signs within repeated description groups;
-    D permutes the true loading rows while keeping descriptions fixed.
-    All scenarios add independent observation noise of SD 0.1.
-    """
     rng = np.random.default_rng(seed)
     outputs = len(projection.names)
     x = rng.uniform(-1, 1, (count, dimensions))
@@ -58,7 +50,6 @@ def method_embeddings(projection, seed):
 
 
 def _misleading_loadings(loadings, rng):
-    """Permute truth, avoiding a chance-identical output relationship matrix."""
     shuffled = loadings[rng.permutation(len(loadings))]
     if np.allclose(shuffled @ shuffled.T, loadings @ loadings.T):
         order = np.arange(len(loadings))

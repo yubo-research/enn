@@ -29,8 +29,6 @@ def _reject_order(
 
 @dataclass(frozen=True)
 class TRLengthConfig:
-    """Lengths the caller set. ``None`` means Rust's default."""
-
     length_init: float | None = None
     length_min: float | None = None
     length_max: float | None = None

@@ -1,32 +1,3 @@
-"""Scaling with N of memory, add time and query time for BPANN_DISK + AUTO + OLS.
-
-One model: ``index_driver=BPANN_DISK``, ``metric_learning=AUTO`` and the post-hoc OLS affine
-calibrator (``ENNStatefulFitter.ask(..., affine_calibrate=True)``). Rows of the 12-d
-``metric_12d`` problem stream in batches with ``ensure_index_sync`` after each batch; the
-fitter is told only the new rows, so it holds running moments of ``y`` rather than the rows.
-At each checkpoint in ``n_grid`` the model refits its hyperparameters and calibrator, then
-answers one posterior call on ``num_test`` fixed test points.
-
-Per checkpoint:
-
-- memory: ``rss_mib`` is resident memory after the checkpoint minus resident memory before the
-  model was built, split into ``anon_mib`` (heap) and ``file_mib`` (pages of memory-mapped
-  files, which the kernel can reclaim); ``peak_mib`` is the peak resident memory since the
-  previous checkpoint (``VmHWM`` reset through ``/proc/self/clear_refs``) minus the same
-  baseline; ``disk_mib`` is the size of the model's work directory. Linux only (nan elsewhere).
-- add: ``add_s`` is the wall time of the adds and syncs since the previous checkpoint (including
-  AUTO's metric refits inside ``add``), ``add_us`` that time per added row, and ``fit_s`` the
-  hyperparameter and calibrator fit.
-- query: ``query_s`` is the posterior call and ``query_us`` that time per test point.
-- accuracy on the test points: ``loglik`` and ``nrmse`` (RMSE over the std of ``y_test``).
-
-Each seed runs in its own process. Each checkpoint line gives mean ± standard error over seeds.
-For each metric in ``REG_METRICS`` one ``reg`` line follows (see ``enn.evals.scaling_fit``): the
-per-seed values are regressed on ln N, N and N^2 (N in thousands) in turn, each fit reported
-with its r^2, intercept, slope, t and p value, and ``best`` names the term with the largest r^2
-(``none`` if that slope is not significant at ``alpha``).
-"""
-
 from __future__ import annotations
 
 import math
@@ -105,7 +76,6 @@ def _proc_status_kib(key: str) -> float:
 
 
 def memory_mib() -> dict[str, float]:
-    """Resident (total, anonymous, file-backed) and peak resident memory in MiB."""
     keys = {
         "rss_mib": "VmRSS",
         "anon_mib": "RssAnon",
@@ -116,7 +86,6 @@ def memory_mib() -> dict[str, float]:
 
 
 def reset_peak() -> None:
-    """Reset ``VmHWM`` to the current resident size (Linux >= 4.0; no-op elsewhere)."""
     try:
         with open("/proc/self/clear_refs", "w", encoding="ascii") as f:
             f.write("5")
@@ -129,8 +98,6 @@ def dir_mib(path: str) -> float:
 
 
 class ScalingRun:
-    """One seed's model, grown checkpoint to checkpoint."""
-
     def __init__(self, work_dir: str, config: ScalingConfig) -> None:
         self.work_dir = work_dir
         self.config = config
@@ -142,7 +109,6 @@ class ScalingRun:
         self.base_mem = memory_mib()
 
     def memory_delta(self) -> dict[str, float]:
-        """Memory now minus memory before the model was built; peak is relative to base RSS."""
         now = memory_mib()
         out = {
             k: now[k] - self.base_mem[k] for k in ("rss_mib", "anon_mib", "file_mib")
@@ -183,7 +149,6 @@ class ScalingRun:
 
 
 def run_seed(config: ScalingConfig) -> list[dict[str, float]]:
-    """Stream one seed; print and return one row of metrics per checkpoint."""
     rng = np.random.default_rng(config.seed)
     x, y = make_data(max(config.n_grid), rng)
     x_test, y_test = make_data(config.num_test, rng)
@@ -215,20 +180,17 @@ def run_seed(config: ScalingConfig) -> list[dict[str, float]]:
 
 
 def run_seed_isolated(config: ScalingConfig) -> list[dict[str, float]]:
-    """``run_seed`` in a fresh process, so no seed inherits another's heap or mapped pages."""
     ctx = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as pool:
         return pool.submit(run_seed, config).result()
 
 
 def format_seed_line(seed: int, row: dict[str, float]) -> str:
-    """Per-seed progress line with every metric; deliberately not an EVAL line."""
     vals = " ".join(format_plain(k, f"{v:.4f}") for k, v in row.items() if k != "n")
     return f"seed = {seed} n = {int(row['n'])} {vals}"
 
 
 def summarize(rows: list[dict[str, float]]) -> dict[int, dict[str, MeanSE]]:
-    """Mean ± SE over seeds of every metric, keyed by checkpoint n."""
     groups: dict[int, list[dict[str, float]]] = {}
     for row in rows:
         groups.setdefault(int(row["n"]), []).append(row)
@@ -251,7 +213,6 @@ def format_eval_line(n: int, stats: dict[str, MeanSE]) -> str:
 
 
 def format_reg_line(metric: str, fits: dict[str, RegFit], alpha: float = ALPHA) -> str:
-    """One ``reg`` line: the best term, then r^2, intercept, slope, t and p of each simple fit."""
     obs = next(iter(fits.values())).obs if fits else 0
     parts = [
         format_plain("model", MODEL_LABEL),
@@ -272,7 +233,6 @@ def format_reg_line(metric: str, fits: dict[str, RegFit], alpha: float = ALPHA) 
 
 
 def regress(rows: list[dict[str, float]]) -> dict[str, dict[str, RegFit]]:
-    """Simple fits on each of ln N, N and N^2 for each ``REG_METRICS`` metric, on per-seed rows."""
     ns = [r["n"] for r in rows]
     return {m: single_term_fits(ns, [r[m] for r in rows]) for m in REG_METRICS}
 
@@ -280,7 +240,6 @@ def regress(rows: list[dict[str, float]]) -> dict[str, dict[str, RegFit]]:
 def run_eval(
     config: ScalingConfig | None = None,
 ) -> tuple[dict[int, dict[str, MeanSE]], dict[str, dict[str, RegFit]]]:
-    """Run all seeds; print per-checkpoint EVAL lines and the regression lines."""
     cfg = ScalingConfig() if config is None else config
     if list(cfg.n_grid) != sorted(set(cfg.n_grid)) or cfg.n_grid[0] < 2:
         raise ValueError("n_grid must be strictly increasing and start at >= 2")

@@ -1,4 +1,3 @@
-//! Bounded-memory original-input storage for noninvertible disk features.
 use crate::error::ENNError;
 use ndarray::{Array2, ArrayView2};
 use std::fs::{File, OpenOptions};

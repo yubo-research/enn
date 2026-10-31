@@ -1,4 +1,3 @@
-//! Supervised linear and quadratic geometry for bounded replay epochs.
 use crate::error::ENNError;
 use ndarray::{s, Array2, Axis};
 use ndarray_linalg::{Eigh, Inverse, SVD, UPLO};

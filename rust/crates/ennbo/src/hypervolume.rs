@@ -1,53 +1,17 @@
-//! 2D hypervolume calculation for maximization problems.
 
 use ndarray::{ArrayView1, ArrayView2};
 use thiserror::Error;
 
-/// Errors that can occur during hypervolume calculation.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum HypervolumeError {
-    /// Input array has wrong dimensionality.
     #[error("y must be 2-dimensional, got shape {0:?}")]
     InvalidDimension(Vec<usize>),
-    /// Input array has wrong number of columns.
     #[error("y must have 2 columns, got shape {0:?}")]
     InvalidColumnCount(Vec<usize>),
-    /// Reference point has wrong shape.
     #[error("ref_point must have 2 elements, got shape {0:?}")]
     InvalidRefPoint(usize),
 }
 
-/// Calculate 2D hypervolume for maximization problems.
-///
-/// This implements the "walking frontier" algorithm for computing
-/// the hypervolume indicator in 2D objective space.
-///
-/// # Arguments
-///
-/// * `y` - Array of shape (N, 2) containing objective values to maximize
-/// * `ref_point` - Array of shape (2,) containing reference point for hypervolume
-///
-/// # Returns
-///
-/// The hypervolume as a float, or an error if inputs are invalid.
-///
-/// # Algorithm
-///
-/// 1. Filter points that dominate the reference point in both dimensions
-/// 2. Sort remaining points by first objective in descending order (stable)
-/// 3. Walk the frontier, accumulating rectangular areas
-///
-/// # Example
-///
-/// ```
-/// use ndarray::array;
-/// use ennbo::hypervolume_2d_max;
-///
-/// let y = array![[1.0, 0.5], [0.5, 1.0]];
-/// let ref_point = array![0.0, 0.0];
-/// let hv = hypervolume_2d_max(&y.view(), &ref_point.view()).unwrap();
-/// assert!((hv - 0.75).abs() < 1e-10);
-/// ```
 pub fn hypervolume_2d_max(
     y: &ArrayView2<f64>,
     ref_point: &ArrayView1<f64>,
@@ -116,11 +80,6 @@ pub fn hypervolume_2d_max(
     Ok(hv)
 }
 
-/// Convenience function for 1D arrays.
-///
-/// # Panics
-///
-/// Panics if the conversion from 1D to 2D view fails.
 pub fn hypervolume_2d_max_1d(
     y: &ArrayView1<f64>,
     ref_point: &ArrayView1<f64>,

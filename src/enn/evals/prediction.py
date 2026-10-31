@@ -1,5 +1,3 @@
-"""Paired sparse-signal and unequal-input-range prediction benchmarks."""
-
 from enn.evals import metric_12d, metric_ranges
 from enn.evals.metric_12d import Metric12dConfig
 

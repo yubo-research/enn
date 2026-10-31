@@ -1,4 +1,3 @@
-//! Bindings for calibrator, normal intervals, and benchmarks.
 
 use ndarray::{Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn};
@@ -14,7 +13,6 @@ fn as_2d(arr: &ArrayD<f64>) -> Array2<f64> {
 #[pyfunction]
 #[pyo3(signature = (mu, y, se=None))]
 #[allow(clippy::type_complexity)]
-#[doc = "kiss-coverage-off"]
 pub fn fit_affine<'py>(
     py: Python<'py>,
     mu: PyReadonlyArray2<f64>,
@@ -37,7 +35,6 @@ pub fn fit_affine<'py>(
 
 #[pyfunction]
 #[pyo3(signature = (mu, se, num_samples, seed, y_bounds=None, clip=None))]
-#[doc = "kiss-coverage-off"]
 pub fn sample_normal<'py>(
     py: Python<'py>,
     mu: PyReadonlyArray2<f64>,
@@ -61,7 +58,6 @@ pub fn sample_normal<'py>(
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn z_crit(level: f64) -> PyResult<f64> {
     ennbo::normal_sample::z_crit(level).map_err(|e| PyValueError::new_err(e.to_string()))
 }
@@ -69,7 +65,6 @@ pub fn z_crit(level: f64) -> PyResult<f64> {
 #[pyfunction]
 #[pyo3(signature = (mu, se, level, y_bounds=None))]
 #[allow(clippy::type_complexity)]
-#[doc = "kiss-coverage-off"]
 pub fn confidence_interval<'py>(
     py: Python<'py>,
     mu: PyReadonlyArray2<f64>,
@@ -86,7 +81,6 @@ pub fn confidence_interval<'py>(
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn ackley_core<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
@@ -108,7 +102,6 @@ fn vec_of(a: PyReadonlyArray1<f64>) -> Vec<f64> {
 
 #[pyfunction]
 #[pyo3(signature = (a, b, mu, y_bounds=None, se=None))]
-#[doc = "kiss-coverage-off"]
 pub fn affine_map_mu<'py>(
     py: Python<'py>,
     a: PyReadonlyArray1<f64>,
@@ -133,7 +126,6 @@ pub fn affine_map_mu<'py>(
 #[pyfunction]
 #[pyo3(signature = (a, b, c, draws, mu, y_bounds=None, se=None))]
 #[allow(clippy::too_many_arguments)]
-#[doc = "kiss-coverage-off"]
 pub fn affine_map_draws<'py>(
     py: Python<'py>,
     a: PyReadonlyArray1<f64>,
@@ -162,7 +154,6 @@ pub fn affine_map_draws<'py>(
 #[pyfunction]
 #[pyo3(signature = (a, b, c, mu, se_epi, se_ale, y_bounds=None))]
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-#[doc = "kiss-coverage-off"]
 pub fn affine_apply<'py>(
     py: Python<'py>,
     a: PyReadonlyArray1<f64>,
@@ -198,7 +189,6 @@ pub fn affine_apply<'py>(
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn choose_indices(n: usize, p: usize, seed: u64) -> PyResult<Vec<usize>> {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -210,12 +200,10 @@ pub fn choose_indices(n: usize, p: usize, seed: u64) -> PyResult<Vec<usize>> {
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn separable_unimodal<'py>(py: Python<'py>, x: PyReadonlyArray2<f64>) -> Bound<'py, PyArray2<f64>> {
     ennbo::benchmarks::separable_unimodal(x.as_array().view()).into_pyarray_bound(py)
 }
 
-/// Rust posterior value exposed to Python.
 #[pyclass(name = "ENNNormal")]
 pub struct PyENNNormal {
     inner: ennbo::ENNNormal,
@@ -225,7 +213,6 @@ pub struct PyENNNormal {
 impl PyENNNormal {
     #[new]
     #[pyo3(signature = (mu, se, se_epi, se_ale, idx=None, y_bounds=None))]
-    #[doc = "kiss-coverage-off"]
     fn new(
         mu: PyReadonlyArrayDyn<f64>,
         se: PyReadonlyArrayDyn<f64>,
@@ -248,31 +235,26 @@ impl PyENNNormal {
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn mu<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
         self.inner.mu.clone().into_pyarray_bound(py)
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn se<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
         self.inner.se.clone().into_pyarray_bound(py)
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn se_epi<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
         self.inner.se_epi.clone().into_pyarray_bound(py)
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn se_ale<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
         self.inner.se_ale.clone().into_pyarray_bound(py)
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn idx<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<i64>>> {
         self.inner
             .idx
@@ -281,7 +263,6 @@ impl PyENNNormal {
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn y_bounds<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
         self.inner
             .y_bounds
@@ -290,7 +271,6 @@ impl PyENNNormal {
     }
 
     #[pyo3(signature = (num_samples, seed, clip=None))]
-    #[doc = "kiss-coverage-off"]
     fn sample<'py>(
         &self,
         py: Python<'py>,
@@ -306,7 +286,6 @@ impl PyENNNormal {
     }
 
     #[pyo3(signature = (level=0.95))]
-    #[doc = "kiss-coverage-off"]
     #[allow(clippy::type_complexity)]
     fn confidence_interval<'py>(
         &self,
@@ -329,13 +308,11 @@ pub struct PyAckley {
 #[pymethods]
 impl PyAckley {
     #[new]
-    #[doc = "kiss-coverage-off"]
     fn new(noise: f64, seed: u64) -> Self {
         Self { inner: ennbo::Ackley::new(noise, seed) }
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     #[allow(clippy::let_and_return)]
     fn noise(&self) -> f64 {
         let noise = self.inner.noise();
@@ -343,14 +320,12 @@ impl PyAckley {
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     #[allow(clippy::let_and_return)]
     fn bounds(&self) -> [f64; 2] {
         let bounds = self.inner.bounds();
         bounds
     }
 
-    #[doc = "kiss-coverage-off"]
     fn evaluate<'py>(
         &mut self,
         py: Python<'py>,
@@ -368,24 +343,20 @@ pub struct PyDoubleAckley {
 #[pymethods]
 impl PyDoubleAckley {
     #[new]
-    #[doc = "kiss-coverage-off"]
     fn new(noise: f64, seed: u64) -> Self {
         Self { inner: ennbo::DoubleAckley::new(noise, seed) }
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn noise(&self) -> f64 {
         self.inner.noise()
     }
 
     #[getter]
-    #[doc = "kiss-coverage-off"]
     fn bounds(&self) -> [f64; 2] {
         self.inner.bounds()
     }
 
-    #[doc = "kiss-coverage-off"]
     fn evaluate<'py>(
         &mut self,
         py: Python<'py>,

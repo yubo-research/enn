@@ -6,8 +6,6 @@ from enn._rust import ENNNormal as _RustENNNormal
 
 
 class ENNNormal:
-    """Facade over the Rust posterior. The only field is that object."""
-
     def __init__(
         self,
         mu: np.ndarray,
@@ -23,7 +21,9 @@ class ENNNormal:
         se_ale_arr = np.asarray(se_ale, dtype=float)
         idx_arr = None if idx is None else np.asarray(idx)
         bounds = None if y_bounds is None else np.asarray(y_bounds, dtype=float)
-        self._inner = _RustENNNormal(mu_arr, se_arr, se_epi_arr, se_ale_arr, idx_arr, bounds)
+        self._inner = _RustENNNormal(
+            mu_arr, se_arr, se_epi_arr, se_ale_arr, idx_arr, bounds
+        )
 
     @property
     def mu(self) -> np.ndarray:

@@ -1,5 +1,3 @@
-"""Closed-loop maximization on known-optimum objectives at a fixed evaluation budget."""
-
 import time
 
 import numpy as np
@@ -18,7 +16,6 @@ CHECKPOINTS = (NUM_INIT, 24, BUDGET)
 
 
 def objective(x: np.ndarray, problem: str) -> np.ndarray:
-    """Negative losses with maximum zero at the origin, on [-1, 1]^5."""
     if problem == "sphere":
         loss = np.mean(x**2, axis=1)
     elif problem == "ackley":
@@ -51,7 +48,6 @@ def build_optimizer(seed: int):
 
 
 def run_seed(problem: str, seed: int) -> list[dict]:
-    """Share the initial design; spend every subsequent evaluation on an actual proposal."""
     rng = np.random.default_rng(seed)
     start = time.perf_counter()
     optimizer = build_optimizer(seed)

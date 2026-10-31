@@ -1,5 +1,3 @@
-"""Validation-only model selection and paired marginal predictive scores."""
-
 import tracemalloc
 from time import perf_counter
 
@@ -21,7 +19,6 @@ def scores(y, posterior, scale):
 
 
 def select_model(x, y, validation, definition, settings):
-    """Select by validation NRMSE; zero sharing is available to every method."""
     best, best_score = None, np.inf
     names, embeddings = definition
     cutoffs, alphas = settings
@@ -74,7 +71,6 @@ def benchmark_method(x, y, splits, definition, settings):
 
 
 def _memory_peak(model, x, y, query):
-    """Measure refit and prediction allocations separately from timed runs."""
     tracemalloc.start()
     try:
         model.fit(x, y).posterior(query)

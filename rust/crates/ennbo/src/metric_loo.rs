@@ -1,4 +1,3 @@
-//! Leave-one-out ENN log-likelihood for a diagonal metric.
 
 use ndarray::ArrayView2;
 
@@ -18,7 +17,6 @@ fn variance(col: &[f64]) -> f64 {
     if var > MIN_VAR { var } else { 1.0 }
 }
 
-/// Geometry is shared by all output columns in one metric evaluation.
 fn loo_neighbors(z: &[f64], a_scaled: &[f64], n: usize, d: usize, k: usize) -> (Vec<usize>, Vec<f64>) {
     let mut row_a = vec![0.0; n];
     let mut az = vec![0.0; n * d];
@@ -61,7 +59,6 @@ fn loo_neighbors(z: &[f64], a_scaled: &[f64], n: usize, d: usize, k: usize) -> (
     (nbr, d2n)
 }
 
-/// Reuse each grid point's weights across outputs; each column still chooses its own maximum.
 fn joint_loglik(columns: &[Vec<f64>], nbr: &[usize], d2n: &[f64], n: usize, k: usize) -> f64 {
     let m = columns.len();
     let mut best = vec![f64::NEG_INFINITY; m];

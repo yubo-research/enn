@@ -1,4 +1,3 @@
-//! Complete categorical encoder usable from supervised learning or optimization in Rust.
 use crate::categorical;
 use crate::categorical_plan::{self, invalid, CatBlock, CatOptions};
 use crate::categorical_values::CatValue;
@@ -6,19 +5,14 @@ pub use crate::categorical_values::InputValue;
 use crate::error::ENNError;
 use ndarray::{s, Array2, ArrayView2};
 
-/// A fixed categorical layout, including automatically derived tie groups.
 #[derive(Debug, Clone)]
 pub struct CatEncoder {
-    /// True for each categorical input column.
     pub kinds: Vec<bool>,
-    /// Fixed output blocks in encoded column order.
     pub blocks: Vec<CatBlock>,
-    /// Validated encoding policy.
     pub options: CatOptions,
 }
 
 impl CatEncoder {
-    /// Build a representation. `true` kinds are categorical; other kinds are continuous.
     pub fn new(
         kinds: Vec<bool>,
         cards: Option<Vec<Option<usize>>>,
@@ -32,12 +26,10 @@ impl CatEncoder {
         })
     }
 
-    /// Number of columns in encoded rows.
     pub fn num_dim(&self) -> usize {
         self.blocks.iter().map(|b| b.width).sum::<usize>() + self.options.hash_dim.unwrap_or(0)
     }
 
-    /// Tie every category's block, or the single shared hash block.
     pub fn tied_dims(&self) -> Vec<Vec<usize>> {
         let mut cursor = 0;
         let mut groups = Vec::new();
@@ -53,17 +45,14 @@ impl CatEncoder {
         groups
     }
 
-    /// Encode mixed numerical rows after validating categorical ids.
     pub fn encode(&self, x: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
         self.encode_values(x)
     }
 
-    /// Encode integer rows without rounding category labels through float coordinates.
     pub fn encode_i64(&self, x: &ArrayView2<i64>) -> Result<Array2<f64>, ENNError> {
         self.encode_values(x)
     }
 
-    /// Encode mixed cells while retaining exact integer categorical labels.
     pub fn encode_mixed(&self, x: &ArrayView2<InputValue>) -> Result<Array2<f64>, ENNError> {
         self.encode_values(x)
     }
@@ -121,7 +110,6 @@ impl CatEncoder {
         Ok(out)
     }
 
-    /// Recover one allowed category per variable; hashes cannot be separated by variable.
     pub fn snap(&self, x: &ArrayView2<f64>, domains: &[Vec<i64>]) -> Result<Array2<i64>, ENNError> {
         if self.options.hash_dim.is_some() {
             return Err(invalid("hashed codes are not separated by variable"));

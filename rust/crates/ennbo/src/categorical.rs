@@ -1,4 +1,3 @@
-//! Deterministic categorical distances shared by Rust and Python callers.
 use crate::error::ENNError;
 use ndarray::{Array2, ArrayView2};
 
@@ -9,7 +8,6 @@ fn hash(category: i64, variable: usize, seed: u64) -> u64 {
     x ^ (x >> 31)
 }
 
-/// Validate a code width before shifting category hashes.
 pub fn width(value: usize, upper: usize) -> Result<usize, ENNError> {
     if value == 0 || value > upper {
         return Err(ENNError::InvalidParameter(format!(
@@ -19,7 +17,6 @@ pub fn width(value: usize, upper: usize) -> Result<usize, ENNError> {
     Ok(value)
 }
 
-/// Choose enough signs to limit collisions, subject to a caller-provided cap.
 pub fn log_code_width(card: usize, cap: usize) -> Result<usize, ENNError> {
     width(cap, 64).map_err(|_| ENNError::InvalidParameter("dim_cap must be in 1..64".into()))?;
     if card == 0 {
@@ -32,7 +29,6 @@ pub fn log_code_width(card: usize, cap: usize) -> Result<usize, ENNError> {
     })
 }
 
-/// Encode each label as a fixed-length sign vector with norm `separation`.
 pub fn rademacher(
     categories: &[i64],
     variable: usize,
@@ -59,7 +55,6 @@ pub fn rademacher(
     ))
 }
 
-/// Encode all categorical variables in a shared normalized sparse hash vector.
 pub fn hash_columns(
     categories: &ArrayView2<i64>,
     dimensions: usize,
@@ -75,7 +70,6 @@ pub fn hash_columns(
     Ok(out)
 }
 
-/// Expand category ids, rejecting labels outside the declared domain.
 pub fn one_hot(categories: &[i64], card: usize) -> Result<Array2<f64>, ENNError> {
     if card == 0 || categories.iter().any(|&v| v < 0 || v as usize >= card) {
         return Err(ENNError::InvalidParameter(
@@ -89,7 +83,6 @@ pub fn one_hot(categories: &[i64], card: usize) -> Result<Array2<f64>, ENNError>
     Ok(out)
 }
 
-/// Recover the most similar allowed category. Domain order resolves exact ties.
 pub fn snap(
     block: &ArrayView2<f64>,
     domain: &[i64],

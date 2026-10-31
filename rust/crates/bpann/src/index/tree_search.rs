@@ -1,11 +1,3 @@
-//! Best-first search of the incremental tree.
-//!
-//! Pages are expanded in order of their centroid's distance to the query, less a
-//! fraction of their radius ([`TREE_SEARCH_RADIUS_WEIGHT`]), and the
-//! search stops after scoring [`leaf_budget`] leaves (once it holds `k` candidates).
-//! The budget is proportional to `ln N`, so the work per query grows like `ln N`.
-//! A page whose ball (centroid and radius) lies entirely farther than the current
-//! `k`-th best row is skipped without using budget, since it cannot hold a better row.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -16,22 +8,15 @@ use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
 use crate::small_n_search::{OrderedF32, OrderedFloat};
 
-/// Leaves scored per query per unit of `ln N`.
 pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 128.0;
 
-/// Leaves a query scores in a tree of `indexed_rows` rows: `ceil(128 ln N)`, at least 1.
 pub fn leaf_budget(indexed_rows: usize) -> usize {
     let ln_n = (indexed_rows.max(1) as f64).ln();
     ((TREE_SEARCH_LEAVES_PER_LN_N * ln_n).ceil() as usize).max(1)
 }
 
-/// Pages are expanded in order of `(d - 0.1 r)^2`, with `d` the distance to the page's
-/// centroid and `r` its radius. Pure centroid order (`0`) loses recall as the tree
-/// grows (uniform 12-d, 3M rows: 0.87 of the true 10 neighbors) and ball-bound order
-/// (`1`) spends the budget on large, far pages; `0.1` finds 0.998 at the same budget.
 pub const TREE_SEARCH_RADIUS_WEIGHT: f32 = 0.1;
 
-/// Squared `max(0, d - w r)` for a page whose centroid is at squared distance `d2`.
 fn discounted(d2: f32, radius: f32, w: f32) -> f32 {
     let gap = (d2.sqrt() - w * radius).max(0.0);
     gap * gap
@@ -41,8 +26,6 @@ fn priority(d2: f32, radius: f32) -> f32 {
     discounted(d2, radius, TREE_SEARCH_RADIUS_WEIGHT)
 }
 
-/// Squared lower bound on the distance from a query to any row in a page whose
-/// centroid is at squared distance `d2` and whose radius is `radius`.
 fn lower_bound(d2: f32, radius: f32) -> f32 {
     discounted(d2, radius, 1.0)
 }
@@ -64,9 +47,6 @@ impl TopK {
         }
     }
 
-    /// Whether no row at squared distance >= `bound` can enter the top `k`. The
-    /// relative slack and absolute underflow allowance keep f32 page bounds from
-    /// pruning a true neighbor beside tiny f64 distances.
     fn cannot_improve(&self, bound: f32) -> bool {
         let lower = (f64::from(bound) * (1.0 - 1e-4)
             - 64.0 * f32::MIN_POSITIVE as f64).max(0.0);
@@ -85,7 +65,6 @@ impl TopK {
     }
 }
 
-/// Approximate `k` nearest rows to `query` (scaled coordinates), ascending by distance.
 pub fn search_tree(
     tree: &Tree,
     query: &[f32],
@@ -104,19 +83,12 @@ pub fn search_tree(
     Ok(rows.into_iter().map(|(row, dist)| (row, dist as f32)).collect())
 }
 
-/// Refine fast candidates in f64, falling back on numerically ambiguous boundaries.
-/// Coordinate error accumulates conservatively through every rescale. The bound
-/// includes query conversion, distance arithmetic and absolute underflow; its
-/// slack grows with dimension and coordinate magnitude, never with an N cutoff.
-/// This certifies precision within the approximate traversal, not exact ANN recall.
 pub fn search_tree_refined(
     tree: &Tree, query: &[f64], k: usize, store: &MmapSearchStore<'_>,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
     search_tree_refined_with_extra(tree, query, k, store, 10)
 }
 
-/// Explicit refinement budget for reproducible low-level work comparisons.
-/// Numerical certification and its fallback are independent of this budget.
 pub fn search_tree_refined_with_extra(
     tree: &Tree, query: &[f64], k: usize, store: &MmapSearchStore<'_>, extra: usize,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
@@ -144,10 +116,6 @@ pub fn search_tree_refined_with_extra(
     Ok(refined)
 }
 
-/// A loose lower bound for true distances outside the f32 candidate pool.
-/// Triangle inequalities bound the omitted point norm by query norm and distance;
-/// Relative coordinate error and dimension-dependent arithmetic error stay separate;
-/// this avoids magnifying accumulated rescale error by dimension a second time.
 fn refinement_lower_bound(tree: &Tree, query: &[f64], store: &MmapSearchStore<'_>, boundary: f64) -> f64 {
     let eta = 4.0 * tree.coordinate_relative_error
         + 16.0 * (query.len() + 1) as f64 * f32::EPSILON as f64;
@@ -164,10 +132,6 @@ fn refinement_lower_bound(tree: &Tree, query: &[f64], store: &MmapSearchStore<'_
     lower.max(0.0).powi(2)
 }
 
-/// Use the same traversal at every N and score leaf rows in original f64 precision.
-/// This retains continuous differences that tied categorical contributions can hide in f32.
-/// Scoring stops only when a partial sum already exceeds the current neighbor limit;
-/// remaining squared terms are nonnegative.
 pub fn search_tree_f64(
     tree: &Tree,
     query: &[f64],

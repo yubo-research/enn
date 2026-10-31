@@ -1,49 +1,17 @@
-//! Statistical data structures and utilities.
 
 use ndarray::{Array2, Array3};
 
-/// Weighted statistical summary for ENN calculations.
-///
-/// This struct holds the normalized weights, L2 norms, means, and
-/// standard errors computed from weighted neighbor contributions.
-///
-/// # Fields
-///
-/// * `w_normalized` - Normalized weights, shape (n_query, k, num_metrics)
-/// * `l2` - L2 norm values, shape (n_query, num_metrics)
-/// * `mu` - Mean predictions, shape (n_query, num_metrics)
-/// * `se` - Standard errors, shape (n_query, num_metrics)
-/// * `se_epi` - Epistemic standard error component, shape (n_query, num_metrics)
-/// * `se_ale` - Aleatoric standard error component, shape (n_query, num_metrics)
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeightedStats {
-    /// Normalized weights for each neighbor, shape (n_query, k, num_metrics).
     pub w_normalized: Array3<f64>,
-    /// L2 norm values for each query point, shape (n_query, num_metrics).
     pub l2: Array2<f64>,
-    /// Mean predictions for each query point, shape (n_query, num_metrics).
     pub mu: Array2<f64>,
-    /// Standard errors for each query point, shape (n_query, num_metrics).
     pub se: Array2<f64>,
-    /// Epistemic standard error component for each query point.
     pub se_epi: Array2<f64>,
-    /// Aleatoric standard error component for each query point.
     pub se_ale: Array2<f64>,
 }
 
 impl WeightedStats {
-    /// Create a new WeightedStats instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `w_normalized` - Normalized weights, shape (n_query, k, num_metrics)
-    /// * `l2` - L2 norms, shape (n_query, num_metrics)
-    /// * `mu` - Means, shape (n_query, num_metrics)
-    /// * `se` - Standard errors, shape (n_query, num_metrics)
-    ///
-    /// # Panics
-    ///
-    /// Panics if arrays don't have compatible shapes.
     pub fn new(
         w_normalized: Array3<f64>,
         l2: Array2<f64>,
@@ -82,22 +50,18 @@ impl WeightedStats {
         }
     }
 
-    /// Get the number of query points.
     pub fn n_queries(&self) -> usize {
         self.l2.nrows()
     }
 
-    /// Get the number of neighbors per query.
     pub fn n_neighbors(&self) -> usize {
         self.w_normalized.shape()[1]
     }
 
-    /// Get the number of metrics.
     pub fn n_metrics(&self) -> usize {
         self.l2.ncols()
     }
 
-    /// Check if there are no query points.
     pub fn is_empty(&self) -> bool {
         self.l2.is_empty()
     }

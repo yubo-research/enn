@@ -1,11 +1,9 @@
-//! Backend placement and weighting policy. Storage follows the index driver.
 use crate::backend::EnnStorage;
 use crate::error::ENNError;
 use crate::index::IndexDriver;
 use crate::metric_auto::MetricLearning;
 use std::path::{Path, PathBuf};
 
-/// Only FLAT can live in memory; disk BPANN uses fixed or learned distances.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnnLayout {
     Memory { scale_x: bool },
@@ -14,12 +12,10 @@ pub enum EnnLayout {
 }
 
 impl EnnLayout {
-    /// FLAT weighting uses running per-dimension standard deviations.
     pub fn flat(weighting: bool) -> Self {
         Self::Memory { scale_x: weighting }
     }
 
-    /// BPANN weighting enables AUTO metric learning, never data scaling.
     pub fn disk(work_dir: PathBuf, weighting: bool) -> Self {
         if weighting {
             Self::DiskAuto { work_dir }
@@ -28,7 +24,6 @@ impl EnnLayout {
         }
     }
 
-    /// Resolve user options, requiring an explicit directory for disk BPANN.
     pub fn new(
         driver: IndexDriver,
         work_dir: Option<PathBuf>,

@@ -1,5 +1,3 @@
-"""Prediction and wall-time curves to 100,000 rows over ten paired seeds."""
-
 from enn.evals.prediction import LONG_CONFIG, run_prediction
 
 

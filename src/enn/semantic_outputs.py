@@ -1,5 +1,3 @@
-"""Fixed, metadata-only output loadings, independent of observed targets."""
-
 import json
 from dataclasses import dataclass
 from hashlib import sha256
@@ -29,7 +27,6 @@ def _cutoff(value):
 
 
 def _normalized(embeddings, outputs):
-    """Rescale first to avoid overflow when normalizing supplied embeddings."""
     values = np.array(embeddings, dtype=float, copy=True)
     if (
         values.ndim != 2
@@ -45,15 +42,6 @@ def _normalized(embeddings, outputs):
 
 @dataclass(frozen=True, eq=False)
 class SemanticOutputProjection:
-    """Normalized sentence embeddings and orthonormal uncentered SVD loadings.
-
-    Use ``from_metadata`` for pretrained embeddings; ``from_embeddings`` supports
-    controlled ablations. Numerically zero singular directions are discarded.
-    The variance cutoff defaults to 0.9; at most output_count - 1 factors remain.
-    Zero embeddings produce no factors and the wrapper falls back to independent
-    outputs. Repeated descriptions retain their common direction.
-    """
-
     names: tuple[str, ...]
     embeddings: np.ndarray
     loadings: np.ndarray
@@ -96,12 +84,6 @@ class SemanticOutputProjection:
         encoder=None,
         cache_dir=None,
     ):
-        """Encode once; optional disk cache keys include texts, model, and cutoff.
-
-        A custom encoder is never looked up in the automatic cache because its
-        identity is unknown. Save/load its projection explicitly instead.
-        Descriptions fall back to names and support file URIs like input metadata.
-        """
         names = _output_names(names)
         variance_cutoff = _cutoff(variance_cutoff)
         texts, rows = semantic_texts(names, descriptions)

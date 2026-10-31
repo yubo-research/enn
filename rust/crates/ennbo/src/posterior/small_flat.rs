@@ -1,9 +1,3 @@
-//! Certified f64 neighbors for small Flat workloads.
-//!
-//! Flat normally fetches k+32 float32 candidates before f64 refinement. Direct
-//! f64 neighbors are equivalent when a conservative float32 error envelope
-//! proves every requested neighbor must belong to that candidate set. Ambiguous
-//! boundaries retain the original Faiss search, including its count-specific ties.
 
 use ndarray::{Array2, ArrayView2};
 
@@ -23,7 +17,6 @@ pub(super) struct SmallFlatNeighbors {
     max_k: usize,
 }
 
-/// Accumulate each distance in dimension order while vectorizing across points.
 fn column_distances(columns: &[f64], query: &[f64], scale: Option<&[f64]>, distances: &mut [f64]) {
     distances.fill(0.0);
     let n = distances.len();
@@ -55,8 +48,6 @@ fn column_norms(columns: &[f64], n: usize, scale: Option<&[f64]>) -> Vec<f64> {
 }
 
 impl SmallFlatNeighbors {
-    /// Bound input conversion, arithmetic, SIMD reduction, and underflow with
-    /// a deliberately loose envelope; reject overflow-prone inputs.
     pub(super) fn new(
         model: &EpistemicNearestNeighbors,
         x: &ArrayView2<f64>,
@@ -140,9 +131,6 @@ impl SmallFlatNeighbors {
         })
     }
 
-    /// Certify that at most k+32 rows could precede any requested row in f32.
-    /// Strict separation from all remaining rows makes heap tie choices irrelevant.
-    /// Prefixes reuse the full selected-set bound when it fits their fetch budget.
     pub(super) fn certified_row(&self, query: usize, k: usize) -> Option<&[(f64, i64, f64)]> {
         let k = k.min(self.n_train);
         if k == 0 || k > self.max_k {

@@ -1,44 +1,28 @@
-//! Acquisition function optimizers for TuRBO.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use thiserror::Error;
 
-/// Errors in acquisition optimization.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum AcquisitionError {
-    /// Invalid parameter.
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
-    /// Empty candidate set.
     #[error("No candidates available")]
     NoCandidates,
 }
 
-/// Result of acquisition optimization.
 pub type AcquisitionResult = Result<Vec<usize>, AcquisitionError>;
 
-/// UCB (Upper Confidence Bound) acquisition optimizer.
 pub struct UCBAcquisition {
-    /// Beta parameter (exploration weight).
     beta: f64,
 }
 
 impl UCBAcquisition {
-    /// Create new UCB acquisition optimizer.
     pub fn new(beta: f64) -> Self {
         Self { beta }
     }
 
-    /// Select arms using UCB acquisition.
-    ///
-    /// # Arguments
-    ///
-    /// * `mu` - Predictive means, shape (n_candidates,)
-    /// * `sigma` - Predictive standard deviations, shape (n_candidates,)
-    /// * `num_arms` - Number of arms to select
-    /// * `rng` - Random number generator
     pub fn select<R: Rng + ?Sized>(
         &self,
         mu: &ArrayView1<f64>,
@@ -74,23 +58,13 @@ impl UCBAcquisition {
     }
 }
 
-/// Thompson sampling acquisition optimizer.
 pub struct ThompsonAcquisition;
 
 impl ThompsonAcquisition {
-    /// Create new Thompson sampling acquisition optimizer.
     pub fn new() -> Self {
         Self
     }
 
-    /// Select arms using Thompson sampling.
-    ///
-    /// # Arguments
-    ///
-    /// * `mu` - Predictive means, shape (n_candidates,)
-    /// * `sigma` - Predictive standard deviations, shape (n_candidates,)
-    /// * `num_arms` - Number of arms to select
-    /// * `rng` - Random number generator
     pub fn select<R: Rng + ?Sized>(
         &self,
         mu: &ArrayView1<f64>,
@@ -141,16 +115,13 @@ impl Default for ThompsonAcquisition {
     }
 }
 
-/// Random acquisition optimizer (baseline).
 pub struct RandomAcquisition;
 
 impl RandomAcquisition {
-    /// Create new random acquisition optimizer.
     pub fn new() -> Self {
         Self
     }
 
-    /// Select random arms.
     pub fn select<R: Rng + ?Sized>(
         &self,
         n_candidates: usize,
@@ -173,19 +144,13 @@ impl Default for RandomAcquisition {
     }
 }
 
-/// Pareto front acquisition optimizer for multi-objective problems.
 pub struct ParetoAcquisition;
 
 impl ParetoAcquisition {
-    /// Create new Pareto acquisition optimizer.
     pub fn new() -> Self {
         Self
     }
 
-    /// Select arms from Pareto front.
-    ///
-    /// For multi-objective, uses non-dominated sorting.
-    /// For single-objective, delegates to arms_from_pareto_fronts_2d.
     pub fn select<R: Rng + ?Sized>(
         &self,
         mu: &ArrayView2<f64>,
@@ -249,7 +214,6 @@ impl ParetoAcquisition {
         Ok(selected)
     }
 
-    /// Build objectives as (y_1, se_1, y_2, se_2, …) for multi-obj ranking.
     fn interleave_mu_se(mu: &ArrayView2<f64>, se: &ArrayView2<f64>) -> Array2<f64> {
         let n_candidates = mu.nrows();
         let n_objectives = mu.ncols();
@@ -261,7 +225,6 @@ impl ParetoAcquisition {
         objectives
     }
 
-    /// Non-dominated sorting (simplified implementation).
     fn non_domin_sort(&self, objectives: &ArrayView2<f64>) -> Vec<Vec<usize>> {
         if objectives.ncols() == 2 {
             return self.non_domin_sort_2d(objectives);
@@ -341,9 +304,6 @@ impl ParetoAcquisition {
         fronts
     }
 
-    /// Non-dominated sorting specialized for 2 objectives.
-    ///
-    /// Uses skyline peeling with objective-0 sort + objective-1 sweep.
     fn non_domin_sort_2d(&self, objectives: &ArrayView2<f64>) -> Vec<Vec<usize>> {
         let n = objectives.nrows();
         if n == 0 {
@@ -392,7 +352,6 @@ impl ParetoAcquisition {
         fronts
     }
 
-    /// Select arms from 2D Pareto fronts (used for single-objective).
     fn arms_from_pareto_fronts_2d<R: Rng + ?Sized>(
         mu: &ArrayView1<f64>,
         sigma: &ArrayView1<f64>,

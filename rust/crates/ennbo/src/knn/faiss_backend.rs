@@ -22,7 +22,6 @@ extern "C" {
     fn omp_get_max_threads() -> i32;
 }
 
-/// Keep small searches serial, restoring the caller's OpenMP budget on exit.
 struct SerialSearch(i32);
 
 const SERIAL_FLAT_COMPONENT_LIMIT: usize = 3_000_000;
@@ -46,17 +45,6 @@ extern "C" {
     fn faiss_get_distance_compute_blas_threshold() -> i32;
 }
 
-/// Prefer Faiss's SIMD Flat distance loop over its BLAS GEMM path, and allow
-/// OpenMP to parallelize Flat queries.
-///
-/// Faiss switches to BLAS when `d >= distance_compute_blas_threshold` (default 20).
-/// With the OpenBLAS linked into this build, that GEMM path is ~30–40× slower than
-/// the SIMD loop for typical ENN shapes (e.g. N=20k, Q=2k, D=100). Raise the
-/// threshold once so Exact/`Flat` queries stay on the fast path.
-///
-/// The Python extension sets `OMP_NUM_THREADS=1` to quiet BLAS oversubscription.
-/// Flat SIMD search needs multiple OpenMP threads; restore parallelism here via
-/// `omp_set_num_threads` (overrides the env default for subsequent regions).
 fn prefer_faiss_simd_distances() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
@@ -107,7 +95,6 @@ impl FaissBackend {
         self.inner.ntotal() as usize
     }
 
-    /// Approximate in-memory footprint of vector storage.
     pub(crate) fn memory_usage_bytes(&self) -> usize {
         let n = self.inner.ntotal() as usize;
         let d = self.inner.d() as usize;
@@ -180,7 +167,6 @@ pub(crate) fn make_faiss_for_test(
     FaissBackend::make_index(num_dim, train_scaled)
 }
 
-/// Grow the backing file to the exact row count needed (no pre-allocation tail).
 const MMAP_GROW_ROWS: usize = 64;
 
 pub struct MmapColumnStore {
@@ -325,7 +311,6 @@ impl MmapColumnStore {
         Ok(out)
     }
 
-    /// Copy rows `[start, end)` into a dense buffer (does not materialize the full store).
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn mmap_row_range(
         &self,

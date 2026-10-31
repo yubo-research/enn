@@ -1,5 +1,3 @@
-"""Fixed, objective-independent semantic features for bounded numerical inputs."""
-
 from __future__ import annotations
 
 import json
@@ -11,17 +9,6 @@ import numpy as np
 
 @dataclass(frozen=True, eq=False, init=False)
 class SemanticInputTransform:
-    """Construct once per ordered problem definition; reuse or save the projection.
-
-    Bounds have shape (D, 2). ``relative_weight`` is the expected semantic/original
-    squared-distance ratio for independent inputs with equal normalized variance.
-    ``variance_cutoff`` retains the shortest SVD prefix explaining this fraction
-    of the variance above the numerical-rank tolerance.
-    An optional encoder implements ``encode(texts)``. Default construction uses
-    sentence-transformers-rs on the CPU and caches downloaded Hugging Face model
-    files. Inference and loading never load the sentence transformer.
-    """
-
     names: tuple[str, ...]
     bounds: np.ndarray
     model: str
@@ -66,16 +53,6 @@ class SemanticInputTransform:
         relative_weight=0.25,
         encoder=None,
     ):
-        """Append shared x-y features, centered cosine SVD factors.
-
-        This is an alternative to the x-x prior built by the normal constructor.
-        All output features are shared by all surrogate outputs. Descriptions
-        follow the same fallback and file URI rules as input descriptions.
-        Construction uses only metadata; observed targets are never required.
-        The returned fixed transform supports the same models, optimizers, and
-        save/load operations. Keep the default ``semantic_only=False`` to retain
-        original inputs alongside this prior. The variance cutoff selects the retained factor count.
-        """
         from enn._rust import semantic_input_output_projection
         from enn.semantic_relationships import relationship_texts
 
@@ -145,7 +122,6 @@ class SemanticInputTransform:
         return semantic_weighted(self.projection, self.relative_weight)
 
     def transform(self, x, *, names=None, semantic_only=False):
-        """Transform rows in definition order, or explicitly reorder named columns."""
         values = np.asarray(x, dtype=float)
         if (
             values.ndim not in (1, 2)

@@ -1,8 +1,6 @@
-//! Fixed semantic features at the surrogate boundary. Optimizer coordinates stay unit-scaled.
 use crate::error::ENNError;
 use ndarray::{s, Array2, ArrayView2, Axis};
 
-/// Validate the fixed projection before any feature-dependent metric is fitted.
 pub fn validate(projection: Option<&Array2<f64>>, dimensions: usize, semantic_only: bool) -> Result<(), ENNError> {
     if let Some(p) = projection {
         if p.nrows() != dimensions || p.iter().any(|v| !v.is_finite()) {
@@ -17,7 +15,6 @@ pub fn validate(projection: Option<&Array2<f64>>, dimensions: usize, semantic_on
     Ok(())
 }
 
-/// Append semantic coordinates, centering numerical unit inputs using fixed bounds.
 pub fn augment(x: &ArrayView2<f64>, projection: Option<&Array2<f64>>) -> Result<Array2<f64>, ENNError> {
     let Some(p) = projection else { return Ok(x.to_owned()); };
     if x.ncols() != p.nrows() {
@@ -28,7 +25,6 @@ pub fn augment(x: &ArrayView2<f64>, projection: Option<&Array2<f64>>) -> Result<
         .map_err(|e| ENNError::InvalidParameter(e.to_string()))
 }
 
-/// Select only semantic features or retain numerical coordinates as well.
 pub fn features(x: &ArrayView2<f64>, projection: Option<&Array2<f64>>, semantic_only: bool) -> Result<Array2<f64>, ENNError> {
     let augmented = augment(x, projection)?;
     if semantic_only {
@@ -38,8 +34,6 @@ pub fn features(x: &ArrayView2<f64>, projection: Option<&Array2<f64>>, semantic_
     Ok(augmented)
 }
 
-/// Pull the learned diagonal feature metric back to original coordinate directions.
-/// Off-diagonal entries cannot be represented by axis-aligned trust regions.
 pub fn original_weights(weights: &[f64], projection: Option<&Array2<f64>>, semantic_only: bool) -> Vec<f64> {
     let Some(p) = projection else { return weights.to_vec(); };
     let offset = if semantic_only { 0 } else { p.nrows() };
@@ -50,7 +44,6 @@ pub fn original_weights(weights: &[f64], projection: Option<&Array2<f64>>, seman
     }).collect()
 }
 
-/// Width of the input representation; ties always index this representation.
 pub fn feature_count(projection: Option<&Array2<f64>>, dimensions: usize, semantic_only: bool) -> usize {
     match projection { Some(p) if semantic_only => p.ncols(), Some(p) => dimensions + p.ncols(), None => dimensions }
 }

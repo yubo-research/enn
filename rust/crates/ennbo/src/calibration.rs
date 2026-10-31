@@ -1,4 +1,3 @@
-//! Post-hoc affine calibration of an ENN posterior.
 
 use ndarray::{Array1, Array2, ArrayView2};
 use rand::Rng;
@@ -18,7 +17,6 @@ pub struct AffineCalibrator {
 }
 
 impl AffineCalibrator {
-    /// Rows are `(a, b, c)`, shape `(3, num_metrics)`.
     pub fn from_rows(rows: ArrayView2<f64>) -> Result<Self, ENNError> {
         if rows.nrows() != 3 {
             return Err(ENNError::InvalidShape {

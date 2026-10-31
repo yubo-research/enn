@@ -47,7 +47,6 @@ class ENNSurrogateConfig:
             object.__setattr__(self, "y_bounds", np.asarray(self.y_bounds, dtype=float))
 
     def _check_tied_dims(self) -> None:
-        """Check disjoint groups; the Rust optimizer validates their feature-column range."""
         if not self.tied_dims:
             return
         flat = [j for g in self.tied_dims for j in g]

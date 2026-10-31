@@ -50,7 +50,6 @@ pub fn bpann_validate_index_backend(work_dir: &Path, expected: &str) -> Result<(
     Ok(())
 }
 
-/// Files and directories a `BpannBackend` writes under `work_dir`.
 const STORE_FILES: &[&str] = &[
     "train_x.bin",
     "train_y.bin",
@@ -62,8 +61,6 @@ const STORE_FILES: &[&str] = &[
 ];
 const STORE_DIRS: &[&str] = &["index"];
 
-/// Delete the persisted store in `work_dir`, leaving other files alone.
-/// No backend may be open on `work_dir`.
 pub fn bpann_remove_store(work_dir: &Path) -> Result<(), BpannError> {
     let gone = |r: std::io::Result<()>| match r {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
@@ -195,7 +192,6 @@ pub fn bpann_write_metadata(
     fs::write(meta_path, json).map_err(|e| BpannError::InvalidParameter(e.to_string()))
 }
 
-/// Keep non-core metadata keys (e.g. `"y_bounds":[...]`) across BPANN rewrites.
 fn preserve_metadata_extension_fields(text: &str) -> Option<String> {
     const CORE: &[&str] = &[
         "format_version",

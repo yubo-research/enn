@@ -1,4 +1,3 @@
-//! y_bounds construction, warp ingress, and naturalized row gathers (kiss split).
 
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::Path;
@@ -21,7 +20,6 @@ impl EpistemicNearestNeighbors {
         Ok(())
     }
 
-    /// Empty model with optional `y_bounds` (`None` → unbounded; disk may load later via reopen).
     pub fn new_empty_with_y_bounds(
         num_dim: usize,
         num_metrics: usize,
@@ -93,7 +91,6 @@ impl EpistemicNearestNeighbors {
         Ok((z, zvar))
     }
 
-    /// Warp natural-unit observations for storage / fit (copy; does not mutate inputs).
     pub fn warp_observations(
         &self,
         y: &ArrayView2<f64>,
@@ -123,12 +120,10 @@ impl EpistemicNearestNeighbors {
         Ok(())
     }
 
-    /// Per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
     pub fn y_bounds(&self) -> &Array2<f64> {
         &self.y_bounds
     }
 
-    /// Public row gather: y (and yvar) naturalized; x unchanged. Storage stays warped.
     pub fn train_rows_at(
         &self,
         indices: &[usize],
@@ -159,7 +154,6 @@ impl EpistemicNearestNeighbors {
         Ok((x, y, yvar))
     }
 
-    /// Public single-row y in natural units.
     pub fn row_y_natural(&self, i: usize) -> Result<Array1<f64>, ENNError> {
         if let Some(history) = &self.original_y {
             return Ok(history.gather(&[i])?.row(0).to_owned());
@@ -168,7 +162,6 @@ impl EpistemicNearestNeighbors {
     }
 }
 
-/// Write `bounds` into `metadata.json`; false if there is no metadata file yet.
 fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<bool, ENNError> {
     use crate::y_bounds::bounds_to_json;
     let meta_path = work_dir.join("metadata.json");

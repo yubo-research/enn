@@ -1,8 +1,3 @@
-//! Background soft-sync flush controller for disk BPANN backends.
-//!
-//! Job state lives beside the data lock so `wait_for_flush` / `schedule_background_flush`
-//! never join or spawn while holding the data lock. Soft sync builds under a shared
-//! read lock and publishes under a short write lock so search can proceed mid-flight.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -18,15 +13,12 @@ fn disk_read(
         .map_err(|_| ENNError::InvalidParameter("disk backend lock poisoned".to_string()))
 }
 
-/// Disk backend handle: data RwLock + sibling flush controller.
 pub struct DiskBackendHandle {
     data: Arc<RwLock<DiskBpannEnnBackend>>,
     job: Mutex<Option<JoinHandle<Result<(), String>>>>,
     last_error: Mutex<Option<String>>,
 }
 
-/// When true, the flush worker waits on [`TEST_FLUSH_WORKER_GATE`] after taking the
-/// soft-sync read lock (test-only mid-flight observability).
 static TEST_FLUSH_DELAY_ARMED: AtomicBool = AtomicBool::new(false);
 static TEST_FLUSH_WORKER_GATE: Mutex<Option<Arc<std::sync::Barrier>>> = Mutex::new(None);
 

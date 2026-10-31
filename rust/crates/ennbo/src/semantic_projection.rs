@@ -1,9 +1,7 @@
-//! Objective-independent projection construction and bounded-input transforms.
 use crate::error::ENNError;
 use ndarray::{s, Array2, ArrayView2, Axis};
 use ndarray_linalg::SVD;
 
-/// Normalize embeddings, retain the requested SVD variance, and fix column signs.
 pub fn projection(embeddings: &ArrayView2<f64>, cutoff: f64) -> Result<Array2<f64>, ENNError> {
     if embeddings.is_empty()
         || embeddings.iter().any(|v| !v.is_finite())
@@ -20,7 +18,6 @@ pub fn projection(embeddings: &ArrayView2<f64>, cutoff: f64) -> Result<Array2<f6
     centered_projection(vectors, cutoff)
 }
 
-/// Center without renormalizing row magnitudes, then build scaled SVD factors.
 pub fn centered_projection(mut vectors: Array2<f64>, cutoff: f64) -> Result<Array2<f64>, ENNError> {
     let mean = vectors
         .mean_axis(Axis(0))
@@ -56,7 +53,6 @@ pub fn centered_projection(mut vectors: Array2<f64>, cutoff: f64) -> Result<Arra
     Ok(result)
 }
 
-/// Shared shortest squared-singular-value prefix above the numerical-rank tolerance.
 pub fn retention_count(
     singular: &[f64],
     rows: usize,
@@ -85,7 +81,6 @@ pub fn retention_count(
     Ok(retained)
 }
 
-/// Uncentered orthonormal output factors, capped to avoid the identity projector.
 pub fn output_projection(
     embeddings: &ArrayView2<f64>,
     cutoff: f64,
@@ -113,8 +108,6 @@ pub fn output_projection(
     Ok(u.unwrap().slice(s![.., ..count]).to_owned())
 }
 
-/// Normalize finite embedding rows without squaring their original magnitudes.
-/// Scaling first avoids overflow and underflow; zero rows remain zero.
 pub(crate) fn normalize_rows(vectors: &mut Array2<f64>) {
     for mut row in vectors.rows_mut() {
         let scale = row.iter().copied().map(f64::abs).fold(0.0_f64, f64::max);
@@ -126,7 +119,6 @@ pub(crate) fn normalize_rows(vectors: &mut Array2<f64>) {
     }
 }
 
-/// Scale semantic energy relative to the original coordinate energy.
 pub fn weighted(
     projection: &ArrayView2<f64>,
     relative_weight: f64,
@@ -140,7 +132,6 @@ pub fn weighted(
         * (relative_weight * projection.nrows() as f64 / projection.ncols().max(1) as f64).sqrt())
 }
 
-/// Normalize original coordinates and produce their semantic representation.
 pub fn transform(
     x: &ArrayView2<f64>,
     bounds: &ArrayView2<f64>,
@@ -160,7 +151,6 @@ pub fn transform(
     crate::semantic::features(&normalized.view(), Some(projection), only)
 }
 
-/// Require finite increasing bounds for each original coordinate.
 pub fn validate_bounds(bounds: &ArrayView2<f64>, dimensions: usize) -> Result<(), ENNError> {
     if bounds.dim() != (dimensions, 2)
         || bounds

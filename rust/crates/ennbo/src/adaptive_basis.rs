@@ -1,17 +1,12 @@
-//! Fit-only statistics, maps, and output projectors for an adaptive epoch.
 use crate::adaptive_geometry::{fixed_rank, invalid, quadratic, ridge, root};
 use crate::error::ENNError;
 use ndarray::{s, Array1, Array2, Axis};
 use ndarray_linalg::SVD;
 
-/// Fixed semantic definitions, independent of observed labels.
 #[derive(Clone, Default)]
 pub struct Metadata {
-    /// Original numerical input bounds.
     pub bounds: Option<Array2<f64>>,
-    /// Weighted input projection.
     pub input: Option<Array2<f64>>,
-    /// Orthonormal output loadings.
     pub output: Option<Array2<f64>>,
 }
 

@@ -1,11 +1,6 @@
-//! Centered cosine SVD input-output projections shared by all surrogates.
 use crate::error::ENNError;
 use ndarray::{Array2, ArrayView2};
 
-/// Construct columns proportional to input-output cosine similarities.
-/// Rows map ordered inputs followed by outputs into deduplicated embeddings.
-/// The combined squared energy equals the retained width, matching the relative
-/// weight convention of the x-x projection. Zero embeddings contribute no prior.
 pub fn projection(
     embeddings: &ArrayView2<f64>,
     rows: &[usize],

@@ -1,4 +1,3 @@
-//! CPU sentence embedding through sentence-transformers-rs; no Python runtime.
 use crate::error::ENNError;
 use ndarray::Array2;
 use sentence_transformers_rs::sentence_transformer::{SentenceTransformerBuilder, Which};
@@ -19,8 +18,6 @@ fn preset(model: &str) -> Result<Which, ENNError> {
     )))
 }
 
-/// Embed a nonempty ordered batch using the model's pooling and dense presets.
-/// The upstream loader downloads model files into the Hugging Face cache.
 pub fn encode(texts: &[String], model: &str) -> Result<Array2<f64>, ENNError> {
     let which = preset(model)?;
     if texts.is_empty() {

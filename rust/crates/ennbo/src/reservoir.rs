@@ -1,4 +1,3 @@
-//! Algorithm R reservoir shared by the AUTO metric and the Python sampler.
 
 use ndarray::ArrayView2;
 
@@ -112,7 +111,6 @@ impl RowReservoir {
         Ok(())
     }
 
-    /// Append every row. `x` is `(n, num_dim)` and `y` is `(n, num_outputs)`.
     pub fn push_rows(&mut self, x: &ArrayView2<f64>, y: &ArrayView2<f64>) -> Result<(), ENNError> {
         if x.nrows() != y.nrows() {
             return Err(ENNError::InvalidParameter(format!(
@@ -142,8 +140,6 @@ impl RowReservoir {
         Ok(())
     }
 
-    /// Algorithm R: fill the next slot until `capacity`, otherwise replace a
-    /// uniform index in `0..num_seen` when that index still lies in the buffer.
     pub fn push_row(&mut self, x: &[f64], y: &[f64]) {
         if self.len < self.capacity {
             let i = self.len;

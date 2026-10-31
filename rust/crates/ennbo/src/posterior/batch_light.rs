@@ -1,4 +1,3 @@
-//! Mixed neighbor counts use the scalar fast path without draw intermediates.
 
 use ndarray::{Array3, ArrayView1, ArrayView2, Axis};
 
@@ -10,10 +9,6 @@ use crate::error::ENNError;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 
-/// Requires nonempty parameters and no observation variances or noise.
-/// Share certified small-workload neighbors; ambiguous float32 boundaries and
-/// nearest exclusion retain each count's original search.
-/// Mixed-k batches have no single neighbor-index matrix, as before.
 pub(super) fn compute_mixed_posterior_light(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
@@ -56,8 +51,6 @@ pub(super) fn compute_mixed_posterior_light(
     ))
 }
 
-/// Index-free selection means for small, unscaled, noise-free Flat candidates.
-/// None requests the ordinary ENN path for ambiguous boundaries or unsupported data.
 pub fn small_flat_selection_means(
     train_x: &ArrayView2<f64>,
     train_y: &ArrayView2<f64>,

@@ -1,5 +1,3 @@
-"""Build tables and figures from completed y-y study CSVs; never rerun fitting."""
-
 import json
 from pathlib import Path
 

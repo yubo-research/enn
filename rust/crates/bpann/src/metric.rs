@@ -1,11 +1,3 @@
-//! Metric changes for a live BPANN index (metric learning mode).
-//!
-//! Every coordinate the index stores is `x_d / x_scale_d` or a mean of such
-//! values, so a new diagonal metric maps each stored value by
-//! `v_d * old_scale_d / new_scale_d` exactly. [`BpannBackend::rescale_metric`]
-//! applies that map in place and keeps the partition; [`BpannBackend::rebuild_metric`]
-//! also re-partitions every row under the new metric, in place, by moving page and
-//! row references a little per later insert ([`crate::index::tree_morph`]).
 
 use std::fs;
 
@@ -15,12 +7,9 @@ use crate::backend::BpannBackend;
 use crate::error::BpannError;
 use crate::index::IncrementalIndex;
 
-/// Present in `work_dir` while the index is expressed in a caller-set metric.
 pub const METRIC_MARKER_FILE: &str = "metric_x_scale.json";
 
 impl IncrementalIndex {
-    /// Multiply every stored coordinate by `ratio`; a re-partition in progress
-    /// carries on under the new coordinates.
     pub fn rescale_coords(&mut self, ratio: &[f64]) {
         if let Some(tree) = self.tree.as_mut() {
             tree.scale_rows(ratio);
@@ -59,10 +48,6 @@ impl BpannBackend {
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))
     }
 
-    /// Switch to metric `x_scale` (distance uses `x / x_scale`) by rescaling the
-    /// stored index in place. The partition is kept; the exhaustive-search
-    /// cache is reloaded lazily from the original training rows to avoid
-    /// cumulative rounding during rescaling.
     pub fn rescale_metric(&mut self, x_scale: &Array1<f64>) -> Result<(), BpannError> {
         self.validate_metric_scale(x_scale)?;
         let ratio: Vec<f64> = (0..self.num_dim)
@@ -75,17 +60,12 @@ impl BpannBackend {
         self.write_metric_marker()
     }
 
-    /// Switch to metric `x_scale` by rescaling in place, then re-partition every
-    /// row under it, in place, during the following inserts. The index answers
-    /// queries under the new metric immediately.
     pub fn rebuild_metric(&mut self, x_scale: &Array1<f64>) -> Result<(), BpannError> {
         self.rescale_metric(x_scale)?;
         self.index.start_morph();
         Ok(())
     }
 
-    /// On reopen, an index persisted under a caller-set metric cannot be matched
-    /// to the reopened (identity) metric, so it is discarded and rebuilt lazily.
     pub fn discard_metric_index_on_reopen(&mut self) -> Result<bool, BpannError> {
         let marker = self.work_dir.join(METRIC_MARKER_FILE);
         if !marker.exists() {

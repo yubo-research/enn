@@ -1,4 +1,3 @@
-//! Optimizer state machine for ask/tell pattern.
 
 mod incumbent;
 pub mod obs_access;
@@ -44,7 +43,6 @@ fn sobol_seed_for_state(
     z & 0xFFFF_FFFF
 }
 
-/// Telemetry for timing.
 #[derive(Debug, Clone, Default)]
 pub struct Telemetry {
     pub dt_fit: f64,
@@ -54,7 +52,6 @@ pub struct Telemetry {
     pub num_candidates: usize,
 }
 
-/// Optimizer state machine.
 pub struct Optimizer {
     bounds: Array2<f64>,
     num_dim: usize,
@@ -72,19 +69,14 @@ pub struct Optimizer {
     sobol_seed_base: u64,
     telemetry: Telemetry,
     incumbent_tracker: IncrementalIncumbentTracker,
-    /// RNG owned for the life of the optimizer. `ask` and `tell` draw from it.
     rng: StdRng,
-    /// `Some(true)` after the first non-empty tell that included `yvar`.
     yvar_on_tell: Option<bool>,
-    /// Points in the fresh local sample drawn after a collapsed trust region.
     local_init_budget: usize,
     local_init_kind: InitStrategy,
-    /// `Some(remaining)` while that fresh sample is still being collected.
     reinit_left: Option<usize>,
 }
 
 impl Optimizer {
-    /// Create a new optimizer.
     pub fn new(
         bounds: Array2<f64>,
         config: OptimizerConfig,
@@ -93,7 +85,6 @@ impl Optimizer {
         Self::new_with_strategy(bounds, config, Strategy::hybrid(InitStrategy::LHD, 10), rng)
     }
 
-    /// Create a new optimizer with an explicit strategy.
     pub fn new_with_strategy(
         bounds: Array2<f64>,
         config: OptimizerConfig,
@@ -166,11 +157,6 @@ impl Optimizer {
         })
     }
 
-    /// Ask for `num_arms` points in natural units (inside `bounds`).
-    ///
-    /// Draws from the `StdRng` stored at construction. Rejects `num_arms == 0`.
-    /// A trust-region restart happens here, not in the `tell` that collapsed the
-    /// box, because that `tell` still owes the caller a posterior.
     pub fn ask(&mut self, num_arms: usize) -> Result<Array2<f64>, ENNError> {
         if num_arms == 0 {
             return Err(ENNError::InvalidParameter(format!(
@@ -200,11 +186,6 @@ impl Optimizer {
         Ok(crate::candidates::from_unit(&unit.view(), &self.bounds.view()))
     }
 
-    /// Record observations in natural units. `x` is stored in the unit cube.
-    ///
-    /// The first non-empty tell fixes whether `yvar` is required. Later tells
-    /// must match. Zero rows return `Ok(())` and do not change that flag.
-    /// Draws from the owned `StdRng`.
     pub fn tell(
         &mut self,
         x: &ArrayView2<f64>,
@@ -261,10 +242,6 @@ impl Optimizer {
         result
     }
 
-    /// Posterior mean at `x` in natural units, in natural `y` units.
-    ///
-    /// `x` is converted to the unit cube, matching `tell`. Returns an error
-    /// when [`Self::has_surrogate`] is false.
     pub fn posterior_mu(&self, x_natural: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
         if x_natural.ncols() != self.num_dim {
             return Err(ENNError::InvalidShape {
@@ -280,57 +257,46 @@ impl Optimizer {
         Ok(pred.mu)
     }
 
-    /// Get current telemetry.
     pub fn telemetry(&self) -> &Telemetry {
         &self.telemetry
     }
 
-    /// Get bounds.
     pub fn bounds(&self) -> &Array2<f64> {
         &self.bounds
     }
 
-    /// Get number of dimensions.
     pub fn num_dim(&self) -> usize {
         self.num_dim
     }
 
-    /// Get configuration.
     pub fn config(&self) -> &OptimizerConfig {
         &self.config
     }
 
-    /// Get trust region state.
     pub fn trust_region(&self) -> &TrustRegionState {
         &self.tr_state
     }
 
-    /// Get mutable trust region state.
     pub fn trust_region_mut(&mut self) -> &mut TrustRegionState {
         &mut self.tr_state
     }
 
-    /// Trust region length (TuRBO or Morbo inner).
     pub fn tr_length(&self) -> f64 {
         self.tr_state.length()
     }
 
-    /// Row-level observation access (ENN surrogate or fallback store).
     pub fn obs_access(&self) -> obs_access::ObsAccess<'_> {
         obs_access::ObsAccess::new(self)
     }
 
-    /// Get surrogate.
     pub fn surrogate(&self) -> Option<&(dyn Surrogate + Send + Sync)> {
         self.surrogate.as_ref().map(|s| s.as_ref())
     }
 
-    /// Whether this optimizer fits a surrogate (false for TuRBO-ZERO and LHD-only).
     pub fn has_surrogate(&self) -> bool {
         self.surrogate.is_some()
     }
 
-    /// Get mutable surrogate.
     pub fn surrogate_mut(&mut self) -> Option<&mut (dyn Surrogate + Send + Sync)> {
         match self.surrogate.as_mut() {
             Some(s) => Some(s.as_mut()),
@@ -338,7 +304,6 @@ impl Optimizer {
         }
     }
 
-    /// Stored `x` in the unit cube (internal).
     pub(crate) fn x_obs_unit(&self) -> Option<Array2<f64>> {
         if let Some(surrogate) = self.surrogate.as_ref() {
             return surrogate.observations_x().ok().flatten();
@@ -349,13 +314,11 @@ impl Optimizer {
         Some(obs_access::build_obs_array2(&self.fallback_x))
     }
 
-    /// Observations in natural units.
     pub fn x_obs(&self) -> Option<Array2<f64>> {
         let unit = self.x_obs_unit()?;
         Some(crate::candidates::from_unit(&unit.view(), &self.bounds.view()))
     }
 
-    /// Get observation values in natural units (ENN model or fallback store).
     pub fn y_obs(&self) -> Option<Array2<f64>> {
         let y_z = self.obs_access().y_obs_warped()?;
         if let Some(surrogate) = self.surrogate.as_ref() {
@@ -364,8 +327,6 @@ impl Optimizer {
         Some(y_z)
     }
 
-    /// Add observations (internal). `y` is natural-unit; incumbent stores natural units
-    /// so trust-region updates compare batch `y` and incumbent in the same space.
     pub fn add_observations(
         &mut self,
         x: &ArrayView2<f64>,
@@ -389,12 +350,10 @@ impl Optimizer {
         observation_delta::observation_delta_from_batch(old_n, x, y)
     }
 
-    /// Incumbent `x` in the unit cube. Internal; callers use [`Self::incumbent_x`].
     pub(crate) fn incumbent_x_unit(&self) -> Option<&Array1<f64>> {
         self.incumbent_x_unit.as_ref()
     }
 
-    /// Incumbent `x` in natural units.
     pub fn incumbent_x(&self) -> Option<Array1<f64>> {
         let unit = self.incumbent_x_unit.as_ref()?;
         let row = unit.clone().insert_axis(ndarray::Axis(0));
@@ -402,17 +361,14 @@ impl Optimizer {
         Some(natural.row(0).to_owned())
     }
 
-    /// Get incumbent y scalar.
     pub fn incumbent_y_scalar(&self) -> Option<&Array1<f64>> {
         self.incumbent_y_scalar.as_ref()
     }
 
-    /// Get sobol engine.
     pub fn sobol_engine_mut(&mut self) -> Option<&mut SobolEngine> {
         self.sobol_engine.as_mut()
     }
 
-    /// Fresh scrambled Sobol draw for this ask. Matches Python's per-ask engine.
     pub fn reseed_sobol(&mut self, num_arms: usize) -> Result<(), ENNError> {
         let Some(engine) = self.sobol_engine.as_ref() else {
             return Ok(());
@@ -431,17 +387,14 @@ impl Optimizer {
         Ok(())
     }
 
-    /// Get sobol seed base.
     pub fn sobol_seed_base(&self) -> u64 {
         self.sobol_seed_base
     }
 
-    /// Get init progress from strategy.
     pub fn init_progress(&self) -> Option<(usize, usize)> {
         self.strategy.init_progress()
     }
 
-    /// Current number of stored observations.
     pub fn obs_count(&self) -> usize {
         if let Some(surrogate) = self.surrogate.as_ref() {
             return surrogate.observation_count().unwrap_or(0);

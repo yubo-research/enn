@@ -1,4 +1,3 @@
-//! Candidate generation for trust region optimization.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::distributions::{Bernoulli, Uniform};
@@ -17,19 +16,14 @@ fn sobol_params() -> &'static JoeKuoD6 {
     PARAMS.get_or_init(JoeKuoD6::extended)
 }
 
-/// Candidate random variable type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CandidateRV {
-    /// Sobol quasi-random sequence.
     Sobol,
-    /// Uniform random sampling.
     #[default]
     Uniform,
-    /// RAASP (Random Axis-Aligned Subspace Perturbation).
     RAASP,
 }
 
-/// Convert from unit hypercube to bounds.
 pub fn from_unit(x_unit: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f64> {
     let n = x_unit.nrows();
     let d = x_unit.ncols();
@@ -45,7 +39,6 @@ pub fn from_unit(x_unit: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f
     result
 }
 
-/// Convert to unit hypercube from bounds.
 pub fn to_unit(x: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f64> {
     let n = x.nrows();
     let d = x.ncols();
@@ -66,7 +59,6 @@ pub fn to_unit(x: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f64> {
     result
 }
 
-/// Generate candidates within trust region bounds.
 #[allow(clippy::too_many_arguments)]
 pub fn generate_candidates<R: Rng + ?Sized>(
     compute_bounds_1d: impl Fn() -> (Array1<f64>, Array1<f64>),
@@ -113,7 +105,6 @@ pub fn generate_candidates<R: Rng + ?Sized>(
     }
 }
 
-/// Sobol fill of a binomial subset of coordinates. Unselected coordinates stay at `x_center`.
 pub fn generate_sobol_masked<R: Rng + ?Sized>(
     x_center: &ArrayView1<f64>,
     lower: &Array1<f64>,
@@ -152,7 +143,6 @@ pub fn generate_sobol_masked<R: Rng + ?Sized>(
     Ok(candidates)
 }
 
-/// Generate uniformly random candidates.
 pub fn generate_uniform<R: Rng + ?Sized>(
     lower: &Array1<f64>,
     upper: &Array1<f64>,
@@ -186,7 +176,6 @@ fn raasp_dim_from_cdf(cdf: &Array1<f64>, r: f64, num_dim: usize) -> usize {
     lo
 }
 
-/// Generate RAASP candidates.
 fn generate_raasp<R: Rng + ?Sized>(
     x_center: &ArrayView1<f64>,
     lengthscales: Option<&ArrayView1<f64>>,
@@ -234,7 +223,6 @@ fn generate_raasp<R: Rng + ?Sized>(
     Ok(candidates)
 }
 
-/// `n` Sobol points in `dim` dimensions, scrambled with `seed`.
 pub fn sobol_sequence(dim: usize, n: usize, seed: u64) -> Result<Array2<f64>, ENNError> {
     let mut engine = SobolEngine::new(dim)?;
     let mut rng = StdRng::seed_from_u64(seed);
@@ -248,17 +236,13 @@ pub fn sobol_sequence(dim: usize, n: usize, seed: u64) -> Result<Array2<f64>, EN
     Ok(out)
 }
 
-/// Sobol quasi-random sequence generator.
 pub struct SobolEngine {
     dimension: usize,
     sequence: Sobol<f64>,
-    /// Random shift per dimension for scrambling (None = not scrambled).
-    /// When set, each sample is transformed: (x_d + shift_d) % 1.0
     shift: Option<Vec<f64>>,
 }
 
 impl SobolEngine {
-    /// Create a new Sobol engine.
     pub fn new(dimension: usize) -> Result<Self, ENNError> {
         if dimension == 0 || dimension > 21201 {
             return Err(ENNError::InvalidParameter(format!(
@@ -275,9 +259,6 @@ impl SobolEngine {
         })
     }
 
-    /// Sample the next point from the Sobol sequence.
-    ///
-    /// If scrambled (via `scramble()`), applies random shift per dimension.
     pub fn sample<R: Rng + ?Sized>(&mut self, _rng: &mut R) -> Result<Vec<f64>, ENNError> {
         let mut sample = self
             .sequence
@@ -305,11 +286,6 @@ impl SobolEngine {
         self.dimension
     }
 
-    /// Scramble the sequence using random digital shift per dimension.
-    ///
-    /// Closer to Owen-style scrambling than a simple offset skip: each dimension
-    /// gets a random shift in [0,1]; samples are (x + shift) mod 1.
-    /// Preserves low-discrepancy structure while randomizing.
     pub fn scramble<R: RngCore + ?Sized>(&mut self, rng: &mut R) {
         self.shift = Some(
             (0..self.dimension)
@@ -324,7 +300,6 @@ impl SobolEngine {
     }
 }
 
-/// Generate Latin Hypercube samples.
 pub fn generate_lhd<R: Rng + ?Sized>(
     num_samples: usize,
     num_dim: usize,

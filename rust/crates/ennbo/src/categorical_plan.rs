@@ -1,44 +1,27 @@
-//! Categorical layouts and validation, independent of the language binding.
 use crate::{categorical, error::ENNError};
 
-/// Representation of one categorical variable.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CatEncoding {
-    /// One coordinate per category.
     OneHot,
-    /// Fixed-width deterministic sign vectors.
     Rademacher,
-    /// Choose the shorter block.
     Auto,
 }
 
-/// One block in encoded rows.
 #[derive(Debug, Clone)]
 pub struct CatBlock {
-    /// Input column index.
     pub source: usize,
-    /// Output block width.
     pub width: usize,
-    /// Continuous, onehot, or code.
     pub style: &'static str,
-    /// Categorical variable index for deterministic hashing.
     pub variable: usize,
 }
 
-/// Options for constructing a categorical input representation.
 #[derive(Debug, Clone)]
 pub struct CatOptions {
-    /// Categorical representation policy.
     pub encoding: CatEncoding,
-    /// Fixed Rademacher width, excluding cards and hash_dim.
     pub code_dim: Option<usize>,
-    /// Shared hash width, excluding cards and code_dim.
     pub hash_dim: Option<usize>,
-    /// Seed shared across deterministic category hashes.
     pub seed: u64,
-    /// Maximum width for automatically chosen Rademacher blocks.
     pub dim_cap: usize,
-    /// Norm of one categorical code.
     pub separation: f64,
 }
 impl Default for CatOptions {
@@ -54,7 +37,6 @@ impl Default for CatOptions {
     }
 }
 
-/// Choose a categorical block's width and style.
 pub fn column_plan(
     card: usize,
     encoding: CatEncoding,
@@ -78,7 +60,6 @@ pub(crate) fn invalid(message: &str) -> ENNError {
     ENNError::InvalidParameter(message.into())
 }
 
-/// Validate layout options before constructing any blocks.
 pub fn validate(
     kinds: &[bool],
     cards: Option<&[Option<usize>]>,
@@ -150,7 +131,6 @@ fn validate_cards(kinds: &[bool], cards: Option<&[Option<usize>]>) -> Result<(),
     Ok(())
 }
 
-/// Construct output blocks in input-column order, retaining continuous columns first for hashes.
 pub fn blocks(
     kinds: &[bool],
     cards: Option<&[Option<usize>]>,

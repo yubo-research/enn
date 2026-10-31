@@ -1,4 +1,3 @@
-//! Diagonal dependence weights from Sobol indices.
 
 use crate::error::ENNError;
 use crate::metric_sobol::{
@@ -176,8 +175,6 @@ pub fn dependence_weights(
     Ok((0..d).map(|j| (u * s[unit[j]] / s_sum) / spr[j]).collect())
 }
 
-/// Trust-region side multipliers from metric weights, normalized like TuRBO-1 lengthscales:
-/// `s = 1 / w`, divided by its arithmetic mean, then by its geometric mean.
 pub fn trust_region_sides(weights: &[f64]) -> Vec<f64> {
     let inv: Vec<f64> = weights.iter().map(|w| 1.0 / w).collect();
     let mean = inv.iter().sum::<f64>() / inv.len() as f64;
@@ -190,8 +187,6 @@ pub fn too_few_rows(n: usize) -> bool {
     n < MIN_DEPENDENCE_ROWS
 }
 
-/// Resolve carried categorical groups against explicit feature groups.
-/// Semantic-only projections remove the original categorical column identity.
 pub fn resolve_tied_groups(carried: &[Vec<usize>], explicit: Option<&[Vec<usize>]>, semantic_only: bool) -> Result<Vec<Vec<usize>>, ENNError> {
     let carried = if semantic_only { &[][..] } else { carried };
     match explicit.filter(|g| !g.is_empty()) {

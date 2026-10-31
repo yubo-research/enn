@@ -1,4 +1,3 @@
-//! NumPy Philox + Cephes `ndtri` reference hash.
 
 use ndarray::{Array, ArrayD, IxDyn};
 

@@ -1,4 +1,3 @@
-//! Held-out candidate selection, continuous output mixing, and epoch calibration.
 use crate::adaptive_basis::{Basis, Metadata};
 use crate::adaptive_geometry::invalid;
 use crate::adaptive_predictor::{Choice, Epoch, Predictor};
@@ -7,7 +6,6 @@ use crate::error::ENNError;
 use crate::params::{ENNParams, PosteriorFlags};
 use ndarray::{s, Array1, Array2, Array3, Axis, Ix3};
 
-/// Least-squares mixing on selection rows only; ties choose zero sharing.
 pub(crate) fn mixing(mean: &Array2<f64>, target: &Array2<f64>, projector: &Array2<f64>) -> f64 {
     let delta = mean.dot(projector) - mean;
     let norm = delta.iter().map(|v| v * v).sum::<f64>();

@@ -45,8 +45,6 @@ impl MmapColumnStore {
         Ok(())
     }
 
-    /// Keep at most about `bytes` of this store's pages resident once the file is
-    /// larger than that; see [`crate::index::tree_residency`].
     pub fn set_resident_budget(&mut self, bytes: usize) {
         self.residency.set_budget(bytes);
         self.residency.update_tracking(self.mmap.len(), 0);
@@ -103,8 +101,6 @@ impl MmapColumnStore {
         })
     }
 
-    /// Touch every page of the current mapping so first appends pay no
-    /// page-fault or block-allocation cost.
     pub(crate) fn pretouch(&mut self) {
         const PAGE: usize = 4096;
         let len = self.mmap.len();
@@ -154,15 +150,6 @@ impl MmapColumnStore {
         Ok(())
     }
 
-    /// Drop faulted/dirty pages from process RSS while keeping the file mapping.
-    ///
-    /// Remaps the same file so previously resident pages are no longer charged to
-    /// this process. File contents are unchanged; subsequent reads fault pages back
-    /// in (typically via the OS file cache). Call only when no borrows into `mmap`
-    /// are live.
-    ///
-    /// Does not `flush()` the whole mapping first: a full-map flush can briefly
-    /// force large residency (hurting `ru_maxrss`) on multi-GB stores.
     pub fn release_resident_pages(&mut self) -> Result<(), BpannError> {
         self.mmap = unsafe {
             MmapMut::map_mut(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?

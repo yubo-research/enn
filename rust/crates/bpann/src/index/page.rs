@@ -13,10 +13,7 @@ pub enum Page {
     },
     Leaf {
         page_id: u32,
-        /// Explicit row membership. Empty when [`Self::Leaf::row_range`] is set.
         row_ids: Vec<u32>,
-        /// Half-open contiguous membership `[start, end)`. Used by empty-leaf
-        /// forests so soft-sync never materializes Θ(N) `u32` identities.
         row_range: Option<(u32, u32)>,
         vectors: Vec<Vec<f32>>,
         stored_centroid: Option<Vec<f32>>,
@@ -24,7 +21,6 @@ pub enum Page {
 }
 
 impl Page {
-    /// Empty (mmap-backed) leaf over a contiguous row span.
     pub fn empty_range_leaf(
         page_id: u32,
         start: u32,

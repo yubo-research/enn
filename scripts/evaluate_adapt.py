@@ -1,8 +1,4 @@
-"""Confirmatory seeds and ablations for report-adapt.pdf.
-
-Run from the repository root with PYTHONPATH=src:. python scripts/evaluate_adapt.py.
-Short evaluator defaults remain three seeds; this command uses 27 additional seeds.
-"""
+_CLI_DESCRIPTION = "Confirmatory seeds and ablations for report-adapt.pdf.\n\nRun from the repository root with PYTHONPATH=src:. python scripts/evaluate_adapt.py.\nShort evaluator defaults remain three seeds; this command uses 27 additional seeds.\n"
 
 import argparse
 import hashlib
@@ -17,7 +13,7 @@ from enn.evals.adapt import run_adapt
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=_CLI_DESCRIPTION)
     parser.add_argument("--seeds", type=int, default=27)
     parser.add_argument("--seed-start", type=int, default=3)
     parser.add_argument(

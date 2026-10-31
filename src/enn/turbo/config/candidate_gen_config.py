@@ -13,8 +13,6 @@ def _reject_negative(name: str, value: int) -> None:
 
 @dataclass(frozen=True)
 class CandidateGenConfig:
-    """Candidate-pool parameters. Rust computes the pool size."""
-
     candidate_rv: CandidateRV | None = None
     min_candidates: int = 10
     max_candidates: int = 5000
@@ -23,7 +21,9 @@ class CandidateGenConfig:
     raasp_driver: RAASPDriver = RAASPDriver.ORIG
 
     def __post_init__(self) -> None:
-        if self.candidate_rv is not None and not isinstance(self.candidate_rv, CandidateRV):
+        if self.candidate_rv is not None and not isinstance(
+            self.candidate_rv, CandidateRV
+        ):
             raise ValueError(
                 f"candidate_rv must be a CandidateRV enum, got {self.candidate_rv!r}"
             )

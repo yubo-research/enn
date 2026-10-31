@@ -1,4 +1,3 @@
-//! KNN backends behind [`crate::index::ENNIndex`] (Faiss in-memory only).
 
 pub(crate) mod faiss_backend;
 pub use faiss_backend::MmapColumnStore;
@@ -10,7 +9,6 @@ use crate::index::{IndexDriver, IndexError};
 
 pub(crate) use faiss_backend::FaissBackend;
 
-/// In-memory Faiss KNN storage (Exact only).
 pub(crate) enum KnnBackend {
     Faiss(Mutex<FaissBackend>),
 }

@@ -1,4 +1,3 @@
-//! Optimization strategies for ask/tell pattern.
 
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::RngCore;
@@ -16,7 +15,6 @@ use select::{
     select_with_ucb,
 };
 
-/// Strategy state for initialization phase.
 #[derive(Debug, Clone)]
 pub struct InitStrategyState {
     pub strategy_type: InitStrategy,
@@ -34,18 +32,13 @@ impl InitStrategyState {
     }
 }
 
-/// Strategy state for TuRBO normal phase.
 #[derive(Debug, Clone, Default)]
 pub struct TurboStrategyState;
 
-/// Strategy enum - uses concrete types instead of trait objects.
 #[derive(Debug, Clone)]
 pub enum Strategy {
-    /// Initialization-only strategy.
     Init(InitStrategyState),
-    /// TuRBO normal strategy.
     Turbo(TurboStrategyState),
-    /// Hybrid: initialization then TuRBO.
     Hybrid {
         init: InitStrategyState,
         turbo: TurboStrategyState,
@@ -54,17 +47,14 @@ pub enum Strategy {
 }
 
 impl Strategy {
-    /// Create a new initialization-only strategy.
     pub fn init(strategy_type: InitStrategy, num_init: usize) -> Self {
         Strategy::Init(InitStrategyState::new(strategy_type, num_init))
     }
 
-    /// Create a new TuRBO strategy.
     pub fn turbo() -> Self {
         Strategy::Turbo(TurboStrategyState)
     }
 
-    /// Create a new hybrid strategy.
     pub fn hybrid(init_strategy: InitStrategy, num_init: usize) -> Self {
         Strategy::Hybrid {
             init: InitStrategyState::new(init_strategy, num_init),
@@ -73,7 +63,6 @@ impl Strategy {
         }
     }
 
-    /// Generate candidates (ask).
     pub fn ask(
         &self,
         optimizer: &mut Optimizer,
@@ -96,7 +85,6 @@ impl Strategy {
         }
     }
 
-    /// Process observations (tell).
     pub fn tell(
         &mut self,
         optimizer: &mut Optimizer,
@@ -131,7 +119,6 @@ impl Strategy {
         }
     }
 
-    /// Budget and design of the initial sample. TuRBO-only has no sample.
     pub fn init_plan(&self) -> (usize, InitStrategy) {
         match self {
             Strategy::Init(state) => (state.num_init, state.strategy_type),
@@ -140,7 +127,6 @@ impl Strategy {
         }
     }
 
-    /// Get initialization progress if applicable.
     pub fn init_progress(&self) -> Option<(usize, usize)> {
         match self {
             Strategy::Init(state) => Some((state.completed, state.num_init)),
@@ -154,7 +140,6 @@ impl Strategy {
     }
 }
 
-/// Ask for initialization phase.
 fn ask_init(
     state: &InitStrategyState,
     optimizer: &mut Optimizer,
@@ -179,7 +164,6 @@ fn ask_init(
     Ok(candidates)
 }
 
-/// Fresh Latin hypercube (or uniform draw) after a collapsed trust region.
 fn ask_local_reinit(
     optimizer: &mut Optimizer,
     num_arms: usize,
@@ -203,7 +187,6 @@ fn tell_local_reinit(
     Ok(())
 }
 
-/// Ask for initialization phase in hybrid mode.
 fn ask_init_hybrid(
     state: &InitStrategyState,
     optimizer: &mut Optimizer,
@@ -230,7 +213,6 @@ fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError>
         .morbo_update_ranges_only(&y_all.view())
 }
 
-/// Common tell logic: add observations, fit surrogate, update incumbent.
 fn tell_common(
     optimizer: &mut Optimizer,
     x: &ArrayView2<f64>,
@@ -307,7 +289,6 @@ fn tell_common(
     Ok(())
 }
 
-/// Tell for initialization phase.
 fn tell_init(
     state: &mut InitStrategyState,
     optimizer: &mut Optimizer,
@@ -367,7 +348,6 @@ fn draw_turbo_candidates(
     )
 }
 
-/// Ask for TuRBO phase.
 fn ask_turbo(
     optimizer: &mut Optimizer,
     num_arms: usize,
@@ -433,7 +413,6 @@ fn seed_turbo_scale_history(optimizer: &mut Optimizer, prev: usize) {
         .turbo_seed_scale_history(&prefix.view());
 }
 
-/// Tell for TuRBO phase.
 fn tell_turbo(
     optimizer: &mut Optimizer,
     x: &ArrayView2<f64>,

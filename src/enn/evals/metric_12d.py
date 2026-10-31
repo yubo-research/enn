@@ -1,21 +1,3 @@
-"""Streaming eval on the 12-d "two of twelve" problem, where metric learning matters.
-
-x ~ U[0,1]^12, y = sin(6 pi x0) + sin(6 pi x1) + 0.1 eps, so ten inputs are irrelevant
-(reports/mbpann/metric_advantage.py). Rows stream in batches with ``ensure_index_sync``
-after each batch. At every checkpoint each model refits its ENN hyperparameters with
-``enn_fit``. ``bpann_disk`` uses raw distances (``ENNMetricLearning.NONE``);
-``bpann_disk_auto`` (``ENNMetricLearning.AUTO``) refits Sobol/Var(x) metric weights on a
-reservoir sample inside ``add`` and applies them only when leave-one-out validation prefers
-them to the best isotropic metric. ``weighting`` enables FLAT data scaling or
-BPANN AUTO learning; disk data scaling is unsupported.
-
-``add_s`` is wall time from the previous checkpoint to this one: adds (including AUTO's metric
-refits), syncs, and hyperparameter fit. ``query_s`` is one posterior call on the test set.
-
-The whole stream is repeated for seeds ``seed .. seed+num_seeds-1`` (data drawn from
-``seed``, fits from ``seed + 1``); each EVAL line reports mean ± standard error over seeds.
-"""
-
 from __future__ import annotations
 
 import os
@@ -88,7 +70,6 @@ class Metric12dConfig:
     num_rows: int | None = None
 
     def stream_rows(self) -> int:
-        """Rows drawn per seed; a shorter ``n_grid`` with the same value streams a prefix of them."""
         return max(self.n_grid) if self.num_rows is None else self.num_rows
 
 
@@ -123,8 +104,6 @@ def build_model(
 
 
 class StreamedModel:
-    """One model grown checkpoint to checkpoint on a shared row stream."""
-
     def __init__(self, name: str, work_dir: str, config: Metric12dConfig) -> None:
         self.name = name
         self.work_dir = work_dir
@@ -141,7 +120,6 @@ class StreamedModel:
         self.model.ensure_index_sync()
 
     def advance(self, x: np.ndarray, y: np.ndarray, lo: int, hi: int) -> float:
-        """Stream rows ``lo:hi`` in batches, refit; return elapsed seconds."""
         t0 = time.perf_counter()
         for start in range(lo, hi, self.config.batch):
             stop = min(hi, start + self.config.batch)
@@ -166,7 +144,6 @@ class StreamedModel:
 def run_model(
     name: str, work_dir: str, config: Metric12dConfig, data: DataFn = make_data
 ) -> list[CheckpointResult]:
-    """Stream ``config.seed``'s data through one model; print and return one row per checkpoint."""
     rng = np.random.default_rng(config.seed)
     x, y = data(config.stream_rows(), rng)
     x_test, y_test = data(config.num_test, rng)

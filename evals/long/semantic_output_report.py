@@ -1,8 +1,4 @@
-"""Render measured CSV results as a two-column LaTeX report and PDF figure.
-
-PYTHONPATH=src:. python evals/long/semantic_output_report.py
-tectonic docs/semantic_output_sharing.tex
-"""
+_CLI_DESCRIPTION = "Render measured CSV results as a two-column LaTeX report and PDF figure.\n\nPYTHONPATH=src:. python evals/long/semantic_output_report.py\ntectonic docs/semantic_output_sharing.tex\n"
 
 import argparse
 import csv
@@ -21,7 +17,6 @@ METHODS = ("independent", "semantic", "shuffled", "random")
 
 
 def mean_se(rows, metric):
-    """Average settings within each seed before computing across-seed error."""
     by_seed = defaultdict(list)
     for row in rows:
         by_seed[row["seed"]].append(float(row[metric]))
@@ -362,7 +357,7 @@ from these records. Candidate search adds cost beyond any final-model overhead.
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=_CLI_DESCRIPTION)
     parser.add_argument(
         "--directory", type=Path, default=Path("_reports/semantic_outputs_full")
     )

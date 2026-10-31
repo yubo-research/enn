@@ -1,4 +1,3 @@
-//! Surrogate models for optimization.
 
 use ndarray::{Array1, Array2, Array3, ArrayView2};
 use rand::RngCore;
@@ -37,7 +36,6 @@ pub trait Surrogate: Send + Sync {
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError>;
 
-    /// Posterior mean and standard error in natural `y` units.
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError>;
 
     fn sample(
@@ -60,7 +58,6 @@ pub trait Surrogate: Send + Sync {
     fn schedule_background_flush(&self) -> Result<(), ENNError>;
     fn wait_for_background_flush(&self) -> Result<(), ENNError>;
     fn release_observation_pages(&self) -> Result<(), ENNError>;
-    /// Drop fitted rows so the next `fit_append` starts a new local dataset.
     fn clear_observations(&mut self) -> Result<(), ENNError>;
 }
 
@@ -69,17 +66,11 @@ pub type BoxedSurrogate = Box<dyn Surrogate + Send + Sync>;
 #[derive(Debug, Clone)]
 pub struct ENNSurrogateConfig {
     pub k: NeighborCount,
-    /// Scale-search settings, or frozen scales.
     pub fit_samples: FitSamples,
-    /// Index, storage, and metric. Illegal pairs are not a variant.
     pub layout: EnnLayout,
-    /// Optional per-metric natural-unit y bounds, shape `(num_metrics, 2)`.
     pub y_bounds: Option<Array2<f64>>,
-    /// Groups in feature coordinates, preserved with any weighting policy.
     pub tied_dims: Vec<Vec<usize>>,
-    /// Use only the projected features, retaining original observations separately.
     pub semantic_only: bool,
-    /// Weighted semantic projection applied to centered unit-bound inputs.
     pub semantic_projection: Option<Box<Array2<f64>>>,
 }
 
@@ -98,7 +89,6 @@ impl Default for ENNSurrogateConfig {
 }
 
 impl ENNSurrogateConfig {
-    /// Reject `tied_dims` that would be ignored or that do not fit `num_dim` inputs.
     pub fn validate(&self, num_dim: usize) -> Result<(), ENNError> {
         crate::semantic::validate(self.semantic_projection.as_deref(), num_dim, self.semantic_only)?;
         if self.tied_dims.is_empty() {
@@ -228,8 +218,6 @@ impl ENNSurrogate {
         )
     }
 
-    /// Replace the state with a model of `x`, `y`, `yvar` alone and fit its scales, starting
-    /// the search from `warm`.
     fn start_model(
         &mut self,
         x_new: &ArrayView2<f64>,
@@ -583,8 +571,6 @@ mod tests {
         assert!(moved, "cal a={} b={} c={}", cal.a[0], cal.b[0], cal.c[0]);
     }
 
-    /// Regression: incremental `fit` must not reuse stale `train_yvar` when the caller
-    /// updates observation noise on prefix rows (same `x`/`y`, new `yvar` on old rows).
     #[test]
     fn regression_incremental_fit_refreshes_prefix_yvar_to_match_full_refit() {
         let config = ENNSurrogateConfig {
@@ -828,7 +814,6 @@ mod tests {
         );
     }
 
-    /// Regression: a TuRBO restart clears observations and refits in the same work_dir.
     #[test]
     fn clear_observations_disk_restarts_in_same_work_dir() {
         use tempfile::TempDir;
@@ -863,7 +848,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&other).unwrap(), "keep");
     }
 
-    /// Under non-identity `y_bounds`, public `Surrogate::predict` returns natural-unit μ.
     #[test]
     fn regression_surrogate_predict_natural_under_y_bounds() {
         let bounds = array![[0.0, 1.0]];

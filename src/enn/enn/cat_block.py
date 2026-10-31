@@ -1,5 +1,3 @@
-"""Categorical width adapter for the Rust encoder."""
-
 from enn._rust import cat_log_width
 
 

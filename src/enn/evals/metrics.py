@@ -1,12 +1,9 @@
-"""Shared predictive scores and directed metric formatting."""
-
 import numpy as np
 
 from ops.qa import gaussian_nll
 
 
 def gaussian_loglik(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> float:
-    """Mean Gaussian predictive log-likelihood (larger is better)."""
     return float(-gaussian_nll(y, mu, se))
 
 

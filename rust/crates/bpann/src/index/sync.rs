@@ -12,12 +12,6 @@ use crate::index::tree_search::{leaf_budget, search_tree};
 use crate::mmap_store::MmapColumnStore;
 use crate::observation as obs;
 
-/// The live BPANN index: at most one incremental tree (see [`crate::index::tree`]).
-///
-/// `tree` is `None` until the first row is indexed; rows `indexed_rows..` of the
-/// store are not yet in it. After a metric change, `morph` re-partitions the tree
-/// in place by moving row and page references below one internal page per inserted
-/// row ([`crate::index::tree_morph`]).
 pub struct IncrementalIndex {
     pub tree: Option<Tree>,
     pub indexed_rows: usize,
@@ -26,7 +20,6 @@ pub struct IncrementalIndex {
 }
 
 impl Clone for IncrementalIndex {
-    /// Copies the tree into new scratch files (a chunk at a time).
     fn clone(&self) -> Self {
         Self {
             tree: self.tree.as_ref().map(|t| t.try_clone().expect("copy tree store")),
@@ -47,8 +40,6 @@ impl IncrementalIndex {
         }
     }
 
-    /// Adopt the tree persisted in `index_dir`. Returns false (and stays empty) if it
-    /// is not an incremental row-id tree, e.g. one written by an older fragment layout.
     pub fn adopt_persisted(&mut self) -> Result<bool, BpannError> {
         self.reset();
         let Some(tree) = Tree::open_persisted(&self.index_dir)? else {
@@ -65,8 +56,6 @@ impl IncrementalIndex {
         self.morph = Morph::default();
     }
 
-    /// Re-partition the indexed rows under the current coordinates, in place,
-    /// during the next inserts.
     pub fn start_morph(&mut self) {
         if let Some(tree) = &self.tree {
             self.morph.schedule(tree);
@@ -77,7 +66,6 @@ impl IncrementalIndex {
         self.morph.active()
     }
 
-    /// Bulk-build an empty tree from up to [`bulk_build_max_rows`] unindexed rows.
     fn bulk_build_from(&mut self, train_x: &MmapColumnStore, num_dim: usize, scale: (bool, &[f64]), end: usize) -> Result<(), BpannError> {
         let end = end.min(self.indexed_rows + bulk_build_max_rows(num_dim));
         let rows: Vec<u32> = (self.indexed_rows as u32..end as u32).collect();
@@ -91,8 +79,6 @@ impl IncrementalIndex {
         Ok(())
     }
 
-    /// Insert rows `indexed_rows..end` into the tree, one at a time, advancing a
-    /// re-partition in progress after each.
     pub fn ensure_sync_for_backend(
         &mut self,
         train_x: &MmapColumnStore,
@@ -173,7 +159,6 @@ impl IncrementalIndex {
         }
     }
 
-    /// Bytes of the persisted index files.
     pub fn index_memory_bytes(&self) -> usize {
         self.tree.as_ref().map_or(0, |_| Tree::persisted_bytes(&self.index_dir))
     }

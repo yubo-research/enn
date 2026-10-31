@@ -1,12 +1,9 @@
-//! Array marshalling for semantic math implemented in ennbo.
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-/// Resolve metadata and deduplicate descriptions in the native core.
 #[pyfunction]
 #[pyo3(signature = (names, descriptions=None))]
-#[doc = "kiss-coverage-off"]
 pub fn semantic_texts(
     names: Vec<String>,
     descriptions: Option<Vec<Option<String>>>,
@@ -15,9 +12,7 @@ pub fn semantic_texts(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-/// Release the GIL while loading and running the CPU sentence transformer.
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn semantic_encode<'py>(
     py: Python<'py>,
     texts: Vec<String>,
@@ -28,9 +23,7 @@ pub fn semantic_encode<'py>(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-/// Construct shared input-output features from deduplicated text embeddings.
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn semantic_input_output_projection<'py>(
     py: Python<'py>,
     embeddings: PyReadonlyArray2<f64>,
@@ -43,9 +36,7 @@ pub fn semantic_input_output_projection<'py>(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-/// Restore original variable ordering before projection construction.
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn semantic_text_projection<'py>(
     py: Python<'py>,
     embeddings: PyReadonlyArray2<f64>,
@@ -58,7 +49,6 @@ pub fn semantic_text_projection<'py>(
 }
 
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn semantic_projection<'py>(
     py: Python<'py>,
     embeddings: PyReadonlyArray2<f64>,
@@ -69,7 +59,6 @@ pub fn semantic_projection<'py>(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn semantic_weighted<'py>(
     py: Python<'py>,
     projection: PyReadonlyArray2<f64>,
@@ -80,7 +69,6 @@ pub fn semantic_weighted<'py>(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn semantic_transform<'py>(
     py: Python<'py>,
     x: PyReadonlyArray2<f64>,
@@ -97,7 +85,6 @@ pub fn semantic_transform<'py>(
     .map(|v| v.into_pyarray_bound(py))
     .map_err(|e| PyValueError::new_err(e.to_string()))
 }
-/// Original input rows for noninvertible feature representations.
 #[pyclass(name = "InputHistory")]
 pub struct PyInputHistory {
     inner: ennbo::input_history::InputHistory,
@@ -105,7 +92,6 @@ pub struct PyInputHistory {
 #[pymethods]
 impl PyInputHistory {
     #[new]
-    #[doc = "kiss-coverage-off"]
     fn new(
         rows: PyReadonlyArray2<f64>,
         model: PyRef<'_, crate::py_model::PyEpistemicNearestNeighbors>,
@@ -114,13 +100,11 @@ impl PyInputHistory {
             .map(|inner| Self { inner })
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
-    #[doc = "kiss-coverage-off"]
     fn append(&mut self, rows: PyReadonlyArray2<f64>) -> PyResult<()> {
         self.inner
             .append(&rows.as_array())
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
-    #[doc = "kiss-coverage-off"]
     fn gather<'py>(
         &self,
         py: Python<'py>,
@@ -133,9 +117,7 @@ impl PyInputHistory {
     }
 }
 
-/// Uncentered output projector with the shared variance retention rule.
 #[pyfunction]
-#[doc = "kiss-coverage-off"]
 pub fn semantic_output_projection<'py>(
     py: Python<'py>,
     embeddings: PyReadonlyArray2<f64>,

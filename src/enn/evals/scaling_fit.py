@@ -1,12 +1,3 @@
-"""Simple linear regressions of a metric on ln N, N and N^2 in turn, and the best of them.
-
-For each term ``f`` in ``TERMS`` the model ``y = b0 + b f(N)`` is fit by ordinary least squares,
-N in thousands of rows (``N_UNIT``), and ``b`` gets a two-sided t test on ``obs - 2`` residual
-degrees of freedom. Every model has the same two parameters, so the one with the largest r^2
-(equivalently the smallest residual sum of squares, or AIC) is the best fit. If even the best
-term's slope is not significant at ``alpha`` the best fit is reported as ``none`` (constant in N).
-"""
-
 from __future__ import annotations
 
 import math
@@ -59,7 +50,6 @@ def _t_test(coef: float, se: float, dof: int) -> TermTest:
 
 
 def ols(ns: list[float], ys: list[float], terms: tuple[str, ...] = TERMS) -> RegFit:
-    """OLS of ``ys`` on an intercept and ``terms`` of ``ns``; non-finite ``ys`` are skipped."""
     pts = np.array(
         [(n, y) for n, y in zip(ns, ys) if math.isfinite(y)], dtype=float
     ).reshape(-1, 2)
@@ -80,12 +70,10 @@ def ols(ns: list[float], ys: list[float], terms: tuple[str, ...] = TERMS) -> Reg
 
 
 def single_term_fits(ns: list[float], ys: list[float]) -> dict[str, RegFit]:
-    """One simple regression ``y = b0 + b f(N)`` per term ``f`` in ``TERMS``."""
     return {t: ols(ns, ys, (t,)) for t in TERMS}
 
 
 def best_term(fits: dict[str, RegFit], alpha: float = ALPHA) -> str:
-    """Term with the largest r^2, or ``"none"`` if its slope's p-value exceeds ``alpha`` (or is nan)."""
     scored = [(t, f) for t, f in fits.items() if math.isfinite(f.r2)]
     if not scored:
         return "none"

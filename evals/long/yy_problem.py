@@ -1,5 +1,3 @@
-"""Response functions specified independently of output text and embeddings."""
-
 from pathlib import Path
 
 import numpy as np
@@ -39,7 +37,6 @@ ALPHAS = (0.0, 0.1, 0.3, 1.0)
 
 
 def metadata(directory):
-    """Cache the actual pretrained encoder output, independent of sample seed."""
     directory = Path(directory)
     paraphrase = SemanticOutputProjection.from_metadata(
         NAMES, DESCRIPTIONS, cache_dir=directory / "cache"
@@ -54,7 +51,6 @@ def metadata(directory):
 
 
 def problem(seed, n, case):
-    """Identical rows and noise draws across cases; no embedding enters truth."""
     rng = np.random.default_rng(seed)
     x = rng.uniform(-1, 1, (n + 100 + 512, 4))
     latent = np.column_stack(
@@ -79,7 +75,6 @@ def problem(seed, n, case):
 
 
 def projections(paraphrase, exact, y, seed, case, variance_cutoff=0.9):
-    """The PCA control applies the same cutoff to training-only output embeddings."""
     rng = np.random.default_rng(seed + 10000)
     order = np.arange(16).reshape(4, 4).T.ravel()
     semantic = paraphrase.embeddings

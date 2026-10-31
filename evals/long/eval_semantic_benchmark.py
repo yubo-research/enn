@@ -1,9 +1,3 @@
-"""Paired high-dimensional ENN regression benchmark; run from repository root.
-
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src python ops/evaluate.py run long/semantic_benchmark
-Install sentence-transformers to construct the cached projections on the first run.
-"""
-
 import csv
 from pathlib import Path
 

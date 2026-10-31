@@ -28,7 +28,6 @@ def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
 
 
 def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Calculate Sobol indices, preserving floating x dtype or using float64 otherwise."""
     if x.ndim != 2:
         raise ValueError(f"x must be 2D, got shape {x.shape}")
     n, d = x.shape
@@ -49,7 +48,6 @@ def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
 def pareto_front_2d_maximize(
     a: np.ndarray | Any, b: np.ndarray | Any, idx: np.ndarray | Any | None = None
 ) -> np.ndarray:
-    """Compute 2D Pareto front (maximize both objectives) using Rust backend."""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     if idx is None:

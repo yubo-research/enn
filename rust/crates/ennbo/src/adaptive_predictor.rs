@@ -1,4 +1,3 @@
-//! Fixed epoch predictor and calibrated marginal uncertainty.
 use crate::adaptive_basis::{Basis, Metadata};
 use crate::adaptive_geometry::invalid;
 use crate::adaptive_scales::distance_scales;
@@ -8,18 +7,12 @@ use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 use ndarray::{Array1, Array2, Ix2};
 
-/// Selected geometry, output projector, neighbor count, and fitted mixing weight.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Choice {
-    /// Input geometry family.
     pub geometry: String,
-    /// Learned geometry strength.
     pub weight: f64,
-    /// Output projector family.
     pub output: String,
-    /// Neighbor count.
     pub neighbors: usize,
-    /// Identity-to-projector mixing fitted on selection rows.
     pub alpha: f64,
 }
 
