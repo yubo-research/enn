@@ -1,6 +1,7 @@
 //! Fixed epoch predictor and calibrated marginal uncertainty.
 use crate::adaptive_basis::{Basis, Metadata};
 use crate::adaptive_geometry::invalid;
+use crate::adaptive_scales::distance_scales;
 use crate::error::ENNError;
 use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
@@ -36,12 +37,25 @@ impl Predictor {
         metadata: &Metadata,
         choice: Choice,
         linear_mean: bool,
+        column_scale: Option<&Array1<f64>>,
     ) -> Result<Self, ENNError> {
-        let basis = Basis::new(x, y, metadata)?;
+        let mut basis = Basis::new(x, y, metadata)?;
+        if let Some(scale) = column_scale {
+            basis.column_scale = scale.clone();
+        }
         let features = basis.features(x, &choice.geometry, choice.weight)?;
         let target = basis.target(x, y, linear_mean);
-        let model =
-            EpistemicNearestNeighbors::new(features, target, None, false, IndexDriver::Flat)?;
+        let scaled = choice.geometry == "scales";
+        let mut model = EpistemicNearestNeighbors::new(
+            features,
+            target,
+            None,
+            scaled,
+            IndexDriver::Flat,
+        )?;
+        if scaled {
+            install_column_scale(&mut model, &basis.column_scale)?;
+        }
         Ok(Self {
             basis,
             model,
@@ -87,6 +101,20 @@ impl Predictor {
         }
         Ok((mu, se))
     }
+}
+
+pub(crate) fn install_column_scale(
+    model: &mut EpistemicNearestNeighbors,
+    coefficients: &Array1<f64>,
+) -> Result<(), ENNError> {
+    if !model.scale_x || coefficients.is_empty() || model.num_dim < coefficients.len() {
+        return Err(invalid("column scales require a semantic factor"));
+    }
+    let dimensions = model.num_dim - coefficients.len();
+    model.metric_fixed = true;
+    model.x_scale = distance_scales(coefficients, dimensions);
+    model.backend.mark_index_stale();
+    model.ensure_index_sync()
 }
 
 pub(crate) struct Epoch {

@@ -2,9 +2,10 @@
 use crate::adaptive_basis::{Basis, Metadata};
 use crate::adaptive_geometry::invalid;
 use crate::adaptive_predictor::{Choice, Epoch, Predictor};
+use crate::adaptive_scales::bake;
 use crate::error::ENNError;
 use crate::params::{ENNParams, PosteriorFlags};
-use ndarray::{s, Array2, Array3, Axis, Ix3};
+use ndarray::{s, Array1, Array2, Array3, Axis, Ix3};
 
 /// Least-squares mixing on selection rows only; ties choose zero sharing.
 pub(crate) fn mixing(mean: &Array2<f64>, target: &Array2<f64>, projector: &Array2<f64>) -> f64 {
@@ -30,8 +31,12 @@ fn selection_means(
     choice: &Choice,
     trend: bool,
 ) -> Result<Array3<f64>, ENNError> {
-    let train = basis.features(x, &choice.geometry, choice.weight)?;
-    let query_features = basis.features(query, &choice.geometry, choice.weight)?;
+    let mut train = basis.features(x, &choice.geometry, choice.weight)?;
+    let mut query_features = basis.features(query, &choice.geometry, choice.weight)?;
+    if choice.geometry == "scales" {
+        bake(&mut train, &basis.column_scale);
+        bake(&mut query_features, &basis.column_scale);
+    }
     let target = basis.target(x, y, trend);
     let neighbors = [3, 10, 30];
     let mut means = match crate::posterior::small_flat_selection_means(
@@ -78,6 +83,7 @@ fn geometries(
     metadata: &Metadata,
     adaptation: &str,
     weight: Option<f64>,
+    scaled: bool,
 ) -> Vec<(&'static str, f64)> {
     let mut choices = vec![("fixed", 0.0)];
     if adaptation == "outputs" || adaptation == "none" {
@@ -85,6 +91,9 @@ fn geometries(
     }
     if metadata.input.is_some() {
         choices.insert(0, ("raw", 0.0));
+    }
+    if scaled && metadata.input.as_ref().is_some_and(|p| p.ncols() > 0) {
+        choices.insert(choices.len().min(2), ("scales", 1.0));
     }
     for geometry in ["linear", "quadratic"] {
         for weight in weight.map_or_else(|| vec![3.0, 30.0], |v| vec![v]) {
@@ -101,17 +110,21 @@ fn select(
     trend: bool,
     adaptation: &str,
     weight: Option<f64>,
+    column_scale: Option<&Array1<f64>>,
 ) -> Result<Choice, ENNError> {
     let end = x.nrows() * 3 / 5;
     let train_x = x.slice(s![..end, ..]).to_owned();
     let train_y = y.slice(s![..end, ..]).to_owned();
     let query = x.slice(s![end..x.nrows() * 4 / 5, ..]).to_owned();
-    let basis = Basis::new(&train_x, &train_y, metadata)?;
+    let mut basis = Basis::new(&train_x, &train_y, metadata)?;
+    if let Some(scale) = column_scale {
+        basis.column_scale = scale.clone();
+    }
     let target =
         (y.slice(s![end..x.nrows() * 4 / 5, ..]).to_owned() - &basis.y_mean) / &basis.y_scale;
     let mut best = None;
     let mut best_loss = f64::INFINITY;
-    for (geometry, weight) in geometries(metadata, adaptation, weight) {
+    for (geometry, weight) in geometries(metadata, adaptation, weight, column_scale.is_some()) {
         let mut choice = Choice {
             geometry: geometry.into(),
             weight,
@@ -166,8 +179,9 @@ pub(crate) fn fit_epoch(
     trend: bool,
     adaptation: &str,
     weight: Option<f64>,
+    column_scale: Option<&Array1<f64>>,
 ) -> Result<Epoch, ENNError> {
-    let choice = select(x, y, metadata, trend, adaptation, weight)?;
+    let choice = select(x, y, metadata, trend, adaptation, weight, column_scale)?;
     let end = x.nrows() * 4 / 5;
     let predictor = Predictor::new(
         &x.slice(s![..end, ..]).to_owned(),
@@ -175,6 +189,7 @@ pub(crate) fn fit_epoch(
         metadata,
         choice,
         trend,
+        column_scale,
     )?;
     let (mu, se) = predictor.posterior(&x.slice(s![end.., ..]).to_owned())?;
     let floor = predictor.basis.y_scale.mapv(|v| (v * 0.03).max(1e-12));

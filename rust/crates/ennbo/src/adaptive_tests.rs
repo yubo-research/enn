@@ -2,7 +2,10 @@
 use crate::adaptive::AdaptiveSemanticENN;
 use crate::adaptive_basis::{Basis, Metadata};
 use crate::adaptive_geometry::{fixed_rank, quadratic, ridge};
+use crate::adaptive_predictor::{Choice, Predictor};
+use crate::adaptive_scales::{bake, centered, distance_scales};
 use crate::adaptive_selection::{fit_epoch, mixing};
+use crate::posterior::neighbor_dist::posterior_row_sq_l2;
 use ndarray::{array, s, Array2, Axis};
 
 fn observations() -> (Array2<f64>, Array2<f64>) {
@@ -28,8 +31,8 @@ fn calibration_labels_cannot_change_choice_or_fitted_mean() {
     let (x, y) = observations();
     let mut changed = y.clone();
     changed.slice_mut(s![48.., ..]).mapv_inplace(|v| v + 100.0);
-    let model = fit_epoch(&x, &y, &metadata(), false, "all", None).unwrap();
-    let other = fit_epoch(&x, &changed, &metadata(), false, "all", None).unwrap();
+    let model = fit_epoch(&x, &y, &metadata(), false, "all", None, None).unwrap();
+    let other = fit_epoch(&x, &changed, &metadata(), false, "all", None, None).unwrap();
     assert_eq!(model.predictor.choice, other.predictor.choice);
     assert_eq!(
         model.predictor.posterior(&x).unwrap().0,
@@ -125,6 +128,74 @@ fn failed_updates_leave_replay_predictions_and_random_state_intact() {
         left.posterior(&x).unwrap().0,
         right.posterior(&x).unwrap().0
     );
+}
+
+#[test]
+fn column_scales_store_factors_and_reject_failed_batches() {
+    let x = Array2::from_shape_fn((16, 2), |(i, j)| (i + j) as f64 / 20.0);
+    let y = x.column(0).insert_axis(Axis(1)).mapv(|v| (v - 0.5).sin());
+    let projection = array![[1.0], [-1.0]];
+    let metadata = Metadata {
+        bounds: Some(array![[0.0, 1.0], [0.0, 1.0]]),
+        input: Some(projection.clone()),
+        output: None,
+    };
+    let z = centered(&x, metadata.bounds.as_ref().unwrap());
+    let factors = z.dot(&projection);
+    let mut basis = Basis::new(&x, &y, &metadata).unwrap();
+    basis.column_scale = array![2.0];
+    let stored = basis.features(&x, "scales", 1.0).unwrap();
+    let joined = ndarray::concatenate(Axis(1), &[z.view(), factors.view()]).unwrap();
+    assert!(stored
+        .iter()
+        .zip(joined.iter())
+        .all(|(left, right)| (left - right).abs() < 1e-12));
+    let mut baked = stored.clone();
+    bake(&mut baked, &basis.column_scale);
+    let delta = &baked.row(0) - &baked.row(1);
+    let dz = &z.row(0) - &z.row(1);
+    let ds = (&factors.row(0) - &factors.row(1)) * 2.0;
+    let expected = dz.dot(&dz) + ds.dot(&ds);
+    assert!((delta.dot(&delta) - expected).abs() < 1e-10);
+    let predictor = Predictor::new(
+        &x,
+        &y,
+        &metadata,
+        Choice {
+            geometry: "scales".into(),
+            weight: 1.0,
+            output: "independent".into(),
+            neighbors: 3,
+            alpha: 0.0,
+        },
+        false,
+        Some(&basis.column_scale),
+    )
+    .unwrap();
+    let rows = predictor.model.train_x_view_opt().unwrap().to_owned();
+    assert!(rows
+        .iter()
+        .zip(stored.iter())
+        .all(|(left, right)| (left - right).abs() < 1e-12));
+    let scale = distance_scales(&basis.column_scale, 2);
+    assert!((predictor.model.x_scale[2] - scale[2]).abs() < 1e-12);
+    let distance = posterior_row_sq_l2(
+        stored.row(0),
+        stored.row(1),
+        true,
+        predictor.model.x_scale.view(),
+    );
+    assert!((distance - expected).abs() < 1e-8);
+    let mut changed = predictor;
+    crate::adaptive_predictor::install_column_scale(&mut changed.model, &array![0.25]).unwrap();
+    assert_eq!(changed.model.train_x_view_opt().unwrap(), rows.view());
+    assert!((changed.model.x_scale[2] - 4.0).abs() < 1e-12);
+
+    let mut model = AdaptiveSemanticENN::new(metadata, 30, 1, false, "inputs".into()).unwrap();
+    model.add(x.clone(), y.clone(), None).unwrap();
+    let before = model.column_scale().unwrap();
+    assert!(model.add(x.clone(), Array2::zeros((16, 2)), None).is_err());
+    assert_eq!(model.column_scale().unwrap(), before);
 }
 
 #[test]

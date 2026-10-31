@@ -128,6 +128,20 @@ def test_fixed_weight_and_immutable_metadata(adaptation, linear_mean):
     assert np.isfinite(model.posterior(problem.x).mu).all()
 
 
+def test_input_adaptation_accepts_column_scale_candidate():
+    problem = make_problem("xx", "aligned", 4, count=80)
+    model = AdaptiveSemanticENN(
+        input_transform=problem.input_transform, adaptation="inputs", capacity=40
+    )
+    model.add(problem.x[:30], problem.y[:30])
+    model.add(problem.x[30:50], problem.y[30:50])
+    assert model.choice.geometry in {"raw", "fixed", "scales", "linear", "quadratic"}
+    assert model.num_seen == 50 and model.num_retained == 40
+    prediction = model.posterior(problem.x[50:58])
+    assert prediction.mu.shape == (8, 1)
+    assert np.isfinite(prediction.mu).all() and np.isfinite(prediction.se).all()
+
+
 def test_opposing_outputs_learn_zero_semantic_mixing():
     rng = np.random.default_rng(30)
     x = rng.uniform(size=(300, 2))

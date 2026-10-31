@@ -12,10 +12,13 @@ class AdaptiveSemanticENN:
 
     The initial batch needs at least 12 rows. Uniform priority sampling retains
     at most ``capacity`` rows. Each refit uses a fresh 60/20/20 fit, selection,
-    and calibration split; calibration labels never influence the fitted mean.
-    Semantic and learned output projectors mix with identity using a weight
-    fitted on selection rows. ``choice.alpha`` reports that weight.
-    Metadata remains immutable; learned input maps retain its factor width.
+    and calibration split; calibration labels never influence the fitted mean
+    of the replay geometries. Column-scale multipliers use every accepted row.
+    Semantic and learned output projectors mix with
+    identity using a weight fitted on selection rows. ``choice.alpha`` reports
+    that weight. Metadata remains immutable; learned input maps retain its
+    factor width. Column scales keep those loadings and update one nonnegative
+    multiplier per factor from constant-size sufficient statistics.
     """
 
     def __init__(

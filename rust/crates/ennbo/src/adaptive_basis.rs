@@ -26,6 +26,7 @@ pub(crate) struct Basis {
     pub quadratic: Array2<f64>,
     pub operators: Vec<(&'static str, Array2<f64>)>,
     pub metadata: Metadata,
+    pub column_scale: Array1<f64>,
 }
 
 fn statistics(x: &Array2<f64>) -> (Array1<f64>, Array1<f64>, Vec<bool>) {
@@ -70,6 +71,7 @@ impl Basis {
             quadratic,
             operators,
             metadata: metadata.clone(),
+            column_scale: Array1::zeros(0),
         })
     }
 
@@ -80,6 +82,17 @@ impl Basis {
         weight: f64,
     ) -> Result<Array2<f64>, ENNError> {
         let d = x.ncols();
+        if geometry == "scales" {
+            let bounds = self.metadata.bounds.as_ref().ok_or_else(|| {
+                invalid("column scales require input bounds")
+            })?;
+            let projection = self.metadata.input.as_ref().ok_or_else(|| {
+                invalid("column scales require a projection")
+            })?;
+            let z = crate::adaptive_scales::centered(x, bounds);
+            let factors = z.dot(projection);
+            return ndarray::concatenate(Axis(1), &[z.view(), factors.view()]).map_err(invalid);
+        }
         if geometry == "raw" || geometry == "fixed" {
             let Some(bounds) = &self.metadata.bounds else {
                 return Ok(x.clone());

@@ -354,6 +354,7 @@ pub mod semantic_encoder;
 pub mod adaptive;
 pub mod adaptive_basis;
 mod adaptive_geometry;
+mod adaptive_scales;
 mod adaptive_predictor;
 mod adaptive_selection;
 #[cfg(test)]

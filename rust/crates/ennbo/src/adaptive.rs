@@ -2,6 +2,7 @@
 use crate::adaptive_basis::Metadata;
 use crate::adaptive_geometry::invalid;
 use crate::adaptive_predictor::{Choice, Epoch};
+use crate::adaptive_scales::{ColumnScales, STATIONARY_FORGET};
 use crate::adaptive_selection::fit_epoch;
 use crate::error::ENNError;
 use ndarray::{Array2, Axis};
@@ -15,6 +16,7 @@ pub struct AdaptiveSemanticENN {
     adaptation: String,
     rng: StdRng,
     sample: Option<(Array2<f64>, Array2<f64>, Vec<f64>)>,
+    scales: Option<ColumnScales>,
     epoch: Option<Epoch>,
     /// Total accepted observations.
     pub num_seen: usize,
@@ -47,6 +49,7 @@ impl AdaptiveSemanticENN {
             adaptation,
             rng: StdRng::seed_from_u64(seed),
             sample: None,
+            scales: None,
             epoch: None,
             num_seen: 0,
             num_refits: 0,
@@ -70,6 +73,8 @@ impl AdaptiveSemanticENN {
     ) -> Result<(), ENNError> {
         self.validate(&x, &y, weight)?;
         let count = x.nrows();
+        let scales = self.updated_scales(&x, &y)?;
+        let learned = scales.as_ref().map(ColumnScales::coefficients);
         let mut rng = self.rng.clone();
         let mut keys: Vec<f64> = (0..count).map(|_| rng.gen()).collect();
         let (x, y) = match &self.sample {
@@ -99,13 +104,45 @@ impl AdaptiveSemanticENN {
             self.linear_mean,
             &self.adaptation,
             weight,
+            learned.as_ref(),
         )?;
         self.sample = Some(sample);
+        self.scales = scales;
         self.epoch = Some(epoch);
         self.rng = rng;
         self.num_seen += count;
         self.num_refits += 1;
         Ok(())
+    }
+
+    fn updated_scales(
+        &self,
+        x: &Array2<f64>,
+        y: &Array2<f64>,
+    ) -> Result<Option<ColumnScales>, ENNError> {
+        if !matches!(self.adaptation.as_str(), "all" | "inputs") {
+            return Ok(None);
+        }
+        let Some(projection) = self.metadata.input.clone() else {
+            return Ok(None);
+        };
+        if projection.ncols() == 0 {
+            return Ok(self.scales.clone());
+        }
+        let Some(bounds) = &self.metadata.bounds else {
+            return Ok(None);
+        };
+        let mut state = self.scales.clone().unwrap_or_else(|| {
+            ColumnScales::new(projection, y.ncols(), STATIONARY_FORGET)
+        });
+        state.observe_rows(x, y, bounds)?;
+        Ok(Some(state))
+    }
+
+    /// Learned multipliers, when input adaptation is active.
+    #[cfg(test)]
+    pub(crate) fn column_scale(&self) -> Option<ndarray::Array1<f64>> {
+        self.scales.as_ref().map(ColumnScales::coefficients)
     }
 
     fn validate(

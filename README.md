@@ -158,8 +158,14 @@ posterior = model.posterior(test_x)
 Pass `output_projection=` to adapt a `SemanticOutputProjection` as well. Each
 `add` refits on a uniform replay sample of at most `capacity` rows, using separate
 rows for fitting, candidate selection, and variance calibration. Candidates
-include the fixed prior, supervised linear and quadratic-gradient geometries,
-and independent, semantic, or learned output sharing. `model.choice` exposes the
+include the fixed prior, column scales on that prior, supervised linear and
+quadratic-gradient geometries, and independent, semantic, or learned output
+sharing. Column scales keep the SVD loadings fixed. Each accepted row updates
+an F-by-F Gram matrix and an F-by-m cross matrix; the state does not grow with
+the number of rows. Multipliers stay nonnegative and shrink toward the metadata
+column weight. Neighbor rows store the centered bound-normalized input together
+with its factor coordinates, so a new multiplier rescales distances without
+rewriting those rows. `model.choice` exposes the
 selection. Learned input maps retain the metadata projection's factor count;
 all priors initialize their count with the shared variance cutoff (default 0.9).
 Semantic and learned output operators use `(1-alpha) I + alpha L Lᵀ`, with
