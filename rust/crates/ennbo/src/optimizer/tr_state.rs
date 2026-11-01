@@ -6,7 +6,7 @@ use crate::morbo_trust_region::{MorboTrustRegion, Rescalarize};
 use crate::trust_region::{TrustRegionError, TurboTrustRegion};
 use crate::trust_region_config::TrustRegionConfig;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TrustRegionState {
     Turbo(TurboTrustRegion),
     Morbo(Box<MorboTrustRegion>),

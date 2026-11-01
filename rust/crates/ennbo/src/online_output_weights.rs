@@ -4,16 +4,25 @@ pub(crate) const PRIOR_ALPHA: f64 = 0.3;
 const SHRINK_ROWS: f64 = 12.0;
 const TINY: f64 = 1e-12;
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct OutputWeights {
+    #[serde(with = "crate::exact")]
     loadings: Array2<f64>,
+    #[serde(with = "crate::exact")]
     projector: Array2<f64>,
+    #[serde(with = "crate::exact")]
     num_output: Array1<f64>,
+    #[serde(with = "crate::exact")]
     den_output: Array1<f64>,
+    #[serde(with = "crate::exact")]
     num_pooled: f64,
+    #[serde(with = "crate::exact")]
     den_pooled: f64,
+    #[serde(with = "crate::exact")]
     num_factor: Array1<f64>,
+    #[serde(with = "crate::exact")]
     den_factor: Array1<f64>,
+    #[serde(with = "crate::exact")]
     rows: f64,
 }
 

@@ -24,6 +24,14 @@ impl ENNFitter {
         }
     }
 
+    pub(crate) fn output_fit(&self) -> Option<&OutputBlendFit> {
+        self.output_fit.as_ref()
+    }
+
+    pub(crate) fn set_output_fit(&mut self, output_fit: Option<OutputBlendFit>) {
+        self.output_fit = output_fit;
+    }
+
     pub fn params(&self) -> Option<&ENNParams> {
         self.params.as_ref()
     }

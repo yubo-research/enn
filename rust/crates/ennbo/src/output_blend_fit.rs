@@ -12,9 +12,11 @@ use crate::params::{ENNParams, PosteriorFlags};
 const MAX_ROWS_PER_ASK: usize = 1000;
 const MIN_LEARNED_ROWS: usize = 12;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OutputBlendFit {
     weights: OutputWeights,
     cursor: usize,
+    #[serde(with = "crate::exact")]
     warm: Option<Arc<OutputBlend>>,
 }
 

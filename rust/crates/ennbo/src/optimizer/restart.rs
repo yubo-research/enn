@@ -22,8 +22,12 @@ impl Optimizer {
         if self.tr_state.is_morbo() {
             return Ok(());
         }
+        self.write_snapshot(true)?;
         if let Some(surrogate) = self.surrogate.as_mut() {
             surrogate.clear_observations()?;
+        }
+        if let Some(store) = self.run_store.as_mut() {
+            store.clear_observations()?;
         }
         self.fallback_x.clear();
         self.fallback_y.clear();

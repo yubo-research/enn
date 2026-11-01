@@ -4,14 +4,18 @@ use crate::neighbor_count::NeighborCount;
 
 const ALL_CANDIDATES_M_THRESHOLD: usize = 1_000_000_000;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct IncrementalIncumbentTracker {
     m: usize,
     observation_count: usize,
     all_indices: Vec<usize>,
+    #[serde(with = "crate::exact")]
     max_y: f64,
     max_indices: Vec<usize>,
     max_initialized: bool,
+    #[serde(with = "crate::exact")]
     top_entries: Vec<(usize, f64)>,
+    #[serde(with = "crate::exact")]
     per_metric_entries: Vec<Vec<(usize, f64)>>,
     use_all_candidates: bool,
     use_noiseless_max: bool,

@@ -337,6 +337,42 @@ pub fn validate_optimizer_rules_py(
     ennbo::validate_optimizer_rules(&rules, &kind).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+#[pyfunction(name = "create_optimizer_run")]
+#[pyo3(signature = (kind, bounds, work_dir, k=None, num_init=None, seed=42, config_overrides=None))]
+#[allow(clippy::too_many_arguments)]
+pub fn create_optimizer_run_py(
+    kind: &str,
+    bounds: PyReadonlyArray2<f64>,
+    work_dir: &str,
+    k: Option<i32>,
+    num_init: Option<usize>,
+    seed: u64,
+    config_overrides: Option<Bound<'_, pyo3::types::PyDict>>,
+) -> PyResult<PyOptimizer> {
+    let overrides = config_overrides
+        .as_ref()
+        .map(|d| parse_config_overrides_from_dict(d))
+        .transpose()?;
+    let kind = match kind {
+        "enn" => ennbo::RunKind::Enn,
+        "zero" => ennbo::RunKind::Zero,
+        "lhd" => ennbo::RunKind::Lhd,
+        _ => return Err(PyValueError::new_err(format!("Unknown run kind: {kind}"))),
+    };
+    let recipe =
+        ennbo::RunRecipe::new(kind, bounds.as_array().to_owned(), k, num_init, overrides);
+    let inner = ennbo::create_run(recipe, seed, work_dir.into())
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(PyOptimizer { inner })
+}
+
+#[pyfunction(name = "open_optimizer")]
+pub fn open_optimizer_py(work_dir: &str) -> PyResult<PyOptimizer> {
+    let inner =
+        ennbo::Optimizer::open(work_dir).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(PyOptimizer { inner })
+}
+
 #[pyfunction(name = "create_optimizer_enn")]
 #[pyo3(signature = (bounds, work_dir, k=None, num_init=None, seed=42, config_overrides=None))]
 pub fn create_optimizer_enn_py(

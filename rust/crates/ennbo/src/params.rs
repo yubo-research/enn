@@ -15,12 +15,16 @@ pub enum ParamsError {
     InvalidAleatoricVariance(f64),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ENNParams {
     pub k_num_neighbors: i32,
+    #[serde(with = "crate::exact")]
     pub epistemic_variance_scale: f64,
+    #[serde(with = "crate::exact")]
     pub aleatoric_variance_scale: f64,
+    #[serde(with = "crate::exact")]
     pub output_blend: Option<Arc<OutputBlend>>,
+    #[serde(with = "crate::exact")]
     pub calibrator: Option<Arc<AffineCalibrator>>,
 }
 

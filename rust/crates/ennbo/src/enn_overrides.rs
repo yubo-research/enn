@@ -4,7 +4,7 @@ use crate::error::ENNError;
 use crate::fit_samples::{FitSamples, ScaleSearch};
 use crate::surrogate::ENNSurrogateConfig;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SearchOverrides {
     pub num_fit_samples: Option<NonZeroUsize>,
     pub num_fit_candidates: Option<NonZeroUsize>,
@@ -44,19 +44,21 @@ impl SearchOverrides {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum FitOverride {
     Frozen,
     Draw(SearchOverrides),
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct EnnOverrides {
     pub fit: Option<FitOverride>,
     pub weighting: Option<bool>,
+    #[serde(with = "crate::exact")]
     pub y_bounds: Option<ndarray::Array2<f64>>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
     pub semantic_only: Option<bool>,
+    #[serde(with = "crate::exact")]
     pub semantic_projection: Option<ndarray::Array2<f64>>,
     pub semantic_outputs: Option<crate::output_blend::SemanticOutputs>,
 }

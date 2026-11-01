@@ -2,7 +2,7 @@ use crate::error::ENNError;
 use crate::morbo_trust_region::MorboTRSettings;
 use crate::trust_region::TRLengthConfig;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TrustRegionKind {
     Turbo,
     Morbo,

@@ -16,7 +16,7 @@ use select::{
     select_with_ucb,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InitStrategyState {
     pub strategy_type: InitStrategy,
     pub num_init: usize,
@@ -33,10 +33,10 @@ impl InitStrategyState {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TurboStrategyState;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Strategy {
     Init(InitStrategyState),
     Turbo(TurboStrategyState),

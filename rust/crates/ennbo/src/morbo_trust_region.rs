@@ -4,7 +4,7 @@ use rand::RngCore;
 
 use crate::trust_region::{TRLengthConfig, TrustRegionError, TurboTrustRegion};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Rescalarize {
     OnRestart,
     OnPropose,
@@ -30,17 +30,24 @@ pub struct MorboTRSettings {
     pub rescalarize: Rescalarize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MorboTrustRegion {
     inner: TurboTrustRegion,
     num_metrics: usize,
+    #[serde(with = "crate::exact")]
     alpha: f64,
     rescalarize: Rescalarize,
+    #[serde(with = "crate::exact")]
     weights: Array1<f64>,
+    #[serde(with = "crate::exact")]
     y_min: Option<Array1<f64>>,
+    #[serde(with = "crate::exact")]
     y_max: Option<Array1<f64>>,
+    #[serde(with = "crate::exact")]
     incumbent_y_raw: Option<Array1<f64>>,
+    #[serde(with = "crate::exact")]
     score_min: Option<f64>,
+    #[serde(with = "crate::exact")]
     score_max: Option<f64>,
     score_count: usize,
 }

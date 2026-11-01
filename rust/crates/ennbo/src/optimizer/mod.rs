@@ -2,13 +2,16 @@ mod incumbent;
 pub mod obs_access;
 mod observation_delta;
 mod restart;
+mod run_store;
 mod tr_state;
 
 pub use observation_delta::ObservationDelta;
+pub use run_store::{create_run, RunKind, RunRecipe};
 
 use ndarray::{Array1, Array2, ArrayView2};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
+use rand_chacha::ChaCha12Rng;
 
 use crate::candidates::SobolEngine;
 use crate::config::{InitStrategy, OptimizerConfig, SurrogateConfig};
@@ -68,11 +71,13 @@ pub struct Optimizer {
     sobol_seed_base: u64,
     telemetry: Telemetry,
     incumbent_tracker: IncrementalIncumbentTracker,
-    rng: StdRng,
+    rng: ChaCha12Rng,
     yvar_on_tell: Option<bool>,
     local_init_budget: usize,
     local_init_kind: InitStrategy,
     reinit_left: Option<usize>,
+    run_store: Option<run_store::RunStore>,
+    replay_base: Option<usize>,
 }
 
 impl Optimizer {
@@ -124,7 +129,7 @@ impl Optimizer {
         rng.fill_bytes(&mut seed_bytes);
         let sobol_seed_base = u64::from_le_bytes(seed_bytes) % (1u64 << 31);
         let owned_rng =
-            StdRng::from_rng(rng).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+            ChaCha12Rng::from_rng(rng).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
         let num_metrics = tr_state.num_metrics();
         let tracker_m = match &config.surrogate {
             SurrogateConfig::ENN(enn_config) => tracker_m_from_enn_k(enn_config.k),
@@ -155,6 +160,8 @@ impl Optimizer {
             local_init_budget,
             local_init_kind,
             reinit_left: None,
+            run_store: None,
+            replay_base: None,
         })
     }
 
@@ -184,6 +191,7 @@ impl Optimizer {
             }
         }
         let unit = result?;
+        self.write_snapshot(false)?;
         Ok(crate::candidates::from_unit(
             &unit.view(),
             &self.bounds.view(),
@@ -223,6 +231,17 @@ impl Optimizer {
             Some(_) => {}
         }
         let x_unit = crate::candidates::to_unit(train_x, &self.bounds.view());
+        self.apply_tell(&x_unit.view(), train_y, train_yvar)?;
+        self.flush_rows()?;
+        self.write_snapshot(false)
+    }
+
+    fn apply_tell(
+        &mut self,
+        x_unit: &ArrayView2<f64>,
+        train_y: &ArrayView2<f64>,
+        train_yvar: Option<&ArrayView2<f64>>,
+    ) -> Result<(), ENNError> {
         let start = std::time::Instant::now();
         let mut rng = self.rng.clone();
 
@@ -232,13 +251,13 @@ impl Optimizer {
 
         let mut strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
-        let result = strategy.tell(self, &x_unit.view(), train_y, train_yvar, &mut telemetry, &mut rng);
+        let result = strategy.tell(self, x_unit, train_y, train_yvar, &mut telemetry, &mut rng);
         self.strategy = strategy;
         self.telemetry = telemetry;
         self.rng = rng;
 
         self.telemetry.dt_tell = start.elapsed().as_secs_f64();
-        if result.is_ok() && train_x.nrows() < 64 {
+        if result.is_ok() && x_unit.nrows() < 64 {
             if let Some(surrogate) = self.surrogate.as_ref() {
                 surrogate.schedule_background_flush()?;
             }
@@ -346,7 +365,13 @@ impl Optimizer {
                 got: vec![y.nrows(), y.ncols()],
             });
         }
-        let old_n = self.obs_count();
+        let replayed_from = self.replay_base.take();
+        let old_n = replayed_from.unwrap_or_else(|| self.obs_count());
+        if self.surrogate.is_none() && replayed_from.is_none() {
+            if let Some(store) = self.run_store.as_mut() {
+                store.append_observation(x, y)?;
+            }
+        }
         for i in 0..x.nrows() {
             let y_row: Array1<f64> = y.row(i).to_owned();
             self.incumbent_tracker.tell(old_n + i, &y_row);

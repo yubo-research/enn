@@ -47,6 +47,18 @@ impl AppendPlan {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SurrogateState {
+    pub(crate) params: Option<ENNParams>,
+    pub(crate) fitter_params: Option<ENNParams>,
+    pub(crate) output_fit: Option<OutputBlendFit>,
+    #[serde(with = "crate::exact")]
+    pub(crate) y_sum: ndarray::Array1<f64>,
+    #[serde(with = "crate::exact")]
+    pub(crate) y_sumsq: ndarray::Array1<f64>,
+    pub(crate) num_obs: usize,
+}
+
 pub(crate) struct ScaleFit {
     pub(crate) search: ScaleSearch,
     pub(crate) fitter: ENNFitter,

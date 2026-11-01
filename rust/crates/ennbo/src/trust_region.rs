@@ -9,10 +9,13 @@ pub enum TrustRegionError {
     InvalidState(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TRLengthConfig {
+    #[serde(with = "crate::exact")]
     pub length_init: f64,
+    #[serde(with = "crate::exact")]
     pub length_min: f64,
+    #[serde(with = "crate::exact")]
     pub length_max: f64,
 }
 
@@ -101,11 +104,13 @@ impl TRLengthConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TurboTrustRegion {
+    #[serde(with = "crate::exact")]
     length: f64,
     failure_counter: i32,
     success_counter: i32,
+    #[serde(with = "crate::exact")]
     best_value: f64,
     prev_num_obs: usize,
     success_tolerance: i32,
@@ -113,7 +118,9 @@ pub struct TurboTrustRegion {
     num_dim: usize,
     num_arms: Option<usize>,
     config: TRLengthConfig,
+    #[serde(with = "crate::exact")]
     hist_ymin: f64,
+    #[serde(with = "crate::exact")]
     hist_ymax: f64,
 }
 

@@ -4,9 +4,11 @@ use crate::error::{invalid, ENNError};
 use crate::params::ENNNormal;
 use crate::semantic_definition::checked_loadings;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SemanticOutputs {
+    #[serde(with = "crate::exact")]
     pub loadings: Array2<f64>,
+    #[serde(with = "crate::exact")]
     pub alpha: Option<f64>,
 }
 
@@ -26,11 +28,15 @@ impl SemanticOutputs {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OutputBlend {
+    #[serde(with = "crate::exact")]
     pub alpha: Array1<f64>,
+    #[serde(with = "crate::exact")]
     pub projector: Array2<f64>,
+    #[serde(with = "crate::exact")]
     pub center: Array1<f64>,
+    #[serde(with = "crate::exact")]
     pub scale: Array1<f64>,
 }
 

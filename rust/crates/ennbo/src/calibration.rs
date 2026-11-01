@@ -8,10 +8,13 @@ const BOUND_SE_MULT: f64 = 0.25;
 
 type ScaledSe = (Array2<f64>, Array2<f64>, Array2<f64>);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AffineCalibrator {
+    #[serde(with = "crate::exact")]
     pub a: Array1<f64>,
+    #[serde(with = "crate::exact")]
     pub b: Array1<f64>,
+    #[serde(with = "crate::exact")]
     pub c: Array1<f64>,
 }
 

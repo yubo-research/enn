@@ -458,7 +458,7 @@ fn column_sums_and_sumsq(a: ArrayView2<f64>) -> (Array1<f64>, Array1<f64>) {
     (sum, sumsq)
 }
 
-fn accumulate_columns(sum: &mut Array1<f64>, sumsq: &mut Array1<f64>, extra: ArrayView2<f64>) {
+pub(crate) fn accumulate_columns(sum: &mut Array1<f64>, sumsq: &mut Array1<f64>, extra: ArrayView2<f64>) {
     let ncol = extra.ncols();
     for row in extra.axis_iter(ndarray::Axis(0)) {
         for j in 0..ncol {

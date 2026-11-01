@@ -63,7 +63,7 @@ impl CandidateConfig {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ConfigOverrides {
     pub acquisition: Option<AcquisitionConfig>,
     pub candidate_rv: Option<CandidateRV>,
@@ -71,8 +71,11 @@ pub struct ConfigOverrides {
     pub min_candidates: Option<usize>,
     pub max_candidates: Option<usize>,
     pub num_candidates_per_arm: Option<usize>,
+    #[serde(with = "crate::exact")]
     pub length_init: Option<f64>,
+    #[serde(with = "crate::exact")]
     pub length_min: Option<f64>,
+    #[serde(with = "crate::exact")]
     pub length_max: Option<f64>,
     pub noise_aware: Option<bool>,
     pub trust_region_kind: Option<crate::trust_region_config::TrustRegionKind>,
@@ -177,9 +180,12 @@ impl ConfigOverrides {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum AcquisitionConfig {
-    UCB { beta: f64 },
+    UCB {
+        #[serde(with = "crate::exact")]
+        beta: f64,
+    },
     Thompson,
     Random,
     Pareto,
@@ -195,7 +201,7 @@ impl Default for AcquisitionConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum InitStrategy {
     #[default]
     LHD,

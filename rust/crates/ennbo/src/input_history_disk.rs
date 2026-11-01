@@ -59,6 +59,36 @@ impl DiskInputs {
         Ok(store)
     }
 
+    pub(crate) fn reopen(
+        directory: &Path,
+        filename: &str,
+    ) -> Result<Option<(Self, usize)>, ENNError> {
+        let path = directory.join(filename);
+        if !path.exists() {
+            return Ok(None);
+        }
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .map_err(invalid)?;
+        let mut header = [0; HEADER_BYTES as usize];
+        file.read_exact(&mut header).map_err(invalid)?;
+        let ncols = u64::from_le_bytes(header[8..16].try_into().map_err(invalid)?) as usize;
+        let nrows = u64::from_le_bytes(header[16..24].try_into().map_err(invalid)?) as usize;
+        if &header[..8] != MAGIC {
+            return Err(invalid("not an observation log"));
+        }
+        file.set_len(HEADER_BYTES + (ncols * nrows * 8) as u64)
+            .map_err(invalid)?;
+        let log = Self {
+            file: Mutex::new(file),
+            ncols,
+            nrows,
+        };
+        Ok(Some((log, nrows)))
+    }
+
     pub(crate) fn append(&mut self, rows: &ArrayView2<f64>) -> Result<(), ENNError> {
         if rows.ncols() != self.ncols {
             return Err(invalid("input width changed"));

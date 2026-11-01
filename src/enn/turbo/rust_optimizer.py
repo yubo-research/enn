@@ -27,6 +27,10 @@ class Optimizer:
     def __init__(self, inner: Any) -> None:
         self._inner = inner
 
+    @classmethod
+    def open(cls, work_dir: str | os.PathLike[str]) -> Optimizer:
+        return cls(_rust.open_optimizer(os.fspath(work_dir)))
+
     @property
     def bounds(self) -> np.ndarray:
         return np.asarray(self._inner.bounds(), dtype=float)
@@ -115,24 +119,22 @@ def create_optimizer(
     overrides = _config_to_rust_overrides(config)
 
     if _is_lhd_only_config(config):
-        inner = _rust.create_optimizer_lhd(
-            bounds_arr, num_init, seed, config_overrides=overrides
-        )
+        kind, k = "lhd", None
     elif isinstance(config.surrogate, ENNSurrogateConfig):
+        kind = "enn"
         k = None if config.surrogate.k is None else int(config.surrogate.k)
-        inner = _rust.create_optimizer_enn(
-            bounds_arr,
-            work_dir,
-            k,
-            num_init,
-            seed,
-            config_overrides=overrides,
-        )
     elif isinstance(config.surrogate, NoSurrogateConfig):
-        inner = _rust.create_optimizer_zero(
-            bounds_arr, num_init, seed, config_overrides=overrides
-        )
+        kind, k = "zero", None
     else:
         raise ValueError(f"Unsupported surrogate config: {type(config.surrogate)}")
 
+    inner = _rust.create_optimizer_run(
+        kind,
+        bounds_arr,
+        work_dir,
+        k,
+        num_init,
+        seed,
+        config_overrides=overrides,
+    )
     return Optimizer(inner)

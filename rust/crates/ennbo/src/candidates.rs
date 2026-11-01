@@ -15,7 +15,7 @@ fn sobol_params() -> &'static JoeKuoD6 {
     PARAMS.get_or_init(JoeKuoD6::extended)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum CandidateRV {
     Sobol,
     #[default]
@@ -238,6 +238,7 @@ pub struct SobolEngine {
     dimension: usize,
     sequence: Sobol<f64>,
     shift: Option<Vec<f64>>,
+    position: u64,
 }
 
 impl SobolEngine {
@@ -254,6 +255,7 @@ impl SobolEngine {
             dimension,
             sequence,
             shift: None,
+            position: 0,
         })
     }
 
@@ -262,6 +264,7 @@ impl SobolEngine {
             .sequence
             .next()
             .ok_or_else(|| ENNError::InvalidParameter("Sobol sequence exhausted".to_string()))?;
+        self.position += 1;
         if sample.len() != self.dimension {
             return Err(ENNError::InvalidParameter(format!(
                 "Sobol sample dimension mismatch: expected {}, got {}",
@@ -282,6 +285,28 @@ impl SobolEngine {
 
     pub fn dimension(&self) -> usize {
         self.dimension
+    }
+
+    pub(crate) fn position(&self) -> u64 {
+        self.position
+    }
+
+    pub(crate) fn shift(&self) -> Option<&[f64]> {
+        self.shift.as_deref()
+    }
+
+    pub(crate) fn restored(
+        dimension: usize,
+        position: u64,
+        shift: Option<Vec<f64>>,
+    ) -> Result<Self, ENNError> {
+        let mut engine = Self::new(dimension)?;
+        engine.shift = shift;
+        for _ in 0..position {
+            engine.sequence.next();
+        }
+        engine.position = position;
+        Ok(engine)
     }
 
     pub fn scramble<R: RngCore + ?Sized>(&mut self, rng: &mut R) {

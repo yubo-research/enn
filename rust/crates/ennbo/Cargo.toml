@@ -20,6 +20,7 @@ faiss = { version = "0.13.0" }
 ndarray = { workspace = true }
 ndarray-linalg = { workspace = true }
 rand = "0.8"
+rand_chacha = "0.3"
 rayon = "1.10"
 sobol = "1.0.2"
 thiserror = { workspace = true }
@@ -34,5 +35,5 @@ faiss = { version = "0.13.0", features = ["static"] }
 [dev-dependencies]
 approx = "0.5"
 numpy = "0.22"
-rand_chacha = "0.3"
+serde_json = "1.0"
 tempfile = "3"

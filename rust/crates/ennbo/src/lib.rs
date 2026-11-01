@@ -15,6 +15,7 @@ pub mod backend;
 pub mod benchmarks;
 #[allow(missing_docs)]
 pub mod calibration;
+mod exact;
 pub mod calibration_shapes;
 #[allow(missing_docs)]
 pub mod candidates;
@@ -101,6 +102,8 @@ pub(crate) mod store_identity;
 pub mod strategy;
 #[allow(missing_docs)]
 pub mod surrogate;
+mod surrogate_config;
+mod surrogate_traits;
 #[allow(missing_docs)]
 pub mod surrogate_affine;
 pub(crate) mod surrogate_state;
@@ -187,6 +190,7 @@ pub use optimizer::Telemetry;
 pub use optimizer_factory::create_optimizer_enn;
 pub use optimizer_factory::create_optimizer_enn_with_overrides;
 pub use optimizer_factory::create_optimizer_lhd;
+pub use optimizer::{create_run, RunKind, RunRecipe};
 pub use optimizer_factory::create_optimizer_zero;
 pub use output_blend::OutputBlend;
 pub use output_blend::SemanticOutputs;
