@@ -10,7 +10,7 @@ class _Encoder:
         self.vectors = vectors
 
     def encode(self, texts):
-        return np.array([self.vectors[text] for text in texts])
+        return np.array([self.vectors[text.partition("::")[0]] for text in texts])
 
 
 @dataclass(frozen=True)

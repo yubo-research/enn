@@ -58,7 +58,7 @@ def test_metadata_fallback_and_disk_cache(tmp_path, monkeypatch):
     kwargs = {"variance_cutoff": 0.9, "cache_dir": tmp_path}
     first = SemanticOutputProjection.from_metadata(["a", "b"], [None, ""], **kwargs)
     second = SemanticOutputProjection.from_metadata(["a", "b"], **kwargs)
-    assert calls == [["a", "b"]]
+    assert calls == [["a::", "b::"]]
     np.testing.assert_array_equal(first.loadings, second.loadings)
     SemanticOutputProjection.from_metadata(["a", "b"], ["new", None], **kwargs)
     assert len(calls) == 2

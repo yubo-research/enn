@@ -15,6 +15,11 @@ class Encoder:
         return np.array([[len(t), t.count("a"), t.count("b")] for t in texts])
 
 
+class ConstantEncoder:
+    def encode(self, texts):
+        return np.ones((len(texts), 2))
+
+
 def make_transform(relationships=False, **kwargs):
     if relationships:
         return SemanticInputTransform.from_input_output(
@@ -75,9 +80,11 @@ def test_descriptions_files_fallback_and_degeneracy(tmp_path):
     path = tmp_path / "description.txt"
     path.write_text("aaa", encoding="utf-8")
     actual = make_transform(descriptions=[path.as_uri(), None, "  "])
-    expected = make_transform(descriptions=["aaa", "b", "ab"])
+    expected = make_transform(descriptions=["aaa", "", "  "])
     np.testing.assert_array_equal(actual.projection, expected.projection)
-    degenerate = make_transform(descriptions=["same"] * 3)
+    degenerate = SemanticInputTransform(
+        ["a", "b", "ab"], [[0, 2]] * 3, encoder=ConstantEncoder()
+    )
     assert degenerate.projection.shape == (3, 0)
     assert degenerate.transform([[0, 1, 2]]).shape == (1, 3)
     limited = make_transform(variance_cutoff=0.9, relative_weight=0)
@@ -343,8 +350,12 @@ def test_default_encoder_uses_native_backend_without_python_runtime(monkeypatch)
     transform = SemanticInputTransform(
         ["a", "b", "c"], [[0, 1]] * 3, descriptions=["shared", "other", "shared"]
     )
-    assert calls == [(["shared", "other"], "sentence-transformers/all-MiniLM-L6-v2")]
-    np.testing.assert_allclose(transform.projection[0], transform.projection[2])
+    assert calls == [
+        (
+            ["a::shared", "b::other", "c::shared"],
+            "sentence-transformers/all-MiniLM-L6-v2",
+        )
+    ]
     transform.transform([[0.1, 0.2, 0.3]])
     assert len(calls) == 1
 

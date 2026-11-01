@@ -11,12 +11,22 @@ pub fn prepare(
             "one description is required per variable".into(),
         ));
     }
+    let texts = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let description = descriptions.and_then(|d| d[i].as_deref()).unwrap_or("");
+            Ok(format!("{name}::{}", description_text(description)?))
+        })
+        .collect::<Result<Vec<_>, ENNError>>()?;
+    Ok(deduplicate(texts))
+}
+
+pub fn deduplicate(texts: Vec<String>) -> (Vec<String>, Vec<usize>) {
     let mut unique = Vec::new();
     let mut indices = HashMap::new();
-    let mut rows = Vec::with_capacity(names.len());
-    for (i, name) in names.iter().enumerate() {
-        let description = descriptions.and_then(|d| d[i].as_deref()).unwrap_or("");
-        let text = description_text(name, description)?;
+    let mut rows = Vec::with_capacity(texts.len());
+    for text in texts {
         let next = unique.len();
         let index = *indices.entry(text.clone()).or_insert_with(|| {
             unique.push(text);
@@ -24,26 +34,19 @@ pub fn prepare(
         });
         rows.push(index);
     }
-    Ok((unique, rows))
+    (unique, rows)
 }
 
-fn description_text(name: &str, description: &str) -> Result<String, ENNError> {
-    let text = if description.starts_with("file://") {
-        let uri =
-            url::Url::parse(description).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-        let path = uri
-            .to_file_path()
-            .map_err(|_| ENNError::InvalidParameter("description files must be local".into()))?;
-        std::fs::read_to_string(path).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
-    } else {
-        description.to_owned()
-    };
-    Ok(if text.trim().is_empty() {
-        name
-    } else {
-        text.trim()
+fn description_text(description: &str) -> Result<String, ENNError> {
+    if !description.starts_with("file://") {
+        return Ok(description.to_owned());
     }
-    .to_owned())
+    let uri =
+        url::Url::parse(description).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+    let path = uri
+        .to_file_path()
+        .map_err(|_| ENNError::InvalidParameter("description files must be local".into()))?;
+    std::fs::read_to_string(path).map_err(|e| ENNError::InvalidParameter(e.to_string()))
 }
 
 pub fn project(
@@ -69,8 +72,12 @@ mod tests {
         let names = vec!["a".into(), "b".into(), "c".into()];
         let descriptions = vec![Some(" shared ".into()), None, Some("shared".into())];
         let (texts, rows) = prepare(&names, Some(&descriptions)).unwrap();
-        assert_eq!(texts, ["shared", "b"]);
+        assert_eq!(texts, ["a:: shared ", "b::", "c::shared"]);
+        assert_eq!(rows, [0, 1, 2]);
+        let (texts, rows) = deduplicate(vec!["x".into(), "y".into(), "x".into()]);
+        assert_eq!(texts, ["x", "y"]);
         assert_eq!(rows, [0, 1, 0]);
+        let rows = vec![0, 1, 0];
         let p = project(&array![[1., 0.], [0., 1.]].view(), &rows, 1.0).unwrap();
         assert!((&p.row(0) - &p.row(2)).iter().all(|v| v.abs() < 1e-12));
         assert_eq!(p.dim(), (3, 1));
@@ -85,15 +92,10 @@ mod tests {
         std::fs::write(&path, "  semantic description \n").unwrap();
         let uri = url::Url::from_file_path(&path).unwrap();
         assert_eq!(
-            description_text("fallback", uri.as_str()).unwrap(),
-            "semantic description"
+            description_text(uri.as_str()).unwrap(),
+            "  semantic description \n"
         );
-        std::fs::write(&path, "  ").unwrap();
-        assert_eq!(
-            description_text("fallback", uri.as_str()).unwrap(),
-            "fallback"
-        );
-        assert!(description_text("a", "file://remote/tmp/text").is_err());
-        assert!(description_text("a", "file:///nonexistent-enn-description").is_err());
+        assert!(description_text("file://remote/tmp/text").is_err());
+        assert!(description_text("file:///nonexistent-enn-description").is_err());
     }
 }

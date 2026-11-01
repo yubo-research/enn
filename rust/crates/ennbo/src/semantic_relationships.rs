@@ -42,7 +42,7 @@ pub fn texts(
         .map(|row| inputs[*row].clone())
         .chain(output_rows.iter().map(|row| outputs[*row].clone()))
         .collect();
-    crate::semantic_text::prepare(&combined, None)
+    Ok(crate::semantic_text::deduplicate(combined))
 }
 
 #[cfg(test)]
@@ -55,7 +55,7 @@ mod tests {
         let names = ["a".to_owned(), "b".to_owned()];
         let outputs = ["a".to_owned(), "c".to_owned()];
         let (texts, rows) = texts(&names, &outputs, None, None).unwrap();
-        assert_eq!(texts, vec!["a", "b", "c"]);
+        assert_eq!(texts, vec!["a::", "b::", "c::"]);
         assert_eq!(rows, vec![0, 1, 0, 2]);
         assert!(super::texts(&names, &[], None, None).is_err());
     }

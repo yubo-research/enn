@@ -13,7 +13,10 @@ class RelationshipEncoder:
     def encode(self, texts):
         self.calls.append(list(texts))
         vectors = {"heat": [2, 0, 0], "cost": [0, 3, 0], "noise": [0, 0, 4]}
-        return np.array([vectors[t] for t in texts], dtype=float)
+        return np.array(
+            [vectors[d or n] for n, _, d in (t.partition("::") for t in texts)],
+            dtype=float,
+        )
 
 
 def make_relationships(**kwargs):
@@ -55,14 +58,14 @@ def test_joint_deduplication_files_fallback_and_one_native_encode(
         _rust, "semantic_encode", lambda texts, model: encoder.encode(texts)
     )
     path = tmp_path / "temperature description.txt"
-    path.write_text(" heat \n")
+    path.write_text("heat")
     transform = SemanticInputTransform.from_input_output(
         ["heat", "cost", "noise"],
         [[0, 1]] * 3,
         ["temperature", "cost"],
-        output_descriptions=[path.as_uri(), "  "],
+        output_descriptions=[path.as_uri(), ""],
     )
-    assert encoder.calls == [["heat", "cost", "noise"]]
+    assert encoder.calls == [["heat::", "cost::", "noise::", "temperature::heat"]]
     transform.transform([[0, 0, 1]])
     assert len(encoder.calls) == 1
     np.testing.assert_array_equal(transform.projection, make_relationships().projection)
