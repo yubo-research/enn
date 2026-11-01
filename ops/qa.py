@@ -18,12 +18,12 @@ from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config import (
     AcqType,
     CandidateGenConfig,
+    CandidateRV,
     ENNFitConfig,
     ENNIndexDriver,
     ENNSurrogateConfig,
     TurboTRConfig,
 )
-from enn.turbo.optimizer_config import CandidateRV
 
 NUM_DIM = 99
 NUM_ROUNDS = 101

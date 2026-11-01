@@ -16,16 +16,16 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "create_optimizer_zero": ("._rust", "create_optimizer_zero"),
     "create_optimizer_lhd": ("._rust", "create_optimizer_lhd"),
     "Telemetry": (".turbo.types.telemetry", "Telemetry"),
-    "OptimizerConfig": (".turbo.optimizer_config", "OptimizerConfig"),
-    "turbo_zero_config": (".turbo.optimizer_config", "turbo_zero_config"),
-    "turbo_enn_config": (".turbo.optimizer_config", "turbo_enn_config"),
-    "lhd_only_config": (".turbo.optimizer_config", "lhd_only_config"),
+    "OptimizerConfig": (".turbo.config", "OptimizerConfig"),
+    "turbo_zero_config": (".turbo.config", "turbo_zero_config"),
+    "turbo_enn_config": (".turbo.config", "turbo_enn_config"),
+    "lhd_only_config": (".turbo.config", "lhd_only_config"),
     "TurboTRConfig": (".turbo.config.trust_region", "TurboTRConfig"),
     "MorboTRConfig": (".turbo.config.trust_region", "MorboTRConfig"),
     "NoTRConfig": (".turbo.config.trust_region", "NoTRConfig"),
-    "CandidateRV": (".turbo.optimizer_config", "CandidateRV"),
-    "InitStrategy": (".turbo.optimizer_config", "InitStrategy"),
-    "AcqType": (".turbo.optimizer_config", "AcqType"),
+    "CandidateRV": (".turbo.config", "CandidateRV"),
+    "InitStrategy": (".turbo.config", "InitStrategy"),
+    "AcqType": (".turbo.config", "AcqType"),
     "CatEncoder": (".enn.cat_codes", "CatEncoder"),
     "CatEncoding": (".enn.cat_codes", "CatEncoding"),
     "DimKind": (".enn.cat_codes", "DimKind"),
@@ -42,6 +42,4 @@ def __getattr__(name: str):
     )
 
 
-__all__: list[str] = [
-    *_LAZY_ATTRS.keys(),
-]
+__all__: list[str] = list(_LAZY_ATTRS)

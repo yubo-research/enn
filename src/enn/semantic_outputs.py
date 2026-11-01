@@ -1,5 +1,4 @@
 import json
-import zipfile
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -67,10 +66,7 @@ class SemanticOutputProjection:
             cache_dir, names, texts, rows, model, variance_cutoff, encoder
         )
         if path is not None and path.exists():
-            try:
-                return cls.load(path)
-            except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile):
-                pass
+            return cls.load(path)
         encoded = (
             semantic_encode(texts, model) if encoder is None else encoder.encode(texts)
         )

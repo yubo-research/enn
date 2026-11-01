@@ -28,7 +28,7 @@ class MBPANNMetric:
         seed: int | None = None,
         reservoir_capacity: int | None = None,
     ) -> None:
-        self._inner = model.rust_backend if hasattr(model, "rust_backend") else model
+        self._inner = model.rust_backend
         groups = None if tied_dims is None else [list(map(int, g)) for g in tied_dims]
         _rust.metric_configure(
             self._inner,

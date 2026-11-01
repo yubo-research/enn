@@ -13,6 +13,9 @@ from .base import (
 from .candidate_rv import CandidateRV
 from .enn_index_driver import ENNIndexDriver
 from .enn_x_scaling import ENNMetricLearning, ENNScaleX
+from .factory import lhd_only_config, turbo_enn_config, turbo_zero_config
+from .init_strategies.hybrid_init import HybridInit
+from .init_strategies.lhd_only_init import LHDOnlyInit
 from .optimizer_config import OptimizerConfig
 from .raasp_driver import RAASPDriver
 from .rescalarize import Rescalarize
@@ -31,27 +34,6 @@ from .trust_region import (
     TRLengthConfig,
     TurboTRConfig,
 )
-
-
-def __getattr__(name: str) -> object:
-    if name in (
-        "lhd_only_config",
-        "turbo_enn_config",
-        "turbo_zero_config",
-    ):
-        from . import factory
-
-        return getattr(factory, name)
-    if name == "HybridInit":
-        from .init_strategies.hybrid_init import HybridInit
-
-        return HybridInit
-    if name == "LHDOnlyInit":
-        from .init_strategies.lhd_only_init import LHDOnlyInit
-
-        return LHDOnlyInit
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
 
 __all__ = [
     "AcqType",

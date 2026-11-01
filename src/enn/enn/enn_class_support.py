@@ -4,9 +4,7 @@ import numpy as np
 
 
 def _to_rust_seeds(function_seeds: np.ndarray | list[int]) -> list[int]:
-    if hasattr(function_seeds, "__iter__"):
-        return np.asarray(function_seeds, dtype=np.int64).tolist()
-    return list(function_seeds)
+    return np.asarray(function_seeds, dtype=np.int64).tolist()
 
 
 def enn_index_neighbor_distances_and_indices(

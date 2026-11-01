@@ -28,10 +28,7 @@ def _groups_if_same_columns(view, source) -> tuple[tuple[int, ...], ...]:
 
 
 def _groups_on(values) -> tuple[tuple[int, ...], ...]:
-    carried = getattr(values, "tied_dims", None)
-    if isinstance(carried, tuple):
-        return carried
-    return ()
+    return getattr(values, "tied_dims", ())
 
 
 def resolve_tied_groups(values, tied_dims, *, semantic_only=False):
