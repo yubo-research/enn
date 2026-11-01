@@ -37,6 +37,7 @@ pub struct BpannBackend {
     index_dirty: Mutex<bool>,
     num_obs_counter: obs::NumObsCounter,
     pub(crate) small_n_x_cache: Mutex<Option<(usize, Arc<[f64]>)>>,
+    _store_lock: fs::File,
 }
 
 impl BpannBackend {
@@ -50,6 +51,7 @@ impl BpannBackend {
     ) -> Result<Self, BpannError> {
         obs::bpann_validate_dim_limits(train_x.ncols())?;
         fs::create_dir_all(&work_dir).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+        let store_lock = crate::store_file::bpann_lock_store(&work_dir)?;
         obs::bpann_validate_index_backend(&work_dir, INDEX_BACKEND)?;
         let num_obs_counter = obs::NumObsCounter::open(&work_dir)?;
 
@@ -115,6 +117,7 @@ impl BpannBackend {
             index_dirty: Mutex::new(indexed_rows < n),
             num_obs_counter,
             small_n_x_cache: Mutex::new(None),
+            _store_lock: store_lock,
         };
         backend.insert_unindexed_rows()?;
         let indexed_rows = backend.index.indexed_rows;

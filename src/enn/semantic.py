@@ -94,6 +94,13 @@ class SemanticInputTransform:
 
         return semantic_weighted(self.projection, self.relative_weight)
 
+    def fingerprint(self, *, semantic_only=False):
+        from enn._rust import semantic_input_fingerprint
+
+        return semantic_input_fingerprint(
+            list(self.names), self.bounds, self.weighted_projection, semantic_only
+        )
+
     def transform(self, x, *, names=None, semantic_only=False):
         from enn._rust import semantic_transform
 

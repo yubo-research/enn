@@ -1,10 +1,9 @@
-use std::fs;
-
 use ndarray::Array1;
 
 use crate::backend::BpannBackend;
 use crate::error::BpannError;
 use crate::index::IncrementalIndex;
+use crate::store_file::{bpann_read_json, bpann_write_json};
 
 pub const METRIC_MARKER_FILE: &str = "metric_x_scale.json";
 
@@ -41,10 +40,10 @@ impl BpannBackend {
     }
 
     fn write_metric_marker(&self) -> Result<(), BpannError> {
-        let body = serde_json::to_string(&self.x_scale.to_vec())
-            .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        fs::write(self.work_dir.join(METRIC_MARKER_FILE), body)
-            .map_err(|e| BpannError::InvalidParameter(e.to_string()))
+        bpann_write_json(
+            &self.work_dir.join(METRIC_MARKER_FILE),
+            &self.x_scale.to_vec(),
+        )
     }
 
     pub fn rescale_metric(&mut self, x_scale: &Array1<f64>) -> Result<(), BpannError> {
@@ -65,14 +64,21 @@ impl BpannBackend {
         Ok(())
     }
 
-    pub fn discard_metric_index_on_reopen(&mut self) -> Result<bool, BpannError> {
+    pub fn restore_metric_on_reopen(&mut self) -> Result<bool, BpannError> {
         let marker = self.work_dir.join(METRIC_MARKER_FILE);
-        if !marker.exists() {
+        let Some(x_scale) = bpann_read_json::<Vec<f64>>(&marker)? else {
             return Ok(false);
-        }
+        };
+        let x_scale = Array1::from(x_scale);
+        self.validate_metric_scale(&x_scale)?;
+        self.scale_x = true;
+        self.x_scale = x_scale;
         self.mark_index_stale();
-        fs::remove_file(&marker).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
         Ok(true)
+    }
+
+    pub fn metric_scale(&self) -> Option<&Array1<f64>> {
+        self.scale_x.then_some(&self.x_scale)
     }
 }
 
@@ -307,15 +313,37 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_scale_and_discards_on_reopen() {
+    fn rejects_bad_scale_and_restores_on_reopen() {
         let x = random_rows(50, 2, 3);
         let dir = TempDir::new().unwrap();
         let mut b = backend_with_rows(&dir, &x);
         assert!(b.rescale_metric(&Array1::from(vec![1.0])).is_err());
         assert!(b.rescale_metric(&Array1::from(vec![1.0, 0.0])).is_err());
-        b.rescale_metric(&Array1::from(vec![1.0, 2.0])).unwrap();
-        assert!(b.discard_metric_index_on_reopen().unwrap());
-        assert_eq!(b.indexed_rows(), 0);
-        assert!(!b.discard_metric_index_on_reopen().unwrap());
+        let scale = Array1::from(vec![1.0, 2.0]);
+        assert_eq!(b.metric_scale(), None);
+        b.rescale_metric(&scale).unwrap();
+        drop(b);
+        let mut reopened = BpannBackend::reopen(dir.path().to_path_buf()).unwrap();
+        assert!(reopened.restore_metric_on_reopen().unwrap());
+        assert_eq!(reopened.indexed_rows(), 0);
+        assert_eq!(reopened.metric_scale(), Some(&scale));
+    }
+
+    #[test]
+    fn reopen_without_a_learned_metric_restores_nothing() {
+        let dir = TempDir::new().unwrap();
+        drop(backend_with_rows(&dir, &random_rows(50, 2, 3)));
+        let mut reopened = BpannBackend::reopen(dir.path().to_path_buf()).unwrap();
+        assert!(!reopened.restore_metric_on_reopen().unwrap());
+        assert_eq!(reopened.metric_scale(), None);
+    }
+
+    #[test]
+    fn invalid_persisted_metric_scale_is_rejected_on_reopen() {
+        let dir = TempDir::new().unwrap();
+        drop(backend_with_rows(&dir, &random_rows(50, 2, 3)));
+        bpann_write_json(&dir.path().join(METRIC_MARKER_FILE), &vec![1.0]).unwrap();
+        let mut reopened = BpannBackend::reopen(dir.path().to_path_buf()).unwrap();
+        assert!(reopened.restore_metric_on_reopen().is_err());
     }
 }

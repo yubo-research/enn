@@ -8,6 +8,7 @@ pub mod metric;
 pub mod mmap_store;
 pub mod observation;
 pub mod small_n_search;
+pub mod store_file;
 pub mod tuning;
 
 pub use backend::{
@@ -26,6 +27,7 @@ pub use small_n_search::{
     load_or_build_small_n_cache, score_queries_flat, topk_flat_sq_l2, OrderedF32, ScoreQueriesFlat,
     SMALL_N_INCORE_SEARCH_LIMIT,
 };
+pub use store_file::{bpann_lock_store, bpann_read_json, bpann_write_json};
 pub use tuning::{
     clear_tuning_provider, current_tuning, set_tuning_provider, BpannTuning,
     DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT, DEFAULT_SKIP_REFINEMENT_ROW_LIMIT,

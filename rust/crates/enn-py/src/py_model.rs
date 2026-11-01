@@ -74,7 +74,7 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None))]
+    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None, input_fingerprint=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         train_x: PyReadonlyArrayDyn<f64>,
@@ -84,9 +84,11 @@ impl PyEpistemicNearestNeighbors {
         weighting: bool,
         y_bounds: Option<PyReadonlyArray2<f64>>,
         tied_dims: Option<Vec<Vec<usize>>>,
+        input_fingerprint: Option<String>,
     ) -> PyResult<Self> {
         let layout = ennbo::EnnLayout::new(work_dir, weighting)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .with_input_fingerprint(input_fingerprint);
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_x = owned_matrix("train_x", train_x)?;
         let train_y = owned_matrix("train_y", train_y)?;

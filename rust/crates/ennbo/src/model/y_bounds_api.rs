@@ -6,6 +6,7 @@ use crate::backend::{EnnBackend, TrainRowsAtResult};
 use crate::error::ENNError;
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
+use crate::store_identity::StoreIdentity;
 use crate::y_bounds::{is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar};
 
 impl EpistemicNearestNeighbors {
@@ -37,6 +38,8 @@ impl EpistemicNearestNeighbors {
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
         let work_dir = layout.work_dir();
+        let identity = StoreIdentity::of(&layout, num_dim, num_metrics);
+        identity.verify(work_dir)?;
         let meta_path = work_dir.join("metadata.json");
         let meta_text = std::fs::read_to_string(meta_path).ok();
         let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics, meta_text.as_deref())?;
@@ -46,6 +49,7 @@ impl EpistemicNearestNeighbors {
             num_metrics,
             pending_flush_threshold,
         )?;
+        identity.record(work_dir)?;
         let auto = layout.metric_learning() == MetricLearning::Auto;
         let mut model = Self {
             original_y: None,

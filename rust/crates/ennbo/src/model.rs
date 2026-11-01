@@ -5,6 +5,7 @@ use crate::backend::EnnBackend;
 use crate::error::ENNError;
 use crate::layout::EnnLayout;
 use crate::metric_auto::AutoMetric;
+use crate::store_identity::StoreIdentity;
 use crate::y_bounds::resolve_y_bounds;
 
 const STATS_CHUNK_ROWS: usize = 1 << 16;
@@ -94,8 +95,10 @@ impl EpistemicNearestNeighbors {
             .then(|| (train_x.clone(), train_y.clone()));
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
         let num_dim = train_x.ncols();
-        let mut num_metrics = train_y.ncols();
+        let num_metrics = train_y.ncols();
         let work_dir = layout.work_dir();
+        let identity = StoreIdentity::of(&layout, num_dim, num_metrics);
+        identity.verify(work_dir)?;
         let disk_reopen =
             train_x.nrows() == 0 && train_y.nrows() == 0 && work_dir.join("metadata.json").exists();
 
@@ -105,15 +108,6 @@ impl EpistemicNearestNeighbors {
             None
         };
 
-        if disk_reopen {
-            if let Some(text) = meta_text.as_deref() {
-                if let Some(persisted) =
-                    crate::backend::disk_observation::parse_json_usize_field(text, "num_metrics")
-                {
-                    num_metrics = persisted;
-                }
-            }
-        }
         let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics, meta_text.as_deref())?;
 
         let original_y = (!crate::y_bounds::is_identity_bounds(&y_bounds)).then(|| train_y.clone());
@@ -134,6 +128,7 @@ impl EpistemicNearestNeighbors {
             train_yvar,
             x_scale.clone(),
         )?;
+        identity.record(work_dir)?;
 
         let mut model = Self {
             original_y: None,
@@ -153,6 +148,10 @@ impl EpistemicNearestNeighbors {
             tied_groups: Vec::new(),
             semantic_outputs: None,
         };
+        if let Some(scale) = model.backend.metric_scale()? {
+            model.scale_x = true;
+            model.x_scale = scale;
+        }
         if disk_reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;
         }
@@ -161,6 +160,9 @@ impl EpistemicNearestNeighbors {
         model.set_tied_groups(tied_dims.clone())?;
         if let Some((x, y)) = auto_rows {
             model.enable_auto_metric(tied_dims, &x.view(), &y.view())?;
+            if disk_reopen {
+                model.restore_auto_metric()?;
+            }
         }
         Ok(model)
     }

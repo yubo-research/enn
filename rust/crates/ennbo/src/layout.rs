@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 pub struct EnnLayout {
     work_dir: PathBuf,
     weighting: bool,
+    input_fingerprint: Option<String>,
 }
 
 impl EnnLayout {
@@ -19,6 +20,7 @@ impl EnnLayout {
         Ok(Self {
             work_dir,
             weighting,
+            input_fingerprint: None,
         })
     }
 
@@ -27,8 +29,17 @@ impl EnnLayout {
         self
     }
 
+    pub fn with_input_fingerprint(mut self, input_fingerprint: Option<String>) -> Self {
+        self.input_fingerprint = input_fingerprint;
+        self
+    }
+
     pub fn weighting(&self) -> bool {
         self.weighting
+    }
+
+    pub fn input_fingerprint(&self) -> Option<&str> {
+        self.input_fingerprint.as_deref()
     }
 
     pub fn work_dir(&self) -> &Path {
@@ -63,6 +74,16 @@ mod tests {
         let layout = EnnLayout::new("rows", false).unwrap().with_weighting(true);
         assert!(layout.weighting());
         assert_eq!(layout.work_dir(), Path::new("rows"));
+    }
+
+    #[test]
+    fn input_fingerprint_defaults_to_none_and_survives_with_weighting() {
+        let layout = EnnLayout::new("rows", false).unwrap();
+        assert_eq!(layout.input_fingerprint(), None);
+        let layout = layout
+            .with_input_fingerprint(Some("abc".into()))
+            .with_weighting(true);
+        assert_eq!(layout.input_fingerprint(), Some("abc"));
     }
 
     #[test]

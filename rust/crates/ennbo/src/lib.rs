@@ -95,6 +95,8 @@ pub mod reservoir;
 pub mod semantic;
 #[allow(missing_docs)]
 pub mod stats;
+
+pub(crate) mod store_identity;
 #[allow(missing_docs)]
 pub mod strategy;
 #[allow(missing_docs)]

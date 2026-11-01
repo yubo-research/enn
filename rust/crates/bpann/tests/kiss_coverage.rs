@@ -261,6 +261,7 @@ fn incremental_batch_compact_and_precomputed_merge() {
         .search(&array![[5.0, 0.0, 0.0, 0.0]].view(), 3, false)
         .unwrap();
     assert_eq!(idx[[0, 0]], 5);
+    drop(b);
     let reopened = BpannBackend::reopen(dir.path().to_path_buf()).unwrap();
     assert_eq!(reopened.indexed_rows(), 20);
     let merged = ennbo_bpann::merge::merge_topk_precomputed_dist(
@@ -303,6 +304,7 @@ fn multi_fragment_persist_to_disk_reopen_matches_row_count() {
     let b2 = BpannBackend::reopen(path.clone()).unwrap();
     assert_eq!(b2.indexed_rows(), rows);
     let pages_first = fs::read(path.join("index/pages.bin")).unwrap();
+    drop(b2);
     let b3 = BpannBackend::reopen(path.clone()).unwrap();
     assert_eq!(b3.indexed_rows(), rows);
     let pages_second = fs::read(path.join("index/pages.bin")).unwrap();

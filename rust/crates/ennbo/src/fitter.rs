@@ -180,11 +180,9 @@ impl ENNFitter {
         if let Some(b) = bounds {
             if !is_identity_bounds(b) {
                 let y_z = warp_y(*y, b)?;
-                let yvar_z = match yvar {
-                    Some(yv) => Some(warp_yvar(*y, *yv, b)?),
-                    None => None,
-                };
-                let _ = yvar_z;
+                if let Some(yv) = yvar {
+                    warp_yvar(*y, *yv, b)?;
+                }
                 self.update_y(&y_z.view());
                 return Ok(());
             }
@@ -297,11 +295,6 @@ impl ENNFitter {
                 )));
             }
         }
-        if model.num_obs() >= 2 && self.y_count == 0 {
-            return Err(ENNError::InvalidParameter(
-                "tell must be called before ask to initialize incremental y statistics".to_string(),
-            ));
-        }
         let warm = params_warm_start.or(self.params.as_ref()).cloned();
         let warm_blend = params_warm_start.and_then(|w| w.output_blend.as_ref());
         let blend = self.fit_output_blend(model, warm_blend, rng)?;
@@ -345,7 +338,6 @@ impl ENNFitter {
         };
 
         let (train_x, train_y, _) = model.rows().train_rows_at(&indices)?;
-        let y_std = self.y_std();
         let logliks = crate::fit::subsample_loglik(
             model,
             &train_x.view(),
@@ -353,7 +345,7 @@ impl ENNFitter {
             &paramss,
             num_fit_samples,
             rng,
-            Some(&y_std.view()),
+            Some(&model.y_scale().view()),
         )?;
         let best_idx = logliks
             .iter()

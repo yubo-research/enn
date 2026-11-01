@@ -120,6 +120,7 @@ def test_disk_reopen_loads_y_bounds(tmp_path):
         work_dir=str(work),
     )
     model.persist_index_to_disk()
+    del model
 
     reopened = EpistemicNearestNeighbors(
         np.zeros((0, 1)),

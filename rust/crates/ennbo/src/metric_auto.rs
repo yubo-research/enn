@@ -3,6 +3,10 @@ use crate::metric_loo::loo_loglik;
 use crate::metric_sobol::MIN_DEPENDENCE_ROWS;
 use crate::metric_weights::{dependence_weights, too_few_rows, validate_tied_dims};
 use crate::reservoir::RowReservoir;
+use serde::{Deserialize, Serialize};
+
+mod state;
+pub(crate) use state::{AutoMetricState, METRIC_STATE_FILE};
 
 pub const DEFAULT_REBUILD_DRIFT: f64 = std::f64::consts::LN_2;
 pub const DRIFT_WEIGHT_FLOOR: f64 = 9.210_340_371_976_184;
@@ -83,7 +87,7 @@ pub fn auto_weights(
     Ok((w, gain))
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MetricCounters {
     pub num_refits: usize,
     pub num_rescales: usize,
@@ -200,6 +204,10 @@ impl AutoMetric {
 
     pub fn num_seen(&self) -> usize {
         self.rows.num_seen()
+    }
+
+    pub(crate) fn num_refits(&self) -> usize {
+        self.counters.num_refits
     }
 
     pub fn snapshot(&self) -> MetricSnapshot {

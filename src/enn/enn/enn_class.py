@@ -126,6 +126,11 @@ class EpistemicNearestNeighbors(_EnnRustView):
             "train_yvar": train_yvar,
             "weighting": weighting,
             "tied_dims": groups,
+            "input_fingerprint": (
+                None
+                if input_transform is None
+                else input_transform.fingerprint(semantic_only=semantic_only)
+            ),
         }
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds

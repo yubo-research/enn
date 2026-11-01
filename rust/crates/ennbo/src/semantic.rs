@@ -91,6 +91,42 @@ pub fn feature_count(
     }
 }
 
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn fnv1a(hash: u64, bytes: &[u8]) -> u64 {
+    bytes
+        .iter()
+        .fold(hash, |h, b| (h ^ u64::from(*b)).wrapping_mul(FNV_PRIME))
+}
+
+fn fnv1a_matrix(hash: u64, matrix: &ArrayView2<f64>) -> u64 {
+    let shape = fnv1a(
+        fnv1a(hash, &matrix.nrows().to_le_bytes()),
+        &matrix.ncols().to_le_bytes(),
+    );
+    matrix
+        .iter()
+        .fold(shape, |h, v| fnv1a(h, &v.to_bits().to_le_bytes()))
+}
+
+pub fn input_fingerprint(
+    names: &[String],
+    bounds: &ArrayView2<f64>,
+    weighted_projection: &ArrayView2<f64>,
+    semantic_only: bool,
+) -> String {
+    let mut hash = fnv1a(FNV_OFFSET, &[u8::from(semantic_only)]);
+    for name in names {
+        hash = fnv1a(hash, &name.len().to_le_bytes());
+        hash = fnv1a(hash, name.as_bytes());
+    }
+    format!(
+        "{:016x}",
+        fnv1a_matrix(fnv1a_matrix(hash, bounds), weighted_projection)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +141,26 @@ mod tests {
         assert_eq!(z[[0, 2]], -1.0);
         assert!(validate(Some(&p), 2, false).is_ok());
         assert!(augment(&array![[0.0]].view(), Some(&p)).is_err());
+    }
+
+    #[test]
+    fn input_fingerprint_is_stable_and_sees_every_part_of_the_transform() {
+        let names = vec!["a".to_string(), "b".to_string()];
+        let bounds = array![[0.0, 1.0], [0.0, 2.0]];
+        let projection = array![[1.0], [-1.0]];
+        let base = input_fingerprint(&names, &bounds.view(), &projection.view(), false);
+        assert_eq!(base, "6f798e8a3bb776b0");
+        let renamed = vec!["ab".to_string(), String::new()];
+        let wider = array![[0.0, 1.0], [0.0, 3.0]];
+        let scaled = array![[2.0], [-1.0]];
+        for other in [
+            input_fingerprint(&names, &bounds.view(), &projection.view(), true),
+            input_fingerprint(&renamed, &bounds.view(), &projection.view(), false),
+            input_fingerprint(&names, &wider.view(), &projection.view(), false),
+            input_fingerprint(&names, &bounds.view(), &scaled.view(), false),
+        ] {
+            assert_ne!(base, other);
+        }
     }
 
     #[test]

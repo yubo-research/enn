@@ -29,6 +29,7 @@ def test_disk_persisted_store_10k_reopens_fast(tmp_path):
         model.add(xs, ys)
         model.schedule_background_flush()
     model.persist_index_to_disk()
+    del model
 
     t0 = time.perf_counter()
     EpistemicNearestNeighbors(

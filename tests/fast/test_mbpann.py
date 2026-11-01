@@ -165,7 +165,7 @@ def test_optimizer_config_forwards_only_weighting_and_directory() -> None:
     assert "index_driver" not in sent and sent["weighting"]
 
 
-def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:
+def test_reopen_after_metric_change_keeps_the_learned_metric(tmp_path) -> None:
     x, _y, model = _model(tmp_path)
     model.metric.set_weights(np.array([100.0, 1.0, 0.01]))
     model.persist_index_to_disk()
@@ -177,7 +177,9 @@ def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:
         work_dir=tmp_path,
     )
     q = np.array([[0.5, 0.5, 0.5]])
-    np.testing.assert_array_equal(reopened.neighbors(q, 5), _exact(x, q, np.ones(3), 5))
+    np.testing.assert_array_equal(
+        reopened.neighbors(q, 5), _exact(x, q, np.array([100.0, 1.0, 0.01]), 5)
+    )
 
 
 def test_auto_rule_needs_positive_finite_heldout_gain() -> None:

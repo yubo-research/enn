@@ -115,6 +115,10 @@ impl EnnBackend {
         disk_write(self.handle.data())?.ensure_index_sync(scale_x, x_scale)
     }
 
+    pub fn metric_scale(&self) -> Result<Option<Array1<f64>>, ENNError> {
+        Ok(disk_read(self.handle.data())?.metric_scale())
+    }
+
     pub fn set_metric_scale(&self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
         self.wait_for_flush()?;
         disk_write(self.handle.data())?.set_metric_scale(x_scale, rebuild)

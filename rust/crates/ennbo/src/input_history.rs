@@ -10,7 +10,12 @@ pub(crate) const ORIGINAL_OUTPUTS_FILE: &str = "original_outputs.bin";
 pub(crate) fn remove_store(work_dir: &Path) -> Result<(), ENNError> {
     ennbo_bpann::bpann_remove_store(work_dir)
         .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-    for name in [ORIGINAL_INPUTS_FILE, ORIGINAL_OUTPUTS_FILE] {
+    for name in [
+        ORIGINAL_INPUTS_FILE,
+        ORIGINAL_OUTPUTS_FILE,
+        crate::store_identity::STORE_IDENTITY_FILE,
+        crate::metric_auto::METRIC_STATE_FILE,
+    ] {
         match std::fs::remove_file(work_dir.join(name)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
                 return Err(ENNError::InvalidParameter(format!("remove {name}: {e}")));

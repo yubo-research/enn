@@ -155,6 +155,21 @@ pub fn semantic_projection<'py>(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 #[pyfunction]
+pub fn semantic_input_fingerprint(
+    names: Vec<String>,
+    bounds: PyReadonlyArray2<f64>,
+    weighted_projection: PyReadonlyArray2<f64>,
+    semantic_only: bool,
+) -> String {
+    ennbo::semantic::input_fingerprint(
+        &names,
+        &bounds.as_array(),
+        &weighted_projection.as_array(),
+        semantic_only,
+    )
+}
+
+#[pyfunction]
 pub fn semantic_weighted<'py>(
     py: Python<'py>,
     projection: PyReadonlyArray2<f64>,

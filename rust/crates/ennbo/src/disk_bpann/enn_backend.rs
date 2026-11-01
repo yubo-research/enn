@@ -43,9 +43,7 @@ impl DiskBpannEnnBackend {
             && work_dir.join("metadata.json").exists()
         {
             let mut reopened = BpannBackend::reopen(work_dir.clone()).map_err(bpann_err)?;
-            reopened
-                .discard_metric_index_on_reopen()
-                .map_err(bpann_err)?;
+            reopened.restore_metric_on_reopen().map_err(bpann_err)?;
             reopened
         } else {
             BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
@@ -106,6 +104,10 @@ impl DiskBpannEnnBackend {
         self.inner
             .ensure_index_sync_with_scale(scale_x, x_scale)
             .map_err(bpann_err)
+    }
+
+    pub fn metric_scale(&self) -> Option<Array1<f64>> {
+        self.inner.metric_scale().cloned()
     }
 
     pub fn set_metric_scale(
@@ -280,7 +282,7 @@ mod tests {
     fn reopen_from_existing_work_dir() {
         let dir = TempDir::new().expect("tempdir");
         let path = dir.path().to_path_buf();
-        let _fresh = DiskBpannEnnBackend::new(
+        let fresh = DiskBpannEnnBackend::new(
             path.clone(),
             array![[0.0, 0.0], [1.0, 0.0]],
             array![[0.0], [1.0]],
@@ -289,6 +291,7 @@ mod tests {
             array![1.0, 1.0],
         )
         .expect("fresh");
+        drop(fresh);
         let reopened = DiskBpannEnnBackend::new(
             path,
             Array2::zeros((0, 2)),
@@ -305,7 +308,7 @@ mod tests {
     fn reopen_uses_persisted_num_metrics_not_placeholder_train_y() {
         let dir = TempDir::new().expect("tempdir");
         let path = dir.path().to_path_buf();
-        let _fresh = DiskBpannEnnBackend::new(
+        let fresh = DiskBpannEnnBackend::new(
             path.clone(),
             array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
             array![[0.0, 1.0], [1.0, 2.0], [1.0, 3.0]],
@@ -314,6 +317,7 @@ mod tests {
             array![1.0, 1.0],
         )
         .expect("fresh");
+        drop(fresh);
         let reopened = DiskBpannEnnBackend::new(
             path,
             Array2::zeros((0, 2)),
