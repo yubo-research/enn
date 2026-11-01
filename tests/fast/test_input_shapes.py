@@ -51,7 +51,9 @@ def test_query_methods_reject_one_dimensional_x(call) -> None:
         if call == "posterior":
             model.posterior(np.zeros(3), params=PARAMS)
         else:
-            model.posterior_function_draw(np.zeros(3), PARAMS, function_seeds=[1])
+            model.posterior_function_draw(
+                np.zeros(3), params=PARAMS, function_seeds=[1]
+            )
 
 
 def test_whatif_arguments_are_named() -> None:
@@ -98,3 +100,16 @@ def test_subsample_loglik_rejects_one_dimensional_y() -> None:
             paramss=[PARAMS],
             rng=np.random.default_rng(0),
         )
+
+
+def test_params_are_keyword_only() -> None:
+    from enn.enn.affine_calibrator import fit_affine_calibrator
+
+    model = _model()
+    q = np.zeros((1, 3))
+    with pytest.raises(TypeError):
+        model.batch_posterior(q, [PARAMS])
+    with pytest.raises(TypeError):
+        model.posterior_function_draw(q, PARAMS, function_seeds=[1])
+    with pytest.raises(TypeError):
+        fit_affine_calibrator(model, PARAMS, num_samples=4, rng=None)

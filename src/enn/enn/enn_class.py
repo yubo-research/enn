@@ -274,8 +274,8 @@ class EpistemicNearestNeighbors(_EnnRustView):
     def batch_posterior(
         self,
         x: np.ndarray,
-        paramss: list[ENNParams],
         *,
+        paramss: list[ENNParams],
         flags: PosteriorFlags | None = None,
     ) -> ENNNormal:
         from .enn_normal import ENNNormal
@@ -314,8 +314,8 @@ class EpistemicNearestNeighbors(_EnnRustView):
     def posterior_function_draw(
         self,
         x: np.ndarray,
-        params: ENNParams,
         *,
+        params: ENNParams,
         function_seeds: np.ndarray | list[int],
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:

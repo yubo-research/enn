@@ -60,7 +60,7 @@ def test_fit_affine_calibrator_loo_opt_in_on_model():
         epistemic_variance_scale=1.0,
         aleatoric_variance_scale=0.1,
     )
-    cal = fit_affine_calibrator(model, params, num_samples=20, rng=rng)
+    cal = fit_affine_calibrator(model, params=params, num_samples=20, rng=rng)
     assert cal.a.shape == (1,)
     assert cal.b.shape == (1,)
     assert cal.c.shape == (1,)
@@ -213,7 +213,7 @@ def test_fit_affine_calibrator_small_n_returns_identity(n: int):
         epistemic_variance_scale=1.0,
         aleatoric_variance_scale=0.0,
     )
-    cal = fit_affine_calibrator(model, params, num_samples=5, rng=rng)
+    cal = fit_affine_calibrator(model, params=params, num_samples=5, rng=rng)
     assert np.allclose(cal.a, 0.0)
     assert np.allclose(cal.b, 1.0)
     assert np.allclose(cal.c, 1.0)
@@ -229,7 +229,7 @@ def test_fit_affine_calibrator_negative_samples_match_zero():
     )
     negative, zero = (
         fit_affine_calibrator(
-            model, params, num_samples=n, rng=np.random.default_rng(6)
+            model, params=params, num_samples=n, rng=np.random.default_rng(6)
         )
         for n in (-3, 0)
     )
@@ -265,7 +265,9 @@ def test_fitter_function_draw_applies_calibrator():
         model, num_fit_candidates=8, num_fit_samples=16, affine_calibrate=True
     )
     q = x[:6]
-    raw_draws, _ = model.posterior_function_draw(q, params, function_seeds=[0, 1, 2])
+    raw_draws, _ = model.posterior_function_draw(
+        q, params=params, function_seeds=[0, 1, 2]
+    )
     cal_draws, _ = fitter.posterior_function_draw(
         model, q, params, function_seeds=[0, 1, 2]
     )
@@ -299,7 +301,7 @@ def test_fitter_function_draw_scatter_follows_c_not_b():
     )
     q = x[:20]
     seeds = list(range(64))
-    raw_d, _ = model.posterior_function_draw(q, params, function_seeds=seeds)
+    raw_d, _ = model.posterior_function_draw(q, params=params, function_seeds=seeds)
     cal_d, _ = fitter.posterior_function_draw(model, q, params, function_seeds=seeds)
     raw_std = float(np.std(raw_d, axis=-1).mean())
     cal_std = float(np.std(cal_d, axis=-1).mean())

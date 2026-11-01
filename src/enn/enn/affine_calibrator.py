@@ -117,8 +117,8 @@ class AffineCalibrator:
 
 def fit_affine_calibrator(
     model: Any,
-    params: Any,
     *,
+    params: Any,
     num_samples: int,
     rng: Any,
     observation_noise: bool = False,

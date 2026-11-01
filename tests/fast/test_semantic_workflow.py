@@ -87,7 +87,9 @@ def test_workflow_over_batches(shape, tmp_path):
         params = fitter.ask(model, num_fit_candidates=5)
         assert params.k_num_neighbors == 4
         post = model.posterior(x[:5], params=params)
-        draws, _ = model.posterior_function_draw(x[:5], params, function_seeds=[1, 2])
+        draws, _ = model.posterior_function_draw(
+            x[:5], params=params, function_seeds=[1, 2]
+        )
         assert np.isfinite(post.mu).all() and (post.se > 0).all()
         assert draws.shape == (5, 3, 2) and np.isfinite(draws).all()
         assert (params.output_blend is not None) == ("yy" in shape)
@@ -161,7 +163,7 @@ def test_batch_posterior_applies_each_entrys_blend():
         low.output_blend.scale,
     )
     high = replace(low, output_blend=high_blend)
-    batch = model.batch_posterior(x[:5], [low, high])
+    batch = model.batch_posterior(x[:5], paramss=[low, high])
     for entry, params in enumerate((low, high)):
         one = model.posterior(x[:5], params=params)
         np.testing.assert_allclose(batch.mu[entry], one.mu, atol=1e-12)

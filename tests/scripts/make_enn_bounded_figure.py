@@ -55,7 +55,7 @@ def compute_figure_ylim(
     ymax = float(upper[:, 0].max())
     draws, _idx = model.posterior_function_draw(
         x_grid,
-        params,
+        params=params,
         function_seeds=list(range(NUM_FUNCTION_DRAWS)),
         flags=PosteriorFlags(),
     )
@@ -87,7 +87,7 @@ def plot_panel(
     seeds = list(range(NUM_FUNCTION_DRAWS))
     draws, _idx = model.posterior_function_draw(
         x_grid,
-        params,
+        params=params,
         function_seeds=seeds,
         flags=PosteriorFlags(),
     )

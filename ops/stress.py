@@ -532,7 +532,7 @@ def run_sample_stress(
     function_seeds = function_seeds_for_sample(cfg.seed)
     draws, _idx = model.posterior_function_draw(
         x_query,
-        STRESS_PARAMS,
+        params=STRESS_PARAMS,
         function_seeds=function_seeds,
     )
     sample_s = time.perf_counter() - t1
@@ -760,7 +760,7 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     function_seeds = function_seeds_for_sample(config.seed + 4, config.num_draws)
     fn_draws, _idx = model.posterior_function_draw(
         x_test,
-        fitted,
+        params=fitted,
         function_seeds=function_seeds,
         flags=DRAW_FLAGS_NO_OBS,
     )

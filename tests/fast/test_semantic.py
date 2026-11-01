@@ -159,8 +159,8 @@ def test_enn_paths_match_explicit_augmentation(relationships):
         manual.posterior(transform.transform(query), params=params).mu,
     )
     np.testing.assert_allclose(
-        model.batch_posterior(query, [params]).se,
-        manual.batch_posterior(transform.transform(query), [params]).se,
+        model.batch_posterior(query, paramss=[params]).se,
+        manual.batch_posterior(transform.transform(query), paramss=[params]).se,
     )
     np.testing.assert_array_equal(
         model.neighbors(query[:1], 3),
@@ -172,9 +172,9 @@ def test_enn_paths_match_explicit_augmentation(relationships):
         transform.transform(x[:1]), y[:1], transform.transform(query), params=params
     )
     np.testing.assert_allclose(a.mu, b.mu)
-    draws = model.posterior_function_draw(query, params, function_seeds=[4])[0]
+    draws = model.posterior_function_draw(query, params=params, function_seeds=[4])[0]
     expected = manual.posterior_function_draw(
-        transform.transform(query), params, function_seeds=[4]
+        transform.transform(query), params=params, function_seeds=[4]
     )[0]
     np.testing.assert_array_equal(draws, expected)
 

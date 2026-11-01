@@ -21,7 +21,7 @@ def test_conditional_posterior_function_draw_matches_unconditional_when_no_whati
     flags = PosteriorFlags(exclude_nearest=False, observation_noise=True)
     seeds = [1, 2, 3]
     draws, idx = model.posterior_function_draw(
-        x_test, params, function_seeds=seeds, flags=flags
+        x_test, params=params, function_seeds=seeds, flags=flags
     )
     draws_cond, idx_cond = model.conditional_posterior_function_draw(
         np.zeros((0, 3), dtype=float),
@@ -88,9 +88,9 @@ def test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_ne
         k_num_neighbors=1, epistemic_variance_scale=1.0, aleatoric_variance_scale=1.0
     )
     seeds = [7]
-    draw_base = model.posterior_function_draw(x_test, params, function_seeds=seeds)[0][
-        0, 0, 0
-    ]
+    draw_base = model.posterior_function_draw(
+        x_test, params=params, function_seeds=seeds
+    )[0][0, 0, 0]
     draw_incl = model.conditional_posterior_function_draw(
         x_whatif,
         y_whatif,
@@ -142,7 +142,7 @@ def test_conditional_posterior_function_draw_matches_augmented_model_exactly():
         work_dir=fresh_work_dir(),
     )
     draws_b, idx_b = enn_b.posterior_function_draw(
-        x_test, params, function_seeds=function_seeds, flags=flags
+        x_test, params=params, function_seeds=function_seeds, flags=flags
     )
     assert np.allclose(draws_a, draws_b)
     assert np.all(idx_a == idx_b)

@@ -18,7 +18,9 @@ def test_posterior_function_sample_basic():
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
-    draws, idx = model.posterior_function_draw(x_test, params, function_seeds=[123])
+    draws, idx = model.posterior_function_draw(
+        x_test, params=params, function_seeds=[123]
+    )
     sample = draws[:, :, 0]
     assert sample.shape == (5, 1) and np.all(np.isfinite(sample))
     assert idx.shape == (5, 5)
@@ -34,16 +36,20 @@ def test_posterior_function_sample_deterministic():
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
-    sample1 = model.posterior_function_draw(x_test, params, function_seeds=[42])[0][
-        :, :, 0
-    ]
+    sample1 = model.posterior_function_draw(x_test, params=params, function_seeds=[42])[
+        0
+    ][:, :, 0]
     assert np.allclose(
         sample1,
-        model.posterior_function_draw(x_test, params, function_seeds=[42])[0][:, :, 0],
+        model.posterior_function_draw(x_test, params=params, function_seeds=[42])[0][
+            :, :, 0
+        ],
     )
     assert not np.allclose(
         sample1,
-        model.posterior_function_draw(x_test, params, function_seeds=[43])[0][:, :, 0],
+        model.posterior_function_draw(x_test, params=params, function_seeds=[43])[0][
+            :, :, 0
+        ],
     )
 
 
@@ -59,7 +65,7 @@ def test_posterior_function_sample_batch_basic():
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     samples, idx = model.posterior_function_draw(
-        x_test, params, function_seeds=[10, 20, 30]
+        x_test, params=params, function_seeds=[10, 20, 30]
     )
     assert samples.shape == (5, 1, 3) and np.all(np.isfinite(samples))
     assert idx.shape == (5, 5)
@@ -76,14 +82,14 @@ def test_posterior_function_sample_batch_matches_single_seed():
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     batch, _ = model.posterior_function_draw(
-        x_test, params, function_seeds=[100, 200, 300]
+        x_test, params=params, function_seeds=[100, 200, 300]
     )
     for i, seed in enumerate([100, 200, 300]):
         assert np.allclose(
             batch[:, :, i],
-            model.posterior_function_draw(x_test, params, function_seeds=[seed])[0][
-                :, :, 0
-            ],
+            model.posterior_function_draw(x_test, params=params, function_seeds=[seed])[
+                0
+            ][:, :, 0],
         )
 
 
@@ -98,7 +104,7 @@ def test_posterior_function_sample_batch_with_multiple_metrics():
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     samples, _ = model.posterior_function_draw(
-        x_test, params, function_seeds=[1, 2, 3, 4]
+        x_test, params=params, function_seeds=[1, 2, 3, 4]
     )
     assert samples.shape == (5, 2, 4) and np.all(np.isfinite(samples))
 
@@ -114,7 +120,7 @@ def test_posterior_function_sample_batch_empty_k():
     )
     samples, idx = model.posterior_function_draw(
         x_test,
-        params,
+        params=params,
         function_seeds=[1, 2],
         flags=PosteriorFlags(exclude_nearest=True),
     )
@@ -135,11 +141,11 @@ def test_posterior_function_sample_with_observation_noise():
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     sample_no_noise = model.posterior_function_draw(
-        x_test, params, function_seeds=[42]
+        x_test, params=params, function_seeds=[42]
     )[0][:, :, 0]
     sample_with_noise = model.posterior_function_draw(
         x_test,
-        params,
+        params=params,
         function_seeds=[42],
         flags=PosteriorFlags(observation_noise=True),
     )[0][:, :, 0]
@@ -170,10 +176,10 @@ def test_posterior_function_draw_aleatoric_is_independent_of_noise_field():
 
     post_on = model.posterior(x_test, params=params, flags=flags_on)
     draws_off = model.posterior_function_draw(
-        x_test, params, function_seeds=seeds, flags=flags_off
+        x_test, params=params, function_seeds=seeds, flags=flags_off
     )[0][:, 0, :]
     draws_on = model.posterior_function_draw(
-        x_test, params, function_seeds=seeds, flags=flags_on
+        x_test, params=params, function_seeds=seeds, flags=flags_on
     )[0][:, 0, :]
 
     np.testing.assert_allclose(

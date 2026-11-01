@@ -119,7 +119,7 @@ def test_batch_posterior_matches_individual_posterior_calls(flags, k_vals):
         )
         for i, k in enumerate(k_vals)
     ]
-    post_batch = model.batch_posterior(x_test, paramss, flags=flags)
+    post_batch = model.batch_posterior(x_test, paramss=paramss, flags=flags)
     assert post_batch.mu.shape == (len(paramss), x_test.shape[0], model.num_outputs)
     assert post_batch.se.shape == (len(paramss), x_test.shape[0], model.num_outputs)
     for i, params in enumerate(paramss):
@@ -177,7 +177,7 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
         k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     post = model.batch_posterior(
-        x_test, [params], flags=PosteriorFlags(exclude_nearest=True)
+        x_test, paramss=[params], flags=PosteriorFlags(exclude_nearest=True)
     )
     assert post.mu.shape == (1, 4, 1) and post.se.shape == (1, 4, 1)
     assert np.all(np.isfinite(post.mu))
@@ -200,7 +200,7 @@ def test_batch_posterior_exclude_nearest_mixed_self_novel_k_equals_n():
     )
     post = model.batch_posterior(
         x_query,
-        [params],
+        paramss=[params],
         flags=PosteriorFlags(exclude_nearest=True, observation_noise=True),
     )
     assert post.mu.shape == (1, 10, 1)

@@ -93,7 +93,7 @@ def test_sample_and_function_draw_respect_y_bounds():
     _assert_in_open_interval(samples, lo, hi)
 
     draws, _ = model.posterior_function_draw(
-        x_test, params, function_seeds=list(range(32))
+        x_test, params=params, function_seeds=list(range(32))
     )
     _assert_in_open_interval(draws, lo, hi)
 
