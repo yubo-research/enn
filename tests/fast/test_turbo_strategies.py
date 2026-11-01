@@ -78,7 +78,7 @@ def test_turbo_hybrid_fallback_executes_when_init_points_exhausted_mid_batch():
     rng = np.random.default_rng(0)
     opt = create_optimizer(bounds=bounds, config=turbo_zero_config(num_init=2), rng=rng)
     x1 = opt.ask(num_arms=1)
-    y1 = -np.sum(x1**2, axis=1)
+    y1 = -np.sum(x1**2, axis=1, keepdims=True)
     opt.tell(x1, y1)
     init_before = opt.init_progress
     assert init_before is not None

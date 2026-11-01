@@ -40,7 +40,7 @@ def test_disk_bpann_batched_sync_recall_above_incore_threshold():
         total_recall = 0.0
         for q in range(num_queries):
             query = x[q]
-            got = model.neighbors(query, k=k).tolist()
+            got = model.neighbors(query[np.newaxis, :], k=k)[0].tolist()
             expected = _brute_force_neighbor_ids(x, query, k)
             hits = sum(1 for idx in got if idx in expected)
             total_recall += hits / k
@@ -75,7 +75,7 @@ def test_disk_bpann_midband_vector_leaf_forest_recall():
         total_recall = 0.0
         for q in range(num_queries):
             query = x[q]
-            got = model.neighbors(query, k=k).tolist()
+            got = model.neighbors(query[np.newaxis, :], k=k)[0].tolist()
             expected = _brute_force_neighbor_ids(x, query, k)
             hits = sum(1 for idx in got if idx in expected)
             total_recall += hits / k
@@ -110,7 +110,7 @@ def test_disk_bpann_large_scale_batched_recall():
         total_recall = 0.0
         for q in range(num_queries):
             query = x[q]
-            got = model.neighbors(query, k=k).tolist()
+            got = model.neighbors(query[np.newaxis, :], k=k)[0].tolist()
             expected = _brute_force_neighbor_ids(x, query, k)
             hits = sum(1 for idx in got if idx in expected)
             total_recall += hits / k

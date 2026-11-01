@@ -44,7 +44,7 @@ def test_fixed_metric_onehot_neighbors_match_exact_after_relabeling(tmp_path):
         if expected is None:
             expected = exact[:, :10]
         np.testing.assert_array_equal(exact[:, :10], expected)
-        actual = np.array([model.neighbors(row, 10) for row in q])
+        actual = model.neighbors(q, 10)
         np.testing.assert_array_equal(actual, expected)
         permutation = np.random.default_rng(505).permutation(128)
         raw[:, -1] = permutation[raw[:, -1].astype(int)]
@@ -67,7 +67,7 @@ def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
             affine_calibrate=True,
         )
         assert model.metric.uses_learned_metric
-        neighbors.append(np.array([model.neighbors(row, 10) for row in q]))
+        neighbors.append(model.neighbors(q, 10))
         posterior = fitter.affine_calibrator.apply(
             model.posterior(
                 q, params=params, flags=PosteriorFlags(observation_noise=True)

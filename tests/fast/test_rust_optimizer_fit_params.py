@@ -110,7 +110,7 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
         ],
         dtype=float,
     )
-    y = np.array([0.2, 1.5, -0.4, 0.7, 0.1], dtype=float)
+    y = np.array([[0.2], [1.5], [-0.4], [0.7], [0.1]], dtype=float)
     query = np.array([[0.55, 0.45, 0.35, 0.25]], dtype=float)
 
     def query_mu(

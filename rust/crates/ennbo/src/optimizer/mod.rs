@@ -215,7 +215,7 @@ impl Optimizer {
             None => self.yvar_on_tell = Some(has_yvar),
             Some(expected) if expected != has_yvar => {
                 return Err(ENNError::InvalidParameter(format!(
-                    "y_var must be {} on every tell()",
+                    "train_yvar must be {} on every tell()",
                     if expected { "provided" } else { "omitted" }
                 )));
             }

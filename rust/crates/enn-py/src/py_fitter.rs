@@ -1,9 +1,13 @@
-use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
+use numpy::{
+    IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn,
+    ToPyArray,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
+use crate::py_args::matrix_view;
 use crate::py_model::{PosteriorPyOut, PyENNParams, PyEpistemicNearestNeighbors};
 
 #[pyclass(name = "ENNStatefulFitter")]
@@ -112,7 +116,7 @@ impl PyENNStatefulFitter {
         &self,
         py: Python<'py>,
         model: &PyEpistemicNearestNeighbors,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         params: PyENNParams,
         exclude_nearest: bool,
         observation_noise: bool,
@@ -121,7 +125,7 @@ impl PyENNStatefulFitter {
         let cal = self.inner.calibrator().cloned();
         let out = ennbo::surrogate_affine::calibrated_posterior(
             &model.inner,
-            &x.as_array(),
+            &matrix_view("x", &x)?,
             &params.inner,
             &flags,
             cal.as_ref(),
@@ -142,7 +146,7 @@ impl PyENNStatefulFitter {
         &self,
         py: Python<'py>,
         model: &PyEpistemicNearestNeighbors,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         params: PyENNParams,
         function_seeds: Vec<i64>,
         exclude_nearest: bool,
@@ -152,7 +156,7 @@ impl PyENNStatefulFitter {
         let cal = self.inner.calibrator().cloned();
         let (draws, idx) = ennbo::surrogate_affine::calibrated_function_draw(
             &model.inner,
-            &x.as_array(),
+            &matrix_view("x", &x)?,
             &params.inner,
             &function_seeds,
             &flags,

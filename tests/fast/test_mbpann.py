@@ -40,7 +40,7 @@ def _model(
 
 
 def _exact(x: np.ndarray, q: np.ndarray, w: np.ndarray, k: int) -> np.ndarray:
-    return np.argsort(((x - q) ** 2) @ w, kind="stable")[:k]
+    return np.argsort(((x - q) ** 2) @ w, kind="stable")[:k][np.newaxis, :]
 
 
 def test_metric_learning_enum_names() -> None:

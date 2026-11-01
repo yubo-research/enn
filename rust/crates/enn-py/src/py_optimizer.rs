@@ -1,6 +1,8 @@
-use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+
+use crate::py_args::matrix_view;
 
 pub(crate) fn optional_f64(
     dict: &Bound<'_, pyo3::types::PyDict>,
@@ -203,33 +205,34 @@ impl PyOptimizer {
         Ok(result.into_dyn().into_pyarray_bound(py))
     }
 
-    #[pyo3(signature = (x, y, y_var=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None))]
     fn tell(
         &mut self,
-        x: PyReadonlyArray2<f64>,
-        y: PyReadonlyArray2<f64>,
-        y_var: Option<PyReadonlyArray2<f64>>,
+        train_x: PyReadonlyArrayDyn<f64>,
+        train_y: PyReadonlyArrayDyn<f64>,
+        train_yvar: Option<PyReadonlyArrayDyn<f64>>,
     ) -> PyResult<()> {
-        let x_arr = x.as_array();
-        let y_arr = y.as_array();
-        let result = match y_var.as_ref() {
-            Some(yv) => {
-                let yv_arr = yv.as_array();
-                self.inner.tell(&x_arr, &y_arr, Some(&yv_arr))
-            }
-            None => self.inner.tell(&x_arr, &y_arr, None),
-        };
-        result.map_err(|e| PyValueError::new_err(e.to_string()))
+        let train_yvar = train_yvar
+            .as_ref()
+            .map(|v| matrix_view("train_yvar", v))
+            .transpose()?;
+        self.inner
+            .tell(
+                &matrix_view("train_x", &train_x)?,
+                &matrix_view("train_y", &train_y)?,
+                train_yvar.as_ref(),
+            )
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn posterior_mu<'py>(
         &self,
         py: Python<'py>,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
         let mu = self
             .inner
-            .posterior_mu(&x.as_array())
+            .posterior_mu(&matrix_view("x", &x)?)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(mu.into_dyn().into_pyarray_bound(py))
     }

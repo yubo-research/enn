@@ -77,7 +77,7 @@ def test_coverage_enn_fit_fast():
     scores = subsample_loglik(
         model,
         x,
-        y.ravel(),
+        y,
         paramss=[
             ENNParams(
                 k_num_neighbors=2,

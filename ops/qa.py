@@ -101,7 +101,7 @@ def run_turbo_enn_ackley(
     for i_iter in range(num_rounds):
         x_arms = optimizer.ask(num_arms=num_arms)
         y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
-        optimizer.tell(x_arms, y_obs, y_var=y_var_scale * np.ones_like(y_obs))
+        optimizer.tell(x_arms, y_obs, train_yvar=y_var_scale * np.ones_like(y_obs))
         y_best = max(y_best, float(np.max(y_obs)))
         cumulative_num_arms += int(np.asarray(x_arms).shape[0])
         seconds_since_start_of_run = time.perf_counter() - t_start
@@ -533,7 +533,7 @@ def run_turbo_acq_seed(
         x_arms = optimizer.ask(num_arms=num_arms)
         y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
         if noise > 0.0:
-            optimizer.tell(x_arms, y_obs, y_var=y_var_scale * np.ones_like(y_obs))
+            optimizer.tell(x_arms, y_obs, train_yvar=y_var_scale * np.ones_like(y_obs))
         else:
             optimizer.tell(x_arms, y_obs)
         y_best = max(y_best, float(np.max(y_obs)))

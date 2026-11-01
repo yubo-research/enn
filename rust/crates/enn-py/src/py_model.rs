@@ -1,11 +1,11 @@
 use ennbo::traits::PosteriorComputation;
-use ndarray::Array2;
 use numpy::{
     IntoPyArray, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::py_args::matrix_view;
 use crate::py_params::{params_with_blend, PyOutputBlend};
 
 pub(crate) type PosteriorPyOut<'py> = (
@@ -15,19 +15,6 @@ pub(crate) type PosteriorPyOut<'py> = (
     Bound<'py, PyArrayDyn<f64>>,
     Option<Bound<'py, PyArrayDyn<i64>>>,
 );
-
-fn owned_matrix(name: &str, arr: PyReadonlyArrayDyn<'_, f64>) -> PyResult<Array2<f64>> {
-    let view = arr.as_array();
-    if view.ndim() != 2 {
-        return Err(PyValueError::new_err(format!(
-            "{name} must be 2-dimensional, got shape {:?}",
-            view.shape()
-        )));
-    }
-    view.to_owned()
-        .into_dimensionality()
-        .map_err(|e| PyValueError::new_err(e.to_string()))
-}
 
 pub(crate) type TrainRowsAtPyOut<'py> = (
     Bound<'py, PyArray2<f64>>,
@@ -90,12 +77,12 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))?
             .with_input_fingerprint(input_fingerprint);
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
-        let train_x = owned_matrix("train_x", train_x)?;
-        let train_y = owned_matrix("train_y", train_y)?;
-        let train_yvar = match train_yvar {
-            Some(v) => Some(owned_matrix("train_yvar", v)?),
-            None => None,
-        };
+        let train_x = matrix_view("train_x", &train_x)?.to_owned();
+        let train_y = matrix_view("train_y", &train_y)?.to_owned();
+        let train_yvar = train_yvar
+            .as_ref()
+            .map(|v| matrix_view("train_yvar", v).map(|m| m.to_owned()))
+            .transpose()?;
         let model = ennbo::EpistemicNearestNeighbors::new_configured(
             train_x,
             train_y,
@@ -126,16 +113,23 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    #[pyo3(signature = (x, y, yvar=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None))]
     fn add(
         &mut self,
-        x: PyReadonlyArray2<f64>,
-        y: PyReadonlyArray2<f64>,
-        yvar: Option<PyReadonlyArray2<f64>>,
+        train_x: PyReadonlyArrayDyn<f64>,
+        train_y: PyReadonlyArrayDyn<f64>,
+        train_yvar: Option<PyReadonlyArrayDyn<f64>>,
     ) -> PyResult<()> {
-        let yvar_arr = yvar.as_ref().map(|v| v.as_array());
+        let train_yvar = train_yvar
+            .as_ref()
+            .map(|v| matrix_view("train_yvar", v))
+            .transpose()?;
         self.inner
-            .add(&x.as_array(), &y.as_array(), yvar_arr.as_ref())
+            .add(
+                &matrix_view("train_x", &train_x)?,
+                &matrix_view("train_y", &train_y)?,
+                train_yvar.as_ref(),
+            )
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -170,7 +164,7 @@ impl PyEpistemicNearestNeighbors {
     fn posterior<'py>(
         &self,
         py: Python<'py>,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         params: PyENNParams,
         exclude_nearest: bool,
         observation_noise: bool,
@@ -178,7 +172,7 @@ impl PyEpistemicNearestNeighbors {
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
         let out = self
             .inner
-            .posterior(&x.as_array(), &params.inner, &flags)
+            .posterior(&matrix_view("x", &x)?, &params.inner, &flags)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
             out.mu.into_pyarray_bound(py),
@@ -194,7 +188,7 @@ impl PyEpistemicNearestNeighbors {
     fn batch_posterior<'py>(
         &self,
         py: Python<'py>,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         k_values: Vec<i32>,
         epistemic_scales: Vec<f64>,
         aleatoric_scales: Vec<f64>,
@@ -208,7 +202,7 @@ impl PyEpistemicNearestNeighbors {
 
         let out = self
             .inner
-            .batch_posterior(&x.as_array(), &paramss, &flags)
+            .batch_posterior(&matrix_view("x", &x)?, &paramss, &flags)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
             out.mu.into_pyarray_bound(py),
@@ -224,7 +218,7 @@ impl PyEpistemicNearestNeighbors {
     fn posterior_function_draw<'py>(
         &self,
         py: Python<'py>,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         params: PyENNParams,
         function_seeds: Vec<i64>,
         exclude_nearest: bool,
@@ -233,7 +227,7 @@ impl PyEpistemicNearestNeighbors {
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
         let (draws, idx) = self
             .inner
-            .posterior_function_draw(&x.as_array(), &params.inner, &function_seeds, &flags)
+            .posterior_function_draw(&matrix_view("x", &x)?, &params.inner, &function_seeds, &flags)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((draws.into_dyn().into_pyarray_bound(py), idx))
     }
@@ -243,9 +237,9 @@ impl PyEpistemicNearestNeighbors {
     fn conditional_posterior<'py>(
         &self,
         py: Python<'py>,
-        x_whatif: PyReadonlyArray2<f64>,
-        y_whatif: PyReadonlyArray2<f64>,
-        x: PyReadonlyArray2<f64>,
+        x_whatif: PyReadonlyArrayDyn<f64>,
+        y_whatif: PyReadonlyArrayDyn<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         params: PyENNParams,
         exclude_nearest: bool,
         observation_noise: bool,
@@ -254,9 +248,9 @@ impl PyEpistemicNearestNeighbors {
         let out = self
             .inner
             .conditional_posterior(
-                &x_whatif.as_array(),
-                &y_whatif.as_array(),
-                &x.as_array(),
+                &matrix_view("x_whatif", &x_whatif)?,
+                &matrix_view("y_whatif", &y_whatif)?,
+                &matrix_view("x", &x)?,
                 &params.inner,
                 &flags,
             )
@@ -275,9 +269,9 @@ impl PyEpistemicNearestNeighbors {
     fn conditional_posterior_function_draw<'py>(
         &self,
         py: Python<'py>,
-        x_whatif: PyReadonlyArray2<f64>,
-        y_whatif: PyReadonlyArray2<f64>,
-        x: PyReadonlyArray2<f64>,
+        x_whatif: PyReadonlyArrayDyn<f64>,
+        y_whatif: PyReadonlyArrayDyn<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         params: PyENNParams,
         function_seeds: Vec<i64>,
         exclude_nearest: bool,
@@ -287,9 +281,9 @@ impl PyEpistemicNearestNeighbors {
         let (draws, idx) = self
             .inner
             .conditional_posterior_function_draw(
-                &x_whatif.as_array(),
-                &y_whatif.as_array(),
-                &x.as_array(),
+                &matrix_view("x_whatif", &x_whatif)?,
+                &matrix_view("y_whatif", &y_whatif)?,
+                &matrix_view("x", &x)?,
                 &params.inner,
                 &function_seeds,
                 &flags,
@@ -302,13 +296,13 @@ impl PyEpistemicNearestNeighbors {
     fn neighbors<'py>(
         &self,
         py: Python<'py>,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         k: i32,
         exclude_nearest: bool,
     ) -> PyResult<Bound<'py, PyArrayDyn<usize>>> {
         let result = self
             .inner
-            .neighbors_one(&x.as_array(), k, exclude_nearest)
+            .neighbors(&matrix_view("x", &x)?, k, exclude_nearest)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(result.into_dyn().into_pyarray_bound(py))
     }
@@ -318,14 +312,14 @@ impl PyEpistemicNearestNeighbors {
     fn neighbor_distances_and_indices<'py>(
         &self,
         py: Python<'py>,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         search_k: i32,
         exclude_nearest: bool,
     ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArrayDyn<i64>>)> {
         let (dist2s, idx) = self
             .inner
             .index_access()
-            .neighbor_distances_and_indices(&x.as_array(), search_k, exclude_nearest)
+            .neighbor_distances_and_indices(&matrix_view("x", &x)?, search_k, exclude_nearest)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
             dist2s.into_dyn().into_pyarray_bound(py),
@@ -338,14 +332,14 @@ impl PyEpistemicNearestNeighbors {
     fn index_neighbor_distances_and_indices<'py>(
         &self,
         py: Python<'py>,
-        x: PyReadonlyArray2<f64>,
+        x: PyReadonlyArrayDyn<f64>,
         search_k: i32,
         exclude_nearest: bool,
     ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArrayDyn<i64>>)> {
         let (dist2s, idx) = self
             .inner
             .index_access()
-            .index_neighbor_distances_and_indices(&x.as_array(), search_k, exclude_nearest)
+            .index_neighbor_distances_and_indices(&matrix_view("x", &x)?, search_k, exclude_nearest)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
             dist2s.into_dyn().into_pyarray_bound(py),

@@ -188,7 +188,7 @@ def test_auto_metric_shares_one_weight_across_tied_dims(tmp_path) -> None:
     for i in range(len(q)):
         d2 = (((x - q[i]) / scale) ** 2).sum(axis=1)
         np.testing.assert_array_equal(
-            model.neighbors(q[i], 5), np.argsort(d2, kind="stable")[:5]
+            model.neighbors(q[i : i + 1], 5)[0], np.argsort(d2, kind="stable")[:5]
         )
     with pytest.raises(ValueError, match="disjoint"):
         EpistemicNearestNeighbors(
@@ -215,5 +215,5 @@ def test_auto_metric_ties_group_weights(tmp_path) -> None:
     for i in range(len(q)):
         d2 = ((x - q[i]) ** 2) @ w
         np.testing.assert_array_equal(
-            model.neighbors(q[i], 5), np.argsort(d2, kind="stable")[:5]
+            model.neighbors(q[i : i + 1], 5)[0], np.argsort(d2, kind="stable")[:5]
         )

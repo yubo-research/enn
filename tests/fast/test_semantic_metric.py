@@ -30,12 +30,12 @@ def test_semantic_auto_optimizer_observations_and_predictions(tmp_path, only):
         bounds=transform.bounds, config=config, rng=np.random.default_rng(12)
     )
     x = np.random.default_rng(13).uniform(0, 2, (120, 3))
-    optimizer.tell(x, np.sin(x[:, 0]))
+    optimizer.tell(x, np.sin(x[:, :1]))
     query = optimizer.ask(2)
     assert query.shape == (2, 3)
     assert np.all((query >= 0) & (query <= 2))
     np.testing.assert_allclose(optimizer._x_obs, x)
-    optimizer.tell(query, np.sin(query[:, 0]))
+    optimizer.tell(query, np.sin(query[:, :1]))
     assert np.isfinite(optimizer.ask(1)).all()
 
 

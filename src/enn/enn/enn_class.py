@@ -237,7 +237,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags = _posterior_flags_coerced(flags)
 
         mu, se, se_epi, se_ale, idx = self._rust_model.posterior(
-            self.transform_inputs(x),
+            self.transform_inputs(np.asarray(x, dtype=float)),
             params=rust_params(params),
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
@@ -260,9 +260,9 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags = _posterior_flags_coerced(flags)
 
         mu, se, se_epi, se_ale, idx = self._rust_model.conditional_posterior(
-            self.transform_inputs(x_whatif),
-            y_whatif,
-            self.transform_inputs(x),
+            self.transform_inputs(np.asarray(x_whatif, dtype=float)),
+            np.asarray(y_whatif, dtype=float),
+            self.transform_inputs(np.asarray(x, dtype=float)),
             params=rust_params(params),
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
@@ -304,17 +304,12 @@ class EpistemicNearestNeighbors(_EnnRustView):
         self, x: np.ndarray, k: int, *, exclude_nearest: bool = False
     ) -> np.ndarray:
         x = np.asarray(x, dtype=float)
-        if x.ndim == 1:
-            x = x[np.newaxis, :]
-        idx_2d = np.asarray(
+        return np.asarray(
             self._rust_model.neighbors(
                 self.transform_inputs(x), int(k), exclude_nearest=exclude_nearest
             ),
             dtype=np.int64,
         )
-        if idx_2d.size == 0:
-            return np.zeros((0,), dtype=np.int64)
-        return idx_2d[0, :]
 
     def posterior_function_draw(
         self,
@@ -325,6 +320,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         flags = _posterior_flags_coerced(flags)
+        x = np.asarray(x, dtype=float)
         seeds = _to_rust_seeds(function_seeds)
         kw = _rust_function_draw_kwargs(params, flags, seeds)
         draws, idx = self._rust_model.posterior_function_draw(
@@ -343,12 +339,12 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         flags = _posterior_flags_coerced(flags)
-        x_whatif = np.asarray(x_whatif, dtype=float)
+        x = np.asarray(x, dtype=float)
         seeds = _to_rust_seeds(function_seeds)
         kw = _rust_function_draw_kwargs(params, flags, seeds)
         draws, idx = self._rust_model.conditional_posterior_function_draw(
-            self.transform_inputs(x_whatif),
-            y_whatif,
+            self.transform_inputs(np.asarray(x_whatif, dtype=float)),
+            np.asarray(y_whatif, dtype=float),
             self.transform_inputs(x),
             **kw,
         )

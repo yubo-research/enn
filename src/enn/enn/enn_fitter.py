@@ -35,8 +35,6 @@ def subsample_loglik(
 
     x_array = np.asarray(x, dtype=float)
     y_array = np.asarray(y, dtype=float)
-    if y_array.ndim == 1:
-        y_array = y_array.reshape(-1, 1)
 
     if not isinstance(model, PyENN):
         raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")

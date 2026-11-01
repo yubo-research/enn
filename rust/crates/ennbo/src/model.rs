@@ -267,22 +267,6 @@ impl EpistemicNearestNeighbors {
         self.scale_x
     }
 
-    pub fn neighbors_one(
-        &self,
-        x: &ArrayView2<f64>,
-        k: i32,
-        exclude_nearest: bool,
-    ) -> Result<Array2<usize>, ENNError> {
-        if x.nrows() != 1 {
-            return Err(ENNError::InvalidParameter(format!(
-                "x must be single point with {} dims, got {:?}",
-                self.num_dim,
-                x.shape()
-            )));
-        }
-        self.neighbors(x, k, exclude_nearest)
-    }
-
     pub fn neighbors(
         &self,
         x: &ArrayView2<f64>,

@@ -17,16 +17,10 @@ from .rust_optimizer_helpers import (
 from .types.telemetry import Telemetry
 
 
-def _tell_estimate(inner: Any, x_native: np.ndarray, y_in: np.ndarray) -> np.ndarray:
+def _tell_estimate(inner: Any, train_x: np.ndarray, train_y: np.ndarray) -> np.ndarray:
     if not inner.has_surrogate():
-        return y_in
-    x = np.asarray(x_native, dtype=float)
-    if x.ndim == 1:
-        x = x.reshape(1, -1)
-    mu = np.asarray(inner.posterior_mu(x), dtype=float)
-    if y_in.ndim == 1 and mu.ndim == 2 and mu.shape[1] == 1:
-        return mu.reshape(-1)
-    return mu
+        return train_y
+    return np.asarray(inner.posterior_mu(train_x), dtype=float)
 
 
 class RustOptimizer:
@@ -79,21 +73,19 @@ class RustOptimizer:
         return np.asarray(self._inner.ask(int(num_arms)), dtype=float)
 
     def tell(
-        self, x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None = None
+        self,
+        train_x: np.ndarray,
+        train_y: np.ndarray,
+        train_yvar: np.ndarray | None = None,
     ) -> np.ndarray:
-        x_native = np.asarray(x, dtype=float)
-        y_in = np.asarray(y, dtype=float)
-        y_native = y_in.reshape(-1, 1) if y_in.ndim == 1 else y_in
-        if y_native.shape[0] == 0:
-            return y_in
-        if y_var is None:
-            self._inner.tell(x_native, y_native)
-        else:
-            y_var_native = np.asarray(y_var, dtype=float)
-            if y_var_native.ndim == 1:
-                y_var_native = y_var_native.reshape(-1, 1)
-            self._inner.tell(x_native, y_native, y_var_native)
-        return _tell_estimate(self._inner, x_native, y_in)
+        train_x = np.asarray(train_x, dtype=float)
+        train_y = np.asarray(train_y, dtype=float)
+        if train_yvar is not None:
+            train_yvar = np.asarray(train_yvar, dtype=float)
+        self._inner.tell(train_x, train_y, train_yvar)
+        if train_y.shape[0] == 0:
+            return train_y
+        return _tell_estimate(self._inner, train_x, train_y)
 
 
 def create_optimizer(

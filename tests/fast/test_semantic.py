@@ -163,7 +163,8 @@ def test_enn_paths_match_explicit_augmentation(relationships):
         manual.batch_posterior(transform.transform(query), [params]).se,
     )
     np.testing.assert_array_equal(
-        model.neighbors(query[0], 3), manual.neighbors(transform.transform(query[0]), 3)
+        model.neighbors(query[:1], 3),
+        manual.neighbors(transform.transform(query[:1]), 3),
     )
     np.testing.assert_allclose(model.train_rows_at([0, 11])[0], x[[0, 11]])
     a = model.conditional_posterior(x[:1], y[:1], query, params=params)
@@ -271,7 +272,7 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
     initial = optimizer.ask(4)
     np.testing.assert_array_equal(initial, baseline.ask(4))
     assert initial.shape == (4, 3)
-    optimizer.tell(initial, np.sin(initial[:, 0]))
+    optimizer.tell(initial, np.sin(initial[:, :1]))
     query = optimizer.ask(2)
     assert query.shape == (2, 3)
     assert np.all((query >= 0) & (query <= 2))
