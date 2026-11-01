@@ -35,5 +35,4 @@ faiss = { version = "0.13.0", features = ["static"] }
 [dev-dependencies]
 approx = "0.5"
 numpy = "0.22"
-serde_json = "1.0"
 tempfile = "3"

@@ -415,8 +415,10 @@ mod tests {
 
     #[test]
     fn a_recipe_round_trips_through_json() {
-        let text = serde_json::to_string(&recipe(RunKind::Enn)).unwrap();
-        let loaded: RunRecipe = serde_json::from_str(&text).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recipe.json");
+        bpann_write_json(&path, &recipe(RunKind::Enn)).unwrap();
+        let loaded: RunRecipe = bpann_read_json(&path).unwrap().unwrap();
         assert_eq!(loaded.kind, RunKind::Enn);
         assert_eq!(loaded.k, Some(3));
         assert_eq!(loaded.bounds, recipe(RunKind::Enn).bounds);

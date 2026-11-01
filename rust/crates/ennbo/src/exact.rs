@@ -104,8 +104,11 @@ mod tests {
     use ndarray::array;
 
     fn round_trip<T: Exact>(value: &T) -> T {
-        let text = serde_json::to_string(&value.to_repr()).unwrap();
-        T::from_repr(serde_json::from_str(&text).unwrap()).unwrap()
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("value.json");
+        ennbo_bpann::bpann_write_json(&path, &value.to_repr()).unwrap();
+        let repr = ennbo_bpann::bpann_read_json(&path).unwrap().unwrap();
+        T::from_repr(repr).unwrap()
     }
 
     #[test]

@@ -657,7 +657,6 @@ dependencies = [
  "rayon",
  "sentence-transformers-rs",
  "serde",
- "serde_json",
  "sobol",
  "tempfile",
  "thiserror 1.0.69",
