@@ -197,6 +197,7 @@ pub(crate) fn fit_epoch(
     let calibration = ratios.mean_axis(Axis(0)).unwrap().mapv(|v| v.max(1e-12));
     Ok(Epoch {
         predictor,
+        blend: None,
         floor,
         calibration,
     })

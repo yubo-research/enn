@@ -6,7 +6,8 @@ use tempfile::TempDir;
 fn mmap_append_fortran_order_preserves_rows() {
     let dir = TempDir::new().unwrap();
     let mut store =
-        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 3, None).unwrap();
+        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 3, None)
+            .unwrap();
 
     let mut f = Array2::<f64>::zeros((2, 3).f());
     f[[0, 0]] = 1.0;
@@ -36,7 +37,8 @@ fn mmap_append_fortran_order_preserves_rows() {
 fn mmap_append_strided_column_view_preserves_rows() {
     let dir = TempDir::new().unwrap();
     let mut store =
-        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None)
+            .unwrap();
 
     let wide = array![[1.0, 9.0, 2.0, 8.0], [3.0, 7.0, 4.0, 6.0]];
     let view = wide.slice(ndarray::s![.., ..;2]);
@@ -56,7 +58,8 @@ fn mmap_append_strided_column_view_preserves_rows() {
 fn MmapColumnStore() {
     let dir = TempDir::new().unwrap();
     let mut store =
-        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None)
+            .unwrap();
     store.mmap_append(&array![[1.0, 2.0]].view()).unwrap();
     assert_eq!(store.mmap_row_slice(0).unwrap()[0], 1.0);
 }
@@ -71,7 +74,8 @@ fn mmap_open_or_create() {
 fn mmap_append() {
     let dir = TempDir::new().unwrap();
     let mut store =
-        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None)
+            .unwrap();
     store.mmap_append(&array![[0.0, 0.0]].view()).unwrap();
 }
 
@@ -79,7 +83,8 @@ fn mmap_append() {
 fn mmap_row_slice() {
     let dir = TempDir::new().unwrap();
     let mut store =
-        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None)
+            .unwrap();
     store.mmap_append(&array![[0.0, 1.0]].view()).unwrap();
     assert_eq!(store.mmap_row_slice(0).unwrap()[1], 1.0);
 }
@@ -88,7 +93,10 @@ fn mmap_row_slice() {
 fn mmap_gather() {
     let dir = TempDir::new().unwrap();
     let mut store =
-        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
-    store.mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view()).unwrap();
+        mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None)
+            .unwrap();
+    store
+        .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
+        .unwrap();
     assert_eq!(store.mmap_gather(&[1]).unwrap().nrows(), 1);
 }

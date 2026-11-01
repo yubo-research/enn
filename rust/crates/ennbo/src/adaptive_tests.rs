@@ -266,3 +266,90 @@ fn constant_input_uses_unit_scale_at_query() {
         assert!((delta.dot(&delta) - 1.0).abs() < 1e-10);
     }
 }
+
+fn stream(rows: usize, seed: u64, opposed: bool) -> (Array2<f64>, Array2<f64>) {
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+    let mut rng = StdRng::seed_from_u64(seed);
+    let x = Array2::from_shape_fn((rows, 2), |_| rng.gen::<f64>());
+    let mut noise = |s: f64| (rng.gen::<f64>() - 0.5) * s;
+    let y = Array2::from_shape_fn((rows, 3), |(i, j)| {
+        let signal = (4.0 * x[[i, 0]]).sin();
+        let sign = if opposed && j == 0 { -1.0 } else { 1.0 };
+        sign * signal + noise(0.6)
+    });
+    (x, y)
+}
+
+#[test]
+fn output_sharing_is_learned_per_output_as_batches_arrive() {
+    let third = (1.0_f64 / 3.0).sqrt();
+    let meta = Metadata {
+        output: Some(array![[third], [third], [third]]),
+        ..Default::default()
+    };
+    let (x, y) = stream(300, 7, true);
+    let mut model = AdaptiveSemanticENN::new(meta, 300, 1, false, "outputs".into()).unwrap();
+    assert!(model.learned_alpha().is_none());
+    for start in (0..300).step_by(20) {
+        let rows = s![start..start + 20, ..];
+        model
+            .add(x.slice(rows).to_owned(), y.slice(rows).to_owned(), None)
+            .unwrap();
+    }
+    let alpha = model.learned_alpha().unwrap();
+    assert!(alpha[0] < alpha[1] && alpha[0] < alpha[2], "{alpha:?}");
+    assert!(model.posterior(&x.slice(s![..5, ..]).to_owned()).is_ok());
+}
+
+#[test]
+fn output_factor_weights_drop_the_misleading_factor_in_predictions() {
+    let h = 0.5_f64.sqrt();
+    let meta = Metadata {
+        output: Some(array![[h, 0.0], [h, 0.0], [0.0, h], [0.0, h]]),
+        ..Default::default()
+    };
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+    let mut rng = StdRng::seed_from_u64(11);
+    let rows = 400;
+    let x = Array2::from_shape_fn((rows, 2), |_| rng.gen::<f64>());
+    let mut noise = |s: f64| (rng.gen::<f64>() - 0.5) * s;
+    let y = Array2::from_shape_fn((rows, 4), |(i, j)| {
+        let signal = (4.0 * x[[i, 0]]).sin();
+        let sign = if j == 3 { -1.0 } else { 1.0 };
+        sign * signal + noise(0.6)
+    });
+    let mut model = AdaptiveSemanticENN::new(meta, 400, 1, false, "outputs".into()).unwrap();
+    assert!(model.learned_factor_weights().is_none());
+    for start in (0..rows).step_by(20) {
+        let r = s![start..start + 20, ..];
+        model
+            .add(x.slice(r).to_owned(), y.slice(r).to_owned(), None)
+            .unwrap();
+    }
+    let g = model.learned_factor_weights().unwrap();
+    assert!(g[0] > g[1] + 0.3, "{g:?}");
+    assert!(model.posterior(&x.slice(s![..5, ..]).to_owned()).is_ok());
+}
+
+#[test]
+fn input_scales_follow_the_informative_factor_and_survive_failed_batches() {
+    let meta = Metadata {
+        bounds: Some(array![[0.0, 1.0], [0.0, 1.0]]),
+        input: Some(array![[1.0, 0.0], [0.0, 1.0]]),
+        output: None,
+    };
+    let (x, y) = stream(240, 3, false);
+    let y = y.slice(s![.., ..1]).to_owned();
+    let mut model = AdaptiveSemanticENN::new(meta, 120, 1, false, "inputs".into()).unwrap();
+    for start in (0..240).step_by(40) {
+        let rows = s![start..start + 40, ..];
+        model
+            .add(x.slice(rows).to_owned(), y.slice(rows).to_owned(), None)
+            .unwrap();
+    }
+    let scale = model.column_scale().unwrap();
+    assert!(scale[0] > 3.0 * scale[1], "{scale:?}");
+    let before = model.column_scale().unwrap();
+    assert!(model.add(x.clone(), Array2::zeros((240, 2)), None).is_err());
+    assert_eq!(model.column_scale().unwrap(), before);
+}

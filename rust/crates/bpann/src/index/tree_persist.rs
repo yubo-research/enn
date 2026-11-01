@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Write};
@@ -54,7 +53,11 @@ impl Tree {
         }
         let centroid = match s.parent(id) {
             Some(p) => {
-                let slot = s.ids(p).iter().position(|&k| k == id).expect("child listed in its parent");
+                let slot = s
+                    .ids(p)
+                    .iter()
+                    .position(|&k| k == id)
+                    .expect("child listed in its parent");
                 s.block(p)[slot * d..(slot + 1) * d].to_vec()
             }
             None => self.page_centroid(id),
@@ -79,11 +82,18 @@ impl Tree {
     }
 
     pub fn page_bytes(&self) -> Vec<u8> {
-        (0..self.num_pages() as u32).flat_map(|id| self.page(id).serialize(self.header.num_dim)).collect()
+        (0..self.num_pages() as u32)
+            .flat_map(|id| self.page(id).serialize(self.header.num_dim))
+            .collect()
     }
 
     pub fn persist(&self) -> Result<(), BpannError> {
-        persist_index_files_with(&self.index_dir, &self.header, |w| self.write_pages(w), &HashMap::new())
+        persist_index_files_with(
+            &self.index_dir,
+            &self.header,
+            |w| self.write_pages(w),
+            &HashMap::new(),
+        )
     }
 
     pub fn on_disk_index_matches(&self) -> Result<bool, BpannError> {
@@ -143,16 +153,23 @@ impl Tree {
                 page_id,
                 centroids,
                 child_page_ids,
-            } if !child_page_ids.is_empty() => (page_id, Kind::Internal, child_page_ids, centroids.concat()),
+            } if !child_page_ids.is_empty() => {
+                (page_id, Kind::Internal, child_page_ids, centroids.concat())
+            }
             _ => return false,
         };
         let d = self.store.num_dim();
-        let fits = ids.len() <= SLOT_ENTRIES && (kind == Kind::Leaf || block.len() == ids.len() * d);
+        let fits =
+            ids.len() <= SLOT_ENTRIES && (kind == Kind::Leaf || block.len() == ids.len() * d);
         if (id as usize) >= self.num_pages() || !fits || self.store.count(id) == u32::MAX as usize {
             return false;
         }
         self.store.set_kind(id, kind);
-        let block = if kind == Kind::Leaf { vec![0.0; ids.len() * d] } else { block };
+        let block = if kind == Kind::Leaf {
+            vec![0.0; ids.len() * d]
+        } else {
+            block
+        };
         self.store.set_entries(id, &ids, &block);
         self.store.set_count(id, u32::MAX as usize);
         true

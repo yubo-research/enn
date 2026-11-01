@@ -1,4 +1,3 @@
-
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
@@ -48,19 +47,25 @@ impl TopK {
     }
 
     fn cannot_improve(&self, bound: f32) -> bool {
-        let lower = (f64::from(bound) * (1.0 - 1e-4)
-            - 64.0 * f32::MIN_POSITIVE as f64).max(0.0);
+        let lower = (f64::from(bound) * (1.0 - 1e-4) - 64.0 * f32::MIN_POSITIVE as f64).max(0.0);
         self.heap.len() >= self.k && self.heap.peek().is_some_and(|&(worst, _)| lower > worst.0)
     }
 
     fn limit(&self) -> f64 {
-        if self.heap.len() < self.k { f64::INFINITY }
-        else { self.heap.peek().map_or(f64::INFINITY, |p| p.0.0) }
+        if self.heap.len() < self.k {
+            f64::INFINITY
+        } else {
+            self.heap.peek().map_or(f64::INFINITY, |p| p.0 .0)
+        }
     }
 
     fn into_sorted(self) -> Vec<(u32, f64)> {
         let mut out: Vec<(u32, f64)> = self.heap.into_iter().map(|(d, r)| (r, d.0)).collect();
-        out.sort_by(|a, b| OrderedFloat(a.1).cmp(&OrderedFloat(b.1)).then(a.0.cmp(&b.0)));
+        out.sort_by(|a, b| {
+            OrderedFloat(a.1)
+                .cmp(&OrderedFloat(b.1))
+                .then(a.0.cmp(&b.0))
+        });
         out
     }
 }
@@ -77,38 +82,66 @@ pub fn search_tree(
             return Ok(Some(f64::from(l2_sq_f32(query, x))));
         }
         let mut buf = Vec::with_capacity(query.len());
-        bpann_row_to_f32(store.train_x.mmap_row_slice(row as usize)?, store.scale_x, store.x_scale, &mut buf);
+        bpann_row_to_f32(
+            store.train_x.mmap_row_slice(row as usize)?,
+            store.scale_x,
+            store.x_scale,
+            &mut buf,
+        );
         Ok(Some(f64::from(l2_sq_f32(query, &buf))))
     })?;
-    Ok(rows.into_iter().map(|(row, dist)| (row, dist as f32)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(row, dist)| (row, dist as f32))
+        .collect())
 }
 
 pub fn search_tree_refined(
-    tree: &Tree, query: &[f64], k: usize, store: &MmapSearchStore<'_>,
+    tree: &Tree,
+    query: &[f64],
+    k: usize,
+    store: &MmapSearchStore<'_>,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
     search_tree_refined_with_extra(tree, query, k, store, 10)
 }
 
 pub fn search_tree_refined_with_extra(
-    tree: &Tree, query: &[f64], k: usize, store: &MmapSearchStore<'_>, extra: usize,
+    tree: &Tree,
+    query: &[f64],
+    k: usize,
+    store: &MmapSearchStore<'_>,
+    extra: usize,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
     let pool = k.saturating_add(extra).min(tree.header.indexed_rows);
     let mut scaled = Vec::with_capacity(query.len());
     bpann_row_to_f32(query, store.scale_x, store.x_scale, &mut scaled);
-    let candidates = search_tree(tree, &scaled, pool, leaf_budget(tree.header.indexed_rows), store)?;
+    let candidates = search_tree(
+        tree,
+        &scaled,
+        pool,
+        leaf_budget(tree.header.indexed_rows),
+        store,
+    )?;
     let boundary = candidates.last().map_or(0.0, |p| f64::from(p.1));
-    let mut refined: Vec<(u32, f64)> = candidates.iter().map(|&(row, _)| {
-        Ok((row, crate::distance::row_sq_l2(
-            ndarray::ArrayView1::from(query),
-            ndarray::ArrayView1::from(store.train_x.mmap_row_slice(row as usize)?),
-            store.scale_x, ndarray::ArrayView1::from(store.x_scale),
-        )))
-    }).collect::<Result<_, BpannError>>()?;
-    refined.sort_by(|a,b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+    let mut refined: Vec<(u32, f64)> = candidates
+        .iter()
+        .map(|&(row, _)| {
+            Ok((
+                row,
+                crate::distance::row_sq_l2(
+                    ndarray::ArrayView1::from(query),
+                    ndarray::ArrayView1::from(store.train_x.mmap_row_slice(row as usize)?),
+                    store.scale_x,
+                    ndarray::ArrayView1::from(store.x_scale),
+                ),
+            ))
+        })
+        .collect::<Result<_, BpannError>>()?;
+    refined.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
     let all_rows = refined.len() == tree.header.indexed_rows;
-    let certified = refined.get(k.saturating_sub(1)).is_some_and(|p| {
-        refinement_lower_bound(tree, query, store, boundary) > p.1
-    });
+    let certified = refined
+        .get(k.saturating_sub(1))
+        .is_some_and(|p| refinement_lower_bound(tree, query, store, boundary) > p.1);
     if !all_rows && (!tree.rows_cached() || !certified) {
         return search_tree_f64(tree, query, k, store);
     }
@@ -116,17 +149,31 @@ pub fn search_tree_refined_with_extra(
     Ok(refined)
 }
 
-fn refinement_lower_bound(tree: &Tree, query: &[f64], store: &MmapSearchStore<'_>, boundary: f64) -> f64 {
+fn refinement_lower_bound(
+    tree: &Tree,
+    query: &[f64],
+    store: &MmapSearchStore<'_>,
+    boundary: f64,
+) -> f64 {
     let eta = 4.0 * tree.coordinate_relative_error
         + 16.0 * (query.len() + 1) as f64 * f32::EPSILON as f64;
-    let norm: f64 = query.iter().enumerate().map(|(j, &q)| {
-        let q = if store.scale_x { q / store.x_scale[j] } else { q };
-        q * q
-    }).sum();
+    let norm: f64 = query
+        .iter()
+        .enumerate()
+        .map(|(j, &q)| {
+            let q = if store.scale_x {
+                q / store.x_scale[j]
+            } else {
+                q
+            };
+            q * q
+        })
+        .sum();
     if eta >= 0.1 || !norm.is_finite() || !boundary.is_finite() {
         return 0.0;
     }
-    let absolute = 64.0 * (query.len() as f64).sqrt()
+    let absolute = 64.0
+        * (query.len() as f64).sqrt()
         * (tree.coordinate_absolute_error + (f32::MIN_POSITIVE as f64).sqrt());
     let lower = boundary.sqrt() * (1.0 - eta) - eta * norm.sqrt() - absolute;
     lower.max(0.0).powi(2)
@@ -140,22 +187,40 @@ pub fn search_tree_f64(
 ) -> Result<Vec<(u32, f64)>, BpannError> {
     let mut scaled = Vec::with_capacity(query.len());
     bpann_row_to_f32(query, store.scale_x, store.x_scale, &mut scaled);
-    let query_scaled: Vec<f64> = query.iter().enumerate().map(|(j, &q)| {
-        if store.scale_x { q / store.x_scale[j] } else { q }
-    }).collect();
-    search_tree_scored(tree, &scaled, k, leaf_budget(tree.header.indexed_rows), |row, _, limit| {
-        let point = store.train_x.mmap_row_slice(row as usize)?;
-        let mut distance = 0.0;
-        for (j, (&q, &x)) in query_scaled.iter().zip(point).enumerate() {
-            let x = if store.scale_x { x / store.x_scale[j] } else { x };
-            let delta = q - x;
-            distance += delta * delta;
-            if distance > limit {
-                return Ok(None);
+    let query_scaled: Vec<f64> = query
+        .iter()
+        .enumerate()
+        .map(|(j, &q)| {
+            if store.scale_x {
+                q / store.x_scale[j]
+            } else {
+                q
             }
-        }
-        Ok(Some(distance.max(0.0)))
-    })
+        })
+        .collect();
+    search_tree_scored(
+        tree,
+        &scaled,
+        k,
+        leaf_budget(tree.header.indexed_rows),
+        |row, _, limit| {
+            let point = store.train_x.mmap_row_slice(row as usize)?;
+            let mut distance = 0.0;
+            for (j, (&q, &x)) in query_scaled.iter().zip(point).enumerate() {
+                let x = if store.scale_x {
+                    x / store.x_scale[j]
+                } else {
+                    x
+                };
+                let delta = q - x;
+                distance += delta * delta;
+                if distance > limit {
+                    return Ok(None);
+                }
+            }
+            Ok(Some(distance.max(0.0)))
+        },
+    )
 }
 
 fn search_tree_scored(
@@ -175,7 +240,11 @@ fn search_tree_scored(
     let s = &tree.store;
     let d = query.len().max(1);
     let mut frontier: BinaryHeap<Reverse<(OrderedF32, OrderedF32, u32)>> = BinaryHeap::new();
-    frontier.push(Reverse((OrderedF32(0.0), OrderedF32(0.0), tree.header.root_page_id)));
+    frontier.push(Reverse((
+        OrderedF32(0.0),
+        OrderedF32(0.0),
+        tree.header.root_page_id,
+    )));
     let mut leaves = 0usize;
     while let Some(Reverse((_, bound, page_id))) = frontier.pop() {
         if leaves >= leaf_budget && top.heap.len() >= k {
@@ -190,7 +259,11 @@ fn search_tree_scored(
                 let radius = s.radius(child);
                 let bound = lower_bound(d2, radius);
                 if !top.cannot_improve(bound) {
-                    frontier.push(Reverse((OrderedF32(priority(d2, radius)), OrderedF32(bound), child)));
+                    frontier.push(Reverse((
+                        OrderedF32(priority(d2, radius)),
+                        OrderedF32(bound),
+                        child,
+                    )));
                 }
             }
             continue;

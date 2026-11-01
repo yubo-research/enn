@@ -25,7 +25,10 @@ fn pages_keep_their_fields_entries_and_kind() {
     s.set_count(node, 2);
     s.set_radius(node, 1.5);
     s.set_parent(leaf, Some(node));
-    assert_eq!((s.ids(node), s.count(node), s.radius(node)), (&[leaf][..], 2, 1.5));
+    assert_eq!(
+        (s.ids(node), s.count(node), s.radius(node)),
+        (&[leaf][..], 2, 1.5)
+    );
     assert_eq!(s.parent(leaf), Some(node));
     s.set_kind(node, Kind::Leaf);
     assert!(s.is_leaf(node) && s.len(node) == 1);
@@ -44,7 +47,8 @@ fn growing_past_the_first_mapping_keeps_every_page() {
     }
     assert_eq!(s.num_pages(), 1000);
     assert!(s.file_bytes() >= 1000 * SLOT_ENTRIES * 4 * 4);
-    assert!((0..1000u32).all(|i| s.ids(i) == [i] && s.block(i)[0] == i as f32 && s.count(i) == i as usize));
+    assert!((0..1000u32)
+        .all(|i| s.ids(i) == [i] && s.block(i)[0] == i as f32 && s.count(i) == i as usize));
     let copy = s.try_clone().unwrap();
     s.set_count(3, 99);
     assert_eq!((copy.count(3), copy.ids(999)), (3, &[999u32][..]));
@@ -68,7 +72,10 @@ fn a_small_budget_moves_pages_to_files_releases_them_and_keeps_the_data() {
     s.set_resident_budget(usize::MAX).unwrap();
     assert!(!s.residency.tracking());
     let copy = s.try_clone().unwrap();
-    assert!(copy.files.is_some(), "a copy of a file-backed store is file-backed");
+    assert!(
+        copy.files.is_some(),
+        "a copy of a file-backed store is file-backed"
+    );
     assert!((0..4000u32).all(|i| copy.ids(i) == [i] && copy.block(i) == [i as f32; 8]));
 }
 

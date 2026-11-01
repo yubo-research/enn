@@ -1,23 +1,31 @@
-
 use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-pub(crate) fn optional_f64(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<f64>> {
+pub(crate) fn optional_f64(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+    key: &str,
+) -> PyResult<Option<f64>> {
     match dict.get_item(key)? {
         Some(v) => Ok(Some(v.extract()?)),
         None => Ok(None),
     }
 }
 
-pub(crate) fn optional_usize(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<usize>> {
+pub(crate) fn optional_usize(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+    key: &str,
+) -> PyResult<Option<usize>> {
     match dict.get_item(key)? {
         Some(v) => Ok(Some(v.extract()?)),
         None => Ok(None),
     }
 }
 
-pub(crate) fn optional_bool(dict: &Bound<'_, pyo3::types::PyDict>, key: &str) -> PyResult<Option<bool>> {
+pub(crate) fn optional_bool(
+    dict: &Bound<'_, pyo3::types::PyDict>,
+    key: &str,
+) -> PyResult<Option<bool>> {
     match dict.get_item(key)? {
         Some(v) => Ok(Some(v.extract()?)),
         None => Ok(None),
@@ -41,9 +49,7 @@ pub(crate) fn apply_scalar_overrides(
 
 #[cfg(test)]
 mod kiss_coverage_tests {
-    use super::{
-        apply_scalar_overrides, optional_bool, optional_f64, optional_usize,
-    };
+    use super::{apply_scalar_overrides, optional_bool, optional_f64, optional_usize};
 
     #[test]
     fn py_optimizer_helpers_are_linked() {
@@ -299,7 +305,10 @@ pub struct PyTelemetry {
 }
 
 #[pyfunction(name = "require_num_fit_samples", signature = (acquisition, num_fit_samples=None))]
-pub fn require_num_fit_samples_py(acquisition: &str, num_fit_samples: Option<usize>) -> PyResult<()> {
+pub fn require_num_fit_samples_py(
+    acquisition: &str,
+    num_fit_samples: Option<usize>,
+) -> PyResult<()> {
     let acq = acquisition_from_name(acquisition)?;
     let fit_samples = ennbo::FitSamples::from_count(num_fit_samples)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;

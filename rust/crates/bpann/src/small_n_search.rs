@@ -1,11 +1,8 @@
-
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::distance::row_sq_l2;
-use crate::merge::{
-    find_query_train_id_flat, merge_topk_precomputed_dist_with_self,
-};
+use crate::merge::{find_query_train_id_flat, merge_topk_precomputed_dist_with_self};
 use rayon::prelude::*;
 
 pub const SMALL_N_INCORE_SEARCH_LIMIT: usize = 8192;
@@ -48,7 +45,12 @@ pub fn topk_flat_sq_l2(
     let mut heap: BinaryHeap<(OrderedFloat<f64>, u32)> = BinaryHeap::with_capacity(k);
     for i in 0..n {
         let row = &flat[i * d..(i + 1) * d];
-        let dist = row_sq_l2(query.into(), row.into(), false, ndarray::ArrayView1::from(&[]));
+        let dist = row_sq_l2(
+            query.into(),
+            row.into(),
+            false,
+            ndarray::ArrayView1::from(&[]),
+        );
         let id = i as u32;
         if heap.len() < k {
             heap.push((OrderedFloat(dist), id));
@@ -129,9 +131,11 @@ pub fn score_queries_flat(
 
 fn scaled_row(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f64>) {
     out.clear();
-    out.extend(row.iter().enumerate().map(|(j, &v)| {
-        if scale_x { v / x_scale[j] } else { v }
-    }));
+    out.extend(
+        row.iter()
+            .enumerate()
+            .map(|(j, &v)| if scale_x { v / x_scale[j] } else { v }),
+    );
 }
 
 pub fn load_or_build_small_n_cache(
@@ -185,7 +189,6 @@ mod tests {
 
     #[test]
     fn topk_flat_prefers_closer_2d_rows() {
-
         let flat = [0.0f64, 0.0, 3.0, 0.0, 1.0, 0.0];
         let hits = topk_flat_sq_l2(&[0.0, 0.0], &flat, 3, 2, 2);
         assert_eq!(hits.iter().map(|h| h.0).collect::<Vec<_>>(), vec![0, 2]);
@@ -215,8 +218,8 @@ mod tests {
     #[test]
     fn small_n_cache_rebuilds_after_append() {
         let dir = TempDir::new().unwrap();
-        let mut b = crate::backend::BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1)
-            .unwrap();
+        let mut b =
+            crate::backend::BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1).unwrap();
         b.append_rows(&array![[0.0]].view(), &array![[0.0]].view(), None)
             .unwrap();
         let c1 = load_or_build_small_n_cache(&b, 1).unwrap();

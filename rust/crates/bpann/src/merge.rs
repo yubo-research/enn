@@ -91,8 +91,6 @@ pub fn bpann_merge_topk_candidates(
         if let Some((id, _)) = ranked.iter().find(|(_, d)| *d <= SELF_DIST_EPS) {
             Some(*id)
         } else {
-
-
             find_query_train_id(train_x, query)
         }
     } else {
@@ -150,7 +148,8 @@ mod kiss_coverage_tests {
     #[test]
     fn merge_units_are_linked() {
         let dir = TempDir::new().unwrap();
-        let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
         store
             .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
             .unwrap();
@@ -202,7 +201,6 @@ mod kiss_coverage_tests {
         crate::merge::bpann_apply_exclude_nearest(&mut ranked, true, None);
         assert!(!ranked.iter().any(|(id, _)| *id == 7));
 
-
         let mut ranked2 = vec![(3u32, 0.5), (4u32, 1.0)];
         crate::merge::bpann_apply_exclude_nearest(&mut ranked2, true, None);
         assert_eq!(ranked2[0].0, 3);
@@ -212,7 +210,8 @@ mod kiss_coverage_tests {
     #[test]
     fn find_query_train_id_matches_exact_row() {
         let dir = TempDir::new().unwrap();
-        let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
         store
             .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
             .unwrap();

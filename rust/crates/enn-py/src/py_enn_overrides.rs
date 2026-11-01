@@ -1,4 +1,3 @@
-
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -78,7 +77,11 @@ pub(crate) fn parse_enn_overrides(
         return Ok(None);
     }
     let y_bounds = match dict.get_item("y_bounds")? {
-        Some(v) => Some(v.extract::<numpy::PyReadonlyArray2<f64>>()?.as_array().to_owned()),
+        Some(v) => Some(
+            v.extract::<numpy::PyReadonlyArray2<f64>>()?
+                .as_array()
+                .to_owned(),
+        ),
         None => None,
     };
     let tied_dims = match dict.get_item("tied_dims")? {
@@ -95,8 +98,15 @@ pub(crate) fn parse_enn_overrides(
         work_dir: optional_string(dict, "work_dir")?.map(PathBuf::from),
         tied_dims,
         semantic_only: optional_bool(dict, "semantic_only")?,
-        semantic_projection: dict.get_item("semantic_projection")?
-            .map(|v| Ok::<_, PyErr>(v.extract::<numpy::PyReadonlyArray2<f64>>()?.as_array().to_owned()))
+        semantic_projection: dict
+            .get_item("semantic_projection")?
+            .map(|v| {
+                Ok::<_, PyErr>(
+                    v.extract::<numpy::PyReadonlyArray2<f64>>()?
+                        .as_array()
+                        .to_owned(),
+                )
+            })
             .transpose()?,
     }))
 }

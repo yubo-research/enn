@@ -1,4 +1,3 @@
-
 use crate::distance::l2_sq_f32;
 use crate::error::BpannError;
 use crate::index::split::weighted_mean;
@@ -54,7 +53,12 @@ impl Tree {
     fn subtree_radius(&mut self, page: u32, centroid: &[f32], depth: usize) -> f32 {
         if self.store.is_leaf(page) {
             let d = self.store.num_dim();
-            return self.store.block(page).chunks_exact(d).map(|row| dist(row, centroid)).fold(0.0, f32::max);
+            return self
+                .store
+                .block(page)
+                .chunks_exact(d)
+                .map(|row| dist(row, centroid))
+                .fold(0.0, f32::max);
         }
         if depth >= MAX_DEPTH {
             return f32::INFINITY;
@@ -107,7 +111,8 @@ impl Tree {
         }
         self.store.set_parent(root, None);
         let total = self.count_subtree(root, 0);
-        let all_seen = (0..self.num_pages() as u32).all(|p| self.store.count(p) != u32::MAX as usize);
+        let all_seen =
+            (0..self.num_pages() as u32).all(|p| self.store.count(p) != u32::MAX as usize);
         total == Some(self.header.indexed_rows) && all_seen
     }
 
@@ -138,8 +143,16 @@ impl Tree {
         (0..copy.num_pages() as u32).for_each(|p| copy.store.set_count(p, u32::MAX as usize));
         assert!(copy.recount(), "tree does not recount");
         for p in 0..self.num_pages() as u32 {
-            assert_eq!(self.store.count(p), copy.store.count(p), "count of page {p}");
-            assert_eq!(self.store.parent(p), copy.store.parent(p), "parent of page {p}");
+            assert_eq!(
+                self.store.count(p),
+                copy.store.count(p),
+                "count of page {p}"
+            );
+            assert_eq!(
+                self.store.parent(p),
+                copy.store.parent(p),
+                "parent of page {p}"
+            );
         }
     }
 }

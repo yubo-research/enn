@@ -69,7 +69,6 @@ fn persist_rewrites_corrupt_pages_with_matching_header() {
 
 #[test]
 fn soft_sync_search_metamorphic_matches_hard_persist() {
-
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
     let mut soft = BpannBackend::new_empty(path.clone(), 3, 1)

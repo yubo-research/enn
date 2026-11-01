@@ -22,7 +22,10 @@ pub struct IncrementalIndex {
 impl Clone for IncrementalIndex {
     fn clone(&self) -> Self {
         Self {
-            tree: self.tree.as_ref().map(|t| t.try_clone().expect("copy tree store")),
+            tree: self
+                .tree
+                .as_ref()
+                .map(|t| t.try_clone().expect("copy tree store")),
             indexed_rows: self.indexed_rows,
             index_dir: self.index_dir.clone(),
             morph: self.morph.clone(),
@@ -66,12 +69,26 @@ impl IncrementalIndex {
         self.morph.active()
     }
 
-    fn bulk_build_from(&mut self, train_x: &MmapColumnStore, num_dim: usize, scale: (bool, &[f64]), end: usize) -> Result<(), BpannError> {
+    fn bulk_build_from(
+        &mut self,
+        train_x: &MmapColumnStore,
+        num_dim: usize,
+        scale: (bool, &[f64]),
+        end: usize,
+    ) -> Result<(), BpannError> {
         let end = end.min(self.indexed_rows + bulk_build_max_rows(num_dim));
         let rows: Vec<u32> = (self.indexed_rows as u32..end as u32).collect();
-        let (mut v, mut vs) = (Vec::with_capacity(num_dim), Vec::with_capacity(rows.len() * num_dim));
+        let (mut v, mut vs) = (
+            Vec::with_capacity(num_dim),
+            Vec::with_capacity(rows.len() * num_dim),
+        );
         for &row in &rows {
-            bpann_row_to_f32(train_x.mmap_row_slice(row as usize)?, scale.0, scale.1, &mut v);
+            bpann_row_to_f32(
+                train_x.mmap_row_slice(row as usize)?,
+                scale.0,
+                scale.1,
+                &mut v,
+            );
             vs.extend_from_slice(&v);
         }
         self.tree = Some(bulk_build(&rows, &mut vs, num_dim, self.index_dir.clone())?);
@@ -104,7 +121,14 @@ impl IncrementalIndex {
                     tree.insert_row(row as u32, &v)?;
                     self.morph.advance(tree);
                 }
-                None => self.tree = Some(Tree::new_tree(row as u32, &v, num_dim, self.index_dir.clone())?),
+                None => {
+                    self.tree = Some(Tree::new_tree(
+                        row as u32,
+                        &v,
+                        num_dim,
+                        self.index_dir.clone(),
+                    )?)
+                }
             }
             self.indexed_rows = row + 1;
         }
@@ -125,7 +149,14 @@ impl IncrementalIndex {
         if let Some(tree) = &self.tree {
             tree.persist()?;
         }
-        obs::bpann_write_metadata(work_dir, train_x.nrows, num_dim, num_metrics, scale_x, self.indexed_rows)?;
+        obs::bpann_write_metadata(
+            work_dir,
+            train_x.nrows,
+            num_dim,
+            num_metrics,
+            scale_x,
+            self.indexed_rows,
+        )?;
         obs::write_indexed_rows(work_dir, self.indexed_rows)?;
         Ok(())
     }
@@ -154,13 +185,17 @@ impl IncrementalIndex {
         store: Option<&MmapSearchStore<'_>>,
     ) -> Result<Vec<(u32, f32)>, BpannError> {
         match (&self.tree, store) {
-            (Some(tree), Some(store)) => search_tree(tree, query_f32, k, leaf_budget(self.indexed_rows), store),
+            (Some(tree), Some(store)) => {
+                search_tree(tree, query_f32, k, leaf_budget(self.indexed_rows), store)
+            }
             _ => Ok(Vec::new()),
         }
     }
 
     pub fn index_memory_bytes(&self) -> usize {
-        self.tree.as_ref().map_or(0, |_| Tree::persisted_bytes(&self.index_dir))
+        self.tree
+            .as_ref()
+            .map_or(0, |_| Tree::persisted_bytes(&self.index_dir))
     }
 }
 
@@ -171,8 +206,8 @@ fn on_disk_indexed_rows(index_dir: &std::path::Path) -> Result<usize, BpannError
     }
     let text = fs::read_to_string(&header_path)
         .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-    let header: IndexHeader = serde_json::from_str(&text)
-        .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+    let header: IndexHeader =
+        serde_json::from_str(&text).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
     Ok(header.indexed_rows)
 }
 
@@ -188,7 +223,8 @@ mod tests {
     fn store_with_rows(dir: &TempDir, n: usize, d: usize, seed: u64) -> MmapColumnStore {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let x = ndarray::Array2::from_shape_fn((n, d), |_| rng.gen::<f64>());
-        let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), d, None).unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), d, None).unwrap();
         store.mmap_append(&x.view()).unwrap();
         store
     }
@@ -197,7 +233,13 @@ mod tests {
         if tree.store.is_leaf(page_id) {
             return 1;
         }
-        1 + tree.store.ids(page_id).iter().map(|&c| depth(tree, c)).max().unwrap()
+        1 + tree
+            .store
+            .ids(page_id)
+            .iter()
+            .map(|&c| depth(tree, c))
+            .max()
+            .unwrap()
     }
 
     fn tree(idx: &IncrementalIndex) -> &Tree {
@@ -210,14 +252,19 @@ mod tests {
         let store = store_with_rows(&dir, 5000, 3, 1);
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
         for end in [1, 2, 700, 701, 5000] {
-            idx.ensure_sync_for_backend(&store, 3, false, &[1.0; 3], end).unwrap();
+            idx.ensure_sync_for_backend(&store, 3, false, &[1.0; 3], end)
+                .unwrap();
         }
         let t = tree(&idx);
         assert_eq!(idx.indexed_rows, 5000);
         assert_eq!(t.header.indexed_rows, 5000);
         assert_eq!(t.leaf_row_ids(), (0..5000).collect::<Vec<u32>>());
         for page in 0..t.num_pages() as u32 {
-            let cap = if t.store.is_leaf(page) { TREE_LEAF_CAPACITY } else { TREE_FANOUT };
+            let cap = if t.store.is_leaf(page) {
+                TREE_LEAF_CAPACITY
+            } else {
+                TREE_FANOUT
+            };
             assert!(t.store.len(page) <= cap);
         }
         let d = depth(t, t.header.root_page_id);
@@ -229,27 +276,39 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = store_with_rows(&dir, 3000, 2, 2);
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
-        idx.ensure_sync_for_backend(&store, 2, false, &[1.0; 2], 3000).unwrap();
+        idx.ensure_sync_for_backend(&store, 2, false, &[1.0; 2], 3000)
+            .unwrap();
         let s = MmapSearchStore {
             train_x: &store,
             scale_x: false,
             x_scale: &[1.0, 1.0],
         };
         for row in [0usize, 1234, 2999] {
-            let q: Vec<f32> = store.mmap_row_slice(row).unwrap().iter().map(|&v| v as f32).collect();
+            let q: Vec<f32> = store
+                .mmap_row_slice(row)
+                .unwrap()
+                .iter()
+                .map(|&v| v as f32)
+                .collect();
             let got = idx.search_candidates(&q, 3, Some(&s)).unwrap();
             assert_eq!(got.len(), 3);
             assert_eq!(got[0], (row as u32, 0.0));
             assert!(got[0].1 <= got[1].1 && got[1].1 <= got[2].1);
         }
-        assert!(idx.search_candidates(&[0.0, 0.0], 3, None).unwrap().is_empty());
+        assert!(idx
+            .search_candidates(&[0.0, 0.0], 3, None)
+            .unwrap()
+            .is_empty());
     }
 
     fn rows_below(t: &Tree, page_id: u32, out: &mut Vec<u32>) {
         if t.store.is_leaf(page_id) {
             out.extend(t.store.ids(page_id));
         } else {
-            t.store.ids(page_id).iter().for_each(|&c| rows_below(t, c, out));
+            t.store
+                .ids(page_id)
+                .iter()
+                .for_each(|&c| rows_below(t, c, out));
         }
     }
 
@@ -261,10 +320,18 @@ mod tests {
                 let mut rows = Vec::new();
                 rows_below(t, child, &mut rows);
                 for row in rows {
-                    let x: Vec<f32> =
-                        store.mmap_row_slice(row as usize).unwrap().iter().zip(scale).map(|(&v, s)| (v * s) as f32).collect();
+                    let x: Vec<f32> = store
+                        .mmap_row_slice(row as usize)
+                        .unwrap()
+                        .iter()
+                        .zip(scale)
+                        .map(|(&v, s)| (v * s) as f32)
+                        .collect();
                     let dd = crate::index::tree_counts::dist(&x, c);
-                    assert!(dd <= t.store.radius(child) * 1.0001 + 1e-6, "row {row} at {dd} outside page {child}");
+                    assert!(
+                        dd <= t.store.radius(child) * 1.0001 + 1e-6,
+                        "row {row} at {dd} outside page {child}"
+                    );
                 }
             }
         }
@@ -275,7 +342,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = store_with_rows(&dir, 4000, 3, 5);
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
-        idx.ensure_sync_for_backend(&store, 3, false, &[1.0; 3], 4000).unwrap();
+        idx.ensure_sync_for_backend(&store, 3, false, &[1.0; 3], 4000)
+            .unwrap();
         assert_radii_bound_rows(&idx, &store, &[1.0; 3]);
         tree(&idx).assert_counts_consistent();
         let s = MmapSearchStore {
@@ -289,12 +357,20 @@ mod tests {
             let got = search_tree(tree(&idx), &q, 7, usize::MAX, &s).unwrap();
             let mut all: Vec<(u32, f32)> = (0..4000u32)
                 .map(|r| {
-                    let x: Vec<f32> = store.mmap_row_slice(r as usize).unwrap().iter().map(|&v| v as f32).collect();
+                    let x: Vec<f32> = store
+                        .mmap_row_slice(r as usize)
+                        .unwrap()
+                        .iter()
+                        .map(|&v| v as f32)
+                        .collect();
                     (r, crate::distance::l2_sq_f32(&q, &x))
                 })
                 .collect();
             all.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
-            assert_eq!(got.iter().map(|g| g.0).collect::<Vec<_>>(), all[..7].iter().map(|a| a.0).collect::<Vec<_>>());
+            assert_eq!(
+                got.iter().map(|g| g.0).collect::<Vec<_>>(),
+                all[..7].iter().map(|a| a.0).collect::<Vec<_>>()
+            );
         }
         idx.rescale_coords(&[2.0, 0.5, 1.0]);
         assert_radii_bound_rows(&idx, &store, &[2.0, 0.5, 1.0]);
@@ -305,7 +381,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = store_with_rows(&dir, 2000, 2, 4);
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
-        idx.ensure_sync_for_backend(&store, 2, false, &[1.0; 2], 2000).unwrap();
+        idx.ensure_sync_for_backend(&store, 2, false, &[1.0; 2], 2000)
+            .unwrap();
         let ratio = [2.0, 0.5];
         idx.rescale_coords(&ratio);
         let mut rebuilt = tree(&idx).try_clone().unwrap();
@@ -330,7 +407,8 @@ mod tests {
         let store = store_with_rows(&dir, 900, 2, 3);
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
         assert!(!idx.needs_disk_rewrite(false, 0));
-        idx.persist_to_disk_for_backend(&store, 2, false, &[1.0; 2], dir.path(), 1).unwrap();
+        idx.persist_to_disk_for_backend(&store, 2, false, &[1.0; 2], dir.path(), 1)
+            .unwrap();
         assert!(!idx.needs_disk_rewrite(false, 900));
         assert!(idx.needs_disk_rewrite(true, 900));
         assert!(idx.index_memory_bytes() > 0);
@@ -345,8 +423,13 @@ mod tests {
             x_scale: &[1.0, 1.0],
         };
         let q = [0.3f32, 0.6];
-        assert_eq!(reopened.search_candidates(&q, 5, Some(&s)).unwrap(), idx.search_candidates(&q, 5, Some(&s)).unwrap());
-        reopened.ensure_sync_for_backend(&store, 2, false, &[1.0; 2], 900).unwrap();
+        assert_eq!(
+            reopened.search_candidates(&q, 5, Some(&s)).unwrap(),
+            idx.search_candidates(&q, 5, Some(&s)).unwrap()
+        );
+        reopened
+            .ensure_sync_for_backend(&store, 2, false, &[1.0; 2], 900)
+            .unwrap();
         tree(&reopened).assert_counts_consistent();
         for q in [[0.1f32, 0.9], [0.5, 0.5]] {
             assert_eq!(
@@ -355,8 +438,14 @@ mod tests {
             );
         }
         let legacy_dir = dir.path().join("legacy");
-        BpannIndex::build_from_vectors(&(0..100).map(|i| vec![i as f32, 0.0]).collect::<Vec<_>>(), 2, 8, 0, legacy_dir.clone())
-            .unwrap();
+        BpannIndex::build_from_vectors(
+            &(0..100).map(|i| vec![i as f32, 0.0]).collect::<Vec<_>>(),
+            2,
+            8,
+            0,
+            legacy_dir.clone(),
+        )
+        .unwrap();
         let mut legacy = IncrementalIndex::new(legacy_dir);
         assert!(!legacy.adopt_persisted().unwrap());
         assert!(legacy.tree.is_none() && legacy.indexed_rows == 0);
@@ -367,12 +456,20 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = store_with_rows(&dir, 70_000, 1, 8);
         let mut idx = IncrementalIndex::new(dir.path().join("index"));
-        idx.ensure_sync_for_backend(&store, 1, false, &[1.0], 69_000).unwrap();
+        idx.ensure_sync_for_backend(&store, 1, false, &[1.0], 69_000)
+            .unwrap();
         let copy = idx.clone();
-        idx.ensure_sync_for_backend(&store, 1, false, &[1.0], 70_000).unwrap();
-        assert_eq!((copy.indexed_rows, tree(&copy).header.indexed_rows), (69_000, 69_000));
+        idx.ensure_sync_for_backend(&store, 1, false, &[1.0], 70_000)
+            .unwrap();
+        assert_eq!(
+            (copy.indexed_rows, tree(&copy).header.indexed_rows),
+            (69_000, 69_000)
+        );
         assert_eq!(tree(&idx).leaf_row_ids().len(), 70_000);
-        assert_eq!(tree(&copy).leaf_row_ids(), (0..69_000).collect::<Vec<u32>>());
+        assert_eq!(
+            tree(&copy).leaf_row_ids(),
+            (0..69_000).collect::<Vec<u32>>()
+        );
         tree(&copy).assert_counts_consistent();
     }
 }

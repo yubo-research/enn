@@ -253,3 +253,5 @@ mod adaptive_selection;
 #[cfg(test)]
 mod adaptive_tests;
 mod adaptive_weight;
+pub mod online_input_scales;
+pub mod online_output_weights;

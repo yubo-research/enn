@@ -1,4 +1,3 @@
-
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -34,7 +33,12 @@ fn scratch_file(dir: &Path, tag: &str) -> Result<File, BpannError> {
     fs::create_dir_all(dir).map_err(io_err)?;
     let seq = SCRATCH_SEQ.fetch_add(1, Ordering::Relaxed);
     let path = dir.join(format!("{tag}.{}.{seq}.scratch", std::process::id()));
-    let file = OpenOptions::new().read(true).write(true).create_new(true).open(&path).map_err(io_err)?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(io_err)?;
     let _ = fs::remove_file(&path);
     Ok(file)
 }
@@ -119,12 +123,16 @@ impl TreeStore {
         if self.files.is_none() && self.file_bytes() > self.residency.budget() {
             self.spill()?;
         }
-        self.residency.update_tracking(self.file_bytes(), self.meta.len());
+        self.residency
+            .update_tracking(self.file_bytes(), self.meta.len());
         Ok(())
     }
 
     fn spill(&mut self) -> Result<(), BpannError> {
-        let files = (scratch_file(&self.dir, "tree_meta")?, scratch_file(&self.dir, "tree_slots")?);
+        let files = (
+            scratch_file(&self.dir, "tree_meta")?,
+            scratch_file(&self.dir, "tree_slots")?,
+        );
         let mut meta = map(Some(&files.0), self.meta.len())?;
         let mut slots = map(Some(&files.1), self.slots.len())?;
         Residency::copy_released(&self.meta, &mut meta, self.meta.len());
@@ -145,7 +153,12 @@ impl TreeStore {
         }
         let id = self.num_pages as u32;
         self.num_pages += 1;
-        self.meta_words_mut(id).copy_from_slice(&[kind_tag(kind), 0, f32::INFINITY.to_bits(), NO_PARENT]);
+        self.meta_words_mut(id).copy_from_slice(&[
+            kind_tag(kind),
+            0,
+            f32::INFINITY.to_bits(),
+            NO_PARENT,
+        ]);
         Ok(id)
     }
 
@@ -177,21 +190,35 @@ impl TreeStore {
     fn meta_words(&self, id: u32) -> &[u32] {
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
-        unsafe { std::slice::from_raw_parts((self.meta.as_ptr() as *const u32).add(i * META_WORDS), META_WORDS) }
+        unsafe {
+            std::slice::from_raw_parts(
+                (self.meta.as_ptr() as *const u32).add(i * META_WORDS),
+                META_WORDS,
+            )
+        }
     }
 
     #[inline]
     fn meta_words_mut(&mut self, id: u32) -> &mut [u32] {
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
-        unsafe { std::slice::from_raw_parts_mut((self.meta.as_mut_ptr() as *mut u32).add(i * META_WORDS), META_WORDS) }
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                (self.meta.as_mut_ptr() as *mut u32).add(i * META_WORDS),
+                META_WORDS,
+            )
+        }
     }
 
     #[inline]
     fn slot_words(&self, id: u32) -> &[u32] {
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
-        self.residency.touch(i * self.slot_words * 4, self.slot_words * 4, &[&self.meta, &self.slots]);
+        self.residency.touch(
+            i * self.slot_words * 4,
+            self.slot_words * 4,
+            &[&self.meta, &self.slots],
+        );
         let n = self.slot_words;
         unsafe { std::slice::from_raw_parts((self.slots.as_ptr() as *const u32).add(i * n), n) }
     }
@@ -200,9 +227,15 @@ impl TreeStore {
     fn slot_words_mut(&mut self, id: u32) -> &mut [u32] {
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
-        self.residency.touch(i * self.slot_words * 4, self.slot_words * 4, &[&self.meta, &self.slots]);
+        self.residency.touch(
+            i * self.slot_words * 4,
+            self.slot_words * 4,
+            &[&self.meta, &self.slots],
+        );
         let n = self.slot_words;
-        unsafe { std::slice::from_raw_parts_mut((self.slots.as_mut_ptr() as *mut u32).add(i * n), n) }
+        unsafe {
+            std::slice::from_raw_parts_mut((self.slots.as_mut_ptr() as *mut u32).add(i * n), n)
+        }
     }
 
     pub fn is_leaf(&self, id: u32) -> bool {
@@ -237,7 +270,10 @@ impl TreeStore {
 
     pub fn set_entries(&mut self, id: u32, ids: &[u32], block: &[f32]) {
         let n = ids.len();
-        assert!(n <= SLOT_ENTRIES && block.len() == n * self.num_dim, "bad entries for page {id}");
+        assert!(
+            n <= SLOT_ENTRIES && block.len() == n * self.num_dim,
+            "bad entries for page {id}"
+        );
         let words = self.slot_words_mut(id);
         words[..n].copy_from_slice(ids);
         for (w, &v) in words[SLOT_ENTRIES..].iter_mut().zip(block) {
@@ -287,7 +323,10 @@ impl TreeStore {
         out.residency.set_budget(self.residency.budget());
         out.grow(self.capacity)?;
         out.num_pages = self.num_pages;
-        let (meta_len, slot_len) = (self.num_pages * META_WORDS * 4, self.num_pages * self.slot_words * 4);
+        let (meta_len, slot_len) = (
+            self.num_pages * META_WORDS * 4,
+            self.num_pages * self.slot_words * 4,
+        );
         if self.files.is_none() {
             out.meta[..meta_len].copy_from_slice(&self.meta[..meta_len]);
             out.slots[..slot_len].copy_from_slice(&self.slots[..slot_len]);

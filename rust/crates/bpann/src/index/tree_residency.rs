@@ -1,4 +1,3 @@
-
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use memmap2::{MmapMut, UncheckedAdvice};
@@ -49,7 +48,9 @@ impl Residency {
         self.reserved = reserved;
         let on = mapped_bytes > self.budget;
         if on && self.bits.is_empty() {
-            self.bits = (0..(1usize << TOUCH_BITS_LOG2) / 64).map(|_| AtomicU64::new(0)).collect();
+            self.bits = (0..(1usize << TOUCH_BITS_LOG2) / 64)
+                .map(|_| AtomicU64::new(0))
+                .collect();
         }
         self.tracking = on;
     }
@@ -71,10 +72,14 @@ impl Residency {
             let key = unit as u64;
             let bit = (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> (64 - TOUCH_BITS_LOG2)) as usize;
             let (word, mask) = (&self.bits[bit / 64], 1u64 << (bit % 64));
-            if word.load(Ordering::Relaxed) & mask != 0 || word.fetch_or(mask, Ordering::Relaxed) & mask != 0 {
+            if word.load(Ordering::Relaxed) & mask != 0
+                || word.fetch_or(mask, Ordering::Relaxed) & mask != 0
+            {
                 continue;
             }
-            if self.bytes.fetch_add(UNIT_BYTES, Ordering::Relaxed) + UNIT_BYTES + self.reserved > self.budget {
+            if self.bytes.fetch_add(UNIT_BYTES, Ordering::Relaxed) + UNIT_BYTES + self.reserved
+                > self.budget
+            {
                 self.release(maps);
             }
         }
@@ -143,11 +148,17 @@ mod tests {
 
     #[test]
     fn copy_released_copies_every_byte() {
-        let ((_a, mut src), (_b, mut dst)) = (maps(COPY_CHUNK_BYTES + 4096), maps(COPY_CHUNK_BYTES + 8192));
-        src.iter_mut().enumerate().for_each(|(i, b)| *b = (i % 251) as u8);
+        let ((_a, mut src), (_b, mut dst)) =
+            (maps(COPY_CHUNK_BYTES + 4096), maps(COPY_CHUNK_BYTES + 8192));
+        src.iter_mut()
+            .enumerate()
+            .for_each(|(i, b)| *b = (i % 251) as u8);
         Residency::copy_released(&src, &mut dst, src.len());
         assert!(src.iter().zip(dst.iter()).all(|(a, b)| a == b));
         release_map(&dst);
-        assert_eq!(dst[COPY_CHUNK_BYTES + 5], ((COPY_CHUNK_BYTES + 5) % 251) as u8);
+        assert_eq!(
+            dst[COPY_CHUNK_BYTES + 5],
+            ((COPY_CHUNK_BYTES + 5) % 251) as u8
+        );
     }
 }

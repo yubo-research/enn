@@ -1,4 +1,3 @@
-
 use std::cmp::{Ordering, Reverse};
 
 use rayon::prelude::*;
@@ -39,7 +38,8 @@ fn apply_perm(order: &mut [usize], buf: &mut [f32], dim: usize, perm: &[usize]) 
     if perm.len() < PARALLEL_SPLIT_MIN_ROWS {
         let new_order: Vec<usize> = perm.iter().map(|&p| order[p]).collect();
         let mut new_buf = Vec::with_capacity(buf.len());
-        perm.iter().for_each(|&p| new_buf.extend_from_slice(&buf[p * dim..(p + 1) * dim]));
+        perm.iter()
+            .for_each(|&p| new_buf.extend_from_slice(&buf[p * dim..(p + 1) * dim]));
         order.copy_from_slice(&new_order);
         buf.copy_from_slice(&new_buf);
         return;
@@ -50,8 +50,13 @@ fn apply_perm(order: &mut [usize], buf: &mut [f32], dim: usize, perm: &[usize]) 
         .par_chunks_mut(dim)
         .zip(perm.par_iter())
         .for_each(|(dst, &p)| dst.copy_from_slice(&buf[p * dim..(p + 1) * dim]));
-    order.par_iter_mut().zip(new_order.par_iter()).for_each(|(o, &n)| *o = n);
-    buf.par_chunks_mut(dim).zip(new_buf.par_chunks(dim)).for_each(|(b, n)| b.copy_from_slice(n));
+    order
+        .par_iter_mut()
+        .zip(new_order.par_iter())
+        .for_each(|(o, &n)| *o = n);
+    buf.par_chunks_mut(dim)
+        .zip(new_buf.par_chunks(dim))
+        .for_each(|(b, n)| b.copy_from_slice(n));
 }
 
 fn split_rows(order: &mut [usize], buf: &mut [f32], dim: usize) -> usize {
@@ -81,7 +86,11 @@ fn split_rows(order: &mut [usize], buf: &mut [f32], dim: usize) -> usize {
         .map(|(pos, x)| (x.iter().zip(&dir).map(|(&v, &d)| v * d).sum(), pos))
         .collect();
     let half = order.len() / 2;
-    proj.select_nth_unstable_by(half, |x, y| x.0.partial_cmp(&y.0).unwrap_or(Ordering::Equal).then(x.1.cmp(&y.1)));
+    proj.select_nth_unstable_by(half, |x, y| {
+        x.0.partial_cmp(&y.0)
+            .unwrap_or(Ordering::Equal)
+            .then(x.1.cmp(&y.1))
+    });
     let perm: Vec<usize> = proj.iter().map(|&(_, pos)| pos).collect();
     apply_perm(order, buf, dim, &perm);
     half
@@ -95,7 +104,10 @@ fn partition(order: &mut [usize], buf: &mut [f32], start: usize, dim: usize) -> 
     let half = split_rows(order, buf, dim);
     let (lo, hi) = order.split_at_mut(half);
     let (buf_lo, buf_hi) = buf.split_at_mut(half * dim);
-    let (a, b) = rayon::join(|| partition(lo, buf_lo, start, dim), || partition(hi, buf_hi, start + half, dim));
+    let (a, b) = rayon::join(
+        || partition(lo, buf_lo, start, dim),
+        || partition(hi, buf_hi, start + half, dim),
+    );
     Node::Split(Box::new(a), Box::new(b), n)
 }
 
@@ -106,7 +118,9 @@ fn children(node: &Node) -> Vec<&Node> {
             .filter(|&i| matches!(kids[i], Node::Split(..)))
             .max_by_key(|&i| (kids[i].count(), Reverse(i)));
         let Some(i) = largest else { break };
-        let Node::Split(a, b, _) = kids[i] else { unreachable!("filtered to splits") };
+        let Node::Split(a, b, _) = kids[i] else {
+            unreachable!("filtered to splits")
+        };
         kids.splice(i..=i, [a.as_ref(), b.as_ref()]);
     }
     kids
@@ -125,14 +139,18 @@ fn push_internal(tree: &mut Tree, kids: &[Emitted], count: usize) -> Result<Emit
     let weights: Vec<f64> = kids.iter().map(|k| k.count as f64).collect();
     let all: Vec<usize> = (0..kids.len()).collect();
     let centroid = weighted_mean(&centroids, &weights, &all);
-    let radius = kids.iter().map(|k| dist(&k.centroid, &centroid) + k.radius).fold(0.0, f32::max);
+    let radius = kids
+        .iter()
+        .map(|k| dist(&k.centroid, &centroid) + k.radius)
+        .fold(0.0, f32::max);
     let s = &mut tree.store;
     let page_id = s.alloc(Kind::Internal)?;
     let ids: Vec<u32> = kids.iter().map(|k| k.page_id).collect();
     s.set_entries(page_id, &ids, &centroids.concat());
     s.set_count(page_id, count);
     s.set_radius(page_id, radius);
-    kids.iter().for_each(|k| s.set_parent(k.page_id, Some(page_id)));
+    kids.iter()
+        .for_each(|k| s.set_parent(k.page_id, Some(page_id)));
     Ok(Emitted {
         page_id,
         centroid,
@@ -152,15 +170,24 @@ struct Builder<'a> {
 impl Builder<'_> {
     fn emit(&mut self, node: &Node) -> Result<Emitted, BpannError> {
         let Node::Leaf { start, len } = node else {
-            let kids = children(node).into_iter().map(|k| self.emit(k)).collect::<Result<Vec<_>, _>>()?;
+            let kids = children(node)
+                .into_iter()
+                .map(|k| self.emit(k))
+                .collect::<Result<Vec<_>, _>>()?;
             return push_internal(&mut self.tree, &kids, node.count());
         };
         let block = &self.vs[start * self.dim..(start + len) * self.dim];
         let points: Vec<&[f32]> = block.chunks_exact(self.dim).collect();
         let all: Vec<usize> = (0..*len).collect();
         let centroid = weighted_mean(&points, &vec![1.0; *len], &all);
-        let radius = points.iter().map(|p| dist(p, &centroid)).fold(0.0, f32::max);
-        let row_ids: Vec<u32> = self.order[*start..start + len].iter().map(|&i| self.rows[i]).collect();
+        let radius = points
+            .iter()
+            .map(|p| dist(p, &centroid))
+            .fold(0.0, f32::max);
+        let row_ids: Vec<u32> = self.order[*start..start + len]
+            .iter()
+            .map(|&i| self.rows[i])
+            .collect();
         let s = &mut self.tree.store;
         let page_id = s.alloc(Kind::Leaf)?;
         s.set_entries(page_id, &row_ids, block);
@@ -225,7 +252,13 @@ mod tests {
         let vs: Vec<f32> = (0..n * dim).map(|_| rng.gen::<f32>()).collect();
         let rows: Vec<u32> = (0..n as u32).collect();
         let dir = tempfile::TempDir::new().unwrap();
-        let mut tree = bulk_build(&rows[..8000], &mut vs[..8000 * dim].to_vec(), dim, dir.path().join("i")).unwrap();
+        let mut tree = bulk_build(
+            &rows[..8000],
+            &mut vs[..8000 * dim].to_vec(),
+            dim,
+            dir.path().join("i"),
+        )
+        .unwrap();
         assert_eq!(bulk_build_max_rows(1_000_000), BULK_BUILD_MIN_ROWS);
         assert_eq!(bulk_build_max_rows(4), BULK_BUILD_MAX_BYTES / 16);
         for &row in &rows[8000..] {

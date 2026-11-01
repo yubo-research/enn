@@ -1,4 +1,3 @@
-
 use std::sync::RwLock;
 
 pub const INDEX_COMPACT_FRAGMENT_MAX_MIN: usize = 3;
@@ -110,8 +109,7 @@ impl BpannTuning {
     }
 
     pub fn rows_need_skip_edges(&self, row_count: usize) -> bool {
-        row_count > self.exhaustive_search_row_limit
-            && row_count <= self.skip_refinement_row_limit
+        row_count > self.exhaustive_search_row_limit && row_count <= self.skip_refinement_row_limit
     }
 
     pub fn use_exhaustive_search(&self, rows: usize) -> bool {
@@ -136,7 +134,10 @@ pub fn clear_tuning_provider() {
 }
 
 pub fn current_tuning() -> BpannTuning {
-    let tuning = if let Some(provider) = TUNING_PROVIDER.read().expect("tuning provider lock").as_ref()
+    let tuning = if let Some(provider) = TUNING_PROVIDER
+        .read()
+        .expect("tuning provider lock")
+        .as_ref()
     {
         provider()
     } else {
@@ -187,7 +188,6 @@ mod tests {
 
     #[test]
     fn metamorphic_default_threshold_independent_of_other_fields() {
-
         let base = BpannTuning::default();
         let variants = [
             BpannTuning {
@@ -265,12 +265,18 @@ mod tests {
             index_compact_rows_per_fragment: 0,
             ..Default::default()
         };
-        assert!(t.validate().unwrap_err().contains("index_compact_rows_per_fragment"));
+        assert!(t
+            .validate()
+            .unwrap_err()
+            .contains("index_compact_rows_per_fragment"));
         let t = BpannTuning {
             search_rows_per_fragment: 0,
             ..Default::default()
         };
-        assert!(t.validate().unwrap_err().contains("search_rows_per_fragment"));
+        assert!(t
+            .validate()
+            .unwrap_err()
+            .contains("search_rows_per_fragment"));
         let t = BpannTuning {
             search_beam_width: 0,
             ..Default::default()
@@ -284,7 +290,10 @@ mod tests {
             index_compact_fragment_max: INDEX_COMPACT_FRAGMENT_MAX_MIN - 1,
             ..Default::default()
         };
-        assert!(t.validate().unwrap_err().contains("index_compact_fragment_max"));
+        assert!(t
+            .validate()
+            .unwrap_err()
+            .contains("index_compact_fragment_max"));
     }
 
     #[test]
@@ -300,11 +309,20 @@ mod tests {
     #[test]
     fn default_search_row_limits_match_historical_cliffs() {
         let t = BpannTuning::default();
-        assert_eq!(t.exhaustive_search_row_limit, DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT);
-        assert_eq!(t.skip_refinement_row_limit, DEFAULT_SKIP_REFINEMENT_ROW_LIMIT);
+        assert_eq!(
+            t.exhaustive_search_row_limit,
+            DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT
+        );
+        assert_eq!(
+            t.skip_refinement_row_limit,
+            DEFAULT_SKIP_REFINEMENT_ROW_LIMIT
+        );
         assert_eq!(DEFAULT_EXHAUSTIVE_SEARCH_ROW_LIMIT, 2500);
         assert_eq!(DEFAULT_SKIP_REFINEMENT_ROW_LIMIT, 150_000);
-        assert_eq!(t.structured_build_row_limit, DEFAULT_STRUCTURED_BUILD_ROW_LIMIT);
+        assert_eq!(
+            t.structured_build_row_limit,
+            DEFAULT_STRUCTURED_BUILD_ROW_LIMIT
+        );
         assert_eq!(DEFAULT_STRUCTURED_BUILD_ROW_LIMIT, 1024);
 
         assert_eq!(t.search_fragment_budget_max, 1);
@@ -357,7 +375,6 @@ mod tests {
 
     #[test]
     fn metamorphic_search_mode_matches_needs_skip_edges() {
-
         let base = BpannTuning::default();
         let pairs = [
             (1usize, 1usize),
@@ -373,7 +390,15 @@ mod tests {
                 ..base
             };
             assert!(t.validate().is_ok(), "ex={ex} skip={skip}");
-            for rows in [0, 1, ex.saturating_sub(1), ex, ex.saturating_add(1), skip, skip.saturating_add(1)] {
+            for rows in [
+                0,
+                1,
+                ex.saturating_sub(1),
+                ex,
+                ex.saturating_add(1),
+                skip,
+                skip.saturating_add(1),
+            ] {
                 assert_eq!(
                     t.rows_need_skip_edges(rows),
                     t.use_skip_refinement_search(rows),

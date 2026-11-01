@@ -58,7 +58,12 @@ pub(crate) fn persist_index_files(
     pages: &[Page],
     skip_edges: &HashMap<u32, Vec<u32>>,
 ) -> Result<(), BpannError> {
-    persist_index_files_with(index_dir, header, |w| write_pages_index(pages, header.num_dim, w), skip_edges)
+    persist_index_files_with(
+        index_dir,
+        header,
+        |w| write_pages_index(pages, header.num_dim, w),
+        skip_edges,
+    )
 }
 
 fn keep_backup(path: &Path, backup: &Path) -> Result<bool, BpannError> {
@@ -99,8 +104,7 @@ pub(crate) fn persist_index_files_with(
             let file = File::create(&pages_tmp)
                 .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
             let mut writer = BufWriter::new(file);
-            write_pages(&mut writer)
-                .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+            write_pages(&mut writer).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
             writer
                 .flush()
                 .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
@@ -162,13 +166,7 @@ mod tests {
             false,
         )
         .unwrap();
-        persist_index_files(
-            &index_dir,
-            &index.header,
-            &index.pages,
-            &index.skip_edges,
-        )
-        .unwrap();
+        persist_index_files(&index_dir, &index.header, &index.pages, &index.skip_edges).unwrap();
         let pages_before = fs::read(index_dir.join("pages.bin")).unwrap();
         {
             let _fail = TestPersistFailGuard::after_pages_rename();
@@ -197,13 +195,7 @@ mod tests {
             false,
         )
         .unwrap();
-        persist_index_files(
-            &index_dir,
-            &index.header,
-            &index.pages,
-            &index.skip_edges,
-        )
-        .unwrap();
+        persist_index_files(&index_dir, &index.header, &index.pages, &index.skip_edges).unwrap();
         let opened = BpannIndex::open(index_dir.clone()).expect("initial open");
         assert_eq!(opened.header.indexed_rows, 3);
 

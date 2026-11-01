@@ -15,12 +15,10 @@ pub fn row_sq_l2(
                 acc + d * d
             })
     } else {
-        x.iter()
-            .zip(y.iter())
-            .fold(0.0, |acc, (&xi, &yi)| {
-                let d = xi - yi;
-                acc + d * d
-            })
+        x.iter().zip(y.iter()).fold(0.0, |acc, (&xi, &yi)| {
+            let d = xi - yi;
+            acc + d * d
+        })
     };
     acc.max(0.0)
 }
@@ -98,7 +96,8 @@ mod kiss_coverage_tests {
         let s = array![1.0, 1.0];
         let _ = crate::distance::row_sq_l2(a.view(), b.view(), false, s.view());
         let dir = TempDir::new().unwrap();
-        let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
         store
             .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
             .unwrap();

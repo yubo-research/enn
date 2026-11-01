@@ -1,11 +1,14 @@
-
 use std::cmp::Ordering;
 
 use crate::distance::l2_sq_f32;
 
 const TWO_MEANS_ITERS: usize = 6;
 
-pub fn weighted_mean<P: AsRef<[f32]>>(points: &[P], weights: &[f64], members: &[usize]) -> Vec<f32> {
+pub fn weighted_mean<P: AsRef<[f32]>>(
+    points: &[P],
+    weights: &[f64],
+    members: &[usize],
+) -> Vec<f32> {
     let dim = points.first().map_or(0, |p| p.as_ref().len());
     let mut acc = vec![0.0f64; dim];
     let mut total = 0.0f64;
@@ -43,7 +46,11 @@ pub fn median_split<P: AsRef<[f32]>>(points: &[P]) -> (Vec<usize>, Vec<usize>) {
         .map(|(i, p)| (p.as_ref().iter().zip(&dir).map(|(&x, &d)| x * d).sum(), i))
         .collect();
     let half = n / 2;
-    proj.select_nth_unstable_by(half, |x, y| x.0.partial_cmp(&y.0).unwrap_or(Ordering::Equal).then(x.1.cmp(&y.1)));
+    proj.select_nth_unstable_by(half, |x, y| {
+        x.0.partial_cmp(&y.0)
+            .unwrap_or(Ordering::Equal)
+            .then(x.1.cmp(&y.1))
+    });
     let left = proj[..half].iter().map(|&(_, i)| i).collect();
     let right = proj[half..].iter().map(|&(_, i)| i).collect();
     (left, right)
@@ -81,7 +88,11 @@ pub fn two_means_split<P: AsRef<[f32]>>(points: &[P], weights: &[f64]) -> (Vec<u
         ca = weighted_mean(points, weights, &a);
         cb = weighted_mean(points, weights, &b);
     }
-    margin.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(Ordering::Equal).then(x.1.cmp(&y.1)));
+    margin.sort_by(|x, y| {
+        x.0.partial_cmp(&y.0)
+            .unwrap_or(Ordering::Equal)
+            .then(x.1.cmp(&y.1))
+    });
     let count_a = margin.iter().filter(|(m, _)| *m <= 0.0).count();
     let min_side = (n / 4).max(1);
     let cut = count_a.clamp(min_side, n - min_side);
@@ -105,7 +116,9 @@ mod tests {
         let (a, b) = two_means_split(&pts, &w);
         assert_eq!(a.len(), 10);
         assert_eq!(b.len(), 10);
-        let side = |g: &[usize]| g.iter().all(|&i| pts[i][0] < 50.0) || g.iter().all(|&i| pts[i][0] > 50.0);
+        let side = |g: &[usize]| {
+            g.iter().all(|&i| pts[i][0] < 50.0) || g.iter().all(|&i| pts[i][0] > 50.0)
+        };
         assert!(side(&a) && side(&b));
     }
 
@@ -131,7 +144,9 @@ mod tests {
         }
         let (a, b) = median_split(&pts);
         assert_eq!((a.len(), b.len()), (10, 10));
-        let side = |g: &[usize]| g.iter().all(|&i| pts[i][0] < 50.0) || g.iter().all(|&i| pts[i][0] > 50.0);
+        let side = |g: &[usize]| {
+            g.iter().all(|&i| pts[i][0] < 50.0) || g.iter().all(|&i| pts[i][0] > 50.0)
+        };
         assert!(side(&a) && side(&b));
         let (a, b) = median_split(&vec![vec![1.0f32, 1.0]; 13]);
         assert_eq!((a.len(), b.len()), (6, 7));

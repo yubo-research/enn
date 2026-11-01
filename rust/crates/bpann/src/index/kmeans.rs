@@ -1,10 +1,6 @@
 use rand::Rng;
 
-pub fn kmeans_plus_plus_init(
-    points: &[Vec<f32>],
-    k: usize,
-    rng: &mut impl Rng,
-) -> Vec<Vec<f32>> {
+pub fn kmeans_plus_plus_init(points: &[Vec<f32>], k: usize, rng: &mut impl Rng) -> Vec<Vec<f32>> {
     if points.is_empty() || k == 0 {
         return Vec::new();
     }
@@ -56,11 +52,7 @@ pub fn assign_clusters(points: &[Vec<f32>], centroids: &[Vec<f32>]) -> Vec<usize
         .collect()
 }
 
-pub fn recompute_centroids(
-    points: &[Vec<f32>],
-    assignments: &[usize],
-    k: usize,
-) -> Vec<Vec<f32>> {
+pub fn recompute_centroids(points: &[Vec<f32>], assignments: &[usize], k: usize) -> Vec<Vec<f32>> {
     let dim = points.first().map_or(0, |p| p.len());
     let mut sums = vec![vec![0.0f32; dim]; k];
     let mut counts = vec![0usize; k];
@@ -77,10 +69,7 @@ pub fn recompute_centroids(
             if counts[c] == 0 {
                 vec![0.0; dim]
             } else {
-                sums[c]
-                    .iter()
-                    .map(|&s| s / counts[c] as f32)
-                    .collect()
+                sums[c].iter().map(|&s| s / counts[c] as f32).collect()
             }
         })
         .collect()
@@ -183,10 +172,7 @@ fn partition_recursive_with_vectors(
             .zip(points.iter())
             .map(|(&id, v)| (id, v.clone()))
             .collect();
-        return PartitionNode::Leaf {
-            entries,
-            centroid,
-        };
+        return PartitionNode::Leaf { entries, centroid };
     }
     let k = row_ids.len().div_ceil(leaf_capacity).clamp(2, 16);
     let (_, assignments) = kmeans_run(&points, k, 20, rng);
@@ -201,8 +187,6 @@ fn partition_recursive_with_vectors(
     let non_empty_clusters = clusters.iter().filter(|c| !c.is_empty()).count();
     let max_cluster_len = clusters.iter().map(|c| c.len()).max().unwrap_or(0);
     if non_empty_clusters <= 1 || max_cluster_len >= row_ids.len() {
-
-
         clusters = vec![Vec::new(); k];
         cluster_vectors = vec![Vec::new(); k];
         for (i, (&id, pt)) in row_ids.iter().zip(points.iter()).enumerate() {
@@ -241,7 +225,9 @@ fn mean_vector(points: &[Vec<f32>]) -> Vec<f32> {
 pub fn max_leaf_size(node: &PartitionNode) -> usize {
     match node {
         PartitionNode::Leaf { entries, .. } => entries.len(),
-        PartitionNode::Internal { children, .. } => children.iter().map(max_leaf_size).max().unwrap_or(0),
+        PartitionNode::Internal { children, .. } => {
+            children.iter().map(max_leaf_size).max().unwrap_or(0)
+        }
     }
 }
 

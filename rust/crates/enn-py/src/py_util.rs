@@ -8,7 +8,6 @@ use pyo3::prelude::*;
 pub fn standardize_y_py<'py>(py: Python<'py>, y: PyReadonlyArray1<f64>) -> PyResult<(f64, f64)> {
     let y_arr = y.as_array();
 
-
     let (center, scale) = py.allow_threads(|| ennbo::standardize_y(&y_arr));
 
     Ok((center, scale))
@@ -30,9 +29,8 @@ pub fn pareto_front_2d_maximize_py<'py>(
         Some(i) => {
             let mut out = Vec::with_capacity(i.as_array().len());
             for &x in i.as_array().iter() {
-                let u = usize::try_from(x).map_err(|_| {
-                    PyValueError::new_err(format!("idx entry {x} is negative"))
-                })?;
+                let u = usize::try_from(x)
+                    .map_err(|_| PyValueError::new_err(format!("idx entry {x} is negative")))?;
                 out.push(u);
             }
             Some(out)
@@ -40,7 +38,8 @@ pub fn pareto_front_2d_maximize_py<'py>(
         None => None,
     };
 
-    let result = py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, idx_vec.as_deref()));
+    let result =
+        py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, idx_vec.as_deref()));
 
     let front = match result {
         Ok(v) => v,
@@ -111,16 +110,17 @@ pub fn arms_from_pareto_fronts_py<'py>(
         )));
     }
 
-    let indices = py.allow_threads(|| {
-        ennbo::util::arms_from_pareto_fronts(
-            &x_arr.view(),
-            &mu_arr.view(),
-            &se_arr.view(),
-            num_arms,
-            seed,
-        )
-    })
-    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let indices = py
+        .allow_threads(|| {
+            ennbo::util::arms_from_pareto_fronts(
+                &x_arr.view(),
+                &mu_arr.view(),
+                &se_arr.view(),
+                num_arms,
+                seed,
+            )
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
     if indices.is_empty() {
         let empty = ndarray::Array2::<f64>::zeros((0, x_arr.ncols()));
         return Ok(empty.into_pyarray_bound(py));

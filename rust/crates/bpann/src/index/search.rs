@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
 
-use crate::distance::{batched_sq_l2_f32, l2_sq_f32, bpann_row_to_f32};
+use crate::distance::{batched_sq_l2_f32, bpann_row_to_f32, l2_sq_f32};
 use crate::error::BpannError;
 use crate::index::build::BpannIndex;
 use crate::index::page::Page;
@@ -77,8 +77,7 @@ pub(crate) fn score_leaf_page(
 pub const MAX_CANDIDATE_LEAVES: usize = 384;
 
 pub fn search_exhaustive_leaves(index: &BpannIndex, query: &[f32], k: usize) -> Vec<(u32, f32)> {
-    search_exhaustive_leaves_with_store(index, query, k, None)
-        .expect("search_exhaustive_leaves")
+    search_exhaustive_leaves_with_store(index, query, k, None).expect("search_exhaustive_leaves")
 }
 
 pub fn search_exhaustive_leaves_with_store(
@@ -399,11 +398,15 @@ mod kiss_coverage_tests {
             dir.path().join("index"),
         )
         .unwrap();
-        let _ = crate::index::search::bpann_mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
+        let _ =
+            crate::index::search::bpann_mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
         let _ = crate::index::search::bpann_brute_force_topk(&vectors, &[0.0, 0.0], 1);
-        let mut store =
-            crate::mmap_store::MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None)
-                .unwrap();
+        let mut store = crate::mmap_store::MmapColumnStore::mmap_open_or_create(
+            dir.path().join("x.bin"),
+            2,
+            None,
+        )
+        .unwrap();
         store
             .mmap_append(&ndarray::array![[0.0, 0.0], [1.0, 0.0]].view())
             .unwrap();
@@ -426,12 +429,7 @@ mod kiss_coverage_tests {
         .unwrap();
         let _ = crate::index::search::search_greedy_blocks_only(&index, &[0.0, 0.0], 1, 2);
         let mut log = Vec::new();
-        let _ = crate::index::search::search_with_skip_refinement(
-            &index,
-            &[0.0, 0.0],
-            1,
-            2,
-            &mut log,
-        );
+        let _ =
+            crate::index::search::search_with_skip_refinement(&index, &[0.0, 0.0], 1, 2, &mut log);
     }
 }

@@ -1,4 +1,3 @@
-
 use std::cell::RefCell;
 
 use crate::distance::l2_sq_f32;
@@ -39,8 +38,13 @@ impl Morph {
         }
         self.credit += MORPH_WORK_PER_ADD as isize;
         while self.credit > 0 {
-            let Some(page) = self.next_internal(tree) else { break };
-            let covered = tree.store.parent(page).is_some_and(|p| small_subtree_leaves(tree, p).is_some());
+            let Some(page) = self.next_internal(tree) else {
+                break;
+            };
+            let covered = tree
+                .store
+                .parent(page)
+                .is_some_and(|p| small_subtree_leaves(tree, p).is_some());
             let work = if covered {
                 0
             } else {
@@ -76,7 +80,12 @@ impl Morph {
 
 fn children_of_kind(tree: &Tree, page: u32, leaves: bool) -> Vec<(usize, u32)> {
     let s = &tree.store;
-    s.ids(page).iter().copied().enumerate().filter(|&(_, k)| s.is_leaf(k) == leaves).collect()
+    s.ids(page)
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|&(_, k)| s.is_leaf(k) == leaves)
+        .collect()
 }
 
 fn small_subtree_leaves(tree: &Tree, page: u32) -> Option<Vec<u32>> {
@@ -102,7 +111,11 @@ fn refresh(tree: &mut Tree, page: u32, (parent, slot): (u32, usize)) {
     let cents: Vec<&[f32]> = st.block(page).chunks_exact(st.num_dim()).collect();
     let weights: Vec<f64> = kids.iter().map(|&k| st.count(k) as f64).collect();
     let c = weighted_mean(&cents, &weights, &(0..kids.len()).collect::<Vec<_>>());
-    let r = cents.iter().zip(kids).map(|(x, &k)| dist(x, &c) + st.radius(k)).fold(0.0, f32::max);
+    let r = cents
+        .iter()
+        .zip(kids)
+        .map(|(x, &k)| dist(x, &c) + st.radius(k))
+        .fold(0.0, f32::max);
     let n = kids.iter().map(|&k| st.count(k)).sum();
     let st = &mut tree.store;
     st.set_count(page, n);
@@ -112,7 +125,10 @@ fn refresh(tree: &mut Tree, page: u32, (parent, slot): (u32, usize)) {
 
 fn slot_in_parent(tree: &Tree, page: u32) -> Option<(u32, usize)> {
     let parent = tree.store.parent(page)?;
-    Some((parent, tree.store.ids(parent).iter().position(|&k| k == page)?))
+    Some((
+        parent,
+        tree.store.ids(parent).iter().position(|&k| k == page)?,
+    ))
 }
 
 fn farthest_point<'a>(points: &[&'a [f32]], members: &[usize], anchor: &[f32]) -> &'a [f32] {
@@ -179,10 +195,19 @@ fn scatter_value(points: &[&[f32]], weights: &[f64], groups: &[Vec<usize>]) -> f
 }
 
 fn scatter(points: &[&[f32]], weights: &[f64], groups: &[Vec<usize>]) -> (f64, Vec<Vec<f32>>) {
-    let centers: Vec<_> = groups.iter().map(|g| weighted_mean(points, weights, g)).collect();
-    let value = groups.iter().zip(&centers).map(|(g, c)| {
-        g.iter().map(|&i| weights[i] * f64::from(l2_sq_f32(points[i], c))).sum::<f64>()
-    }).sum();
+    let centers: Vec<_> = groups
+        .iter()
+        .map(|g| weighted_mean(points, weights, g))
+        .collect();
+    let value = groups
+        .iter()
+        .zip(&centers)
+        .map(|(g, c)| {
+            g.iter()
+                .map(|&i| weights[i] * f64::from(l2_sq_f32(points[i], c)))
+                .sum::<f64>()
+        })
+        .sum();
     (value, centers)
 }
 
@@ -199,7 +224,12 @@ fn runs(sizes: impl Iterator<Item = usize>) -> Vec<Vec<usize>> {
 fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
     let d = tree.store.num_dim();
     let deep = small_subtree_leaves(tree, page);
-    let leaves = deep.clone().unwrap_or_else(|| children_of_kind(tree, page, true).iter().map(|l| l.1).collect());
+    let leaves = deep.clone().unwrap_or_else(|| {
+        children_of_kind(tree, page, true)
+            .iter()
+            .map(|l| l.1)
+            .collect()
+    });
     if leaves.len() < 2 || !tree.rows_cached() {
         return 0;
     }
@@ -222,13 +252,19 @@ fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
         return rows.len();
     }
     for ((&id, group), c) in leaves.iter().zip(groups).zip(centers) {
-        let Some((parent, slot)) = slot_in_parent(tree, id) else { continue };
+        let Some((parent, slot)) = slot_in_parent(tree, id) else {
+            continue;
+        };
         let mine: Vec<&[f32]> = group.iter().map(|&i| points[i]).collect();
         let s = &mut tree.store;
         s.entry_mut(parent, slot).copy_from_slice(&c);
         s.set_count(id, mine.len());
         s.set_radius(id, mine.iter().map(|p| dist(p, &c)).fold(0.0, f32::max));
-        s.set_entries(id, &group.iter().map(|&i| rows[i]).collect::<Vec<_>>(), &mine.concat());
+        s.set_entries(
+            id,
+            &group.iter().map(|&i| rows[i]).collect::<Vec<_>>(),
+            &mine.concat(),
+        );
     }
     if deep.is_some() {
         for (s, k) in children_of_kind(tree, page, false) {
@@ -244,8 +280,14 @@ fn repartition_internal(tree: &mut Tree, parent: u32) -> usize {
     if members.len() < 2 {
         return 0;
     }
-    let kids: Vec<u32> = members.iter().flat_map(|m| tree.store.ids(m.1).to_vec()).collect();
-    let flat: Vec<f32> = members.iter().flat_map(|m| tree.store.block(m.1).to_vec()).collect();
+    let kids: Vec<u32> = members
+        .iter()
+        .flat_map(|m| tree.store.ids(m.1).to_vec())
+        .collect();
+    let flat: Vec<f32> = members
+        .iter()
+        .flat_map(|m| tree.store.block(m.1).to_vec())
+        .collect();
     let cents: Vec<&[f32]> = flat.chunks_exact(d).collect();
     let weights: Vec<f64> = kids.iter().map(|&k| tree.store.count(k) as f64).collect();
     let groups = groups_of(&cents, members.len());
@@ -256,8 +298,14 @@ fn repartition_internal(tree: &mut Tree, parent: u32) -> usize {
     }
     for ((&(slot, id), group), c) in members.iter().zip(groups).zip(centers) {
         let s = &mut tree.store;
-        let r = group.iter().map(|&i| dist(cents[i], &c) + s.radius(kids[i])).fold(0.0, f32::max);
-        let group_cents: Vec<f32> = group.iter().flat_map(|&i| cents[i].iter().copied()).collect();
+        let r = group
+            .iter()
+            .map(|&i| dist(cents[i], &c) + s.radius(kids[i]))
+            .fold(0.0, f32::max);
+        let group_cents: Vec<f32> = group
+            .iter()
+            .flat_map(|&i| cents[i].iter().copied())
+            .collect();
         let group_kids: Vec<u32> = group.iter().map(|&i| kids[i]).collect();
         let n: usize = group_kids.iter().map(|&k| s.count(k)).sum();
         s.entry_mut(parent, slot).copy_from_slice(&c);

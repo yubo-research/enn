@@ -10,9 +10,7 @@ use crate::index::tree::Tree;
 use crate::index::IncrementalIndex;
 use crate::large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 use crate::mmap_store::MmapColumnStore;
-use crate::observation::{
-    self as obs, TrainRowsAt, INDEX_BACKEND, MAX_NUM_DIM, MAX_RECORD_STRIDE,
-};
+use crate::observation::{self as obs, TrainRowsAt, INDEX_BACKEND, MAX_NUM_DIM, MAX_RECORD_STRIDE};
 
 mod flush_thresholds;
 
@@ -80,8 +78,6 @@ impl BpannBackend {
             train_y_store.mmap_append(&train_y.view())?;
         }
         if train_x_store.nrows == 0 {
-
-
             train_x_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
             train_y_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
             train_x_store.pretouch();
@@ -134,7 +130,11 @@ impl BpannBackend {
         Ok(backend)
     }
 
-    pub fn new_empty(work_dir: PathBuf, num_dim: usize, num_metrics: usize) -> Result<Self, BpannError> {
+    pub fn new_empty(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+    ) -> Result<Self, BpannError> {
         Self::new(
             work_dir,
             Array2::zeros((0, num_dim)),
@@ -190,8 +190,7 @@ impl BpannBackend {
 
     fn reset_index(&mut self) {
         self.index.reset();
-        self.pending_unindexed
-            .store(self.len(), Ordering::Relaxed);
+        self.pending_unindexed.store(self.len(), Ordering::Relaxed);
         *self.index_dirty.lock().expect("index_dirty") = true;
     }
 
@@ -267,7 +266,9 @@ impl BpannBackend {
             self.insert_unindexed_rows()?;
         }
         self.pending_unindexed.store(0, Ordering::Relaxed);
-        if self.index.indexed_rows.abs_diff(self.indexed_rows_written) >= self.pending_hard_flush_threshold {
+        if self.index.indexed_rows.abs_diff(self.indexed_rows_written)
+            >= self.pending_hard_flush_threshold
+        {
             obs::write_indexed_rows(&self.work_dir, self.index.indexed_rows)?;
             self.indexed_rows_written = self.index.indexed_rows;
         }
@@ -331,7 +332,6 @@ impl BpannBackend {
         }
         let k_req = search_k.min(total);
 
-
         let k_eff = k_req;
         let pool_k = if exclude_nearest {
             (k_eff + 1).min(total)
@@ -339,20 +339,14 @@ impl BpannBackend {
             k_eff
         };
         if k_eff == 0 {
-            return Ok((
-                Array2::zeros((n_query, 0)),
-                Array2::zeros((n_query, 0)),
-            ));
+            return Ok((Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0))));
         }
 
         let mut dist2s = Array2::from_elem((n_query, k_eff), f64::INFINITY);
         let mut indices = Array2::from_elem((n_query, k_eff), -1i64);
         let scale_x = self.scale_x;
         let x_scale_vec = self.x_scale.as_slice().unwrap().to_vec();
-        let query_rows: Vec<Vec<f64>> = (0..n_query)
-            .map(|q| queries.row(q).to_vec())
-            .collect();
-
+        let query_rows: Vec<Vec<f64>> = (0..n_query).map(|q| queries.row(q).to_vec()).collect();
 
         search_indexed_and_pending(
             self,
@@ -377,17 +371,18 @@ impl BpannBackend {
     }
 
     pub fn page_bytes(&self) -> Vec<u8> {
-        self.index.tree.as_ref().map(Tree::page_bytes).unwrap_or_default()
+        self.index
+            .tree
+            .as_ref()
+            .map(Tree::page_bytes)
+            .unwrap_or_default()
     }
 
     pub fn mmap_row_slice(&self, i: usize) -> Result<&[f64], BpannError> {
         self.train_x.mmap_row_slice(i)
     }
 
-    pub fn mmap_row_y_and_yvar(
-        &self,
-        i: usize,
-    ) -> Result<(&[f64], Option<&[f64]>), BpannError> {
+    pub fn mmap_row_y_and_yvar(&self, i: usize) -> Result<(&[f64], Option<&[f64]>), BpannError> {
         let y = self.train_y.mmap_row_slice(i)?;
         let yvar = match self.train_yvar.as_ref() {
             None => None,
@@ -420,7 +415,6 @@ impl BpannBackend {
     }
 }
 
-
 fn trim_trailing_invalid_neighbor_cols(
     dist2s: Array2<f64>,
     indices: Array2<i64>,
@@ -433,10 +427,7 @@ fn trim_trailing_invalid_neighbor_cols(
     if width == indices.ncols() {
         (dist2s, indices)
     } else if width == 0 {
-        (
-            Array2::zeros((n_query, 0)),
-            Array2::zeros((n_query, 0)),
-        )
+        (Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0)))
     } else {
         (
             dist2s
@@ -467,9 +458,7 @@ pub fn soft_sync_build(backend: &BpannBackend) -> Result<Option<IncrementalIndex
 
 pub fn soft_sync_publish(backend: &mut BpannBackend, built: IncrementalIndex) {
     backend.index = built;
-    backend
-        .pending_unindexed
-        .store(0, Ordering::Relaxed);
+    backend.pending_unindexed.store(0, Ordering::Relaxed);
 }
 
 pub fn open_rejects_num_dim(num_dim: usize) -> Result<(), BpannError> {

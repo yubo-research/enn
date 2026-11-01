@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 
 use crate::distance::l2_sq_f32;
@@ -60,7 +59,12 @@ impl Tree {
         })
     }
 
-    pub fn new_tree(row: u32, v: &[f32], num_dim: usize, index_dir: PathBuf) -> Result<Self, BpannError> {
+    pub fn new_tree(
+        row: u32,
+        v: &[f32],
+        num_dim: usize,
+        index_dir: PathBuf,
+    ) -> Result<Self, BpannError> {
         let mut tree = Self::empty(num_dim, index_dir)?;
         let id = tree.store.alloc(Kind::Leaf)?;
         tree.store.push_entry(id, row, v);
@@ -135,7 +139,9 @@ impl Tree {
         let ca = weighted_mean(&vectors, &weights, &left);
         let cb = weighted_mean(&vectors, &weights, &right);
         let pick_ids = |g: &[usize]| -> Vec<u32> { g.iter().map(|&i| row_ids[i]).collect() };
-        let gather = |g: &[usize]| -> Vec<f32> { g.iter().flat_map(|&i| vectors[i].iter().copied()).collect() };
+        let gather = |g: &[usize]| -> Vec<f32> {
+            g.iter().flat_map(|&i| vectors[i].iter().copied()).collect()
+        };
         let s = &mut self.store;
         s.set_radius(leaf, max_dist(&vectors, &left, &ca));
         s.set_entries(leaf, &pick_ids(&left), &gather(&left));
@@ -157,7 +163,11 @@ impl Tree {
         let Some((parent, slot)) = path.pop() else {
             let root = s.alloc(Kind::Internal)?;
             s.set_count(root, s.count(old.0) + s.count(new.0));
-            s.set_entries(root, &[old.0, new.0], &[old.1.as_slice(), new.1.as_slice()].concat());
+            s.set_entries(
+                root,
+                &[old.0, new.0],
+                &[old.1.as_slice(), new.1.as_slice()].concat(),
+            );
             s.set_parent(root, None);
             s.set_parent(old.0, Some(root));
             s.set_parent(new.0, Some(root));
@@ -173,7 +183,11 @@ impl Tree {
         Ok(())
     }
 
-    fn split_internal(&mut self, path: &mut Vec<(u32, usize)>, page_id: u32) -> Result<(), BpannError> {
+    fn split_internal(
+        &mut self,
+        path: &mut Vec<(u32, usize)>,
+        page_id: u32,
+    ) -> Result<(), BpannError> {
         let s = &self.store;
         let all_children = s.ids(page_id).to_vec();
         let flat = s.block(page_id).to_vec();
@@ -183,11 +197,18 @@ impl Tree {
         let ca = weighted_mean(&all_centroids, &weights, &left);
         let cb = weighted_mean(&all_centroids, &weights, &right);
         let radius = |g: &[usize], c: &[f32]| {
-            g.iter().map(|&i| dist(all_centroids[i], c) + s.radius(all_children[i])).fold(0.0, f32::max)
+            g.iter()
+                .map(|&i| dist(all_centroids[i], c) + s.radius(all_children[i]))
+                .fold(0.0, f32::max)
         };
         let (r_a, r_b) = (radius(&left, &ca), radius(&right, &cb));
         let pick = |g: &[usize]| -> (Vec<f32>, Vec<u32>) {
-            (g.iter().flat_map(|&i| all_centroids[i].iter().copied()).collect(), g.iter().map(|&i| all_children[i]).collect())
+            (
+                g.iter()
+                    .flat_map(|&i| all_centroids[i].iter().copied())
+                    .collect(),
+                g.iter().map(|&i| all_children[i]).collect(),
+            )
         };
         let ((cents_a, kids_a), (cents_b, kids_b)) = (pick(&left), pick(&right));
         let n_a: usize = kids_a.iter().map(|&c| s.count(c)).sum();
@@ -198,7 +219,9 @@ impl Tree {
         let new_id = s.alloc(Kind::Internal)?;
         s.set_count(new_id, n_b);
         s.set_radius(new_id, r_b);
-        kids_b.iter().for_each(|&kid| s.set_parent(kid, Some(new_id)));
+        kids_b
+            .iter()
+            .for_each(|&kid| s.set_parent(kid, Some(new_id)));
         s.set_entries(page_id, &kids_a, &cents_a);
         s.set_entries(new_id, &kids_b, &cents_b);
         self.attach_sibling(path, (page_id, ca), (new_id, cb))

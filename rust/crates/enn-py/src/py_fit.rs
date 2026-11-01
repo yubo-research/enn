@@ -1,4 +1,3 @@
-
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -55,7 +54,6 @@ pub fn subsample_loglik_py(
     y_std: Option<PyReadonlyArray1<f64>>,
 ) -> PyResult<Vec<f64>> {
     let mut rng = StdRng::seed_from_u64(seed);
-
 
     let n_params = k_values.len();
     if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {

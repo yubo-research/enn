@@ -1,12 +1,19 @@
 use crate::adaptive_basis::Metadata;
 use crate::adaptive_geometry::invalid;
 use crate::adaptive_predictor::{Choice, Epoch};
-use crate::adaptive_scales::{ColumnScales, STATIONARY_FORGET};
+use crate::adaptive_scales::centered;
 use crate::adaptive_selection::fit_epoch;
 use crate::adaptive_weight::{GeometryWeight, PRIOR_WEIGHT};
 use crate::error::ENNError;
-use ndarray::{Array2, Axis};
+use crate::online_input_scales::InputScales;
+use crate::online_output_weights::OutputWeights;
+use ndarray::{Array1, Array2, Axis};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+
+const SCALE_NEIGHBORS: usize = 10;
+const SCALE_RESERVOIR: usize = 300;
+const SCALE_SEED: u64 = 0x5ca1e;
+const MIN_LEARNED_ROWS: usize = 12;
 
 pub struct AdaptiveSemanticENN {
     metadata: Metadata,
@@ -15,7 +22,8 @@ pub struct AdaptiveSemanticENN {
     adaptation: String,
     rng: StdRng,
     sample: Option<(Array2<f64>, Array2<f64>, Vec<f64>)>,
-    scales: Option<ColumnScales>,
+    scales: Option<Vec<InputScales>>,
+    output_weights: Option<OutputWeights>,
     weight_state: Option<GeometryWeight>,
     direction: Option<Array2<f64>>,
     epoch: Option<Epoch>,
@@ -48,6 +56,7 @@ impl AdaptiveSemanticENN {
             rng: StdRng::seed_from_u64(seed),
             sample: None,
             scales: None,
+            output_weights: None,
             weight_state: None,
             direction: None,
             epoch: None,
@@ -88,7 +97,8 @@ impl AdaptiveSemanticENN {
                 .map_or(PRIOR_WEIGHT, GeometryWeight::weight)
         });
         let scales = self.updated_scales(&x, &y)?;
-        let learned = scales.as_ref().map(ColumnScales::coefficients);
+        let learned = scales.as_deref().map(coefficients);
+        let output_weights = self.updated_output_weights(&x, &y);
         let mut rng = self.rng.clone();
         let mut keys: Vec<f64> = (0..count).map(|_| rng.gen()).collect();
         let (x, y) = match &self.sample {
@@ -120,6 +130,14 @@ impl AdaptiveSemanticENN {
             Some(geometry_weight),
             learned.as_ref(),
         )?;
+        let mut epoch = epoch;
+        if let Some(weights) = output_weights
+            .as_ref()
+            .filter(|w| w.rows() >= MIN_LEARNED_ROWS)
+        {
+            epoch.blend = Some((weights.weighted_projector(), weights.alpha()));
+        }
+        self.output_weights = output_weights;
         self.sample = Some(sample);
         self.scales = scales;
         self.weight_state = next_weight;
@@ -135,7 +153,7 @@ impl AdaptiveSemanticENN {
         &self,
         x: &Array2<f64>,
         y: &Array2<f64>,
-    ) -> Result<Option<ColumnScales>, ENNError> {
+    ) -> Result<Option<Vec<InputScales>>, ENNError> {
         if !matches!(self.adaptation.as_str(), "all" | "inputs") {
             return Ok(None);
         }
@@ -148,17 +166,80 @@ impl AdaptiveSemanticENN {
         let Some(bounds) = &self.metadata.bounds else {
             return Ok(None);
         };
-        let mut state = self
-            .scales
+        if x.ncols() != projection.nrows() {
+            return Err(invalid(
+                "column-scale observations must match the projection and outputs",
+            ));
+        }
+        let mut learners = self.scales.clone().unwrap_or_else(|| {
+            (0..y.ncols())
+                .map(|j| {
+                    InputScales::new(
+                        &projection,
+                        SCALE_NEIGHBORS,
+                        SCALE_RESERVOIR,
+                        SCALE_SEED + j as u64,
+                    )
+                })
+                .collect()
+        });
+        let z = centered(x, bounds);
+        let factors = z.dot(&projection);
+        for row in 0..x.nrows() {
+            for (j, learner) in learners.iter_mut().enumerate() {
+                learner.observe(z.row(row), factors.row(row), y[[row, j]]);
+            }
+        }
+        Ok(Some(learners))
+    }
+
+    fn updated_output_weights(&self, x: &Array2<f64>, y: &Array2<f64>) -> Option<OutputWeights> {
+        if !matches!(self.adaptation.as_str(), "all" | "outputs") {
+            return None;
+        }
+        let loading = self.metadata.output.as_ref().filter(|p| p.ncols() > 0)?;
+        let mut weights = self
+            .output_weights
             .clone()
-            .unwrap_or_else(|| ColumnScales::new(projection, y.ncols(), STATIONARY_FORGET));
-        state.observe_rows(x, y, bounds)?;
-        Ok(Some(state))
+            .unwrap_or_else(|| OutputWeights::new(loading.clone()));
+        if let Some(epoch) = &self.epoch {
+            let basis = &epoch.predictor.basis;
+            if let Ok(mean) = epoch.predictor.standardized_mean(x) {
+                let target = (y - &basis.y_mean) / &basis.y_scale;
+                for (mut a, mut t) in mean
+                    .rows()
+                    .into_iter()
+                    .zip(target.rows())
+                    .map(|(a, t)| (a.to_owned(), t.to_owned()))
+                {
+                    for (j, constant) in basis.constant.iter().enumerate() {
+                        if *constant {
+                            a[j] = 0.0;
+                            t[j] = 0.0;
+                        }
+                    }
+                    weights.observe(a.view(), t.view());
+                }
+            }
+        }
+        Some(weights)
     }
 
     #[cfg(test)]
     pub(crate) fn column_scale(&self) -> Option<ndarray::Array1<f64>> {
-        self.scales.as_ref().map(ColumnScales::coefficients)
+        self.scales.as_deref().map(coefficients)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn learned_factor_weights(&self) -> Option<Array1<f64>> {
+        self.output_weights
+            .as_ref()
+            .map(OutputWeights::factor_weights)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn learned_alpha(&self) -> Option<Array1<f64>> {
+        self.epoch.as_ref()?.blend.as_ref().map(|b| b.1.clone())
     }
 
     #[cfg(test)]
@@ -224,6 +305,14 @@ impl AdaptiveSemanticENN {
         }
         epoch.posterior(x)
     }
+}
+
+fn coefficients(learners: &[InputScales]) -> Array1<f64> {
+    let mut total = learners[0].scale().mapv(f64::sqrt);
+    for learner in &learners[1..] {
+        total += &learner.scale().mapv(f64::sqrt);
+    }
+    total / learners.len() as f64
 }
 
 fn active_direction(epoch: &Epoch) -> Array2<f64> {

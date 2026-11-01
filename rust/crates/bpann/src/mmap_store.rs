@@ -34,7 +34,6 @@ impl MmapColumnStore {
         let grow_rows = (need_rows - self.nrows).max(MMAP_GROW_ROWS);
         let new_len = self.bytes_for_rows(self.nrows + grow_rows);
 
-
         self.file
             .set_len(new_len as u64)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
@@ -78,9 +77,8 @@ impl MmapColumnStore {
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?
             .len();
         let row_bytes = ncols * std::mem::size_of::<f64>();
-        let nrows = known_nrows.unwrap_or_else(|| {
-            (len as usize).checked_div(row_bytes).unwrap_or(0)
-        });
+        let nrows =
+            known_nrows.unwrap_or_else(|| (len as usize).checked_div(row_bytes).unwrap_or(0));
         if known_nrows.is_some() && nrows * row_bytes > len as usize {
             return Err(BpannError::InvalidParameter(format!(
                 "known_nrows {nrows} exceeds train file bytes {len}"
@@ -129,11 +127,12 @@ impl MmapColumnStore {
         self.touch(offset, n * std::mem::size_of::<f64>());
         let dst = &mut self.mmap[offset..offset + n * std::mem::size_of::<f64>()];
 
-
-
         if let Some(src) = rows.as_slice() {
             let src_bytes = unsafe {
-                std::slice::from_raw_parts(src.as_ptr() as *const u8, n * std::mem::size_of::<f64>())
+                std::slice::from_raw_parts(
+                    src.as_ptr() as *const u8,
+                    n * std::mem::size_of::<f64>(),
+                )
             };
             dst.copy_from_slice(src_bytes);
         } else {
@@ -231,9 +230,7 @@ mod tests {
         store.release_resident_pages().unwrap();
         assert_eq!(store.mmap_row_slice(0).unwrap(), &[1.0, 2.0]);
         assert_eq!(store.mmap_row_slice(2).unwrap(), &[5.0, 6.0]);
-        store
-            .mmap_append(&array![[7.0, 8.0]].view())
-            .unwrap();
+        store.mmap_append(&array![[7.0, 8.0]].view()).unwrap();
         store.release_resident_pages().unwrap();
         assert_eq!(store.mmap_row_slice(3).unwrap(), &[7.0, 8.0]);
     }
@@ -248,7 +245,10 @@ mod tests {
         store.mmap_append(&rows.view()).unwrap();
         assert!(store.residency.tracking());
         for i in (0..40_000).step_by(97) {
-            assert_eq!(store.mmap_row_slice(i).unwrap(), &[(2 * i) as f64, (2 * i + 1) as f64]);
+            assert_eq!(
+                store.mmap_row_slice(i).unwrap(),
+                &[(2 * i) as f64, (2 * i + 1) as f64]
+            );
             assert!(store.residency.estimate() <= 1 << 17);
         }
         store.release_resident_pages().unwrap();

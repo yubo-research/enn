@@ -1,4 +1,3 @@
-
 use ndarray::Array2;
 use rayon::prelude::*;
 
@@ -37,19 +36,17 @@ fn merge_pending(
     } else {
         None
     };
-    merge_topk_precomputed_dist_with_self(
-        leg_a,
-        leg_b,
-        k_eff,
-        pool_k,
-        exclude_nearest,
-        self_id,
-    )
+    merge_topk_precomputed_dist_with_self(leg_a, leg_b, k_eff, pool_k, exclude_nearest, self_id)
 }
 
 fn pending_topk(
-    train_x: &MmapColumnStore, start: usize, end: usize, query: &[f64],
-    k: usize, scale_x: bool, x_scale: &[f64],
+    train_x: &MmapColumnStore,
+    start: usize,
+    end: usize,
+    query: &[f64],
+    k: usize,
+    scale_x: bool,
+    x_scale: &[f64],
 ) -> Result<Vec<(u32, f64)>, BpannError> {
     use crate::small_n_search::OrderedFloat;
     let mut heap = std::collections::BinaryHeap::with_capacity(k + 1);
@@ -57,7 +54,8 @@ fn pending_topk(
         let distance = crate::distance::row_sq_l2(
             ndarray::ArrayView1::from(query),
             ndarray::ArrayView1::from(train_x.mmap_row_slice(row)?),
-            scale_x, ndarray::ArrayView1::from(x_scale),
+            scale_x,
+            ndarray::ArrayView1::from(x_scale),
         );
         let candidate = (OrderedFloat(distance), row as u32);
         if heap.len() < k {
@@ -67,7 +65,11 @@ fn pending_topk(
             heap.push(candidate);
         }
     }
-    Ok(heap.into_sorted_vec().into_iter().map(|(distance, row)| (row, distance.0)).collect())
+    Ok(heap
+        .into_sorted_vec()
+        .into_iter()
+        .map(|(distance, row)| (row, distance.0))
+        .collect())
 }
 
 pub fn search_indexed_and_pending(
@@ -107,21 +109,38 @@ pub fn search_indexed_and_pending(
             let leg_a = if let Some(tree) = backend.index.tree.as_ref().filter(|_| indexed > 0) {
                 crate::index::tree_search::search_tree_refined(
                     tree,
-                    query_buf, index_k.max(1), &store,
-                ).expect("search_tree_refined")
+                    query_buf,
+                    index_k.max(1),
+                    &store,
+                )
+                .expect("search_tree_refined")
             } else {
                 Vec::new()
             };
 
             let leg_b = if has_pending {
-                pending_topk(train_x, pending_start, total, query_buf, pool_k, scale_x, x_scale_vec)
-                    .expect("pending_topk")
+                pending_topk(
+                    train_x,
+                    pending_start,
+                    total,
+                    query_buf,
+                    pool_k,
+                    scale_x,
+                    x_scale_vec,
+                )
+                .expect("pending_topk")
             } else {
                 Vec::new()
             };
 
             let merged = merge_pending(
-                &leg_a, &leg_b, train_x, query_buf, k_eff, pool_k, exclude_nearest,
+                &leg_a,
+                &leg_b,
+                train_x,
+                query_buf,
+                k_eff,
+                pool_k,
+                exclude_nearest,
             );
             let mut dist_row = vec![f64::INFINITY; k_eff];
             let mut idx_row = vec![-1i64; k_eff];
