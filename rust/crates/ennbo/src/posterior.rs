@@ -461,10 +461,10 @@ pub fn compute_posterior_internals(
         });
     }
 
-    let batch_size = x.nrows();
+    crate::util::check_finite_query(x)?;
 
     if model.num_obs() == 0 {
-        return Ok(empty_posterior_internals(model, batch_size));
+        return Ok(empty_posterior_internals(model, x.nrows()));
     }
 
     let neighbor_data = get_neighbor_data(model, x, params, flags.exclude_nearest)?;
@@ -480,7 +480,7 @@ pub fn compute_posterior_internals(
         };
         compute_weighted_posterior(model, wp_data, None)
     } else {
-        Ok(empty_posterior_internals(model, batch_size))
+        Ok(empty_posterior_internals(model, x.nrows()))
     }
 }
 

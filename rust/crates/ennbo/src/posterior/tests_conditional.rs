@@ -430,3 +430,15 @@ fn kiss_posterior_batch_units_are_linked() {
         EpistemicNearestNeighbors::conditional_posterior_function_draw,
     );
 }
+
+#[test]
+fn test_posterior_and_neighbors_reject_non_finite_query() {
+    let model = create_test_model();
+    let params = ENNParams::new(2, 1.0, 0.1).unwrap();
+    let flags = PosteriorFlags::new();
+    for bad in [f64::NAN, f64::INFINITY] {
+        let query = array![[bad, 0.5]];
+        assert!(model.posterior(&query.view(), &params, &flags).is_err());
+        assert!(model.neighbors(&query.view(), 1, false).is_err());
+    }
+}

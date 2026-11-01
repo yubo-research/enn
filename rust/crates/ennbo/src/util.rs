@@ -4,6 +4,15 @@ use rand::Rng;
 
 use crate::error::ENNError;
 
+pub(crate) fn check_finite_query(x: &ArrayView2<f64>) -> Result<(), ENNError> {
+    if x.iter().any(|v| !v.is_finite()) {
+        return Err(ENNError::InvalidParameter(
+            "NaN or Inf not allowed in x".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn argmax_random_tie(values: &[f64], rng: &mut dyn rand::RngCore) -> usize {
     if values.is_empty() {
         return 0;

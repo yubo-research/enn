@@ -356,6 +356,7 @@ impl EpistemicNearestNeighbors {
                 "k must be non-negative, got {k}"
             )));
         }
+        crate::util::check_finite_query(x)?;
         if self.num_obs == 0 {
             return Ok(Array2::zeros((x.nrows(), 0)));
         }

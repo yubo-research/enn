@@ -29,6 +29,7 @@ impl EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
+        crate::util::check_finite_query(x)?;
         let (mu, se, se_epi, se_ale, idx) = if !flags.observation_noise && !self.has_yvar() {
             compute_posterior_light(self, x, params, flags)?
         } else {
@@ -206,6 +207,7 @@ impl EpistemicNearestNeighbors {
         paramss: &[ENNParams],
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
+        crate::util::check_finite_query(x)?;
         let mut out = <Self as PosteriorComputation>::batch_posterior(self, x, paramss, flags)?;
         self.naturalize_enn_normal(&mut out)?;
         Ok(out)
