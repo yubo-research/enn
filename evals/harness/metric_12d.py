@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 from evals.harness.metric_12d_results import (
     CheckpointResult,
@@ -102,13 +102,15 @@ class StreamedModel:
         self.config = config
         self.model: EpistemicNearestNeighbors | None = None
         self.params: object = None
-        self.token: object = None
-        self.fit_rng = np.random.default_rng(config.seed + 1)
+        self.fitter = ENNStatefulFitter(
+            k=config.k, rng=np.random.default_rng(config.seed + 1)
+        )
 
     def _add_rows(self, x: np.ndarray, y: np.ndarray) -> None:
         if self.model is None:
             self.model = build_model(self.name, x[:0], y[:0], self.work_dir)
-        self.token = self.model.add(x, y)
+        self.model.add(x, y)
+        self.fitter.tell(x, y)
         self.model.ensure_index_sync()
 
     def advance(self, x: np.ndarray, y: np.ndarray, lo: int, hi: int) -> float:
@@ -117,13 +119,10 @@ class StreamedModel:
             stop = min(hi, start + self.config.batch)
             self._add_rows(x[start:stop], y[start:stop])
         assert self.model is not None
-        self.params = enn_fit(
+        self.params = self.fitter.ask(
             self.model,
-            k=self.config.k,
             num_fit_candidates=self.config.num_fit_candidates,
             num_fit_samples=self.config.num_fit_samples,
-            rng=self.fit_rng,
-            incremental=self.token,
         )
         return time.perf_counter() - t0
 

@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from enn._rust import ENNAddToken, InputHistory
 from enn._rust import EpistemicNearestNeighbors as _RustENN
+from enn._rust import InputHistory
 from enn.turbo.config.enn_surrogate_config import validate_enn_placement
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
@@ -150,12 +150,11 @@ class EpistemicNearestNeighbors(_EnnRustView):
         x: np.ndarray,
         y: np.ndarray,
         yvar: np.ndarray | None = None,
-    ) -> ENNAddToken:
+    ) -> None:
         x, y, yvar = self._coerce_inputs(x, y, yvar)
-        token = self._rust_model.add(self.transform_inputs(x), y, yvar)
+        self._rust_model.add(self.transform_inputs(x), y, yvar)
         if self._original_inputs is not None:
             self._original_inputs.append(x)
-        return token
 
     def transform_inputs(self, x):
         return (

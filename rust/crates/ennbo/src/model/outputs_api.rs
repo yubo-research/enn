@@ -77,10 +77,6 @@ impl EpistemicNearestNeighbors {
         OutputMoments::from_sums(self.num_obs, &self.y_sum, &self.y_sumsq)
     }
 
-    pub(crate) fn warped_y_sums(&self) -> (&Array1<f64>, &Array1<f64>) {
-        (&self.y_sum, &self.y_sumsq)
-    }
-
     pub(crate) fn checked_blend<'p>(
         &self,
         params: &'p ENNParams,

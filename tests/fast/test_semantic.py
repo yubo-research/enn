@@ -284,7 +284,7 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
 
 @pytest.mark.parametrize("relationships", [False, True])
 def test_fit_helpers_accept_semantic_model(relationships):
-    from enn.enn.enn_fit import enn_fit, subsample_loglik
+    from enn.enn.enn_fitter import ENNStatefulFitter, subsample_loglik
 
     transform = make_transform(relationships)
     x = np.random.default_rng(4).uniform(0, 2, (15, 3))
@@ -292,14 +292,12 @@ def test_fit_helpers_accept_semantic_model(relationships):
     model = EpistemicNearestNeighbors(
         x[:0], y[:0], input_transform=transform, work_dir=fresh_work_dir()
     )
-    params = enn_fit(
-        model,
-        k=3,
-        num_fit_candidates=3,
-        num_fit_samples=5,
-        rng=np.random.default_rng(5),
-        incremental=model.add(x, y),
+    model.add(x, y)
+    fitter = ENNStatefulFitter(
+        k=3, rng=np.random.default_rng(5), input_transform=transform
     )
+    fitter.tell(x, y)
+    params = fitter.ask(model, num_fit_candidates=3, num_fit_samples=5)
     scores = subsample_loglik(
         model, x, y, paramss=[params], P=5, rng=np.random.default_rng(6)
     )

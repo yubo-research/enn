@@ -13,7 +13,7 @@ import numpy as np
 from enn import create_optimizer, turbo_enn_config, turbo_zero_config
 from enn.benchmarks import Ackley
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config import (
     AcqType,
@@ -278,14 +278,13 @@ def fit_and_eval_y_bounds(
         model = EpistemicNearestNeighbors(
             x_train[:0], y_train[:0], y_bounds=y_bounds, work_dir=work_dir
         )
-        token = model.add(x_train, y_train)
-        params = enn_fit(
+        model.add(x_train, y_train)
+        fitter = ENNStatefulFitter(k=k, rng=rng)
+        fitter.tell(x_train, y_train, y_bounds=y_bounds)
+        params = fitter.ask(
             model,
-            k=k,
             num_fit_candidates=num_fit_candidates,
             num_fit_samples=num_fit_samples,
-            rng=rng,
-            incremental=token,
         )
         return evaluate_natural_y(
             model,
@@ -763,14 +762,13 @@ def evaluate_y_var_fit(
 ) -> YVarNoiseMetrics:
     with tempfile.TemporaryDirectory(prefix="qa_y_var_") as work_dir:
         model = EpistemicNearestNeighbors(x_train[:0], y_train[:0], work_dir=work_dir)
-        token = model.add(x_train, y_train, train_yvar)
-        params = enn_fit(
+        model.add(x_train, y_train, train_yvar)
+        fitter = ENNStatefulFitter(k=k, rng=rng)
+        fitter.tell(x_train, y_train, train_yvar)
+        params = fitter.ask(
             model,
-            k=k,
             num_fit_candidates=num_fit_candidates,
             num_fit_samples=num_fit_samples,
-            rng=rng,
-            incremental=token,
         )
         flags = PosteriorFlags(observation_noise=True)
         post = model.posterior(x_test, params=params, flags=flags)

@@ -11,7 +11,7 @@ from enn import (
     SemanticInputTransform,
     create_optimizer,
 )
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config
@@ -139,19 +139,19 @@ def test_semantic_only_fitting_and_invalid_add_preserve_original_rows():
         weighting=True,
         work_dir=fresh_work_dir(),
     )
-    token = model.add(x[:12], y[:12])
+    model.add(x[:12], y[:12])
     with pytest.raises(ValueError):
         model.add(x[12:13], np.zeros((1, 2)))
     assert len(model) == 12
     np.testing.assert_allclose(model.train_rows_at([11])[0], x[11:12])
-    params = enn_fit(
-        model,
+    fitter = ENNStatefulFitter(
         k=3,
-        num_fit_samples=4,
-        num_fit_candidates=3,
         rng=np.random.default_rng(1),
-        incremental=token,
+        input_transform=transform,
+        semantic_only=True,
     )
+    fitter.tell(x[:12], y[:12])
+    params = fitter.ask(model, num_fit_samples=4, num_fit_candidates=3)
     assert np.isfinite(model.posterior(x[:2], params=params).mu).all()
 
 
@@ -199,16 +199,16 @@ def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, wei
     original, observations, _ = reopened.train_rows_at([17, 0, 12])
     np.testing.assert_array_equal(original, x[[17, 0, 12]])
     np.testing.assert_allclose(observations, y[[17, 0, 12]])
-    token = reopened.add(x[18:], y[18:])
+    reopened.add(x[18:], y[18:])
     reopened.persist_index_to_disk()
-    params = enn_fit(
-        reopened,
+    fitter = ENNStatefulFitter(
         k=3,
-        num_fit_samples=4,
-        num_fit_candidates=3,
         rng=np.random.default_rng(1),
-        incremental=token,
+        input_transform=reopened.input_transform,
+        semantic_only=reopened.semantic_only,
     )
+    fitter.tell(x, y)
+    params = fitter.ask(reopened, num_fit_samples=4, num_fit_candidates=3)
     assert np.isfinite(reopened.posterior(x[:2], params=params).mu).all()
     del reopened
     again = EpistemicNearestNeighbors(

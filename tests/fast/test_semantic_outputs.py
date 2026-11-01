@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from enn import EpistemicNearestNeighbors, SemanticOutputProjection
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import ENNParams
 from evals.harness.work_dirs import fresh_work_dir
 
@@ -105,13 +105,10 @@ def fit_pinned(x, y, alpha, p=None):
         output_alpha=alpha,
         work_dir=fresh_work_dir(),
     )
-    params = enn_fit(
-        model,
-        k=3,
-        num_fit_candidates=3,
-        rng=np.random.default_rng(0),
-        incremental=model.add(x, y),
-    )
+    model.add(x, y)
+    fitter = ENNStatefulFitter(k=3, rng=np.random.default_rng(0))
+    fitter.tell(x, y)
+    params = fitter.ask(model, num_fit_candidates=3)
     return model, params
 
 

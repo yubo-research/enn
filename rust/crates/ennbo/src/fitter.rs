@@ -84,16 +84,6 @@ impl ENNFitter {
         self.y_sumsq = y.mapv(|v| v * v).sum_axis(Axis(0));
     }
 
-    pub(crate) fn seed_y_stats(&mut self, model: &EpistemicNearestNeighbors) {
-        let (sum, sumsq) = model.warped_y_sums();
-        self.y_sum = sum.clone();
-        self.y_sumsq = sumsq.clone();
-        self.y_count = model.len();
-        self.num_metrics = model.num_metrics();
-        self.num_dim = Some(model.num_dim());
-        self.y_bounds = Some(model.y_bounds().clone());
-    }
-
     pub fn update_y(&mut self, y_new: &ArrayView2<f64>) {
         if y_new.nrows() == 0 {
             return;
@@ -602,7 +592,11 @@ mod tests {
 
     fn seeded_fitter(model: &EpistemicNearestNeighbors) -> ENNFitter {
         let mut fitter = ENNFitter::new(3);
-        fitter.seed_y_stats(model);
+        let indices: Vec<usize> = (0..model.len()).collect();
+        let (x, y, _) = model.train_rows_at(&indices).unwrap();
+        fitter
+            .tell(&x.view(), &y.view(), None, Some(model.y_bounds()))
+            .unwrap();
         fitter
     }
 
@@ -669,8 +663,10 @@ mod tests {
         let second = fitter.ask(&model, &search, None, &mut rng).unwrap();
         let center = |p: &ENNParams| p.output_blend.as_ref().unwrap().center.clone();
         assert_ne!(center(&first), center(&second));
-        let (sum, _) = model.warped_y_sums();
-        assert_eq!(center(&second), sum / model.len() as f64);
+        let indices: Vec<usize> = (0..model.len()).collect();
+        let (_, y, _) = model.train_rows_at(&indices).unwrap();
+        let want = y.mean_axis(Axis(0)).unwrap();
+        assert!((center(&second) - want).iter().all(|d| d.abs() < 1e-12));
     }
 
     #[test]

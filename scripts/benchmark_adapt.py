@@ -13,7 +13,7 @@ import numpy as np
 
 
 def measure(kind, case, seed, counts):
-    from enn.enn.enn_fit import enn_fit
+    from enn.enn.enn_fitter import ENNStatefulFitter
     from evals.harness.adapt import (
         NUM_FIT_CANDIDATES,
         PARAMS,
@@ -26,19 +26,20 @@ def measure(kind, case, seed, counts):
 
     problem = make_problem(kind, case, seed, count=max(counts) + 128)
     model = workflow_model(problem, WORKFLOWS["adaptive"])
-    fit_rng = np.random.default_rng(seed)
+    fitter = ENNStatefulFitter(
+        k=PARAMS.k_num_neighbors,
+        rng=np.random.default_rng(seed),
+        input_transform=model.input_transform,
+    )
     rows, predictions = [], []
     for count in counts:
         cpu_start = time.process_time()
         start = time.perf_counter()
         first = len(model)
-        params = enn_fit(
-            model,
-            k=PARAMS.k_num_neighbors,
-            num_fit_candidates=NUM_FIT_CANDIDATES,
-            rng=fit_rng,
-            incremental=model.add(problem.x[first:count], problem.y[first:count]),
-        )
+        x, y = problem.x[first:count], problem.y[first:count]
+        model.add(x, y)
+        fitter.tell(x, y)
+        params = fitter.ask(model, num_fit_candidates=NUM_FIT_CANDIDATES)
         elapsed = time.perf_counter() - start
         cpu_elapsed = time.process_time() - cpu_start
         posterior = model.posterior(problem.x[-128:], params=params)

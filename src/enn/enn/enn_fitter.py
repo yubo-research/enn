@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 
 from enn._rust import ENNStatefulFitter as _RustENNStatefulFitter
+from enn._rust import subsample_loglik as _rust_subsample_loglik
 
 from .enn_class_support import rust_params
 
@@ -17,6 +18,51 @@ def py_params(rust_result: Any) -> Any:
         epistemic_variance_scale=rust_result.epistemic_variance_scale,
         aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
         output_blend=rust_result.output_blend,
+    )
+
+
+def subsample_loglik(
+    model: Any,
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    paramss: list[Any],
+    P: int | None = None,
+    rng: Any,
+    y_std: np.ndarray | None = None,
+) -> list[float]:
+    from .enn_class import EpistemicNearestNeighbors as PyENN
+
+    x_array = np.asarray(x, dtype=float)
+    y_array = np.asarray(y, dtype=float)
+    if y_array.ndim == 1:
+        y_array = y_array.reshape(-1, 1)
+
+    if not isinstance(model, PyENN):
+        raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
+
+    seed = int(rng.integers(0, 2**63 - 1))
+
+    k_values = [p.k_num_neighbors for p in paramss]
+    epi_scales = [p.epistemic_variance_scale for p in paramss]
+    ale_scales = [p.aleatoric_variance_scale for p in paramss]
+    blends = [p.output_blend for p in paramss]
+
+    y_std_arr = None
+    if y_std is not None:
+        y_std_arr = np.asarray(y_std, dtype=float).ravel()
+
+    return _rust_subsample_loglik(
+        model.rust_backend,
+        model.transform_inputs(x_array),
+        y_array,
+        k_values,
+        epi_scales,
+        ale_scales,
+        P,
+        seed,
+        y_std_arr,
+        blends,
     )
 
 

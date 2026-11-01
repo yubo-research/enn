@@ -45,8 +45,6 @@ pub mod hash;
 #[allow(missing_docs)]
 pub mod hypervolume;
 #[allow(missing_docs)]
-pub mod incremental_fit;
-#[allow(missing_docs)]
 pub mod incumbent_tracker;
 #[allow(missing_docs)]
 pub mod layout;
@@ -171,7 +169,6 @@ pub use fitter::ENNFitter;
 pub use hash::normal_hash_batch_multi_seed;
 pub use hash::normal_hash_batch_multi_seed_fast;
 pub use hypervolume::hypervolume_2d_max;
-pub use incremental_fit::{AddToken, IncrementalAsk, IncrementalFit};
 pub use incumbent_tracker::IncrementalIncumbentTracker;
 pub use layout::EnnLayout;
 pub use model::EnnIndexAccess;

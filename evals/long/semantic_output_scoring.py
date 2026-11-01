@@ -4,7 +4,7 @@ from time import perf_counter
 import numpy as np
 
 from enn import EpistemicNearestNeighbors, SemanticOutputProjection
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from evals.harness.work_dirs import fresh_work_dir
 
 NEIGHBORS = 8
@@ -25,13 +25,10 @@ class PinnedAlphaENN:
             output_alpha=self.alpha,
             work_dir=fresh_work_dir(),
         )
-        self.params = enn_fit(
-            self.model,
-            k=NEIGHBORS,
-            num_fit_candidates=NUM_FIT_CANDIDATES,
-            rng=np.random.default_rng(self.seed),
-            incremental=self.model.add(x, y),
-        )
+        self.model.add(x, y)
+        fitter = ENNStatefulFitter(k=NEIGHBORS, rng=np.random.default_rng(self.seed))
+        fitter.tell(x, y)
+        self.params = fitter.ask(self.model, num_fit_candidates=NUM_FIT_CANDIDATES)
         return self
 
     def posterior(self, x):

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from enn import EpistemicNearestNeighbors, SemanticOutputProjection
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from evals.harness.adapt_problem import make_problem
 from evals.harness.work_dirs import fresh_work_dir
 
@@ -20,20 +20,21 @@ def stream(problem, **kwargs):
     )
 
 
-def fit(model, token, seed=0):
-    return enn_fit(
-        model,
+def add_and_fit(model, x, y, seed=0):
+    model.add(x, y)
+    fitter = ENNStatefulFitter(
         k=8,
-        num_fit_candidates=3,
         rng=np.random.default_rng(seed),
-        incremental=token,
+        input_transform=model.input_transform,
     )
+    fitter.tell(x, y)
+    return fitter.ask(model, num_fit_candidates=3)
 
 
 def test_failed_add_preserves_rows_and_predictions():
     problem = make_problem("xx", "misleading", 13, count=48)
     model = stream(problem, weighting=True)
-    params = fit(model, model.add(problem.x[:30], problem.y[:30]))
+    params = add_and_fit(model, problem.x[:30], problem.y[:30])
     before = model.posterior(problem.x[-4:], params=params).mu.copy()
     with pytest.raises(ValueError):
         model.add(problem.x[30:40], np.ones((10, 2)))
@@ -49,7 +50,7 @@ def test_signed_output_learning_and_deterministic_replay():
     results = []
     for _ in range(2):
         model = stream(problem)
-        params = fit(model, model.add(problem.x[:100], problem.y[:100]), seed=3)
+        params = add_and_fit(model, problem.x[:100], problem.y[:100], seed=3)
         results.append(model.posterior(problem.x[100:], params=params))
     left, right = results
     np.testing.assert_array_equal(left.mu, right.mu)
@@ -64,7 +65,7 @@ def test_constant_outputs_with_zero_embeddings():
     model = EpistemicNearestNeighbors(
         x[:0], y[:0], output_projection=projection, work_dir=fresh_work_dir()
     )
-    params = fit(model, model.add(x, y))
+    params = add_and_fit(model, x, y)
     post = model.posterior(x, params=params)
     np.testing.assert_allclose(post.mu, y, atol=1e-12)
     assert np.isfinite(post.se).all()
@@ -77,6 +78,6 @@ def test_invalid_data_is_rejected_without_changing_the_model():
     with pytest.raises(ValueError):
         model.add(np.ones((12, 1)), np.full((12, 1), np.nan))
     assert len(model) == 0
-    params = fit(model, model.add(np.ones((12, 1)), np.ones((12, 1))))
+    params = add_and_fit(model, np.ones((12, 1)), np.ones((12, 1)))
     with pytest.raises(ValueError):
         model.posterior(np.array([[np.nan]]), params=params)

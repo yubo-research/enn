@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from enn import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from evals.harness.adapt import NUM_FIT_CANDIDATES, PARAMS, score
 from evals.harness.adapt_problem import make_problem
 from evals.harness.work_dirs import fresh_work_dir
@@ -22,19 +22,17 @@ def main():
             weighting=True,
             work_dir=fresh_work_dir(),
         )
-        rng = np.random.default_rng(seed)
+        fitter = ENNStatefulFitter(
+            k=PARAMS.k_num_neighbors,
+            rng=np.random.default_rng(seed),
+            input_transform=model.input_transform,
+        )
         for count in range(100, 3001, 100):
             start = time.perf_counter()
-            token = model.add(
-                problem.x[count - 100 : count], problem.y[count - 100 : count]
-            )
-            params = enn_fit(
-                model,
-                k=PARAMS.k_num_neighbors,
-                num_fit_candidates=NUM_FIT_CANDIDATES,
-                rng=rng,
-                incremental=token,
-            )
+            x, y = problem.x[count - 100 : count], problem.y[count - 100 : count]
+            model.add(x, y)
+            fitter.tell(x, y)
+            params = fitter.ask(model, num_fit_candidates=NUM_FIT_CANDIDATES)
             rows.append(
                 dict(
                     seed=seed,

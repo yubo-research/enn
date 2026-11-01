@@ -50,34 +50,27 @@ def test_optimizer_fixture_capture_smoke():
 
 def test_coverage_enn_fit_fast():
     from enn.enn.enn_class import EpistemicNearestNeighbors
-    from enn.enn.enn_fit import enn_fit, subsample_loglik
-    from enn.enn.enn_fitter import ENNStatefulFitter
+    from enn.enn.enn_fitter import ENNStatefulFitter, subsample_loglik
     from enn.enn.enn_params import ENNParams
 
     rng = np.random.default_rng(8)
     x = np.array([[0.0, 0.0], [1.0, 1.0], [0.5, 0.5], [0.2, 0.8]])
     y = np.array([[0.0], [1.0], [0.5], [0.3]])
     model = EpistemicNearestNeighbors(x[:0], y[:0], work_dir=fresh_work_dir())
-    params = enn_fit(
-        model,
-        k=2,
-        num_fit_candidates=2,
-        num_fit_samples=2,
-        rng=rng,
-        incremental=model.add(x, y),
-    )
+    model.add(x, y)
+    fitter = ENNStatefulFitter(k=2, rng=rng)
+    fitter.tell(x, y)
+    params = fitter.ask(model, num_fit_candidates=2, num_fit_samples=2)
     assert params.k_num_neighbors >= 1
-    fitter = ENNStatefulFitter(k=2, rng=np.random.default_rng(9))
-    fitter.tell(x[:2], y[:2])
+    fitter2 = ENNStatefulFitter(k=2, rng=np.random.default_rng(9))
+    fitter2.tell(x[:2], y[:2])
     model2 = EpistemicNearestNeighbors(x[:2], y[:2], work_dir=fresh_work_dir())
-    token = model2.add(x[2:3], y[2:3])
-    params2 = enn_fit(
+    model2.add(x[2:3], y[2:3])
+    fitter2.tell(x[2:3], y[2:3])
+    params2 = fitter2.ask(
         model2,
-        k=2,
         num_fit_candidates=2,
         num_fit_samples=2,
-        rng=np.random.default_rng(10),
-        incremental=token,
         params_warm_start=params,
     )
     assert params2.k_num_neighbors >= 1

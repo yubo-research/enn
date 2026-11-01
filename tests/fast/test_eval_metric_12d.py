@@ -51,7 +51,7 @@ def test_build_model_selects_metric_learning() -> None:
 def test_advance_adds_rows_in_batches_and_auto_refits_inside_add(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(mod, "enn_fit", lambda *a, **kw: None)
+    monkeypatch.setattr(mod.ENNStatefulFitter, "ask", lambda *a, **kw: None)
     cfg = mod.Metric12dConfig(batch=40)
     x, y = mod.make_data(260, np.random.default_rng(4))
     with tempfile.TemporaryDirectory() as work_dir:

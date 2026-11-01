@@ -7,7 +7,7 @@ import tempfile
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.posterior_flags import PosteriorFlags
 from ops.qa import make_bounded_1d_xy, y_bounds_array
 
@@ -35,15 +35,10 @@ def fit_model(
         y_bounds=y_bounds,
         work_dir=tempfile.mkdtemp(prefix="enn_bounded_figure_"),
     )
-    token = model.add(x_train, y_train)
-    params = enn_fit(
-        model,
-        k=K,
-        num_fit_candidates=30,
-        num_fit_samples=20,
-        rng=np.random.default_rng(SEED + 1),
-        incremental=token,
-    )
+    model.add(x_train, y_train)
+    fitter = ENNStatefulFitter(k=K, rng=np.random.default_rng(SEED + 1))
+    fitter.tell(x_train, y_train, y_bounds=y_bounds)
+    params = fitter.ask(model, num_fit_candidates=30, num_fit_samples=20)
     return model, params
 
 

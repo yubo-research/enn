@@ -15,7 +15,7 @@ import click
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 
 DEFAULT_NUM_DIM = 10
@@ -723,16 +723,15 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         config.num_test, num_dim=config.num_dim, rng=data_rng
     )
     model = EpistemicNearestNeighbors(x[:0], y[:0], work_dir=config.work_dir)
-    token = model.add(x, y)
+    model.add(x, y)
 
     t0 = time.perf_counter()
-    fitted = enn_fit(
+    fitter = ENNStatefulFitter(k=config.k, rng=fit_rng)
+    fitter.tell(x, y)
+    fitted = fitter.ask(
         model,
-        k=config.k,
         num_fit_candidates=config.num_fit_candidates,
         num_fit_samples=config.num_fit_samples,
-        rng=fit_rng,
-        incremental=token,
     )
     fit_s = time.perf_counter() - t0
 

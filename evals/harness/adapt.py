@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from enn import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import ENNParams
 from evals.harness.adapt_problem import make_problem
 from evals.harness.work_dirs import fresh_work_dir
@@ -62,13 +62,10 @@ def fixed_model(problem, count, raw=False):
         output_alpha=PRIOR_ALPHA,
         work_dir=fresh_work_dir(),
     )
-    params = enn_fit(
-        model,
-        k=PARAMS.k_num_neighbors,
-        num_fit_candidates=1,
-        rng=np.random.default_rng(0),
-        incremental=model.add(x, y),
-    )
+    model.add(x, y)
+    fitter = ENNStatefulFitter(k=PARAMS.k_num_neighbors, rng=np.random.default_rng(0))
+    fitter.tell(x, y)
+    params = fitter.ask(model, num_fit_candidates=1)
     return model, replace(
         PARAMS,
         output_blend=params.output_blend,
@@ -124,20 +121,19 @@ def update_model(problem, count, method, models, seed):
     if method in ("fixed", "raw"):
         return fixed_model(problem, count, raw=method == "raw")
     if method not in models:
-        models[method] = (
-            workflow_model(problem, WORKFLOWS[method]),
-            np.random.default_rng(seed),
+        model = workflow_model(problem, WORKFLOWS[method])
+        fitter = ENNStatefulFitter(
+            k=PARAMS.k_num_neighbors,
+            rng=np.random.default_rng(seed),
+            input_transform=model.input_transform,
         )
-    model, rng = models[method]
+        models[method] = (model, fitter)
+    model, fitter = models[method]
     start = len(model)
-    params = enn_fit(
-        model,
-        k=PARAMS.k_num_neighbors,
-        num_fit_candidates=NUM_FIT_CANDIDATES,
-        rng=rng,
-        incremental=model.add(problem.x[start:count], problem.y[start:count]),
-    )
-    return model, params
+    x, y = problem.x[start:count], problem.y[start:count]
+    model.add(x, y)
+    fitter.tell(x, y)
+    return model, fitter.ask(model, num_fit_candidates=NUM_FIT_CANDIDATES)
 
 
 def run_adapt(

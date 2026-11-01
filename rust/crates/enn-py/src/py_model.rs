@@ -69,7 +69,6 @@ fn py_posterior_flags(exclude_nearest: bool, observation_noise: bool) -> ennbo::
 #[pyclass(name = "EpistemicNearestNeighbors")]
 pub struct PyEpistemicNearestNeighbors {
     pub(crate) inner: ennbo::EpistemicNearestNeighbors,
-    pub(crate) incremental: ennbo::IncrementalFit,
 }
 
 #[pymethods]
@@ -104,10 +103,7 @@ impl PyEpistemicNearestNeighbors {
             tied_dims.unwrap_or_default(),
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self {
-            inner: model,
-            incremental: ennbo::IncrementalFit::new(),
-        })
+        Ok(Self { inner: model })
     }
 
     #[pyo3(signature = (loadings, alpha=None))]
@@ -134,16 +130,10 @@ impl PyEpistemicNearestNeighbors {
         x: PyReadonlyArray2<f64>,
         y: PyReadonlyArray2<f64>,
         yvar: Option<PyReadonlyArray2<f64>>,
-    ) -> PyResult<crate::py_fit::PyAddToken> {
+    ) -> PyResult<()> {
         let yvar_arr = yvar.as_ref().map(|v| v.as_array());
-        self.incremental
-            .add(
-                &mut self.inner,
-                &x.as_array(),
-                &y.as_array(),
-                yvar_arr.as_ref(),
-            )
-            .map(|inner| crate::py_fit::PyAddToken { inner })
+        self.inner
+            .add(&x.as_array(), &y.as_array(), yvar_arr.as_ref())
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 

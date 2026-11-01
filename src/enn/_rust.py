@@ -67,8 +67,6 @@ ENNParams = _ext.model.ENNParams
 ENNOutputBlend = _ext.model.ENNOutputBlend
 ENNStatefulFitter = _ext.fit.ENNStatefulFitter
 subsample_loglik = _ext.fit.subsample_loglik
-ENNAddToken = _ext.fit.ENNAddToken
-enn_fit_incremental = _ext.fit.enn_fit_incremental
 Optimizer = _ext.optimizer.Optimizer
 create_optimizer_enn = _ext.optimizer.create_optimizer_enn
 create_optimizer_zero = _ext.optimizer.create_optimizer_zero
@@ -79,7 +77,6 @@ validate_enn_placement = _ext.model.validate_enn_placement
 
 
 __all__ = [
-    "ENNAddToken",
     "ENNOutputBlend",
     "ENNParams",
     "ENNStatefulFitter",
@@ -90,7 +87,6 @@ __all__ = [
     "create_optimizer_enn",
     "create_optimizer_lhd",
     "create_optimizer_zero",
-    "enn_fit_incremental",
     "ensure_config_file",
     "hypervolume_2d_max",
     "normal_hash_batch_multi_seed_fast",

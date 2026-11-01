@@ -1,4 +1,4 @@
-"""One workflow: add, enn_fit with the token, posterior, draws."""
+"""One workflow: add, tell, ask, posterior, draws."""
 
 from dataclasses import replace
 
@@ -12,7 +12,7 @@ from enn import (
     SemanticInputTransform,
     SemanticOutputProjection,
 )
-from enn.enn.enn_fit import enn_fit, subsample_loglik
+from enn.enn.enn_fitter import subsample_loglik
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from evals.harness.work_dirs import fresh_work_dir
 
@@ -60,31 +60,31 @@ def build(x, y, shape="none", work_dir=None, **kwargs):
     )
 
 
-def fit(model, token, seed=0, **kwargs):
-    return enn_fit(
-        model,
+def held_fitter(model, seed=0):
+    return ENNStatefulFitter(
         k=4,
-        num_fit_candidates=5,
         rng=np.random.default_rng(seed),
-        incremental=token,
-        **kwargs,
+        input_transform=model.input_transform,
     )
+
+
+def add_and_fit(model, x, y, seed=0):
+    model.add(x, y)
+    fitter = held_fitter(model, seed)
+    fitter.tell(x, y)
+    return fitter.ask(model, num_fit_candidates=5)
 
 
 @pytest.mark.parametrize("shape", SHAPES)
 def test_workflow_over_batches(shape, tmp_path):
     x, y = data()
     model = build(x[:0], y[:0], shape, tmp_path)
-    rng = np.random.default_rng(1)
+    fitter = held_fitter(model, 1)
     for start in range(0, 60, 20):
         batch = slice(start, start + 20)
-        params = enn_fit(
-            model,
-            k=4,
-            num_fit_candidates=5,
-            rng=rng,
-            incremental=model.add(x[batch], y[batch]),
-        )
+        model.add(x[batch], y[batch])
+        fitter.tell(x[batch], y[batch])
+        params = fitter.ask(model, num_fit_candidates=5)
         assert params.k_num_neighbors == 4
         post = model.posterior(x[:5], params=params)
         draws, _ = model.posterior_function_draw(x[:5], params, function_seeds=[1, 2])
@@ -104,7 +104,7 @@ def test_workflow_over_batches(shape, tmp_path):
 def test_models_without_yy_match_the_values_from_before_the_blend(shape, mean, se):
     x, y = data()
     model = build(x[:0], y[:0], shape)
-    params = fit(model, model.add(x, y))
+    params = add_and_fit(model, x, y)
     assert params.output_blend is None
     assert params.epistemic_variance_scale == pytest.approx(448.174093090275, rel=1e-12)
     assert params.aleatoric_variance_scale == pytest.approx(
@@ -115,15 +115,10 @@ def test_models_without_yy_match_the_values_from_before_the_blend(shape, mean, s
     assert post.se[0, 2] == pytest.approx(se, rel=1e-12)
 
 
-def test_enn_fit_and_a_held_fitter_both_return_a_blend():
+def test_held_fitter_returns_a_blend():
     x, y = data()
     model = build(x[:0], y[:0], "yy")
-    token_params = fit(model, model.add(x, y))
-    fitter = ENNStatefulFitter(k=4, seed=0)
-    fitter.tell(x, y)
-    held_params = fitter.ask(model, num_fit_candidates=5)
-    assert token_params.output_blend is not None
-    assert held_params.output_blend is not None
+    assert add_and_fit(model, x, y).output_blend is not None
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -158,7 +153,7 @@ def test_unblended_params_predict_unblended_on_a_yy_model():
 def test_batch_posterior_applies_each_entrys_blend():
     x, y = data()
     model = build(x[:0], y[:0], "yy", output_alpha=0.1)
-    low = fit(model, model.add(x, y))
+    low = add_and_fit(model, x, y)
     high_blend = ENNOutputBlend(
         np.full(3, 0.9),
         low.output_blend.projector,
@@ -187,7 +182,7 @@ def test_sign_opposed_output_gets_low_alpha_and_others_do_not():
     model = EpistemicNearestNeighbors(
         x[:0], y[:0], output_projection=projection, work_dir=fresh_work_dir()
     )
-    alpha = fit(model, model.add(x, y)).output_blend.alpha
+    alpha = add_and_fit(model, x, y).output_blend.alpha
     assert alpha[2] < 0.2 and alpha[0] > alpha[2] and alpha[1] > alpha[2]
 
 
@@ -196,7 +191,7 @@ def test_constant_output_is_unchanged_and_does_not_affect_others():
     constant = y.copy()
     constant[:, 2] = 0.1
     model = build(x[:0], constant[:0], "yy", output_alpha=1.0)
-    params = fit(model, model.add(x, constant))
+    params = add_and_fit(model, x, constant)
     blend = params.output_blend
     assert blend.alpha[2] == 0 and blend.scale[2] == 1
     post = model.posterior(x[:5], params=params)
@@ -210,17 +205,19 @@ def test_constant_output_is_unchanged_and_does_not_affect_others():
 def test_pinned_alpha_stays_across_asks():
     x, y = data()
     model = build(x[:0], y[:0], "yy", output_alpha=0.1)
-    rng = np.random.default_rng(0)
+    fitter = held_fitter(model)
     for start in (0, 20, 40):
-        token = model.add(x[start : start + 20], y[start : start + 20])
-        params = enn_fit(model, k=4, num_fit_candidates=3, rng=rng, incremental=token)
+        batch = slice(start, start + 20)
+        model.add(x[batch], y[batch])
+        fitter.tell(x[batch], y[batch])
+        params = fitter.ask(model, num_fit_candidates=3)
         np.testing.assert_array_equal(params.output_blend.alpha, np.full(3, 0.1))
 
 
 def test_output_blend_round_trips_and_validates():
     x, y = data()
     model = build(x[:0], y[:0], "yy")
-    blend = fit(model, model.add(x, y)).output_blend
+    blend = add_and_fit(model, x, y).output_blend
     copy = ENNOutputBlend(blend.alpha, blend.projector, blend.center, blend.scale)
     assert copy == blend
     params = ENNParams(4, 1, 0, output_blend=blend)
@@ -234,55 +231,33 @@ def test_output_blend_round_trips_and_validates():
 def test_warm_blend_with_wrong_outputs_is_an_error():
     x, y = data()
     model = build(x[:0], y[:0], "yy")
-    token = model.add(x, y)
+    model.add(x, y)
+    fitter = held_fitter(model)
+    fitter.tell(x, y)
     wrong = ENNOutputBlend(np.zeros(1), np.eye(1), np.zeros(1), np.ones(1))
     with pytest.raises(ValueError, match="warm output blend"):
-        fit(model, token, params_warm_start=ENNParams(4, 1, 0, output_blend=wrong))
+        fitter.ask(
+            model,
+            num_fit_candidates=5,
+            params_warm_start=ENNParams(4, 1, 0, output_blend=wrong),
+        )
 
 
-def test_enn_fit_requires_the_token():
-    x, y = data()
-    model = build(x, y)
-    with pytest.raises(TypeError, match="incremental"):
-        enn_fit(model, k=4, num_fit_candidates=3, rng=np.random.default_rng(0))
-    with pytest.raises(TypeError, match="token"):
-        fit(model, None)
-
-
-def test_one_rng_works_across_calls_and_is_reproducible():
+def test_streamed_fits_are_reproducible():
     x, y = data()
 
     def run():
         model = build(x[:0], y[:0])
-        rng = np.random.default_rng(7)
+        fitter = held_fitter(model, 7)
         results = []
         for start in (0, 20, 40):
-            token = model.add(x[start : start + 20], y[start : start + 20])
-            results.append(
-                enn_fit(model, k=4, num_fit_candidates=5, rng=rng, incremental=token)
-            )
+            batch = slice(start, start + 20)
+            model.add(x[batch], y[batch])
+            fitter.tell(x[batch], y[batch])
+            results.append(fitter.ask(model, num_fit_candidates=5))
         return results
 
     assert run() == run()
-
-
-@pytest.mark.parametrize("bounded", [False, True])
-def test_constructor_rows_count_like_told_rows(bounded):
-    x, y = data(outputs=1)
-    y = (y - y.min()) / (y.max() - y.min()) * 0.8 + 0.1
-    bounds = np.array([[0.0, 1.0]]) if bounded else None
-    model = build(x[:40], y[:40], y_bounds=bounds)
-    token = model.add(x[40:], y[40:])
-    token_params = enn_fit(
-        model,
-        k=4,
-        num_fit_candidates=5,
-        rng=np.random.default_rng(3),
-        incremental=token,
-    )
-    fitter = ENNStatefulFitter(k=4, rng=np.random.default_rng(3))
-    fitter.tell(x, y, y_bounds=bounds)
-    assert token_params == fitter.ask(model, num_fit_candidates=5)
 
 
 def test_disk_reopen_predicts_the_same_and_warm_blend_survives(tmp_path):
@@ -292,7 +267,7 @@ def test_disk_reopen_predicts_the_same_and_warm_blend_survives(tmp_path):
         "output_projection": output_projection(),
     }
     model = EpistemicNearestNeighbors(x[:0], y[:0], **kwargs)
-    params = fit(model, model.add(x[:8], y[:8]))
+    params = add_and_fit(model, x[:8], y[:8])
     expected = model.posterior(x[:5], params=params)
     model.persist_index_to_disk()
     del model
@@ -300,15 +275,17 @@ def test_disk_reopen_predicts_the_same_and_warm_blend_survives(tmp_path):
     actual = reopened.posterior(x[:5], params=params)
     np.testing.assert_allclose(actual.mu, expected.mu, atol=1e-12)
     np.testing.assert_allclose(actual.se, expected.se, atol=1e-12)
-    token = reopened.add(x[8:9], y[8:9])
-    refit = fit(reopened, token, params_warm_start=params)
+    reopened.add(x[8:9], y[8:9])
+    fitter = held_fitter(reopened)
+    fitter.tell(x[:9], y[:9])
+    refit = fitter.ask(reopened, num_fit_candidates=5, params_warm_start=params)
     assert refit.output_blend == params.output_blend
 
 
 def test_observation_noise_flag_uses_the_blend():
     x, y = data()
     model = build(x[:0], y[:0], "yy", output_alpha=0.9)
-    params = fit(model, model.add(x, y))
+    params = add_and_fit(model, x, y)
     flags = PosteriorFlags(observation_noise=True)
     blended = model.posterior(x[:5], params=params, flags=flags)
     plain = model.posterior(
