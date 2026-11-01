@@ -28,6 +28,21 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "CatEncoder": (".enn.cat_codes", "CatEncoder"),
     "CatEncoding": (".enn.cat_codes", "CatEncoding"),
     "DimKind": (".enn.cat_codes", "DimKind"),
+    "ENNParams": (".enn.enn_params", "ENNParams"),
+    "PosteriorFlags": (".enn.enn_params", "PosteriorFlags"),
+    "ENNNormal": (".enn.enn_normal", "ENNNormal"),
+    "ENNSurrogateConfig": (".turbo.config.surrogate", "ENNSurrogateConfig"),
+    "ENNFitConfig": (".turbo.config.enn_fit_config", "ENNFitConfig"),
+    "NoSurrogateConfig": (".turbo.config.surrogate", "NoSurrogateConfig"),
+    "MultiObjectiveConfig": (
+        ".turbo.config.multi_objective_config",
+        "MultiObjectiveConfig",
+    ),
+    "CandidateGenConfig": (".turbo.config.candidate_gen_config", "CandidateGenConfig"),
+    "TRLengthConfig": (".turbo.config.tr_length_config", "TRLengthConfig"),
+    "Rescalarize": (".turbo.config.rescalarize", "Rescalarize"),
+    "RAASPDriver": (".turbo.config.raasp_driver", "RAASPDriver"),
+    "ENNMetricLearning": (".turbo.config.enn_x_scaling", "ENNMetricLearning"),
 }
 
 
