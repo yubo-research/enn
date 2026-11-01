@@ -201,9 +201,9 @@ def test_conditional_draws_and_fitter_use_same_features(relationships):
     np.testing.assert_array_equal(actual[0], expected[0])
     fitter = ENNStatefulFitter(3, seed=1)
     fitted = fitter.ask(model, num_fit_candidates=3, num_fit_samples=5)
-    assert np.isfinite(fitter.posterior(model, x[2:4], fitted).mu).all()
+    assert np.isfinite(model.posterior(x[2:4], params=fitted).mu).all()
     assert np.isfinite(
-        fitter.posterior_function_draw(model, x[2:4], fitted, function_seeds=[1])[0]
+        model.posterior_function_draw(x[2:4], params=fitted, function_seeds=[1])[0]
     ).all()
 
 

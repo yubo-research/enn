@@ -1,9 +1,7 @@
-use ndarray::{Array2, ArrayView1, ArrayView2};
 use rand::seq::index::sample;
 use rand::Rng;
 use std::sync::Arc;
 
-use crate::calibration::AffineCalibrator;
 use crate::error::ENNError;
 use crate::fit_samples::ScaleSearch;
 use crate::model::EpistemicNearestNeighbors;
@@ -14,7 +12,6 @@ use crate::params::ENNParams;
 pub struct ENNFitter {
     pub(crate) k: i32,
     pub(crate) params: Option<ENNParams>,
-    calibrator: Option<AffineCalibrator>,
     output_fit: Option<OutputBlendFit>,
 }
 
@@ -23,37 +20,8 @@ impl ENNFitter {
         Self {
             k,
             params: None,
-            calibrator: None,
             output_fit: None,
         }
-    }
-
-    pub fn calibrator(&self) -> Option<&AffineCalibrator> {
-        self.calibrator.as_ref()
-    }
-
-    pub fn set_calibrator_rows(&mut self, rows: ArrayView2<f64>) -> Result<(), ENNError> {
-        self.calibrator = Some(AffineCalibrator::from_rows(rows)?);
-        Ok(())
-    }
-
-    pub fn set_calibrator_abc(
-        &mut self,
-        a: ArrayView1<f64>,
-        b: ArrayView1<f64>,
-        c: ArrayView1<f64>,
-    ) -> Result<(), ENNError> {
-        if a.len() != b.len() || b.len() != c.len() {
-            return Err(ENNError::InvalidShape {
-                expected: vec![a.len()],
-                got: vec![b.len(), c.len()],
-            });
-        }
-        let mut rows = Array2::zeros((3, a.len()));
-        rows.row_mut(0).assign(&a);
-        rows.row_mut(1).assign(&b);
-        rows.row_mut(2).assign(&c);
-        self.set_calibrator_rows(rows.view())
     }
 
     pub fn params(&self) -> Option<&ENNParams> {
@@ -105,18 +73,19 @@ impl ENNFitter {
         rng: &mut R,
         affine_calibrate: bool,
     ) -> Result<ENNParams, ENNError> {
-        self.params = Some(best.clone());
-        self.calibrator = if affine_calibrate {
-            Some(crate::surrogate_affine::fit_calibrator(
+        let calibrator = if affine_calibrate {
+            Some(Arc::new(crate::surrogate_affine::fit_calibrator(
                 model,
                 &best,
                 num_fit_samples,
                 rng,
                 false,
-            )?)
+            )?))
         } else {
             None
         };
+        let best = best.with_calibrator(calibrator);
+        self.params = Some(best.clone());
         Ok(best)
     }
 
@@ -211,7 +180,7 @@ impl ENNFitter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{array, Axis};
+    use ndarray::{array, Array2, Axis};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 

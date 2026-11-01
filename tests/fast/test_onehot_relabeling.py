@@ -69,10 +69,8 @@ def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
         )
         assert model.metric.uses_learned_metric
         neighbors.append(model.neighbors(q, 10))
-        posterior = fitter.affine_calibrator.apply(
-            model.posterior(
-                q, params=params, flags=PosteriorFlags(observation_noise=True)
-            )
+        posterior = model.posterior(
+            q, params=params, flags=PosteriorFlags(observation_noise=True)
         )
         results.append((posterior.mu, posterior.se**2))
         permutation = np.random.default_rng(505).permutation(128)

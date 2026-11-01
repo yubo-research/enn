@@ -282,17 +282,11 @@ class EpistemicNearestNeighbors(_EnnRustView):
 
         flags = _posterior_flags_coerced(flags)
         x = np.asarray(x, dtype=float)
-        k_values = [p.k_num_neighbors for p in paramss]
-        epistemic_scales = [p.epistemic_variance_scale for p in paramss]
-        aleatoric_scales = [p.aleatoric_variance_scale for p in paramss]
         mu_all, se_all, se_epi_all, se_ale_all, idx = self._rust_model.batch_posterior(
             self.transform_inputs(x),
-            k_values=k_values,
-            epistemic_scales=epistemic_scales,
-            aleatoric_scales=aleatoric_scales,
+            paramss=[rust_params(p) for p in paramss],
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
-            output_blends=[p.output_blend for p in paramss],
         )
         idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
         yb = np.asarray(self._rust_model.y_bounds, dtype=float)

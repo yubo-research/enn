@@ -109,6 +109,13 @@ impl ENNSurrogateConfig {
     }
 }
 
+fn next_function_seeds(rng: &mut dyn RngCore, num_samples: usize) -> Vec<i64> {
+    let mut seed_bytes = [0u8; 8];
+    rng.fill_bytes(&mut seed_bytes);
+    let base_seed = u64::from_le_bytes(seed_bytes) as i64;
+    (0..num_samples as i64).map(|i| base_seed + i).collect()
+}
+
 pub struct ENNSurrogate {
     config: ENNSurrogateConfig,
     state: FitState,
@@ -167,10 +174,8 @@ impl ENNSurrogate {
                 search,
                 fitter,
                 params,
-                calibrator,
             } = fit.as_mut();
             *params = Some(fitter.ask(model, search, params.as_ref(), rng)?);
-            *calibrator = fitter.calibrator().cloned();
         }
         Ok(())
     }
@@ -240,7 +245,6 @@ impl ENNSurrogate {
                     search,
                     fitter: ENNFitter::new(self.config.k.get()),
                     params: warm,
-                    calibrator: None,
                 }),
             },
         };
@@ -342,7 +346,11 @@ impl Surrogate for ENNSurrogate {
         let mut seed_bytes = [0u8; 32];
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
-        let warm = self.state.params().cloned();
+        let warm = self
+            .state
+            .params()
+            .cloned()
+            .map(|p| p.with_calibrator(None));
         self.clear_observations()?;
         let features = crate::semantic::features(
             x,
@@ -448,11 +456,6 @@ impl Surrogate for ENNSurrogate {
             .into_dimensionality::<ndarray::Ix2>()
             .map_err(|e| ENNError::InvalidParameter(format!("Shape error: {}", e)))?;
 
-        if let Some(cal) = self.state.calibrator() {
-            let (mu, se) =
-                crate::surrogate_affine::apply_prediction(cal, mu, se, model.y_bounds())?;
-            return Ok(SurrogatePrediction { mu, se });
-        }
         Ok(SurrogatePrediction { mu, se })
     }
 
@@ -471,29 +474,16 @@ impl Surrogate for ENNSurrogate {
         )?;
         let x = &features.view();
 
-        let mut seed_bytes = [0u8; 8];
-        rng.fill_bytes(&mut seed_bytes);
-        let base_seed = u64::from_le_bytes(seed_bytes) as i64;
-        let function_seeds: Vec<i64> = (0..num_samples as i64).map(|i| base_seed + i).collect();
-
-        if let Some(cal) = self.state.calibrator() {
-            return crate::surrogate_affine::calibrated_sample(
-                model,
-                &params,
-                cal,
-                x,
-                num_samples,
-                rng,
-            );
+        let flags = PosteriorFlags::new();
+        let function_seeds = next_function_seeds(rng, num_samples);
+        if params.calibrator.is_none() {
+            let (draws, _) =
+                model.posterior_function_draw_warped(x, &params, &function_seeds, &flags)?;
+            return Ok(draws);
         }
-        let (draws, _) = model.posterior_function_draw_warped(
-            x,
-            &params,
-            &function_seeds,
-            &Default::default(),
-        )?;
-
-        Ok(draws)
+        let function_seeds = next_function_seeds(rng, num_samples);
+        let (draws, _) = model.posterior_function_draw(x, &params, &function_seeds, &flags)?;
+        Ok(draws.permuted_axes([2, 0, 1]))
     }
 
     fn lengthscales(&self) -> Option<Array1<f64>> {
@@ -611,8 +601,12 @@ mod tests {
         let c = on.predict(&query.view()).unwrap();
         assert_eq!(a.mu[[0, 0]], b.mu[[0, 0]]);
         assert_eq!(a.se[[0, 0]], b.se[[0, 0]]);
-        assert!(off_a.state.calibrator().is_none());
-        let cal = on.state.calibrator().expect("flag on stores a calibrator");
+        assert!(off_a.params().unwrap().calibrator.is_none());
+        let on_params = on.params().unwrap();
+        let cal = on_params
+            .calibrator
+            .as_ref()
+            .expect("flag on stores a calibrator");
         let mu_gap = (c.mu[[0, 0]] - a.mu[[0, 0]]).abs();
         let se_gap = (c.se[[0, 0]] - a.se[[0, 0]]).abs();
         let moved = mu_gap > 1e-8 || se_gap > 1e-8;

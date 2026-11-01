@@ -16,6 +16,7 @@ pub(crate) fn transpose_num_samples_last(draws: Array3<f64>) -> Array3<f64> {
 use super::draw_compute::draw_from_internals;
 use super::light::{compute_posterior_light, idx_nested_to_array2};
 use super::{compute_conditional_posterior_internals, compute_posterior_internals};
+use crate::calibration::AffineCalibrator;
 use crate::error::ENNError;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
@@ -92,7 +93,63 @@ impl EpistemicNearestNeighbors {
     ) -> Result<ENNNormal, ENNError> {
         let mut out = self.posterior_warped(x, params, flags)?;
         self.naturalize_enn_normal(&mut out)?;
+        self.calibrate_normal(&mut out, params)?;
         Ok(out)
+    }
+
+    fn checked_calibrator<'a>(
+        &self,
+        params: &'a ENNParams,
+    ) -> Result<Option<&'a AffineCalibrator>, ENNError> {
+        let Some(cal) = params.calibrator.as_deref() else {
+            return Ok(None);
+        };
+        if cal.a.len() != self.num_metrics() {
+            return Err(ENNError::InvalidParameter(format!(
+                "calibrator has {} outputs but the model has {}",
+                cal.a.len(),
+                self.num_metrics()
+            )));
+        }
+        Ok(Some(cal))
+    }
+
+    fn calibrate_normal(&self, out: &mut ENNNormal, params: &ENNParams) -> Result<(), ENNError> {
+        if let Some(cal) = self.checked_calibrator(params)? {
+            crate::surrogate_affine::calibrate_normal(cal, out, self.y_bounds())?;
+        }
+        Ok(())
+    }
+
+    fn calibrate_batch(&self, out: &mut ENNNormal, paramss: &[ENNParams]) -> Result<(), ENNError> {
+        for (entry, params) in paramss.iter().enumerate() {
+            let Some(cal) = self.checked_calibrator(params)? else {
+                continue;
+            };
+            let mut slice = out.batch_entry(entry);
+            crate::surrogate_affine::calibrate_normal(cal, &mut slice, self.y_bounds())?;
+            out.assign_batch_entry(entry, &slice);
+        }
+        Ok(())
+    }
+
+    pub(super) fn calibrate_published_draws(
+        &self,
+        mut draws: Array3<f64>,
+        params: &ENNParams,
+        uncalibrated_posterior: impl FnOnce(&ENNParams) -> Result<ENNNormal, ENNError>,
+    ) -> Result<Array3<f64>, ENNError> {
+        self.naturalize_draws_3d(&mut draws);
+        if let Some(cal) = self.checked_calibrator(params)? {
+            let post = uncalibrated_posterior(&params.clone().with_calibrator(None))?;
+            draws = crate::surrogate_affine::calibrate_natural_draws(
+                cal,
+                draws,
+                &post,
+                self.y_bounds(),
+            )?;
+        }
+        Ok(transpose_num_samples_last(draws))
     }
 
     pub(crate) fn posterior_function_draw_warped(
@@ -116,16 +173,10 @@ impl EpistemicNearestNeighbors {
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
         let (draws, idx) = self.posterior_function_draw_warped(x, params, function_seeds, flags)?;
-        Ok((self.publish_draws(draws), idx))
-    }
-
-    pub(crate) fn publish_draws(&self, mut draws: Array3<f64>) -> Array3<f64> {
-        self.naturalize_draws_3d(&mut draws);
-        transpose_num_samples_last(draws)
-    }
-
-    pub(crate) fn samples_last(draws: Array3<f64>) -> Array3<f64> {
-        transpose_num_samples_last(draws)
+        let draws = self.calibrate_published_draws(draws, params, |bare| {
+            self.posterior(x, bare, flags)
+        })?;
+        Ok((draws, idx))
     }
 
     pub(crate) fn conditional_posterior_warped(
@@ -160,6 +211,7 @@ impl EpistemicNearestNeighbors {
     ) -> Result<ENNNormal, ENNError> {
         let mut out = self.conditional_posterior_warped(x_whatif, y_whatif, x, params, flags)?;
         self.naturalize_enn_normal(&mut out)?;
+        self.calibrate_normal(&mut out, params)?;
         Ok(out)
     }
 
@@ -246,6 +298,7 @@ impl EpistemicNearestNeighbors {
         crate::util::check_finite_query(x)?;
         let mut out = <Self as PosteriorComputation>::batch_posterior(self, x, paramss, flags)?;
         self.naturalize_enn_normal(&mut out)?;
+        self.calibrate_batch(&mut out, paramss)?;
         Ok(out)
     }
 }

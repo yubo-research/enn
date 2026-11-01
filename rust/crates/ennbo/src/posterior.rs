@@ -104,7 +104,10 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
             compute_conditional_posterior_internals(self, x, x_whatif, &y_z.view(), params, flags)?;
         let mut draws = draw_from_internals(self, &internals, function_seeds)?;
         self.apply_draw_blend(&mut draws, params)?;
-        Ok((self.publish_draws(draws), internals.idx))
+        let draws = self.calibrate_published_draws(draws, params, |bare| {
+            self.conditional_posterior(x_whatif, y_whatif, x, bare, flags)
+        })?;
+        Ok((draws, internals.idx))
     }
 }
 

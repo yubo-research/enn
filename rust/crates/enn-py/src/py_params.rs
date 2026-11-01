@@ -60,6 +60,34 @@ impl PyOutputBlend {
     }
 }
 
+pub(crate) type PyCalibratorCoefficients<'py> = (
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+);
+
+type PyCalibratorArgument<'py> = (
+    PyReadonlyArray1<'py, f64>,
+    PyReadonlyArray1<'py, f64>,
+    PyReadonlyArray1<'py, f64>,
+);
+
+fn calibrator_from_argument(
+    calibrator: Option<PyCalibratorArgument<'_>>,
+) -> PyResult<Option<Arc<ennbo::calibration::AffineCalibrator>>> {
+    calibrator
+        .map(|(a, b, c)| {
+            ennbo::calibration::AffineCalibrator::from_coefficients(
+                a.as_array(),
+                b.as_array(),
+                c.as_array(),
+            )
+            .map(Arc::new)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+        })
+        .transpose()
+}
+
 pub(crate) fn inner_blend(blend: Option<PyOutputBlend>) -> Option<Arc<ennbo::OutputBlend>> {
     blend.map(|b| b.inner)
 }
@@ -88,19 +116,21 @@ pub struct PyENNParams {
 #[pymethods]
 impl PyENNParams {
     #[new]
-    #[pyo3(signature = (k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, output_blend=None))]
+    #[pyo3(signature = (k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, output_blend=None, calibrator=None))]
     pub(crate) fn new(
         k_num_neighbors: i32,
         epistemic_variance_scale: f64,
         aleatoric_variance_scale: f64,
         output_blend: Option<PyOutputBlend>,
+        calibrator: Option<PyCalibratorArgument<'_>>,
     ) -> PyResult<Self> {
         let inner = params_with_blend(
             k_num_neighbors,
             epistemic_variance_scale,
             aleatoric_variance_scale,
             output_blend,
-        )?;
+        )?
+        .with_calibrator(calibrator_from_argument(calibrator)?);
         Ok(Self { inner })
     }
 
@@ -125,6 +155,20 @@ impl PyENNParams {
             .output_blend
             .clone()
             .map(|inner| PyOutputBlend { inner })
+    }
+
+    #[getter]
+    pub(crate) fn calibrator<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> Option<PyCalibratorCoefficients<'py>> {
+        self.inner.calibrator.as_ref().map(|cal| {
+            (
+                cal.a.to_pyarray_bound(py),
+                cal.b.to_pyarray_bound(py),
+                cal.c.to_pyarray_bound(py),
+            )
+        })
     }
 
     fn __repr__(&self) -> String {

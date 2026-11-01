@@ -184,19 +184,16 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[pyo3(signature = (x, k_values, epistemic_scales, aleatoric_scales, exclude_nearest=false, observation_noise=false, output_blends=None))]
+    #[pyo3(signature = (x, paramss, exclude_nearest=false, observation_noise=false))]
     fn batch_posterior<'py>(
         &self,
         py: Python<'py>,
         x: PyReadonlyArrayDyn<f64>,
-        k_values: Vec<i32>,
-        epistemic_scales: Vec<f64>,
-        aleatoric_scales: Vec<f64>,
+        paramss: Vec<PyENNParams>,
         exclude_nearest: bool,
         observation_noise: bool,
-        output_blends: Option<Vec<Option<PyOutputBlend>>>,
     ) -> PyResult<PosteriorPyOut<'py>> {
-        let paramss = params_list(k_values, epistemic_scales, aleatoric_scales, output_blends)?;
+        let paramss: Vec<ennbo::ENNParams> = paramss.into_iter().map(|p| p.inner).collect();
 
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
 
@@ -482,6 +479,7 @@ mod kiss_coverage_tests {
             PyENNParams::epistemic_variance_scale,
             PyENNParams::aleatoric_variance_scale,
             PyENNParams::output_blend,
+            PyENNParams::calibrator,
             crate::py_params::PyOutputBlend::new,
             crate::py_params::PyOutputBlend::alpha,
             crate::py_params::PyOutputBlend::projector,

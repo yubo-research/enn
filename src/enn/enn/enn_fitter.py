@@ -10,6 +10,19 @@ from enn._rust import subsample_loglik as _rust_subsample_loglik
 from .enn_class_support import rust_params
 
 
+def _py_calibrator(coefficients: Any) -> Any:
+    if coefficients is None:
+        return None
+    from .affine_calibrator import AffineCalibrator
+
+    a, b, c = coefficients
+    return AffineCalibrator(
+        a=np.asarray(a, dtype=float),
+        b=np.asarray(b, dtype=float),
+        c=np.asarray(c, dtype=float),
+    )
+
+
 def py_params(rust_result: Any) -> Any:
     from .enn_params import ENNParams as PyENNParams
 
@@ -18,6 +31,7 @@ def py_params(rust_result: Any) -> Any:
         epistemic_variance_scale=rust_result.epistemic_variance_scale,
         aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
         output_blend=rust_result.output_blend,
+        calibrator=_py_calibrator(rust_result.calibrator),
     )
 
 
@@ -108,92 +122,3 @@ class ENNStatefulFitter:
             affine_calibrate,
         )
         return py_params(rust_result)
-
-    @property
-    def affine_calibrator(self):
-        coeffs = self._rust.affine_coeffs()
-        if coeffs is None:
-            return None
-        from .affine_calibrator import AffineCalibrator
-
-        a, b, c = coeffs
-        return AffineCalibrator(
-            a=np.asarray(a, dtype=float),
-            b=np.asarray(b, dtype=float),
-            c=np.asarray(c, dtype=float),
-        )
-
-    @affine_calibrator.setter
-    def affine_calibrator(self, cal) -> None:
-        if cal is None:
-            return
-        self._rust.set_calibrator_abc(
-            np.asarray(cal.a, dtype=float),
-            np.asarray(cal.b, dtype=float),
-            np.asarray(cal.c, dtype=float),
-        )
-
-    def calibrate(self, normal: Any) -> Any:
-        if self.affine_calibrator is None:
-            return normal
-        return self.affine_calibrator.apply(normal)
-
-    def posterior(
-        self,
-        model: Any,
-        x: np.ndarray,
-        params: Any,
-        flags: Any | None = None,
-    ) -> Any:
-        from .enn_normal import ENNNormal
-        from .enn_params import PosteriorFlags
-
-        flags = flags if flags is not None else PosteriorFlags()
-        mu, se, se_epi, se_ale, idx = self._rust.posterior_calibrated(
-            model.rust_backend,
-            model.transform_inputs(np.asarray(x, dtype=float)),
-            rust_params(params),
-            flags.exclude_nearest,
-            flags.observation_noise,
-        )
-        idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
-        yb = np.asarray(model.rust_backend.y_bounds, dtype=float)
-        return ENNNormal(mu, se, se_epi, se_ale, idx=idx_arr, y_bounds=yb)
-
-    def posterior_function_draw(
-        self,
-        model: Any,
-        x: np.ndarray,
-        params: Any,
-        *,
-        function_seeds: Any,
-        flags: Any | None = None,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        from .enn_class_support import _to_rust_seeds
-        from .enn_params import PosteriorFlags
-
-        flags = flags if flags is not None else PosteriorFlags()
-        draws, idx = self._rust.function_draw_calibrated(
-            model.rust_backend,
-            model.transform_inputs(np.asarray(x, dtype=float)),
-            rust_params(params),
-            _to_rust_seeds(function_seeds),
-            flags.exclude_nearest,
-            flags.observation_noise,
-        )
-        n_query = np.asarray(x).shape[0]
-        idx_arr = np.array(idx, dtype=int) if idx else np.zeros((n_query, 0), dtype=int)
-        return np.asarray(draws, dtype=float), idx_arr
-
-    def sample(
-        self,
-        model: Any,
-        x: np.ndarray,
-        params: Any,
-        num_samples: int,
-        seed: int,
-        flags: Any | None = None,
-        clip: float | None = None,
-    ) -> np.ndarray:
-        post = self.posterior(model, x, params, flags=flags)
-        return post.sample(num_samples, int(seed), clip=clip)

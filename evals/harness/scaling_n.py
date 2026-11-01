@@ -143,7 +143,7 @@ class ScalingRun:
 
     def query(self, x_test: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
         t0 = time.perf_counter()
-        post = self.fitter.posterior(self.model, x_test, self.params, flags=DRAW_FLAGS)
+        post = self.model.posterior(x_test, params=self.params, flags=DRAW_FLAGS)
         return post.mu, post.se, time.perf_counter() - t0
 
 

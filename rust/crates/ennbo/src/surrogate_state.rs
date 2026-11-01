@@ -1,4 +1,3 @@
-use crate::calibration::AffineCalibrator;
 use crate::fit_samples::ScaleSearch;
 use crate::fitter::ENNFitter;
 use crate::model::EpistemicNearestNeighbors;
@@ -51,7 +50,6 @@ pub(crate) struct ScaleFit {
     pub(crate) search: ScaleSearch,
     pub(crate) fitter: ENNFitter,
     pub(crate) params: Option<ENNParams>,
-    pub(crate) calibrator: Option<AffineCalibrator>,
 }
 
 pub(crate) enum FitState {
@@ -79,13 +77,6 @@ impl FitState {
             Self::Unfitted => None,
             Self::Frozen { params, .. } => Some(params),
             Self::Searched { fit, .. } => fit.params.as_ref(),
-        }
-    }
-
-    pub(crate) fn calibrator(&self) -> Option<&AffineCalibrator> {
-        match self {
-            Self::Searched { fit, .. } => fit.calibrator.as_ref(),
-            _ => None,
         }
     }
 }

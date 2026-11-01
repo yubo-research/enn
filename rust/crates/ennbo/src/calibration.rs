@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2, ArrayView2};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::Rng;
 
 use crate::error::ENNError;
@@ -8,7 +8,7 @@ const BOUND_SE_MULT: f64 = 0.25;
 
 type ScaledSe = (Array2<f64>, Array2<f64>, Array2<f64>);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AffineCalibrator {
     pub a: Array1<f64>,
     pub b: Array1<f64>,
@@ -27,6 +27,24 @@ impl AffineCalibrator {
             a: rows.row(0).to_owned(),
             b: rows.row(1).to_owned(),
             c: rows.row(2).to_owned(),
+        })
+    }
+
+    pub fn from_coefficients(
+        a: ArrayView1<f64>,
+        b: ArrayView1<f64>,
+        c: ArrayView1<f64>,
+    ) -> Result<Self, ENNError> {
+        if a.len() != b.len() || b.len() != c.len() {
+            return Err(ENNError::InvalidShape {
+                expected: vec![a.len()],
+                got: vec![b.len(), c.len()],
+            });
+        }
+        Ok(Self {
+            a: a.to_owned(),
+            b: b.to_owned(),
+            c: c.to_owned(),
         })
     }
 

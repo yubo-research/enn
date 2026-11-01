@@ -6,6 +6,8 @@ import numpy as np
 
 from enn._rust import ENNParams as RustENNParams
 
+from .enn_params_class import calibrator_coefficients
+
 
 def rust_params(params: Any | None) -> RustENNParams | None:
     if params is None:
@@ -15,6 +17,7 @@ def rust_params(params: Any | None) -> RustENNParams | None:
         params.epistemic_variance_scale,
         params.aleatoric_variance_scale,
         params.output_blend,
+        calibrator_coefficients(params.calibrator),
     )
 
 

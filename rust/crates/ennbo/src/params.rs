@@ -1,7 +1,8 @@
-use ndarray::{Array2, ArrayD};
+use ndarray::{Array2, ArrayD, Axis};
 use std::sync::Arc;
 use thiserror::Error;
 
+use crate::calibration::AffineCalibrator;
 use crate::output_blend::OutputBlend;
 
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -20,6 +21,7 @@ pub struct ENNParams {
     pub epistemic_variance_scale: f64,
     pub aleatoric_variance_scale: f64,
     pub output_blend: Option<Arc<OutputBlend>>,
+    pub calibrator: Option<Arc<AffineCalibrator>>,
 }
 
 impl ENNParams {
@@ -49,11 +51,17 @@ impl ENNParams {
             epistemic_variance_scale,
             aleatoric_variance_scale,
             output_blend: None,
+            calibrator: None,
         })
     }
 
     pub fn with_output_blend(mut self, output_blend: Option<Arc<OutputBlend>>) -> Self {
         self.output_blend = output_blend;
+        self
+    }
+
+    pub fn with_calibrator(mut self, calibrator: Option<Arc<AffineCalibrator>>) -> Self {
+        self.calibrator = calibrator;
         self
     }
 }
@@ -134,6 +142,29 @@ impl ENNNormal {
         level: f64,
     ) -> Result<(ArrayD<f64>, ArrayD<f64>), crate::error::ENNError> {
         crate::normal_sample::confidence_interval(&self.mu, &self.se, self.y_bounds.as_ref(), level)
+    }
+
+    pub(crate) fn batch_entry(&self, entry: usize) -> Self {
+        let pick = |a: &ArrayD<f64>| a.index_axis(Axis(0), entry).to_owned();
+        Self {
+            mu: pick(&self.mu),
+            se: pick(&self.se),
+            se_epi: pick(&self.se_epi),
+            se_ale: pick(&self.se_ale),
+            idx: None,
+            y_bounds: None,
+        }
+    }
+
+    pub(crate) fn assign_batch_entry(&mut self, entry: usize, value: &Self) {
+        self.mu.index_axis_mut(Axis(0), entry).assign(&value.mu);
+        self.se.index_axis_mut(Axis(0), entry).assign(&value.se);
+        self.se_epi
+            .index_axis_mut(Axis(0), entry)
+            .assign(&value.se_epi);
+        self.se_ale
+            .index_axis_mut(Axis(0), entry)
+            .assign(&value.se_ale);
     }
 
     pub fn len(&self) -> usize {

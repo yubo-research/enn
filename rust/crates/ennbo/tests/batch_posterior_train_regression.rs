@@ -19,6 +19,7 @@ fn batch_posterior_on_train_matches_posterior_when_no_neighbors() {
         epistemic_variance_scale: 1.0,
         aleatoric_variance_scale: 0.1,
         output_blend: None,
+        calibrator: None,
     };
     let flags = PosteriorFlags::new();
     let batch = model
@@ -53,6 +54,7 @@ fn batch_posterior_on_train_row_matches_single_query_posterior() {
         epistemic_variance_scale: 80.0,
         aleatoric_variance_scale: 0.0,
         output_blend: None,
+        calibrator: None,
     };
     let flags = PosteriorFlags {
         exclude_nearest: false,

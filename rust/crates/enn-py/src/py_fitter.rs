@@ -1,13 +1,10 @@
-use numpy::{
-    IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn, ToPyArray,
-};
+use numpy::{IntoPyArray, PyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use crate::py_args::matrix_view;
-use crate::py_model::{PosteriorPyOut, PyENNParams, PyEpistemicNearestNeighbors};
+use crate::py_model::{PyENNParams, PyEpistemicNearestNeighbors};
 
 #[pyclass(name = "ENNStatefulFitter")]
 pub struct PyENNStatefulFitter {
@@ -54,98 +51,6 @@ impl PyENNStatefulFitter {
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(PyENNParams { inner: result })
     }
-
-    #[pyo3(signature = (a, b, c))]
-    fn set_calibrator_abc(
-        &mut self,
-        a: PyReadonlyArray1<f64>,
-        b: PyReadonlyArray1<f64>,
-        c: PyReadonlyArray1<f64>,
-    ) -> PyResult<()> {
-        self.inner
-            .set_calibrator_abc(a.as_array(), b.as_array(), c.as_array())
-            .map_err(|e| PyValueError::new_err(e.to_string()))
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn affine_coeffs<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> Option<(
-        Bound<'py, PyArray1<f64>>,
-        Bound<'py, PyArray1<f64>>,
-        Bound<'py, PyArray1<f64>>,
-    )> {
-        self.inner.calibrator().map(|cal| {
-            (
-                cal.a.to_pyarray_bound(py),
-                cal.b.to_pyarray_bound(py),
-                cal.c.to_pyarray_bound(py),
-            )
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (model, x, params, exclude_nearest=false, observation_noise=false))]
-    fn posterior_calibrated<'py>(
-        &self,
-        py: Python<'py>,
-        model: &PyEpistemicNearestNeighbors,
-        x: PyReadonlyArrayDyn<f64>,
-        params: PyENNParams,
-        exclude_nearest: bool,
-        observation_noise: bool,
-    ) -> PyResult<PosteriorPyOut<'py>> {
-        let flags = posterior_flags(exclude_nearest, observation_noise);
-        let cal = self.inner.calibrator().cloned();
-        let out = ennbo::surrogate_affine::calibrated_posterior(
-            &model.inner,
-            &matrix_view("x", &x)?,
-            &params.inner,
-            &flags,
-            cal.as_ref(),
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok((
-            out.mu.into_pyarray_bound(py),
-            out.se.into_pyarray_bound(py),
-            out.se_epi.into_pyarray_bound(py),
-            out.se_ale.into_pyarray_bound(py),
-            out.idx.map(|idx| idx.into_dyn().into_pyarray_bound(py)),
-        ))
-    }
-
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[pyo3(signature = (model, x, params, function_seeds, exclude_nearest=false, observation_noise=false))]
-    fn function_draw_calibrated<'py>(
-        &self,
-        py: Python<'py>,
-        model: &PyEpistemicNearestNeighbors,
-        x: PyReadonlyArrayDyn<f64>,
-        params: PyENNParams,
-        function_seeds: Vec<i64>,
-        exclude_nearest: bool,
-        observation_noise: bool,
-    ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Vec<Vec<usize>>)> {
-        let flags = posterior_flags(exclude_nearest, observation_noise);
-        let cal = self.inner.calibrator().cloned();
-        let (draws, idx) = ennbo::surrogate_affine::calibrated_function_draw(
-            &model.inner,
-            &matrix_view("x", &x)?,
-            &params.inner,
-            &function_seeds,
-            &flags,
-            cal.as_ref(),
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok((draws.into_dyn().into_pyarray_bound(py), idx))
-    }
-}
-
-fn posterior_flags(exclude_nearest: bool, observation_noise: bool) -> ennbo::PosteriorFlags {
-    ennbo::PosteriorFlags::new()
-        .with_exclude_nearest(exclude_nearest)
-        .with_observation_noise(observation_noise)
 }
 
 #[pyfunction]
@@ -193,10 +98,6 @@ mod kiss_coverage_tests {
         let _ = (
             PyENNStatefulFitter::new,
             PyENNStatefulFitter::ask,
-            PyENNStatefulFitter::affine_coeffs,
-            PyENNStatefulFitter::set_calibrator_abc,
-            PyENNStatefulFitter::posterior_calibrated,
-            PyENNStatefulFitter::function_draw_calibrated,
             std::mem::size_of::<PyENNStatefulFitter>,
         );
     }
