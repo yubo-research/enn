@@ -1,4 +1,5 @@
 import json
+import zipfile
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -12,6 +13,11 @@ from enn._rust import (
     semantic_output_projection,
     semantic_texts,
     validate_semantic_outputs,
+)
+from enn.semantic_defaults import (
+    DEFAULT_SEMANTIC_MODEL,
+    DEFAULT_VARIANCE_CUTOFF,
+    SEMANTIC_FORMAT_VERSION,
 )
 
 
@@ -34,7 +40,9 @@ class SemanticOutputProjection:
         object.__setattr__(self, "loadings", loadings)
 
     @classmethod
-    def from_embeddings(cls, names, embeddings, *, variance_cutoff=0.9):
+    def from_embeddings(
+        cls, names, embeddings, *, variance_cutoff=DEFAULT_VARIANCE_CUTOFF
+    ):
         names = tuple(names)
         values = np.asarray(embeddings, dtype=float)
         loadings = semantic_output_projection(names, values, float(variance_cutoff))
@@ -46,8 +54,8 @@ class SemanticOutputProjection:
         names,
         descriptions=None,
         *,
-        variance_cutoff=0.9,
-        model="sentence-transformers/all-MiniLM-L6-v2",
+        variance_cutoff=DEFAULT_VARIANCE_CUTOFF,
+        model=DEFAULT_SEMANTIC_MODEL,
         encoder=None,
         cache_dir=None,
     ):
@@ -59,7 +67,10 @@ class SemanticOutputProjection:
             cache_dir, names, texts, rows, model, variance_cutoff, encoder
         )
         if path is not None and path.exists():
-            return cls.load(path)
+            try:
+                return cls.load(path)
+            except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile):
+                pass
         encoded = (
             semantic_encode(texts, model) if encoder is None else encoder.encode(texts)
         )
@@ -82,13 +93,13 @@ class SemanticOutputProjection:
                 names=self.names,
                 embeddings=self.embeddings,
                 loadings=self.loadings,
-                version=1,
+                version=SEMANTIC_FORMAT_VERSION,
             )
 
     @classmethod
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
-            if int(data["version"]) != 1:
+            if int(data["version"]) != SEMANTIC_FORMAT_VERSION:
                 raise ValueError("unsupported semantic output projection version")
             return cls(tuple(data["names"]), data["embeddings"], data["loadings"])
 
@@ -96,5 +107,14 @@ class SemanticOutputProjection:
 def _cache_path(directory, names, texts, rows, model, variance_cutoff, encoder):
     if directory is None or encoder is not None:
         return None
-    key = json.dumps([2, names, texts, list(map(int, rows)), model, variance_cutoff])
+    key = json.dumps(
+        [
+            SEMANTIC_FORMAT_VERSION,
+            names,
+            texts,
+            list(map(int, rows)),
+            model,
+            variance_cutoff,
+        ]
+    )
     return Path(directory).joinpath(f"{sha256(key.encode()).hexdigest()}.npz")

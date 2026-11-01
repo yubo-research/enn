@@ -40,30 +40,35 @@ def test_projection_geometry_and_order():
         transform.transform(x, names=["a", "a", "b"])
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_cache_load_without_sentence_runtime(tmp_path, monkeypatch, legacy):
+def test_cache_load_without_sentence_runtime(tmp_path, monkeypatch):
     transform = make_transform(variance_cutoff=1)
     path = tmp_path / "projection.npz"
     transform.save(path)
-    with np.load(path) as data:
-        metadata = json.loads(str(data["metadata"]))
-    assert metadata["variance_cutoff"] == 1
-    if legacy:
-        metadata.pop("variance_cutoff")
-        np.savez(
-            path,
-            bounds=transform.bounds,
-            projection=transform.projection,
-            metadata=json.dumps(metadata),
-        )
     monkeypatch.setitem(sys.modules, "sentence_transformers", None)
     restored = SemanticInputTransform.load(path)
     np.testing.assert_array_equal(
         restored.transform([[1, 0, 2]]), transform.transform([[1, 0, 2]])
     )
     assert restored.names == transform.names
-    assert restored.variance_cutoff == (0.9 if legacy else 1)
+    assert restored.variance_cutoff == 1
     assert not restored.projection.flags.writeable
+
+
+def test_legacy_cache_without_variance_cutoff_is_rejected(tmp_path):
+    transform = make_transform(variance_cutoff=1)
+    path = tmp_path / "projection.npz"
+    transform.save(path)
+    with np.load(path) as data:
+        metadata = json.loads(str(data["metadata"]))
+    metadata.pop("variance_cutoff")
+    np.savez(
+        path,
+        bounds=transform.bounds,
+        projection=transform.projection,
+        metadata=json.dumps(metadata),
+    )
+    with pytest.raises(KeyError):
+        SemanticInputTransform.load(path)
 
 
 def test_descriptions_files_fallback_and_degeneracy(tmp_path):

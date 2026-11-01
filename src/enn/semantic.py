@@ -6,6 +6,12 @@ from pathlib import Path
 
 import numpy as np
 
+from enn.semantic_defaults import (
+    DEFAULT_SEMANTIC_MODEL,
+    DEFAULT_VARIANCE_CUTOFF,
+    SEMANTIC_FORMAT_VERSION,
+)
+
 
 @dataclass(frozen=True, eq=False, init=False)
 class SemanticInputTransform:
@@ -22,22 +28,19 @@ class SemanticInputTransform:
         bounds,
         descriptions=None,
         *,
-        model="sentence-transformers/all-MiniLM-L6-v2",
-        variance_cutoff=0.9,
+        model=DEFAULT_SEMANTIC_MODEL,
+        variance_cutoff=DEFAULT_VARIANCE_CUTOFF,
         relative_weight=0.25,
         encoder=None,
     ):
-        self._set_definition(names, bounds, model, relative_weight, variance_cutoff)
+        definition = _definition(names, bounds, model, relative_weight, variance_cutoff)
         from enn._rust import semantic_text_projection, semantic_texts
 
-        texts, rows = semantic_texts(self.names, descriptions)
-        embeddings = self._encode(texts, encoder)
-        object.__setattr__(
-            self,
-            "projection",
-            semantic_text_projection(embeddings, rows, self.variance_cutoff),
+        texts, rows = semantic_texts(definition[0], descriptions)
+        embeddings = _encode(texts, definition[2], encoder)
+        self._assign(
+            definition, semantic_text_projection(embeddings, rows, definition[4])
         )
-        self._freeze()
 
     @classmethod
     def from_input_output(
@@ -48,8 +51,8 @@ class SemanticInputTransform:
         descriptions=None,
         output_descriptions=None,
         *,
-        model="sentence-transformers/all-MiniLM-L6-v2",
-        variance_cutoff=0.9,
+        model=DEFAULT_SEMANTIC_MODEL,
+        variance_cutoff=DEFAULT_VARIANCE_CUTOFF,
         relative_weight=0.25,
         encoder=None,
     ):
@@ -58,50 +61,32 @@ class SemanticInputTransform:
             semantic_relationship_texts,
         )
 
-        result = cls.__new__(cls)
-        result._set_definition(names, bounds, model, relative_weight, variance_cutoff)
+        definition = _definition(names, bounds, model, relative_weight, variance_cutoff)
         texts, rows = semantic_relationship_texts(
-            result.names, output_names, descriptions, output_descriptions
+            definition[0], output_names, descriptions, output_descriptions
         )
-        embeddings = result._encode(texts, encoder)
-        object.__setattr__(
-            result,
-            "projection",
-            semantic_input_output_projection(
-                embeddings, rows, len(result.names), result.variance_cutoff
-            ),
+        embeddings = _encode(texts, definition[2], encoder)
+        projection = semantic_input_output_projection(
+            embeddings, rows, len(definition[0]), definition[4]
         )
-        result._freeze()
+        result = cls.__new__(cls)
+        result._assign(definition, projection)
         return result
 
-    def _set_definition(self, names, bounds, model, relative_weight, variance_cutoff):
-        object.__setattr__(self, "names", tuple(names))
-        object.__setattr__(self, "bounds", np.array(bounds, dtype=float, copy=True))
-        object.__setattr__(self, "model", model)
-        object.__setattr__(self, "relative_weight", float(relative_weight))
-        object.__setattr__(self, "variance_cutoff", float(variance_cutoff))
-        self._validate_definition()
-
-    def _encode(self, texts, encoder):
-        from enn._rust import semantic_encode
-
-        return np.asarray(
-            semantic_encode(texts, self.model)
-            if encoder is None
-            else encoder.encode(texts),
-            dtype=float,
-        )
-
-    def _validate_definition(self):
-        from enn._rust import validate_semantic_definition
-
-        validate_semantic_definition(
-            self.names, self.bounds, self.variance_cutoff, self.relative_weight
-        )
-
-    def _freeze(self):
-        self.bounds.setflags(write=False)
-        self.projection.setflags(write=False)
+    def _assign(self, definition, projection):
+        names, bounds, model, relative_weight, variance_cutoff = definition
+        projection = np.array(projection, dtype=float, copy=True)
+        bounds.setflags(write=False)
+        projection.setflags(write=False)
+        for key, value in (
+            ("names", names),
+            ("bounds", bounds),
+            ("model", model),
+            ("relative_weight", relative_weight),
+            ("variance_cutoff", variance_cutoff),
+            ("projection", projection),
+        ):
+            object.__setattr__(self, key, value)
 
     @property
     def weighted_projection(self):
@@ -128,7 +113,7 @@ class SemanticInputTransform:
                 "model": self.model,
                 "relative_weight": self.relative_weight,
                 "variance_cutoff": self.variance_cutoff,
-                "version": 1,
+                "version": SEMANTIC_FORMAT_VERSION,
             }
         )
         with Path(path).open("wb") as stream:
@@ -143,22 +128,39 @@ class SemanticInputTransform:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as data:
             meta = json.loads(str(data["metadata"]))
-            if meta.pop("version") != 1:
+            if meta.pop("version") != SEMANTIC_FORMAT_VERSION:
                 raise ValueError("unsupported semantic transform version")
-            result = cls.__new__(cls)
-            object.__setattr__(result, "names", tuple(meta["names"]))
-            object.__setattr__(result, "model", meta["model"])
-            object.__setattr__(
-                result, "relative_weight", float(meta["relative_weight"])
+            definition = _definition(
+                meta["names"],
+                data["bounds"],
+                meta["model"],
+                meta["relative_weight"],
+                meta["variance_cutoff"],
             )
-            object.__setattr__(
-                result, "variance_cutoff", float(meta.get("variance_cutoff", 0.9))
-            )
-            object.__setattr__(result, "bounds", data["bounds"].copy())
-            object.__setattr__(result, "projection", data["projection"].copy())
+            projection = data["projection"].copy()
         from enn._rust import validate_semantic_cache
 
-        validate_semantic_cache(result.projection, len(result.names))
-        result._validate_definition()
-        result._freeze()
+        validate_semantic_cache(projection, len(definition[0]))
+        result = cls.__new__(cls)
+        result._assign(definition, projection)
         return result
+
+
+def _definition(names, bounds, model, relative_weight, variance_cutoff):
+    from enn._rust import validate_semantic_definition
+
+    names = tuple(names)
+    bounds = np.array(bounds, dtype=float, copy=True)
+    relative_weight = float(relative_weight)
+    variance_cutoff = float(variance_cutoff)
+    validate_semantic_definition(names, bounds, variance_cutoff, relative_weight)
+    return names, bounds, model, relative_weight, variance_cutoff
+
+
+def _encode(texts, model, encoder):
+    from enn._rust import semantic_encode
+
+    return np.asarray(
+        semantic_encode(texts, model) if encoder is None else encoder.encode(texts),
+        dtype=float,
+    )

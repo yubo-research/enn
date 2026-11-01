@@ -64,6 +64,25 @@ def test_metadata_fallback_and_disk_cache(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
+def test_corrupt_cache_file_is_rebuilt(tmp_path, monkeypatch):
+    from enn import semantic_outputs
+
+    calls = []
+
+    def encode(texts, model):
+        calls.append(texts)
+        return OutputEncoder().encode(texts)
+
+    monkeypatch.setattr(semantic_outputs, "semantic_encode", encode)
+    kwargs = {"cache_dir": tmp_path}
+    first = SemanticOutputProjection.from_metadata(["a", "b"], **kwargs)
+    (path,) = tmp_path.glob("*.npz")
+    path.write_bytes(b"not an npz file")
+    second = SemanticOutputProjection.from_metadata(["a", "b"], **kwargs)
+    assert len(calls) == 2
+    np.testing.assert_array_equal(first.loadings, second.loadings)
+
+
 @pytest.mark.parametrize("variance_cutoff", [0, 3, -1, np.nan, np.inf])
 def test_invalid_cutoffs(variance_cutoff):
     with pytest.raises(ValueError):
