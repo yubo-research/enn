@@ -15,6 +15,8 @@ pub(crate) fn remove_store(work_dir: &Path) -> Result<(), ENNError> {
         ORIGINAL_OUTPUTS_FILE,
         crate::store_identity::STORE_IDENTITY_FILE,
         crate::metric_auto::METRIC_STATE_FILE,
+        "input_transform.npz",
+        "output_projection.npz",
     ] {
         match std::fs::remove_file(work_dir.join(name)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {

@@ -89,14 +89,7 @@ fn disk_persist_index_multi_batch_reopen_is_fast_and_correct() {
         .expect("reference neighbors");
 
     let t0 = Instant::now();
-    let reopened = EpistemicNearestNeighbors::new_with_storage(
-        Array2::zeros((0, dim)),
-        Array2::zeros((0, 1)),
-        None,
-        ennbo::EnnLayout::new(work_dir.clone(), false).unwrap(),
-        None,
-    )
-    .expect("reopen");
+    let reopened = EpistemicNearestNeighbors::open(work_dir.clone()).expect("reopen");
     let reopen_s = t0.elapsed().as_secs_f64();
     assert!(
         reopen_s < 1.0,

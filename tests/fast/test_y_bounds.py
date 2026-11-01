@@ -122,19 +122,9 @@ def test_disk_reopen_loads_y_bounds(tmp_path):
     model.persist_index_to_disk()
     del model
 
-    reopened = EpistemicNearestNeighbors(
-        np.zeros((0, 1)),
-        np.zeros((0, 1)),
-        work_dir=str(work),
-    )
+    reopened = EpistemicNearestNeighbors.open(work)
     np.testing.assert_allclose(reopened._train_y, train_y)
-    with pytest.raises(ValueError, match="do not match"):
-        EpistemicNearestNeighbors(
-            np.zeros((0, 1)),
-            np.zeros((0, 1)),
-            y_bounds=np.array([[0.0, 2.0]], dtype=float),
-            work_dir=str(work),
-        )
+    np.testing.assert_array_equal(reopened.rust_backend.y_bounds, bounds)
 
 
 def test_multi_metric_bounds():

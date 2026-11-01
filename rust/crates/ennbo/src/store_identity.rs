@@ -1,137 +1,144 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ennbo_bpann::{bpann_read_json, bpann_write_json};
+use ndarray::Array2;
 use serde::{Deserialize, Serialize};
 
-use crate::backend::disk_observation::parse_json_usize_field;
 use crate::error::ENNError;
 use crate::layout::EnnLayout;
 
 pub(crate) const STORE_IDENTITY_FILE: &str = "store_identity.json";
+const STORE_METADATA_FILE: &str = "metadata.json";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct StoreIdentity {
-    num_dim: usize,
-    num_metrics: usize,
+    pub(crate) num_dim: usize,
+    pub(crate) num_metrics: usize,
     weighting: bool,
     input_fingerprint: Option<String>,
+    semantic_only: bool,
+    output_fingerprint: Option<String>,
+    output_alpha: Option<f64>,
+    pub(crate) tied_dims: Vec<Vec<usize>>,
+    y_bounds: Vec<(Option<f64>, Option<f64>)>,
 }
 
 fn file_error(e: ennbo_bpann::BpannError) -> ENNError {
     ENNError::InvalidParameter(e.to_string())
 }
 
+fn finite(value: f64) -> Option<f64> {
+    value.is_finite().then_some(value)
+}
+
+pub(crate) fn reject_existing_store(work_dir: &Path) -> Result<(), ENNError> {
+    let held = [STORE_IDENTITY_FILE, STORE_METADATA_FILE]
+        .iter()
+        .any(|name| work_dir.join(name).exists());
+    if held {
+        return Err(ENNError::InvalidParameter(format!(
+            "work_dir {} already holds a store; reopen it with EpistemicNearestNeighbors.open",
+            work_dir.display()
+        )));
+    }
+    Ok(())
+}
+
 impl StoreIdentity {
-    pub(crate) fn of(layout: &EnnLayout, num_dim: usize, num_metrics: usize) -> Self {
+    pub(crate) fn of(
+        layout: &EnnLayout,
+        shape: (usize, usize),
+        tied_dims: &[Vec<usize>],
+        y_bounds: &Array2<f64>,
+    ) -> Self {
         Self {
-            num_dim,
-            num_metrics,
+            num_dim: shape.0,
+            num_metrics: shape.1,
             weighting: layout.weighting(),
             input_fingerprint: layout.input_fingerprint().map(str::to_owned),
+            semantic_only: layout.semantic_only(),
+            output_fingerprint: layout.output_fingerprint().map(str::to_owned),
+            output_alpha: layout.output_alpha(),
+            tied_dims: tied_dims.to_vec(),
+            y_bounds: y_bounds
+                .rows()
+                .into_iter()
+                .map(|row| (finite(row[0]), finite(row[1])))
+                .collect(),
         }
     }
 
-    fn mismatch(&self, work_dir: &Path, recorded: impl std::fmt::Debug) -> ENNError {
-        ENNError::InvalidParameter(format!(
-            "work_dir {} holds {recorded:?}, which does not match the requested {self:?}; \
-             reopen with the original settings or use a fresh work_dir",
-            work_dir.display()
-        ))
+    pub(crate) fn load(work_dir: &Path) -> Result<Self, ENNError> {
+        bpann_read_json::<Self>(&work_dir.join(STORE_IDENTITY_FILE))
+            .map_err(file_error)?
+            .ok_or_else(|| {
+                ENNError::InvalidParameter(format!(
+                    "work_dir {} has no {STORE_IDENTITY_FILE}, so it holds no store to open",
+                    work_dir.display()
+                ))
+            })
     }
 
-    fn verify_store_shape(&self, work_dir: &Path) -> Result<(), ENNError> {
-        let Ok(meta) = std::fs::read_to_string(work_dir.join("metadata.json")) else {
-            return Ok(());
-        };
-        let recorded = (
-            parse_json_usize_field(&meta, "num_dim"),
-            parse_json_usize_field(&meta, "num_metrics"),
-        );
-        if recorded == (Some(self.num_dim), Some(self.num_metrics)) {
-            return Ok(());
-        }
-        Err(self.mismatch(work_dir, recorded))
+    pub(crate) fn layout(&self, work_dir: PathBuf) -> Result<EnnLayout, ENNError> {
+        Ok(EnnLayout::new(work_dir, self.weighting)?
+            .with_input_fingerprint(self.input_fingerprint.clone())
+            .with_semantic_only(self.semantic_only)
+            .with_output_identity(self.output_fingerprint.clone(), self.output_alpha))
     }
 
-    pub(crate) fn verify(&self, work_dir: &Path) -> Result<(), ENNError> {
-        let path = work_dir.join(STORE_IDENTITY_FILE);
-        match bpann_read_json::<Self>(&path).map_err(file_error)? {
-            Some(recorded) if recorded == *self => Ok(()),
-            Some(recorded) => Err(self.mismatch(work_dir, recorded)),
-            None => self.verify_store_shape(work_dir),
+    pub(crate) fn y_bounds(&self) -> Array2<f64> {
+        let mut bounds = Array2::zeros((self.y_bounds.len(), 2));
+        for (i, (lo, hi)) in self.y_bounds.iter().enumerate() {
+            bounds[[i, 0]] = lo.unwrap_or(f64::NEG_INFINITY);
+            bounds[[i, 1]] = hi.unwrap_or(f64::INFINITY);
         }
+        bounds
     }
 
     pub(crate) fn record(&self, work_dir: &Path) -> Result<(), ENNError> {
-        let path = work_dir.join(STORE_IDENTITY_FILE);
-        if path.exists() {
-            return Ok(());
-        }
-        bpann_write_json(&path, self).map_err(file_error)
+        bpann_write_json(&work_dir.join(STORE_IDENTITY_FILE), self).map_err(file_error)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndarray::array;
     use tempfile::TempDir;
 
-    fn identity(dir: &TempDir, weighting: bool, fingerprint: Option<&str>) -> StoreIdentity {
-        let layout = EnnLayout::new(dir.path(), weighting)
+    #[test]
+    fn identity_round_trips_every_setting_including_open_bounds() {
+        let dir = TempDir::new().unwrap();
+        let layout = EnnLayout::new(dir.path(), true)
             .unwrap()
-            .with_input_fingerprint(fingerprint.map(str::to_owned));
-        StoreIdentity::of(&layout, 3, 1)
-    }
-
-    #[test]
-    fn a_recorded_identity_accepts_itself_and_rejects_changes() {
-        let dir = TempDir::new().unwrap();
-        let recorded = identity(&dir, false, Some("a"));
+            .with_input_fingerprint(Some("in".into()))
+            .with_semantic_only(true)
+            .with_output_identity(Some("out".into()), Some(0.25));
+        let bounds = array![[0.0, 1.0], [f64::NEG_INFINITY, f64::INFINITY]];
+        let recorded = StoreIdentity::of(&layout, (3, 2), &[vec![0, 1]], &bounds);
         recorded.record(dir.path()).unwrap();
-        recorded.verify(dir.path()).unwrap();
-        for other in [
-            identity(&dir, true, Some("a")),
-            identity(&dir, false, Some("b")),
-            identity(&dir, false, None),
-            StoreIdentity {
-                num_dim: 5,
-                ..recorded.clone()
-            },
-            StoreIdentity {
-                num_metrics: 4,
-                ..recorded.clone()
-            },
-        ] {
-            let err = other.verify(dir.path()).unwrap_err();
-            assert!(err.to_string().contains("work_dir"), "{err}");
+        let loaded = StoreIdentity::load(dir.path()).unwrap();
+        assert_eq!(loaded, recorded);
+        assert_eq!(loaded.y_bounds(), bounds);
+        assert_eq!(loaded.layout(dir.path().into()).unwrap(), layout);
+    }
+
+    #[test]
+    fn missing_identity_is_a_clear_error() {
+        let dir = TempDir::new().unwrap();
+        let err = StoreIdentity::load(dir.path()).unwrap_err();
+        assert!(err.to_string().contains("store_identity.json"), "{err}");
+    }
+
+    #[test]
+    fn an_existing_store_is_rejected_by_either_marker_file() {
+        let dir = TempDir::new().unwrap();
+        reject_existing_store(dir.path()).unwrap();
+        for name in [STORE_METADATA_FILE, STORE_IDENTITY_FILE] {
+            std::fs::write(dir.path().join(name), "{}").unwrap();
+            let err = reject_existing_store(dir.path()).unwrap_err();
+            assert!(err.to_string().contains(".open"), "{err}");
+            std::fs::remove_file(dir.path().join(name)).unwrap();
         }
-    }
-
-    #[test]
-    fn record_keeps_the_first_identity() {
-        let dir = TempDir::new().unwrap();
-        let first = identity(&dir, false, None);
-        first.record(dir.path()).unwrap();
-        identity(&dir, true, None).record(dir.path()).unwrap();
-        first.verify(dir.path()).unwrap();
-    }
-
-    #[test]
-    fn a_store_without_a_recorded_identity_is_checked_against_its_metadata() {
-        let dir = TempDir::new().unwrap();
-        let requested = identity(&dir, false, None);
-        requested.verify(dir.path()).unwrap();
-        std::fs::write(
-            dir.path().join("metadata.json"),
-            r#"{"num_dim":3,"num_metrics":1}"#,
-        )
-        .unwrap();
-        requested.verify(dir.path()).unwrap();
-        std::fs::write(
-            dir.path().join("metadata.json"),
-            r#"{"num_dim":5,"num_metrics":1}"#,
-        )
-        .unwrap();
-        assert!(requested.verify(dir.path()).is_err());
     }
 }

@@ -41,13 +41,7 @@ def test_exact_rows_survive_append_and_disk_reopen(tmp_path, disk, semantic_only
     if disk:
         model.persist_index_to_disk()
         del model
-        model = EpistemicNearestNeighbors(
-            np.empty((0, 2)),
-            np.empty((0, 1)),
-            input_transform=transform,
-            semantic_only=semantic_only,
-            **kwargs,
-        )
+        model = EpistemicNearestNeighbors.open(kwargs["work_dir"])
         reopened_x, reopened_y, _ = model.train_rows_at(indices)
         np.testing.assert_array_equal(reopened_x, actual_x)
         np.testing.assert_array_equal(reopened_y, actual_y)

@@ -127,6 +127,10 @@ pub fn input_fingerprint(
     )
 }
 
+pub fn output_fingerprint(loadings: &ArrayView2<f64>) -> String {
+    format!("{:016x}", fnv1a_matrix(FNV_OFFSET, loadings))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

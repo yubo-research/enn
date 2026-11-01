@@ -190,9 +190,7 @@ def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, wei
     model.add(x[12:18], y[12:18])
     model.persist_index_to_disk()
     del model
-    reopened = EpistemicNearestNeighbors(
-        np.empty((0, x.shape[1])), np.empty((0, 1)), **kwargs
-    )
+    reopened = EpistemicNearestNeighbors.open(kwargs["work_dir"])
     original, observations, _ = reopened.train_rows_at([17, 0, 12])
     np.testing.assert_array_equal(original, x[[17, 0, 12]])
     np.testing.assert_allclose(observations, y[[17, 0, 12]])
@@ -205,7 +203,5 @@ def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, wei
     params = fitter.ask(reopened, num_fit_samples=4, num_fit_candidates=3)
     assert np.isfinite(reopened.posterior(x[:2], params=params).mu).all()
     del reopened
-    again = EpistemicNearestNeighbors(
-        np.empty((0, x.shape[1])), np.empty((0, 1)), **kwargs
-    )
+    again = EpistemicNearestNeighbors.open(kwargs["work_dir"])
     np.testing.assert_array_equal(again.train_rows_at([23, 0])[0], x[[23, 0]])

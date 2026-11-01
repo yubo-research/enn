@@ -7,6 +7,14 @@ pub struct EnnLayout {
     work_dir: PathBuf,
     weighting: bool,
     input_fingerprint: Option<String>,
+    semantic_only: bool,
+    output: Option<Box<OutputIdentity>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct OutputIdentity {
+    fingerprint: Option<String>,
+    alpha: Option<f64>,
 }
 
 impl EnnLayout {
@@ -21,6 +29,8 @@ impl EnnLayout {
             work_dir,
             weighting,
             input_fingerprint: None,
+            semantic_only: false,
+            output: None,
         })
     }
 
@@ -32,6 +42,37 @@ impl EnnLayout {
     pub fn with_input_fingerprint(mut self, input_fingerprint: Option<String>) -> Self {
         self.input_fingerprint = input_fingerprint;
         self
+    }
+
+    pub fn with_semantic_only(mut self, semantic_only: bool) -> Self {
+        self.semantic_only = semantic_only;
+        self
+    }
+
+    pub fn with_output_identity(
+        mut self,
+        output_fingerprint: Option<String>,
+        output_alpha: Option<f64>,
+    ) -> Self {
+        self.output = (output_fingerprint.is_some() || output_alpha.is_some()).then(|| {
+            Box::new(OutputIdentity {
+                fingerprint: output_fingerprint,
+                alpha: output_alpha,
+            })
+        });
+        self
+    }
+
+    pub fn semantic_only(&self) -> bool {
+        self.semantic_only
+    }
+
+    pub fn output_fingerprint(&self) -> Option<&str> {
+        self.output.as_ref()?.fingerprint.as_deref()
+    }
+
+    pub fn output_alpha(&self) -> Option<f64> {
+        self.output.as_ref()?.alpha
     }
 
     pub fn weighting(&self) -> bool {

@@ -69,6 +69,14 @@ impl EpistemicNearestNeighbors {
         Ok(())
     }
 
+    pub fn set_outputs(&mut self, outputs: Option<SemanticOutputs>) {
+        self.semantic_outputs = outputs.filter(|o| o.loadings.ncols() > 0);
+    }
+
+    pub fn layout(&self) -> &crate::layout::EnnLayout {
+        &self.layout
+    }
+
     pub fn semantic_outputs(&self) -> Option<&SemanticOutputs> {
         self.semantic_outputs.as_ref()
     }

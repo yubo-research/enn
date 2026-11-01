@@ -32,10 +32,6 @@ def test_disk_persisted_store_10k_reopens_fast(tmp_path):
     del model
 
     t0 = time.perf_counter()
-    EpistemicNearestNeighbors(
-        np.empty((0, num_dim)),
-        np.empty((0, 1)),
-        work_dir=str(work_dir),
-    )
+    EpistemicNearestNeighbors.open(work_dir)
     init_s = time.perf_counter() - t0
     assert init_s < 1.0, f"reopen init_s={init_s:.3f}s expected < 1.0s after persist"

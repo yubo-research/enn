@@ -254,146 +254,15 @@ pub fn bounds_match(a: &Array2<f64>, b: &Array2<f64>) -> bool {
     })
 }
 
-pub fn bounds_to_json(bounds: &Array2<f64>) -> String {
-    let mut parts = Vec::with_capacity(bounds.nrows());
-    for row in bounds.rows() {
-        let lo = if row[0].is_finite() {
-            format!("{}", row[0])
-        } else {
-            "null".to_string()
-        };
-        let hi = if row[1].is_finite() {
-            format!("{}", row[1])
-        } else {
-            "null".to_string()
-        };
-        parts.push(format!("[{lo},{hi}]"));
-    }
-    format!("[{}]", parts.join(","))
-}
-
-pub fn parse_bound_pair(lo_tok: &str, hi_tok: &str) -> Result<(f64, f64), ENNError> {
-    let lo = if lo_tok == "null" {
-        f64::NEG_INFINITY
-    } else {
-        lo_tok
-            .parse()
-            .map_err(|_| ENNError::InvalidParameter(format!("bad y_bounds lo: {lo_tok}")))?
-    };
-    let hi = if hi_tok == "null" {
-        f64::INFINITY
-    } else {
-        hi_tok
-            .parse()
-            .map_err(|_| ENNError::InvalidParameter(format!("bad y_bounds hi: {hi_tok}")))?
-    };
-    Ok((lo, hi))
-}
-
-pub fn load_y_bounds_from_metadata_text(
-    text: &str,
-    num_metrics: usize,
-) -> Result<Option<Array2<f64>>, ENNError> {
-    let key = "\"y_bounds\":";
-    let Some(start) = text.find(key) else {
-        return Ok(None);
-    };
-    let after = &text[start + key.len()..];
-    let after = after.trim_start();
-    if !after.starts_with('[') {
-        return Err(ENNError::InvalidParameter(
-            "y_bounds in metadata is not an array".to_string(),
-        ));
-    }
-
-    let mut depth = 0i32;
-    let mut end = None;
-    for (i, c) in after.char_indices() {
-        match c {
-            '[' => depth += 1,
-            ']' => {
-                depth -= 1;
-                if depth == 0 {
-                    end = Some(i);
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    let end =
-        end.ok_or_else(|| ENNError::InvalidParameter("y_bounds array not closed".to_string()))?;
-    let inner = &after[1..end];
-    let mut bounds = Array2::zeros((num_metrics, 2));
-    let mut metric = 0usize;
-    let mut rest = inner.trim();
-    while !rest.is_empty() {
-        rest = rest.trim_start_matches(|c: char| c == ',' || c.is_whitespace());
-        if rest.is_empty() {
-            break;
-        }
-        if !rest.starts_with('[') {
-            return Err(ENNError::InvalidParameter(
-                "y_bounds expected [lo,hi] pair".to_string(),
-            ));
-        }
-        let close = rest
-            .find(']')
-            .ok_or_else(|| ENNError::InvalidParameter("y_bounds pair not closed".to_string()))?;
-        let pair = &rest[1..close];
-        let mut parts = pair.splitn(2, ',');
-        let lo_tok = parts
-            .next()
-            .ok_or_else(|| ENNError::InvalidParameter("y_bounds missing lo".to_string()))?
-            .trim();
-        let hi_tok = parts
-            .next()
-            .ok_or_else(|| ENNError::InvalidParameter("y_bounds missing hi".to_string()))?
-            .trim();
-        let (lo, hi) = parse_bound_pair(lo_tok, hi_tok)?;
-        if metric >= num_metrics {
-            return Err(ENNError::InvalidParameter(format!(
-                "y_bounds has more than {num_metrics} metrics"
-            )));
-        }
-        bounds[[metric, 0]] = lo;
-        bounds[[metric, 1]] = hi;
-        metric += 1;
-        rest = &rest[close + 1..];
-    }
-    if metric != num_metrics {
-        return Err(ENNError::InvalidParameter(format!(
-            "y_bounds length {metric} != num_metrics {num_metrics}"
-        )));
-    }
-    validate_bounds(&bounds, num_metrics)?;
-    Ok(Some(bounds))
-}
-
 pub fn resolve_y_bounds(
     requested: Option<&Array2<f64>>,
     num_metrics: usize,
-    disk_metadata: Option<&str>,
 ) -> Result<Array2<f64>, ENNError> {
-    let loaded = match disk_metadata {
-        Some(text) => load_y_bounds_from_metadata_text(text, num_metrics)?,
-        None => None,
-    };
-    match (requested, loaded) {
-        (None, None) => Ok(unbounded_bounds(num_metrics)),
-        (None, Some(b)) => Ok(b),
-        (Some(req), None) => {
-            validate_bounds(req, num_metrics)?;
-            Ok(req.clone())
-        }
-        (Some(req), Some(disk)) => {
-            validate_bounds(req, num_metrics)?;
-            if !bounds_match(req, &disk) {
-                return Err(ENNError::InvalidParameter(
-                    "y_bounds do not match disk metadata".to_string(),
-                ));
-            }
-            Ok(req.clone())
+    match requested {
+        None => Ok(unbounded_bounds(num_metrics)),
+        Some(bounds) => {
+            validate_bounds(bounds, num_metrics)?;
+            Ok(bounds.clone())
         }
     }
 }
@@ -440,26 +309,6 @@ mod tests {
 
         let zv = warp_yvar(y.view(), yvar.view(), &b).unwrap();
         assert!((zv[[0, 0]] - 0.0625).abs() < 1e-15);
-    }
-
-    #[test]
-    fn metadata_null_roundtrip() {
-        let b = array![[0.0, f64::INFINITY], [f64::NEG_INFINITY, 1.0], [0.0, 1.0]];
-        let json = bounds_to_json(&b);
-        assert_eq!(json, "[[0,null],[null,1],[0,1]]");
-        let text = format!("{{\"y_bounds\":{json}}}");
-        let loaded = load_y_bounds_from_metadata_text(&text, 3).unwrap().unwrap();
-        assert!(bounds_match(&b, &loaded));
-    }
-
-    #[test]
-    fn resolve_must_match() {
-        let disk = array![[0.0, 1.0]];
-        let text = format!("{{\"y_bounds\":{}}}", bounds_to_json(&disk));
-        let ok = resolve_y_bounds(Some(&disk), 1, Some(&text)).unwrap();
-        assert!(bounds_match(&ok, &disk));
-        let bad = array![[0.0, 2.0]];
-        assert!(resolve_y_bounds(Some(&bad), 1, Some(&text)).is_err());
     }
 
     #[test]

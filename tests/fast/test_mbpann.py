@@ -170,12 +170,7 @@ def test_reopen_after_metric_change_keeps_the_learned_metric(tmp_path) -> None:
     model.metric.set_weights(np.array([100.0, 1.0, 0.01]))
     model.persist_index_to_disk()
     del model
-    reopened = EpistemicNearestNeighbors(
-        np.zeros((0, 3)),
-        np.zeros((0, 1)),
-        weighting=True,
-        work_dir=tmp_path,
-    )
+    reopened = EpistemicNearestNeighbors.open(tmp_path)
     q = np.array([[0.5, 0.5, 0.5]])
     np.testing.assert_array_equal(
         reopened.neighbors(q, 5), _exact(x, q, np.array([100.0, 1.0, 0.01]), 5)

@@ -12,6 +12,11 @@ from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 from .cat_ties import resolve_tied_groups
 from .enn_class_support import _to_rust_seeds, rust_params
+from .enn_store import (
+    open_input_transform,
+    open_output_projection,
+    save_store_artifacts,
+)
 from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
@@ -69,6 +74,13 @@ def _finalize_function_draw(
     return draws_arr, idx_arr
 
 
+def _rust_output_argument(output_projection, output_alpha):
+    if output_projection is None:
+        return None
+    alpha = None if output_alpha is None else float(output_alpha)
+    return output_projection.loadings, alpha
+
+
 class EpistemicNearestNeighbors(_EnnRustView):
     input_transform: SemanticInputTransform | None = None
     output_projection: SemanticOutputProjection | None = None
@@ -98,10 +110,8 @@ class EpistemicNearestNeighbors(_EnnRustView):
         semantic_only: bool = False,
         output_alpha: float | None = None,
     ) -> None:
-        if input_transform is not None:
-            self.input_transform = input_transform
-        if semantic_only:
-            self.semantic_only = True
+        self.input_transform = input_transform
+        self.semantic_only = bool(semantic_only)
         original_inputs = (
             np.asarray(train_x, dtype=float) if input_transform is not None else None
         )
@@ -119,6 +129,9 @@ class EpistemicNearestNeighbors(_EnnRustView):
         train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
+        if output_alpha is not None and output_projection is None:
+            raise ValueError("output_alpha requires output_projection")
+        self.output_projection = output_projection
         rust_kwargs: dict[str, Any] = {
             "train_x": train_x,
             "train_y": train_y,
@@ -126,29 +139,32 @@ class EpistemicNearestNeighbors(_EnnRustView):
             "train_yvar": train_yvar,
             "weighting": weighting,
             "tied_dims": groups,
+            "semantic_only": semantic_only,
             "input_fingerprint": (
                 None
                 if input_transform is None
                 else input_transform.fingerprint(semantic_only=semantic_only)
             ),
+            "output": _rust_output_argument(output_projection, output_alpha),
         }
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
         if input_transform is not None:
             self._original_inputs = InputHistory(original_inputs, self._rust_model)
-        self._configure_outputs(output_projection, output_alpha)
+        save_store_artifacts(work_dir, input_transform, output_projection)
 
-    def _configure_outputs(self, output_projection, output_alpha) -> None:
-        if output_projection is None:
-            if output_alpha is not None:
-                raise ValueError("output_alpha requires output_projection")
-            return
-        self.output_projection = output_projection
-        self._rust_model.set_semantic_outputs(
-            output_projection.loadings,
-            None if output_alpha is None else float(output_alpha),
+    @classmethod
+    def open(cls, work_dir: str | os.PathLike[str]) -> EpistemicNearestNeighbors:
+        validate_enn_placement(work_dir)
+        self = cls.__new__(cls)
+        self._rust_model = _RustENN.open(os.fspath(work_dir))
+        self.semantic_only = bool(self._rust_model.store_settings[1])
+        self.input_transform, self._original_inputs = open_input_transform(
+            self._rust_model, work_dir
         )
+        self.output_projection = open_output_projection(self._rust_model, work_dir)
+        return self
 
     def add(
         self,

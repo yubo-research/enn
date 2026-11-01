@@ -9,6 +9,7 @@ from enn._rust import (
     semantic_encode,
     semantic_output_definition,
     semantic_output_embeddings,
+    semantic_output_fingerprint,
     semantic_output_projection,
     semantic_texts,
     validate_semantic_outputs,
@@ -81,6 +82,9 @@ class SemanticOutputProjection:
             path.parent.mkdir(parents=True, exist_ok=True)
             result.save(path)
         return result
+
+    def fingerprint(self):
+        return semantic_output_fingerprint(self.loadings)
 
     def save(self, path):
         with Path(path).open("wb") as stream:

@@ -74,6 +74,10 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::py_semantic::semantic_input_fingerprint,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_semantic::semantic_output_fingerprint,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_transform, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_semantic::semantic_output_projection,

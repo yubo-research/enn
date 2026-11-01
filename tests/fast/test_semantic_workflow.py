@@ -270,7 +270,7 @@ def test_disk_reopen_predicts_the_same_and_warm_blend_survives(tmp_path):
     expected = model.posterior(x[:5], params=params)
     model.persist_index_to_disk()
     del model
-    reopened = EpistemicNearestNeighbors(np.empty((0, 3)), np.empty((0, 3)), **kwargs)
+    reopened = EpistemicNearestNeighbors.open(kwargs["work_dir"])
     actual = reopened.posterior(x[:5], params=params)
     np.testing.assert_allclose(actual.mu, expected.mu, atol=1e-12)
     np.testing.assert_allclose(actual.se, expected.se, atol=1e-12)

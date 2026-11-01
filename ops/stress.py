@@ -322,13 +322,7 @@ def function_seeds_for_sample(seed: int, num_seeds: int = 1) -> list[int]:
 def reopen_disk_bpann_enn(work_dir: str) -> tuple[EpistemicNearestNeighbors, dict]:
     """Reopen a persisted bpann_disk store from work_dir."""
     meta = load_disk_metadata(work_dir)
-    num_dim = int(meta["num_dim"])
-    num_metrics = int(meta["num_metrics"])
-    model = EpistemicNearestNeighbors(
-        np.empty((0, num_dim), dtype=float),
-        np.empty((0, num_metrics), dtype=float),
-        work_dir=work_dir,
-    )
+    model = EpistemicNearestNeighbors.open(work_dir)
     model.ensure_index_sync()
     return model, meta
 
@@ -388,7 +382,10 @@ def run_enn_add_stress(
 
     empty_x = np.empty((0, cfg.num_dim), dtype=float)
     empty_y = np.empty((0, 1), dtype=float)
-    model = EpistemicNearestNeighbors(empty_x, empty_y, work_dir=cfg.work_dir)
+    if (Path(cfg.work_dir) / "store_identity.json").is_file():
+        model = EpistemicNearestNeighbors.open(cfg.work_dir)
+    else:
+        model = EpistemicNearestNeighbors(empty_x, empty_y, work_dir=cfg.work_dir)
 
     model.add(empty_x, empty_y)
 

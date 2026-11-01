@@ -9,6 +9,7 @@ from enn import (
     ENNStatefulFitter,
     EpistemicNearestNeighbors,
     SemanticInputTransform,
+    SemanticOutputProjection,
 )
 from enn.enn.enn_params import ENNParams
 from enn.enn.mbpann import MBPANNMetric
@@ -29,15 +30,6 @@ class _Encoder:
 def _sparse_rows(n, seed=0, num_dim=8):
     x = np.random.default_rng(seed).random((n, num_dim))
     return x, np.sin(6 * x[:, :1])
-
-
-def _reopen(work_dir, num_dim=8, num_outputs=1, **kwargs):
-    return EpistemicNearestNeighbors(
-        np.zeros((0, num_dim)),
-        np.zeros((0, num_outputs)),
-        work_dir=work_dir,
-        **kwargs,
-    )
 
 
 def _rmse(model, x, y):
@@ -71,7 +63,7 @@ def test_reopen_keeps_learned_metric_and_accuracy(tmp_path):
     live_weights = live.metric.weights.copy()
     assert live_scale.max() / live_scale.min() > 10
     del live
-    reopened = _reopen(tmp_path / "w", weighting=True)
+    reopened = EpistemicNearestNeighbors.open(tmp_path / "w")
     np.testing.assert_allclose(reopened._x_scale, live_scale, rtol=1e-12)
     np.testing.assert_allclose(reopened.metric.weights, live_weights)
     assert _rmse(reopened, x_test, y_test) < 1.5 * live_rmse
@@ -86,12 +78,12 @@ def test_reopen_continues_the_metric_stream(tmp_path):
         x[:1000], y[:1000], work_dir=tmp_path / "n", weighting=True
     )
     del closed
-    closed = _reopen(tmp_path / "c", weighting=True)
+    closed = EpistemicNearestNeighbors.open(tmp_path / "c")
     for start in range(1000, 1500, 100):
         closed.add(x[start : start + 100], y[start : start + 100])
         never_closed.add(x[start : start + 100], y[start : start + 100])
         del closed
-        closed = _reopen(tmp_path / "c", weighting=True)
+        closed = EpistemicNearestNeighbors.open(tmp_path / "c")
     assert closed.metric.num_seen == never_closed.metric.num_seen == 1500
     assert closed.metric.num_refits == never_closed.metric.num_refits
     assert np.allclose(closed._x_scale, never_closed._x_scale)
@@ -107,7 +99,7 @@ def test_reopen_restores_metric_policy_and_sample(tmp_path):
     seen = model.metric.num_seen
     gain = model.metric.heldout_gain
     del model
-    reopened = _reopen(tmp_path / "w", weighting=True)
+    reopened = EpistemicNearestNeighbors.open(tmp_path / "w")
     assert reopened.metric.num_seen == seen == 2000
     assert reopened.metric.heldout_gain == gain
     MBPANNMetric(reopened, seed=7, reservoir_capacity=500, rebuild_drift=0.3)
@@ -115,61 +107,169 @@ def test_reopen_restores_metric_policy_and_sample(tmp_path):
 
 @pytest.mark.parametrize(
     ("num_dim", "num_outputs", "weighting"),
-    [(5, 1, False), (3, 4, False), (3, 1, True)],
+    [(5, 1, False), (3, 4, False), (3, 1, True), (3, 1, False)],
 )
-def test_reopen_rejects_a_different_shape_or_weighting(
+def test_constructor_rejects_any_existing_store(
     tmp_path, num_dim, num_outputs, weighting
 ):
     _plain_store(tmp_path / "w")
-    with pytest.raises(ValueError, match="work_dir"):
-        _reopen(tmp_path / "w", num_dim, num_outputs, weighting=weighting)
-    assert len(_reopen(tmp_path / "w", 3)) == 30
+    with pytest.raises(ValueError, match=r"EpistemicNearestNeighbors\.open"):
+        EpistemicNearestNeighbors(
+            np.zeros((0, num_dim)),
+            np.zeros((0, num_outputs)),
+            work_dir=tmp_path / "w",
+            weighting=weighting,
+        )
+    assert len(EpistemicNearestNeighbors.open(tmp_path / "w")) == 30
 
 
-def test_reopen_accepts_an_equal_transform_and_rejects_others(tmp_path):
-    x = np.random.default_rng(0).random((30, 3))
-    y = x.sum(axis=1, keepdims=True)
+def test_constructor_rejects_an_existing_store_with_a_transform(tmp_path):
+    _plain_store(tmp_path / "w")
+    with pytest.raises(ValueError, match=r"EpistemicNearestNeighbors\.open"):
+        EpistemicNearestNeighbors(
+            np.zeros((0, 3)),
+            np.zeros((0, 1)),
+            input_transform=_transform(),
+            work_dir=tmp_path / "w",
+        )
+
+
+def test_an_empty_model_in_a_fresh_directory_is_legal(tmp_path):
     model = EpistemicNearestNeighbors(
-        x, y, input_transform=_transform(), work_dir=tmp_path / "w"
+        np.zeros((0, 3)), np.zeros((0, 1)), work_dir=tmp_path / "fresh"
+    )
+    assert len(model) == 0
+
+
+def test_open_on_an_empty_directory_is_a_clear_error(tmp_path):
+    with pytest.raises(ValueError, match=r"store_identity\.json"):
+        EpistemicNearestNeighbors.open(tmp_path)
+
+
+def test_store_without_an_identity_file_is_not_supported(tmp_path):
+    _plain_store(tmp_path / "w")
+    (tmp_path / "w" / "store_identity.json").unlink()
+    with pytest.raises(ValueError, match=r"store_identity\.json"):
+        EpistemicNearestNeighbors.open(tmp_path / "w")
+
+
+def _transform_store(work_dir, **kwargs):
+    x = np.random.default_rng(0).random((30, 3))
+    model = EpistemicNearestNeighbors(
+        x,
+        x.sum(axis=1, keepdims=True),
+        input_transform=_transform(),
+        work_dir=work_dir,
+        **kwargs,
     )
     del model
-    empty_x, empty_y = np.zeros((0, 3)), np.zeros((0, 1))
-    for kwargs in (
-        {"input_transform": _transform(seed=2)},
-        {"input_transform": _transform(relative_weight=3.0)},
-        {"input_transform": _transform(), "semantic_only": True},
-        {},
-    ):
-        with pytest.raises(ValueError, match="work_dir"):
-            EpistemicNearestNeighbors(
-                empty_x, empty_y, work_dir=tmp_path / "w", **kwargs
-            )
-    reopened = EpistemicNearestNeighbors(
-        empty_x, empty_y, input_transform=_transform(), work_dir=tmp_path / "w"
+    return x
+
+
+@pytest.mark.parametrize("semantic_only", [False, True])
+def test_open_restores_the_transform_from_the_store(tmp_path, semantic_only):
+    x = _transform_store(tmp_path / "w", semantic_only=semantic_only)
+    reopened = EpistemicNearestNeighbors.open(tmp_path / "w")
+    assert reopened.semantic_only is semantic_only
+    original = _transform()
+    np.testing.assert_array_equal(
+        reopened.input_transform.weighted_projection, original.weighted_projection
     )
     np.testing.assert_array_equal(reopened.train_rows_at([0])[0], x[:1])
+    reopened.add(x[:2], x[:2].sum(axis=1, keepdims=True))
+    assert len(reopened) == 32
+
+
+def test_open_rejects_a_replaced_transform(tmp_path):
+    _transform_store(tmp_path / "w")
+    _transform(seed=2).save(tmp_path / "w" / "input_transform.npz")
+    with pytest.raises(ValueError, match="fingerprint"):
+        EpistemicNearestNeighbors.open(tmp_path / "w")
+
+
+def test_open_rejects_a_missing_transform(tmp_path):
+    _transform_store(tmp_path / "w")
+    (tmp_path / "w" / "input_transform.npz").unlink()
+    with pytest.raises(FileNotFoundError):
+        EpistemicNearestNeighbors.open(tmp_path / "w")
+
+
+def _output_projection(seed=0):
+    embeddings = np.random.default_rng(seed).normal(size=(2, 4))
+    return SemanticOutputProjection.from_embeddings(["p", "q"], embeddings)
+
+
+def _output_store(work_dir):
+    x = np.random.default_rng(0).random((30, 3))
+    y = np.column_stack([x.sum(axis=1), x[:, 0]])
+    model = EpistemicNearestNeighbors(
+        x,
+        y,
+        output_projection=_output_projection(),
+        output_alpha=0.25,
+        work_dir=work_dir,
+    )
+    del model
+
+
+def test_open_restores_the_output_projection_and_alpha(tmp_path):
+    _output_store(tmp_path / "w")
+    reopened = EpistemicNearestNeighbors.open(tmp_path / "w")
+    np.testing.assert_array_equal(
+        reopened.output_projection.loadings, _output_projection().loadings
+    )
+    params = ENNStatefulFitter(3, seed=0).ask(reopened, num_fit_candidates=2)
+    np.testing.assert_array_equal(params.output_blend.alpha, [0.25, 0.25])
+
+
+def test_open_rejects_a_replaced_output_projection(tmp_path):
+    _output_store(tmp_path / "w")
+    _output_projection(seed=1).save(tmp_path / "w" / "output_projection.npz")
+    with pytest.raises(ValueError, match="fingerprint"):
+        EpistemicNearestNeighbors.open(tmp_path / "w")
+
+
+def test_open_restores_y_bounds_without_any_sync(tmp_path):
+    bounds = np.array([[0.0, 1.0], [0.0, np.inf]])
+    x = np.array([[0.0], [1.0]])
+    y = np.array([[0.2, 1.5], [0.8, 3.0]])
+    model = EpistemicNearestNeighbors(x, y, y_bounds=bounds, work_dir=tmp_path / "w")
+    del model
+    reopened = EpistemicNearestNeighbors.open(tmp_path / "w")
+    np.testing.assert_array_equal(reopened.rust_backend.y_bounds, bounds)
+
+
+def test_open_restores_tied_dims(tmp_path):
+    x = np.random.default_rng(0).random((30, 3))
+    model = EpistemicNearestNeighbors(
+        x,
+        x.sum(axis=1, keepdims=True),
+        tied_dims=[[0, 1]],
+        weighting=True,
+        work_dir=tmp_path / "w",
+    )
+    del model
+    assert EpistemicNearestNeighbors.open(tmp_path / "w").tied_dims == ((0, 1),)
 
 
 def test_second_open_model_is_rejected_until_the_first_is_released(tmp_path):
     _plain_store(tmp_path / "w")
-    first = _reopen(tmp_path / "w", 3)
+    first = EpistemicNearestNeighbors.open(tmp_path / "w")
     with pytest.raises(ValueError, match="already open"):
-        _reopen(tmp_path / "w", 3)
+        EpistemicNearestNeighbors.open(tmp_path / "w")
     del first
-    assert len(_reopen(tmp_path / "w", 3)) == 30
+    assert len(EpistemicNearestNeighbors.open(tmp_path / "w")) == 30
 
 
 def test_store_open_in_another_process_is_rejected(tmp_path):
     _plain_store(tmp_path / "w")
-    first = _reopen(tmp_path / "w", 3)
+    first = EpistemicNearestNeighbors.open(tmp_path / "w")
     script = textwrap.dedent(
         """
         import sys
         import numpy as np
         from enn import EpistemicNearestNeighbors
-        EpistemicNearestNeighbors(
-            np.zeros((0, 3)), np.zeros((0, 1)), work_dir=sys.argv[1]
-        )
+        EpistemicNearestNeighbors.open(sys.argv[1])
         """
     )
     result = subprocess.run(
@@ -183,25 +283,6 @@ def test_store_open_in_another_process_is_rejected(tmp_path):
     del first
 
 
-def test_store_written_before_identity_files_still_reopens(tmp_path):
-    x, y = _sparse_rows(1000)
-    work_dir = tmp_path / "w"
-    model = EpistemicNearestNeighbors(x, y, work_dir=work_dir, weighting=True)
-    scale = model._x_scale.copy()
-    del model
-    (work_dir / "store_identity.json").unlink()
-    (work_dir / "metric_state.json").unlink()
-    with pytest.raises(ValueError, match="work_dir"):
-        _reopen(work_dir, 5, weighting=True)
-    reopened = _reopen(work_dir, weighting=True)
-    np.testing.assert_allclose(reopened._x_scale, scale, rtol=1e-12)
-    refits = reopened.metric.num_refits
-    reopened.add(x[:1], y[:1])
-    assert reopened.metric.num_refits == refits + 1
-    del reopened
-    assert (work_dir / "store_identity.json").exists()
-
-
 def test_reopened_metric_sample_uses_original_outputs_with_y_bounds(tmp_path):
     x, _ = _sparse_rows(1000)
     y = 0.5 + 0.4 * np.sin(6 * x[:, :1])
@@ -213,7 +294,7 @@ def test_reopened_metric_sample_uses_original_outputs_with_y_bounds(tmp_path):
         x[:600], y[:600], work_dir=tmp_path / "n", weighting=True, y_bounds=bounds
     )
     del closed
-    closed = _reopen(tmp_path / "c", weighting=True)
+    closed = EpistemicNearestNeighbors.open(tmp_path / "c")
     closed.add(x[600:], y[600:])
     never_closed.add(x[600:], y[600:])
     np.testing.assert_allclose(closed._x_scale, never_closed._x_scale, rtol=1e-12)
@@ -237,7 +318,7 @@ def test_killed_owner_releases_the_store(tmp_path):
         [sys.executable, "-c", script, str(tmp_path / "w")], check=False
     )
     assert result.returncode == -9
-    assert len(_reopen(tmp_path / "w", 3)) == 0
+    assert len(EpistemicNearestNeighbors.open(tmp_path / "w")) == 0
 
 
 def test_ask_reads_everything_it_needs_from_the_model(tmp_path):

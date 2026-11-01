@@ -214,7 +214,6 @@ pub use util::argmax_random_tie;
 pub use util::calculate_sobol_indices;
 pub use util::pareto_front_2d_maximize;
 pub use util::standardize_y;
-pub use y_bounds::bounds_to_json;
 pub use y_bounds::is_identity_bounds;
 pub use y_bounds::unbounded_bounds;
 pub use y_bounds::validate_bounds;

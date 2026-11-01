@@ -1,12 +1,11 @@
 use ndarray::{Array1, Array2, ArrayView2};
-use std::path::Path;
 
 use super::EpistemicNearestNeighbors;
 use crate::backend::{EnnBackend, TrainRowsAtResult};
 use crate::error::ENNError;
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
-use crate::store_identity::StoreIdentity;
+use crate::store_identity::{reject_existing_store, StoreIdentity};
 use crate::y_bounds::{is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar};
 
 impl EpistemicNearestNeighbors {
@@ -38,18 +37,15 @@ impl EpistemicNearestNeighbors {
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
         let work_dir = layout.work_dir();
-        let identity = StoreIdentity::of(&layout, num_dim, num_metrics);
-        identity.verify(work_dir)?;
-        let meta_path = work_dir.join("metadata.json");
-        let meta_text = std::fs::read_to_string(meta_path).ok();
-        let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics, meta_text.as_deref())?;
+        reject_existing_store(work_dir)?;
+        let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics)?;
         let backend = EnnBackend::new_empty_disk(
             work_dir.to_path_buf(),
             num_dim,
             num_metrics,
             pending_flush_threshold,
         )?;
-        identity.record(work_dir)?;
+        StoreIdentity::of(&layout, (num_dim, num_metrics), &[], &y_bounds).record(work_dir)?;
         let auto = layout.metric_learning() == MetricLearning::Auto;
         let mut model = Self {
             original_y: None,
@@ -64,7 +60,6 @@ impl EpistemicNearestNeighbors {
             y_bounds,
             y_sum: Array1::zeros(num_metrics),
             y_sumsq: Array1::zeros(num_metrics),
-            y_bounds_persisted: std::sync::atomic::AtomicBool::new(false),
             auto_metric: None,
             tied_groups: Vec::new(),
             semantic_outputs: None,
@@ -83,7 +78,6 @@ impl EpistemicNearestNeighbors {
                 crate::input_history::ORIGINAL_OUTPUTS_FILE,
             )?);
         }
-        model.persist_y_bounds_metadata()?;
         Ok(model)
     }
 
@@ -117,16 +111,6 @@ impl EpistemicNearestNeighbors {
             None => None,
         };
         Ok((z, zvar))
-    }
-
-    pub(crate) fn persist_y_bounds_metadata(&self) -> Result<(), ENNError> {
-        use std::sync::atomic::Ordering;
-        if self.y_bounds_persisted.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-        let written = patch_metadata_y_bounds(self.layout.work_dir(), &self.y_bounds)?;
-        self.y_bounds_persisted.store(written, Ordering::Relaxed);
-        Ok(())
     }
 
     pub fn y_bounds(&self) -> &Array2<f64> {
@@ -172,60 +156,6 @@ impl EpistemicNearestNeighbors {
         }
         self.rows().row_y(i)
     }
-}
-
-fn patch_metadata_y_bounds(work_dir: &Path, bounds: &Array2<f64>) -> Result<bool, ENNError> {
-    use crate::y_bounds::bounds_to_json;
-    let meta_path = work_dir.join("metadata.json");
-    if !meta_path.exists() {
-        return Ok(false);
-    }
-    let text = std::fs::read_to_string(&meta_path)
-        .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-    let yb = format!("\"y_bounds\":{}", bounds_to_json(bounds));
-    let new_text = if text.contains("\"y_bounds\":") {
-        let key = "\"y_bounds\":";
-        let start = text.find(key).unwrap();
-        let after = &text[start + key.len()..];
-        let after_trim = after.trim_start();
-        let mut depth = 0i32;
-        let mut end_rel = None;
-        for (i, c) in after_trim.char_indices() {
-            match c {
-                '[' => depth += 1,
-                ']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end_rel = Some(i + c.len_utf8());
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let end_rel = end_rel.ok_or_else(|| {
-            ENNError::InvalidParameter("malformed y_bounds in metadata".to_string())
-        })?;
-        let abs_start = start;
-        let abs_end = start + key.len() + (after.len() - after_trim.len()) + end_rel;
-        format!("{}{}{}", &text[..abs_start], yb, &text[abs_end..])
-    } else if let Some(pos) = text.rfind('}') {
-        let insert = if text[..pos].trim_end().ends_with('{') {
-            yb
-        } else {
-            format!(",{yb}")
-        };
-        format!("{}{}{}", &text[..pos], insert, &text[pos..])
-    } else {
-        return Err(ENNError::InvalidParameter(
-            "metadata.json missing closing brace".to_string(),
-        ));
-    };
-    if new_text != text {
-        std::fs::write(&meta_path, new_text)
-            .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-    }
-    Ok(true)
 }
 
 #[cfg(test)]

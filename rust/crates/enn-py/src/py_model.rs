@@ -61,7 +61,7 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None, input_fingerprint=None))]
+    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None, input_fingerprint=None, semantic_only=false, output=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         train_x: PyReadonlyArrayDyn<f64>,
@@ -72,18 +72,33 @@ impl PyEpistemicNearestNeighbors {
         y_bounds: Option<PyReadonlyArray2<f64>>,
         tied_dims: Option<Vec<Vec<usize>>>,
         input_fingerprint: Option<String>,
+        semantic_only: bool,
+        output: Option<(PyReadonlyArrayDyn<f64>, Option<f64>)>,
     ) -> PyResult<Self> {
-        let layout = ennbo::EnnLayout::new(work_dir, weighting)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?
-            .with_input_fingerprint(input_fingerprint);
-        let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_x = matrix_view("train_x", &train_x)?.to_owned();
         let train_y = matrix_view("train_y", &train_y)?.to_owned();
+        let output_alpha = output.as_ref().and_then(|(_, alpha)| *alpha);
+        let outputs = output
+            .as_ref()
+            .map(|(loadings, alpha)| {
+                ennbo::SemanticOutputs::new(loadings.as_array(), *alpha, train_y.ncols())
+                    .map_err(|e| PyValueError::new_err(e.to_string()))
+            })
+            .transpose()?;
+        let output_fingerprint = outputs
+            .as_ref()
+            .map(|o| ennbo::semantic::output_fingerprint(&o.loadings.view()));
+        let layout = ennbo::EnnLayout::new(work_dir, weighting)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .with_input_fingerprint(input_fingerprint)
+            .with_semantic_only(semantic_only)
+            .with_output_identity(output_fingerprint, output_alpha);
+        let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_yvar = train_yvar
             .as_ref()
             .map(|v| matrix_view("train_yvar", v).map(|m| m.to_owned()))
             .transpose()?;
-        let model = ennbo::EpistemicNearestNeighbors::new_configured(
+        let mut model = ennbo::EpistemicNearestNeighbors::new_configured(
             train_x,
             train_y,
             train_yvar,
@@ -92,7 +107,26 @@ impl PyEpistemicNearestNeighbors {
             tied_dims.unwrap_or_default(),
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        model.set_outputs(outputs);
         Ok(Self { inner: model })
+    }
+
+    #[staticmethod]
+    fn open(work_dir: &str) -> PyResult<Self> {
+        let inner = ennbo::EpistemicNearestNeighbors::open(work_dir)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    #[getter]
+    fn store_settings(&self) -> (Option<String>, bool, Option<String>, Option<f64>) {
+        let layout = self.inner.layout();
+        (
+            layout.input_fingerprint().map(str::to_owned),
+            layout.semantic_only(),
+            layout.output_fingerprint().map(str::to_owned),
+            layout.output_alpha(),
+        )
     }
 
     #[pyo3(signature = (loadings, alpha=None))]
@@ -450,6 +484,8 @@ mod kiss_coverage_tests {
         let _ = py_posterior_flags as fn(bool, bool) -> ennbo::PosteriorFlags;
         let _ = (
             PyEpistemicNearestNeighbors::new,
+            PyEpistemicNearestNeighbors::open,
+            PyEpistemicNearestNeighbors::store_settings,
             PyEpistemicNearestNeighbors::add,
             PyEpistemicNearestNeighbors::set_metric_scale,
             PyEpistemicNearestNeighbors::set_semantic_outputs,
