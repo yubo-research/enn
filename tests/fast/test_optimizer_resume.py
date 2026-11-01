@@ -241,6 +241,35 @@ def test_a_leftover_temporary_state_file_is_ignored(tmp_path):
     assert reopened.tr_obs_count == 2
 
 
+@pytest.mark.parametrize("kind", ["restarting_enn", "restarting_zero"])
+def test_crash_inside_a_restart_matches_an_uninterrupted_run(tmp_path, kind):
+    kept = _create(kind, tmp_path / "kept")
+    crashed = _create(kind, tmp_path / "crashed")
+    state = tmp_path / "crashed" / "optimizer_state.json"
+    noise_rng = np.random.default_rng(5)
+    crossed_restart = False
+    for round_index in range(30):
+        before = kept.tr_obs_count
+        arms = kept.ask(2)
+        if kept.tr_obs_count < before:
+            crossed_restart = True
+            del crashed
+            state.write_text(
+                state.read_text().replace(
+                    '"restart_pending":false', '"restart_pending":true'
+                )
+            )
+            crashed = Optimizer.open(tmp_path / "crashed")
+            assert crashed.tr_obs_count == 0
+        np.testing.assert_array_equal(crashed.ask(2), arms)
+        noise = noise_rng.standard_normal((arms.shape[0], 2))
+        y = _objective(kind, arms, noise) - float(round_index)
+        kept.tell(arms, y)
+        crashed.tell(arms, y)
+        _assert_same(_observe(kept), _observe(crashed))
+    assert crossed_restart
+
+
 def test_restart_pending_snapshot_is_finished_on_open(tmp_path):
     optimizer = _create("frozen", tmp_path / "w")
     x = optimizer.ask(2)
