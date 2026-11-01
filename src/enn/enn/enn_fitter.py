@@ -69,11 +69,7 @@ class ENNStatefulFitter:
         *,
         seed: int,
         infer_aleatoric_variance_scale: bool = True,
-        input_transform=None,
-        semantic_only=False,
     ) -> None:
-        self.input_transform = input_transform
-        self.semantic_only = semantic_only
         self._k = int(k)
         self._seed = int(seed)
         self._rust = _RustENNStatefulFitter(
@@ -90,34 +86,6 @@ class ENNStatefulFitter:
     def seed(self) -> int:
         return self._seed
 
-    def tell(
-        self,
-        x: np.ndarray,
-        y: np.ndarray,
-        yvar: np.ndarray | None = None,
-        y_bounds: np.ndarray | None = None,
-    ) -> None:
-        x_array = np.asarray(x, dtype=float)
-        if self.input_transform is not None:
-            x_array = self.input_transform.transform(
-                x_array, semantic_only=self.semantic_only
-            )
-        y_array = np.asarray(y, dtype=float)
-        if y_array.ndim == 1:
-            y_array = y_array.reshape(-1, 1)
-        yvar_array = None
-        if yvar is not None:
-            yvar_array = np.asarray(yvar, dtype=float)
-            if yvar_array.ndim == 1:
-                yvar_array = yvar_array.reshape(-1, 1)
-        y_bounds_array = None
-        if y_bounds is not None:
-            y_bounds_array = np.asarray(y_bounds, dtype=float)
-        self._rust.tell(x_array, y_array, yvar_array, y_bounds_array)
-
-    def y_std(self) -> np.ndarray:
-        return np.asarray(self._rust.y_std(), dtype=float)
-
     def ask(
         self,
         model: Any,
@@ -132,8 +100,6 @@ class ENNStatefulFitter:
         if not isinstance(model, PyENN):
             raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
 
-        if self.input_transform is not model.input_transform:
-            raise ValueError("fitter and model must share the same input transform")
         rust_result = self._rust.ask(
             model.rust_backend,
             None if num_fit_candidates is None else int(num_fit_candidates),

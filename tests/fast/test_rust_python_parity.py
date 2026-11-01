@@ -121,8 +121,6 @@ def test_posterior_mu_se_and_fitted_params():
     seed = 17
     fitter = ENNStatefulFitter(k=4, seed=seed)
     rust_fitter = _rust.ENNStatefulFitter(4, seed, True)
-    fitter.tell(x, y)
-    rust_fitter.tell(x, y)
     fitted = fitter.ask(model, num_fit_candidates=6, num_fit_samples=4)
     rust_fitted = rust_fitter.ask(model.rust_backend, 6, 4)
     assert fitted.k_num_neighbors == rust_fitted.k_num_neighbors

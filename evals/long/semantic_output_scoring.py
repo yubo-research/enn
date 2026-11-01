@@ -29,7 +29,6 @@ class PinnedAlphaENN:
         fitter = ENNStatefulFitter(
             k=NEIGHBORS, seed=int(np.random.default_rng(self.seed).integers(2**63 - 1))
         )
-        fitter.tell(x, y)
         self.params = fitter.ask(self.model, num_fit_candidates=NUM_FIT_CANDIDATES)
         return self
 

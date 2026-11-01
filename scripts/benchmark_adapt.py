@@ -29,7 +29,6 @@ def measure(kind, case, seed, counts):
     fitter = ENNStatefulFitter(
         k=PARAMS.k_num_neighbors,
         seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
-        input_transform=model.input_transform,
     )
     rows, predictions = [], []
     for count in counts:
@@ -38,7 +37,6 @@ def measure(kind, case, seed, counts):
         first = len(model)
         x, y = problem.x[first:count], problem.y[first:count]
         model.add(x, y)
-        fitter.tell(x, y)
         params = fitter.ask(model, num_fit_candidates=NUM_FIT_CANDIDATES)
         elapsed = time.perf_counter() - start
         cpu_elapsed = time.process_time() - cpu_start

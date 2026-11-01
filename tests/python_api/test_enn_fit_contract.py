@@ -20,8 +20,8 @@ class TestENNStatefulFitterContract:
         assert "rng" not in params
         assert "infer_aleatoric_variance_scale" in params
 
-    def test_tell_and_ask_signatures(self):
-        assert "tell" in dir(ENNStatefulFitter)
+    def test_ask_signature_and_no_tell(self):
+        assert "tell" not in dir(ENNStatefulFitter)
         sig = inspect.signature(ENNStatefulFitter.ask)
         params = list(sig.parameters.keys())
         assert "model" in params
@@ -39,7 +39,6 @@ class TestENNStatefulFitterContract:
         rng = np.random.default_rng(42)
 
         fitter = ENNStatefulFitter(k=2, seed=int(rng.integers(2**63 - 1)))
-        fitter.tell(train_x, train_y)
         result = fitter.ask(
             model,
             num_fit_candidates=3,

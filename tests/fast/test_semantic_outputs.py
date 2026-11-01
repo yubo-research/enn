@@ -109,7 +109,6 @@ def fit_pinned(x, y, alpha, p=None):
     fitter = ENNStatefulFitter(
         k=3, seed=int(np.random.default_rng(0).integers(2**63 - 1))
     )
-    fitter.tell(x, y)
     params = fitter.ask(model, num_fit_candidates=3)
     return model, params
 

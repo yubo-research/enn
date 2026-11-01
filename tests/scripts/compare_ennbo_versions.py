@@ -1,4 +1,3 @@
-
 """Compare current ennbo source to ennbo==0.3.6 on TuRBO-ENN and MORBO.
 
 Runs three difficult benchmarks (Ackley 30D, DoubleAckley 30D, separable unimodal)

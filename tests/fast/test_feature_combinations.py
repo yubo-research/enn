@@ -147,10 +147,7 @@ def test_semantic_only_fitting_and_invalid_add_preserve_original_rows():
     fitter = ENNStatefulFitter(
         k=3,
         seed=int(np.random.default_rng(1).integers(2**63 - 1)),
-        input_transform=transform,
-        semantic_only=True,
     )
-    fitter.tell(x[:12], y[:12])
     params = fitter.ask(model, num_fit_samples=4, num_fit_candidates=3)
     assert np.isfinite(model.posterior(x[:2], params=params).mu).all()
 
@@ -204,10 +201,7 @@ def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, wei
     fitter = ENNStatefulFitter(
         k=3,
         seed=int(np.random.default_rng(1).integers(2**63 - 1)),
-        input_transform=reopened.input_transform,
-        semantic_only=reopened.semantic_only,
     )
-    fitter.tell(x, y)
     params = fitter.ask(reopened, num_fit_samples=4, num_fit_candidates=3)
     assert np.isfinite(reopened.posterior(x[:2], params=params).mu).all()
     del reopened

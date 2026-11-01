@@ -268,9 +268,6 @@ mod tests {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2);
-        let all: Vec<usize> = (0..model.len()).collect();
-        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
-        fitter.reset_y_stats(&ty.view());
 
         let result = fitter
             .ask(
@@ -291,9 +288,6 @@ mod tests {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2);
-        let all: Vec<usize> = (0..model.len()).collect();
-        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
-        fitter.reset_y_stats(&ty.view());
 
         let warm_start = ENNParams::new(2, 1.5, 0.2).unwrap();
 
@@ -315,9 +309,6 @@ mod tests {
         let model = create_test_model();
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2);
-        let all: Vec<usize> = (0..model.len()).collect();
-        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
-        fitter.reset_y_stats(&ty.view());
 
         let result = fitter
             .ask(
@@ -341,9 +332,6 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2);
-        let all: Vec<usize> = (0..model.len()).collect();
-        let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
-        fitter.reset_y_stats(&ty.view());
 
         let result = fitter
             .ask(

@@ -85,7 +85,6 @@ def test_enn_stateful_fitter_affine_calibrate_flag():
     y = 1.0 + 2.0 * x[:, :1]
     model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     fitter = ENNStatefulFitter(k=4, seed=int(rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
     assert fitter.affine_calibrator is None
     params = fitter.ask(
         model,
@@ -164,7 +163,6 @@ def test_fitter_posterior_applies_calibrator_when_opted_in():
     y = 1.0 + 2.0 * x[:, :1]
     model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     fitter = ENNStatefulFitter(k=4, seed=int(rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
     params = fitter.ask(
         model,
         num_fit_candidates=8,
@@ -189,7 +187,6 @@ def test_fitter_posterior_passthrough_without_calibrator():
     y = x.sum(axis=1, keepdims=True)
     model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     fitter = ENNStatefulFitter(k=3, seed=int(rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
     params = fitter.ask(
         model,
         num_fit_candidates=6,
@@ -245,29 +242,12 @@ def test_fit_affine_calibrator_negative_samples_match_zero():
     assert np.array_equal(negative.c, zero.c)
 
 
-def test_tell_clears_affine_calibrator():
-    rng = np.random.default_rng(8)
-    x = rng.standard_normal((30, 2))
-    y = 1.0 + 2.0 * x[:, :1]
-    model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
-    fitter = ENNStatefulFitter(k=4, seed=int(rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
-    fitter.ask(model, num_fit_candidates=8, num_fit_samples=12, affine_calibrate=True)
-    assert fitter.affine_calibrator is not None
-    x2 = rng.standard_normal((5, 2))
-    y2 = 1.0 + 2.0 * x2[:, :1]
-    model.add(x2, y2)
-    fitter.tell(x2, y2)
-    assert fitter.affine_calibrator is None
-
-
 def test_fitter_function_draw_applies_calibrator():
     rng = np.random.default_rng(9)
     x = rng.standard_normal((40, 2))
     y = 1.0 + 2.0 * x[:, :1]
     model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     fitter = ENNStatefulFitter(k=4, seed=int(rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
     params = fitter.ask(
         model, num_fit_candidates=8, num_fit_samples=16, affine_calibrate=True
     )
@@ -297,7 +277,6 @@ def test_fitter_function_draw_scatter_follows_c_not_b():
     y = 1.0 + 0.5 * x[:, :1]
     model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     fitter = ENNStatefulFitter(k=5, seed=int(rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
     params = fitter.ask(
         model, num_fit_candidates=8, num_fit_samples=16, affine_calibrate=False
     )
@@ -327,7 +306,6 @@ def test_fitter_sample_uses_calibrated_posterior():
     y = 0.5 + 1.5 * x[:, :1]
     model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     fitter = ENNStatefulFitter(k=4, seed=int(rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
     params = fitter.ask(
         model, num_fit_candidates=8, num_fit_samples=12, affine_calibrate=True
     )

@@ -47,9 +47,6 @@ fn enn_fitter_ask_always_fits_with_enough_obs() {
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
     let model = crate::test_helpers::test_model(train_x, train_y, None, false);
     let mut fitter = ENNFitter::new(2);
-    let all: Vec<usize> = (0..model.len()).collect();
-    let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
-    fitter.reset_y_stats(&ty.view());
     let mut rng = StdRng::seed_from_u64(99);
     let p = fitter
         .ask(

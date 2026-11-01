@@ -240,13 +240,10 @@ def test_killed_owner_releases_the_store(tmp_path):
     assert len(_reopen(tmp_path / "w", 3)) == 0
 
 
-def test_ask_needs_no_tell_and_selects_what_a_told_fitter_selects(tmp_path):
+def test_ask_reads_everything_it_needs_from_the_model(tmp_path):
     x = np.random.default_rng(0).random((300, 3))
     y = x.sum(axis=1, keepdims=True)
     model = EpistemicNearestNeighbors(x, y, work_dir=tmp_path / "w")
-    told = ENNStatefulFitter(5, seed=1)
-    told.tell(x, y)
-    untold = ENNStatefulFitter(5, seed=1)
-    assert told.ask(model, num_fit_candidates=30) == untold.ask(
-        model, num_fit_candidates=30
-    )
+    first = ENNStatefulFitter(5, seed=1).ask(model, num_fit_candidates=30)
+    second = ENNStatefulFitter(5, seed=1).ask(model, num_fit_candidates=30)
+    assert first == second

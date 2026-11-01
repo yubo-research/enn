@@ -66,7 +66,6 @@ def fixed_model(problem, count, raw=False):
     fitter = ENNStatefulFitter(
         k=PARAMS.k_num_neighbors, seed=int(np.random.default_rng(0).integers(2**63 - 1))
     )
-    fitter.tell(x, y)
     params = fitter.ask(model, num_fit_candidates=1)
     return model, replace(
         PARAMS,
@@ -127,14 +126,12 @@ def update_model(problem, count, method, models, seed):
         fitter = ENNStatefulFitter(
             k=PARAMS.k_num_neighbors,
             seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
-            input_transform=model.input_transform,
         )
         models[method] = (model, fitter)
     model, fitter = models[method]
     start = len(model)
     x, y = problem.x[start:count], problem.y[start:count]
     model.add(x, y)
-    fitter.tell(x, y)
     return model, fitter.ask(model, num_fit_candidates=NUM_FIT_CANDIDATES)
 
 

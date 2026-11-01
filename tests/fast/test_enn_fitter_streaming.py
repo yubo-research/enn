@@ -30,7 +30,6 @@ def test_fit_after_every_add_uses_num_fit_candidates_one():
         row_y = row_y.reshape(1, -1)
         row_yvar = row_yvar.reshape(1, -1)
         model.add(row_x, row_y, row_yvar)
-        fitter.tell(row_x, row_y, row_yvar)
         params = fitter.ask(
             model,
             num_fit_candidates=1,
@@ -54,10 +53,10 @@ def test_model_add_returns_nothing():
     assert len(model) == 1
 
 
-def test_tell_with_y_bounds_tracks_warped_y_std():
+def test_model_scale_tracks_warped_y():
     import numpy as np
 
-    from enn.enn.enn_fitter import ENNStatefulFitter
+    from enn.enn.enn_class import EpistemicNearestNeighbors
 
     rng = np.random.default_rng(0)
     x = rng.standard_normal((12, 2))
@@ -66,26 +65,26 @@ def test_tell_with_y_bounds_tracks_warped_y_std():
     z = np.log(y / (1.0 - y))
     want = float(z.std(ddof=0))
 
-    fitter = ENNStatefulFitter(
-        k=3, seed=int(np.random.default_rng(0).integers(2**63 - 1))
+    model = EpistemicNearestNeighbors(
+        x[:6], y[:6], y_bounds=bounds, work_dir=fresh_work_dir()
     )
-    fitter.tell(x, y, y_bounds=bounds)
-    got = float(fitter.y_std()[0])
-    assert abs(got - want) < 1e-12, f"warped y_std: got {got} want {want}"
+    model.add(x[6:], y[6:])
+    got = float(model._y_scale.ravel()[0])
+    assert abs(got - want) < 1e-12, f"warped scale: got {got} want {want}"
     assert got > 1.0, f"expected warped std >> natural, got {got}"
 
 
-def test_tell_rejects_y_outside_y_bounds():
+def test_model_rejects_y_outside_y_bounds():
     import numpy as np
     import pytest
 
-    from enn.enn.enn_fitter import ENNStatefulFitter
+    from enn.enn.enn_class import EpistemicNearestNeighbors
 
-    fitter = ENNStatefulFitter(
-        k=2, seed=int(np.random.default_rng(0).integers(2**63 - 1))
+    model = EpistemicNearestNeighbors(
+        np.array([[0.0, 0.0]]),
+        np.array([[0.5]]),
+        y_bounds=np.array([[0.0, 1.0]]),
+        work_dir=fresh_work_dir(),
     )
-    x = np.array([[0.0, 0.0]], dtype=float)
-    y = np.array([[1.5]], dtype=float)
-    bounds = np.array([[0.0, 1.0]], dtype=float)
     with pytest.raises(ValueError, match="bound"):
-        fitter.tell(x, y, y_bounds=bounds)
+        model.add(np.array([[1.0, 1.0]]), np.array([[1.5]]))

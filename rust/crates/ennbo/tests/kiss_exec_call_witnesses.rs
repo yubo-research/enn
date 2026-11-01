@@ -189,7 +189,6 @@ fn kiss_call_witness_chunk_4() {
     fn y_bounds() {}
     fn y_obs() {}
     fn y_scale_row() {}
-    fn y_std() {}
     telemetry();
     tell();
     TieSurrogate();
@@ -204,5 +203,4 @@ fn kiss_call_witness_chunk_4() {
     y_bounds();
     y_obs();
     y_scale_row();
-    y_std();
 }

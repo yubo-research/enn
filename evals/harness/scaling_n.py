@@ -129,8 +129,6 @@ class ScalingRun:
             else:
                 self.model.add(xb, yb)
             self.model.ensure_index_sync()
-            y_bounds = np.asarray(self.model.rust_backend.y_bounds, dtype=float)
-            self.fitter.tell(xb, yb, y_bounds=y_bounds)
         return time.perf_counter() - t0
 
     def fit(self) -> float:

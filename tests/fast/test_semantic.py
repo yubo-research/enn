@@ -199,15 +199,12 @@ def test_conditional_draws_and_fitter_use_same_features(relationships):
         transform.transform(x[:1]), y[:1], transform.transform(x[2:4]), **kwargs
     )
     np.testing.assert_array_equal(actual[0], expected[0])
-    fitter = ENNStatefulFitter(3, seed=1, input_transform=transform)
-    fitter.tell(x, y)
+    fitter = ENNStatefulFitter(3, seed=1)
     fitted = fitter.ask(model, num_fit_candidates=3, num_fit_samples=5)
     assert np.isfinite(fitter.posterior(model, x[2:4], fitted).mu).all()
     assert np.isfinite(
         fitter.posterior_function_draw(model, x[2:4], fitted, function_seeds=[1])[0]
     ).all()
-    with pytest.raises(ValueError, match="same input transform"):
-        fitter.ask(manual)
 
 
 @pytest.mark.parametrize(
@@ -301,9 +298,7 @@ def test_fit_helpers_accept_semantic_model(relationships):
     fitter = ENNStatefulFitter(
         k=3,
         seed=int(np.random.default_rng(5).integers(2**63 - 1)),
-        input_transform=transform,
     )
-    fitter.tell(x, y)
     params = fitter.ask(model, num_fit_candidates=3, num_fit_samples=5)
     scores = subsample_loglik(
         model,

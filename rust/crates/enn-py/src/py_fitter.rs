@@ -1,6 +1,5 @@
 use numpy::{
-    IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArrayDyn,
-    ToPyArray,
+    IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn, ToPyArray,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -27,30 +26,6 @@ impl PyENNStatefulFitter {
             rng: StdRng::seed_from_u64(seed),
             infer_aleatoric_variance: infer_aleatoric_variance_scale,
         }
-    }
-
-    #[pyo3(signature = (x, y, yvar=None, y_bounds=None))]
-    fn tell(
-        &mut self,
-        x: PyReadonlyArray2<f64>,
-        y: PyReadonlyArray2<f64>,
-        yvar: Option<PyReadonlyArray2<f64>>,
-        y_bounds: Option<PyReadonlyArray2<f64>>,
-    ) -> PyResult<()> {
-        let yvar_arr = yvar.as_ref().map(|v| v.as_array());
-        let y_bounds_owned = y_bounds.as_ref().map(|v| v.as_array().to_owned());
-        self.inner
-            .tell(
-                &x.as_array(),
-                &y.as_array(),
-                yvar_arr.as_ref(),
-                y_bounds_owned.as_ref(),
-            )
-            .map_err(|e| PyValueError::new_err(e.to_string()))
-    }
-
-    fn y_std<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        Ok(self.inner.y_std().to_pyarray_bound(py))
     }
 
     #[pyo3(signature = (model, num_fit_candidates=None, num_fit_samples=None, params_warm_start=None, affine_calibrate=false))]
@@ -217,8 +192,6 @@ mod kiss_coverage_tests {
     fn py_fitter_units_are_linked() {
         let _ = (
             PyENNStatefulFitter::new,
-            PyENNStatefulFitter::tell,
-            PyENNStatefulFitter::y_std,
             PyENNStatefulFitter::ask,
             PyENNStatefulFitter::affine_coeffs,
             PyENNStatefulFitter::set_calibrator_abc,

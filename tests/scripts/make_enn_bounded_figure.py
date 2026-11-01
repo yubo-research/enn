@@ -39,7 +39,6 @@ def fit_model(
     fitter = ENNStatefulFitter(
         k=K, seed=int(np.random.default_rng(SEED + 1).integers(2**63 - 1))
     )
-    fitter.tell(x_train, y_train, y_bounds=y_bounds)
     params = fitter.ask(model, num_fit_candidates=30, num_fit_samples=20)
     return model, params
 

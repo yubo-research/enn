@@ -111,7 +111,6 @@ class StreamedModel:
         if self.model is None:
             self.model = build_model(self.name, x[:0], y[:0], self.work_dir)
         self.model.add(x, y)
-        self.fitter.tell(x, y)
         self.model.ensure_index_sync()
 
     def advance(self, x: np.ndarray, y: np.ndarray, lo: int, hi: int) -> float:

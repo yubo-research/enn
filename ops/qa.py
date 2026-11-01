@@ -280,7 +280,6 @@ def fit_and_eval_y_bounds(
         )
         model.add(x_train, y_train)
         fitter = ENNStatefulFitter(k=k, seed=int(rng.integers(2**63 - 1)))
-        fitter.tell(x_train, y_train, y_bounds=y_bounds)
         params = fitter.ask(
             model,
             num_fit_candidates=num_fit_candidates,
@@ -764,7 +763,6 @@ def evaluate_y_var_fit(
         model = EpistemicNearestNeighbors(x_train[:0], y_train[:0], work_dir=work_dir)
         model.add(x_train, y_train, train_yvar)
         fitter = ENNStatefulFitter(k=k, seed=int(rng.integers(2**63 - 1)))
-        fitter.tell(x_train, y_train, train_yvar)
         params = fitter.ask(
             model,
             num_fit_candidates=num_fit_candidates,

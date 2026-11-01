@@ -25,9 +25,7 @@ def add_and_fit(model, x, y, seed=0):
     fitter = ENNStatefulFitter(
         k=8,
         seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
-        input_transform=model.input_transform,
     )
-    fitter.tell(x, y)
     return fitter.ask(model, num_fit_candidates=3)
 
 

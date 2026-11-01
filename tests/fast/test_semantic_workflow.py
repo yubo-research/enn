@@ -64,14 +64,12 @@ def held_fitter(model, seed=0):
     return ENNStatefulFitter(
         k=4,
         seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
-        input_transform=model.input_transform,
     )
 
 
 def add_and_fit(model, x, y, seed=0):
     model.add(x, y)
     fitter = held_fitter(model, seed)
-    fitter.tell(x, y)
     return fitter.ask(model, num_fit_candidates=5)
 
 
@@ -83,7 +81,6 @@ def test_workflow_over_batches(shape, tmp_path):
     for start in range(0, 60, 20):
         batch = slice(start, start + 20)
         model.add(x[batch], y[batch])
-        fitter.tell(x[batch], y[batch])
         params = fitter.ask(model, num_fit_candidates=5)
         assert params.k_num_neighbors == 4
         post = model.posterior(x[:5], params=params)
@@ -130,9 +127,7 @@ def test_ask_leaves_the_model_unchanged(shape):
     probe = ENNParams(4, 1, 0)
     before = model.posterior(x[:5], params=probe)
     scale = model._x_scale.copy()
-    transform = model.input_transform
-    fitter = ENNStatefulFitter(k=4, seed=0, input_transform=transform)
-    fitter.tell(x, y)
+    fitter = ENNStatefulFitter(k=4, seed=0)
     fitter.ask(model, num_fit_candidates=5)
     assert len(model) == 60
     np.testing.assert_array_equal(scale, model._x_scale)
@@ -216,7 +211,6 @@ def test_pinned_alpha_stays_across_asks():
     for start in (0, 20, 40):
         batch = slice(start, start + 20)
         model.add(x[batch], y[batch])
-        fitter.tell(x[batch], y[batch])
         params = fitter.ask(model, num_fit_candidates=3)
         np.testing.assert_array_equal(params.output_blend.alpha, np.full(3, 0.1))
 
@@ -240,7 +234,6 @@ def test_warm_blend_with_wrong_outputs_is_an_error():
     model = build(x[:0], y[:0], "yy")
     model.add(x, y)
     fitter = held_fitter(model)
-    fitter.tell(x, y)
     wrong = ENNOutputBlend(np.zeros(1), np.eye(1), np.zeros(1), np.ones(1))
     with pytest.raises(ValueError, match="warm output blend"):
         fitter.ask(
@@ -260,7 +253,6 @@ def test_streamed_fits_are_reproducible():
         for start in (0, 20, 40):
             batch = slice(start, start + 20)
             model.add(x[batch], y[batch])
-            fitter.tell(x[batch], y[batch])
             results.append(fitter.ask(model, num_fit_candidates=5))
         return results
 
@@ -284,7 +276,6 @@ def test_disk_reopen_predicts_the_same_and_warm_blend_survives(tmp_path):
     np.testing.assert_allclose(actual.se, expected.se, atol=1e-12)
     reopened.add(x[8:9], y[8:9])
     fitter = held_fitter(reopened)
-    fitter.tell(x[:9], y[:9])
     refit = fitter.ask(reopened, num_fit_candidates=5, params_warm_start=params)
     assert refit.output_blend == params.output_blend
 

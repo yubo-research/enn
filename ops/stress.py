@@ -727,7 +727,6 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
 
     t0 = time.perf_counter()
     fitter = ENNStatefulFitter(k=config.k, seed=int(fit_rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
     fitted = fitter.ask(
         model,
         num_fit_candidates=config.num_fit_candidates,

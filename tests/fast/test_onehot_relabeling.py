@@ -61,7 +61,6 @@ def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
         fitter = ENNStatefulFitter(
             k=10, seed=int(np.random.default_rng([404, 4]).integers(2**63 - 1))
         )
-        fitter.tell(x, y)
         params = fitter.ask(
             model,
             num_fit_candidates=30,

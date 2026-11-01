@@ -25,13 +25,11 @@ def main():
         fitter = ENNStatefulFitter(
             k=PARAMS.k_num_neighbors,
             seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
-            input_transform=model.input_transform,
         )
         for count in range(100, 3001, 100):
             start = time.perf_counter()
             x, y = problem.x[count - 100 : count], problem.y[count - 100 : count]
             model.add(x, y)
-            fitter.tell(x, y)
             params = fitter.ask(model, num_fit_candidates=NUM_FIT_CANDIDATES)
             rows.append(
                 dict(

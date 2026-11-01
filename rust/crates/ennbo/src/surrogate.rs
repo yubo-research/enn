@@ -203,11 +203,8 @@ impl ENNSurrogate {
     ) -> Result<(), ENNError> {
         match &mut self.state {
             FitState::Unfitted => return self.start_model(x_new, y_new, yvar_new, None, rng),
-            FitState::Frozen { model, .. } => model.add(x_new, y_new, yvar_new)?,
-            FitState::Searched { model, fit } => {
+            FitState::Frozen { model, .. } | FitState::Searched { model, .. } => {
                 model.add(x_new, y_new, yvar_new)?;
-                fit.fitter
-                    .tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
             }
         }
         let has_params = self.state.params().is_some();
@@ -237,19 +234,15 @@ impl ENNSurrogate {
                 model,
                 params: self.config.default_params()?,
             },
-            FitSamples::Draw(search) => {
-                let mut fitter = ENNFitter::new(self.config.k.get());
-                fitter.tell(x_new, y_new, yvar_new, self.config.y_bounds.as_ref())?;
-                FitState::Searched {
-                    model,
-                    fit: Box::new(ScaleFit {
-                        search,
-                        fitter,
-                        params: warm,
-                        calibrator: None,
-                    }),
-                }
-            }
+            FitSamples::Draw(search) => FitState::Searched {
+                model,
+                fit: Box::new(ScaleFit {
+                    search,
+                    fitter: ENNFitter::new(self.config.k.get()),
+                    params: warm,
+                    calibrator: None,
+                }),
+            },
         };
         let frozen = self.config.fit_samples.is_frozen();
         self.apply_plan(
@@ -722,30 +715,13 @@ mod tests {
     }
 
     #[test]
-    fn fit_tells_fitter_warped_y_under_y_bounds() {
+    fn surrogate_model_scales_warped_y_under_y_bounds() {
         let x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
         let y = array![[0.1], [0.2], [0.8], [0.9]];
         let bounds = array![[0.0, 1.0]];
-        let mut fit_nat = crate::fitter::ENNFitter::new(2);
-        fit_nat.tell(&x.view(), &y.view(), None, None).unwrap();
-        let nat_std = fit_nat.y_std()[0];
         let y_z = crate::y_bounds::warp_y(y.view(), &bounds).unwrap();
-        let mut fit_z = crate::fitter::ENNFitter::new(2);
-        fit_z.tell(&x.view(), &y_z.view(), None, None).unwrap();
-        let z_std = fit_z.y_std()[0];
-
-        assert!((nat_std - 0.35355).abs() < 0.01, "natural y_std={nat_std}");
-        assert!(z_std > 1.5, "warped y_std={z_std}");
-
-        let mut fit_bounded = crate::fitter::ENNFitter::new(2);
-        fit_bounded
-            .tell(&x.view(), &y.view(), None, Some(&bounds))
-            .unwrap();
-        let bounded_std = fit_bounded.y_std()[0];
-        assert!(
-            (bounded_std - z_std).abs() < 1e-9,
-            "tell with y_bounds must warp: got {bounded_std} want {z_std} (natural would be {nat_std})"
-        );
+        let z_std = y_z.std_axis(ndarray::Axis(0), 0.0)[0];
+        assert!(z_std > 1.5, "warped std={z_std}");
 
         let dir = tempfile::tempdir().unwrap();
         let config = ENNSurrogateConfig {
@@ -757,13 +733,10 @@ mod tests {
         let mut sur = ENNSurrogate::new(config);
         let mut rng = StdRng::seed_from_u64(7);
         sur.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
-        let FitState::Searched { fit, .. } = &sur.state else {
-            panic!("Draw config must keep a fitter");
-        };
-        let fitter_std = fit.fitter.y_std()[0];
+        let scale = sur.model().unwrap().y_scale()[0];
         assert!(
-            (fitter_std - z_std).abs() < 1e-9,
-            "surrogate fitter must track warped y: got {fitter_std} want {z_std} (natural would be {nat_std})"
+            (scale - z_std).abs() < 1e-9,
+            "the scale search must see warped y: got {scale} want {z_std}"
         );
     }
 

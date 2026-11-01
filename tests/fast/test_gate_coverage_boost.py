@@ -14,8 +14,6 @@ def test_fitter_surface():
     fitter = ENNStatefulFitter(k=2, seed=int(rng.integers(2**63 - 1)))
     x = np.array([[0.0, 0.0], [1.0, 1.0]])
     y = np.array([[0.0], [1.0]])
-    fitter.tell(x, y)
-    assert fitter.y_std().size >= 1
     model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     params = fitter.ask(model, num_fit_candidates=2, num_fit_samples=2)
     assert params.k_num_neighbors >= 1
@@ -55,16 +53,13 @@ def test_coverage_enn_fit_fast():
     model = EpistemicNearestNeighbors(x[:0], y[:0], work_dir=fresh_work_dir())
     model.add(x, y)
     fitter = ENNStatefulFitter(k=2, seed=int(rng.integers(2**63 - 1)))
-    fitter.tell(x, y)
     params = fitter.ask(model, num_fit_candidates=2, num_fit_samples=2)
     assert params.k_num_neighbors >= 1
     fitter2 = ENNStatefulFitter(
         k=2, seed=int(np.random.default_rng(9).integers(2**63 - 1))
     )
-    fitter2.tell(x[:2], y[:2])
     model2 = EpistemicNearestNeighbors(x[:2], y[:2], work_dir=fresh_work_dir())
     model2.add(x[2:3], y[2:3])
-    fitter2.tell(x[2:3], y[2:3])
     params2 = fitter2.ask(
         model2,
         num_fit_candidates=2,
