@@ -8,6 +8,8 @@ from typing import Any
 
 import numpy as np
 
+from evals.harness.work_dirs import fresh_work_dir
+
 BenchmarkObjective = Callable[[np.ndarray], np.ndarray]
 
 
@@ -336,7 +338,10 @@ def run_benchmark(
         optimizer, problem, affine_calibrate=affine_calibrate
     )
     opt = create_optimizer(
-        bounds=bounds, config=config, seed=int(rng.integers(2**63 - 1))
+        bounds=bounds,
+        config=config,
+        seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
 
     best_y = -np.inf

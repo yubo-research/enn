@@ -48,6 +48,7 @@ def _optimizer():
         bounds=bounds,
         config=turbo_zero_config(),
         seed=int(np.random.default_rng(0).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
 
 
@@ -94,7 +95,6 @@ def test_enn_surrogate_config_properties():
 
     cfg = ENNSurrogateConfig(
         fit=ENNFitConfig(num_fit_samples=50, num_fit_candidates=30),
-        work_dir=fresh_work_dir(),
     )
     # num_fit_samples / num_fit_candidates
     assert cfg.num_fit_samples == 50

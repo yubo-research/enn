@@ -88,7 +88,6 @@ def test_optimizer_bounded_open_unit_interval():
             k=2,
             fit=ENNFitConfig(num_fit_samples=5),
             y_bounds=bounds,
-            work_dir=fresh_work_dir(),
         ),
         num_init=2,
     )
@@ -97,11 +96,12 @@ def test_optimizer_bounded_open_unit_interval():
         bounds=np.array([[0.0, 1.0]], dtype=float),
         config=cfg,
         seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     x = opt.ask(2)
     y = np.array([[0.2], [0.8]], dtype=float)
     opt.tell(x, y)
-    y_obs = opt._y_obs.view()
+    y_obs = opt.y_obs.view()
     assert y_obs.shape[0] >= 2
     assert np.all(y_obs > 0.0) and np.all(y_obs < 1.0)
     x2 = opt.ask(1)

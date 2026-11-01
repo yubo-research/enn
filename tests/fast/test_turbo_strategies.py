@@ -31,7 +31,7 @@ def test_validate_optimizer_config_lhd_only_requires_no_surrogate_direct_call():
     class Dummy:
         def __init__(self) -> None:
             self.init = InitConfig(init_strategy=LHDOnlyInit())
-            self.surrogate = ENNSurrogateConfig(work_dir=fresh_work_dir())
+            self.surrogate = ENNSurrogateConfig()
             self.acquisition = RandomAcquisitionConfig()
 
     validate_optimizer_config(turbo_zero_config())
@@ -46,7 +46,7 @@ def test_validate_optimizer_config_rejects_unknown_acquisition():
 
     bad = type("Cfg", (), {})()
     bad.init = InitConfig(init_strategy=LHDOnlyInit())
-    bad.surrogate = ENNSurrogateConfig(work_dir=fresh_work_dir())
+    bad.surrogate = ENNSurrogateConfig()
     bad.acquisition = NotAnAcquisition()
     with pytest.raises(TypeError, match="AcquisitionConfig"):
         validate_optimizer_config(bad)
@@ -61,6 +61,7 @@ def test_optimizer_init_progress_and_telemetry_smoke():
         bounds=bounds,
         config=turbo_zero_config(num_init=5),
         seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     init = opt.init_progress
     assert init is not None
@@ -82,6 +83,7 @@ def test_turbo_hybrid_fallback_executes_when_init_points_exhausted_mid_batch():
         bounds=bounds,
         config=turbo_zero_config(num_init=2),
         seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     x1 = opt.ask(num_arms=1)
     y1 = -np.sum(x1**2, axis=1, keepdims=True)

@@ -20,7 +20,6 @@ from enn.turbo.config import (
     turbo_zero_config,
 )
 from enn.turbo.config.optimizer_config import OptimizerConfig
-from evals.harness.work_dirs import fresh_work_dir
 
 UNIT_BOX_BOUNDS = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
 MORBO_SEPARABLE_BOUNDS = np.array([[-300.0, 600.0], [0.2, 1.0]], dtype=float)
@@ -55,31 +54,23 @@ class FixtureGeneratorEntry:
 PREFIX_CONFIG: dict[str, OptimizerConfig] = {
     "turbo_enn_ucb_single": turbo_enn_config(
         acq_type=AcqType.UCB,
-        enn=ENNSurrogateConfig(
-            k=4, fit=ENNFitConfig(num_fit_samples=10), work_dir=fresh_work_dir()
-        ),
+        enn=ENNSurrogateConfig(k=4, fit=ENNFitConfig(num_fit_samples=10)),
         num_init=3,
     ),
     "turbo_enn_thompson_single": turbo_enn_config(
         acq_type=AcqType.THOMPSON,
-        enn=ENNSurrogateConfig(
-            k=4, fit=ENNFitConfig(num_fit_samples=10), work_dir=fresh_work_dir()
-        ),
+        enn=ENNSurrogateConfig(k=4, fit=ENNFitConfig(num_fit_samples=10)),
         num_init=3,
     ),
     "turbo_enn_pareto_multi": turbo_enn_config(
         acq_type=AcqType.PARETO,
-        enn=ENNSurrogateConfig(
-            k=3, fit=ENNFitConfig(num_fit_samples=10), work_dir=fresh_work_dir()
-        ),
+        enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=10)),
         num_init=2,
     ),
     "turbo_zero": turbo_zero_config(num_init=3),
     "turbo_enn_noise_aware": turbo_enn_config(
         acq_type=AcqType.UCB,
-        enn=ENNSurrogateConfig(
-            k=3, fit=ENNFitConfig(num_fit_samples=8), work_dir=fresh_work_dir()
-        ),
+        enn=ENNSurrogateConfig(k=3, fit=ENNFitConfig(num_fit_samples=8)),
         trust_region=TurboTRConfig(noise_aware=True),
         num_init=2,
     ),
@@ -89,7 +80,6 @@ PREFIX_CONFIG: dict[str, OptimizerConfig] = {
         enn=ENNSurrogateConfig(
             k=4,
             fit=ENNFitConfig(num_fit_samples=4, num_fit_candidates=8),
-            work_dir=fresh_work_dir(),
         ),
         trust_region=MorboTRConfig(
             multi_objective=MultiObjectiveConfig(num_metrics=2),

@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 from .. import _rust
+from .config.enn_surrogate_config import validate_enn_placement
 from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .rust_optimizer_helpers import (
@@ -22,26 +23,32 @@ def _tell_estimate(inner: Any, train_x: np.ndarray, train_y: np.ndarray) -> np.n
     return np.asarray(inner.posterior_mu(train_x), dtype=float)
 
 
-class RustOptimizer:
+class Optimizer:
     def __init__(self, inner: Any) -> None:
         self._inner = inner
 
-    def _dim(self) -> int:
-        return int(np.asarray(self._inner.bounds()).shape[0])
+    @property
+    def bounds(self) -> np.ndarray:
+        return np.asarray(self._inner.bounds(), dtype=float)
 
     @property
-    def _x_obs(self) -> np.ndarray:
+    def x_obs(self) -> np.ndarray:
         arr = self._inner.x_obs()
         if arr is None:
-            return np.empty((0, self._dim()))
+            return np.empty((0, self.bounds.shape[0]))
         return np.asarray(arr, dtype=float)
 
     @property
-    def _y_obs(self) -> np.ndarray:
+    def y_obs(self) -> np.ndarray:
         arr = self._inner.y_obs()
         if arr is None:
             return np.empty((0, 1))
         return np.asarray(arr, dtype=float)
+
+    @property
+    def incumbent_x(self) -> np.ndarray | None:
+        arr = self._inner.incumbent_x()
+        return None if arr is None else np.asarray(arr, dtype=float)
 
     @property
     def tr_obs_count(self) -> int:
@@ -92,7 +99,8 @@ def create_optimizer(
     bounds: np.ndarray,
     config: OptimizerConfig,
     seed: int,
-) -> Any:
+    work_dir: str | os.PathLike[str],
+) -> Optimizer:
     if not is_rust_supported_config(config):
         raise ValueError(f"Unsupported optimizer config: {type(config.surrogate)}")
 
@@ -101,6 +109,8 @@ def create_optimizer(
     if transform is not None and not np.array_equal(transform.bounds, bounds_arr):
         raise ValueError("semantic transform bounds must match optimizer bounds")
     seed = int(seed)
+    work_dir = os.fspath(work_dir)
+    validate_enn_placement(work_dir)
     num_init = config.init.num_init
     overrides = _config_to_rust_overrides(config)
 
@@ -112,7 +122,7 @@ def create_optimizer(
         k = None if config.surrogate.k is None else int(config.surrogate.k)
         inner = _rust.create_optimizer_enn(
             bounds_arr,
-            os.fspath(config.surrogate.work_dir),
+            work_dir,
             k,
             num_init,
             seed,
@@ -125,4 +135,4 @@ def create_optimizer(
     else:
         raise ValueError(f"Unsupported surrogate config: {type(config.surrogate)}")
 
-    return RustOptimizer(inner)
+    return Optimizer(inner)

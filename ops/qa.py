@@ -67,7 +67,6 @@ def build_ackley_enn_surrogate() -> ENNSurrogateConfig:
     return ENNSurrogateConfig(
         k=10,
         fit=ENNFitConfig(num_fit_samples=100),
-        work_dir=tempfile.mkdtemp(prefix="qa_ackley_bpann_"),
     )
 
 
@@ -93,6 +92,7 @@ def run_turbo_enn_ackley(
         bounds=bounds,
         config=config,
         seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+        work_dir=tempfile.mkdtemp(prefix="qa_ackley_bpann_"),
     )
     y_var_scale = float(noise) ** 2
     y_best = -np.inf
@@ -485,7 +485,6 @@ def build_turbo_acq_config(
         enn=ENNSurrogateConfig(
             k=k,
             fit=ENNFitConfig(num_fit_samples=num_fit_samples),
-            work_dir=tempfile.mkdtemp(prefix="qa_turbo_acq_"),
         ),
         candidates=CandidateGenConfig(candidate_rv=CandidateRV.UNIFORM),
         trust_region=trust,
@@ -523,6 +522,7 @@ def run_turbo_acq_seed(
         bounds=bounds,
         config=config,
         seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+        work_dir=tempfile.mkdtemp(prefix="qa_turbo_acq_"),
     )
     y_var_scale = float(noise) ** 2
     y_best = -np.inf

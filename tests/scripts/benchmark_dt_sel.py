@@ -4,7 +4,6 @@ import argparse
 import json
 import statistics
 import sys
-import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -14,6 +13,7 @@ import numpy as np
 
 from enn import AcqType, create_optimizer, turbo_enn_config
 from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def make_bounds(num_dim: int) -> np.ndarray:
@@ -139,7 +139,6 @@ def _build_optimizer(
                 num_fit_samples=num_fit_samples,
                 num_fit_candidates=num_fit_candidates,
             ),
-            work_dir=tempfile.mkdtemp(prefix="enn_benchmark_dt_sel_"),
         ),
         num_init=num_arms,
         acq_type=AcqType.UCB,
@@ -148,7 +147,10 @@ def _build_optimizer(
         bounds,
         rng,
         create_optimizer(
-            bounds=bounds, config=config, seed=int(rng.integers(2**63 - 1))
+            bounds=bounds,
+            config=config,
+            seed=int(rng.integers(2**63 - 1)),
+            work_dir=fresh_work_dir(),
         ),
     )
 

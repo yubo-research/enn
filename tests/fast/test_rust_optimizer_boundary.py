@@ -30,9 +30,7 @@ def test_unknown_override_key_is_rejected():
 
 
 def test_every_python_override_key_is_accepted_by_rust():
-    config = turbo_enn_config(
-        enn=ENNSurrogateConfig(k=4, work_dir=fresh_work_dir()), num_init=4
-    )
+    config = turbo_enn_config(enn=ENNSurrogateConfig(k=4), num_init=4)
     overrides = _config_to_rust_overrides(config)
     assert overrides is not None
     _rust.create_optimizer_enn(
@@ -50,7 +48,7 @@ def test_has_surrogate_reports_the_optimizer_kind():
 
 def test_ucb_override_leaves_beta_to_rust():
     config = OptimizerConfig(
-        surrogate=ENNSurrogateConfig(k=4, work_dir=fresh_work_dir()),
+        surrogate=ENNSurrogateConfig(k=4),
         acquisition=UCBAcquisitionConfig(),
     )
     overrides = _config_to_rust_overrides(config)
@@ -87,7 +85,7 @@ def test_out_of_range_tied_dims_are_rejected():
             config_overrides={"tied_dims": [[0, 99]]},
         )
     with pytest.raises(ValueError, match="disjoint"):
-        ENNSurrogateConfig(tied_dims=((0, 99), (0,)), work_dir=fresh_work_dir())
+        ENNSurrogateConfig(tied_dims=((0, 99), (0,)))
 
 
 @pytest.mark.parametrize(

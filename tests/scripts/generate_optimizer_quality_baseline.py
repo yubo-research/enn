@@ -4,7 +4,6 @@ import importlib
 import importlib.util
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -45,7 +44,6 @@ def _build_cells(dims: tuple[int, ...], seeds: tuple[int, ...]) -> list[dict]:
                 enn=ENNSurrogateConfig(
                     k=10,
                     fit=ENNFitConfig(num_fit_samples=10),
-                    work_dir=tempfile.mkdtemp(prefix="enn_quality_baseline_"),
                 ),
                 num_init=min(10, 2 * dim),
             )

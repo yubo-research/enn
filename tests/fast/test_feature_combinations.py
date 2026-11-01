@@ -109,7 +109,6 @@ def test_optimizer_feature_combinations(
         x = np.asarray(x)
     surrogate = ENNSurrogateConfig(
         weighting=weighting,
-        work_dir=tmp_path,
         tied_dims=tied,
         input_transform=transform if semantics != "none" else None,
         semantic_only=semantics == "only",
@@ -119,6 +118,7 @@ def test_optimizer_feature_combinations(
         bounds=transform.bounds,
         config=turbo_enn_config(enn=surrogate, num_init=3),
         seed=int(np.random.default_rng(4).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     optimizer.tell(x[:16], y[:16])
     proposed = optimizer.ask(2)
@@ -126,7 +126,7 @@ def test_optimizer_feature_combinations(
     assert np.all((proposed >= -1) & (proposed <= 2))
     optimizer.tell(x[16:], y[16:])
     assert np.isfinite(optimizer.ask(1)).all()
-    np.testing.assert_allclose(optimizer._x_obs, x, atol=1e-14)
+    np.testing.assert_allclose(optimizer.x_obs, x, atol=1e-14)
 
 
 def test_semantic_only_fitting_and_invalid_add_preserve_original_rows():

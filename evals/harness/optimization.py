@@ -40,13 +40,13 @@ def build_optimizer(seed: int):
         enn=ENNSurrogateConfig(
             k=8,
             fit=ENNFitConfig(num_fit_samples=24, num_fit_candidates=16),
-            work_dir=fresh_work_dir(),
         ),
     )
     return create_optimizer(
         bounds=np.array([[-1.0, 1.0]] * NUM_DIM),
         config=config,
         seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
 
 

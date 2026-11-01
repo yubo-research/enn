@@ -6,6 +6,7 @@ import json
 import resource
 import struct
 import sys
+import tempfile
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
@@ -1004,7 +1005,6 @@ def build_turbo_enn_optimizer_config(
         enn=ENNSurrogateConfig(
             k=TURBO_ENN_K,
             fit=ENNFitConfig(num_fit_samples=TURBO_ENN_NUM_FIT_SAMPLES),
-            work_dir=work_dir,
         ),
         trust_region=TurboTRConfig(noise_aware=True),
         acq_type=AcqType.UCB,
@@ -1084,6 +1084,7 @@ def run_turbo_enn_stress(
             bounds=bounds_arr,
             config=config,
             seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+            work_dir=work_dir,
         )
     else:
         opt = optimizer
@@ -1284,6 +1285,7 @@ def run_proposal_scale_stress(
                 bounds=bounds,
                 config=config,
                 seed=int(np.random.default_rng(seed + n).integers(2**63 - 1)),
+                work_dir=tempfile.mkdtemp(prefix="stress_turbo_"),
             )
         seed_turbo_enn_to_n(
             opt,

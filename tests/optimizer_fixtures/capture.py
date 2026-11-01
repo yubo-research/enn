@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 from enn.turbo.config.optimizer_config import OptimizerConfig
+from evals.harness.work_dirs import fresh_work_dir
 
 from .catalog import (
     FIXTURE_OBJECTIVES,
@@ -27,7 +28,10 @@ def capture_optimizer_fixture(
     objective_fn = FIXTURE_OBJECTIVES[run.objective]
     rng = np.random.default_rng(seed)
     opt = create_optimizer(
-        bounds=bounds, config=config, seed=int(rng.integers(2**63 - 1))
+        bounds=bounds,
+        config=config,
+        seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     steps = []
     for _ in range(run.num_cycles):

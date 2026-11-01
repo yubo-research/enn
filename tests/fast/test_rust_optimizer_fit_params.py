@@ -26,7 +26,7 @@ def _make_enn_config(num_fit_samples: int | None, num_fit_candidates: int | None
         num_fit_samples=num_fit_samples,
         num_fit_candidates=num_fit_candidates,
     )
-    enn = ENNSurrogateConfig(k=4, fit=fit, work_dir=fresh_work_dir())
+    enn = ENNSurrogateConfig(k=4, fit=fit)
     return turbo_enn_config(enn=enn, num_init=6)
 
 
@@ -80,13 +80,14 @@ def test_both_fit_params_passed_to_rust_overrides():
     assert overrides["num_fit_candidates"] == 200
 
 
-def test_rust_optimizer_uses_the_surrogate_work_dir(tmp_path):
+def test_optimizer_keeps_its_store_in_work_dir(tmp_path):
     work_dir = tmp_path / "optimizer_store"
-    config = turbo_enn_config(enn=ENNSurrogateConfig(work_dir=work_dir), num_init=1)
+    config = turbo_enn_config(enn=ENNSurrogateConfig(), num_init=1)
     optimizer = create_optimizer(
         bounds=np.array([[0.0, 1.0]]),
         config=config,
         seed=int(np.random.default_rng(0).integers(2**63 - 1)),
+        work_dir=work_dir,
     )
     x = optimizer.ask(num_arms=2)
     optimizer.tell(x, x)
@@ -122,13 +123,12 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
             fit = ENNFitConfig()
         else:
             fit = ENNFitConfig(num_fit_samples=num_fit_samples, num_fit_candidates=30)
-        cfg = turbo_enn_config(
-            enn=ENNSurrogateConfig(k=3, fit=fit, work_dir=fresh_work_dir()), num_init=2
-        )
+        cfg = turbo_enn_config(enn=ENNSurrogateConfig(k=3, fit=fit), num_init=2)
         opt = create_optimizer(
             bounds=bounds,
             config=cfg,
             seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+            work_dir=fresh_work_dir(),
         )
         told = np.asarray(opt.tell(x, y), dtype=float)
         at_query = np.asarray(opt._inner.posterior_mu(query), dtype=float)
@@ -146,6 +146,7 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
         bounds=bounds,
         config=turbo_zero_config(num_init=2),
         seed=int(np.random.default_rng(0).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     echoed = np.asarray(zero.tell(x, y), dtype=float)
     assert np.allclose(echoed, y)

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import cProfile
 import pstats
-import tempfile
 import time
 from dataclasses import dataclass
 
@@ -15,6 +14,7 @@ from enn.turbo.config.candidate_gen_config import CandidateGenConfig
 from enn.turbo.config.enn_surrogate_config import ENNFitConfig, ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config
 from enn.turbo.config.trust_region import TurboTRConfig
+from evals.harness.work_dirs import fresh_work_dir
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,6 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
             num_fit_samples=cfg.num_fit_samples,
             num_fit_candidates=cfg.num_fit_candidates,
         ),
-        work_dir=tempfile.mkdtemp(prefix="enn_profile_turbo_"),
     )
     candidates = (
         CandidateGenConfig(
@@ -61,7 +60,10 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
         candidates=candidates,
     )
     return create_optimizer(
-        bounds=bounds, config=opt_config, seed=int(rng.integers(2**63 - 1))
+        bounds=bounds,
+        config=opt_config,
+        seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
 
 
@@ -96,8 +98,8 @@ def _time_find_center(opt: object, rng: np.random.Generator) -> float:
     if not hasattr(opt, "_surrogate"):
         _ = opt.ask(num_arms=1)
         return 0.0
-    x_obs = opt._x_obs.view()
-    y_obs = opt._y_obs.view()
+    x_obs = opt.x_obs.view()
+    y_obs = opt.y_obs.view()
     _ = opt._surrogate.fit(x_obs, y_obs, None, num_steps=0, rng=rng)
     t0 = time.perf_counter()
     _ = opt._find_x_center(x_obs, y_obs)
@@ -109,8 +111,8 @@ def _time_fit(opt: object, rng: np.random.Generator) -> float:
         t0 = time.perf_counter()
         _ = opt.ask(num_arms=1)
         return time.perf_counter() - t0
-    x_obs = opt._x_obs.view()
-    y_obs = opt._y_obs.view()
+    x_obs = opt.x_obs.view()
+    y_obs = opt.y_obs.view()
     t0 = time.perf_counter()
     _ = opt._surrogate.fit(x_obs, y_obs, None, num_steps=0, rng=rng)
     return time.perf_counter() - t0

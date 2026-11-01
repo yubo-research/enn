@@ -19,7 +19,6 @@ def test_semantic_auto_optimizer_observations_and_predictions(tmp_path, only):
     transform = SemanticInputTransform(["a", "b", "c"], [[0, 2]] * 3, encoder=Encoder())
     config = turbo_enn_config(
         enn=ENNSurrogateConfig(
-            work_dir=tmp_path / "index",
             weighting=True,
             input_transform=transform,
             semantic_only=only,
@@ -30,17 +29,18 @@ def test_semantic_auto_optimizer_observations_and_predictions(tmp_path, only):
         bounds=transform.bounds,
         config=config,
         seed=int(np.random.default_rng(12).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     x = np.random.default_rng(13).uniform(0, 2, (120, 3))
     optimizer.tell(x, np.sin(x[:, :1]))
     query = optimizer.ask(2)
     assert query.shape == (2, 3)
     assert np.all((query >= 0) & (query <= 2))
-    np.testing.assert_allclose(optimizer._x_obs, x)
+    np.testing.assert_allclose(optimizer.x_obs, x)
     optimizer.tell(query, np.sin(query[:, :1]))
     assert np.isfinite(optimizer.ask(1)).all()
 
 
 def test_semantic_only_requires_projection():
     with pytest.raises(ValueError, match="requires input_transform"):
-        ENNSurrogateConfig(semantic_only=True, work_dir=fresh_work_dir())
+        ENNSurrogateConfig(semantic_only=True)

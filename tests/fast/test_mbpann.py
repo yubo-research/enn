@@ -18,7 +18,6 @@ from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 from enn.turbo.config.optimizer_config import OptimizerConfig
 from enn.turbo.rust_optimizer_helpers import _config_to_rust_overrides
-from evals.harness.work_dirs import fresh_work_dir
 
 
 def _data(n: int = 400, d: int = 3, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
@@ -153,13 +152,11 @@ def test_disk_weighting_preserves_neighbor_metric_through_adds(tmp_path) -> None
 
 def test_optimizer_config_forwards_only_weighting_and_directory() -> None:
     for weighting in [False, True]:
-        config = OptimizerConfig(
-            surrogate=ENNSurrogateConfig(weighting=weighting, work_dir=fresh_work_dir())
-        )
+        config = OptimizerConfig(surrogate=ENNSurrogateConfig(weighting=weighting))
         sent = _config_to_rust_overrides(config)
         assert sent["weighting"] is weighting
         assert not {"scale_x", "metric_learning", "enn_storage"}.intersection(sent)
-    disk = ENNSurrogateConfig(weighting=True, work_dir="/tmp/enn_auto")
+    disk = ENNSurrogateConfig(weighting=True)
     sent = _config_to_rust_overrides(OptimizerConfig(surrogate=disk))
     assert "work_dir" not in sent
     assert "index_driver" not in sent and sent["weighting"]

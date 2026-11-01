@@ -249,7 +249,6 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
         enn=ENNSurrogateConfig(
             input_transform=transform,
             fit=ENNFitConfig(num_fit_samples=5, num_fit_candidates=3),
-            work_dir=fresh_work_dir(),
         ),
         num_init=4,
         acq_type=AcqType.THOMPSON,
@@ -258,6 +257,7 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
         bounds=transform.bounds,
         config=config,
         seed=int(np.random.default_rng(9).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     from dataclasses import replace
 
@@ -267,6 +267,7 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
             config, surrogate=replace(config.surrogate, input_transform=None)
         ),
         seed=int(np.random.default_rng(9).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     initial = optimizer.ask(4)
     np.testing.assert_array_equal(initial, baseline.ask(4))
@@ -275,12 +276,13 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
     query = optimizer.ask(2)
     assert query.shape == (2, 3)
     assert np.all((query >= 0) & (query <= 2))
-    np.testing.assert_allclose(optimizer._x_obs, initial)
+    np.testing.assert_allclose(optimizer.x_obs, initial)
     with pytest.raises(ValueError, match="bounds must match"):
         create_optimizer(
             bounds=np.array([[0, 3]] * 3),
             config=config,
             seed=int(np.random.default_rng(9).integers(2**63 - 1)),
+            work_dir=fresh_work_dir(),
         )
 
 

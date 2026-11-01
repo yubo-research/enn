@@ -50,7 +50,9 @@ def _rust_optimizer(bounds, config, kind: str, seed: int):
 
 
 def _pair(bounds, config, kind: str, seed: int, y: np.ndarray | None = None):
-    py = create_optimizer(bounds=bounds, config=config, seed=seed)
+    py = create_optimizer(
+        bounds=bounds, config=config, seed=seed, work_dir=fresh_work_dir()
+    )
     rust = _rust_optimizer(bounds, config, kind, seed)
     x_py = py.ask(2)
     x_rust = np.asarray(rust.ask(2), dtype=float)
@@ -60,8 +62,8 @@ def _pair(bounds, config, kind: str, seed: int, y: np.ndarray | None = None):
         y = np.zeros((2, 1))
     py.tell(x_py, y)
     rust.tell(x_rust, y, None)
-    assert np.allclose(py._x_obs, np.asarray(rust.x_obs()))
-    assert np.allclose(py._y_obs, np.asarray(rust.y_obs()))
+    assert np.allclose(py.x_obs, np.asarray(rust.x_obs()))
+    assert np.allclose(py.y_obs, np.asarray(rust.y_obs()))
 
 
 def test_turbo_enn_natural_ask_matches_rust():
@@ -70,7 +72,7 @@ def test_turbo_enn_natural_ask_matches_rust():
         cfg = turbo_enn_config(
             num_init=2,
             acq_type=AcqType.PARETO,
-            enn=ENNSurrogateConfig(work_dir=fresh_work_dir()),
+            enn=ENNSurrogateConfig(),
         )
         _pair(bounds, cfg, "enn", seed=11 + dim)
 
@@ -87,7 +89,7 @@ def test_morbo_two_metrics_natural_ask():
         num_init=2,
         acq_type=AcqType.PARETO,
         trust_region=MorboTRConfig(multi_objective=MultiObjectiveConfig(num_metrics=2)),
-        enn=ENNSurrogateConfig(work_dir=fresh_work_dir()),
+        enn=ENNSurrogateConfig(),
     )
     y = np.array([[0.1, 0.4], [0.2, 0.3]])
     _pair(bounds, cfg, "morbo", seed=9, y=y)

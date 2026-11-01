@@ -80,6 +80,7 @@ def test_optimizer_tell_rejects_one_dimensional_y_and_returns_matrix() -> None:
         bounds=bounds,
         config=turbo_zero_config(num_init=2),
         seed=0,
+        work_dir=fresh_work_dir(),
     )
     x = opt.ask(2)
     with pytest.raises(ValueError, match="train_y must be 2-dimensional"):
@@ -124,6 +125,7 @@ def test_observation_arguments_use_train_names() -> None:
         bounds=np.array([[0.0, 1.0]]),
         config=turbo_zero_config(num_init=1),
         seed=0,
+        work_dir=fresh_work_dir(),
     )
     arm = opt.ask(1)
     opt.tell(train_x=arm, train_y=y)

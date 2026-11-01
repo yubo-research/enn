@@ -21,6 +21,7 @@ from enn import (
     fit_affine_calibrator,
     turbo_enn_config,
 )
+from evals.harness.work_dirs import fresh_work_dir
 
 GOLDEN = json.loads(
     (Path(__file__).parent / "golden" / "calibrated_params.json").read_text()
@@ -95,7 +96,7 @@ def _trace(tmp_path, acq: AcqType, seed: int, bounded: bool) -> dict:
     r = np.random.default_rng(100 + seed)
     kw = {"y_bounds": np.array([[-10.0, 10.0]])} if bounded else {}
     fit = ENNFitConfig(num_fit_samples=20, num_fit_candidates=8, affine_calibrate=True)
-    enn = ENNSurrogateConfig(k=4, fit=fit, work_dir=tmp_path / "store", **kw)
+    enn = ENNSurrogateConfig(k=4, fit=fit, **kw)
     config = turbo_enn_config(
         enn=enn,
         num_init=6,
@@ -103,7 +104,9 @@ def _trace(tmp_path, acq: AcqType, seed: int, bounded: bool) -> dict:
         candidates=CandidateGenConfig(max_candidates=64),
     )
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]])
-    optimizer = create_optimizer(bounds=bounds, config=config, seed=seed)
+    optimizer = create_optimizer(
+        bounds=bounds, config=config, seed=seed, work_dir=fresh_work_dir()
+    )
     arms, told = [], []
     for _ in range(14):
         x = optimizer.ask(2)

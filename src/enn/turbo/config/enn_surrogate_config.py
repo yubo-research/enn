@@ -23,13 +23,11 @@ class ENNSurrogateConfig:
     fit: ENNFitConfig = field(default_factory=ENNFitConfig)
     weighting: bool = False
     tied_dims: tuple = ()
-    work_dir: str | os.PathLike[str] = field(kw_only=True)
     input_transform: SemanticInputTransform | None = field(default=None, kw_only=True)
     semantic_only: bool = field(default=False, kw_only=True)
     y_bounds: np.ndarray | None = None
 
     def __post_init__(self) -> None:
-        validate_enn_placement(self.work_dir)
         self._check_tied_dims()
         if self.semantic_only and self.input_transform is None:
             raise ValueError("semantic_only requires input_transform")
