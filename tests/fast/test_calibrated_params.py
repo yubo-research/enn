@@ -120,7 +120,7 @@ def _trace(tmp_path, acq: AcqType, seed: int, bounded: bool) -> dict:
 @pytest.mark.parametrize("acq", [AcqType.PARETO, AcqType.UCB, AcqType.THOMPSON])
 @pytest.mark.parametrize("seed", [1, 2])
 @pytest.mark.parametrize("bounded", [False, True])
-def test_optimizer_affine_calibrate_results_are_unchanged(
+def test_optimizer_affine_calibrate_results_match_golden(
     tmp_path, acq, seed, bounded
 ) -> None:
     got = _trace(tmp_path, acq, seed, bounded)

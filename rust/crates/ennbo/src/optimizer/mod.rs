@@ -1,3 +1,4 @@
+mod durable_sync;
 mod incumbent;
 pub mod obs_access;
 mod observation_delta;

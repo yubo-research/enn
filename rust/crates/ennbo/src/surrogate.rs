@@ -422,9 +422,10 @@ impl Surrogate for ENNSurrogate {
                 model.posterior_function_draw_warped(x, &params, &function_seeds, &flags)?;
             return Ok(draws);
         }
-        let function_seeds = next_function_seeds(rng, num_samples);
         let (draws, _) = model.posterior_function_draw(x, &params, &function_seeds, &flags)?;
-        Ok(draws.permuted_axes([2, 0, 1]))
+        let mut draws = draws.permuted_axes([2, 0, 1]);
+        model.warp_draws_3d(&mut draws)?;
+        Ok(draws)
     }
 
     fn durable_state(&self) -> Result<Option<SurrogateState>, ENNError> {
@@ -794,6 +795,50 @@ mod tests {
         let cfg =
             ENNSurrogateConfig::new(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
         assert!(cfg.k.get() >= 1);
+    }
+
+    #[test]
+    fn calibrated_samples_are_warped_and_use_one_seed() {
+        let x = array![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [2.0, 2.0],
+            [1.0, 1.0],
+            [2.0, 0.0]
+        ];
+        let y = array![[0.1], [0.2], [0.8], [0.9], [0.5], [0.3]];
+        let query = array![[0.5, 0.5], [1.5, 1.0]];
+        let dir = tempfile::tempdir().unwrap();
+        let mut search = crate::fit_samples::test_search(6, 4, false);
+        search.affine_calibrate = true;
+        let config = ENNSurrogateConfig {
+            k: crate::NeighborCount::new(3).unwrap(),
+            fit_samples: FitSamples::Draw(search),
+            y_bounds: Some(array![[0.0, 1.0]]),
+            ..ENNSurrogateConfig::new(crate::layout::EnnLayout::new(dir.path(), false).unwrap())
+        };
+        let mut sur = ENNSurrogate::new(config);
+        sur.fit(&x.view(), &y.view(), None, &mut StdRng::seed_from_u64(7))
+            .unwrap();
+        let model = sur.model().unwrap();
+        let params = sur.params().unwrap();
+        assert!(params.calibrator.is_some());
+
+        let mut rng = StdRng::seed_from_u64(5);
+        let mut expected_rng = StdRng::seed_from_u64(5);
+        let seeds = next_function_seeds(&mut expected_rng, 2);
+        let mut naturalized = sur.sample(&query.view(), 2, &mut rng).unwrap();
+        assert_eq!(rng.next_u64(), expected_rng.next_u64());
+
+        model.naturalize_draws_3d(&mut naturalized);
+        let (published, _) = model
+            .posterior_function_draw(&query.view(), params, &seeds, &PosteriorFlags::new())
+            .unwrap();
+        let published = published.permuted_axes([2, 0, 1]);
+        for (got, want) in naturalized.iter().zip(published.iter()) {
+            assert!((got - want).abs() < 1e-9, "got {got} want {want}");
+        }
     }
 
     #[test]

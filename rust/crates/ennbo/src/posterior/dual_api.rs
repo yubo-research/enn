@@ -21,7 +21,7 @@ use crate::error::ENNError;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::traits::PosteriorComputation;
-use crate::y_bounds::{inv_y, is_identity_bounds, naturalize_mu_se};
+use crate::y_bounds::{inv_y, is_identity_bounds, naturalize_mu_se, warp_y};
 
 impl EpistemicNearestNeighbors {
     pub(crate) fn posterior_warped(
@@ -287,6 +287,18 @@ impl EpistemicNearestNeighbors {
             let inv = inv_y(sample.view(), bounds);
             sample.assign(&inv);
         }
+    }
+
+    pub(crate) fn warp_draws_3d(&self, draws: &mut Array3<f64>) -> Result<(), ENNError> {
+        if is_identity_bounds(self.y_bounds()) {
+            return Ok(());
+        }
+        let bounds = self.y_bounds();
+        for mut sample in draws.axis_iter_mut(ndarray::Axis(0)) {
+            let warped = warp_y(sample.view(), bounds)?;
+            sample.assign(&warped);
+        }
+        Ok(())
     }
 
     pub fn batch_posterior(

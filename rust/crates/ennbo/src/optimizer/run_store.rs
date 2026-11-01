@@ -6,6 +6,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha12Rng;
 use serde::{Deserialize, Serialize};
 
+use super::durable_sync::{sync_dir, BackgroundSync};
 use super::Optimizer;
 use crate::config::ConfigOverrides;
 use crate::error::ENNError;
@@ -115,11 +116,13 @@ pub(super) struct OptimizerState {
 pub(super) struct RunStore {
     work_dir: PathBuf,
     observations: Option<DiskInputs>,
+    sync: BackgroundSync,
 }
 
 impl RunStore {
     fn new(work_dir: PathBuf) -> Self {
         Self {
+            sync: BackgroundSync::for_work_dir(work_dir.clone(), STATE_FILE),
             work_dir,
             observations: None,
         }
@@ -163,7 +166,21 @@ impl RunStore {
     }
 
     fn write_state(&self, state: &OptimizerState) -> Result<(), ENNError> {
-        bpann_write_json(&self.work_dir.join(STATE_FILE), state).map_err(file_error)
+        bpann_write_json(&self.work_dir.join(STATE_FILE), state).map_err(file_error)?;
+        self.sync.request()?;
+        let rows_will_be_deleted_next = state.restart_pending;
+        if rows_will_be_deleted_next {
+            self.sync.wait_until_on_disk()?;
+        }
+        Ok(())
+    }
+
+    fn sync_new_run(&self) -> Result<(), ENNError> {
+        self.sync.wait_until_on_disk()?;
+        let Some(parent) = self.work_dir.parent().filter(|p| !p.as_os_str().is_empty()) else {
+            return Ok(());
+        };
+        sync_dir(parent).map_err(|e| ENNError::InvalidParameter(e.to_string()))
     }
 }
 
@@ -184,6 +201,9 @@ pub fn create_run(recipe: RunRecipe, seed: u64, work_dir: PathBuf) -> Result<Opt
     bpann_write_json(&work_dir.join(RUN_FILE), &recipe).map_err(file_error)?;
     optimizer.run_store = Some(RunStore::new(work_dir));
     optimizer.write_snapshot(false)?;
+    if let Some(store) = optimizer.run_store.as_ref() {
+        store.sync_new_run()?;
+    }
     Ok(optimizer)
 }
 
