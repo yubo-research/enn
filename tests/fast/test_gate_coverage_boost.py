@@ -11,7 +11,7 @@ def test_fitter_surface():
     from enn.enn.enn_fitter import ENNStatefulFitter
 
     rng = np.random.default_rng(0)
-    fitter = ENNStatefulFitter(k=2, rng=rng)
+    fitter = ENNStatefulFitter(k=2, seed=int(rng.integers(2**63 - 1)))
     x = np.array([[0.0, 0.0], [1.0, 1.0]])
     y = np.array([[0.0], [1.0]])
     fitter.tell(x, y)
@@ -25,17 +25,13 @@ def test_init_strategy_base_subclass():
     from enn.turbo.config.init_strategy_base import InitStrategy
 
     class Dummy(InitStrategy):
-        def create_runtime_strategy(self, *, bounds, rng, num_init):
-            return (bounds, rng, num_init)
+        def create_runtime_strategy(self, *, bounds, num_init):
+            return (bounds, num_init)
 
-    out = Dummy().create_runtime_strategy(
-        bounds=np.zeros((2, 2)), rng=np.random.default_rng(1), num_init=2
-    )
-    assert out[2] == 2
+    out = Dummy().create_runtime_strategy(bounds=np.zeros((2, 2)), num_init=2)
+    assert out[1] == 2
     with pytest.raises(NotImplementedError):
-        InitStrategy().create_runtime_strategy(
-            bounds=np.zeros((2, 2)), rng=np.random.default_rng(1), num_init=2
-        )
+        InitStrategy().create_runtime_strategy(bounds=np.zeros((2, 2)), num_init=2)
 
 
 def test_optimizer_fixture_capture_smoke():
@@ -58,11 +54,13 @@ def test_coverage_enn_fit_fast():
     y = np.array([[0.0], [1.0], [0.5], [0.3]])
     model = EpistemicNearestNeighbors(x[:0], y[:0], work_dir=fresh_work_dir())
     model.add(x, y)
-    fitter = ENNStatefulFitter(k=2, rng=rng)
+    fitter = ENNStatefulFitter(k=2, seed=int(rng.integers(2**63 - 1)))
     fitter.tell(x, y)
     params = fitter.ask(model, num_fit_candidates=2, num_fit_samples=2)
     assert params.k_num_neighbors >= 1
-    fitter2 = ENNStatefulFitter(k=2, rng=np.random.default_rng(9))
+    fitter2 = ENNStatefulFitter(
+        k=2, seed=int(np.random.default_rng(9).integers(2**63 - 1))
+    )
     fitter2.tell(x[:2], y[:2])
     model2 = EpistemicNearestNeighbors(x[:2], y[:2], work_dir=fresh_work_dir())
     model2.add(x[2:3], y[2:3])
@@ -86,7 +84,7 @@ def test_coverage_enn_fit_fast():
             )
         ],
         P=2,
-        rng=np.random.default_rng(11),
+        seed=int(np.random.default_rng(11).integers(2**63 - 1)),
         y_std=np.ones(1),
     )
     assert len(scores) == 1

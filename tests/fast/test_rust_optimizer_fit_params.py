@@ -84,7 +84,9 @@ def test_rust_optimizer_uses_the_surrogate_work_dir(tmp_path):
     work_dir = tmp_path / "optimizer_store"
     config = turbo_enn_config(enn=ENNSurrogateConfig(work_dir=work_dir), num_init=1)
     optimizer = create_optimizer(
-        bounds=np.array([[0.0, 1.0]]), config=config, rng=np.random.default_rng(0)
+        bounds=np.array([[0.0, 1.0]]),
+        config=config,
+        seed=int(np.random.default_rng(0).integers(2**63 - 1)),
     )
     x = optimizer.ask(num_arms=2)
     optimizer.tell(x, x)
@@ -124,7 +126,9 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
             enn=ENNSurrogateConfig(k=3, fit=fit, work_dir=fresh_work_dir()), num_init=2
         )
         opt = create_optimizer(
-            bounds=bounds, config=cfg, rng=np.random.default_rng(seed)
+            bounds=bounds,
+            config=cfg,
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
         )
         told = np.asarray(opt.tell(x, y), dtype=float)
         at_query = np.asarray(opt._inner.posterior_mu(query), dtype=float)
@@ -141,7 +145,7 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
     zero = create_optimizer(
         bounds=bounds,
         config=turbo_zero_config(num_init=2),
-        rng=np.random.default_rng(0),
+        seed=int(np.random.default_rng(0).integers(2**63 - 1)),
     )
     echoed = np.asarray(zero.tell(x, y), dtype=float)
     assert np.allclose(echoed, y)

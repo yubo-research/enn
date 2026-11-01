@@ -103,7 +103,8 @@ class StreamedModel:
         self.model: EpistemicNearestNeighbors | None = None
         self.params: object = None
         self.fitter = ENNStatefulFitter(
-            k=config.k, rng=np.random.default_rng(config.seed + 1)
+            k=config.k,
+            seed=int(np.random.default_rng(config.seed + 1).integers(2**63 - 1)),
         )
 
     def _add_rows(self, x: np.ndarray, y: np.ndarray) -> None:

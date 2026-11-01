@@ -103,7 +103,8 @@ class ScalingRun:
         self.config = config
         self.model = None
         self.fitter = ENNStatefulFitter(
-            k=config.k, rng=np.random.default_rng(config.seed + 1)
+            k=config.k,
+            seed=int(np.random.default_rng(config.seed + 1).integers(2**63 - 1)),
         )
         self.params = None
         self.base_mem = memory_mib()

@@ -118,7 +118,7 @@ def test_optimizer_feature_combinations(
     optimizer = create_optimizer(
         bounds=transform.bounds,
         config=turbo_enn_config(enn=surrogate, num_init=3),
-        rng=np.random.default_rng(4),
+        seed=int(np.random.default_rng(4).integers(2**63 - 1)),
     )
     optimizer.tell(x[:16], y[:16])
     proposed = optimizer.ask(2)
@@ -146,7 +146,7 @@ def test_semantic_only_fitting_and_invalid_add_preserve_original_rows():
     np.testing.assert_allclose(model.train_rows_at([11])[0], x[11:12])
     fitter = ENNStatefulFitter(
         k=3,
-        rng=np.random.default_rng(1),
+        seed=int(np.random.default_rng(1).integers(2**63 - 1)),
         input_transform=transform,
         semantic_only=True,
     )
@@ -203,7 +203,7 @@ def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, wei
     reopened.persist_index_to_disk()
     fitter = ENNStatefulFitter(
         k=3,
-        rng=np.random.default_rng(1),
+        seed=int(np.random.default_rng(1).integers(2**63 - 1)),
         input_transform=reopened.input_transform,
         semantic_only=reopened.semantic_only,
     )

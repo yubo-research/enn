@@ -46,7 +46,7 @@ def build_optimizer(seed: int):
     return create_optimizer(
         bounds=np.array([[-1.0, 1.0]] * NUM_DIM),
         config=config,
-        rng=np.random.default_rng(seed),
+        seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
     )
 
 

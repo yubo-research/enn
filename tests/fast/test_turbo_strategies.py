@@ -17,16 +17,14 @@ from evals.harness.work_dirs import fresh_work_dir
 
 def test_hybrid_init_runtime_strategy_is_not_a_python_object():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    rng = np.random.default_rng(0)
     with pytest.raises(ValueError, match="Rust optimizer"):
-        HybridInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
+        HybridInit().create_runtime_strategy(bounds=bounds, num_init=4)
 
 
 def test_lhd_only_init_marker_not_python_runtime():
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
-    rng = np.random.default_rng(0)
     with pytest.raises(RuntimeError, match="Rust-routing config marker"):
-        LHDOnlyInit().create_runtime_strategy(bounds=bounds, rng=rng, num_init=4)
+        LHDOnlyInit().create_runtime_strategy(bounds=bounds, num_init=4)
 
 
 def test_validate_optimizer_config_lhd_only_requires_no_surrogate_direct_call():
@@ -59,7 +57,11 @@ def test_optimizer_init_progress_and_telemetry_smoke():
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    opt = create_optimizer(bounds=bounds, config=turbo_zero_config(num_init=5), rng=rng)
+    opt = create_optimizer(
+        bounds=bounds,
+        config=turbo_zero_config(num_init=5),
+        seed=int(rng.integers(2**63 - 1)),
+    )
     init = opt.init_progress
     assert init is not None
     init_idx, num_init = init
@@ -76,7 +78,11 @@ def test_turbo_hybrid_fallback_executes_when_init_points_exhausted_mid_batch():
 
     bounds = np.array([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
     rng = np.random.default_rng(0)
-    opt = create_optimizer(bounds=bounds, config=turbo_zero_config(num_init=2), rng=rng)
+    opt = create_optimizer(
+        bounds=bounds,
+        config=turbo_zero_config(num_init=2),
+        seed=int(rng.integers(2**63 - 1)),
+    )
     x1 = opt.ask(num_arms=1)
     y1 = -np.sum(x1**2, axis=1, keepdims=True)
     opt.tell(x1, y1)

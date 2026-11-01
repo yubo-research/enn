@@ -16,7 +16,8 @@ class TestENNStatefulFitterContract:
         sig = inspect.signature(ENNStatefulFitter.__init__)
         params = list(sig.parameters.keys())
         assert "k" in params
-        assert "rng" in params
+        assert "seed" in params
+        assert "rng" not in params
         assert "infer_aleatoric_variance_scale" in params
 
     def test_tell_and_ask_signatures(self):
@@ -37,7 +38,7 @@ class TestENNStatefulFitterContract:
         model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
         rng = np.random.default_rng(42)
 
-        fitter = ENNStatefulFitter(k=2, rng=rng)
+        fitter = ENNStatefulFitter(k=2, seed=int(rng.integers(2**63 - 1)))
         fitter.tell(train_x, train_y)
         result = fitter.ask(
             model,

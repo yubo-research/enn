@@ -100,10 +100,14 @@ def test_arms_from_pareto_fronts_selects_fronts_in_order():
         np.array([0.10, 0.20, 0.15, 0.40, 0.05, 0.50]),
     )
     rng = np.random.default_rng(0)
-    out4 = arms_from_pareto_fronts(x_cand, mu, se, num_arms=4, rng=rng)
+    out4 = arms_from_pareto_fronts(
+        x_cand, mu, se, num_arms=4, seed=int(rng.integers(2**63 - 1))
+    )
     assert out4.shape == (4, 2) and np.allclose(out4, x_cand[[0, 1, 3, 5]])
     rng = np.random.default_rng(0)
-    out5 = arms_from_pareto_fronts(x_cand, mu, se, num_arms=5, rng=rng)
+    out5 = arms_from_pareto_fronts(
+        x_cand, mu, se, num_arms=5, seed=int(rng.integers(2**63 - 1))
+    )
     assert out5.shape == (5, 2) and np.allclose(out5, x_cand[[0, 1, 2, 3, 5]])
 
 

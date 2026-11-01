@@ -28,7 +28,7 @@ def subsample_loglik(
     *,
     paramss: list[Any],
     P: int | None = None,
-    rng: Any,
+    seed: int,
     y_std: np.ndarray | None = None,
 ) -> list[float]:
     from .enn_class import EpistemicNearestNeighbors as PyENN
@@ -38,8 +38,6 @@ def subsample_loglik(
 
     if not isinstance(model, PyENN):
         raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
-
-    seed = int(rng.integers(0, 2**63 - 1))
 
     k_values = [p.k_num_neighbors for p in paramss]
     epi_scales = [p.epistemic_variance_scale for p in paramss]
@@ -58,7 +56,7 @@ def subsample_loglik(
         epi_scales,
         ale_scales,
         P,
-        seed,
+        int(seed),
         y_std_arr,
         blends,
     )
@@ -68,19 +66,14 @@ class ENNStatefulFitter:
     def __init__(
         self,
         k: int,
-        rng: Any | None = None,
         *,
-        seed: int | None = None,
+        seed: int,
         infer_aleatoric_variance_scale: bool = True,
         input_transform=None,
         semantic_only=False,
     ) -> None:
         self.input_transform = input_transform
         self.semantic_only = semantic_only
-        if seed is None:
-            if rng is None:
-                raise TypeError("ENNStatefulFitter requires rng or seed")
-            seed = int(rng.integers(0, 2**63 - 1))
         self._k = int(k)
         self._seed = int(seed)
         self._rust = _RustENNStatefulFitter(
@@ -232,10 +225,9 @@ class ENNStatefulFitter:
         x: np.ndarray,
         params: Any,
         num_samples: int,
-        rng: Any,
+        seed: int,
         flags: Any | None = None,
         clip: float | None = None,
     ) -> np.ndarray:
         post = self.posterior(model, x, params, flags=flags)
-        seed = int(rng.integers(0, 2**63 - 1))
-        return post.sample(num_samples, seed, clip=clip)
+        return post.sample(num_samples, int(seed), clip=clip)

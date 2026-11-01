@@ -120,19 +120,18 @@ def fit_affine_calibrator(
     *,
     params: Any,
     num_samples: int,
-    rng: Any,
+    seed: int,
     observation_noise: bool = False,
 ) -> AffineCalibrator:
     from enn._rust import fit_model_affine
 
-    seed = int(rng.integers(0, 2**63 - 1))
     a, b, c = fit_model_affine(
         model.rust_backend,
         int(params.k_num_neighbors),
         float(params.epistemic_variance_scale),
         float(params.aleatoric_variance_scale),
         int(num_samples),
-        seed,
+        int(seed),
         bool(observation_noise),
         params.output_blend,
     )

@@ -20,14 +20,6 @@ from enn.turbo.rust_optimizer_helpers import _config_to_rust_overrides
 from evals.harness.work_dirs import fresh_work_dir
 
 
-class _Seed:
-    def __init__(self, seed: int) -> None:
-        self.seed = seed
-
-    def integers(self, *_args, **_kwargs) -> int:
-        return self.seed
-
-
 def _bounds(dim: int) -> np.ndarray:
     lo = np.linspace(-2.0, 0.0, dim)
     hi = lo + 3.0
@@ -58,7 +50,7 @@ def _rust_optimizer(bounds, config, kind: str, seed: int):
 
 
 def _pair(bounds, config, kind: str, seed: int, y: np.ndarray | None = None):
-    py = create_optimizer(bounds=bounds, config=config, rng=_Seed(seed))
+    py = create_optimizer(bounds=bounds, config=config, seed=seed)
     rust = _rust_optimizer(bounds, config, kind, seed)
     x_py = py.ask(2)
     x_rust = np.asarray(rust.ask(2), dtype=float)
@@ -127,7 +119,7 @@ def test_posterior_mu_se_and_fitted_params():
     assert np.array_equal(py_idx, rust_idx)
 
     seed = 17
-    fitter = ENNStatefulFitter(k=4, rng=_Seed(seed))
+    fitter = ENNStatefulFitter(k=4, seed=seed)
     rust_fitter = _rust.ENNStatefulFitter(4, seed, True)
     fitter.tell(x, y)
     rust_fitter.tell(x, y)

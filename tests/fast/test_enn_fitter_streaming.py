@@ -21,7 +21,9 @@ def test_fit_after_every_add_uses_num_fit_candidates_one():
         np.empty((0, 1)),
         work_dir=fresh_work_dir(),
     )
-    fitter = ENNStatefulFitter(k=3, rng=np.random.default_rng(7))
+    fitter = ENNStatefulFitter(
+        k=3, seed=int(np.random.default_rng(7).integers(2**63 - 1))
+    )
     params: ENNParams | None = None
     for row_x, row_y, row_yvar in zip(x_all, y_all, yvar_all):
         row_x = row_x.reshape(1, -1)
@@ -64,7 +66,9 @@ def test_tell_with_y_bounds_tracks_warped_y_std():
     z = np.log(y / (1.0 - y))
     want = float(z.std(ddof=0))
 
-    fitter = ENNStatefulFitter(k=3, rng=np.random.default_rng(0))
+    fitter = ENNStatefulFitter(
+        k=3, seed=int(np.random.default_rng(0).integers(2**63 - 1))
+    )
     fitter.tell(x, y, y_bounds=bounds)
     got = float(fitter.y_std()[0])
     assert abs(got - want) < 1e-12, f"warped y_std: got {got} want {want}"
@@ -77,7 +81,9 @@ def test_tell_rejects_y_outside_y_bounds():
 
     from enn.enn.enn_fitter import ENNStatefulFitter
 
-    fitter = ENNStatefulFitter(k=2, rng=np.random.default_rng(0))
+    fitter = ENNStatefulFitter(
+        k=2, seed=int(np.random.default_rng(0).integers(2**63 - 1))
+    )
     x = np.array([[0.0, 0.0]], dtype=float)
     y = np.array([[1.5]], dtype=float)
     bounds = np.array([[0.0, 1.0]], dtype=float)

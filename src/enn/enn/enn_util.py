@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
@@ -16,9 +16,6 @@ from enn._rust import (
 from enn._rust import (
     standardize_y as _rust_standardize_y,
 )
-
-if TYPE_CHECKING:
-    from numpy.random import Generator
 
 
 def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
@@ -53,12 +50,13 @@ def arms_from_pareto_fronts(
     mu: np.ndarray | Any,
     se: np.ndarray | Any,
     num_arms: int,
-    rng: Generator | Any,
+    seed: int,
 ) -> np.ndarray:
     x_array = np.asarray(x_cand, dtype=np.float64)
     mu_array = np.asarray(mu, dtype=np.float64)
     se_array = np.asarray(se, dtype=np.float64)
     num_arms = int(num_arms)
-    seed = int(rng.integers(0, 2**63 - 1))
-    result = _rust_arms_from_pareto_fronts(x_array, mu_array, se_array, num_arms, seed)
+    result = _rust_arms_from_pareto_fronts(
+        x_array, mu_array, se_array, num_arms, int(seed)
+    )
     return np.asarray(result, dtype=x_array.dtype)

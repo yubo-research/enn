@@ -96,7 +96,7 @@ def test_optimizer_bounded_open_unit_interval():
     opt = create_optimizer(
         bounds=np.array([[0.0, 1.0]], dtype=float),
         config=cfg,
-        rng=rng,
+        seed=int(rng.integers(2**63 - 1)),
     )
     x = opt.ask(2)
     y = np.array([[0.2], [0.8]], dtype=float)

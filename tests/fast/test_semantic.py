@@ -258,7 +258,9 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
         acq_type=AcqType.THOMPSON,
     )
     optimizer = create_optimizer(
-        bounds=transform.bounds, config=config, rng=np.random.default_rng(9)
+        bounds=transform.bounds,
+        config=config,
+        seed=int(np.random.default_rng(9).integers(2**63 - 1)),
     )
     from dataclasses import replace
 
@@ -267,7 +269,7 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
         config=replace(
             config, surrogate=replace(config.surrogate, input_transform=None)
         ),
-        rng=np.random.default_rng(9),
+        seed=int(np.random.default_rng(9).integers(2**63 - 1)),
     )
     initial = optimizer.ask(4)
     np.testing.assert_array_equal(initial, baseline.ask(4))
@@ -279,7 +281,9 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
     np.testing.assert_allclose(optimizer._x_obs, initial)
     with pytest.raises(ValueError, match="bounds must match"):
         create_optimizer(
-            bounds=np.array([[0, 3]] * 3), config=config, rng=np.random.default_rng(9)
+            bounds=np.array([[0, 3]] * 3),
+            config=config,
+            seed=int(np.random.default_rng(9).integers(2**63 - 1)),
         )
 
 
@@ -295,12 +299,19 @@ def test_fit_helpers_accept_semantic_model(relationships):
     )
     model.add(x, y)
     fitter = ENNStatefulFitter(
-        k=3, rng=np.random.default_rng(5), input_transform=transform
+        k=3,
+        seed=int(np.random.default_rng(5).integers(2**63 - 1)),
+        input_transform=transform,
     )
     fitter.tell(x, y)
     params = fitter.ask(model, num_fit_candidates=3, num_fit_samples=5)
     scores = subsample_loglik(
-        model, x, y, paramss=[params], P=5, rng=np.random.default_rng(6)
+        model,
+        x,
+        y,
+        paramss=[params],
+        P=5,
+        seed=int(np.random.default_rng(6).integers(2**63 - 1)),
     )
     assert np.isfinite(scores).all()
 

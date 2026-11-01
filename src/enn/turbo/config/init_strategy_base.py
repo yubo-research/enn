@@ -8,7 +8,6 @@ class InitStrategy:
         self,
         *,
         bounds: Any,
-        rng: Any,
         num_init: int | None,
     ) -> Any:
         raise NotImplementedError("InitStrategy.create_runtime_strategy")

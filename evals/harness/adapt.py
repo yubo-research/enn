@@ -63,7 +63,9 @@ def fixed_model(problem, count, raw=False):
         work_dir=fresh_work_dir(),
     )
     model.add(x, y)
-    fitter = ENNStatefulFitter(k=PARAMS.k_num_neighbors, rng=np.random.default_rng(0))
+    fitter = ENNStatefulFitter(
+        k=PARAMS.k_num_neighbors, seed=int(np.random.default_rng(0).integers(2**63 - 1))
+    )
     fitter.tell(x, y)
     params = fitter.ask(model, num_fit_candidates=1)
     return model, replace(
@@ -124,7 +126,7 @@ def update_model(problem, count, method, models, seed):
         model = workflow_model(problem, WORKFLOWS[method])
         fitter = ENNStatefulFitter(
             k=PARAMS.k_num_neighbors,
-            rng=np.random.default_rng(seed),
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
             input_transform=model.input_transform,
         )
         models[method] = (model, fitter)

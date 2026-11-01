@@ -4,7 +4,6 @@ import os
 from typing import Any
 
 import numpy as np
-from numpy.random import Generator
 
 from .. import _rust
 from .config.optimizer_config import OptimizerConfig
@@ -92,7 +91,7 @@ def create_optimizer(
     *,
     bounds: np.ndarray,
     config: OptimizerConfig,
-    rng: Generator,
+    seed: int,
 ) -> Any:
     if not is_rust_supported_config(config):
         raise ValueError(f"Unsupported optimizer config: {type(config.surrogate)}")
@@ -101,7 +100,7 @@ def create_optimizer(
     transform = getattr(config.surrogate, "input_transform", None)
     if transform is not None and not np.array_equal(transform.bounds, bounds_arr):
         raise ValueError("semantic transform bounds must match optimizer bounds")
-    seed = int(rng.integers(2**63 - 1))
+    seed = int(seed)
     num_init = config.init.num_init
     overrides = _config_to_rust_overrides(config)
 

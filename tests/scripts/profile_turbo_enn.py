@@ -60,7 +60,9 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
         num_init=1,
         candidates=candidates,
     )
-    return create_optimizer(bounds=bounds, config=opt_config, rng=rng)
+    return create_optimizer(
+        bounds=bounds, config=opt_config, seed=int(rng.integers(2**63 - 1))
+    )
 
 
 def _seed_observations(

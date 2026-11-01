@@ -36,7 +36,9 @@ def fit_model(
         work_dir=tempfile.mkdtemp(prefix="enn_bounded_figure_"),
     )
     model.add(x_train, y_train)
-    fitter = ENNStatefulFitter(k=K, rng=np.random.default_rng(SEED + 1))
+    fitter = ENNStatefulFitter(
+        k=K, seed=int(np.random.default_rng(SEED + 1).integers(2**63 - 1))
+    )
     fitter.tell(x_train, y_train, y_bounds=y_bounds)
     params = fitter.ask(model, num_fit_candidates=30, num_fit_samples=20)
     return model, params

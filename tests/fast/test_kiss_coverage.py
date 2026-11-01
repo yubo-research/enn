@@ -45,7 +45,9 @@ def _optimizer():
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]])
     return create_optimizer(
-        bounds=bounds, config=turbo_zero_config(), rng=np.random.default_rng(0)
+        bounds=bounds,
+        config=turbo_zero_config(),
+        seed=int(np.random.default_rng(0).integers(2**63 - 1)),
     )
 
 

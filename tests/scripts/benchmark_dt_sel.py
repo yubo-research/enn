@@ -144,7 +144,13 @@ def _build_optimizer(
         num_init=num_arms,
         acq_type=AcqType.UCB,
     )
-    return bounds, rng, create_optimizer(bounds=bounds, config=config, rng=rng)
+    return (
+        bounds,
+        rng,
+        create_optimizer(
+            bounds=bounds, config=config, seed=int(rng.integers(2**63 - 1))
+        ),
+    )
 
 
 def _run_ask_timings(

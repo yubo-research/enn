@@ -726,7 +726,7 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     model.add(x, y)
 
     t0 = time.perf_counter()
-    fitter = ENNStatefulFitter(k=config.k, rng=fit_rng)
+    fitter = ENNStatefulFitter(k=config.k, seed=int(fit_rng.integers(2**63 - 1)))
     fitter.tell(x, y)
     fitted = fitter.ask(
         model,
@@ -1069,7 +1069,10 @@ def run_turbo_enn_stress(
     from enn.benchmarks import Ackley
 
     if objective is None:
-        ackley = Ackley(noise=TURBO_ENN_ACKLEY_NOISE, rng=np.random.default_rng(seed))
+        ackley = Ackley(
+            noise=TURBO_ENN_ACKLEY_NOISE,
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+        )
     else:
         ackley = objective
     if bounds is None:
@@ -1082,7 +1085,9 @@ def run_turbo_enn_stress(
             num_init=TURBO_ENN_NUM_INIT,
         )
         opt = create_optimizer(
-            bounds=bounds_arr, config=config, rng=np.random.default_rng(seed)
+            bounds=bounds_arr,
+            config=config,
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
         )
     else:
         opt = optimizer
@@ -1261,7 +1266,10 @@ def run_proposal_scale_stress(
     from enn.benchmarks import Ackley
 
     if objective is None:
-        ackley = Ackley(noise=TURBO_ENN_ACKLEY_NOISE, rng=np.random.default_rng(seed))
+        ackley = Ackley(
+            noise=TURBO_ENN_ACKLEY_NOISE,
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+        )
     else:
         ackley = objective
     bounds = np.array([ackley.bounds] * num_dim, dtype=float)
@@ -1277,7 +1285,9 @@ def run_proposal_scale_stress(
                 num_init=TURBO_ENN_NUM_INIT,
             )
             opt = create_optimizer(
-                bounds=bounds, config=config, rng=np.random.default_rng(seed + n)
+                bounds=bounds,
+                config=config,
+                seed=int(np.random.default_rng(seed + n).integers(2**63 - 1)),
             )
         seed_turbo_enn_to_n(
             opt,

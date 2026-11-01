@@ -108,12 +108,12 @@ class ProblemSpec:
 
         rng = np.random.default_rng(self.rng_seed)
         if self.name == "ackley_30d":
-            objective = Ackley(noise=self.noise, rng=rng)
+            objective = Ackley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
         elif self.name in {"double_ackley_30d", "ackley_pair_30d"}:
             objective = (
-                Ackley(noise=self.noise, rng=rng)
+                Ackley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
                 if self.name == "ackley_pair_30d"
-                else DoubleAckley(noise=self.noise, rng=rng)
+                else DoubleAckley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
             )
         else:
             raise ValueError(self.name)
@@ -127,7 +127,7 @@ class ProblemSpec:
 
         rng = np.random.default_rng(self.rng_seed)
         if self.name == "ackley_30d":
-            ackley = Ackley(noise=self.noise, rng=rng)
+            ackley = Ackley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
 
             def objective(x: np.ndarray) -> np.ndarray:
                 y = ackley(x)
@@ -136,11 +136,13 @@ class ProblemSpec:
             return objective
 
         if self.name == "double_ackley_30d":
-            double_ackley = DoubleAckley(noise=self.noise, rng=rng)
+            double_ackley = DoubleAckley(
+                noise=self.noise, seed=int(rng.integers(2**63 - 1))
+            )
             return double_ackley
 
         if self.name == "ackley_pair_30d":
-            ackley = Ackley(noise=self.noise, rng=rng)
+            ackley = Ackley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
             mid = self.num_dim // 2
 
             def objective(x: np.ndarray) -> np.ndarray:
@@ -333,7 +335,9 @@ def run_benchmark(
     config = build_optimizer_config(
         optimizer, problem, affine_calibrate=affine_calibrate
     )
-    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = create_optimizer(
+        bounds=bounds, config=config, seed=int(rng.integers(2**63 - 1))
+    )
 
     best_y = -np.inf
     all_y: list[np.ndarray] = []

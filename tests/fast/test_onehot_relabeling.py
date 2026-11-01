@@ -58,7 +58,9 @@ def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
     for label in range(2):
         x, q = encoder.encode(raw), encoder.encode(query)
         model = _model(x, y, tmp_path / str(label))
-        fitter = ENNStatefulFitter(k=10, rng=np.random.default_rng([404, 4]))
+        fitter = ENNStatefulFitter(
+            k=10, seed=int(np.random.default_rng([404, 4]).integers(2**63 - 1))
+        )
         fitter.tell(x, y)
         params = fitter.ask(
             model,

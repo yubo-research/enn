@@ -20,7 +20,9 @@ def run_best_y(
     create_optimizer: Callable[..., Any],
 ) -> float:
     rng = np.random.default_rng(seed)
-    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = create_optimizer(
+        bounds=bounds, config=config, seed=int(rng.integers(2**63 - 1))
+    )
     evals = 0
     best = -np.inf
     while evals < budget:

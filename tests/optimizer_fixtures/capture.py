@@ -26,7 +26,9 @@ def capture_optimizer_fixture(
 
     objective_fn = FIXTURE_OBJECTIVES[run.objective]
     rng = np.random.default_rng(seed)
-    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = create_optimizer(
+        bounds=bounds, config=config, seed=int(rng.integers(2**63 - 1))
+    )
     steps = []
     for _ in range(run.num_cycles):
         x = opt.ask(num_arms=run.num_arms)

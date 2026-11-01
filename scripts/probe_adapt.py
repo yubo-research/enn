@@ -24,7 +24,7 @@ def main():
         )
         fitter = ENNStatefulFitter(
             k=PARAMS.k_num_neighbors,
-            rng=np.random.default_rng(seed),
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
             input_transform=model.input_transform,
         )
         for count in range(100, 3001, 100):

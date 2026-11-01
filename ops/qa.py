@@ -81,7 +81,7 @@ def run_turbo_enn_ackley(
 ) -> None:
     """Run TuRBO-ENN on Ackley; print EVAL metrics each round."""
     rng = np.random.default_rng(seed)
-    objective = Ackley(noise=noise, rng=rng)
+    objective = Ackley(noise=noise, seed=int(rng.integers(2**63 - 1)))
     bounds = np.array([objective.bounds] * num_dim, dtype=float)
     config = turbo_enn_config(
         enn=build_ackley_enn_surrogate(),
@@ -92,7 +92,7 @@ def run_turbo_enn_ackley(
     optimizer = create_optimizer(
         bounds=bounds,
         config=config,
-        rng=np.random.default_rng(seed),
+        seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
     )
     y_var_scale = float(noise) ** 2
     y_best = -np.inf
@@ -279,7 +279,7 @@ def fit_and_eval_y_bounds(
             x_train[:0], y_train[:0], y_bounds=y_bounds, work_dir=work_dir
         )
         model.add(x_train, y_train)
-        fitter = ENNStatefulFitter(k=k, rng=rng)
+        fitter = ENNStatefulFitter(k=k, seed=int(rng.integers(2**63 - 1)))
         fitter.tell(x_train, y_train, y_bounds=y_bounds)
         params = fitter.ask(
             model,
@@ -510,7 +510,7 @@ def run_turbo_acq_seed(
 ) -> TurboAcqSeedResult:
     """One seed of TuRBO ask/tell on Ackley; returns y_best, time, and AUC."""
     obj_rng = np.random.default_rng(seed)
-    objective = Ackley(noise=noise, rng=obj_rng)
+    objective = Ackley(noise=noise, seed=int(obj_rng.integers(2**63 - 1)))
     bounds = np.array([objective.bounds] * num_dim, dtype=float)
     config = build_turbo_acq_config(
         acq_type=acq_type,
@@ -523,7 +523,7 @@ def run_turbo_acq_seed(
     optimizer = create_optimizer(
         bounds=bounds,
         config=config,
-        rng=np.random.default_rng(seed),
+        seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
     )
     y_var_scale = float(noise) ** 2
     y_best = -np.inf
@@ -763,7 +763,7 @@ def evaluate_y_var_fit(
     with tempfile.TemporaryDirectory(prefix="qa_y_var_") as work_dir:
         model = EpistemicNearestNeighbors(x_train[:0], y_train[:0], work_dir=work_dir)
         model.add(x_train, y_train, train_yvar)
-        fitter = ENNStatefulFitter(k=k, rng=rng)
+        fitter = ENNStatefulFitter(k=k, seed=int(rng.integers(2**63 - 1)))
         fitter.tell(x_train, y_train, train_yvar)
         params = fitter.ask(
             model,

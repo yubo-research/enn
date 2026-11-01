@@ -63,7 +63,7 @@ def build(x, y, shape="none", work_dir=None, **kwargs):
 def held_fitter(model, seed=0):
     return ENNStatefulFitter(
         k=4,
-        rng=np.random.default_rng(seed),
+        seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
         input_transform=model.input_transform,
     )
 
@@ -170,7 +170,12 @@ def test_batch_posterior_applies_each_entrys_blend():
         np.testing.assert_allclose(batch.se[entry], one.se, atol=1e-12)
     assert not np.allclose(batch.mu[0], batch.mu[1])
     low_score, high_score = subsample_loglik(
-        model, x, y, paramss=[low, high], P=20, rng=np.random.default_rng(0)
+        model,
+        x,
+        y,
+        paramss=[low, high],
+        P=20,
+        seed=int(np.random.default_rng(0).integers(2**63 - 1)),
     )
     assert low_score != high_score
 

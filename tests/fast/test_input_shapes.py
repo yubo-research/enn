@@ -79,7 +79,7 @@ def test_optimizer_tell_rejects_one_dimensional_y_and_returns_matrix() -> None:
     opt = create_optimizer(
         bounds=bounds,
         config=turbo_zero_config(num_init=2),
-        rng=np.random.default_rng(0),
+        seed=0,
     )
     x = opt.ask(2)
     with pytest.raises(ValueError, match="train_y must be 2-dimensional"):
@@ -98,7 +98,7 @@ def test_subsample_loglik_rejects_one_dimensional_y() -> None:
             np.zeros((4, 3)),
             np.zeros(4),
             paramss=[PARAMS],
-            rng=np.random.default_rng(0),
+            seed=0,
         )
 
 
@@ -112,4 +112,20 @@ def test_params_are_keyword_only() -> None:
     with pytest.raises(TypeError):
         model.posterior_function_draw(q, PARAMS, function_seeds=[1])
     with pytest.raises(TypeError):
-        fit_affine_calibrator(model, PARAMS, num_samples=4, rng=None)
+        fit_affine_calibrator(model, PARAMS, num_samples=4, seed=0)
+
+
+def test_observation_arguments_use_train_names() -> None:
+    model = _model()
+    x, y = np.zeros((1, 3)), np.zeros((1, 1))
+    model.add(train_x=x, train_y=y)
+    assert len(model) == 21
+    opt = create_optimizer(
+        bounds=np.array([[0.0, 1.0]]),
+        config=turbo_zero_config(num_init=1),
+        seed=0,
+    )
+    arm = opt.ask(1)
+    opt.tell(train_x=arm, train_y=y)
+    with pytest.raises(ValueError, match="train_yvar must be omitted on every tell"):
+        opt.tell(train_x=arm, train_y=y, train_yvar=np.ones((1, 1)))

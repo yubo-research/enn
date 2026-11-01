@@ -27,7 +27,9 @@ def test_semantic_auto_optimizer_observations_and_predictions(tmp_path, only):
         num_init=4,
     )
     optimizer = create_optimizer(
-        bounds=transform.bounds, config=config, rng=np.random.default_rng(12)
+        bounds=transform.bounds,
+        config=config,
+        seed=int(np.random.default_rng(12).integers(2**63 - 1)),
     )
     x = np.random.default_rng(13).uniform(0, 2, (120, 3))
     optimizer.tell(x, np.sin(x[:, :1]))
