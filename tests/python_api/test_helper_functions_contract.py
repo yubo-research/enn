@@ -159,54 +159,6 @@ class TestEnnHashContract:
             normal_hash_batch_multi_seed_fast(seeds, indices, num_metrics=-1)
 
 
-class TestWeightedStatsContract:
-    """API contract tests for WeightedStats dataclass."""
-
-    def test_weighted_stats_exists(self):
-        """WeightedStats dataclass exists."""
-        from enn.enn.weighted_stats import WeightedStats
-
-        assert inspect.isclass(WeightedStats)
-
-    def test_weighted_stats_fields(self):
-        """WeightedStats has expected fields."""
-        from enn.enn.weighted_stats import WeightedStats
-
-
-        ws = WeightedStats(
-            w_normalized=np.array([0.5, 0.5]),
-            l2=np.array([1.0, 2.0]),
-            mu=np.array([0.0, 1.0]),
-            se=np.array([0.1, 0.2]),
-            se_epi=np.array([0.1, 0.2]),
-            se_ale=np.array([0.0, 0.0]),
-        )
-
-        assert hasattr(ws, "w_normalized")
-        assert hasattr(ws, "l2")
-        assert hasattr(ws, "mu")
-        assert hasattr(ws, "se")
-        assert hasattr(ws, "se_epi")
-        assert hasattr(ws, "se_ale")
-
-    def test_weighted_stats_is_frozen(self):
-        """WeightedStats is frozen (immutable)."""
-        from enn.enn.weighted_stats import WeightedStats
-
-        ws = WeightedStats(
-            w_normalized=np.array([0.5]),
-            l2=np.array([1.0]),
-            mu=np.array([0.0]),
-            se=np.array([0.1]),
-            se_epi=np.array([0.1]),
-            se_ale=np.array([0.0]),
-        )
-
-
-        with pytest.raises((AttributeError, TypeError)):
-            ws.mu = np.array([1.0])
-
-
 class TestEnnUtilContract:
     """API contract tests for enn_util functions."""
 

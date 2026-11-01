@@ -37,8 +37,8 @@ def load_reference(directory):
 
 def measure(kind, case, seed, counts, geometry_weight):
     from enn import AdaptiveSemanticENN
-    from enn.evals.adapt import score
-    from enn.evals.adapt_problem import make_problem
+    from evals.harness.adapt import score
+    from evals.harness.adapt_problem import make_problem
 
     problem = make_problem(kind, case, seed, count=max(counts) + 128)
     model = AdaptiveSemanticENN(

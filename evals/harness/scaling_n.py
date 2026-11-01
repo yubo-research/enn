@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from enn.enn.enn_fitter import ENNStatefulFitter
-from enn.evals.metric_12d import (
+from evals.harness.metric_12d import (
     BATCH,
     NUM_FIT_CANDIDATES,
     NUM_FIT_SAMPLES,
@@ -20,8 +20,8 @@ from enn.evals.metric_12d import (
     build_model,
     make_data,
 )
-from enn.evals.metrics import format_directed, format_plain, gaussian_loglik, rmse
-from enn.evals.scaling_fit import ALPHA, RegFit, best_term, single_term_fits
+from evals.harness.metrics import format_directed, format_plain, gaussian_loglik, rmse
+from evals.harness.scaling_fit import ALPHA, RegFit, best_term, single_term_fits
 from ops.stress import DRAW_FLAGS, MeanSE, format_mean_se, mean_se
 
 MODEL = "bpann_disk_auto"

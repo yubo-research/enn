@@ -1,5 +1,6 @@
-
+use crate::py_args::{count_at_least, optional_finite_number};
 use numpy::{IntoPyArray, PyArray3, PyReadonlyArray2};
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 #[pyfunction]
@@ -36,11 +37,12 @@ impl PyAdaptiveSemanticENN {
         bounds: Option<PyReadonlyArray2<f64>>,
         input: Option<PyReadonlyArray2<f64>>,
         output: Option<PyReadonlyArray2<f64>>,
-        capacity: usize,
+        capacity: &Bound<'_, PyAny>,
         seed: u64,
         linear_mean: bool,
         adaptation: String,
     ) -> PyResult<Self> {
+        let capacity = count_at_least(capacity, 12, "capacity must be an integer at least 12")?;
         let metadata = ennbo::adaptive_basis::Metadata {
             bounds: bounds.map(|v| v.as_array().to_owned()),
             input: input.map(|v| v.as_array().to_owned()),
@@ -56,8 +58,12 @@ impl PyAdaptiveSemanticENN {
         py: Python<'_>,
         x: PyReadonlyArray2<f64>,
         y: PyReadonlyArray2<f64>,
-        weight: Option<f64>,
+        weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<()> {
+        let weight = optional_finite_number(
+            weight,
+            "geometry_weight must be a positive finite number or None",
+        )?;
         let (x, y) = (x.as_array().to_owned(), y.as_array().to_owned());
         py.allow_threads(|| self.inner.add(x, y, weight))
             .map_err(value_error)
@@ -67,6 +73,11 @@ impl PyAdaptiveSemanticENN {
         py: Python<'py>,
         x: PyReadonlyArray2<f64>,
     ) -> PyResult<MarginalArrays<'py>> {
+        if self.inner.choice().is_none() {
+            return Err(PyRuntimeError::new_err(
+                "add must be called before posterior",
+            ));
+        }
         let x = x.as_array().to_owned();
         py.allow_threads(|| self.inner.posterior(&x))
             .map(|(mu, se)| (mu.into_pyarray_bound(py), se.into_pyarray_bound(py)))
@@ -83,6 +94,10 @@ impl PyAdaptiveSemanticENN {
                 c.alpha,
             )
         })
+    }
+    #[getter]
+    fn capacity(&self) -> usize {
+        self.inner.capacity()
     }
     #[getter]
     fn num_seen(&self) -> usize {

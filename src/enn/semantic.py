@@ -53,12 +53,14 @@ class SemanticInputTransform:
         relative_weight=0.25,
         encoder=None,
     ):
-        from enn._rust import semantic_input_output_projection
-        from enn.semantic_relationships import relationship_texts
+        from enn._rust import (
+            semantic_input_output_projection,
+            semantic_relationship_texts,
+        )
 
         result = cls.__new__(cls)
         result._set_definition(names, bounds, model, relative_weight, variance_cutoff)
-        texts, rows = relationship_texts(
+        texts, rows = semantic_relationship_texts(
             result.names, output_names, descriptions, output_descriptions
         )
         embeddings = result._encode(texts, encoder)
@@ -83,33 +85,19 @@ class SemanticInputTransform:
     def _encode(self, texts, encoder):
         from enn._rust import semantic_encode
 
-        embeddings = np.asarray(
+        return np.asarray(
             semantic_encode(texts, self.model)
             if encoder is None
             else encoder.encode(texts),
             dtype=float,
         )
-        if embeddings.ndim != 2:
-            raise ValueError("encoder must return a two-dimensional embedding matrix")
-        return embeddings
 
     def _validate_definition(self):
-        if (
-            not self.names
-            or any(not isinstance(n, str) or not n.strip() for n in self.names)
-            or len(set(self.names)) != len(self.names)
-        ):
-            raise ValueError("variable names must be nonempty and unique")
-        if (
-            self.bounds.shape != (len(self.names), 2)
-            or not np.isfinite(self.bounds).all()
-            or np.any(self.bounds[:, 1] <= self.bounds[:, 0])
-        ):
-            raise ValueError("bounds must be finite increasing pairs, one per variable")
-        if not np.isfinite(self.variance_cutoff) or not 0 < self.variance_cutoff <= 1:
-            raise ValueError("variance_cutoff must be finite and in (0, 1]")
-        if not np.isfinite(self.relative_weight) or self.relative_weight < 0:
-            raise ValueError("relative_weight must be finite and nonnegative")
+        from enn._rust import validate_semantic_definition
+
+        validate_semantic_definition(
+            self.names, self.bounds, self.variance_cutoff, self.relative_weight
+        )
 
     def _freeze(self):
         self.bounds.setflags(write=False)
@@ -122,23 +110,16 @@ class SemanticInputTransform:
         return semantic_weighted(self.projection, self.relative_weight)
 
     def transform(self, x, *, names=None, semantic_only=False):
-        values = np.asarray(x, dtype=float)
-        if (
-            values.ndim not in (1, 2)
-            or values.shape[-1] != len(self.names)
-            or not np.isfinite(values).all()
-        ):
-            raise ValueError("inputs must be finite rows with one column per variable")
-        if names is not None:
-            if len(names) != len(self.names) or set(names) != set(self.names):
-                raise ValueError("input names must match the problem definition")
-            values = values[..., [list(names).index(n) for n in self.names]]
         from enn._rust import semantic_transform
 
-        result = semantic_transform(
-            np.atleast_2d(values), self.bounds, self.weighted_projection, semantic_only
+        return semantic_transform(
+            np.asarray(x, dtype=float),
+            self.names,
+            names,
+            self.bounds,
+            self.weighted_projection,
+            semantic_only,
         )
-        return result[0] if values.ndim == 1 else result
 
     def save(self, path):
         metadata = json.dumps(
@@ -175,12 +156,9 @@ class SemanticInputTransform:
             )
             object.__setattr__(result, "bounds", data["bounds"].copy())
             object.__setattr__(result, "projection", data["projection"].copy())
-        if (
-            result.projection.ndim != 2
-            or result.projection.shape[0] != len(result.names)
-            or not np.isfinite(result.projection).all()
-        ):
-            raise ValueError("invalid cached projection")
+        from enn._rust import validate_semantic_cache
+
+        validate_semantic_cache(result.projection, len(result.names))
         result._validate_definition()
         result._freeze()
         return result

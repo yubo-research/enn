@@ -28,19 +28,10 @@ def standardize_y(y: np.ndarray | list[float] | Any) -> tuple[float, float]:
 
 
 def calculate_sobol_indices(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    if x.ndim != 2:
-        raise ValueError(f"x must be 2D, got shape {x.shape}")
-    n, d = x.shape
-    if d <= 0:
-        raise ValueError(f"x must have at least 1 dimension, got {d}")
-    if y.ndim == 2 and y.shape[1] == 1:
-        y = y.reshape(-1)
-    if y.ndim != 1 or y.shape[0] != n:
-        raise ValueError(f"y shape {y.shape} incompatible with x rows {n}")
-
-    x_f64 = np.asarray(x, dtype=np.float64)
-    y_f64 = np.asarray(y, dtype=np.float64)
-    result = _rust_calculate_sobol_indices(x_f64, y_f64)
+    x = np.asarray(x)
+    result = _rust_calculate_sobol_indices(
+        np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+    )
     result_dtype = x.dtype if np.issubdtype(x.dtype, np.floating) else np.float64
     return np.asarray(result, dtype=result_dtype)
 

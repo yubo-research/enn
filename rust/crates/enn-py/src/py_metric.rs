@@ -217,7 +217,9 @@ pub fn loo_loglik(
 }
 
 #[pyfunction]
-pub fn validate_tied_dims(tied: Vec<Vec<i64>>, num_dim: usize) -> PyResult<()> {
+#[pyo3(signature = (tied, num_dim=None))]
+pub fn validate_tied_dims(tied: Vec<Vec<i64>>, num_dim: Option<usize>) -> PyResult<()> {
+    let num_dim = num_dim.unwrap_or_else(|| ennbo::metric_weights::smallest_tied_dim_count(&tied));
     ennbo::metric_weights::validate_tied_dims_signed(&tied, num_dim)
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }

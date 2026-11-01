@@ -106,18 +106,18 @@ pub fn affine_map_mu<'py>(
     py: Python<'py>,
     a: PyReadonlyArray1<f64>,
     b: PyReadonlyArray1<f64>,
-    mu: PyReadonlyArray2<f64>,
+    mu: PyReadonlyArrayDyn<f64>,
     y_bounds: Option<PyReadonlyArray2<f64>>,
-    se: Option<PyReadonlyArray2<f64>>,
-) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    se: Option<PyReadonlyArrayDyn<f64>>,
+) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
     let bounds = owned_bounds(&y_bounds);
-    let se_owned = owned_bounds(&se);
-    let out = ennbo::calibration::map_mu_with(
+    let se_view = se.as_ref().map(|v| v.as_array());
+    let out = ennbo::calibration_shapes::map_mu_any_rank(
         &vec_of(a),
         &vec_of(b),
-        mu.as_array().view(),
+        &mu.as_array(),
         bounds.as_ref(),
-        se_owned.as_ref(),
+        se_view.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
     Ok(out.into_pyarray_bound(py))
@@ -131,21 +131,24 @@ pub fn affine_map_draws<'py>(
     a: PyReadonlyArray1<f64>,
     b: PyReadonlyArray1<f64>,
     c: PyReadonlyArray1<f64>,
-    draws: PyReadonlyArray2<f64>,
-    mu: PyReadonlyArray2<f64>,
+    draws: PyReadonlyArrayDyn<f64>,
+    mu: PyReadonlyArrayDyn<f64>,
     y_bounds: Option<PyReadonlyArray2<f64>>,
-    se: Option<PyReadonlyArray2<f64>>,
-) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    se: Option<PyReadonlyArrayDyn<f64>>,
+) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
     let bounds = owned_bounds(&y_bounds);
-    let se_owned = owned_bounds(&se);
-    let out = ennbo::calibration::map_draws_with(
-        &vec_of(a),
-        &vec_of(b),
-        &vec_of(c),
-        draws.as_array().view(),
-        mu.as_array().view(),
+    let se_view = se.as_ref().map(|v| v.as_array());
+    let (a, b, c) = (vec_of(a), vec_of(b), vec_of(c));
+    let out = ennbo::calibration_shapes::map_draws_any_rank(
+        &ennbo::calibration_shapes::AffineCoefficients {
+            a: &a,
+            b: &b,
+            c: &c,
+        },
+        &draws.as_array(),
+        &mu.as_array(),
         bounds.as_ref(),
-        se_owned.as_ref(),
+        se_view.as_ref(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
     Ok(out.into_pyarray_bound(py))

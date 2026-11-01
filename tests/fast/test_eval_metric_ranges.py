@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from enn.evals import metric_12d
-from enn.evals import metric_ranges as mod
+from evals.harness import metric_12d
+from evals.harness import metric_ranges as mod
 
 TINY = metric_12d.Metric12dConfig(
     n_grid=(10, 30),

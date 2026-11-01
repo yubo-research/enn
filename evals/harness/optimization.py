@@ -3,9 +3,9 @@ import time
 import numpy as np
 
 from enn import create_optimizer, turbo_enn_config
-from enn.evals.metrics import format_smaller
 from enn.turbo.config import AcqType, ENNFitConfig, ENNSurrogateConfig
 from enn.turbo.config.candidate_gen_config import CandidateGenConfig
+from evals.harness.metrics import format_smaller
 from ops.stress import format_mean_se, mean_se
 
 NUM_DIM = 5

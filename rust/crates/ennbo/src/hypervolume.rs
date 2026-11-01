@@ -1,4 +1,4 @@
-use ndarray::{ArrayView1, ArrayView2};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewD, Ix1, Ix2};
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -69,6 +69,24 @@ pub fn hypervolume_2d_max(
     Ok(hv)
 }
 
+pub fn hypervolume_2d_max_any_rank(
+    y: &ArrayViewD<f64>,
+    ref_point: &ArrayViewD<f64>,
+) -> Result<f64, HypervolumeError> {
+    if y.is_empty() {
+        return Ok(0.0);
+    }
+    let matrix = y
+        .view()
+        .into_dimensionality::<Ix2>()
+        .map_err(|_| HypervolumeError::InvalidDimension(y.shape().to_vec()))?;
+    let reference = ref_point
+        .view()
+        .into_dimensionality::<Ix1>()
+        .map_err(|_| HypervolumeError::InvalidRefPoint(ref_point.ndim()))?;
+    hypervolume_2d_max(&matrix, &reference)
+}
+
 pub fn hypervolume_2d_max_1d(
     y: &ArrayView1<f64>,
     ref_point: &ArrayView1<f64>,
@@ -85,6 +103,24 @@ mod tests {
     fn hypervolume_at_origin(y: &ArrayView2<f64>) -> f64 {
         let ref_point = array![0.0, 0.0];
         hypervolume_2d_max(y, &ref_point.view()).unwrap()
+    }
+
+    #[test]
+    fn any_rank_treats_empty_as_zero_and_rejects_vectors() {
+        let empty = Array2::<f64>::zeros((0, 2)).into_dyn();
+        let reference = array![0.0, 0.0].into_dyn();
+        assert_eq!(
+            hypervolume_2d_max_any_rank(&empty.view(), &reference.view()),
+            Ok(0.0)
+        );
+        let vector = array![1.0, 1.0].into_dyn();
+        assert!(hypervolume_2d_max_any_rank(&vector.view(), &reference.view()).is_err());
+        let matrix = array![[1.0, 2.0]].into_dyn();
+        assert_eq!(
+            hypervolume_2d_max_any_rank(&matrix.view(), &reference.view()),
+            Ok(2.0)
+        );
+        assert!(hypervolume_2d_max_any_rank(&matrix.view(), &matrix.view()).is_err());
     }
 
     #[test]

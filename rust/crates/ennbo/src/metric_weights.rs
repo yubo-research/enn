@@ -51,6 +51,11 @@ pub fn validate_tied_dims_signed(tied: &[Vec<i64>], num_dim: usize) -> Result<()
     validate_tied_dims(&converted, num_dim)
 }
 
+pub fn smallest_tied_dim_count(tied: &[Vec<i64>]) -> usize {
+    let largest = tied.iter().flatten().copied().max().unwrap_or(0);
+    usize::try_from(largest).map_or(1, |j| j.saturating_add(1))
+}
+
 fn column(y: &[f64], n: usize, m: usize, j: usize) -> Vec<f64> {
     (0..n).map(|i| y[i * m + j]).collect()
 }
@@ -203,7 +208,18 @@ pub fn resolve_tied_groups(
 
 #[cfg(test)]
 mod tied_feature_tests {
-    use super::resolve_tied_groups;
+    use super::{resolve_tied_groups, smallest_tied_dim_count};
+    #[test]
+    fn smallest_tied_dim_count_covers_largest_entry() {
+        assert_eq!(smallest_tied_dim_count(&[vec![2, 7], vec![0]]), 8);
+        assert_eq!(smallest_tied_dim_count(&[vec![-1]]), 1);
+        assert_eq!(smallest_tied_dim_count(&[vec![]]), 1);
+        assert_eq!(
+            smallest_tied_dim_count(&[vec![i64::MAX]]),
+            i64::MAX as usize + 1
+        );
+    }
+
     #[test]
     fn projected_ties_do_not_inherit_removed_categorical_columns() {
         let carried = vec![vec![2, 3, 4]];

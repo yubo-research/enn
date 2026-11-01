@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from enn._rust import validate_fit_settings
+
 
 @dataclass(frozen=True)
 class ENNFitConfig:
@@ -11,25 +13,12 @@ class ENNFitConfig:
     affine_calibrate: bool = False
 
     def __post_init__(self) -> None:
-        if self.num_fit_samples is not None and self.num_fit_samples <= 0:
-            raise ValueError(f"num_fit_samples must be > 0, got {self.num_fit_samples}")
-        if self.num_fit_candidates is not None and self.num_fit_candidates <= 0:
-            raise ValueError(
-                f"num_fit_candidates must be > 0, got {self.num_fit_candidates}"
-            )
-        if self.num_fit_samples is None:
-            search_only = {
-                "num_fit_candidates": self.num_fit_candidates is not None,
-                "infer_aleatoric_variance_scale": self.infer_aleatoric_variance_scale
-                is not None,
-                "affine_calibrate": self.affine_calibrate,
-            }
-            set_names = [name for name, is_set in search_only.items() if is_set]
-            if set_names:
-                raise ValueError(
-                    f"{', '.join(set_names)} require num_fit_samples; "
-                    "num_fit_samples=None freezes the scales"
-                )
+        validate_fit_settings(
+            self.num_fit_samples,
+            self.num_fit_candidates,
+            self.infer_aleatoric_variance_scale,
+            self.affine_calibrate,
+        )
 
     @property
     def infers_aleatoric_variance(self) -> bool:

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from enn.evals import optimization as mod
+from evals.harness import optimization as mod
 
 
 @pytest.mark.parametrize("problem", ("sphere", "ackley"))

@@ -10,16 +10,16 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
-from enn.evals.metric_12d_results import (
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
+from evals.harness.metric_12d_results import (
     CheckpointResult,
     CheckpointSummary,
     format_eval_line,
     format_seed_line,
     summarize,
 )
-from enn.evals.metrics import gaussian_loglik, rmse
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning
+from evals.harness.metrics import gaussian_loglik, rmse
 from ops.stress import DRAW_FLAGS
 
 NUM_DIM = 12

@@ -30,6 +30,44 @@ fn reject_length(message: String) -> crate::error::ENNError {
     crate::error::ENNError::InvalidParameter(message)
 }
 
+pub fn validate_length_overrides(
+    length_init: Option<f64>,
+    length_min: Option<f64>,
+    length_max: Option<f64>,
+) -> Result<(), crate::error::ENNError> {
+    for (name, value) in [
+        ("length_init", length_init),
+        ("length_min", length_min),
+        ("length_max", length_max),
+    ] {
+        if let Some(value) = value.filter(|v| *v <= 0.0) {
+            return Err(reject_length(format!("{name} must be > 0, got {value}")));
+        }
+    }
+    if let (Some(low), Some(high)) = (length_min, length_max) {
+        if low >= high {
+            return Err(reject_length(format!(
+                "length_min must be < length_max, got {low} >= {high}"
+            )));
+        }
+    }
+    if let (Some(init), Some(high)) = (length_init, length_max) {
+        if init > high {
+            return Err(reject_length(format!(
+                "length_init must be <= length_max, got {init} > {high}"
+            )));
+        }
+    }
+    if let (Some(low), Some(init)) = (length_min, length_init) {
+        if low > init {
+            return Err(reject_length(format!(
+                "length_min must be <= length_init, got {low} > {init}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl TRLengthConfig {
     pub fn new(length_init: f64, length_min: f64, length_max: f64) -> Self {
         Self {
@@ -40,36 +78,11 @@ impl TRLengthConfig {
     }
 
     fn check(self) -> Result<Self, crate::error::ENNError> {
-        if self.length_init <= 0.0 {
-            return Err(reject_length(format!(
-                "length_init must be > 0, got {}",
-                self.length_init
-            )));
-        }
-        if self.length_min <= 0.0 {
-            return Err(reject_length(format!(
-                "length_min must be > 0, got {}",
-                self.length_min
-            )));
-        }
-        if self.length_max <= 0.0 {
-            return Err(reject_length(format!(
-                "length_max must be > 0, got {}",
-                self.length_max
-            )));
-        }
-        if self.length_min >= self.length_max {
-            return Err(reject_length(format!(
-                "length_min must be < length_max, got {} >= {}",
-                self.length_min, self.length_max
-            )));
-        }
-        if self.length_init > self.length_max || self.length_min > self.length_init {
-            return Err(reject_length(format!(
-                "lengths out of order: min {} init {} max {}",
-                self.length_min, self.length_init, self.length_max
-            )));
-        }
+        validate_length_overrides(
+            Some(self.length_init),
+            Some(self.length_min),
+            Some(self.length_max),
+        )?;
         Ok(self)
     }
 
@@ -425,6 +438,32 @@ impl NoTrustRegion {
     }
 
     pub fn restart(&mut self) {}
+}
+
+#[cfg(test)]
+mod length_override_tests {
+    use super::validate_length_overrides;
+
+    fn message(init: Option<f64>, min: Option<f64>, max: Option<f64>) -> String {
+        validate_length_overrides(init, min, max)
+            .unwrap_err()
+            .to_string()
+    }
+
+    #[test]
+    fn unset_lengths_skip_pairwise_checks() {
+        assert!(validate_length_overrides(None, None, None).is_ok());
+        assert!(validate_length_overrides(Some(9.0), Some(5.0), None).is_ok());
+        assert!(validate_length_overrides(Some(0.5), Some(0.5), Some(1.0)).is_ok());
+    }
+
+    #[test]
+    fn each_violation_names_the_offending_lengths() {
+        assert!(message(Some(0.0), None, None).contains("length_init must be > 0"));
+        assert!(message(None, Some(1.0), Some(1.0)).contains("length_min must be < length_max"));
+        assert!(message(Some(2.0), None, Some(1.0)).contains("length_init must be <= length_max"));
+        assert!(message(Some(0.1), Some(0.2), None).contains("length_min must be <= length_init"));
+    }
 }
 
 #[cfg(test)]

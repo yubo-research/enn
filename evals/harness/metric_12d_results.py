@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from enn.evals.metrics import format_larger, format_plain, format_smaller
+from evals.harness.metrics import format_larger, format_plain, format_smaller
 from ops.stress import MeanSE, format_mean_se, mean_se
 
 

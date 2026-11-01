@@ -18,10 +18,12 @@ class ENNMetricLearning(Enum):
 
 
 def validate_tied_dims(
-    tied_dims: Sequence[Sequence[int]] | None, num_dim: int
+    tied_dims: Sequence[Sequence[int]] | None, num_dim: int | None = None
 ) -> tuple[tuple[int, ...], ...]:
     if tied_dims is None:
         return ()
     groups = tuple(tuple(operator.index(j) for j in g) for g in tied_dims)
-    _validate_tied_dims([list(g) for g in groups], int(num_dim))
+    _validate_tied_dims(
+        [list(g) for g in groups], None if num_dim is None else int(num_dim)
+    )
     return groups

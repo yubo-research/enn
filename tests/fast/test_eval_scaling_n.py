@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from enn.evals import scaling_n as mod
-from enn.evals.scaling_fit import TERMS, RegFit, TermTest, best_term
+from evals.harness import scaling_n as mod
+from evals.harness.scaling_fit import TERMS, RegFit, TermTest, best_term
 from evals.long import eval_scaling
 from ops.stress import MeanSE
 

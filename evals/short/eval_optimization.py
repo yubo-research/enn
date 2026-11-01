@@ -1,4 +1,4 @@
-from enn.evals.optimization import run_optimization
+from evals.harness.optimization import run_optimization
 
 
 def evaluate() -> None:

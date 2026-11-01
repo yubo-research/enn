@@ -28,10 +28,37 @@ pub fn projection(
     crate::semantic_projection::centered_projection(result, cutoff)
 }
 
+pub fn texts(
+    names: &[String],
+    output_names: &[String],
+    descriptions: Option<&[Option<String>]>,
+    output_descriptions: Option<&[Option<String>]>,
+) -> Result<(Vec<String>, Vec<usize>), ENNError> {
+    crate::semantic_definition::validate_relationship_outputs(output_names)?;
+    let (inputs, input_rows) = crate::semantic_text::prepare(names, descriptions)?;
+    let (outputs, output_rows) = crate::semantic_text::prepare(output_names, output_descriptions)?;
+    let combined: Vec<String> = input_rows
+        .iter()
+        .map(|row| inputs[*row].clone())
+        .chain(output_rows.iter().map(|row| outputs[*row].clone()))
+        .collect();
+    crate::semantic_text::prepare(&combined, None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ndarray::array;
+
+    #[test]
+    fn texts_share_rows_across_inputs_and_outputs() {
+        let names = ["a".to_owned(), "b".to_owned()];
+        let outputs = ["a".to_owned(), "c".to_owned()];
+        let (texts, rows) = texts(&names, &outputs, None, None).unwrap();
+        assert_eq!(texts, vec!["a", "b", "c"]);
+        assert_eq!(rows, vec![0, 1, 0, 2]);
+        assert!(super::texts(&names, &[], None, None).is_err());
+    }
 
     #[test]
     fn centered_cosines_preserve_signed_geometry() {

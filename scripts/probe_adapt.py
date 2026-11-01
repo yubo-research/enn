@@ -3,8 +3,8 @@ import time
 from pathlib import Path
 
 from enn import AdaptiveSemanticENN
-from enn.evals.adapt import score
-from enn.evals.adapt_problem import make_problem
+from evals.harness.adapt import score
+from evals.harness.adapt_problem import make_problem
 
 
 def main():

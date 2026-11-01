@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from enn.evals import scaling_fit as mod
+from evals.harness import scaling_fit as mod
 
 NS = [100.0, 300.0, 1000.0, 3000.0, 10000.0, 30000.0, 100000.0] * 3
 

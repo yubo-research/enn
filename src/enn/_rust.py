@@ -121,3 +121,17 @@ semantic_text_projection = _ext.util.semantic_text_projection
 semantic_input_output_projection = _ext.util.semantic_input_output_projection
 
 AdaptiveSemanticENN = _ext.util.AdaptiveSemanticENN
+
+SemanticMultiOutputENN = _ext.util.SemanticMultiOutputENN
+semantic_relationship_texts = _ext.util.semantic_relationship_texts
+semantic_output_definition = _ext.util.semantic_output_definition
+semantic_output_embeddings = _ext.util.semantic_output_embeddings
+validate_semantic_definition = _ext.util.validate_semantic_definition
+validate_semantic_cache = _ext.util.validate_semantic_cache
+validate_semantic_outputs = _ext.util.validate_semantic_outputs
+
+validate_candidate_counts = _ext.optimizer.validate_candidate_counts
+validate_fit_settings = _ext.optimizer.validate_fit_settings
+validate_num_init = _ext.optimizer.validate_num_init
+validate_multi_objective = _ext.optimizer.validate_multi_objective
+validate_length_overrides = _ext.optimizer.validate_length_overrides

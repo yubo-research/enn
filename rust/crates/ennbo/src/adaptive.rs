@@ -55,6 +55,9 @@ impl AdaptiveSemanticENN {
             num_refits: 0,
         })
     }
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
     pub fn num_retained(&self) -> usize {
         self.sample.as_ref().map_or(0, |s| s.0.nrows())
     }

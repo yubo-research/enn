@@ -26,10 +26,35 @@ pub fn pymodule_hash(m: &Bound<'_, PyModule>) -> PyResult<()> {
 pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_semantic::PyInputHistory>()?;
     m.add_class::<crate::py_adaptive::PyAdaptiveSemanticENN>()?;
+    m.add_class::<crate::py_multi_output::PySemanticMultiOutputENN>()?;
     m.add_class::<crate::py_cat_encoder::PyCatEncoder>()?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_log_width, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_column_plan, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_texts, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_semantic::semantic_relationship_texts,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_semantic::validate_semantic_definition,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_semantic::validate_semantic_cache,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_semantic::validate_semantic_outputs,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_semantic::semantic_output_definition,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_semantic::semantic_output_embeddings,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_encode, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_text_projection, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_input_output_projection, m)?)?;
@@ -113,11 +138,46 @@ pub fn pymodule_fit(m: &Bound<'_, PyModule>) -> PyResult<()> {
 pub fn pymodule_optimizer(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_optimizer::PyOptimizer>()?;
     m.add_class::<crate::py_optimizer::PyTelemetry>()?;
-    m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_enn_py, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_zero_py, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_lhd_py, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_optimizer::require_num_fit_samples_py, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_optimizer::validate_optimizer_rules_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_optimizer::create_optimizer_enn_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_optimizer::create_optimizer_zero_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_optimizer::create_optimizer_lhd_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_optimizer::require_num_fit_samples_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_optimizer::validate_optimizer_rules_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_config_rules::validate_candidate_counts_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_config_rules::validate_fit_settings_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_config_rules::validate_num_init_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_config_rules::validate_multi_objective_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_config_rules::validate_length_overrides_py,
+        m
+    )?)?;
     Ok(())
 }
 

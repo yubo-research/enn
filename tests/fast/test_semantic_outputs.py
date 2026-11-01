@@ -112,7 +112,7 @@ def test_shared_limit_and_opposing_outputs():
     projected = independent.posterior(x[:4], params=params).mu @ projection().loadings
     np.testing.assert_allclose(latent.mu, projected, atol=1e-12)
     shared_se = latent.se @ np.abs(projection().loadings.T)
-    posterior = model._fitted.predict(x[:4], 1.0)
+    posterior = model._native.uncalibrated_posterior(x[:4])
     np.testing.assert_allclose(posterior[1], shared_se * scale, rtol=1e-9)
     np.testing.assert_allclose(model.posterior(x[:4]).mu, expected, atol=1e-12)
     # Opposite standardized outputs cancel in the common semantic direction.
@@ -133,6 +133,59 @@ def test_fold_refit_and_gaussian_calibration():
         np.mean((y - model.oof_mean_) ** 2 / model.oof_variance_, axis=0), 1
     )
     assert np.isfinite(model.posterior(x[:4]).se).all()
+
+
+def test_fold_ids_reproduce_numpy_default_rng_assignment():
+    x, y = data()
+    model = SemanticMultiOutputENN(projection(), folds=3, seed=4).fit(x, y)
+    permutation = np.random.default_rng(4).permutation(len(x))
+    expected = np.empty(len(x), dtype=int)
+    expected[permutation] = np.arange(len(x)) % 3
+    np.testing.assert_array_equal(model.fold_ids_, expected)
+
+
+def test_out_of_fold_attributes_appear_only_after_fit():
+    model = SemanticMultiOutputENN(projection(), folds=3)
+    for name in ("oof_mean_", "oof_variance_", "fold_ids_"):
+        assert not hasattr(model, name)
+
+
+def test_failed_refit_keeps_the_previous_fit():
+    x, y = data()
+    model = SemanticMultiOutputENN(projection(), folds=3).fit(x, y)
+    before = model.posterior(x[:4]).mu
+    with pytest.raises(ValueError):
+        model.fit(x, np.full_like(y, np.nan))
+    np.testing.assert_array_equal(model.posterior(x[:4]).mu, before)
+
+
+@pytest.mark.parametrize("folds", [True, np.True_, 2.5, "3"])
+def test_folds_must_be_a_true_integer(folds):
+    with pytest.raises(ValueError, match="folds"):
+        SemanticMultiOutputENN(projection(), folds=folds)
+
+
+def test_numpy_integer_folds_are_accepted():
+    x, y = data()
+    model = SemanticMultiOutputENN(projection(), folds=np.int64(3)).fit(x, y)
+    assert set(model.fold_ids_) == {0, 1, 2}
+
+
+def test_vector_inputs_raise_value_errors():
+    x, y = data()
+    model = SemanticMultiOutputENN(projection(), folds=3)
+    with pytest.raises(ValueError):
+        model.fit(x[:, 0], y)
+    model.fit(x, y)
+    with pytest.raises(ValueError):
+        model.posterior(x[0])
+
+
+def test_projection_rejects_nonorthonormal_loadings_and_bad_names():
+    with pytest.raises(ValueError, match="orthonormal"):
+        SemanticOutputProjection(("a", "b", "c"), np.eye(3), np.ones((3, 2)))
+    with pytest.raises(ValueError, match="output names"):
+        SemanticOutputProjection((1, "b"), np.eye(2), np.zeros((2, 0)))
 
 
 def test_zero_embeddings_fall_back_and_refit():

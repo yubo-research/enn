@@ -1,4 +1,4 @@
-from enn.evals.scaling_n import run_eval
+from evals.harness.scaling_n import run_eval
 
 
 def evaluate() -> None:

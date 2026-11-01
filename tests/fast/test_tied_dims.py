@@ -154,6 +154,17 @@ def test_validate_tied_dims() -> None:
             validate_tied_dims(bad, 4)
 
 
+def test_validate_tied_dims_without_width_only_checks_structure() -> None:
+    assert validate_tied_dims([[0, 99], [5]]) == ((0, 99), (5,))
+    for bad, match in [
+        ([[]], "non-empty"),
+        ([[-1]], r"\[0, 1\)"),
+        ([[0, 99], [0]], "disjoint"),
+    ]:
+        with pytest.raises(ValueError, match=match):
+            validate_tied_dims(bad)
+
+
 @pytest.mark.parametrize("driver", [ENNIndexDriver.FLAT, ENNIndexDriver.BPANN_DISK])
 def test_scale_x_leaves_tied_dims_unscaled(tmp_path, driver) -> None:
     x, y = _mixed(600)

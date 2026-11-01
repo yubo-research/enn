@@ -49,9 +49,7 @@ class ENNSurrogateConfig:
     def _check_tied_dims(self) -> None:
         if not self.tied_dims:
             return
-        flat = [j for g in self.tied_dims for j in g]
-        groups = validate_tied_dims(self.tied_dims, 1 + max([0, *flat]))
-        object.__setattr__(self, "tied_dims", groups)
+        object.__setattr__(self, "tied_dims", validate_tied_dims(self.tied_dims))
 
     @property
     def num_fit_samples(self) -> int | None:

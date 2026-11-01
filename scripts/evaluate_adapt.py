@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from enn.evals.adapt import run_adapt
+from evals.harness.adapt import run_adapt
 
 
 def main():
@@ -43,12 +43,12 @@ def main():
         )
         timings[kind] = time.perf_counter() - start
     files = [
-        Path("src/enn") / name
+        Path(name)
         for name in (
-            "adaptive.py",
-            "adaptive_model.py",
-            "evals/adapt.py",
-            "evals/adapt_problem.py",
+            "src/enn/adaptive.py",
+            "src/enn/adaptive_model.py",
+            "evals/harness/adapt.py",
+            "evals/harness/adapt_problem.py",
         )
     ]
     protocol = {

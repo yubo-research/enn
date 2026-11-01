@@ -185,7 +185,7 @@ pub fn fit_model_affine<'py>(
     k: i32,
     epistemic: f64,
     aleatoric: f64,
-    num_fit_samples: usize,
+    num_fit_samples: i64,
     seed: u64,
     observation_noise: bool,
 ) -> PyResult<(
@@ -193,6 +193,7 @@ pub fn fit_model_affine<'py>(
     Bound<'py, PyArray1<f64>>,
     Bound<'py, PyArray1<f64>>,
 )> {
+    let num_fit_samples = usize::try_from(num_fit_samples).unwrap_or(0);
     let params = ennbo::ENNParams::new(k, epistemic, aleatoric)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
     let mut rng = StdRng::seed_from_u64(seed);

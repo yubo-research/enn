@@ -16,9 +16,9 @@ def normal_hash_batch_multi_seed(
 
     function_seeds = np.asarray(function_seeds, dtype=np.int64)
     data_indices = np.asarray(data_indices)
-    if num_metrics <= 0:
-        raise ValueError(num_metrics)
-    return np.asarray(_rust_hash(function_seeds, data_indices, num_metrics), dtype=float)
+    return np.asarray(
+        _rust_hash(function_seeds, data_indices, num_metrics), dtype=float
+    )
 
 
 def normal_hash_batch_multi_seed_fast(
@@ -28,8 +28,6 @@ def normal_hash_batch_multi_seed_fast(
 
     function_seeds = np.asarray(function_seeds, dtype=np.int64)
     data_indices = np.asarray(data_indices)
-    if num_metrics <= 0:
-        raise ValueError(num_metrics)
     return np.asarray(
         _rust_hash_fast(function_seeds, data_indices, num_metrics), dtype=float
     )

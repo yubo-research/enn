@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from enn import AdaptiveSemanticENN, SemanticOutputProjection
-from enn.evals.adapt_problem import make_problem
+from evals.harness.adapt_problem import make_problem
 
 
 def test_bounded_stream_and_failed_updates_preserve_predictions():

@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 
 from enn.enn.mbpann import MBPANNMetric
-from enn.evals import metric_12d as mod
 from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
+from evals.harness import metric_12d as mod
 from ops.stress import MeanSE
 
 TINY = mod.Metric12dConfig(

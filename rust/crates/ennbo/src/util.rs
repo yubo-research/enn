@@ -106,6 +106,34 @@ pub fn pareto_front_2d_maximize(
     Ok(front)
 }
 
+pub fn calculate_sobol_indices_any_rank(
+    x: &ndarray::ArrayViewD<f64>,
+    y: &ndarray::ArrayViewD<f64>,
+) -> Result<Array1<f64>, ENNError> {
+    let invalid = |message: String| ENNError::InvalidParameter(message);
+    let rows = x
+        .view()
+        .into_dimensionality::<ndarray::Ix2>()
+        .map_err(|_| invalid(format!("x must be 2D, got shape {:?}", x.shape())))?;
+    if rows.ncols() == 0 {
+        return Err(invalid("x must have at least 1 dimension, got 0".into()));
+    }
+    let column = y.ndim() == 2 && y.shape()[1] == 1;
+    let values: Array1<f64> = if column || y.ndim() == 1 {
+        y.iter().copied().collect()
+    } else {
+        Array1::zeros(0)
+    };
+    if values.len() != rows.nrows() || !(column || y.ndim() == 1) {
+        return Err(invalid(format!(
+            "y shape {:?} incompatible with x rows {}",
+            y.shape(),
+            rows.nrows()
+        )));
+    }
+    Ok(calculate_sobol_indices(&rows, &values.view()))
+}
+
 pub fn calculate_sobol_indices(x: &ArrayView2<f64>, y: &ArrayView1<f64>) -> Array1<f64> {
     let n = x.nrows();
     let d = x.ncols();

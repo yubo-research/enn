@@ -31,6 +31,24 @@ fn pcg64_seed_0_integers_match_numpy() {
 }
 
 #[test]
+fn pcg64_permutation_matches_numpy_generator() {
+    assert_eq!(
+        NumpyPcg64::from_seed(0).permutation(10),
+        vec![4, 6, 2, 7, 3, 5, 9, 0, 8, 1]
+    );
+    assert_eq!(
+        NumpyPcg64::from_seed(4).permutation(18),
+        vec![0, 7, 9, 16, 5, 8, 1, 10, 17, 2, 13, 11, 15, 6, 4, 3, 12, 14]
+    );
+    assert_eq!(
+        NumpyPcg64::from_seed(123456).permutation(7),
+        vec![2, 0, 5, 4, 6, 1, 3]
+    );
+    assert_eq!(NumpyPcg64::from_seed(0).permutation(0), Vec::<usize>::new());
+    assert_eq!(NumpyPcg64::from_seed(0).permutation(1), vec![0]);
+}
+
+#[test]
 fn pcg64_seed_18_standard_normal_matches_numpy() {
     let mut rng = NumpyPcg64::from_seed(18);
     let expect = [

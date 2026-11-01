@@ -1,4 +1,4 @@
-from enn.evals.prediction import SHORT_CONFIG, run_prediction
+from evals.harness.prediction import SHORT_CONFIG, run_prediction
 
 
 def evaluate() -> None:

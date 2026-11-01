@@ -1,6 +1,7 @@
-
-use ndarray::Array1;
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2,
+    PyReadonlyArrayDyn,
+};
 use pyo3::prelude::*;
 
 #[pyfunction(name = "standardize_y")]
@@ -52,14 +53,16 @@ pub fn pareto_front_2d_maximize_py<'py>(
 #[pyfunction(name = "calculate_sobol_indices")]
 pub fn calculate_sobol_indices_py<'py>(
     py: Python<'py>,
-    x: PyReadonlyArray2<f64>,
-    y: PyReadonlyArray1<f64>,
+    x: PyReadonlyArrayDyn<f64>,
+    y: PyReadonlyArrayDyn<f64>,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let x_arr = x.as_array();
     let y_arr = y.as_array();
 
-    let sobol = py.allow_threads(|| ennbo::calculate_sobol_indices(&x_arr, &y_arr));
-    Ok(Array1::from_vec(sobol.to_vec()).into_pyarray_bound(py))
+    let sobol = py
+        .allow_threads(|| ennbo::util::calculate_sobol_indices_any_rank(&x_arr, &y_arr))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(sobol.into_pyarray_bound(py))
 }
 
 #[pyfunction(name = "sobol_sequence")]

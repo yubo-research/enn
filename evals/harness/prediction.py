@@ -1,5 +1,5 @@
-from enn.evals import metric_12d, metric_ranges
-from enn.evals.metric_12d import Metric12dConfig
+from evals.harness import metric_12d, metric_ranges
+from evals.harness.metric_12d import Metric12dConfig
 
 SHORT_CONFIG = Metric12dConfig(
     n_grid=(30, 100, 300),

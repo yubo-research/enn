@@ -112,6 +112,29 @@ impl NumpyPcg64 {
         self.lemire64(rng)
     }
 
+    pub fn permutation(&mut self, count: usize) -> Vec<usize> {
+        let mut values: Vec<usize> = (0..count).collect();
+        for high in (1..count).rev() {
+            values.swap(high, self.masked_interval(high) as usize);
+        }
+        values
+    }
+
+    fn masked_interval(&mut self, max: usize) -> u64 {
+        let max = max as u64;
+        let mask = u64::MAX >> max.leading_zeros();
+        loop {
+            let value = if max <= u64::from(u32::MAX) {
+                u64::from(self.next_u32()) & mask
+            } else {
+                self.next_u64() & mask
+            };
+            if value <= max {
+                return value;
+            }
+        }
+    }
+
     fn lemire32(&mut self, rng: u32) -> u32 {
         let rng_excl = u64::from(rng) + 1;
         let mut draw = || (u64::from(self.next_u32())) * rng_excl;

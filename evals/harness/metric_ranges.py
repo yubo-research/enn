@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from enn.evals.metric_12d import MODELS, NUM_DIM, Metric12dConfig
-from enn.evals.metric_12d import run_eval as run_stream_eval
-from enn.evals.metric_12d_results import CheckpointSummary
+from evals.harness.metric_12d import MODELS, NUM_DIM, Metric12dConfig
+from evals.harness.metric_12d import run_eval as run_stream_eval
+from evals.harness.metric_12d_results import CheckpointSummary
 
 NOISE_STD = 0.1
 RANGES = 10.0 ** np.linspace(-2.0, 2.0, NUM_DIM)

@@ -218,6 +218,25 @@ def test_fit_affine_calibrator_small_n_returns_identity(n: int):
     assert np.allclose(cal.c, 1.0)
 
 
+def test_fit_affine_calibrator_negative_samples_match_zero():
+    x = np.random.default_rng(5).standard_normal((12, 2))
+    model = EpistemicNearestNeighbors(x, x[:, :1])
+    params = ENNParams(
+        k_num_neighbors=2,
+        epistemic_variance_scale=1.0,
+        aleatoric_variance_scale=0.0,
+    )
+    negative, zero = (
+        fit_affine_calibrator(
+            model, params, num_samples=n, rng=np.random.default_rng(6)
+        )
+        for n in (-3, 0)
+    )
+    assert np.array_equal(negative.a, zero.a)
+    assert np.array_equal(negative.b, zero.b)
+    assert np.array_equal(negative.c, zero.c)
+
+
 def test_tell_clears_affine_calibrator():
     rng = np.random.default_rng(8)
     x = rng.standard_normal((30, 2))

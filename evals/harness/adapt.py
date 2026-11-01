@@ -7,7 +7,7 @@ import numpy as np
 
 from enn import EpistemicNearestNeighbors, SemanticMultiOutputENN
 from enn.enn.enn_params import ENNParams
-from enn.evals.adapt_problem import make_problem
+from evals.harness.adapt_problem import make_problem
 
 PARAMS = ENNParams(8, 1, 0)
 CHECKPOINTS = (30, 100, 300)

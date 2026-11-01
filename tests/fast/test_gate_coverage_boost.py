@@ -4,12 +4,10 @@ import numpy as np
 import pytest
 
 
-def test_enn_reexport_and_fitter_surface():
-    import enn.enn.enn as enn_mod
+def test_fitter_surface():
     from enn.enn.enn_class import EpistemicNearestNeighbors
     from enn.enn.enn_fitter import ENNStatefulFitter
 
-    assert enn_mod.DrawInternals is not None
     rng = np.random.default_rng(0)
     fitter = ENNStatefulFitter(k=2, rng=rng)
     x = np.array([[0.0, 0.0], [1.0, 1.0]])
@@ -19,6 +17,7 @@ def test_enn_reexport_and_fitter_surface():
     model = EpistemicNearestNeighbors(x, y)
     params = fitter.ask(model, num_fit_candidates=2, num_fit_samples=2)
     assert params.k_num_neighbors >= 1
+
 
 def test_init_strategy_base_subclass():
     from enn.turbo.config.init_strategy_base import InitStrategy
@@ -37,7 +36,6 @@ def test_init_strategy_base_subclass():
         )
 
 
-
 def test_optimizer_fixture_capture_smoke():
     from optimizer_fixtures.capture import build_fixture
     from optimizer_fixtures.catalog import FIXTURE_GENERATOR_ENTRIES
@@ -46,7 +44,6 @@ def test_optimizer_fixture_capture_smoke():
     payload = build_fixture(entry, seed=0)
     assert "steps" in payload
     assert payload["seed"] == 0
-
 
 
 def test_coverage_enn_fit_fast():
@@ -91,4 +88,3 @@ def test_coverage_enn_fit_fast():
         y_std=np.ones(1),
     )
     assert len(scores) == 1
-

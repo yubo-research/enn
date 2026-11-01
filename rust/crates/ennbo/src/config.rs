@@ -10,7 +10,11 @@ use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::{TrustRegionConfig, TrustRegionKind};
 
 mod rules;
-pub use rules::{validate_optimizer_rules, OptimizerInitKind, OptimizerRuleSet, TurboEnnBuilder};
+pub use rules::{
+    validate_candidate_counts, validate_fit_settings, validate_multi_objective,
+    validate_optimizer_rules, validate_positive_option, FitSettings, OptimizerInitKind,
+    OptimizerRuleSet, TurboEnnBuilder,
+};
 
 #[derive(Debug, Clone)]
 pub struct OptimizerConfig {

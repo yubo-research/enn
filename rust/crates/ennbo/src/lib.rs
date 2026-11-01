@@ -15,6 +15,7 @@ pub mod backend;
 pub mod benchmarks;
 #[allow(missing_docs)]
 pub mod calibration;
+pub mod calibration_shapes;
 #[allow(missing_docs)]
 pub mod candidates;
 #[allow(missing_docs)]
@@ -225,6 +226,8 @@ pub use y_bounds::is_identity_bounds;
 pub use y_bounds::unbounded_bounds;
 pub use y_bounds::validate_bounds;
 
+pub mod semantic_definition;
+pub mod semantic_multi_output;
 pub mod semantic_projection;
 pub mod semantic_relationships;
 
