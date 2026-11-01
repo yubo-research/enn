@@ -1,21 +1,22 @@
-mod batch_light;
-pub use batch_light::small_flat_selection_means;
+mod batch;
 mod draw_compute;
 mod dual_api;
 mod light;
 mod neighbor;
 pub mod neighbor_dist;
-mod small_flat;
 pub(crate) use neighbor::index_search;
 
-use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
+use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2};
 
+use self::batch::batch_posterior_unblended;
+#[cfg(test)]
+use self::batch::{
+    assign_posterior_results, compute_batch_separate_neighbors, compute_batch_with_shared_neighbors,
+};
 use self::draw_compute::draw_from_internals;
-use self::light::idx_nested_to_array2;
 use self::neighbor::{get_conditional_neighbor_data, get_neighbor_data};
 use crate::draw::DrawInternals;
 use crate::error::{ENNError, EPS_VAR};
-use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::stats::WeightedStats;
@@ -54,61 +55,9 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         paramss: &[ENNParams],
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        if paramss.is_empty() {
-            return Err(ENNError::InvalidParameter(
-                "paramss must be non-empty".to_string(),
-            ));
-        }
-
-        let k_values: std::collections::HashSet<i32> =
-            paramss.iter().map(|p| p.k_num_neighbors).collect();
-        if k_values.len() > 1
-            && !self.has_yvar()
-            && !flags.observation_noise
-            && self.backend_driver() == IndexDriver::Flat
-        {
-            return batch_light::compute_mixed_posterior_light(self, x, paramss, flags);
-        }
-        let batch_size = x.nrows();
-        let num_params = paramss.len();
-
-        let mut mu_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
-        let mut se_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
-        let mut se_epi_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
-        let mut se_ale_all = Array3::zeros((num_params, batch_size, self.num_metrics()));
-
-        let idx = if k_values.len() == 1 && self.num_obs() > 0 {
-            compute_batch_with_shared_neighbors(
-                self,
-                x,
-                paramss,
-                flags,
-                &mut mu_all,
-                &mut se_all,
-                &mut se_epi_all,
-                &mut se_ale_all,
-            )?
-        } else {
-            compute_batch_separate_neighbors(
-                self,
-                x,
-                paramss,
-                flags,
-                &mut mu_all,
-                &mut se_all,
-                &mut se_epi_all,
-                &mut se_ale_all,
-            )?;
-            None
-        };
-
-        Ok(ENNNormal::new(
-            mu_all.into_dyn(),
-            se_all.into_dyn(),
-            se_epi_all.into_dyn(),
-            se_ale_all.into_dyn(),
-            idx,
-        ))
+        let mut out = batch_posterior_unblended(self, x, paramss, flags)?;
+        self.apply_batch_blends(&mut out, paramss)?;
+        Ok(out)
     }
 
     fn posterior_function_draw(
@@ -153,94 +102,10 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         let (y_z, _) = self.warp_observations(y_whatif, None)?;
         let internals =
             compute_conditional_posterior_internals(self, x, x_whatif, &y_z.view(), params, flags)?;
-        let draws = draw_from_internals(self, &internals, function_seeds)?;
+        let mut draws = draw_from_internals(self, &internals, function_seeds)?;
+        self.apply_draw_blend(&mut draws, params)?;
         Ok((self.publish_draws(draws), internals.idx))
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn compute_batch_with_shared_neighbors(
-    model: &EpistemicNearestNeighbors,
-    x: &ArrayView2<f64>,
-    paramss: &[ENNParams],
-    flags: &PosteriorFlags,
-    mu_all: &mut Array3<f64>,
-    se_all: &mut Array3<f64>,
-    se_epi_all: &mut Array3<f64>,
-    se_ale_all: &mut Array3<f64>,
-) -> Result<Option<Array2<i64>>, ENNError> {
-    let neighbor_data = get_neighbor_data(model, x, &paramss[0], flags.exclude_nearest)?;
-
-    if let Some(data) = neighbor_data {
-        let idx = idx_nested_to_array2(&data.idx);
-        let wp_data = WeightedPosteriorData {
-            dist2s: &data.dist2s.view(),
-            idx: &data.idx,
-            y_neighbors: &data.y_neighbors.view(),
-            params: &paramss[0],
-            observation_noise: flags.observation_noise,
-            yvar_neighbors_override: None,
-        };
-
-        for (i, params) in paramss.iter().enumerate() {
-            let data_with_params = WeightedPosteriorData { params, ..wp_data };
-            let internals = compute_weighted_posterior(model, data_with_params, None)?;
-            assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
-        }
-        Ok(Some(idx))
-    } else {
-        let batch_size = x.nrows();
-        let internals = empty_posterior_internals(model, batch_size);
-        for i in 0..paramss.len() {
-            assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
-        }
-        Ok(Some(idx_nested_to_array2(&internals.idx)))
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn compute_batch_separate_neighbors(
-    model: &EpistemicNearestNeighbors,
-    x: &ArrayView2<f64>,
-    paramss: &[ENNParams],
-    flags: &PosteriorFlags,
-    mu_all: &mut Array3<f64>,
-    se_all: &mut Array3<f64>,
-    se_epi_all: &mut Array3<f64>,
-    se_ale_all: &mut Array3<f64>,
-) -> Result<(), ENNError> {
-    for (i, params) in paramss.iter().enumerate() {
-        let internals = compute_posterior_internals(model, x, params, flags)?;
-        assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
-    }
-    Ok(())
-}
-
-fn assign_posterior_results(
-    internals: &DrawInternals,
-    mu_all: &mut Array3<f64>,
-    se_all: &mut Array3<f64>,
-    se_epi_all: &mut Array3<f64>,
-    se_ale_all: &mut Array3<f64>,
-    index: usize,
-) {
-    let slice = ndarray::Slice::from(index..index + 1);
-    mu_all
-        .slice_axis_mut(Axis(0), slice)
-        .assign(&internals.mu.slice_axis(Axis(0), ndarray::Slice::from(..)));
-    se_all
-        .slice_axis_mut(Axis(0), slice)
-        .assign(&internals.se.slice_axis(Axis(0), ndarray::Slice::from(..)));
-    se_epi_all.slice_axis_mut(Axis(0), slice).assign(
-        &internals
-            .se_epi
-            .slice_axis(Axis(0), ndarray::Slice::from(..)),
-    );
-    se_ale_all.slice_axis_mut(Axis(0), slice).assign(
-        &internals
-            .se_ale
-            .slice_axis(Axis(0), ndarray::Slice::from(..)),
-    );
 }
 
 pub struct WeightedPosteriorData<'a> {
@@ -608,3 +473,7 @@ mod tests_conditional;
 #[cfg(test)]
 #[path = "posterior/tests_y_bounds.rs"]
 mod tests_y_bounds;
+
+#[cfg(test)]
+#[path = "posterior/tests_blend.rs"]
+mod tests_blend;

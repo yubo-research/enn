@@ -1,30 +1,21 @@
 use ndarray::{Array1, Array2, ArrayView2};
-use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use crate::backend::{EnnBackend, EnnStorage};
+use crate::backend::EnnBackend;
 use crate::error::ENNError;
-use crate::index::IndexDriver;
 use crate::layout::EnnLayout;
 use crate::metric_auto::AutoMetric;
 use crate::y_bounds::resolve_y_bounds;
 
 const STATS_CHUNK_ROWS: usize = 1 << 16;
 
-type InitStats = (
-    Array1<f64>,
-    Array1<f64>,
-    Array1<f64>,
-    Array1<f64>,
-    Array1<f64>,
-    Array1<f64>,
-);
-
 mod access;
 mod auto_api;
 mod metric;
+mod outputs_api;
 mod y_bounds_api;
 pub use access::{EnnIndexAccess, EnnRowAccess};
+pub use outputs_api::OutputMoments;
 
 pub struct EpistemicNearestNeighbors {
     original_y: Option<crate::input_history::InputHistory>,
@@ -35,18 +26,14 @@ pub struct EpistemicNearestNeighbors {
     pub(crate) num_metrics: usize,
     pub(crate) scale_x: bool,
     pub(crate) x_scale: Array1<f64>,
-    pub(crate) metric_fixed: bool,
-    pub(crate) unscaled_dims: Vec<usize>,
     pub(crate) y_scale: Array1<f64>,
     pub(crate) y_bounds: Array2<f64>,
     y_sum: Array1<f64>,
     y_sumsq: Array1<f64>,
-    x_sum: Array1<f64>,
-    x_sumsq: Array1<f64>,
-    work_dir: Option<PathBuf>,
     y_bounds_persisted: AtomicBool,
     pub(crate) auto_metric: Option<AutoMetric>,
     tied_groups: Vec<Vec<usize>>,
+    semantic_outputs: Option<crate::output_blend::SemanticOutputs>,
 }
 
 impl EpistemicNearestNeighbors {
@@ -74,42 +61,13 @@ impl EpistemicNearestNeighbors {
         Ok(())
     }
 
-    fn init_stats(train_x: &Array2<f64>, train_y: &Array2<f64>, scale_x: bool) -> InitStats {
-        let num_obs = train_x.nrows();
-        let num_dim = train_x.ncols();
-        let num_metrics = train_y.ncols();
-        let (y_sum, y_sumsq) = column_sums_and_sumsq(train_y.view());
-        let y_scale = scale_from_moments(num_obs, num_metrics, &y_sum, &y_sumsq, 0.0);
-        if scale_x {
-            let (x_sum, x_sumsq) = column_sums_and_sumsq(train_x.view());
-            let x_scale = scale_from_moments(num_obs, num_dim, &x_sum, &x_sumsq, 1e-12);
-            (y_scale, y_sum, y_sumsq, x_scale, x_sum, x_sumsq)
-        } else {
-            (
-                y_scale,
-                y_sum,
-                y_sumsq,
-                Array1::ones(num_dim),
-                Array1::zeros(num_dim),
-                Array1::zeros(num_dim),
-            )
-        }
-    }
-
     pub fn new(
         train_x: Array2<f64>,
         train_y: Array2<f64>,
         train_yvar: Option<Array2<f64>>,
-        weighting: bool,
-        driver: IndexDriver,
+        layout: EnnLayout,
     ) -> Result<Self, ENNError> {
-        Self::new_with_storage(
-            train_x,
-            train_y,
-            train_yvar,
-            EnnLayout::new(driver, None, weighting)?,
-            None,
-        )
+        Self::new_with_storage(train_x, train_y, train_yvar, layout, None)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -134,24 +92,15 @@ impl EpistemicNearestNeighbors {
         crate::metric_weights::validate_tied_dims(&tied_dims, train_x.ncols())?;
         let auto_rows = (layout.metric_learning() == crate::metric_auto::MetricLearning::Auto)
             .then(|| (train_x.clone(), train_y.clone()));
-        let scale_x = layout.scale_x();
-        let storage = layout.storage();
-        let work_dir = layout.work_dir().map(std::path::Path::to_path_buf);
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
         let num_dim = train_x.ncols();
         let mut num_metrics = train_y.ncols();
-        let disk_work_dir = work_dir.clone();
-        let disk_reopen = matches!(storage, EnnStorage::Disk)
-            && train_x.nrows() == 0
-            && train_y.nrows() == 0
-            && disk_work_dir
-                .as_ref()
-                .is_some_and(|p| p.join("metadata.json").exists());
+        let work_dir = layout.work_dir();
+        let disk_reopen =
+            train_x.nrows() == 0 && train_y.nrows() == 0 && work_dir.join("metadata.json").exists();
 
         let meta_text = if disk_reopen {
-            disk_work_dir
-                .as_ref()
-                .and_then(|p| std::fs::read_to_string(p.join("metadata.json")).ok())
+            std::fs::read_to_string(work_dir.join("metadata.json")).ok()
         } else {
             None
         };
@@ -175,12 +124,16 @@ impl EpistemicNearestNeighbors {
         };
 
         let num_obs = train_x.nrows();
-        let (y_scale, y_sum, y_sumsq, x_scale, x_sum, x_sumsq) =
-            Self::init_stats(&train_x, &train_y, scale_x);
-
-        let stored_work_dir = disk_work_dir.clone();
-        let backend =
-            EnnBackend::from_layout(&layout, train_x, train_y, train_yvar, x_scale.clone())?;
+        let (y_sum, y_sumsq) = column_sums_and_sumsq(train_y.view());
+        let y_scale = scale_from_moments(num_obs, num_metrics, &y_sum, &y_sumsq, 0.0);
+        let x_scale = Array1::ones(num_dim);
+        let backend = EnnBackend::new_disk(
+            work_dir.to_path_buf(),
+            train_x,
+            train_y,
+            train_yvar,
+            x_scale.clone(),
+        )?;
 
         let mut model = Self {
             original_y: None,
@@ -189,20 +142,16 @@ impl EpistemicNearestNeighbors {
             num_obs,
             num_dim,
             num_metrics,
-            scale_x,
+            scale_x: false,
             x_scale,
-            metric_fixed: false,
-            unscaled_dims: Vec::new(),
             y_scale,
             y_bounds,
             y_sum,
             y_sumsq,
-            x_sum,
-            x_sumsq,
-            work_dir: stored_work_dir,
             y_bounds_persisted: AtomicBool::new(false),
             auto_metric: None,
             tied_groups: Vec::new(),
+            semantic_outputs: None,
         };
         if disk_reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;
@@ -212,8 +161,6 @@ impl EpistemicNearestNeighbors {
         model.set_tied_groups(tied_dims.clone())?;
         if let Some((x, y)) = auto_rows {
             model.enable_auto_metric(tied_dims, &x.view(), &y.view())?;
-        } else {
-            model.set_unscaled_dims(tied_dims.into_iter().flatten().collect())?;
         }
         Ok(model)
     }
@@ -286,11 +233,6 @@ impl EpistemicNearestNeighbors {
             let n = self.backend.len();
             self.y_scale = scale_from_moments(n, self.num_metrics, &self.y_sum, &self.y_sumsq, 0.0);
 
-            if self.scale_x && !self.metric_fixed {
-                accumulate_columns(&mut self.x_sum, &mut self.x_sumsq, x.view());
-                self.refresh_data_x_scale(n)?;
-            }
-
             self.num_obs = n;
             self.persist_y_bounds_metadata()?;
             self.observe_auto_metric(x, y)?;
@@ -303,7 +245,7 @@ impl EpistemicNearestNeighbors {
     }
 
     pub fn persist_index_to_disk(&self) -> Result<(), ENNError> {
-        crate::backend::persist_enn_backend_index(&self.backend)?;
+        self.backend.persist_index_to_disk()?;
         self.persist_y_bounds_metadata()
     }
 
@@ -374,9 +316,6 @@ impl EpistemicNearestNeighbors {
         if search_k == 0 {
             return Ok(Array2::zeros((x.nrows(), 0)));
         }
-        if !self.backend.defer_index_sync_for_search() {
-            self.ensure_index_sync()?;
-        }
         let (_, idx_full) = self.backend.search(x, search_k as i32, exclude_nearest)?;
         let k_out = (k as usize).min(idx_full.ncols());
         let mut result = Array2::zeros((x.nrows(), k_out));
@@ -416,27 +355,12 @@ impl EpistemicNearestNeighbors {
         self.num_obs > 0 && self.rows().row_yvar(0).ok().flatten().is_some()
     }
 
-    pub(crate) fn backend_driver(&self) -> IndexDriver {
-        self.backend.driver()
-    }
-
-    pub(crate) fn train_y_view_opt(&self) -> Option<ndarray::ArrayView2<'_, f64>> {
-        self.backend.in_memory_train_y_view()
-    }
-
-    pub(crate) fn train_x_view_opt(&self) -> Option<ndarray::ArrayView2<'_, f64>> {
-        self.backend.in_memory_train_x_view()
-    }
-
     pub(crate) fn backend_search(
         &self,
         x: &ArrayView2<f64>,
         search_k: i32,
         exclude_nearest: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-        if !self.backend.defer_index_sync_for_search() {
-            self.ensure_index_sync()?;
-        }
         self.backend.search(x, search_k, exclude_nearest)
     }
 }
@@ -483,23 +407,14 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
         Array1::zeros(model.num_metrics),
         Array1::zeros(model.num_metrics),
     );
-    let (mut x_sum, mut x_sumsq) = (Array1::zeros(model.num_dim), Array1::zeros(model.num_dim));
     for start in (0..n).step_by(STATS_CHUNK_ROWS) {
         let indices: Vec<usize> = (start..(start + STATS_CHUNK_ROWS).min(n)).collect();
-        let (x, y, _) = model.backend.train_rows_at(&indices)?;
+        let (_, y, _) = model.backend.train_rows_at(&indices)?;
         accumulate_columns(&mut y_sum, &mut y_sumsq, y.view());
-        if model.scale_x {
-            accumulate_columns(&mut x_sum, &mut x_sumsq, x.view());
-        }
     }
     model.y_sum = y_sum;
     model.y_sumsq = y_sumsq;
     model.y_scale = scale_from_moments(n, model.num_metrics, &model.y_sum, &model.y_sumsq, 0.0);
-    if model.scale_x {
-        model.x_sum = x_sum;
-        model.x_sumsq = x_sumsq;
-        model.x_scale = model.data_x_scale(n);
-    }
     model
         .backend
         .ensure_index_sync(model.scale_x, &model.x_scale)?;
@@ -557,27 +472,58 @@ pub(crate) fn scale_from_moments(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::row_storage::RowStorage;
     use ndarray::array;
 
     #[test]
     fn test_enn_creation() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let train_y = array![[0.0], [1.0], [1.0], [2.0]];
-        let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-                .unwrap();
+        let model = crate::test_helpers::test_model(train_x, train_y, None, false);
         assert_eq!(model.len(), 4);
         assert_eq!(model.num_outputs(), 1);
+    }
+
+    #[test]
+    fn store_is_written_to_work_dir_and_outlives_the_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("store");
+        let model = EpistemicNearestNeighbors::new(
+            array![[0.0, 0.0], [1.0, 0.0]],
+            array![[0.0], [1.0]],
+            None,
+            EnnLayout::new(&store, false).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(model.layout.work_dir(), store);
+        assert!(store.join("metadata.json").exists());
+        drop(model);
+        assert!(store.join("metadata.json").exists());
+    }
+
+    #[test]
+    fn search_rejects_wrong_dimension_and_nonpositive_k() {
+        let model = crate::test_helpers::test_model(
+            array![[0.0, 0.0], [1.0, 0.0]],
+            array![[0.0], [1.0]],
+            None,
+            false,
+        );
+        let access = model.index_access();
+        let wrong_dim = array![[0.0, 0.0, 0.0]];
+        let right_dim = array![[0.0, 0.0]];
+        assert!(access
+            .neighbor_distances_and_indices(&wrong_dim.view(), 1, false)
+            .is_err());
+        assert!(access
+            .neighbor_distances_and_indices(&right_dim.view(), 0, false)
+            .is_err());
     }
 
     #[test]
     fn test_enn_add() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0]];
         let train_y = array![[0.0], [1.0]];
-        let mut model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-                .unwrap();
+        let mut model = crate::test_helpers::test_model(train_x, train_y, None, false);
         model
             .add(&array![[0.0, 1.0]].view(), &array![[1.0]].view(), None)
             .unwrap();
@@ -585,12 +531,8 @@ mod tests {
     }
 
     #[test]
-    fn kiss_row_storage_and_scale_helpers() {
+    fn kiss_scale_helpers() {
         let rows = array![[1.0, 2.0], [3.0, 4.0]];
-        let mut storage = RowStorage::from_array2(rows.clone());
-        assert_eq!(storage.nrows(), 2);
-        storage.push_rows(&array![[5.0, 6.0]].view()).unwrap();
-        assert_eq!(storage.nrows(), 3);
         let (sum, sumsq) = column_sums_and_sumsq(rows.view());
         let mut sum2 = sum.clone();
         let mut sumsq2 = sumsq.clone();
@@ -601,10 +543,11 @@ mod tests {
 
     #[test]
     fn test_new_empty_and_row_accessors() {
+        let dir = tempfile::tempdir().unwrap();
         let mut model = EpistemicNearestNeighbors::new_empty(
             2,
             1,
-            crate::layout::EnnLayout::new(IndexDriver::Flat, None, false).unwrap(),
+            crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
             None,
         )
         .unwrap();
@@ -618,29 +561,14 @@ mod tests {
     }
 
     #[test]
-    fn internal_in_memory_views_and_index() {
-        let train_x = array![[0.0, 0.0], [1.0, 0.0]];
-        let train_y = array![[0.0], [1.0]];
-        let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-                .unwrap();
-        assert!(model.train_x_view_opt().is_some());
-        assert!(model.train_y_view_opt().is_some());
-        assert_eq!(model.index_access().len(), 2);
-    }
-
-    #[test]
     fn kiss_model_accessor_helpers() {
-        let mut model = EpistemicNearestNeighbors::new(
+        let mut model = crate::test_helpers::test_model(
             array![[0.0, 0.0], [1.0, 0.0]],
             array![[0.0], [1.0]],
             None,
             false,
-            IndexDriver::Flat,
-        )
-        .unwrap();
+        );
         assert!(!model.is_scale_x());
-        assert_eq!(model.backend_driver(), IndexDriver::Flat);
         let _ = model.x_scale_row();
         model
             .add(&array![[0.5, 0.5]].view(), &array![[0.5]].view(), None)
@@ -658,21 +586,13 @@ mod tests {
                 x,
                 y,
                 None,
-                EnnLayout::disk(dir.path().to_path_buf(), true),
+                crate::layout::EnnLayout::new(dir.path().to_path_buf(), true).unwrap(),
                 None,
             )
             .unwrap()
         };
         let built = open(x, y);
-        let stats = |m: &EpistemicNearestNeighbors| {
-            (
-                m.num_obs,
-                m.y_sum.clone(),
-                m.y_sumsq.clone(),
-                m.x_sum.clone(),
-                m.x_sumsq.clone(),
-            )
-        };
+        let stats = |m: &EpistemicNearestNeighbors| (m.num_obs, m.y_sum.clone(), m.y_sumsq.clone());
         let expected = stats(&built);
         drop(built);
         let reopened = open(Array2::zeros((0, 2)), Array2::zeros((0, 1)));

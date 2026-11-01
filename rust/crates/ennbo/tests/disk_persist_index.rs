@@ -3,7 +3,6 @@
 use std::fs;
 use std::time::Instant;
 
-use ennbo::index::IndexDriver;
 use ennbo::EpistemicNearestNeighbors;
 use ndarray::{Array2, ArrayView2};
 use tempfile::TempDir;
@@ -20,7 +19,7 @@ fn build_reference_disk_model(work_dir: &std::path::Path, dim: usize) -> Epistem
         x,
         y,
         None,
-        ennbo::EnnLayout::disk(work_dir.to_path_buf(), false),
+        ennbo::EnnLayout::new(work_dir.to_path_buf(), false).unwrap(),
         None,
     )
     .expect("reference new");
@@ -34,7 +33,7 @@ fn build_multi_batch_disk_model(
     let mut model = EpistemicNearestNeighbors::new_empty(
         dim,
         1,
-        ennbo::EnnLayout::new(IndexDriver::BpAnnDisk, Some(work_dir.to_path_buf()), false).unwrap(),
+        ennbo::EnnLayout::new(work_dir.to_path_buf(), false).unwrap(),
         Some(1000),
     )
     .expect("new_empty");
@@ -94,7 +93,7 @@ fn disk_persist_index_multi_batch_reopen_is_fast_and_correct() {
         Array2::zeros((0, dim)),
         Array2::zeros((0, 1)),
         None,
-        ennbo::EnnLayout::disk(work_dir.clone(), false),
+        ennbo::EnnLayout::new(work_dir.clone(), false).unwrap(),
         None,
     )
     .expect("reopen");
@@ -148,7 +147,7 @@ fn schedule_soft_sync_leaves_pages_unchanged_until_persist() {
     let mut model = EpistemicNearestNeighbors::new_empty(
         dim,
         1,
-        ennbo::EnnLayout::new(IndexDriver::BpAnnDisk, Some(work_dir.clone()), false).unwrap(),
+        ennbo::EnnLayout::new(work_dir.clone(), false).unwrap(),
         Some(50),
     )
     .expect("new_empty");

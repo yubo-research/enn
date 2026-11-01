@@ -4,6 +4,7 @@ import argparse
 import json
 import statistics
 import sys
+import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -138,6 +139,7 @@ def _build_optimizer(
                 num_fit_samples=num_fit_samples,
                 num_fit_candidates=num_fit_candidates,
             ),
+            work_dir=tempfile.mkdtemp(prefix="enn_benchmark_dt_sel_"),
         ),
         num_init=num_arms,
         acq_type=AcqType.UCB,

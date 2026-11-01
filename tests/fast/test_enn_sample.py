@@ -4,13 +4,16 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def test_posterior_function_sample_basic():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
     train_y = train_x.sum(axis=1, keepdims=True)
-    model = EpistemicNearestNeighbors(train_x, train_y, 0.1 * np.ones_like(train_y))
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, 0.1 * np.ones_like(train_y), work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -24,7 +27,9 @@ def test_posterior_function_sample_basic():
 def test_posterior_function_sample_deterministic():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    model = EpistemicNearestNeighbors(train_x, train_x.sum(axis=1, keepdims=True))
+    model = EpistemicNearestNeighbors(
+        train_x, train_x.sum(axis=1, keepdims=True), work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -46,7 +51,9 @@ def test_posterior_function_sample_batch_basic():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
     train_y = train_x.sum(axis=1, keepdims=True)
-    model = EpistemicNearestNeighbors(train_x, train_y, 0.1 * np.ones_like(train_y))
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, 0.1 * np.ones_like(train_y), work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -61,7 +68,9 @@ def test_posterior_function_sample_batch_basic():
 def test_posterior_function_sample_batch_matches_single_seed():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    model = EpistemicNearestNeighbors(train_x, train_x.sum(axis=1, keepdims=True))
+    model = EpistemicNearestNeighbors(
+        train_x, train_x.sum(axis=1, keepdims=True), work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -81,7 +90,9 @@ def test_posterior_function_sample_batch_matches_single_seed():
 def test_posterior_function_sample_batch_with_multiple_metrics():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    model = EpistemicNearestNeighbors(train_x, rng.standard_normal((20, 2)))
+    model = EpistemicNearestNeighbors(
+        train_x, rng.standard_normal((20, 2)), work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -96,7 +107,7 @@ def test_posterior_function_sample_batch_empty_k():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((2, 3))
     train_y = train_x.sum(axis=1, keepdims=True)
-    model = EpistemicNearestNeighbors(train_x, train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -116,7 +127,9 @@ def test_posterior_function_sample_with_observation_noise():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
     train_y = train_x.sum(axis=1, keepdims=True)
-    model = EpistemicNearestNeighbors(train_x, train_y, 0.5 * np.ones_like(train_y))
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, 0.5 * np.ones_like(train_y), work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -144,7 +157,9 @@ def test_posterior_function_draw_aleatoric_is_independent_of_noise_field():
     train_x = rng.standard_normal((40, 2))
     train_y = train_x.sum(axis=1, keepdims=True)
     train_yvar = 0.25 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((6, 2))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
@@ -164,7 +179,6 @@ def test_posterior_function_draw_aleatoric_is_independent_of_noise_field():
     np.testing.assert_allclose(
         draws_on.std(axis=1, ddof=1), post_on.se[:, 0], rtol=0.08, atol=0.05
     )
-
 
     corr_off = np.corrcoef(draws_off[0], draws_off[1])[0, 1]
     corr_on = np.corrcoef(draws_on[0], draws_on[1])[0, 1]

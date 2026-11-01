@@ -4,18 +4,9 @@ from typing import Any
 
 import numpy as np
 
-from enn._rust import ENNParams as RustENNParams
 from enn._rust import ENNStatefulFitter as _RustENNStatefulFitter
 
-
-def rust_params(params: Any | None) -> RustENNParams | None:
-    if params is None:
-        return None
-    return RustENNParams(
-        params.k_num_neighbors,
-        params.epistemic_variance_scale,
-        params.aleatoric_variance_scale,
-    )
+from .enn_class_support import rust_params
 
 
 def py_params(rust_result: Any) -> Any:
@@ -25,6 +16,7 @@ def py_params(rust_result: Any) -> Any:
         k_num_neighbors=rust_result.k_num_neighbors,
         epistemic_variance_scale=rust_result.epistemic_variance_scale,
         aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
+        output_blend=rust_result.output_blend,
     )
 
 
@@ -143,16 +135,6 @@ class ENNStatefulFitter:
             return normal
         return self.affine_calibrator.apply(normal)
 
-    def _fit_scales(self, params: Any) -> np.ndarray:
-        return np.array(
-            [
-                params.k_num_neighbors,
-                params.epistemic_variance_scale,
-                params.aleatoric_variance_scale,
-            ],
-            dtype=float,
-        )
-
     def posterior(
         self,
         model: Any,
@@ -167,7 +149,7 @@ class ENNStatefulFitter:
         mu, se, se_epi, se_ale, idx = self._rust.posterior_calibrated(
             model.rust_backend,
             model.transform_inputs(np.asarray(x, dtype=float)),
-            self._fit_scales(params),
+            rust_params(params),
             flags.exclude_nearest,
             flags.observation_noise,
         )
@@ -191,7 +173,7 @@ class ENNStatefulFitter:
         draws, idx = self._rust.function_draw_calibrated(
             model.rust_backend,
             model.transform_inputs(np.asarray(x, dtype=float)),
-            self._fit_scales(params),
+            rust_params(params),
             _to_rust_seeds(function_seeds),
             flags.exclude_nearest,
             flags.observation_noise,

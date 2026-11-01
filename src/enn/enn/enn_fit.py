@@ -8,7 +8,8 @@ from enn._rust import ENNAddToken
 from enn._rust import enn_fit_incremental as _rust_enn_fit_incremental
 from enn._rust import subsample_loglik as _rust_subsample_loglik
 
-from .enn_fitter import ENNStatefulFitter, py_params, rust_params
+from .enn_class_support import rust_params
+from .enn_fitter import py_params
 
 
 def subsample_loglik(
@@ -36,6 +37,7 @@ def subsample_loglik(
     k_values = [p.k_num_neighbors for p in paramss]
     epi_scales = [p.epistemic_variance_scale for p in paramss]
     ale_scales = [p.aleatoric_variance_scale for p in paramss]
+    blends = [p.output_blend for p in paramss]
 
     y_std_arr = None
     if y_std is not None:
@@ -51,6 +53,7 @@ def subsample_loglik(
         P,
         seed,
         y_std_arr,
+        blends,
     )
 
 
@@ -62,29 +65,13 @@ def enn_fit(
     num_fit_samples: int | None = None,
     rng: Any,
     params_warm_start: Any | None = None,
-    incremental: ENNAddToken | None = None,
+    incremental: ENNAddToken,
 ) -> Any:
     from .enn_class import EpistemicNearestNeighbors as PyENN
 
     if not isinstance(model, PyENN):
         raise TypeError(f"Expected EpistemicNearestNeighbors, got {type(model)}")
 
-    if incremental is None:
-        fitter = ENNStatefulFitter(
-            k=k,
-            rng=rng,
-            input_transform=model.input_transform,
-            semantic_only=model.semantic_only,
-        )
-        x_all, y_all, yvar_all = model.train_rows_at(list(range(len(model))))
-        y_bounds = np.asarray(model.rust_backend.y_bounds, dtype=float)
-        fitter.tell(x_all, y_all, yvar_all, y_bounds=y_bounds)
-        return fitter.ask(
-            model,
-            num_fit_candidates=num_fit_candidates,
-            num_fit_samples=num_fit_samples,
-            params_warm_start=params_warm_start,
-        )
     if not isinstance(incremental, ENNAddToken):
         raise TypeError(
             "incremental must be the token returned by model.add, "

@@ -1,7 +1,8 @@
-
 """Generate side-by-side ENN posterior figure with noise-field samples."""
 
 from __future__ import annotations
+
+import tempfile
 
 import numpy as np
 
@@ -28,13 +29,20 @@ def fit_model(
     y_train: np.ndarray,
     y_bounds: np.ndarray | None,
 ) -> tuple[EpistemicNearestNeighbors, object]:
-    model = EpistemicNearestNeighbors(x_train, y_train, y_bounds=y_bounds)
+    model = EpistemicNearestNeighbors(
+        x_train[:0],
+        y_train[:0],
+        y_bounds=y_bounds,
+        work_dir=tempfile.mkdtemp(prefix="enn_bounded_figure_"),
+    )
+    token = model.add(x_train, y_train)
     params = enn_fit(
         model,
         k=K,
         num_fit_candidates=30,
         num_fit_samples=20,
         rng=np.random.default_rng(SEED + 1),
+        incremental=token,
     )
     return model, params
 

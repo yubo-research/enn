@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def test_neighbors_returns_correct_number_and_ordering():
@@ -21,13 +21,15 @@ def test_neighbors_returns_correct_number_and_ordering():
     assert train_y[indices].shape == (5, 1)
 
 
-def test_neighbors_flat_index_driver_returns_valid_indices():
+def test_neighbors_store_returns_valid_indices():
     rng = np.random.default_rng(3)
     n, d = 35, 4
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True).astype(float)
     model = EpistemicNearestNeighbors(
-        train_x, train_y, index_driver=ENNIndexDriver.FLAT
+        train_x,
+        train_y,
+        work_dir=fresh_work_dir(),
     )
     x_query = rng.standard_normal(d)
     neighbors = model.neighbors(x_query, k=6, exclude_nearest=False)
@@ -53,7 +55,9 @@ def test_neighbors_with_empty_observations():
     train_x = np.zeros((0, d), dtype=float)
     train_y = np.zeros((0, 1), dtype=float)
     train_yvar = np.ones((0, 1), dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     x_query = np.zeros(d, dtype=float)
     neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
     assert neighbors.shape == (0,)
@@ -65,7 +69,9 @@ def test_neighbors_k_larger_than_available():
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True).astype(float)
     train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     x_query = np.zeros(d, dtype=float)
     neighbors = model.neighbors(x_query, k=20, exclude_nearest=False)
     assert neighbors.shape == (n,)
@@ -86,7 +92,9 @@ def test_neighbors_with_multiple_metrics():
     train_x = rng.standard_normal((n, d))
     train_y = rng.standard_normal((n, 2))
     train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     x_query = np.zeros(d, dtype=float)
     neighbors = model.neighbors(x_query, k=5, exclude_nearest=False)
     assert neighbors.shape == (5,)
@@ -111,7 +119,9 @@ def test_neighbors_exclude_nearest_requires_multiple_observations():
     d = 3
     train_x = rng.standard_normal((1, d))
     train_y, train_yvar = np.array([[1.0]]), np.array([[0.1]])
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     x_query = np.zeros(d, dtype=float)
     with pytest.raises(
         ValueError, match="exclude_nearest=true requires at least 2 observations"

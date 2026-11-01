@@ -1,15 +1,21 @@
 //! Integration tests for EnnBackend dispatch and disk storage.
 
-use ennbo::{EpistemicNearestNeighbors, IndexDriver};
+use ennbo::EpistemicNearestNeighbors;
 use ndarray::array;
 use tempfile::TempDir;
 
 #[test]
-fn in_memory_backend_row_and_index_accessors() {
+fn store_row_and_index_accessors() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
     let train_y = array![[0.0], [1.0], [2.0]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let model = EpistemicNearestNeighbors::new(
+        train_x,
+        train_y,
+        None,
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
+    )
+    .unwrap();
     assert_eq!(model.index_access().len(), 3);
     assert_eq!(model.num_dim(), 2);
     let x0 = model.rows().row_x(0).unwrap();
@@ -19,19 +25,19 @@ fn in_memory_backend_row_and_index_accessors() {
     let (x_at, y_at, _) = model.rows().train_rows_at(&[0, 2]).unwrap();
     assert_eq!(x_at.nrows(), 2);
     assert_eq!(y_at.nrows(), 2);
-    let mem = model.index_access().memory_bytes().unwrap();
-    assert!(mem > 0);
+    model.index_access().memory_bytes().unwrap();
     let query = array![[0.1, 0.1]];
     let idx = model.neighbors(&query.view(), 2, false).unwrap();
     assert_eq!(idx.nrows(), 1);
 }
 
 #[test]
-fn new_empty_in_memory_accepts_incremental_add() {
+fn new_empty_store_accepts_incremental_add() {
+    let dir = tempfile::tempdir().unwrap();
     let mut model = EpistemicNearestNeighbors::new_empty(
         2,
         1,
-        ennbo::EnnLayout::new(IndexDriver::Flat, None, false).unwrap(),
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
         None,
     )
     .unwrap();
@@ -51,7 +57,7 @@ fn disk_backend_roundtrip_and_search() {
         train_x.clone(),
         train_y,
         None,
-        ennbo::EnnLayout::disk(dir.path().to_path_buf(), false),
+        ennbo::EnnLayout::new(dir.path().to_path_buf(), false).unwrap(),
         None,
     )
     .unwrap();
@@ -64,12 +70,12 @@ fn disk_backend_roundtrip_and_search() {
     let query = array![[0.9, 0.9]];
     let idx = model.neighbors(&query.view(), 1, false).unwrap();
     assert_eq!(idx[[0, 0]], 3);
+    let dir = tempfile::tempdir().unwrap();
     let mem = EpistemicNearestNeighbors::new(
         train_x,
         array![[0.0], [1.0], [1.0], [2.0]],
         None,
-        false,
-        IndexDriver::Flat,
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
     )
     .unwrap();
     let exact = mem.neighbors(&query.view(), 1, false).unwrap();
@@ -102,20 +108,13 @@ fn kiss_disk_bpann_static_coverage_names() {
 }
 
 #[test]
-fn disk_storage_rejects_non_disk_driver() {
-    let dir = TempDir::new().expect("tempdir");
-    let err = ennbo::EnnLayout::new(IndexDriver::Flat, Some(dir.path().to_path_buf()), false);
-    assert!(err.unwrap_err().to_string().contains("FLAT"));
-}
-
-#[test]
 fn weighting_selects_auto_for_bpann_disk() {
     let dir = TempDir::new().expect("tempdir");
     let model = EpistemicNearestNeighbors::new_with_storage(
         array![[0.0, 0.0], [2.0, 20.0]],
         array![[0.0], [1.0]],
         None,
-        ennbo::EnnLayout::disk(dir.path().to_path_buf(), true),
+        ennbo::EnnLayout::new(dir.path().to_path_buf(), true).unwrap(),
         None,
     )
     .expect("weighted BPANN_DISK must succeed");

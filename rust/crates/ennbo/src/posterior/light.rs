@@ -1,9 +1,10 @@
-use ndarray::{Array2, ArrayView1, ArrayView2, ArrayViewMut1, Axis};
+use ndarray::{Array2, ArrayView1, ArrayView2, Axis};
 
 use crate::error::{ENNError, EPS_VAR};
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNParams, PosteriorFlags};
 
+use super::neighbor::usable_neighbor_count;
 use super::{empty_posterior_internals, index_search};
 
 pub(crate) type PosteriorLightOut = (
@@ -45,7 +46,7 @@ fn neighbor_search_k(
 }
 
 #[inline]
-pub(super) fn fill_neighbor_weights(
+fn fill_neighbor_weights(
     distances: ArrayView1<f64>,
     params: &ENNParams,
     weights: &mut [f64],
@@ -59,62 +60,6 @@ pub(super) fn fill_neighbor_weights(
         norm += *weight;
     }
     1.0 / norm
-}
-
-pub(super) fn fill_neighbor_means(
-    train_y: ArrayView2<f64>,
-    indices: ArrayView1<i64>,
-    weights: &[f64],
-    inv_norm: f64,
-    mut means: ArrayViewMut1<f64>,
-) {
-    means.fill(0.0);
-    if let (Some(targets), Some(output)) = (train_y.as_slice(), means.as_slice_mut()) {
-        let metrics = output.len();
-        if metrics == 1 {
-            fill_fixed_neighbor_means::<1>(targets, indices, weights, inv_norm, output);
-            return;
-        }
-        if metrics == 6 {
-            fill_fixed_neighbor_means::<6>(targets, indices, weights, inv_norm, output);
-            return;
-        }
-        for (j, &index) in indices.iter().enumerate() {
-            let normalized = weights[j] * inv_norm;
-            let start = index as usize * metrics;
-            let row = &targets[start..start + metrics];
-            for (mean, &target) in output.iter_mut().zip(row) {
-                *mean += normalized * target;
-            }
-        }
-    } else {
-        for (j, &index) in indices.iter().enumerate() {
-            let normalized = weights[j] * inv_norm;
-            let row = train_y.row(index as usize);
-            for (mean, &target) in means.iter_mut().zip(row.iter()) {
-                *mean += normalized * target;
-            }
-        }
-    }
-}
-
-fn fill_fixed_neighbor_means<const M: usize>(
-    targets: &[f64],
-    indices: ArrayView1<i64>,
-    weights: &[f64],
-    inv_norm: f64,
-    output: &mut [f64],
-) {
-    let mut means = [0.0; M];
-    for (j, &index) in indices.iter().enumerate() {
-        let normalized = weights[j] * inv_norm;
-        let start = index as usize * M;
-        let row = &targets[start..start + M];
-        for m in 0..M {
-            means[m] += normalized * row[m];
-        }
-    }
-    output.copy_from_slice(&means);
 }
 
 pub(super) fn fuse_neighbors_to_mu_se(
@@ -146,18 +91,14 @@ pub(super) fn fuse_neighbors_to_mu_se(
             idx_out[[i, j]] = idx_row[j];
         }
 
-        if let Some(train_y) = model.train_y_view_opt() {
-            fill_neighbor_means(train_y, idx_row, &w, inv_norm, mu.row_mut(i));
-        } else {
-            for m in 0..num_metrics {
-                let mut mean = 0.0;
-                for j in 0..k {
-                    let normalized = w[j] * inv_norm;
-                    let row = model.rows().row_y(idx_row[j] as usize).expect("row_y");
-                    mean += normalized * row[m];
-                }
-                mu[[i, m]] = mean;
+        for m in 0..num_metrics {
+            let mut mean = 0.0;
+            for j in 0..k {
+                let normalized = w[j] * inv_norm;
+                let row = model.rows().row_y(idx_row[j] as usize).expect("row_y");
+                mean += normalized * row[m];
             }
+            mu[[i, m]] = mean;
         }
         for m in 0..num_metrics {
             let y_scale_m = y_scale[m];
@@ -210,12 +151,7 @@ pub(crate) fn compute_posterior_light(
 
     let (dist2s_full, idx_full) = index_search(model, x, search_k as i32, flags.exclude_nearest)?;
 
-    let available_k = if flags.exclude_nearest {
-        search_k.saturating_sub(1)
-    } else {
-        search_k
-    };
-    let k = (params.k_num_neighbors as usize).min(available_k);
+    let k = usable_neighbor_count(&idx_full, params);
     if k == 0 {
         let internals = empty_posterior_internals(model, batch_size);
         return Ok((
@@ -235,8 +171,6 @@ pub(crate) fn compute_posterior_light(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::IndexDriver;
-    use crate::model::EpistemicNearestNeighbors;
     use crate::posterior::compute_posterior_internals;
     use crate::test_helpers::test_epistemic_model_exact_unit_square as create_test_model;
     use ndarray::array;
@@ -248,14 +182,7 @@ mod tests {
         let m = 2;
         let train_x = Array2::from_shape_fn((n, d), |(i, j)| (i as f64 * 0.1) + (j as f64 * 0.01));
         let train_y = Array2::from_shape_fn((n, m), |(i, j)| (i as f64) + (j as f64));
-        let model = EpistemicNearestNeighbors::new(
-            train_x.clone(),
-            train_y,
-            None,
-            false,
-            IndexDriver::Flat,
-        )
-        .unwrap();
+        let model = crate::test_helpers::test_model(train_x.clone(), train_y, None, false);
         let params = ENNParams::new(5, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
 
@@ -286,14 +213,7 @@ mod tests {
 
     #[test]
     fn test_neighbor_search_k_exclude_nearest_requires_two_observations() {
-        let model = EpistemicNearestNeighbors::new(
-            array![[0.0, 0.0]],
-            array![[1.0]],
-            None,
-            false,
-            IndexDriver::Flat,
-        )
-        .unwrap();
+        let model = crate::test_helpers::test_model(array![[0.0, 0.0]], array![[1.0]], None, false);
         let params = ENNParams::new(1, 1.0, 0.1).unwrap();
         assert!(neighbor_search_k(&model, &params, true).is_err());
         assert_eq!(neighbor_search_k(&model, &params, false).unwrap(), 1);
@@ -333,14 +253,12 @@ mod tests {
 
     #[test]
     fn test_compute_posterior_light_empty_model() {
-        let model = EpistemicNearestNeighbors::new(
+        let model = crate::test_helpers::test_model(
             Array2::zeros((0, 2)),
             Array2::zeros((0, 1)),
             None,
             false,
-            IndexDriver::Flat,
-        )
-        .unwrap();
+        );
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
         let query = array![[0.5, 0.5]];
@@ -355,9 +273,7 @@ mod tests {
     fn test_fuse_neighbors_to_mu_se_on_small_batch() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
         let train_y = array![[1.0], [2.0], [3.0], [4.0]];
-        let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-                .unwrap();
+        let model = crate::test_helpers::test_model(train_x, train_y, None, false);
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
         let all: Vec<usize> = (0..model.len()).collect();
@@ -382,9 +298,7 @@ mod tests {
     fn test_compute_posterior_light_multiple_metrics() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let train_y = array![[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]];
-        let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-                .unwrap();
+        let model = crate::test_helpers::test_model(train_x, train_y, None, false);
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
         let flags = PosteriorFlags::new();
         let all: Vec<usize> = (0..model.len()).collect();

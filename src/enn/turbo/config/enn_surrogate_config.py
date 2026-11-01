@@ -8,18 +8,13 @@ import numpy as np
 from enn.semantic import SemanticInputTransform
 
 from .enn_fit_config import ENNFitConfig
-from .enn_index_driver import ENNIndexDriver, index_driver_to_wire
 from .enn_x_scaling import validate_tied_dims
 
 
-def validate_enn_placement(*, index_driver, work_dir, weighting):
+def validate_enn_placement(work_dir):
     from enn._rust import validate_enn_placement as rust_validate
 
-    rust_validate(
-        index_driver_to_wire(index_driver),
-        None if work_dir is None else os.fspath(work_dir),
-        weighting,
-    )
+    rust_validate(os.fspath(work_dir))
 
 
 @dataclass(frozen=True)
@@ -28,18 +23,13 @@ class ENNSurrogateConfig:
     fit: ENNFitConfig = field(default_factory=ENNFitConfig)
     weighting: bool = False
     tied_dims: tuple = ()
-    index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
-    work_dir: str | os.PathLike[str] | None = None
+    work_dir: str | os.PathLike[str] = field(kw_only=True)
     input_transform: SemanticInputTransform | None = field(default=None, kw_only=True)
     semantic_only: bool = field(default=False, kw_only=True)
     y_bounds: np.ndarray | None = None
 
     def __post_init__(self) -> None:
-        validate_enn_placement(
-            index_driver=self.index_driver,
-            work_dir=self.work_dir,
-            weighting=self.weighting,
-        )
+        validate_enn_placement(self.work_dir)
         self._check_tied_dims()
         if self.semantic_only and self.input_transform is None:
             raise ValueError("semantic_only requires input_transform")

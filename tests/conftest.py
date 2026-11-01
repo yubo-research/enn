@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from evals.harness.work_dirs import fresh_work_dir
+
 _tests_path = Path(__file__).parent
 if str(_tests_path) not in sys.path:
     sys.path.insert(0, str(_tests_path))
@@ -90,5 +92,7 @@ def make_enn_model(n=20, d=3, seed=0, yvar_scale=0.1):
     train_x = rng.standard_normal((n, d))
     train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
     train_yvar = yvar_scale * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     return model, train_x, train_y, train_yvar, rng

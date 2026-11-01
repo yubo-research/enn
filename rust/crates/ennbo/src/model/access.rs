@@ -21,18 +21,11 @@ impl<'a> EnnIndexAccess<'a> {
     }
 
     pub fn memory_bytes(&self) -> Result<usize, ENNError> {
-        if !self.model.backend.defer_index_sync_for_search() {
-            self.ensure_sync()?;
-        }
         self.model.backend.index_memory_bytes()
     }
 
-    pub fn is_stale(&self) -> bool {
-        self.model.backend.is_index_stale()
-    }
-
     pub fn release_observation_pages(&self) -> Result<(), ENNError> {
-        crate::backend::release_enn_observation_pages(&self.model.backend)
+        self.model.backend.release_observation_pages()
     }
 
     pub fn len(&self) -> usize {
@@ -49,12 +42,14 @@ impl<'a> EnnIndexAccess<'a> {
         search_k: i32,
         exclude_nearest: bool,
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
-        if !self.model.backend.defer_index_sync_for_search() {
-            self.ensure_sync()?;
-        }
         let n_obs = self.model.num_obs();
         if !exclude_nearest || n_obs == 0 || search_k <= 0 {
-            return self.model.backend.search(x, search_k, exclude_nearest);
+            let (dist, idx) = self.model.backend.search(x, search_k, exclude_nearest)?;
+            return Ok(pad_neighbor_cols_to_search_k(
+                dist,
+                idx,
+                search_k.max(0) as usize,
+            ));
         }
         let fetch_k = ((search_k as usize) + 1).min(n_obs);
         let (dist, idx) = self.model.backend.search(x, fetch_k as i32, true)?;
@@ -105,6 +100,31 @@ impl<'a> EnnRowAccess<'a> {
     }
 }
 
+fn pad_neighbor_cols_to_search_k(
+    dist2s: Array2<f64>,
+    idx: Array2<i64>,
+    search_k: usize,
+) -> (Array2<f64>, Array2<i64>) {
+    use ndarray::{concatenate, s, Axis};
+    let k_eff = dist2s.ncols();
+    if k_eff >= search_k {
+        return (dist2s, idx);
+    }
+    let n_query = dist2s.nrows();
+    let pad_dist = Array2::from_elem((n_query, search_k - k_eff), f64::INFINITY);
+    let mut pad_idx = Array2::zeros((n_query, search_k - k_eff));
+    if k_eff > 0 {
+        let farthest = idx.slice(s![.., k_eff - 1]).to_owned();
+        for mut column in pad_idx.columns_mut() {
+            column.assign(&farthest);
+        }
+    }
+    (
+        concatenate![Axis(1), dist2s.view(), pad_dist.view()],
+        concatenate![Axis(1), idx.view(), pad_idx.view()],
+    )
+}
+
 fn trim_search_cols(
     dist: Array2<f64>,
     idx: Array2<i64>,
@@ -138,20 +158,16 @@ impl EpistemicNearestNeighbors {
 
 #[cfg(test)]
 mod access_tests {
-    use crate::EpistemicNearestNeighbors;
-    use crate::IndexDriver;
     use ndarray::array;
 
     #[test]
     fn neighbor_distance_helpers() {
-        let model = EpistemicNearestNeighbors::new(
+        let model = crate::test_helpers::test_model(
             array![[0.0, 0.0], [1.0, 0.0]],
             array![[0.0], [1.0]],
             None,
             false,
-            IndexDriver::Flat,
-        )
-        .unwrap();
+        );
         let query = array![[0.1, 0.1]];
         let access = model.index_access();
         let _ = access

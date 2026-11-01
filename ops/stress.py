@@ -8,7 +8,7 @@ import struct
 import sys
 import time
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import click
@@ -17,13 +17,7 @@ import numpy as np
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams, PosteriorFlags
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "bpann_disk")
-DISK_INDEX_TYPE_CHOICES: frozenset[str] = frozenset({"bpann_disk"})
-DISK_DEFER_SYNC_DRIVERS: frozenset[ENNIndexDriver] = frozenset(
-    {ENNIndexDriver.BPANN_DISK}
-)
 DEFAULT_NUM_DIM = 10
 STRESS_OBS_BATCH_SIZE = 100
 ENN_ADD_STRESS_BATCH_SIZE = 1000
@@ -63,7 +57,6 @@ TURBO_ENN_NUM_FIT_SAMPLES = 100
 
 
 TURBO_ENN_SEED_CHUNK = 100_000
-TURBO_ENN_SEED_CHUNK_FLAT = 200_000
 PROPOSAL_SCALE_NS: tuple[int, ...] = (
     10,
     30,
@@ -120,7 +113,6 @@ def run_disk_rss_stress(
     *,
     num_obs: int,
     work_dir: str,
-    index_driver: ENNIndexDriver = ENNIndexDriver.BPANN_DISK,
     config: DiskRssStressConfig | None = None,
 ) -> DiskRssStressResult:
     """Stream batched adds to disk ENN; return RSS and on-disk metrics."""
@@ -141,7 +133,6 @@ def run_disk_rss_stress(
     model = EpistemicNearestNeighbors(
         empty_x,
         empty_y,
-        index_driver=index_driver,
         work_dir=work_dir,
     )
     baseline_after_init = max_rss_bytes()
@@ -189,24 +180,7 @@ class EnnAddStressConfig:
     heartbeat_seconds: float = 0.0
     query_n: int = STRESS_QUERY_N
     query_seed: int = STRESS_QUERY_SEED
-    work_dir: str | None = None
-
-
-def parse_index_driver(name: str) -> ENNIndexDriver:
-    mapping = {
-        "flat": ENNIndexDriver.FLAT,
-        "bpann_disk": ENNIndexDriver.BPANN_DISK,
-    }
-    if name not in mapping:
-        raise ValueError(f"Unknown index type: {name}")
-    return mapping[name]
-
-
-def turbo_enn_default_seed_chunk(index_driver: ENNIndexDriver) -> int:
-    """Return turbo-enn bulk-seed chunk sized for the index backend."""
-    if index_driver == ENNIndexDriver.FLAT:
-        return TURBO_ENN_SEED_CHUNK_FLAT
-    return TURBO_ENN_SEED_CHUNK
+    work_dir: str = field(kw_only=True)
 
 
 def _next_checkpoint(n: int) -> int:
@@ -353,7 +327,6 @@ def reopen_disk_bpann_enn(work_dir: str) -> tuple[EpistemicNearestNeighbors, dic
     model = EpistemicNearestNeighbors(
         np.empty((0, num_dim), dtype=float),
         np.empty((0, num_metrics), dtype=float),
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=work_dir,
     )
     model.ensure_index_sync()
@@ -385,15 +358,14 @@ def format_config_header(
     *,
     num_dim: int,
     num_obs: int,
-    work_dir: str | None = None,
+    work_dir: str,
     num_obs_existing: int | None = None,
 ) -> str:
     prefix = "restarting " if num_obs_existing else ""
     parts = [format_kv("num_dim", num_dim), format_kv("num_obs", num_obs)]
     if num_obs_existing:
         parts.append(format_kv("num_obs_existing", num_obs_existing))
-    if work_dir is not None:
-        parts.append(format_kv("work_dir", work_dir))
+    parts.append(format_kv("work_dir", work_dir))
     return prefix + " ".join(parts)
 
 
@@ -405,26 +377,18 @@ def _time_query_s(model: EpistemicNearestNeighbors, x_query: np.ndarray) -> floa
 
 def run_enn_add_stress(
     *,
-    index_driver: ENNIndexDriver,
     num_obs: int,
-    config: EnnAddStressConfig | None = None,
+    config: EnnAddStressConfig,
 ) -> Iterator[tuple[int, float, float]]:
     if num_obs < 1:
         raise ValueError("num_obs must be >= 1")
-    cfg = config if config is not None else EnnAddStressConfig()
+    cfg = config
     checkpoints = set(checkpoint_ns(num_obs))
     x_query = make_query_points(cfg.query_n, num_dim=cfg.num_dim, seed=cfg.query_seed)
 
     empty_x = np.empty((0, cfg.num_dim), dtype=float)
     empty_y = np.empty((0, 1), dtype=float)
-    model_kwargs: dict[str, object] = {
-        "train_x": empty_x,
-        "train_y": empty_y,
-        "index_driver": index_driver,
-    }
-    if cfg.work_dir is not None:
-        model_kwargs["work_dir"] = cfg.work_dir
-    model = EpistemicNearestNeighbors(**model_kwargs)
+    model = EpistemicNearestNeighbors(empty_x, empty_y, work_dir=cfg.work_dir)
 
     model.add(empty_x, empty_y)
 
@@ -444,10 +408,6 @@ def run_enn_add_stress(
         ):
             cp = checkpoint_list[next_checkpoint_i]
 
-            if index_driver not in DISK_DEFER_SYNC_DRIVERS:
-                t_sync = time.perf_counter()
-                model.ensure_index_sync()
-                segment_lib_s += time.perf_counter() - t_sync
             segment_s = segment_lib_s
             segment_lib_s = 0.0
             query_s = _time_query_s(model, x_query)
@@ -468,8 +428,7 @@ def run_enn_add_stress(
                 n += 1
                 t_add = time.perf_counter()
                 model.add(x_row, y_row)
-                if index_driver in DISK_DEFER_SYNC_DRIVERS:
-                    model.schedule_background_flush()
+                model.schedule_background_flush()
                 segment_lib_s += time.perf_counter() - t_add
                 if cfg.progress_every and (n % cfg.progress_every == 0):
                     click.echo(format_kv("progress n", n), err=True)
@@ -489,8 +448,7 @@ def run_enn_add_stress(
             ):
                 t_add = time.perf_counter()
                 model.add(x_batch, y_batch)
-                if index_driver in DISK_DEFER_SYNC_DRIVERS:
-                    model.schedule_background_flush()
+                model.schedule_background_flush()
                 segment_lib_s += time.perf_counter() - t_add
                 n += x_batch.shape[0]
                 if cfg.progress_every and (n % cfg.progress_every == 0):
@@ -502,8 +460,7 @@ def run_enn_add_stress(
                     last_heartbeat_t = time.perf_counter()
                 yield from emit_checkpoints(n)
     finally:
-        if index_driver in DISK_DEFER_SYNC_DRIVERS:
-            model.persist_index_to_disk()
+        model.persist_index_to_disk()
 
 
 def format_stress_row(n: int, query_s: float, segment_s: float) -> str:
@@ -710,8 +667,7 @@ class DrawStressConfig:
     num_fit_candidates: int = DEFAULT_DRAW_NUM_FIT_CANDIDATES
     num_fit_samples: int = DEFAULT_DRAW_NUM_FIT_SAMPLES
     num_draws: int = DEFAULT_DRAW_NUM_DRAWS
-    index_driver: ENNIndexDriver = ENNIndexDriver.FLAT
-    work_dir: str | None = None
+    work_dir: str = field(kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -766,18 +722,8 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
     x_test, y_test = make_draw_observations(
         config.num_test, num_dim=config.num_dim, rng=data_rng
     )
-    model_kwargs: dict[str, object] = {
-        "train_x": x,
-        "train_y": y,
-        "index_driver": config.index_driver,
-    }
-    if config.index_driver == ENNIndexDriver.BPANN_DISK:
-        if config.work_dir is None:
-            raise ValueError("bpann_disk requires work_dir")
-        model_kwargs["work_dir"] = config.work_dir
-    elif config.work_dir is not None:
-        raise ValueError("work_dir requires bpann_disk")
-    model = EpistemicNearestNeighbors(**model_kwargs)
+    model = EpistemicNearestNeighbors(x[:0], y[:0], work_dir=config.work_dir)
+    token = model.add(x, y)
 
     t0 = time.perf_counter()
     fitted = enn_fit(
@@ -786,6 +732,7 @@ def run_draw_stress(config: DrawStressConfig) -> DrawStressResult:
         num_fit_candidates=config.num_fit_candidates,
         num_fit_samples=config.num_fit_samples,
         rng=fit_rng,
+        incremental=token,
     )
     fit_s = time.perf_counter() - t0
 
@@ -920,10 +867,8 @@ def run_draw_stress_over_seeds(
         raise ValueError("num_seeds must be >= 1")
     results = []
     for i in range(num_seeds):
-        seed_work_dir = config.work_dir
-        if config.work_dir is not None:
-            seed_work_dir = str(Path(config.work_dir) / f"seed{config.seed + i}")
-            Path(seed_work_dir).mkdir(parents=True, exist_ok=True)
+        seed_work_dir = str(Path(config.work_dir) / f"seed{config.seed + i}")
+        Path(seed_work_dir).mkdir(parents=True, exist_ok=True)
         results.append(
             run_draw_stress(
                 DrawStressConfig(
@@ -935,7 +880,6 @@ def run_draw_stress_over_seeds(
                     num_fit_candidates=config.num_fit_candidates,
                     num_fit_samples=config.num_fit_samples,
                     num_draws=config.num_draws,
-                    index_driver=config.index_driver,
                     work_dir=seed_work_dir,
                 )
             )
@@ -1044,14 +988,12 @@ def turbo_enn_ask_stops(num_obs: int, num_ask: int) -> tuple[int, ...]:
 
 def build_turbo_enn_optimizer_config(
     *,
-    index_driver: ENNIndexDriver,
-    work_dir: str | None = None,
+    work_dir: str,
     num_init: int = TURBO_ENN_NUM_INIT,
 ):
     """Build turbo_enn config matching compare's single-metric Ackley path.
 
     Overrides only ``num_init`` (fixed at ``TURBO_ENN_NUM_INIT`` for the stress CLI).
-    For ``BPANN_DISK``, ``work_dir`` is required.
     """
     from enn.turbo.config import (
         AcqType,
@@ -1063,19 +1005,12 @@ def build_turbo_enn_optimizer_config(
 
     if num_init < 1:
         raise ValueError("num_init must be >= 1")
-    enn_kwargs: dict[str, object] = {
-        "k": TURBO_ENN_K,
-        "fit": ENNFitConfig(num_fit_samples=TURBO_ENN_NUM_FIT_SAMPLES),
-        "index_driver": index_driver,
-    }
-    if index_driver == ENNIndexDriver.BPANN_DISK:
-        if work_dir is None:
-            raise ValueError("bpann_disk requires work_dir")
-        enn_kwargs["work_dir"] = work_dir
-    elif work_dir is not None:
-        raise ValueError("work_dir requires bpann_disk")
     return turbo_enn_config(
-        enn=ENNSurrogateConfig(**enn_kwargs),
+        enn=ENNSurrogateConfig(
+            k=TURBO_ENN_K,
+            fit=ENNFitConfig(num_fit_samples=TURBO_ENN_NUM_FIT_SAMPLES),
+            work_dir=work_dir,
+        ),
         trust_region=TurboTRConfig(noise_aware=True),
         acq_type=AcqType.UCB,
         num_init=num_init,
@@ -1087,15 +1022,12 @@ def format_turbo_enn_config_header(
     num_dim: int,
     num_obs: int,
     num_ask: int,
-    index_type: str,
-    work_dir: str | None = None,
+    work_dir: str,
     tell_all: bool = False,
 ) -> str:
     header = (
-        f"num_dim={num_dim} num_obs={num_obs} num_ask={num_ask} index_type={index_type}"
+        f"num_dim={num_dim} num_obs={num_obs} num_ask={num_ask} work_dir={work_dir}"
     )
-    if work_dir is not None:
-        header = f"{header} work_dir={work_dir}"
     if tell_all:
         header = f"{header} tell_all=true"
     return header
@@ -1112,11 +1044,10 @@ def format_turbo_enn_row(
 
 def run_turbo_enn_stress(
     *,
-    index_driver: ENNIndexDriver,
     num_dim: int,
     num_obs: int,
     num_ask: int,
-    work_dir: str | None = None,
+    work_dir: str,
     seed: int = TURBO_ENN_SEED,
     seed_chunk: int | None = None,
     tell_all: bool = False,
@@ -1129,7 +1060,7 @@ def run_turbo_enn_stress(
         raise ValueError("num_dim must be >= 1")
     stops = turbo_enn_ask_stops(num_obs, num_ask)
     if seed_chunk is None:
-        seed_chunk = turbo_enn_default_seed_chunk(index_driver)
+        seed_chunk = TURBO_ENN_SEED_CHUNK
     if tell_all:
         seed_chunk = 1
     if seed_chunk < 1:
@@ -1148,7 +1079,6 @@ def run_turbo_enn_stress(
         bounds_arr = np.asarray(bounds, dtype=float)
     if optimizer is None:
         config = build_turbo_enn_optimizer_config(
-            index_driver=index_driver,
             work_dir=work_dir,
             num_init=TURBO_ENN_NUM_INIT,
         )
@@ -1289,16 +1219,11 @@ def format_proposal_scale_config_header(
     num_dim: int,
     max_n: int,
     num_probes: int,
-    index_type: str,
-    work_dir: str | None = None,
+    work_dir: str,
 ) -> str:
-    header = (
-        f"num_dim={num_dim} max_n={max_n} num_probes={num_probes} "
-        f"index_type={index_type}"
+    return (
+        f"num_dim={num_dim} max_n={max_n} num_probes={num_probes} work_dir={work_dir}"
     )
-    if work_dir is not None:
-        header = f"{header} work_dir={work_dir}"
-    return header
 
 
 def format_proposal_scale_row(
@@ -1311,11 +1236,10 @@ def format_proposal_scale_row(
 
 
 def run_proposal_scale_stress(
-    index_driver: ENNIndexDriver,
     num_dim: int,
     max_n: int,
     *,
-    work_dir: str | None = None,
+    work_dir: str,
     num_probes: int = PROPOSAL_SCALE_NUM_PROBES,
     warmup: int = PROPOSAL_SCALE_WARMUP,
     seed_chunk: int = PROPOSAL_SCALE_SEED_CHUNK,
@@ -1344,17 +1268,12 @@ def run_proposal_scale_stress(
     bounds = np.array([ackley.bounds] * num_dim, dtype=float)
 
     for n in grid:
-        n_work_dir: str | None
-        if work_dir is not None:
-            n_work_dir = str(Path(work_dir) / f"n{n}")
-            Path(n_work_dir).mkdir(parents=True, exist_ok=True)
-        else:
-            n_work_dir = None
+        n_work_dir = str(Path(work_dir) / f"n{n}")
+        Path(n_work_dir).mkdir(parents=True, exist_ok=True)
         if optimizer_factory is not None:
             opt = optimizer_factory(n=n, work_dir=n_work_dir)
         else:
             config = build_turbo_enn_optimizer_config(
-                index_driver=index_driver,
                 work_dir=n_work_dir,
                 num_init=TURBO_ENN_NUM_INIT,
             )
@@ -1388,10 +1307,6 @@ def cli() -> None:
 @cli.command(
     "enn",
     params=[
-        click.Argument(
-            ["index_type"],
-            type=click.Choice(INDEX_TYPE_CHOICES),
-        ),
         click.Argument(["num_obs"], type=int),
         click.Option(
             ["--num-dim"],
@@ -1417,8 +1332,8 @@ def cli() -> None:
         click.Option(
             ["--work-dir"],
             type=click.Path(file_okay=False, dir_okay=True, path_type=str),
-            default=None,
-            help="Disk-backed ENN work directory (requires bpann_disk).",
+            required=True,
+            help="Disk-backed ENN work directory.",
         ),
         click.Option(
             ["--batch"],
@@ -1438,12 +1353,11 @@ def cli() -> None:
     ],
 )
 def enn(
-    index_type: str,
     num_obs: int,
     num_dim: int,
     progress_every: int,
     heartbeat_seconds: float,
-    work_dir: str | None,
+    work_dir: str,
     batch: bool,
     ennbo_config: str | None,
 ) -> None:
@@ -1460,14 +1374,7 @@ def enn(
         raise click.ClickException("progress_every must be >= 0")
     if heartbeat_seconds < 0:
         raise click.ClickException("heartbeat_seconds must be >= 0")
-    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
-        raise click.ClickException(
-            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
-        )
-    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
-        raise click.ClickException(f"{index_type} requires --work-dir")
-    driver = parse_index_driver(index_type)
-    num_obs_existing = load_num_obs_existing(work_dir) if work_dir is not None else 0
+    num_obs_existing = load_num_obs_existing(work_dir)
     click.echo(
         format_config_header(
             num_dim=num_dim,
@@ -1478,7 +1385,6 @@ def enn(
     )
     batch_size = ENN_ADD_STRESS_BATCH_SIZE if batch else 1
     for n, query_s, segment_s in run_enn_add_stress(
-        index_driver=driver,
         num_obs=num_obs,
         config=EnnAddStressConfig(
             num_dim=num_dim,
@@ -1582,17 +1488,10 @@ def sample(work_dir: str, num_samples: int, seed: int) -> None:
             help="Repeat full draw stress over seed..seed+num_seeds-1; report mean ± SE.",
         ),
         click.Option(
-            ["--index-type"],
-            type=click.Choice(INDEX_TYPE_CHOICES),
-            default="flat",
-            show_default=True,
-            help="ENN index backend for draw stress.",
-        ),
-        click.Option(
             ["--work-dir"],
             type=click.Path(file_okay=False, dir_okay=True, path_type=str),
-            default=None,
-            help="Disk-backed ENN work directory (requires bpann_disk).",
+            required=True,
+            help="Disk-backed ENN work directory.",
         ),
     ],
 )
@@ -1606,8 +1505,7 @@ def draw(
     num_fit_samples: int,
     num_draws: int,
     num_seeds: int,
-    index_type: str,
-    work_dir: str | None,
+    work_dir: str,
 ) -> None:
     """Fit ENN on synthetic data; report avg likelihood for two draw methods."""
     if num_obs < 1:
@@ -1626,12 +1524,6 @@ def draw(
         raise click.ClickException("num_draws must be >= 2")
     if num_seeds < 1:
         raise click.ClickException("num_seeds must be >= 1")
-    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
-        raise click.ClickException(
-            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
-        )
-    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
-        raise click.ClickException(f"{index_type} requires --work-dir")
     config = DrawStressConfig(
         num_obs=num_obs,
         num_test=num_test,
@@ -1641,7 +1533,6 @@ def draw(
         num_fit_candidates=num_fit_candidates,
         num_fit_samples=num_fit_samples,
         num_draws=num_draws,
-        index_driver=parse_index_driver(index_type),
         work_dir=work_dir,
     )
     try:
@@ -1656,10 +1547,6 @@ def draw(
 @cli.command(
     "turbo-enn",
     params=[
-        click.Argument(
-            ["index_type"],
-            type=click.Choice(INDEX_TYPE_CHOICES),
-        ),
         click.Argument(["num_obs"], type=int),
         click.Argument(["num_ask"], type=int),
         click.Option(
@@ -1672,8 +1559,8 @@ def draw(
         click.Option(
             ["--work-dir"],
             type=click.Path(file_okay=False, dir_okay=True, path_type=str),
-            default=None,
-            help="Disk-backed ENN work directory (requires bpann_disk).",
+            required=True,
+            help="Disk-backed ENN work directory.",
         ),
         click.Option(
             ["--tell-all"],
@@ -1687,11 +1574,10 @@ def draw(
     ],
 )
 def turbo_enn(
-    index_type: str,
     num_obs: int,
     num_ask: int,
     num_dim: int,
-    work_dir: str | None,
+    work_dir: str,
     tell_all: bool,
 ) -> None:
     """Time TuRBO-ENN ask at exponentially spaced DGP observation checkpoints."""
@@ -1703,19 +1589,11 @@ def turbo_enn(
         raise click.ClickException("num_ask must be >= 1")
     if num_ask > num_obs:
         raise click.ClickException("num_ask must be <= num_obs")
-    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
-        raise click.ClickException(
-            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
-        )
-    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
-        raise click.ClickException(f"{index_type} requires --work-dir")
-    driver = parse_index_driver(index_type)
     click.echo(
         format_turbo_enn_config_header(
             num_dim=num_dim,
             num_obs=num_obs,
             num_ask=num_ask,
-            index_type=index_type,
             work_dir=work_dir,
             tell_all=tell_all,
         )
@@ -1724,7 +1602,6 @@ def turbo_enn(
     y_best = float("-inf")
     try:
         for row in run_turbo_enn_stress(
-            index_driver=driver,
             num_dim=num_dim,
             num_obs=num_obs,
             num_ask=num_ask,
@@ -1749,10 +1626,6 @@ def turbo_enn(
 @cli.command(
     "proposal-scale",
     params=[
-        click.Argument(
-            ["index_type"],
-            type=click.Choice(INDEX_TYPE_CHOICES),
-        ),
         click.Option(
             ["--num-dim"],
             type=int,
@@ -1777,17 +1650,16 @@ def turbo_enn(
         click.Option(
             ["--work-dir"],
             type=click.Path(file_okay=False, dir_okay=True, path_type=str),
-            default=None,
-            help="Disk-backed ENN work directory (requires bpann_disk).",
+            required=True,
+            help="Disk-backed ENN work directory.",
         ),
     ],
 )
 def proposal_scale(
-    index_type: str,
     num_dim: int,
     max_n: int,
     num_probes: int,
-    work_dir: str | None,
+    work_dir: str,
 ) -> None:
     """Time mean TuRBO-ENN proposal cost at log-spaced N (seed then probe)."""
     if num_dim < 1:
@@ -1798,26 +1670,17 @@ def proposal_scale(
         )
     if num_probes < 1:
         raise click.ClickException("num_probes must be >= 1")
-    if work_dir is not None and index_type not in DISK_INDEX_TYPE_CHOICES:
-        raise click.ClickException(
-            f"work_dir requires index_type in {sorted(DISK_INDEX_TYPE_CHOICES)}"
-        )
-    if index_type in DISK_INDEX_TYPE_CHOICES and work_dir is None:
-        raise click.ClickException(f"{index_type} requires --work-dir")
-    driver = parse_index_driver(index_type)
     click.echo(
         format_proposal_scale_config_header(
             num_dim=num_dim,
             max_n=max_n,
             num_probes=num_probes,
-            index_type=index_type,
             work_dir=work_dir,
         )
     )
     n_width = len(str(max_n))
     try:
         for row in run_proposal_scale_stress(
-            driver,
             num_dim,
             max_n,
             work_dir=work_dir,

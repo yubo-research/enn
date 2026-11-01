@@ -335,9 +335,10 @@ pub fn validate_optimizer_rules_py(
 }
 
 #[pyfunction(name = "create_optimizer_enn")]
-#[pyo3(signature = (bounds, k=None, num_init=None, seed=42, config_overrides=None))]
+#[pyo3(signature = (bounds, work_dir, k=None, num_init=None, seed=42, config_overrides=None))]
 pub fn create_optimizer_enn_py(
     bounds: PyReadonlyArray2<f64>,
+    work_dir: &str,
     k: Option<i32>,
     num_init: Option<usize>,
     seed: u64,
@@ -350,8 +351,11 @@ pub fn create_optimizer_enn_py(
         .map(|d| parse_config_overrides_from_dict(d))
         .transpose()?;
 
+    let layout =
+        ennbo::EnnLayout::new(work_dir, false).map_err(|e| PyValueError::new_err(e.to_string()))?;
     let optimizer = create_optimizer_enn_with_overrides(
         bounds.as_array().to_owned(),
+        layout,
         k,
         num_init,
         seed,

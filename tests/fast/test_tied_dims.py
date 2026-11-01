@@ -6,10 +6,10 @@ import pytest
 from enn.enn import metric_stream as ms
 from enn.enn.cat_codes import CatEncoder, DimKind
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import (
     validate_tied_dims,
 )
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def _mixed(n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
@@ -108,7 +108,6 @@ def test_model_ties_encoded_categoricals(tmp_path) -> None:
         x[:200],
         y[:200, None],
         weighting=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
     )
     assert model.tied_dims == encoder.tied_dims()
@@ -118,23 +117,30 @@ def test_model_ties_encoded_categoricals(tmp_path) -> None:
     for group in encoder.tied_dims():
         _weights_constant(metric.weights, group)
     copied = np.array(x[:30], copy=True)
-    plain = EpistemicNearestNeighbors(copied, y[:30, None])
+    plain = EpistemicNearestNeighbors(copied, y[:30, None], work_dir=fresh_work_dir())
     assert plain.tied_dims == ()
     with pytest.raises(ValueError, match="categorical blocks"):
-        EpistemicNearestNeighbors(x[:30], y[:30, None], tied_dims=[[0, 1]])
+        EpistemicNearestNeighbors(
+            x[:30], y[:30, None], tied_dims=[[0, 1]], work_dir=fresh_work_dir()
+        )
 
 
-def test_scale_x_uses_encoded_categorical_groups() -> None:
+def test_auto_metric_uses_encoded_categorical_groups() -> None:
     encoder, x, y = _encoded_mixed(400)
-    model = EpistemicNearestNeighbors(x[:200], y[:200, None], weighting=True)
+    model = EpistemicNearestNeighbors(
+        x[:200], y[:200, None], weighting=True, work_dir=fresh_work_dir()
+    )
     assert model.tied_dims == encoder.tied_dims()
     model.add(x[200:], y[200:, None])
     scale = model._x_scale[0]
-    tied = [j for group in encoder.tied_dims() for j in group]
-    np.testing.assert_array_equal(scale[tied], 1.0)
-    assert scale[0] > 1.0
+    for group in encoder.tied_dims():
+        assert len(set(scale[list(group)])) == 1
     matched = EpistemicNearestNeighbors(
-        x[:20], y[:20, None], tied_dims=encoder.tied_dims(), weighting=True
+        x[:20],
+        y[:20, None],
+        tied_dims=encoder.tied_dims(),
+        weighting=True,
+        work_dir=fresh_work_dir(),
     )
     assert matched.tied_dims == encoder.tied_dims()
 
@@ -165,31 +171,19 @@ def test_validate_tied_dims_without_width_only_checks_structure() -> None:
             validate_tied_dims(bad)
 
 
-@pytest.mark.parametrize("driver", [ENNIndexDriver.FLAT, ENNIndexDriver.BPANN_DISK])
-def test_scale_x_leaves_tied_dims_unscaled(tmp_path, driver) -> None:
+def test_auto_metric_shares_one_weight_across_tied_dims(tmp_path) -> None:
     x, y = _mixed(600)
-    kw = {"work_dir": tmp_path} if driver == ENNIndexDriver.BPANN_DISK else {}
     model = EpistemicNearestNeighbors(
         x[:300],
         y[:300, None],
         tied_dims=[[2, 3, 4]],
         weighting=True,
-        index_driver=driver,
-        **kw,
+        work_dir=tmp_path,
     )
     assert model.tied_dims == ((2, 3, 4),)
     model.add(x[300:], y[300:, None])
+    assert model.metric.weights[2] == model.metric.weights[3] == model.metric.weights[4]
     scale = model._x_scale[0]
-    if driver == ENNIndexDriver.FLAT:
-        np.testing.assert_array_equal(scale[2:], 1.0)
-    if driver == ENNIndexDriver.FLAT:
-        np.testing.assert_allclose(scale[:2], x[:, :2].std(axis=0), rtol=0.011)
-    else:
-        assert (
-            model.metric.weights[2]
-            == model.metric.weights[3]
-            == model.metric.weights[4]
-        )
     q = x[:4] + 0.01
     for i in range(len(q)):
         d2 = (((x - q[i]) / scale) ** 2).sum(axis=1)
@@ -197,7 +191,9 @@ def test_scale_x_leaves_tied_dims_unscaled(tmp_path, driver) -> None:
             model.neighbors(q[i], 5), np.argsort(d2, kind="stable")[:5]
         )
     with pytest.raises(ValueError, match="disjoint"):
-        EpistemicNearestNeighbors(x, y[:, None], tied_dims=[[2, 3], [3, 4]])
+        EpistemicNearestNeighbors(
+            x, y[:, None], tied_dims=[[2, 3], [3, 4]], work_dir=fresh_work_dir()
+        )
 
 
 def test_auto_metric_ties_group_weights(tmp_path) -> None:
@@ -207,7 +203,6 @@ def test_auto_metric_ties_group_weights(tmp_path) -> None:
         y[:50, None],
         tied_dims=[[2, 3, 4]],
         weighting=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
     )
     for lo in range(50, 700, 50):

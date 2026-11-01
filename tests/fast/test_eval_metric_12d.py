@@ -7,8 +7,7 @@ import numpy as np
 import pytest
 
 from enn.enn.mbpann import MBPANNMetric
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 from evals.harness import metric_12d as mod
 from ops.stress import MeanSE
 
@@ -37,27 +36,12 @@ def test_make_data_shapes_and_signal() -> None:
     assert np.max(np.abs(y[:, 0] - f)) < 1.0
 
 
-def test_build_model_drivers_scale_x_and_metric_learning() -> None:
+def test_build_model_selects_metric_learning() -> None:
     x, y = mod.make_data(12, np.random.default_rng(1))
     with tempfile.TemporaryDirectory() as work_dir:
-        flat = mod.build_model("flat", x, y, work_dir)
-        scaled = mod.build_model("flat_scale_x", x, y, work_dir)
         bpann = mod.build_model("bpann_disk", x, y, work_dir)
         auto = mod.build_model("bpann_disk_auto", x, y, work_dir)
-        with pytest.raises(ValueError, match="unknown model"):
-            mod.build_model("bpann_disk_scale_x", x, y, work_dir)
-        assert bpann.scale_x == ENNScaleX.OFF
-        assert (
-            flat._index_driver == ENNIndexDriver.FLAT and flat.scale_x == ENNScaleX.OFF
-        )
-        assert flat.metric_learning == ENNMetricLearning.NONE
-        assert (
-            scaled._index_driver == ENNIndexDriver.FLAT
-            and scaled.scale_x == ENNScaleX.ON
-        )
-        assert bpann._index_driver == ENNIndexDriver.BPANN_DISK
         assert bpann.metric_learning == ENNMetricLearning.NONE
-        assert auto._index_driver == ENNIndexDriver.BPANN_DISK
         assert auto.metric_learning == ENNMetricLearning.AUTO
         assert isinstance(auto.metric, MBPANNMetric) and bpann.metric is None
         with pytest.raises(ValueError, match="unknown model"):
@@ -82,7 +66,7 @@ def test_advance_adds_rows_in_batches_and_auto_refits_inside_add(
 def test_format_eval_line_mean_pm_se() -> None:
     line = mod.format_eval_line(
         mod.CheckpointSummary(
-            "flat",
+            "bpann_disk",
             30,
             MeanSE(-1.25, 0.125),
             MeanSE(0.5, 0.02),
@@ -91,7 +75,7 @@ def test_format_eval_line_mean_pm_se() -> None:
         )
     )
     assert line == (
-        "EVAL: model = flat n = 30 LARGER(loglik) = -1.2500 ± 0.1250 "
+        "EVAL: model = bpann_disk n = 30 LARGER(loglik) = -1.2500 ± 0.1250 "
         "SMALLER(nrmse) = 0.5000 ± 0.0200 SMALLER(add_s) = 0.0100 ± 0.0010 "
         "SMALLER(query_s) = 0.0020"
     )
@@ -99,10 +83,10 @@ def test_format_eval_line_mean_pm_se() -> None:
 
 def test_format_seed_line_is_not_an_eval_line() -> None:
     line = mod.format_seed_line(
-        3, mod.CheckpointResult("flat", 30, -1.25, 0.5, 0.01, 0.002)
+        3, mod.CheckpointResult("bpann_disk", 30, -1.25, 0.5, 0.01, 0.002)
     )
     assert line == (
-        "seed = 3 model = flat n = 30 loglik = -1.2500 nrmse = 0.5000 "
+        "seed = 3 model = bpann_disk n = 30 loglik = -1.2500 nrmse = 0.5000 "
         "add_s = 0.0100 query_s = 0.0020"
     )
 
@@ -155,22 +139,22 @@ def test_run_eval_streams_each_seed(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(mod, "run_model", fake_run_model)
     cfg = mod.Metric12dConfig(n_grid=(10, 30), seed=5, num_seeds=3)
-    results = mod.run_eval(cfg, models=("flat", "bpann_disk"))
+    results = mod.run_eval(cfg, models=("bpann_disk", "bpann_disk_auto"))
     assert [(name, seed) for name, seed, _ in seen] == [
-        (m, s) for s in (5, 6, 7) for m in ("flat", "bpann_disk")
+        (m, s) for s in (5, 6, 7) for m in ("bpann_disk", "bpann_disk_auto")
     ]
     assert len({work_dir for _, _, work_dir in seen}) == 3
     assert [(r.model, r.num_obs) for r in results] == [
-        ("flat", 10),
-        ("flat", 30),
         ("bpann_disk", 10),
         ("bpann_disk", 30),
+        ("bpann_disk_auto", 10),
+        ("bpann_disk_auto", 30),
     ]
     assert results[0].loglik == MeanSE(6.0, 1.0 / np.sqrt(3.0))
 
 
 def test_bpann_models_and_metric_learning_modes() -> None:
-    assert mod.MODELS == ("flat", "flat_scale_x", "bpann_disk", "bpann_disk_auto")
+    assert mod.MODELS == ("bpann_disk", "bpann_disk_auto")
     assert mod.BPANN_METRIC_LEARNING == {
         "bpann_disk": ENNMetricLearning.NONE,
         "bpann_disk_auto": ENNMetricLearning.AUTO,
@@ -189,16 +173,16 @@ def test_run_eval_rejects_bad_grid() -> None:
 
 
 def test_single_model_run_matches_combined_run() -> None:
-    combined = mod.run_eval(TINY, models=("flat", "flat_scale_x"))
-    single = mod.run_eval(TINY, models=("flat_scale_x",))
+    combined = mod.run_eval(TINY, models=("bpann_disk", "bpann_disk_auto"))
+    single = mod.run_eval(TINY, models=("bpann_disk_auto",))
     assert [(s.num_obs, s.loglik, s.nrmse) for s in single] == [
-        (s.num_obs, s.loglik, s.nrmse) for s in combined if s.model == "flat_scale_x"
+        (s.num_obs, s.loglik, s.nrmse) for s in combined if s.model == "bpann_disk_auto"
     ]
 
 
 def test_truncated_grid_with_same_num_rows_reproduces_long_prefix() -> None:
-    short = mod.run_eval(replace(TINY, num_rows=100), models=("flat",))
-    long = mod.run_eval(replace(TINY, n_grid=(10, 30, 100)), models=("flat",))
+    short = mod.run_eval(replace(TINY, num_rows=100), models=("bpann_disk",))
+    long = mod.run_eval(replace(TINY, n_grid=(10, 30, 100)), models=("bpann_disk",))
     assert [(r.num_obs, r.loglik, r.nrmse) for r in short] == [
         (r.num_obs, r.loglik, r.nrmse) for r in long[:2]
     ]

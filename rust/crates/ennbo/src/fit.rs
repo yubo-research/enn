@@ -45,7 +45,7 @@ fn validate_subsample_inputs(
     Ok(())
 }
 
-pub(crate) fn compute_single_loglik(
+fn compute_single_loglik(
     y_scaled: &ArrayView2<f64>,
     mu_i: &ArrayView2<f64>,
     se_i: &ArrayView2<f64>,
@@ -199,7 +199,6 @@ pub fn subsample_loglik<R: Rng>(
 mod tests {
     use super::*;
     use crate::fitter::ENNFitter;
-    use crate::index::IndexDriver;
     use crate::test_helpers::test_epistemic_model_exact_unit_square as create_test_model;
     use ndarray::array;
     use rand::rngs::StdRng;
@@ -250,9 +249,7 @@ mod tests {
     fn test_subsample_loglik_empty_model() {
         let train_x = array![[0.0, 0.0]];
         let train_y = array![[0.0]];
-        let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-                .unwrap();
+        let model = crate::test_helpers::test_model(train_x, train_y, None, false);
 
         let x = array![[0.5, 0.5]];
         let y = array![[1.0]];
@@ -340,9 +337,7 @@ mod tests {
     fn test_enn_fitter_ask_multioutput() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5]];
         let train_y = array![[0.0, 1.0], [1.0, 2.0], [1.0, 0.0], [2.0, 1.0], [1.0, 1.5]];
-        let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-                .unwrap();
+        let model = crate::test_helpers::test_model(train_x, train_y, None, false);
 
         let mut rng = StdRng::seed_from_u64(42);
         let mut fitter = ENNFitter::new(2);
@@ -476,7 +471,7 @@ mod tests {
         let x = array![[0.0, 0.0], [1.0, 1.0]];
         let y = array![[1.0], [f64::NAN]];
         let params = ENNParams::new(2, 1.0, 0.1).unwrap();
-        let paramss = vec![params, params];
+        let paramss = vec![params.clone(), params];
         let mut rng = StdRng::seed_from_u64(0);
         let logliks =
             subsample_loglik(&model, &x.view(), &y.view(), &paramss, 2, &mut rng, None).unwrap();
@@ -488,11 +483,12 @@ mod tests {
         let train_x = array![[0.0], [1.0], [0.5], [0.25], [0.75]];
         let train_y = array![[0.1], [0.9], [0.5], [0.3], [0.7]];
         let bounds = array![[0.0, 1.0]];
+        let dir = tempfile::tempdir().unwrap();
         let model = EpistemicNearestNeighbors::new_with_storage(
             train_x,
             train_y,
             None,
-            crate::layout::EnnLayout::flat(false),
+            crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
             Some(bounds),
         )
         .unwrap();

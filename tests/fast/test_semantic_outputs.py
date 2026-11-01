@@ -1,14 +1,12 @@
-"""Metadata geometry, blend limits, and held-out calibration invariants."""
+"""Metadata geometry and blend limits."""
 
 import numpy as np
 import pytest
 
-from enn import (
-    EpistemicNearestNeighbors,
-    SemanticMultiOutputENN,
-    SemanticOutputProjection,
-)
+from enn import EpistemicNearestNeighbors, SemanticOutputProjection
+from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 
 
 class OutputEncoder:
@@ -99,105 +97,54 @@ def test_invalid_embeddings(embeddings):
         SemanticOutputProjection.from_embeddings(["a", "b", "c"], embeddings)
 
 
+def fit_pinned(x, y, alpha, p=None):
+    model = EpistemicNearestNeighbors(
+        x[:0],
+        y[:0],
+        output_projection=p or projection(),
+        output_alpha=alpha,
+        work_dir=fresh_work_dir(),
+    )
+    params = enn_fit(
+        model,
+        k=3,
+        num_fit_candidates=3,
+        rng=np.random.default_rng(0),
+        incremental=model.add(x, y),
+    )
+    return model, params
+
+
 def test_alpha_zero_matches_independent_and_constant_outputs():
     x, y = data()
     y[:, 2] = 7
-    params = ENNParams(3, 1, 0)
-    model = SemanticMultiOutputENN(projection(), alpha=0, params=params, folds=3).fit(
-        x, y
-    )
-    actual = model.posterior(x[:4])
-    mean, scale = y.mean(axis=0), y.std(axis=0)
-    scale[2] = 1
-    independent = EpistemicNearestNeighbors(x, (y - mean) / scale)
-    expected = independent.posterior(x[:4], params=params).mu * scale + mean
-    np.testing.assert_allclose(actual.mu, expected, atol=1e-12)
-    assert np.isfinite(actual.se).all() and (actual.se > 0).all()
-    shared = SemanticMultiOutputENN(projection(), alpha=1, folds=3).fit(x, y)
-    np.testing.assert_array_equal(shared.posterior(x[:4]).mu[:, 2], 7)
+    model, params = fit_pinned(x, y, 0)
+    plain = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
+    expected = plain.posterior(x[:4], params=ENNParams(3, 1, 0))
+    fixed = ENNParams(3, 1, 0, output_blend=params.output_blend)
+    actual = model.posterior(x[:4], params=fixed)
+    np.testing.assert_allclose(actual.mu, expected.mu, atol=1e-12)
+    np.testing.assert_allclose(actual.se, expected.se, atol=1e-12)
+    _, shared = fit_pinned(x, y, 1)
+    assert shared.output_blend.alpha[2] == 0
+    np.testing.assert_allclose(model.posterior(x[:4], params=shared).mu[:, 2], 7)
 
 
 def test_shared_limit_and_opposing_outputs():
     x, y = data()
-    params = ENNParams(3, 1, 0)
-    model = SemanticMultiOutputENN(projection(), alpha=1, params=params, folds=3).fit(
-        x, y
-    )
-    mean, scale = y.mean(axis=0), y.std(axis=0)
-    h = ((y - mean) / scale) @ projection().loadings
-    latent = EpistemicNearestNeighbors(x, h).posterior(x[:4], params=params)
-    expected = latent.mu @ projection().loadings.T * scale + mean
-    independent = EpistemicNearestNeighbors(x, (y - mean) / scale)
-    projected = independent.posterior(x[:4], params=params).mu @ projection().loadings
-    np.testing.assert_allclose(latent.mu, projected, atol=1e-12)
-    shared_se = latent.se @ np.abs(projection().loadings.T)
-    posterior = model._native.uncalibrated_posterior(x[:4])
-    np.testing.assert_allclose(posterior[1], shared_se * scale, rtol=1e-9)
-    np.testing.assert_allclose(model.posterior(x[:4]).mu, expected, atol=1e-12)
+    model, params = fit_pinned(x, y, 1)
+    blend = params.output_blend
+    fixed = ENNParams(3, 1, 0, output_blend=blend)
+    plain = model.posterior(x[:4], params=ENNParams(3, 1, 0))
+    loadings = projection().loadings
+    latent = ((plain.mu - blend.center) / blend.scale) @ loadings
+    expected = latent @ loadings.T * blend.scale + blend.center
+    shared = model.posterior(x[:4], params=fixed)
+    np.testing.assert_allclose(shared.mu, expected, atol=1e-12)
     # Opposite standardized outputs cancel in the common semantic direction.
     np.testing.assert_allclose(
-        model.posterior(x[:4]).mu[:, :2], np.tile(mean[:2], (4, 1))
+        shared.mu[:, :2], np.tile(blend.center[:2], (4, 1)), atol=1e-12
     )
-
-
-def test_fold_refit_and_gaussian_calibration():
-    x, y = data()
-    model = SemanticMultiOutputENN(projection(), folds=3, seed=4).fit(x, y)
-    held = model.fold_ids_ == 0
-    changed = y.copy()
-    changed[held] += 100
-    other = SemanticMultiOutputENN(projection(), folds=3, seed=4).fit(x, changed)
-    np.testing.assert_array_equal(model.oof_mean_[held], other.oof_mean_[held])
-    np.testing.assert_allclose(
-        np.mean((y - model.oof_mean_) ** 2 / model.oof_variance_, axis=0), 1
-    )
-    assert np.isfinite(model.posterior(x[:4]).se).all()
-
-
-def test_fold_ids_reproduce_numpy_default_rng_assignment():
-    x, y = data()
-    model = SemanticMultiOutputENN(projection(), folds=3, seed=4).fit(x, y)
-    permutation = np.random.default_rng(4).permutation(len(x))
-    expected = np.empty(len(x), dtype=int)
-    expected[permutation] = np.arange(len(x)) % 3
-    np.testing.assert_array_equal(model.fold_ids_, expected)
-
-
-def test_out_of_fold_attributes_appear_only_after_fit():
-    model = SemanticMultiOutputENN(projection(), folds=3)
-    for name in ("oof_mean_", "oof_variance_", "fold_ids_"):
-        assert not hasattr(model, name)
-
-
-def test_failed_refit_keeps_the_previous_fit():
-    x, y = data()
-    model = SemanticMultiOutputENN(projection(), folds=3).fit(x, y)
-    before = model.posterior(x[:4]).mu
-    with pytest.raises(ValueError):
-        model.fit(x, np.full_like(y, np.nan))
-    np.testing.assert_array_equal(model.posterior(x[:4]).mu, before)
-
-
-@pytest.mark.parametrize("folds", [True, np.True_, 2.5, "3"])
-def test_folds_must_be_a_true_integer(folds):
-    with pytest.raises(ValueError, match="folds"):
-        SemanticMultiOutputENN(projection(), folds=folds)
-
-
-def test_numpy_integer_folds_are_accepted():
-    x, y = data()
-    model = SemanticMultiOutputENN(projection(), folds=np.int64(3)).fit(x, y)
-    assert set(model.fold_ids_) == {0, 1, 2}
-
-
-def test_vector_inputs_raise_value_errors():
-    x, y = data()
-    model = SemanticMultiOutputENN(projection(), folds=3)
-    with pytest.raises(ValueError):
-        model.fit(x[:, 0], y)
-    model.fit(x, y)
-    with pytest.raises(ValueError):
-        model.posterior(x[0])
 
 
 def test_projection_rejects_nonorthonormal_loadings_and_bad_names():
@@ -207,43 +154,43 @@ def test_projection_rejects_nonorthonormal_loadings_and_bad_names():
         SemanticOutputProjection((1, "b"), np.eye(2), np.zeros((2, 0)))
 
 
-def test_zero_embeddings_fall_back_and_refit():
+def test_zero_embeddings_fall_back_to_no_blend():
     x, y = data()
     zero = SemanticOutputProjection.from_embeddings(["a", "b", "c"], np.zeros((3, 2)))
-    first = SemanticMultiOutputENN(zero, alpha=1, folds=3).fit(x, y)
-    second = SemanticMultiOutputENN(zero, alpha=0, folds=3).fit(x, y)
-    np.testing.assert_array_equal(first.posterior(x).mu, second.posterior(x).mu)
-    first.fit(x, y + 1)
-    np.testing.assert_allclose(first.posterior(x).mu, second.posterior(x).mu + 1)
-    assert first.posterior(x[:0]).mu.shape == (0, 3)
+    model, params = fit_pinned(x, y, 1, zero)
+    assert params.output_blend is None
+    assert model.posterior(x[:0], params=params).mu.shape == (0, 3)
 
 
-def test_validation_and_unfitted_state():
-    model = SemanticMultiOutputENN(projection(), folds=3)
-    with pytest.raises(RuntimeError):
-        model.posterior([[0, 0]])
+def test_output_alpha_requires_a_projection_and_a_valid_value():
     x, y = data()
+    with pytest.raises(ValueError, match="requires output_projection"):
+        EpistemicNearestNeighbors(x, y, output_alpha=0.3, work_dir=fresh_work_dir())
+    for alpha in (-0.1, 1.1, np.nan):
+        with pytest.raises(ValueError, match="output_alpha"):
+            EpistemicNearestNeighbors(
+                x,
+                y,
+                output_projection=projection(),
+                output_alpha=alpha,
+                work_dir=fresh_work_dir(),
+            )
     with pytest.raises(ValueError):
-        model.fit(x, y[:, :2])
-    with pytest.raises(ValueError):
-        model.fit(x[:2], y[:2])
-    with pytest.raises(ValueError):
-        SemanticMultiOutputENN(projection(), alpha=np.nan)
-    with pytest.raises(ValueError):
-        SemanticMultiOutputENN(projection(), folds=1)
-    model.fit(x, y)
-    with pytest.raises(ValueError):
-        model.posterior([[np.nan, 1]])
+        EpistemicNearestNeighbors(
+            x, y[:, :2], output_projection=projection(), work_dir=fresh_work_dir()
+        )
 
 
 def test_batched_scalar_predictions_match_each_output():
     x, y = data()
     params = ENNParams(3, 1, 0)
-    batched = EpistemicNearestNeighbors(x, y).posterior(x[:4], params=params)
+    batched = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir()).posterior(
+        x[:4], params=params
+    )
     for output in range(y.shape[1]):
-        scalar = EpistemicNearestNeighbors(x, y[:, output : output + 1]).posterior(
-            x[:4], params=params
-        )
+        scalar = EpistemicNearestNeighbors(
+            x, y[:, output : output + 1], work_dir=fresh_work_dir()
+        ).posterior(x[:4], params=params)
         np.testing.assert_allclose(batched.mu[:, output], scalar.mu.ravel())
         np.testing.assert_allclose(batched.se[:, output], scalar.se.ravel())
 

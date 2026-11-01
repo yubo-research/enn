@@ -11,8 +11,7 @@ from .base import (
     InitConfig,
 )
 from .candidate_rv import CandidateRV
-from .enn_index_driver import ENNIndexDriver
-from .enn_x_scaling import ENNMetricLearning, ENNScaleX
+from .enn_x_scaling import ENNMetricLearning
 from .factory import lhd_only_config, turbo_enn_config, turbo_zero_config
 from .init_strategies.hybrid_init import HybridInit
 from .init_strategies.lhd_only_init import LHDOnlyInit
@@ -42,9 +41,7 @@ __all__ = [
     "CandidateRV",
     "DrawAcquisitionConfig",
     "ENNFitConfig",
-    "ENNIndexDriver",
     "ENNMetricLearning",
-    "ENNScaleX",
     "ENNSurrogateConfig",
     "HybridInit",
     "InitConfig",

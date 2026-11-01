@@ -6,7 +6,7 @@ use crate::error::ENNError;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
-use crate::surrogate::{Surrogate, SurrogatePrediction};
+use crate::surrogate::{ENNSurrogateConfig, Surrogate, SurrogatePrediction};
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::TrustRegionConfig;
 use approx::relative_eq;
@@ -107,7 +107,8 @@ impl Surrogate for TieSurrogate {
 fn morbo_optimizer_scalarize_ready(seed: u64) -> Optimizer {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,
@@ -178,7 +179,8 @@ fn morbo_ucb_equal_scores_should_vary_with_rng() {
 fn morbo_pareto_ask_after_multiobjective_tell() {
     let bounds = array![[-1.0, 1.0], [-1.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(14);
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.acquisition = crate::config::AcquisitionConfig::Pareto;
     cfg.candidates.min_candidates = 32;
     cfg.candidates.max_candidates = 1_000_000_000;
@@ -221,7 +223,8 @@ fn morbo_pareto_ask_after_multiobjective_tell() {
 fn morbo_on_restart_rescalarize_via_ask_turbo() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(302);
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.candidates.num_candidates_per_dim = 0;
     cfg.candidates.max_candidates = 1_000_000_000;
     cfg.candidates.num_candidates_per_arm = 32;
@@ -281,7 +284,8 @@ fn morbo_on_restart_rescalarize_via_ask_turbo() {
 fn morbo_on_propose_rescalarize_via_ask_turbo() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(301);
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.candidates.num_candidates_per_dim = 0;
     cfg.candidates.max_candidates = 1_000_000_000;
     cfg.candidates.num_candidates_per_arm = 32;
@@ -345,12 +349,13 @@ fn kiss_tie_surrogate_type() {
 fn morbo_ranges_natural_under_y_bounds_match_y_obs_sync() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(4242);
-    let mut cfg = turbo_enn_config();
-    cfg.surrogate = SurrogateConfig::ENN(crate::surrogate::ENNSurrogateConfig {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
+    cfg.surrogate = SurrogateConfig::ENN(ENNSurrogateConfig {
         k: crate::NeighborCount::new(3).unwrap(),
         fit_samples: crate::FitSamples::draw(4, 4).unwrap(),
         y_bounds: Some(array![[0.0, 1.0], [0.0, 1.0]]),
-        ..Default::default()
+        ..ENNSurrogateConfig::new(crate::layout::EnnLayout::new(dir.path(), false).unwrap())
     });
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,

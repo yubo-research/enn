@@ -8,6 +8,7 @@ import numpy as np
 
 from enn import ENNStatefulFitter, EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 
 
 class TestENNStatefulFitterContract:
@@ -33,7 +34,7 @@ class TestENNStatefulFitterContract:
             dtype=float,
         )
         train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
-        model = EpistemicNearestNeighbors(train_x, train_y)
+        model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
         rng = np.random.default_rng(42)
 
         fitter = ENNStatefulFitter(k=2, rng=rng)

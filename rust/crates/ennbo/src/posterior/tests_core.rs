@@ -1,5 +1,4 @@
 use super::*;
-use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::test_helpers::test_epistemic_model_exact_unit_square as create_test_model;
 use ndarray::array;
@@ -130,8 +129,7 @@ fn test_compute_posterior_internals() {
 fn test_compute_posterior_internals_empty_model() {
     let train_x = array![[0.0, 0.0]];
     let train_y = array![[0.0]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
+    let model = crate::test_helpers::test_model(train_x, train_y, None, false);
 
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();

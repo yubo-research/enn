@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from enn._rust import ENNOutputBlend
 from enn._rust import ENNParams as _validated_params
 
 
@@ -10,10 +11,12 @@ class ENNParams:
     k_num_neighbors: int
     epistemic_variance_scale: float
     aleatoric_variance_scale: float
+    output_blend: ENNOutputBlend | None = field(default=None, hash=False)
 
     def __post_init__(self) -> None:
         _validated_params(
             int(self.k_num_neighbors),
             float(self.epistemic_variance_scale),
             float(self.aleatoric_variance_scale),
+            self.output_blend,
         )

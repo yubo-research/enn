@@ -9,12 +9,11 @@ import resource
 from itertools import product
 from pathlib import Path
 from time import perf_counter
+from types import SimpleNamespace
 
 import numpy as np
 
-from enn import SemanticMultiOutputENN
-from enn.enn.enn_params import ENNParams
-from evals.long.semantic_output_scoring import scores
+from evals.long.semantic_output_scoring import PinnedAlphaENN, scores
 from evals.long.yy_problem import (
     ALPHAS,
     CASES,
@@ -37,9 +36,7 @@ def write_csv(path, rows):
 def evaluate_model(projection, alpha, data, n):
     x, y, clean = data
     started = perf_counter()
-    model = SemanticMultiOutputENN(
-        projection, alpha=alpha, params=ENNParams(8, 1, 0), folds=3, seed=0
-    ).fit(x[:n], y[:n])
+    model = PinnedAlphaENN(projection, alpha).fit(x[:n], y[:n])
     fit_seconds = perf_counter() - started
     started = perf_counter()
     posterior = model.posterior(x[n:])
@@ -49,7 +46,7 @@ def evaluate_model(projection, alpha, data, n):
     metrics["clean_nrmse"] = np.sqrt(
         np.mean(((posterior.mu[100:] - clean[n + 100 :]) / scale) ** 2, axis=0)
     )
-    test = type(posterior)(posterior.mu[100:], posterior.se[100:])
+    test = SimpleNamespace(mu=posterior.mu[100:], se=posterior.se[100:])
     test_metrics = scores(y[n + 100 :], test, scale)
     test_metrics["clean_nrmse"] = metrics["clean_nrmse"]
     validation = np.mean(
@@ -102,7 +99,7 @@ def environment(directory, args, elapsed):
     paths = list(directory.glob("*.npz")) + [
         Path(__file__),
         Path("evals/long/yy_problem.py"),
-        Path("src/enn/semantic_multi_output.py"),
+        Path("src/enn/enn/enn_class.py"),
         Path("src/enn/semantic_outputs.py"),
     ]
     record = {

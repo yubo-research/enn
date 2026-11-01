@@ -68,12 +68,10 @@ def collect_tell_sizes(
     seed_chunk: int | None = None,
 ) -> list[int]:
     """Run ``run_turbo_enn_stress`` with recording fakes; return tell batch sizes."""
-    from enn.turbo.config.enn_index_driver import ENNIndexDriver
     from ops.stress import run_turbo_enn_stress
 
     opt = RecordingTurboOpt()
     kwargs: dict = {
-        "index_driver": ENNIndexDriver.FLAT,
         "num_dim": 2,
         "num_obs": num_obs,
         "num_ask": num_ask,

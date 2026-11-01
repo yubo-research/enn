@@ -8,6 +8,7 @@ import pytest
 from enn import EpistemicNearestNeighbors
 from enn.enn.enn_normal import ENNNormal
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 from ops.qa import frac_out_of_open_interval, make_bounded_1d_xy, y_bounds_array
 
 
@@ -19,7 +20,9 @@ def _logit_model() -> EpistemicNearestNeighbors:
     bounds = np.array([[0.0, 1.0]], dtype=float)
     train_x = np.array([[0.0], [1.0], [0.5]], dtype=float)
     train_y = np.array([[0.1], [0.9], [0.5]], dtype=float)
-    return EpistemicNearestNeighbors(train_x, train_y, y_bounds=bounds)
+    return EpistemicNearestNeighbors(
+        train_x, train_y, y_bounds=bounds, work_dir=fresh_work_dir()
+    )
 
 
 @pytest.mark.parametrize(
@@ -39,7 +42,10 @@ def test_confidence_interval_stays_in_open_interval(lo, hi):
     x_train, y_train = make_bounded_1d_xy(24, rng, lo, hi, y_scale=1.5, y_center=0.0)
     x_test = np.linspace(0.0, 1.0, 40).reshape(-1, 1)
     model = EpistemicNearestNeighbors(
-        x_train, y_train, y_bounds=y_bounds_array(lo, hi)
+        x_train,
+        y_train,
+        y_bounds=y_bounds_array(lo, hi),
+        work_dir=fresh_work_dir(),
     )
     params = ENNParams(
         k_num_neighbors=3,
@@ -69,12 +75,13 @@ def test_confidence_interval_unbounded_matches_linear():
 def test_sample_and_function_draw_respect_y_bounds():
     lo, hi = -3.0, 7.0
     rng = np.random.default_rng(11)
-    x_train, y_train = make_bounded_1d_xy(
-        16, rng, lo, hi, y_scale=2.0, y_center=-1.0
-    )
+    x_train, y_train = make_bounded_1d_xy(16, rng, lo, hi, y_scale=2.0, y_center=-1.0)
     x_test = np.linspace(0.0, 1.0, 80).reshape(-1, 1)
     model = EpistemicNearestNeighbors(
-        x_train, y_train, y_bounds=y_bounds_array(lo, hi)
+        x_train,
+        y_train,
+        y_bounds=y_bounds_array(lo, hi),
+        work_dir=fresh_work_dir(),
     )
     params = ENNParams(
         k_num_neighbors=4,

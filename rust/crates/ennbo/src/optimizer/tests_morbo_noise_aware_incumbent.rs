@@ -24,11 +24,13 @@ fn argmax_scores(scores: &ndarray::Array1<f64>) -> usize {
 fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(42);
+    let dir = tempfile::tempdir().unwrap();
+    let layout = crate::layout::EnnLayout::new(dir.path(), false).unwrap();
     let mut cfg = OptimizerConfig {
         surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
             k: crate::NeighborCount::new(3).unwrap(),
             fit_samples: crate::FitSamples::draw(6, 4).unwrap(),
-            ..Default::default()
+            ..ENNSurrogateConfig::new(layout.clone())
         }),
         trust_region: TrustRegionConfig::Morbo(MorboTRSettings {
             num_metrics: 2,
@@ -36,7 +38,7 @@ fn morbo_noise_aware_incumbent_y_is_mu_row_used_for_selection() {
             length: TRLengthConfig::default(),
             rescalarize: Rescalarize::OnRestart,
         }),
-        ..OptimizerConfig::default()
+        ..crate::config::turbo_enn_config(layout)
     };
     cfg.noise_aware = true;
 

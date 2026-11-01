@@ -5,7 +5,8 @@ use numpy::{
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use std::path::PathBuf;
+
+use crate::py_params::{params_with_blend, PyOutputBlend};
 
 pub(crate) type PosteriorPyOut<'py> = (
     Bound<'py, PyArrayDyn<f64>>,
@@ -34,6 +35,31 @@ pub(crate) type TrainRowsAtPyOut<'py> = (
     Option<Bound<'py, PyArray2<f64>>>,
 );
 
+pub(crate) fn params_list(
+    k_values: Vec<i32>,
+    epistemic_scales: Vec<f64>,
+    aleatoric_scales: Vec<f64>,
+    output_blends: Option<Vec<Option<PyOutputBlend>>>,
+) -> PyResult<Vec<ennbo::ENNParams>> {
+    let n_params = k_values.len();
+    let blends = output_blends.unwrap_or_else(|| vec![None; n_params]);
+    if epistemic_scales.len() != n_params
+        || aleatoric_scales.len() != n_params
+        || blends.len() != n_params
+    {
+        return Err(PyValueError::new_err(
+            "k_values, epistemic_scales, aleatoric_scales, and output_blends must have same length",
+        ));
+    }
+    k_values
+        .into_iter()
+        .zip(epistemic_scales)
+        .zip(aleatoric_scales)
+        .zip(blends)
+        .map(|(((k, epi), ale), blend)| params_with_blend(k, epi, ale, blend))
+        .collect()
+}
+
 fn py_posterior_flags(exclude_nearest: bool, observation_noise: bool) -> ennbo::PosteriorFlags {
     ennbo::PosteriorFlags::new()
         .with_exclude_nearest(exclude_nearest)
@@ -49,20 +75,18 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, weighting=false, index_driver="FLAT", work_dir=None, y_bounds=None, tied_dims=None))]
+    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         train_x: PyReadonlyArrayDyn<f64>,
         train_y: PyReadonlyArrayDyn<f64>,
+        work_dir: &str,
         train_yvar: Option<PyReadonlyArrayDyn<f64>>,
         weighting: bool,
-        index_driver: &str,
-        work_dir: Option<&str>,
         y_bounds: Option<PyReadonlyArray2<f64>>,
         tied_dims: Option<Vec<Vec<usize>>>,
     ) -> PyResult<Self> {
-        let driver = crate::py_layout::index_driver_from_wire(index_driver)?;
-        let layout = ennbo::EnnLayout::new(driver, work_dir.map(PathBuf::from), weighting)
+        let layout = ennbo::EnnLayout::new(work_dir, weighting)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_x = owned_matrix("train_x", train_x)?;
@@ -84,6 +108,17 @@ impl PyEpistemicNearestNeighbors {
             inner: model,
             incremental: ennbo::IncrementalFit::new(),
         })
+    }
+
+    #[pyo3(signature = (loadings, alpha=None))]
+    fn set_semantic_outputs(
+        &mut self,
+        loadings: PyReadonlyArrayDyn<f64>,
+        alpha: Option<f64>,
+    ) -> PyResult<()> {
+        self.inner
+            .set_semantic_outputs(loadings.as_array(), alpha)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[pyo3(signature = (x_scale, rebuild=false))]
@@ -139,27 +174,19 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, exclude_nearest=false, observation_noise=false))]
+    #[pyo3(signature = (x, params, exclude_nearest=false, observation_noise=false))]
     fn posterior<'py>(
         &self,
         py: Python<'py>,
         x: PyReadonlyArray2<f64>,
-        k_num_neighbors: i32,
-        epistemic_variance_scale: f64,
-        aleatoric_variance_scale: f64,
+        params: PyENNParams,
         exclude_nearest: bool,
         observation_noise: bool,
     ) -> PyResult<PosteriorPyOut<'py>> {
-        let params = ennbo::ENNParams::new(
-            k_num_neighbors,
-            epistemic_variance_scale,
-            aleatoric_variance_scale,
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
         let out = self
             .inner
-            .posterior(&x.as_array(), &params, &flags)
+            .posterior(&x.as_array(), &params.inner, &flags)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
             out.mu.into_pyarray_bound(py),
@@ -171,7 +198,7 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[pyo3(signature = (x, k_values, epistemic_scales, aleatoric_scales, exclude_nearest=false, observation_noise=false))]
+    #[pyo3(signature = (x, k_values, epistemic_scales, aleatoric_scales, exclude_nearest=false, observation_noise=false, output_blends=None))]
     fn batch_posterior<'py>(
         &self,
         py: Python<'py>,
@@ -181,21 +208,9 @@ impl PyEpistemicNearestNeighbors {
         aleatoric_scales: Vec<f64>,
         exclude_nearest: bool,
         observation_noise: bool,
+        output_blends: Option<Vec<Option<PyOutputBlend>>>,
     ) -> PyResult<PosteriorPyOut<'py>> {
-        let n_params = k_values.len();
-        if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {
-            return Err(PyValueError::new_err(
-                "k_values, epistemic_scales, and aleatoric_scales must have same length",
-            ));
-        }
-
-        let mut paramss = Vec::with_capacity(n_params);
-        for i in 0..n_params {
-            let params =
-                ennbo::ENNParams::new(k_values[i], epistemic_scales[i], aleatoric_scales[i])
-                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
-            paramss.push(params);
-        }
+        let paramss = params_list(k_values, epistemic_scales, aleatoric_scales, output_blends)?;
 
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
 
@@ -213,52 +228,36 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[pyo3(signature = (x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, function_seeds, exclude_nearest=false, observation_noise=false))]
+    #[pyo3(signature = (x, params, function_seeds, exclude_nearest=false, observation_noise=false))]
     fn posterior_function_draw<'py>(
         &self,
         py: Python<'py>,
         x: PyReadonlyArray2<f64>,
-        k_num_neighbors: i32,
-        epistemic_variance_scale: f64,
-        aleatoric_variance_scale: f64,
+        params: PyENNParams,
         function_seeds: Vec<i64>,
         exclude_nearest: bool,
         observation_noise: bool,
     ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Vec<Vec<usize>>)> {
-        let params = ennbo::ENNParams::new(
-            k_num_neighbors,
-            epistemic_variance_scale,
-            aleatoric_variance_scale,
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
         let (draws, idx) = self
             .inner
-            .posterior_function_draw(&x.as_array(), &params, &function_seeds, &flags)
+            .posterior_function_draw(&x.as_array(), &params.inner, &function_seeds, &flags)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((draws.into_dyn().into_pyarray_bound(py), idx))
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (x_whatif, y_whatif, x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, exclude_nearest=false, observation_noise=false))]
+    #[pyo3(signature = (x_whatif, y_whatif, x, params, exclude_nearest=false, observation_noise=false))]
     fn conditional_posterior<'py>(
         &self,
         py: Python<'py>,
         x_whatif: PyReadonlyArray2<f64>,
         y_whatif: PyReadonlyArray2<f64>,
         x: PyReadonlyArray2<f64>,
-        k_num_neighbors: i32,
-        epistemic_variance_scale: f64,
-        aleatoric_variance_scale: f64,
+        params: PyENNParams,
         exclude_nearest: bool,
         observation_noise: bool,
     ) -> PyResult<PosteriorPyOut<'py>> {
-        let params = ennbo::ENNParams::new(
-            k_num_neighbors,
-            epistemic_variance_scale,
-            aleatoric_variance_scale,
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
         let out = self
             .inner
@@ -266,7 +265,7 @@ impl PyEpistemicNearestNeighbors {
                 &x_whatif.as_array(),
                 &y_whatif.as_array(),
                 &x.as_array(),
-                &params,
+                &params.inner,
                 &flags,
             )
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -280,26 +279,18 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[pyo3(signature = (x_whatif, y_whatif, x, k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, function_seeds, exclude_nearest=false, observation_noise=false))]
+    #[pyo3(signature = (x_whatif, y_whatif, x, params, function_seeds, exclude_nearest=false, observation_noise=false))]
     fn conditional_posterior_function_draw<'py>(
         &self,
         py: Python<'py>,
         x_whatif: PyReadonlyArray2<f64>,
         y_whatif: PyReadonlyArray2<f64>,
         x: PyReadonlyArray2<f64>,
-        k_num_neighbors: i32,
-        epistemic_variance_scale: f64,
-        aleatoric_variance_scale: f64,
+        params: PyENNParams,
         function_seeds: Vec<i64>,
         exclude_nearest: bool,
         observation_noise: bool,
     ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Vec<Vec<usize>>)> {
-        let params = ennbo::ENNParams::new(
-            k_num_neighbors,
-            epistemic_variance_scale,
-            aleatoric_variance_scale,
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
         let (draws, idx) = self
             .inner
@@ -307,7 +298,7 @@ impl PyEpistemicNearestNeighbors {
                 &x_whatif.as_array(),
                 &y_whatif.as_array(),
                 &x.as_array(),
-                &params,
+                &params.inner,
                 &function_seeds,
                 &flags,
             )
@@ -390,16 +381,6 @@ impl PyEpistemicNearestNeighbors {
     }
 
     #[getter]
-    fn scale_x(&self) -> bool {
-        self.inner.index_driver() == ennbo::IndexDriver::Flat && self.inner.is_scale_x()
-    }
-
-    #[getter]
-    fn index_driver(&self) -> &'static str {
-        self.inner.index_driver().as_wire()
-    }
-
-    #[getter]
     fn metric_learning_auto(&self) -> bool {
         self.inner.metric_learning_auto()
     }
@@ -475,17 +456,6 @@ pub(crate) fn train_rows_at_warped<'py>(
     ))
 }
 
-#[pyfunction]
-pub(crate) fn set_unscaled_dims(
-    mut model: PyRefMut<'_, PyEpistemicNearestNeighbors>,
-    dims: Vec<usize>,
-) -> PyResult<()> {
-    model
-        .inner
-        .set_unscaled_dims(dims)
-        .map_err(|e| PyValueError::new_err(e.to_string()))
-}
-
 pub use crate::py_params::PyENNParams;
 
 #[cfg(test)]
@@ -499,6 +469,7 @@ mod kiss_coverage_tests {
             PyEpistemicNearestNeighbors::new,
             PyEpistemicNearestNeighbors::add,
             PyEpistemicNearestNeighbors::set_metric_scale,
+            PyEpistemicNearestNeighbors::set_semantic_outputs,
             PyEpistemicNearestNeighbors::ensure_index_sync,
             PyEpistemicNearestNeighbors::schedule_background_flush,
             PyEpistemicNearestNeighbors::persist_index_to_disk,
@@ -513,7 +484,6 @@ mod kiss_coverage_tests {
             PyEpistemicNearestNeighbors::index_neighbor_distances_and_indices,
             PyEpistemicNearestNeighbors::num_outputs,
             PyEpistemicNearestNeighbors::num_dim,
-            PyEpistemicNearestNeighbors::scale_x,
             PyEpistemicNearestNeighbors::train_rows_at,
             PyEpistemicNearestNeighbors::row_x,
             PyEpistemicNearestNeighbors::row_y,
@@ -521,11 +491,18 @@ mod kiss_coverage_tests {
             PyEpistemicNearestNeighbors::y_scale_row,
             PyEpistemicNearestNeighbors::y_bounds,
             train_rows_at_warped,
-            set_unscaled_dims,
             PyENNParams::new,
             PyENNParams::k_num_neighbors,
             PyENNParams::epistemic_variance_scale,
             PyENNParams::aleatoric_variance_scale,
+            PyENNParams::output_blend,
+            crate::py_params::PyOutputBlend::new,
+            crate::py_params::PyOutputBlend::alpha,
+            crate::py_params::PyOutputBlend::projector,
+            crate::py_params::PyOutputBlend::center,
+            crate::py_params::PyOutputBlend::scale,
+            crate::py_params::PyOutputBlend::__eq__,
+            params_list,
             std::mem::size_of::<PyEpistemicNearestNeighbors>,
             std::mem::size_of::<PyENNParams>,
         );

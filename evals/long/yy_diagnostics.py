@@ -1,24 +1,25 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 
-from enn import SemanticMultiOutputENN, SemanticOutputProjection
-from enn.enn.enn_params import ENNParams
+from enn import SemanticOutputProjection
+from evals.long.semantic_output_scoring import PinnedAlphaENN
 from evals.long.yy_problem import problem
 
 
 def check_projection(directory):
     projection = SemanticOutputProjection.load(directory / "paraphrase_projection.npz")
     x, y, _ = problem(0, 100, "aligned_noisy")
-    params = ENNParams(8, 1, 0)
-    independent = SemanticMultiOutputENN(projection, alpha=0, params=params, folds=3)
-    shared = SemanticMultiOutputENN(projection, alpha=1, params=params, folds=3)
-    baseline = independent.fit(x[:100], y[:100]).posterior(x[100:]).mu
-    actual = shared.fit(x[:100], y[:100]).posterior(x[100:]).mu
-    mean, scale = y[:100].mean(axis=0), y[:100].std(axis=0)
+    shared = PinnedAlphaENN(projection, 1).fit(x[:100], y[:100])
+    actual = shared.posterior(x[100:]).mu
+    blend = shared.params.output_blend
+    unblended = replace(shared.params, output_blend=None)
+    baseline = shared.model.posterior(x[100:], params=unblended).mu
     p = projection.loadings @ projection.loadings.T
-    expected = (((baseline - mean) / scale) @ p) * scale + mean
+    expected = (((baseline - blend.center) / blend.scale) @ p) * blend.scale
+    expected = expected + blend.center
     error = float(np.max(np.abs(actual - expected)))
     np.testing.assert_allclose(actual, expected, atol=1e-12, rtol=1e-12)
     identity_error = float(np.max(np.abs(p @ p - p)))

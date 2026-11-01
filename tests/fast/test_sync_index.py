@@ -4,13 +4,14 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def test_ensure_index_sync_callable():
     rng = np.random.default_rng(0)
     x = rng.standard_normal((8, 2))
     y = rng.standard_normal((8, 1))
-    model = EpistemicNearestNeighbors(x, y)
+    model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     model.ensure_index_sync()
 
 
@@ -22,11 +23,13 @@ def test_ensure_index_sync_after_add_matches_fresh_posterior():
     x1 = rng.standard_normal((5, d))
     y1 = rng.standard_normal((5, 1))
 
-    inc = EpistemicNearestNeighbors(x0, y0)
+    inc = EpistemicNearestNeighbors(x0, y0, work_dir=fresh_work_dir())
     inc.add(x1, y1)
     inc.ensure_index_sync()
 
-    fresh = EpistemicNearestNeighbors(np.vstack([x0, x1]), np.vstack([y0, y1]))
+    fresh = EpistemicNearestNeighbors(
+        np.vstack([x0, x1]), np.vstack([y0, y1]), work_dir=fresh_work_dir()
+    )
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
     )
@@ -42,7 +45,7 @@ def test_ensure_index_sync_twice_without_add():
     rng = np.random.default_rng(7)
     x = rng.standard_normal((6, 2))
     y = rng.standard_normal((6, 1))
-    model = EpistemicNearestNeighbors(x, y)
+    model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
     model.add(rng.standard_normal((2, 2)), rng.standard_normal((2, 1)))
     model.ensure_index_sync()
     model.ensure_index_sync()

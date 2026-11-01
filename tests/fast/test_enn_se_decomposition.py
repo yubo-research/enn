@@ -7,8 +7,10 @@ import pytest
 
 from enn import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+from evals.harness.work_dirs import fresh_work_dir
 
 try:
+    from enn._rust import ENNParams as RustENNParams
     from enn._rust import EpistemicNearestNeighbors as RustENN
 
     RUST_AVAILABLE = True
@@ -29,7 +31,7 @@ def test_se_decomposition_no_observation_noise():
     train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
     query = np.array([[0.5, 0.5]], dtype=float)
     flags = PosteriorFlags(observation_noise=False)
-    model = EpistemicNearestNeighbors(train_x, train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
     post = model.posterior(query, params=_params(), flags=flags)
 
     np.testing.assert_allclose(post.se_epi, post.se, rtol=1e-12, atol=1e-12)
@@ -41,7 +43,7 @@ def test_se_decomposition_observation_noise_hypot():
     train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
     query = np.array([[0.5, 0.5]], dtype=float)
     flags = PosteriorFlags(observation_noise=True)
-    model = EpistemicNearestNeighbors(train_x, train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
     post = model.posterior(query, params=_params(aleatoric=0.1), flags=flags)
 
     recomposed = np.hypot(post.se_epi, post.se_ale)
@@ -57,8 +59,10 @@ def test_se_decomposition_yvar_without_observation_noise():
     flags = PosteriorFlags(observation_noise=False)
     params = _params()
 
-    model_yvar = EpistemicNearestNeighbors(train_x, train_y, train_yvar=train_yvar)
-    model_plain = EpistemicNearestNeighbors(train_x, train_y)
+    model_yvar = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar=train_yvar, work_dir=fresh_work_dir()
+    )
+    model_plain = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
 
     post_yvar = model_yvar.posterior(query, params=params, flags=flags)
     post_plain = model_plain.posterior(query, params=params, flags=flags)
@@ -74,7 +78,7 @@ def test_batch_posterior_se_components_match_posterior():
     query = np.array([[0.5, 0.5], [0.2, 0.8]], dtype=float)
     flags = PosteriorFlags(observation_noise=True)
     params = _params(aleatoric=0.1)
-    model = EpistemicNearestNeighbors(train_x, train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
 
     batch = model.batch_posterior(query, paramss=[params], flags=flags)
     single = model.posterior(query, params=params, flags=flags)
@@ -91,7 +95,7 @@ def test_conditional_posterior_se_components_match_posterior_empty_whatif():
     query = np.array([[0.5, 0.5]], dtype=float)
     flags = PosteriorFlags(observation_noise=True)
     params = _params(aleatoric=0.1)
-    model = EpistemicNearestNeighbors(train_x, train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
 
     post = model.posterior(query, params=params, flags=flags)
     cond = model.conditional_posterior(
@@ -110,6 +114,7 @@ def test_empty_model_se_decomposition():
     model = EpistemicNearestNeighbors(
         np.zeros((0, 2), dtype=float),
         np.zeros((0, 1), dtype=float),
+        work_dir=fresh_work_dir(),
     )
     query = np.array([[0.5, 0.5]], dtype=float)
     post = model.posterior(query, params=_params())
@@ -123,12 +128,10 @@ def test_rust_posterior_tuple_contract():
     train_x = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
     train_y = np.array([[0.0], [1.0]], dtype=float)
     query = np.array([[0.5, 0.5]], dtype=float)
-    rs_model = RustENN(train_x, train_y, weighting=False, index_driver="FLAT")
+    rs_model = RustENN(train_x, train_y, fresh_work_dir(), weighting=False)
     out = rs_model.posterior(
         query,
-        k_num_neighbors=2,
-        epistemic_variance_scale=1.0,
-        aleatoric_variance_scale=0.1,
+        params=RustENNParams(2, 1.0, 0.1),
         exclude_nearest=False,
         observation_noise=False,
     )

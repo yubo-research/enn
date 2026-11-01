@@ -1,6 +1,6 @@
 """Regression test: num_fit_samples and num_fit_candidates passed to Rust backend.
 
-Bug: _config_to_rust_overrides() in rust_optimizer.py extracts index_driver but
+Bug: _config_to_rust_overrides() in rust_optimizer.py extracts work_dir but
 does not extract num_fit_samples or num_fit_candidates from ENNSurrogateConfig.
 This causes all experiments with different nfs= values to produce identical results.
 
@@ -9,13 +9,15 @@ See: enn_bug_report.md
 
 from __future__ import annotations
 
+import numpy as np
+
 from enn.turbo.config import (
     ENNFitConfig,
     ENNSurrogateConfig,
     turbo_enn_config,
 )
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.rust_optimizer import _config_to_rust_overrides
+from enn.turbo.rust_optimizer import _config_to_rust_overrides, create_optimizer
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def _make_enn_config(num_fit_samples: int | None, num_fit_candidates: int | None):
@@ -24,7 +26,7 @@ def _make_enn_config(num_fit_samples: int | None, num_fit_candidates: int | None
         num_fit_samples=num_fit_samples,
         num_fit_candidates=num_fit_candidates,
     )
-    enn = ENNSurrogateConfig(k=4, fit=fit)
+    enn = ENNSurrogateConfig(k=4, fit=fit, work_dir=fresh_work_dir())
     return turbo_enn_config(enn=enn, num_init=6)
 
 
@@ -78,16 +80,16 @@ def test_both_fit_params_passed_to_rust_overrides():
     assert overrides["num_fit_candidates"] == 200
 
 
-def test_rust_optimizer_passes_bpann_disk_index_driver():
-    config = turbo_enn_config(
-        enn=ENNSurrogateConfig(
-            index_driver=ENNIndexDriver.BPANN_DISK, work_dir="/tmp/enn_boundary"
-        )
+def test_rust_optimizer_uses_the_surrogate_work_dir(tmp_path):
+    work_dir = tmp_path / "optimizer_store"
+    config = turbo_enn_config(enn=ENNSurrogateConfig(work_dir=work_dir), num_init=1)
+    optimizer = create_optimizer(
+        bounds=np.array([[0.0, 1.0]]), config=config, rng=np.random.default_rng(0)
     )
-    overrides = _config_to_rust_overrides(config)
+    x = optimizer.ask(num_arms=2)
+    optimizer.tell(x, x)
 
-    assert overrides is not None
-    assert overrides["index_driver"] == "BPANN_DISK"
+    assert (work_dir / "metadata.json").exists()
 
 
 def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
@@ -118,7 +120,9 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
             fit = ENNFitConfig()
         else:
             fit = ENNFitConfig(num_fit_samples=num_fit_samples, num_fit_candidates=30)
-        cfg = turbo_enn_config(enn=ENNSurrogateConfig(k=3, fit=fit), num_init=2)
+        cfg = turbo_enn_config(
+            enn=ENNSurrogateConfig(k=3, fit=fit, work_dir=fresh_work_dir()), num_init=2
+        )
         opt = create_optimizer(
             bounds=bounds, config=cfg, rng=np.random.default_rng(seed)
         )

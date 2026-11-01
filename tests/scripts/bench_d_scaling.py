@@ -1,3 +1,4 @@
+import tempfile
 import time
 
 import numpy as np
@@ -30,7 +31,12 @@ def benchmark_d_scaling(ds=None, n=1000, num_candidates=5000):
         )
 
         t0 = time.perf_counter()
-        model = EpistemicNearestNeighbors(train_x, train_y, weighting=True)
+        model = EpistemicNearestNeighbors(
+            train_x,
+            train_y,
+            weighting=True,
+            work_dir=tempfile.mkdtemp(prefix="enn_bench_d_scaling_"),
+        )
         row["ENN_Init (s)"] = time.perf_counter() - t0
 
         t0 = time.perf_counter()

@@ -103,8 +103,16 @@ fn test_create_optimizer_factories_and_telemetry_defaults() {
 
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
 
-    let mut enn =
-        create_optimizer_enn_with_overrides(bounds.clone(), Some(3), Some(2), 0, None).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut enn = create_optimizer_enn_with_overrides(
+        bounds.clone(),
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(2),
+        0,
+        None,
+    )
+    .unwrap();
     let mut zero = create_optimizer_zero_with_overrides(bounds.clone(), Some(2), 0, None).unwrap();
     let mut lhd = create_optimizer_lhd_with_overrides(bounds, Some(2), 0, None).unwrap();
 
@@ -152,8 +160,16 @@ fn test_noise_aware_config_and_incumbent_after_tell() {
         noise_aware: Some(true),
         ..Default::default()
     };
-    let mut opt =
-        create_optimizer_enn_with_overrides(bounds, Some(3), Some(0), 0, Some(&overrides)).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(
+        bounds,
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(0),
+        0,
+        Some(&overrides),
+    )
+    .unwrap();
     assert!(opt.config().noise_aware);
 
     let x = array![[0.2, 0.3], [0.4, 0.5], [0.6, 0.7], [0.8, 0.9],];
@@ -170,8 +186,16 @@ fn reset_incumbent_tracker_desyncs_count_from_obs() {
         noise_aware: Some(true),
         ..Default::default()
     };
-    let mut opt =
-        create_optimizer_enn_with_overrides(bounds, Some(3), Some(0), 0, Some(&overrides)).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(
+        bounds,
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(0),
+        0,
+        Some(&overrides),
+    )
+    .unwrap();
     let x = array![[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]];
     let y = array![[0.0], [1.0], [0.5]];
     opt.tell(&x.view(), &y.view(), None).unwrap();
@@ -184,7 +208,16 @@ fn reset_incumbent_tracker_desyncs_count_from_obs() {
 #[test]
 fn local_restart_drops_rows_and_asks_a_new_lhd() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-    let mut opt = create_optimizer_enn_with_overrides(bounds, Some(3), Some(4), 0, None).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(
+        bounds,
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(4),
+        0,
+        None,
+    )
+    .unwrap();
     let x = opt.ask(4).unwrap();
     let y = ndarray::Array2::from_elem((4, 1), 1.0);
     opt.tell(&x.view(), &y.view(), None).unwrap();
@@ -210,8 +243,16 @@ fn turbo_length_restart_keeps_incumbent_tracker_synced() {
         noise_aware: Some(true),
         ..Default::default()
     };
-    let mut opt =
-        create_optimizer_enn_with_overrides(bounds, Some(3), Some(0), 0, Some(&overrides)).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(
+        bounds,
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(0),
+        0,
+        Some(&overrides),
+    )
+    .unwrap();
 
     for i in 0..64 {
         let x = array![[0.1 + 0.01 * (i as f64), 0.2]];
@@ -234,7 +275,16 @@ fn turbo_length_restart_keeps_incumbent_tracker_synced() {
 #[test]
 fn collapse_keeps_posterior_until_the_next_ask() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-    let mut opt = create_optimizer_enn_with_overrides(bounds, Some(3), Some(1), 0, None).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(
+        bounds,
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(1),
+        0,
+        None,
+    )
+    .unwrap();
     let x0 = opt.ask(1).unwrap();
     opt.tell(&x0.view(), &array![[100.0]].view(), None).unwrap();
     let mut last_x = x0;

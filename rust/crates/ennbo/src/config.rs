@@ -2,9 +2,9 @@ use crate::candidates::CandidateRV;
 use crate::enn_overrides::EnnOverrides;
 use crate::error::ENNError;
 use crate::fit_samples::FitSamples;
+use crate::layout::EnnLayout;
 use crate::morbo_override::MorboOverride;
 use crate::morbo_trust_region::MorboTRSettings;
-use crate::neighbor_count::NeighborCount;
 use crate::surrogate::ENNSurrogateConfig;
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::{TrustRegionConfig, TrustRegionKind};
@@ -25,28 +25,10 @@ pub struct OptimizerConfig {
     pub noise_aware: bool,
 }
 
-impl Default for OptimizerConfig {
-    fn default() -> Self {
-        Self {
-            surrogate: SurrogateConfig::ENN(ENNSurrogateConfig::default()),
-            trust_region: TrustRegionConfig::default(),
-            candidates: CandidateConfig::default(),
-            acquisition: AcquisitionConfig::default(),
-            noise_aware: false,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum SurrogateConfig {
     ENN(ENNSurrogateConfig),
     None,
-}
-
-impl Default for SurrogateConfig {
-    fn default() -> Self {
-        SurrogateConfig::ENN(ENNSurrogateConfig::default())
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -227,13 +209,9 @@ fn turbo_candidate_config() -> CandidateConfig {
     }
 }
 
-pub fn turbo_enn_config() -> OptimizerConfig {
+pub fn turbo_enn_config(layout: EnnLayout) -> OptimizerConfig {
     OptimizerConfig {
-        surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
-            k: NeighborCount::default(),
-            fit_samples: FitSamples::default(),
-            ..Default::default()
-        }),
+        surrogate: SurrogateConfig::ENN(ENNSurrogateConfig::new(layout)),
         trust_region: TrustRegionConfig::default(),
         candidates: turbo_candidate_config(),
         acquisition: AcquisitionConfig::default(),
@@ -271,9 +249,9 @@ impl OptimizerConfig {
         Ok(())
     }
 
-    pub fn turbo_enn() -> TurboEnnBuilder {
+    pub fn turbo_enn(layout: EnnLayout) -> TurboEnnBuilder {
         TurboEnnBuilder {
-            config: turbo_enn_config(),
+            config: turbo_enn_config(layout),
             kind: OptimizerInitKind::Hybrid,
             num_init: None,
         }
@@ -316,7 +294,6 @@ pub fn lhd_only_config() -> OptimizerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::EnnStorage;
     use crate::candidates::CandidateRV;
     use crate::enn_overrides::{FitOverride, SearchOverrides};
     use crate::morbo_trust_region::Rescalarize;
@@ -368,14 +345,9 @@ mod tests {
     }
 
     #[test]
-    fn test_config_defaults() {
-        let config = OptimizerConfig::default();
-        assert!(matches!(config.acquisition, AcquisitionConfig::UCB { .. }));
-    }
-
-    #[test]
     fn test_turbo_enn_config() {
-        let config = turbo_enn_config();
+        let dir = tempfile::tempdir().unwrap();
+        let config = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
         assert!(matches!(config.surrogate, SurrogateConfig::ENN(_)));
         assert!(matches!(config.acquisition, AcquisitionConfig::UCB { .. }));
         assert_eq!(config.candidates.candidate_rv, CandidateRV::RAASP);
@@ -406,13 +378,10 @@ mod tests {
 
     #[test]
     fn test_config_overrides_apply_to() {
-        use crate::index::IndexDriver;
-
         let overrides = ConfigOverrides {
             acquisition: Some(AcquisitionConfig::Thompson),
             candidate_rv: Some(CandidateRV::Sobol),
             enn: Some(EnnOverrides {
-                index_driver: Some(IndexDriver::Flat),
                 fit: Some(draw_override(123, 456)),
                 weighting: Some(true),
                 ..Default::default()
@@ -420,19 +389,19 @@ mod tests {
             ..Default::default()
         };
 
-        let config = turbo_enn_config();
+        let dir = tempfile::tempdir().unwrap();
+        let config = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
         let applied = overrides.apply_to(config).unwrap();
 
         assert!(matches!(applied.acquisition, AcquisitionConfig::Thompson));
         assert_eq!(applied.candidates.candidate_rv, CandidateRV::Sobol);
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
-            assert_eq!(enn.layout.index_driver(), IndexDriver::Flat);
             assert_eq!(enn.fit_samples.count(), Some(123));
             assert_eq!(
                 enn.fit_samples.search().unwrap().num_fit_candidates.get(),
                 456
             );
-            assert!(enn.layout.scale_x());
+            assert!(enn.layout.weighting());
         } else {
             panic!("expected ENN surrogate");
         }
@@ -447,11 +416,16 @@ mod tests {
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let applied = overrides
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
-        assert!(enn.layout.scale_x());
+        assert!(enn.layout.weighting());
     }
 
     #[test]
@@ -470,7 +444,12 @@ mod tests {
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let applied = overrides
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap();
         let TrustRegionConfig::Morbo(settings) = applied.trust_region else {
             panic!("expected Morbo trust region");
         };
@@ -506,7 +485,12 @@ mod tests {
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let applied = overrides
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
@@ -515,29 +499,25 @@ mod tests {
             enn.fit_samples.search().unwrap().num_fit_candidates.get(),
             11
         );
-        assert!(enn.layout.scale_x());
+        assert!(enn.layout.weighting());
     }
 
     #[test]
-    fn config_overrides_apply_enn_storage_and_work_dir() {
-        use crate::index::IndexDriver;
-        use std::path::PathBuf;
-
+    fn config_overrides_keep_the_work_dir_of_the_layout() {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
-                index_driver: Some(IndexDriver::BpAnnDisk),
-                work_dir: Some(PathBuf::from("/tmp/enn_work")),
+                weighting: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let layout = EnnLayout::new("/tmp/enn_work", false).unwrap();
+        let applied = overrides.apply_to(turbo_enn_config(layout)).unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
-        assert_eq!(enn.layout.index_driver(), IndexDriver::BpAnnDisk);
-        assert_eq!(enn.layout.storage(), EnnStorage::Disk);
-        assert_eq!(enn.layout.work_dir(), Some(Path::new("/tmp/enn_work")));
+        assert_eq!(enn.layout.work_dir(), Path::new("/tmp/enn_work"));
+        assert!(enn.layout.weighting());
     }
 
     #[test]
@@ -579,7 +559,9 @@ mod tests {
 
     #[test]
     fn validate_rejects_frozen_enn_with_ucb() {
-        let mut config = turbo_enn_config();
+        let dir = tempfile::tempdir().unwrap();
+        let mut config =
+            turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
         if let SurrogateConfig::ENN(enn) = &mut config.surrogate {
             enn.fit_samples = FitSamples::Frozen;
         }
@@ -603,7 +585,12 @@ mod tests {
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let applied = overrides
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap();
         let TrustRegionConfig::Morbo(settings) = applied.trust_region else {
             panic!("expected Morbo trust region");
         };
@@ -629,7 +616,12 @@ mod tests {
             trust_region_kind: Some(TrustRegionKind::Morbo),
             ..Default::default()
         };
-        let err = missing.apply_to(turbo_enn_config()).unwrap_err();
+        let dir = tempfile::tempdir().unwrap();
+        let err = missing
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap_err();
         assert!(
             err.to_string().contains("num_metrics and alpha"),
             "unexpected error: {err}"
@@ -642,7 +634,12 @@ mod tests {
             }),
             ..Default::default()
         };
-        let err = unpaired.apply_to(turbo_enn_config()).unwrap_err();
+        let dir = tempfile::tempdir().unwrap();
+        let err = unpaired
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap_err();
         assert!(
             err.to_string().contains("require trust_region MORBO"),
             "unexpected error: {err}"

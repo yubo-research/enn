@@ -2,7 +2,6 @@
 
 use super::draw_turbo_candidates;
 use crate::config::{turbo_enn_config, SurrogateConfig};
-use crate::layout::EnnLayout;
 use crate::metric_weights::trust_region_sides;
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
@@ -81,17 +80,15 @@ fn morbo_bounds_use_the_same_sides() {
 }
 
 fn disk_auto_optimizer(dir: &std::path::Path, num_dim: usize, seed: u64) -> Optimizer {
-    let layout = EnnLayout::DiskAuto {
-        work_dir: dir.to_path_buf(),
-    };
-    let mut cfg = turbo_enn_config();
+    let layout = crate::layout::EnnLayout::new(dir.to_path_buf(), true).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     // Scale fitting does not affect coordinate sampling or AUTO side lengths.
     cfg.acquisition = crate::config::AcquisitionConfig::Pareto;
     cfg.surrogate = SurrogateConfig::ENN(ENNSurrogateConfig {
         k: crate::NeighborCount::new(10).unwrap(),
         fit_samples: crate::FitSamples::Frozen,
-        layout,
-        ..Default::default()
+        ..ENNSurrogateConfig::new(layout)
     });
     let bounds = Array2::from_shape_fn((num_dim, 2), |(_, j)| j as f64);
     let mut rng = StdRng::seed_from_u64(seed);

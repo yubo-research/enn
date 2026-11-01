@@ -42,13 +42,46 @@ impl EpistemicNearestNeighbors {
                 idx_nested_to_array2(&internals.idx),
             )
         };
-        Ok(ENNNormal::new(
+        let mut out = ENNNormal::new(
             mu.into_dyn(),
             se.into_dyn(),
             se_epi.into_dyn(),
             se_ale.into_dyn(),
             Some(idx),
-        ))
+        );
+        self.apply_normal_blend(&mut out, params)?;
+        Ok(out)
+    }
+
+    fn apply_normal_blend(&self, out: &mut ENNNormal, params: &ENNParams) -> Result<(), ENNError> {
+        match self.checked_blend(params)? {
+            Some(blend) => blend.apply_normal(out),
+            None => Ok(()),
+        }
+    }
+
+    pub(super) fn apply_batch_blends(
+        &self,
+        out: &mut ENNNormal,
+        paramss: &[ENNParams],
+    ) -> Result<(), ENNError> {
+        for (entry, params) in paramss.iter().enumerate() {
+            if let Some(blend) = self.checked_blend(params)? {
+                blend.apply_batch_entry(out, entry)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn apply_draw_blend(
+        &self,
+        draws: &mut Array3<f64>,
+        params: &ENNParams,
+    ) -> Result<(), ENNError> {
+        if let Some(blend) = self.checked_blend(params)? {
+            blend.apply_draws(draws);
+        }
+        Ok(())
     }
 
     pub fn posterior(
@@ -70,7 +103,8 @@ impl EpistemicNearestNeighbors {
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
         let internals = compute_posterior_internals(self, x, params, flags)?;
-        let draws = draw_from_internals(self, &internals, function_seeds)?;
+        let mut draws = draw_from_internals(self, &internals, function_seeds)?;
+        self.apply_draw_blend(&mut draws, params)?;
         Ok((draws, internals.idx))
     }
 
@@ -105,13 +139,15 @@ impl EpistemicNearestNeighbors {
         let (y_z, _) = self.warp_observations(y_whatif, None)?;
         let internals =
             compute_conditional_posterior_internals(self, x, x_whatif, &y_z.view(), params, flags)?;
-        Ok(ENNNormal::new(
+        let mut out = ENNNormal::new(
             internals.mu.into_dyn(),
             internals.se.into_dyn(),
             internals.se_epi.into_dyn(),
             internals.se_ale.into_dyn(),
             Some(idx_nested_to_array2(&internals.idx)),
-        ))
+        );
+        self.apply_normal_blend(&mut out, params)?;
+        Ok(out)
     }
 
     pub fn conditional_posterior(

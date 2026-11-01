@@ -14,7 +14,6 @@ pub mod enn_py_build {
     define_enn_py_build_api!(link_rpath);
 }
 pub mod link_rpath;
-pub mod py_adaptive;
 mod py_args;
 pub mod py_cat_encoder;
 pub mod py_config_rules;
@@ -26,7 +25,6 @@ pub mod py_hypervolume;
 pub mod py_layout;
 pub mod py_metric;
 pub mod py_model;
-pub mod py_multi_output;
 pub mod py_numpy_normal;
 pub mod py_optimizer;
 pub mod py_params;

@@ -1,16 +1,35 @@
 import json
 import time
-from dataclasses import asdict
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
-from enn import EpistemicNearestNeighbors, SemanticMultiOutputENN
+from enn import EpistemicNearestNeighbors
+from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams
 from evals.harness.adapt_problem import make_problem
+from evals.harness.work_dirs import fresh_work_dir
 
 PARAMS = ENNParams(8, 1, 0)
 CHECKPOINTS = (30, 100, 300)
+PRIOR_ALPHA = 0.3
+NUM_FIT_CANDIDATES = 30
+
+
+@dataclass(frozen=True)
+class Workflow:
+    weighting: bool
+    learned_outputs: bool = True
+    output_alpha: float | None = None
+
+
+WORKFLOWS = {
+    "adaptive": Workflow(weighting=True),
+    "adaptive_inputs": Workflow(weighting=True, learned_outputs=False),
+    "adaptive_outputs": Workflow(weighting=False),
+    "tuned_fixed": Workflow(weighting=False, output_alpha=PRIOR_ALPHA),
+}
 
 
 def score(posterior, target):
@@ -28,19 +47,37 @@ def score(posterior, target):
 
 def fixed_model(problem, count, raw=False):
     x, y = problem.x[:count], problem.y[:count]
-    if problem.output_projection is not None and not raw:
-        return SemanticMultiOutputENN(
-            problem.output_projection, alpha=0.3, params=PARAMS, folds=3
-        ).fit(x, y)
-    return EpistemicNearestNeighbors(
-        x, y, input_transform=None if raw else problem.input_transform
+    if problem.output_projection is None or raw:
+        model = EpistemicNearestNeighbors(
+            x,
+            y,
+            input_transform=None if raw else problem.input_transform,
+            work_dir=fresh_work_dir(),
+        )
+        return model, PARAMS
+    model = EpistemicNearestNeighbors(
+        x[:0],
+        y[:0],
+        output_projection=problem.output_projection,
+        output_alpha=PRIOR_ALPHA,
+        work_dir=fresh_work_dir(),
+    )
+    params = enn_fit(
+        model,
+        k=PARAMS.k_num_neighbors,
+        num_fit_candidates=1,
+        rng=np.random.default_rng(0),
+        incremental=model.add(x, y),
+    )
+    return model, replace(
+        PARAMS,
+        output_blend=params.output_blend,
     )
 
 
-def predict(model, x):
-    if isinstance(model, EpistemicNearestNeighbors):
-        return model.posterior(x, params=PARAMS)
-    return model.posterior(x)
+def alpha_summary(params):
+    blend = params.output_blend
+    return None if blend is None else float(blend.alpha.mean())
 
 
 def run_case(kind, case, seed, methods):
@@ -49,10 +86,10 @@ def run_case(kind, case, seed, methods):
     for count in CHECKPOINTS:
         for method in methods:
             start = time.perf_counter()
-            model = update_model(problem, count, method, models)
+            model, params = update_model(problem, count, method, models, seed)
             update_s = time.perf_counter() - start
             start = time.perf_counter()
-            posterior = predict(model, problem.x[300:])
+            posterior = model.posterior(problem.x[300:], params=params)
             rows.append(
                 dict(
                     kind=kind,
@@ -62,32 +99,45 @@ def run_case(kind, case, seed, methods):
                     method=method,
                     update_s=update_s,
                     query_s=time.perf_counter() - start,
-                    choice=None if method in ("fixed", "raw") else asdict(model.choice),
+                    mean_alpha=alpha_summary(params),
                     **score(posterior, problem.y[300:]),
                 )
             )
     return rows
 
 
-def update_model(problem, count, method, models):
+def workflow_model(problem, workflow):
+    return EpistemicNearestNeighbors(
+        problem.x[:0],
+        problem.y[:0],
+        input_transform=problem.input_transform,
+        output_projection=problem.output_projection
+        if workflow.learned_outputs
+        else None,
+        output_alpha=workflow.output_alpha if problem.output_projection else None,
+        weighting=workflow.weighting,
+        work_dir=fresh_work_dir(),
+    )
+
+
+def update_model(problem, count, method, models, seed):
     if method in ("fixed", "raw"):
         return fixed_model(problem, count, raw=method == "raw")
-    from enn.adaptive import AdaptiveSemanticENN
-
     if method not in models:
-        models[method] = AdaptiveSemanticENN(
-            input_transform=problem.input_transform,
-            output_projection=problem.output_projection,
-            linear_mean=method == "adaptive_linear",
-            adaptation={
-                "adaptive_inputs": "inputs",
-                "adaptive_outputs": "outputs",
-                "tuned_fixed": "none",
-            }.get(method, "all"),
+        models[method] = (
+            workflow_model(problem, WORKFLOWS[method]),
+            np.random.default_rng(seed),
         )
-    model = models[method]
-    start = model.num_seen
-    return model.add(problem.x[start:count], problem.y[start:count])
+    model, rng = models[method]
+    start = len(model)
+    params = enn_fit(
+        model,
+        k=PARAMS.k_num_neighbors,
+        num_fit_candidates=NUM_FIT_CANDIDATES,
+        rng=rng,
+        incremental=model.add(problem.x[start:count], problem.y[start:count]),
+    )
+    return model, params
 
 
 def run_adapt(

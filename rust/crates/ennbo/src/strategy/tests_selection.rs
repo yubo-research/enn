@@ -58,7 +58,8 @@ fn test_thompson_sampling_uses_posterior_sample() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(42);
 
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.acquisition = AcquisitionConfig::Thompson;
     let mut optimizer =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
@@ -82,7 +83,8 @@ fn test_thompson_sampling_uses_posterior_sample() {
     );
 
     let mut rng2 = StdRng::seed_from_u64(42);
-    let mut cfg2 = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg2 = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg2.acquisition = AcquisitionConfig::Thompson;
     let mut optimizer2 = Optimizer::new_with_strategy(
         array![[0.0, 1.0], [0.0, 1.0]],
@@ -136,7 +138,8 @@ fn test_telemetry_populated_after_operations() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(99);
 
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.acquisition = AcquisitionConfig::UCB { beta: 2.0 };
     let mut optimizer =
         Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
@@ -183,9 +186,14 @@ fn turbo_strategy_state_default_and_tell_common_paths() {
     let y = array![[0.1]];
     tell_common(&mut opt_no_sur, &x.view(), &y.view(), None, None, &mut rng).unwrap();
 
-    let mut opt_enn =
-        Optimizer::new_with_strategy(bounds, turbo_enn_config(), Strategy::turbo(), &mut rng)
-            .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt_enn = Optimizer::new_with_strategy(
+        bounds,
+        turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap()),
+        Strategy::turbo(),
+        &mut rng,
+    )
+    .unwrap();
     let x2 = array![[0.0, 0.0], [1.0, 1.0]];
     let y2 = array![[0.0], [1.0]];
     let mut tel = Telemetry::default();
@@ -205,7 +213,8 @@ fn turbo_strategy_state_default_and_tell_common_paths() {
 fn ask_scores_full_configured_candidate_pool() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(201);
-    let mut config = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     let num_candidates = 37usize;
     config.candidates.num_candidates_per_dim = 0;
     config.candidates.max_candidates = 1_000_000_000;
@@ -239,9 +248,14 @@ fn select_with_functions_direct_smoke() {
     let out_r = select_with_random(&x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_r.nrows(), 2);
 
-    let mut opt =
-        Optimizer::new_with_strategy(bounds, turbo_enn_config(), Strategy::turbo(), &mut rng)
-            .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt = Optimizer::new_with_strategy(
+        bounds,
+        turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap()),
+        Strategy::turbo(),
+        &mut rng,
+    )
+    .unwrap();
     let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8]];
     let yf = array![[0.0], [1.0], [0.5]];
     opt.tell(&xf.view(), &yf.view(), None).unwrap();
@@ -272,8 +286,16 @@ fn select_with_pareto_scores_naturalized_under_y_bounds() {
         acquisition: Some(AcquisitionConfig::Pareto),
         ..Default::default()
     };
-    let mut opt =
-        create_optimizer_enn_with_overrides(bounds, Some(3), Some(0), 0, Some(&overrides)).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(
+        bounds,
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(0),
+        0,
+        Some(&overrides),
+    )
+    .unwrap();
     if let SurrogateConfig::ENN(enn) = &opt.config().surrogate {
         assert!(enn.y_bounds.is_some());
     }
@@ -317,8 +339,16 @@ fn select_with_thompson_scores_naturalized_under_y_bounds() {
         acquisition: Some(AcquisitionConfig::Thompson),
         ..Default::default()
     };
-    let mut opt =
-        create_optimizer_enn_with_overrides(bounds, Some(3), Some(0), 0, Some(&overrides)).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut opt = create_optimizer_enn_with_overrides(
+        bounds,
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(0),
+        0,
+        Some(&overrides),
+    )
+    .unwrap();
     let xf = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.7, 0.3]];
     let yf = array![[0.1], [0.9], [0.4], [0.6]];
     opt.tell(&xf.view(), &yf.view(), None).unwrap();

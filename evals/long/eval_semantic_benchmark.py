@@ -5,6 +5,7 @@ import numpy as np
 
 from enn import EpistemicNearestNeighbors, SemanticInputTransform
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 
 GROUPS = [
     "Temperature of the heating system in degrees Celsius",
@@ -53,7 +54,9 @@ def problem(seed, dimensions):
 
 def evaluate_prediction(y, train_count, features):
     z = features
-    model = EpistemicNearestNeighbors(z[:train_count], y[:train_count])
+    model = EpistemicNearestNeighbors(
+        z[:train_count], y[:train_count], work_dir=fresh_work_dir()
+    )
     post = model.posterior(z[1000:], params=ENNParams(8, 1.0, 0.0))
     residual = (post.mu - y[1000:]).ravel()
     std = y[1000:].std()

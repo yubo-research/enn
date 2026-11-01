@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-use crate::index::IndexError;
-
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ENNError {
     #[error("Invalid shape: expected {expected:?}, got {got:?}")]
@@ -11,8 +9,6 @@ pub enum ENNError {
     },
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
-    #[error("Index error: {0}")]
-    IndexError(#[from] IndexError),
     #[error("Not enough observations: got {0}, need at least {1}")]
     NotEnoughObservations(usize, usize),
     #[error("Shape error: {0}")]
@@ -27,10 +23,13 @@ impl From<ndarray::ShapeError> for ENNError {
 
 pub const EPS_VAR: f64 = 1e-9;
 
+pub(crate) fn invalid(error: impl std::fmt::Display) -> ENNError {
+    ENNError::InvalidParameter(error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::IndexError;
 
     #[test]
     fn test_enn_error_display() {
@@ -48,16 +47,6 @@ mod tests {
 
         let err = ENNError::ShapeError("bad shape".to_string());
         assert!(err.to_string().contains("Shape error"));
-    }
-
-    #[test]
-    fn test_enn_error_from_index_error() {
-        let index_err = IndexError::InvalidShape {
-            expected: 5,
-            got: 3,
-        };
-        let enn_err: ENNError = index_err.into();
-        assert!(matches!(enn_err, ENNError::IndexError(_)));
     }
 
     #[test]

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from evals.harness.work_dirs import fresh_work_dir
+
 
 def test_enn_fit_after_every_add_uses_num_fit_candidates_one():
     import numpy as np
@@ -14,7 +16,10 @@ def test_enn_fit_after_every_add_uses_num_fit_candidates_one():
     yvar_all = 0.01 * np.ones_like(y_all)
 
     model = EpistemicNearestNeighbors(
-        np.empty((0, 2)), np.empty((0, 1)), np.empty((0, 1))
+        np.empty((0, 2)),
+        np.empty((0, 1)),
+        np.empty((0, 1)),
+        work_dir=fresh_work_dir(),
     )
     params: ENNParams | None = None
     for row_x, row_y, row_yvar in zip(x_all, y_all, yvar_all):
@@ -47,10 +52,14 @@ def test_enn_fit_incremental_metamorphic_matches_manual_tell_ask():
     x_all = rng.standard_normal((8, 2))
     y_all = rng.standard_normal((8, 1))
 
-    via_enn_fit = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
+    via_enn_fit = EpistemicNearestNeighbors(
+        np.empty((0, 2)), np.empty((0, 1)), work_dir=fresh_work_dir()
+    )
     params_a = None
 
-    via_manual = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
+    via_manual = EpistemicNearestNeighbors(
+        np.empty((0, 2)), np.empty((0, 1)), work_dir=fresh_work_dir()
+    )
     fitter_b = ENNStatefulFitter(k=2, rng=np.random.default_rng(99))
     params_b = None
 
@@ -100,8 +109,12 @@ def test_enn_fit_rejects_stale_foreign_and_repeated_tokens():
     rng = np.random.default_rng(1)
     x = rng.standard_normal((4, 2))
     y = rng.standard_normal((4, 1))
-    model = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
-    other = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
+    model = EpistemicNearestNeighbors(
+        np.empty((0, 2)), np.empty((0, 1)), work_dir=fresh_work_dir()
+    )
+    other = EpistemicNearestNeighbors(
+        np.empty((0, 2)), np.empty((0, 1)), work_dir=fresh_work_dir()
+    )
     first = model.add(x[0:1], y[0:1])
     second = model.add(x[1:2], y[1:2])
     with pytest.raises(ValueError, match="stale or already used"):
@@ -141,7 +154,7 @@ def test_enn_fit_rejects_stale_foreign_and_repeated_tokens():
         )
 
 
-def test_incremental_enn_fit_rejects_a_later_k_or_seed():
+def test_incremental_enn_fit_rejects_a_later_k_but_not_a_later_seed():
     import numpy as np
     import pytest
 
@@ -151,7 +164,9 @@ def test_incremental_enn_fit_rejects_a_later_k_or_seed():
     rng = np.random.default_rng(1)
     x = rng.standard_normal((4, 2))
     y = rng.standard_normal((4, 1))
-    model = EpistemicNearestNeighbors(np.empty((0, 2)), np.empty((0, 1)))
+    model = EpistemicNearestNeighbors(
+        np.empty((0, 2)), np.empty((0, 1)), work_dir=fresh_work_dir()
+    )
     first = model.add(x[0:1], y[0:1])
     enn_fit(
         model,
@@ -176,7 +191,7 @@ def test_incremental_enn_fit_rejects_a_later_k_or_seed():
         k=2,
         num_fit_candidates=1,
         num_fit_samples=4,
-        rng=np.random.default_rng(1),
+        rng=np.random.default_rng(2),
         incremental=second,
     )
 
@@ -188,7 +203,9 @@ def test_incremental_fit_state_lives_only_in_the_rust_model():
     from enn.enn.enn_fit import enn_fit
 
     r = np.random.default_rng(0)
-    model = EpistemicNearestNeighbors(r.random((20, 2)), r.random((20, 1)))
+    model = EpistemicNearestNeighbors(
+        r.random((20, 2)), r.random((20, 1)), work_dir=fresh_work_dir()
+    )
     token = model.add(r.random((5, 2)), r.random((5, 1)))
     enn_fit(
         model,

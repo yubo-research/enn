@@ -2,7 +2,7 @@
 use ennbo::categorical_encoder::CatEncoder;
 use ennbo::categorical_plan::{CatEncoding, CatOptions};
 use ennbo::surrogate::{ENNSurrogate, ENNSurrogateConfig, Surrogate};
-use ennbo::{EnnLayout, EpistemicNearestNeighbors, FitSamples, IndexDriver, NeighborCount};
+use ennbo::{EnnLayout, EpistemicNearestNeighbors, FitSamples, NeighborCount};
 use ndarray::{s, Array2};
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -45,32 +45,28 @@ fn native_feature_combinations_match_explicit_model_features() {
             });
             for weighting in [false, true] {
                 for tied in [vec![], vec![vec![0, 1]]] {
-                    for driver in [IndexDriver::Flat, IndexDriver::BpAnnDisk] {
-                        let dir = (driver == IndexDriver::BpAnnDisk)
-                            .then(|| root.path().join(format!("surrogate-{sequence}")));
-                        let layout = EnnLayout::new(driver, dir, weighting).unwrap();
-                        let config = ENNSurrogateConfig {
-                            layout,
-                            semantic_projection: projection.clone(),
-                            semantic_only: mode == 2,
-                            tied_dims: tied.clone(),
-                            fit_samples: FitSamples::Frozen,
-                            k: NeighborCount::new(3).unwrap(),
-                            ..Default::default()
-                        };
-                        compare(
-                            config,
-                            &x,
-                            &y,
-                            root.path().join(format!("reference-{sequence}")),
-                        );
-                        sequence += 1;
-                    }
+                    let dir = root.path().join(format!("surrogate-{sequence}"));
+                    let layout = EnnLayout::new(dir, weighting).unwrap();
+                    let config = ENNSurrogateConfig {
+                        semantic_projection: projection.clone(),
+                        semantic_only: mode == 2,
+                        tied_dims: tied.clone(),
+                        fit_samples: FitSamples::Frozen,
+                        k: NeighborCount::new(3).unwrap(),
+                        ..ENNSurrogateConfig::new(layout)
+                    };
+                    compare(
+                        config,
+                        &x,
+                        &y,
+                        root.path().join(format!("reference-{sequence}")),
+                    );
+                    sequence += 1;
                 }
             }
         }
     }
-    assert_eq!(sequence, 72);
+    assert_eq!(sequence, 36);
 }
 
 fn compare(
@@ -86,9 +82,7 @@ fn compare(
         config.semantic_only,
     )
     .unwrap();
-    let dir = (config.layout.index_driver() == IndexDriver::BpAnnDisk).then_some(reference_dir);
-    let reference_layout =
-        EnnLayout::new(config.layout.index_driver(), dir, config.layout.weighting()).unwrap();
+    let reference_layout = ennbo::EnnLayout::new(reference_dir, config.layout.weighting()).unwrap();
     let mut reference = EpistemicNearestNeighbors::new_configured(
         z.slice(s![..12, ..]).to_owned(),
         y.slice(s![..12, ..]).to_owned(),
@@ -98,10 +92,7 @@ fn compare(
         config.tied_dims.clone(),
     )
     .unwrap();
-    assert_eq!(
-        reference.metric_learning_auto(),
-        config.layout.index_driver() == IndexDriver::BpAnnDisk && config.layout.weighting()
-    );
+    assert_eq!(reference.metric_learning_auto(), config.layout.weighting());
     let mut surrogate = ENNSurrogate::new(config);
     let mut rng = StdRng::seed_from_u64(4);
     surrogate
@@ -188,7 +179,7 @@ fn semantic_only_originals_follow_disk_model_lifecycle() {
     let x = ndarray::array![[1., 2., 3.], [4., 5., 6.]];
     let features = ndarray::array![[2.], [5.]];
     let y = ndarray::array![[1.], [4.]];
-    let layout = EnnLayout::disk(dir.path().to_path_buf(), false);
+    let layout = ennbo::EnnLayout::new(dir.path().to_path_buf(), false).unwrap();
     let mut model =
         EpistemicNearestNeighbors::new_with_storage(features, y, None, layout.clone(), None)
             .unwrap();

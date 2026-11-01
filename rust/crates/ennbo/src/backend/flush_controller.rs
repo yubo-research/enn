@@ -187,7 +187,6 @@ impl DiskBackendHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::IndexDriver;
     use crate::EpistemicNearestNeighbors;
     use ndarray::Array2;
     use std::sync::Barrier;
@@ -204,21 +203,14 @@ mod tests {
         let mut model = EpistemicNearestNeighbors::new_empty(
             dim,
             1,
-            crate::layout::EnnLayout::new(
-                IndexDriver::BpAnnDisk,
-                Some(dir.path().to_path_buf()),
-                false,
-            )
-            .unwrap(),
+            crate::layout::EnnLayout::new(dir.path().to_path_buf(), false).unwrap(),
             Some(1),
         )
         .expect("new_empty");
         let x = Array2::from_shape_fn((n, dim), |(i, j)| (i + j) as f64);
         let y = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);
         model.add(&x.view(), &y.view(), None).expect("add");
-        if let crate::backend::EnnBackend::Disk(handle) = &model.backend {
-            write_backend(handle.data()).mark_index_stale();
-        }
+        write_backend(model.backend.handle.data()).mark_index_stale();
         model
     }
 
@@ -428,11 +420,11 @@ mod tests {
         let model = disk_model(&dir, 6, 2);
         model.schedule_background_flush().expect("schedule");
         model.backend.wait_for_flush().expect("wait soft");
-        if let crate::backend::EnnBackend::Disk(handle) = &model.backend {
-            handle.persist_index_to_disk().expect("hard persist");
-        } else {
-            panic!("expected disk backend");
-        }
+        model
+            .backend
+            .handle
+            .persist_index_to_disk()
+            .expect("hard persist");
         assert!(dir.path().join("index/pages.bin").exists());
     }
 

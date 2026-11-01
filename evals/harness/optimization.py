@@ -6,6 +6,7 @@ from enn import create_optimizer, turbo_enn_config
 from enn.turbo.config import AcqType, ENNFitConfig, ENNSurrogateConfig
 from enn.turbo.config.candidate_gen_config import CandidateGenConfig
 from evals.harness.metrics import format_smaller
+from evals.harness.work_dirs import fresh_work_dir
 from ops.stress import format_mean_se, mean_se
 
 NUM_DIM = 5
@@ -37,7 +38,9 @@ def build_optimizer(seed: int):
         acq_type=AcqType.UCB,
         candidates=CandidateGenConfig(max_candidates=128),
         enn=ENNSurrogateConfig(
-            k=8, fit=ENNFitConfig(num_fit_samples=24, num_fit_candidates=16)
+            k=8,
+            fit=ENNFitConfig(num_fit_samples=24, num_fit_candidates=16),
+            work_dir=fresh_work_dir(),
         ),
     )
     return create_optimizer(

@@ -6,7 +6,6 @@ use ndarray::{Array1, Array2, ArrayView2};
 use crate::backend::TrainRowsAtResult;
 use crate::error::ENNError;
 use crate::file_config::install_bpann_tuning_from_config;
-use crate::index::IndexDriver;
 
 fn bpann_err(e: ennbo_bpann::BpannError) -> ENNError {
     match e {
@@ -26,7 +25,6 @@ fn apply_config_flush_threshold(inner: BpannBackend) -> BpannBackend {
 
 pub struct DiskBpannEnnBackend {
     inner: BpannBackend,
-    driver: IndexDriver,
     num_metrics: usize,
 }
 
@@ -55,11 +53,7 @@ impl DiskBpannEnnBackend {
         };
         let inner = apply_config_flush_threshold(inner);
         let num_metrics = inner.num_metrics();
-        Ok(Self {
-            inner,
-            driver: IndexDriver::BpAnnDisk,
-            num_metrics,
-        })
+        Ok(Self { inner, num_metrics })
     }
 
     pub fn new_empty(
@@ -71,15 +65,7 @@ impl DiskBpannEnnBackend {
         let inner = apply_config_flush_threshold(
             BpannBackend::new_empty(work_dir, num_dim, num_metrics).map_err(bpann_err)?,
         );
-        Ok(Self {
-            inner,
-            driver: IndexDriver::BpAnnDisk,
-            num_metrics,
-        })
-    }
-
-    pub fn driver(&self) -> IndexDriver {
-        self.driver
+        Ok(Self { inner, num_metrics })
     }
 
     #[allow(clippy::len_without_is_empty)]
@@ -93,14 +79,6 @@ impl DiskBpannEnnBackend {
 
     pub fn num_metrics(&self) -> usize {
         self.num_metrics
-    }
-
-    pub fn defer_index_sync_for_search(&self) -> bool {
-        true
-    }
-
-    pub fn is_index_stale(&self) -> bool {
-        false
     }
 
     pub fn mark_index_stale(&mut self) {
@@ -228,11 +206,7 @@ impl DiskBpannEnnBackend {
             .with_pending_flush_threshold(pending_flush_threshold)
             .with_pending_hard_flush_threshold(pending_hard_flush_threshold)
             .with_defer_append_indexing(true);
-        Ok(Self {
-            inner,
-            driver: IndexDriver::BpAnnDisk,
-            num_metrics,
-        })
+        Ok(Self { inner, num_metrics })
     }
 
     pub fn pending_unindexed_count(&self) -> usize {

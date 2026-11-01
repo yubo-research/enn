@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import numpy as np
@@ -119,7 +120,12 @@ def create_optimizer(
     elif isinstance(config.surrogate, ENNSurrogateConfig):
         k = None if config.surrogate.k is None else int(config.surrogate.k)
         inner = _rust.create_optimizer_enn(
-            bounds_arr, k, num_init, seed, config_overrides=overrides
+            bounds_arr,
+            os.fspath(config.surrogate.work_dir),
+            k,
+            num_init,
+            seed,
+            config_overrides=overrides,
         )
     elif isinstance(config.surrogate, NoSurrogateConfig):
         inner = _rust.create_optimizer_zero(

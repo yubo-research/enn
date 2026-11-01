@@ -1,5 +1,4 @@
-use crate::adaptive_geometry::invalid;
-use crate::error::ENNError;
+use crate::error::{invalid, ENNError};
 use crate::semantic_projection::{normalize_rows, validate_bounds};
 use ndarray::{Array2, ArrayView2, ArrayViewD, Axis, Ix1, Ix2};
 use std::collections::HashSet;

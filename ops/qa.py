@@ -20,7 +20,6 @@ from enn.turbo.config import (
     CandidateGenConfig,
     CandidateRV,
     ENNFitConfig,
-    ENNIndexDriver,
     ENNSurrogateConfig,
     TurboTRConfig,
 )
@@ -30,7 +29,6 @@ NUM_ROUNDS = 101
 NUM_ARMS = 100
 ACKLEY_NOISE = 0.1
 SEED = 0
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "bpann_disk")
 Y_BOUNDS_N_TRAIN = 80
 Y_BOUNDS_N_TEST = 200
 Y_BOUNDS_K = 10
@@ -64,31 +62,17 @@ Y_VAR_WRONG_SCALE = 0.01
 Y_VAR_SWEEP: tuple[float, ...] = (0.01, 0.09, 0.25, 1.0)
 
 
-def parse_index_driver(name: str) -> ENNIndexDriver:
-    mapping = {
-        "flat": ENNIndexDriver.FLAT,
-        "bpann_disk": ENNIndexDriver.BPANN_DISK,
-    }
-    if name not in mapping:
-        raise ValueError(f"Unknown index type: {name}")
-    return mapping[name]
-
-
-def build_ackley_enn_surrogate(index_driver: ENNIndexDriver) -> ENNSurrogateConfig:
-    """Build ENN surrogate config; BPANN_DISK requires disk storage + work_dir."""
-    enn_kwargs: dict[str, object] = {
-        "k": 10,
-        "fit": ENNFitConfig(num_fit_samples=100),
-        "index_driver": index_driver,
-    }
-    if index_driver == ENNIndexDriver.BPANN_DISK:
-        enn_kwargs["work_dir"] = tempfile.mkdtemp(prefix="qa_ackley_bpann_")
-    return ENNSurrogateConfig(**enn_kwargs)
+def build_ackley_enn_surrogate() -> ENNSurrogateConfig:
+    """Build ENN surrogate config with its own work_dir."""
+    return ENNSurrogateConfig(
+        k=10,
+        fit=ENNFitConfig(num_fit_samples=100),
+        work_dir=tempfile.mkdtemp(prefix="qa_ackley_bpann_"),
+    )
 
 
 def run_turbo_enn_ackley(
     *,
-    index_driver: ENNIndexDriver,
     num_dim: int = NUM_DIM,
     num_rounds: int = NUM_ROUNDS,
     num_arms: int = NUM_ARMS,
@@ -100,7 +84,7 @@ def run_turbo_enn_ackley(
     objective = Ackley(noise=noise, rng=rng)
     bounds = np.array([objective.bounds] * num_dim, dtype=float)
     config = turbo_enn_config(
-        enn=build_ackley_enn_surrogate(index_driver),
+        enn=build_ackley_enn_surrogate(),
         candidates=CandidateGenConfig(candidate_rv=CandidateRV.UNIFORM),
         trust_region=TurboTRConfig(noise_aware=True),
         acq_type=AcqType.UCB,
@@ -134,10 +118,9 @@ def cli() -> None:
 
 
 @cli.command("ackley-99")
-@click.argument("index_type", type=click.Choice(INDEX_TYPE_CHOICES))
-def ackley_99(index_type: str) -> None:
+def ackley_99() -> None:
     """TuRBO-ENN optimization-performance check on 99-D Ackley."""
-    run_turbo_enn_ackley(index_driver=parse_index_driver(index_type))
+    run_turbo_enn_ackley()
 
 
 @dataclass(frozen=True)
@@ -291,24 +274,29 @@ def fit_and_eval_y_bounds(
     num_draws: int,
     interval: tuple[float, float] | None = None,
 ) -> YBoundsMetrics:
-    model = EpistemicNearestNeighbors(x_train, y_train, y_bounds=y_bounds)
-    params = enn_fit(
-        model,
-        k=k,
-        num_fit_candidates=num_fit_candidates,
-        num_fit_samples=num_fit_samples,
-        rng=rng,
-    )
-    return evaluate_natural_y(
-        model,
-        params,
-        x_test,
-        y_test,
-        name=name,
-        rng=rng,
-        num_draws=num_draws,
-        interval=interval,
-    )
+    with tempfile.TemporaryDirectory(prefix="qa_y_bounds_") as work_dir:
+        model = EpistemicNearestNeighbors(
+            x_train[:0], y_train[:0], y_bounds=y_bounds, work_dir=work_dir
+        )
+        token = model.add(x_train, y_train)
+        params = enn_fit(
+            model,
+            k=k,
+            num_fit_candidates=num_fit_candidates,
+            num_fit_samples=num_fit_samples,
+            rng=rng,
+            incremental=token,
+        )
+        return evaluate_natural_y(
+            model,
+            params,
+            x_test,
+            y_test,
+            name=name,
+            rng=rng,
+            num_draws=num_draws,
+            interval=interval,
+        )
 
 
 def compare_unbounded_vs_bounded(
@@ -499,6 +487,7 @@ def build_turbo_acq_config(
         enn=ENNSurrogateConfig(
             k=k,
             fit=ENNFitConfig(num_fit_samples=num_fit_samples),
+            work_dir=tempfile.mkdtemp(prefix="qa_turbo_acq_"),
         ),
         candidates=CandidateGenConfig(candidate_rv=CandidateRV.UNIFORM),
         trust_region=trust,
@@ -772,27 +761,30 @@ def evaluate_y_var_fit(
     num_fit_samples: int,
     rng: np.random.Generator,
 ) -> YVarNoiseMetrics:
-    model = EpistemicNearestNeighbors(x_train, y_train, train_yvar=train_yvar)
-    params = enn_fit(
-        model,
-        k=k,
-        num_fit_candidates=num_fit_candidates,
-        num_fit_samples=num_fit_samples,
-        rng=rng,
-    )
-    flags = PosteriorFlags(observation_noise=True)
-    post = model.posterior(x_test, params=params, flags=flags)
-    mu = np.asarray(post.mu, dtype=float).ravel()
-    se = np.asarray(post.se, dtype=float).ravel()
-    se_ale = np.asarray(post.se_ale, dtype=float).ravel()
-    y = np.asarray(y_test, dtype=float).ravel()
-    return YVarNoiseMetrics(
-        name=name,
-        nll=gaussian_nll(y, mu, se),
-        calib_1se=float(np.mean(np.abs(y - mu) <= se)),
-        mean_se=float(np.mean(se)),
-        mean_se_ale=float(np.mean(se_ale)),
-    )
+    with tempfile.TemporaryDirectory(prefix="qa_y_var_") as work_dir:
+        model = EpistemicNearestNeighbors(x_train[:0], y_train[:0], work_dir=work_dir)
+        token = model.add(x_train, y_train, train_yvar)
+        params = enn_fit(
+            model,
+            k=k,
+            num_fit_candidates=num_fit_candidates,
+            num_fit_samples=num_fit_samples,
+            rng=rng,
+            incremental=token,
+        )
+        flags = PosteriorFlags(observation_noise=True)
+        post = model.posterior(x_test, params=params, flags=flags)
+        mu = np.asarray(post.mu, dtype=float).ravel()
+        se = np.asarray(post.se, dtype=float).ravel()
+        se_ale = np.asarray(post.se_ale, dtype=float).ravel()
+        y = np.asarray(y_test, dtype=float).ravel()
+        return YVarNoiseMetrics(
+            name=name,
+            nll=gaussian_nll(y, mu, se),
+            calib_1se=float(np.mean(np.abs(y - mu) <= se)),
+            mean_se=float(np.mean(se)),
+            mean_se_ale=float(np.mean(se_ale)),
+        )
 
 
 def compare_y_var_noise(

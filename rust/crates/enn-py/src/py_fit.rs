@@ -4,7 +4,8 @@ use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use crate::py_model::{PyENNParams, PyEpistemicNearestNeighbors};
+use crate::py_model::{params_list, PyENNParams, PyEpistemicNearestNeighbors};
+use crate::py_params::PyOutputBlend;
 
 #[pyclass(name = "ENNAddToken", frozen)]
 #[derive(Clone, Copy)]
@@ -41,7 +42,7 @@ pub fn enn_fit_incremental_py(
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(name = "subsample_loglik")]
-#[pyo3(signature = (model, x, y, k_values, epistemic_scales, aleatoric_scales, p=None, seed=0, y_std=None))]
+#[pyo3(signature = (model, x, y, k_values, epistemic_scales, aleatoric_scales, p=None, seed=0, y_std=None, output_blends=None))]
 pub fn subsample_loglik_py(
     model: &PyEpistemicNearestNeighbors,
     x: PyReadonlyArray2<f64>,
@@ -52,22 +53,11 @@ pub fn subsample_loglik_py(
     p: Option<usize>,
     seed: u64,
     y_std: Option<PyReadonlyArray1<f64>>,
+    output_blends: Option<Vec<Option<PyOutputBlend>>>,
 ) -> PyResult<Vec<f64>> {
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let n_params = k_values.len();
-    if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {
-        return Err(PyValueError::new_err(
-            "k_values, epistemic_scales, and aleatoric_scales must have same length",
-        ));
-    }
-
-    let mut paramss = Vec::with_capacity(n_params);
-    for i in 0..n_params {
-        let params = ennbo::ENNParams::new(k_values[i], epistemic_scales[i], aleatoric_scales[i])
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        paramss.push(params);
-    }
+    let paramss = params_list(k_values, epistemic_scales, aleatoric_scales, output_blends)?;
 
     let y_std_arr = y_std.as_ref().map(|v| v.as_array());
 

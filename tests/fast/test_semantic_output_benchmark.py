@@ -1,12 +1,12 @@
 """Synthetic experiment and validation/test separation contracts."""
 
 import inspect
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from enn import SemanticOutputProjection
-from enn.semantic_multi_output import OutputPosterior
 from evals.long.eval_semantic_outputs import evaluate, summarize
 from evals.long.semantic_output_problem import method_embeddings, synthetic_problem
 from evals.long.semantic_output_scoring import benchmark_method, scores
@@ -52,7 +52,9 @@ def test_selection_ignores_test_labels(monkeypatch):
 
 def test_scores_and_summary_uncertainty():
     actual = scores(
-        np.zeros((2, 3)), OutputPosterior(np.ones((2, 3)), np.ones((2, 3))), np.ones(3)
+        np.zeros((2, 3)),
+        SimpleNamespace(mu=np.ones((2, 3)), se=np.ones((2, 3))),
+        np.ones(3),
     )
     np.testing.assert_array_equal(actual["nrmse"], 1)
     np.testing.assert_allclose(actual["loglik"], -0.5 * (np.log(2 * np.pi) + 1))

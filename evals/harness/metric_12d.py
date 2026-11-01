@@ -10,7 +10,6 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fit import enn_fit
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 from evals.harness.metric_12d_results import (
     CheckpointResult,
@@ -45,8 +44,6 @@ NUM_FIT_SAMPLES = 100
 SEED = 0
 NUM_SEEDS = 10
 MODELS: tuple[str, ...] = (
-    "flat",
-    "flat_scale_x",
     "bpann_disk",
     "bpann_disk_auto",
 )
@@ -86,10 +83,6 @@ def make_data(num_obs: int, rng: np.random.Generator) -> tuple[np.ndarray, np.nd
 def build_model(
     name: str, x: np.ndarray, y: np.ndarray, work_dir: str
 ) -> EpistemicNearestNeighbors:
-    if name == "flat":
-        return EpistemicNearestNeighbors(x, y)
-    if name == "flat_scale_x":
-        return EpistemicNearestNeighbors(x, y, weighting=True)
     if name not in BPANN_METRIC_LEARNING:
         raise ValueError(f"unknown model {name!r}")
     model_dir = os.path.join(work_dir, name)
@@ -98,7 +91,6 @@ def build_model(
         x,
         y,
         weighting=name == "bpann_disk_auto",
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=model_dir,
     )
 
@@ -110,13 +102,13 @@ class StreamedModel:
         self.config = config
         self.model: EpistemicNearestNeighbors | None = None
         self.params: object = None
+        self.token: object = None
         self.fit_rng = np.random.default_rng(config.seed + 1)
 
     def _add_rows(self, x: np.ndarray, y: np.ndarray) -> None:
         if self.model is None:
-            self.model = build_model(self.name, x, y, self.work_dir)
-        else:
-            self.model.add(x, y)
+            self.model = build_model(self.name, x[:0], y[:0], self.work_dir)
+        self.token = self.model.add(x, y)
         self.model.ensure_index_sync()
 
     def advance(self, x: np.ndarray, y: np.ndarray, lo: int, hi: int) -> float:
@@ -131,6 +123,7 @@ class StreamedModel:
             num_fit_candidates=self.config.num_fit_candidates,
             num_fit_samples=self.config.num_fit_samples,
             rng=self.fit_rng,
+            incremental=self.token,
         )
         return time.perf_counter() - t0
 

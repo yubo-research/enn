@@ -13,7 +13,8 @@ use rand::SeedableRng;
 fn morbo_optimizer_with_tied_obs(seed: u64) -> Optimizer {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,

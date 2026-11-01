@@ -13,8 +13,9 @@ from enn import (
 )
 from enn.enn.enn_fit import enn_fit
 from enn.enn.enn_params import ENNParams
-from enn.turbo.config import ENNFitConfig, ENNIndexDriver, ENNSurrogateConfig
+from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config
+from evals.harness.work_dirs import fresh_work_dir
 
 
 class Encoder:
@@ -41,7 +42,6 @@ def problem(encoding):
     return x, np.sin(x[:, :1] * 3), transform
 
 
-@pytest.mark.parametrize("driver", list(ENNIndexDriver))
 @pytest.mark.parametrize("weighting", [False, True])
 @pytest.mark.parametrize("use_ties", [False, True])
 @pytest.mark.parametrize("semantics", ["none", "both", "only"])
@@ -49,7 +49,7 @@ def problem(encoding):
     "encoding", [None, CatEncoding.ONE_HOT, CatEncoding.RADEMACHER]
 )
 def test_supervised_feature_combinations(
-    tmp_path, driver, weighting, semantics, encoding, use_ties
+    tmp_path, weighting, semantics, encoding, use_ties
 ):
     x, y, transform = problem(encoding)
     tied = (
@@ -59,9 +59,11 @@ def test_supervised_feature_combinations(
     )
     if not use_ties:
         x = np.asarray(x)
-    kwargs = {"index_driver": driver, "weighting": weighting, "tied_dims": tied}
-    if driver is ENNIndexDriver.BPANN_DISK:
-        kwargs["work_dir"] = tmp_path / "actual"
+    kwargs = {
+        "weighting": weighting,
+        "tied_dims": tied,
+        "work_dir": tmp_path / "actual",
+    }
     if semantics != "none":
         kwargs.update(input_transform=transform, semantic_only=semantics == "only")
     actual = EpistemicNearestNeighbors(x[:16], y[:16], **kwargs)
@@ -70,8 +72,7 @@ def test_supervised_feature_combinations(
         if semantics == "none"
         else transform.transform(x, semantic_only=semantics == "only")
     )
-    if driver is ENNIndexDriver.BPANN_DISK:
-        kwargs["work_dir"] = tmp_path / "manual"
+    kwargs["work_dir"] = tmp_path / "manual"
     kwargs.pop("input_transform", None)
     kwargs.pop("semantic_only", None)
     manual = EpistemicNearestNeighbors(np.asarray(features[:16]), y[:16], **kwargs)
@@ -89,7 +90,6 @@ def test_supervised_feature_combinations(
     assert actual.tied_dims == tied
 
 
-@pytest.mark.parametrize("driver", list(ENNIndexDriver))
 @pytest.mark.parametrize("weighting", [False, True])
 @pytest.mark.parametrize("use_ties", [False, True])
 @pytest.mark.parametrize("semantics", ["none", "both", "only"])
@@ -97,7 +97,7 @@ def test_supervised_feature_combinations(
     "encoding", [None, CatEncoding.ONE_HOT, CatEncoding.RADEMACHER]
 )
 def test_optimizer_feature_combinations(
-    tmp_path, driver, weighting, semantics, encoding, use_ties
+    tmp_path, weighting, semantics, encoding, use_ties
 ):
     x, y, transform = problem(encoding)
     tied = (
@@ -108,9 +108,8 @@ def test_optimizer_feature_combinations(
     if not use_ties:
         x = np.asarray(x)
     surrogate = ENNSurrogateConfig(
-        index_driver=driver,
         weighting=weighting,
-        work_dir=tmp_path if driver is ENNIndexDriver.BPANN_DISK else None,
+        work_dir=tmp_path,
         tied_dims=tied,
         input_transform=transform if semantics != "none" else None,
         semantic_only=semantics == "only",
@@ -133,8 +132,14 @@ def test_optimizer_feature_combinations(
 def test_semantic_only_fitting_and_invalid_add_preserve_original_rows():
     x, y, transform = problem(None)
     model = EpistemicNearestNeighbors(
-        x[:12], y[:12], input_transform=transform, semantic_only=True, weighting=True
+        x[:0],
+        y[:0],
+        input_transform=transform,
+        semantic_only=True,
+        weighting=True,
+        work_dir=fresh_work_dir(),
     )
+    token = model.add(x[:12], y[:12])
     with pytest.raises(ValueError):
         model.add(x[12:13], np.zeros((1, 2)))
     assert len(model) == 12
@@ -145,23 +150,23 @@ def test_semantic_only_fitting_and_invalid_add_preserve_original_rows():
         num_fit_samples=4,
         num_fit_candidates=3,
         rng=np.random.default_rng(1),
+        incremental=token,
     )
     assert np.isfinite(model.posterior(x[:2], params=params).mu).all()
 
 
-def test_disk_directory_is_explicit_even_when_environment_is_set(tmp_path, monkeypatch):
+def test_work_dir_is_required_even_when_the_environment_names_one(
+    tmp_path, monkeypatch
+):
     from enn._rust import EpistemicNearestNeighbors as RustENN
 
     directory = tmp_path / "environment-only"
     monkeypatch.setenv("ENN_WORK_DIR", str(directory))
     x, y = np.zeros((2, 1)), np.ones((2, 1))
-    for wrapper, driver in [
-        (EpistemicNearestNeighbors, ENNIndexDriver.BPANN_DISK),
-        (RustENN, "BPANN_DISK"),
-    ]:
-        with pytest.raises(ValueError, match="explicit work_dir"):
-            wrapper(x, y, index_driver=driver)
-        assert len(wrapper(x, y)) == 2
+    for wrapper in [EpistemicNearestNeighbors, RustENN]:
+        with pytest.raises(TypeError, match="work_dir"):
+            wrapper(x, y)
+        assert len(wrapper(x, y, work_dir=str(tmp_path / wrapper.__module__))) == 2
     assert not directory.exists()
 
 
@@ -170,14 +175,15 @@ def test_native_optimizer_rejects_replaced_options(obsolete):
     from enn._rust import create_optimizer_enn
 
     with pytest.raises(ValueError, match="Unknown config override key"):
-        create_optimizer_enn(np.array([[0.0, 1.0]]), config_overrides={obsolete: True})
+        create_optimizer_enn(
+            np.array([[0.0, 1.0]]), fresh_work_dir(), config_overrides={obsolete: True}
+        )
 
 
 @pytest.mark.parametrize("weighting", [False, True])
 def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, weighting):
     x, y, transform = problem(None)
     kwargs = {
-        "index_driver": ENNIndexDriver.BPANN_DISK,
         "work_dir": tmp_path,
         "weighting": weighting,
         "input_transform": transform,
@@ -193,7 +199,7 @@ def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, wei
     original, observations, _ = reopened.train_rows_at([17, 0, 12])
     np.testing.assert_array_equal(original, x[[17, 0, 12]])
     np.testing.assert_allclose(observations, y[[17, 0, 12]])
-    reopened.add(x[18:], y[18:])
+    token = reopened.add(x[18:], y[18:])
     reopened.persist_index_to_disk()
     params = enn_fit(
         reopened,
@@ -201,6 +207,7 @@ def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, wei
         num_fit_samples=4,
         num_fit_candidates=3,
         rng=np.random.default_rng(1),
+        incremental=token,
     )
     assert np.isfinite(reopened.posterior(x[:2], params=params).mu).all()
     del reopened

@@ -4,8 +4,9 @@ import numpy as np
 import pytest
 
 from enn import SemanticInputTransform, create_optimizer
-from enn.turbo.config import ENNIndexDriver, ENNSurrogateConfig
+from enn.turbo.config import ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config
+from evals.harness.work_dirs import fresh_work_dir
 
 
 class Encoder:
@@ -18,7 +19,6 @@ def test_semantic_auto_optimizer_observations_and_predictions(tmp_path, only):
     transform = SemanticInputTransform(["a", "b", "c"], [[0, 2]] * 3, encoder=Encoder())
     config = turbo_enn_config(
         enn=ENNSurrogateConfig(
-            index_driver=ENNIndexDriver.BPANN_DISK,
             work_dir=tmp_path / "index",
             weighting=True,
             input_transform=transform,
@@ -41,4 +41,4 @@ def test_semantic_auto_optimizer_observations_and_predictions(tmp_path, only):
 
 def test_semantic_only_requires_projection():
     with pytest.raises(ValueError, match="requires input_transform"):
-        ENNSurrogateConfig(semantic_only=True)
+        ENNSurrogateConfig(semantic_only=True, work_dir=fresh_work_dir())

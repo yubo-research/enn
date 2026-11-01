@@ -1,16 +1,11 @@
 use ndarray::Array1;
 
-use super::{scale_from_moments, EpistemicNearestNeighbors};
+use super::EpistemicNearestNeighbors;
 use crate::error::ENNError;
-use crate::index::IndexDriver;
 
 impl EpistemicNearestNeighbors {
     pub fn weighting(&self) -> bool {
         self.layout.weighting()
-    }
-
-    pub fn index_driver(&self) -> IndexDriver {
-        self.backend_driver()
     }
 
     pub fn metric_learning_auto(&self) -> bool {
@@ -28,35 +23,6 @@ impl EpistemicNearestNeighbors {
             return metric.tied();
         }
         &self.tied_groups
-    }
-
-    pub(crate) fn data_x_scale(&self, n: usize) -> Array1<f64> {
-        let mut x_scale = scale_from_moments(n, self.num_dim, &self.x_sum, &self.x_sumsq, 1e-12);
-        for &j in &self.unscaled_dims {
-            x_scale[j] = 1.0;
-        }
-        x_scale
-    }
-
-    pub(crate) fn refresh_data_x_scale(&mut self, n: usize) -> Result<(), ENNError> {
-        let x_scale = self.data_x_scale(n);
-        self.x_scale = x_scale;
-        self.backend.mark_index_stale();
-        Ok(())
-    }
-
-    pub fn set_unscaled_dims(&mut self, dims: Vec<usize>) -> Result<(), ENNError> {
-        if let Some(j) = dims.iter().find(|&&j| j >= self.num_dim) {
-            return Err(ENNError::InvalidParameter(format!(
-                "unscaled dimension {j} is out of range for {} dimensions",
-                self.num_dim
-            )));
-        }
-        self.unscaled_dims = dims;
-        if !self.scale_x || self.metric_fixed {
-            return Ok(());
-        }
-        self.refresh_data_x_scale(self.num_obs)
     }
 
     pub fn set_metric_scale(
@@ -82,7 +48,6 @@ impl EpistemicNearestNeighbors {
         }
         self.backend.set_metric_scale(&x_scale, rebuild)?;
         self.scale_x = true;
-        self.metric_fixed = true;
         self.x_scale = x_scale;
         Ok(())
     }
@@ -90,7 +55,7 @@ impl EpistemicNearestNeighbors {
 
 #[cfg(test)]
 mod tests {
-    use crate::{EpistemicNearestNeighbors, IndexDriver};
+    use crate::EpistemicNearestNeighbors;
     use ndarray::{Array1, Array2};
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -122,9 +87,7 @@ mod tests {
             x.slice(ndarray::s![..300, ..]).to_owned(),
             y.slice(ndarray::s![..300, ..]).to_owned(),
             None,
-            crate::layout::EnnLayout::DiskAuto {
-                work_dir: dir.path().to_path_buf(),
-            },
+            crate::layout::EnnLayout::new(dir.path().to_path_buf(), true).unwrap(),
             None,
         )
         .unwrap();
@@ -163,114 +126,10 @@ mod tests {
         assert!(model.is_scale_x());
     }
 
-    fn column_std(x: &Array2<f64>) -> Array1<f64> {
-        x.std_axis(ndarray::Axis(0), 0.0)
-    }
-
     #[test]
-    fn flat_weighting_tracks_moments_after_adds() {
-        let widths = [0.01, 1.0, 100.0];
-        let mut x = rows(3000, 3, 5);
-        for mut row in x.rows_mut() {
-            for j in 0..3 {
-                row[j] *= widths[j];
-            }
-        }
-        let y = Array2::zeros((3000, 1));
-        let mut model = EpistemicNearestNeighbors::new_with_storage(
-            x.slice(ndarray::s![..20, ..]).to_owned(),
-            y.slice(ndarray::s![..20, ..]).to_owned(),
-            None,
-            crate::layout::EnnLayout::flat(true),
-            None,
-        )
-        .unwrap();
-        for lo in (20..3000).step_by(245) {
-            let hi = (lo + 245).min(3000);
-            model
-                .add(
-                    &x.slice(ndarray::s![lo..hi, ..]),
-                    &y.slice(ndarray::s![lo..hi, ..]),
-                    None,
-                )
-                .unwrap();
-            model.ensure_index_sync().unwrap();
-        }
-        let applied = model.x_scale_row().row(0).to_owned();
-        let std = column_std(&x);
-        assert!((&applied - &std).iter().all(|v| v.abs() < 1e-9));
-        let q = rows(5, 3, 6) * &Array1::from(widths.to_vec());
-        let got = model.neighbors(&q.view(), 4, false).unwrap();
-        for r in 0..q.nrows() {
-            assert_eq!(
-                got.row(r).to_vec(),
-                exact_topk(&x, &q.row(r).to_vec(), &applied, 4)
-            );
-        }
-    }
-
-    #[test]
-    fn unscaled_dims_keep_scale_one_through_adds() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let mut x = rows(600, 3, 7);
-        for mut row in x.rows_mut() {
-            row[0] *= 10.0;
-            row[2] = (row[2] > 0.5) as i32 as f64;
-        }
-        let y = Array2::zeros((600, 1));
-        let open = |layout| {
-            EpistemicNearestNeighbors::new_with_storage(
-                x.slice(ndarray::s![..300, ..]).to_owned(),
-                y.slice(ndarray::s![..300, ..]).to_owned(),
-                None,
-                layout,
-                None,
-            )
-            .unwrap()
-        };
-        let flat = open(crate::layout::EnnLayout::flat(true));
-        let disk = open(crate::layout::EnnLayout::disk(
-            dir.path().to_path_buf(),
-            false,
-        ));
-        for mut model in [flat, disk] {
-            assert!(model.set_unscaled_dims(vec![3]).is_err());
-            model.set_unscaled_dims(vec![2]).unwrap();
-            assert_eq!(model.x_scale[2], 1.0);
-            model
-                .add(
-                    &x.slice(ndarray::s![300.., ..]),
-                    &y.slice(ndarray::s![300.., ..]),
-                    None,
-                )
-                .unwrap();
-            let std = column_std(&x);
-            let applied = model.x_scale_row().row(0).to_owned();
-            assert_eq!(applied[2], 1.0);
-            if model.weighting() {
-                assert!((applied[0] / std[0]).ln().abs() <= 1e-9);
-            }
-            let q = rows(5, 3, 8);
-            let got = model.neighbors(&q.view(), 4, false).unwrap();
-            for r in 0..q.nrows() {
-                assert_eq!(
-                    got.row(r).to_vec(),
-                    exact_topk(&x, &q.row(r).to_vec(), &applied, 4)
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn metric_scale_rejected_for_in_memory_backend() {
-        let mut model = EpistemicNearestNeighbors::new(
-            rows(10, 2, 3),
-            Array2::zeros((10, 1)),
-            None,
-            false,
-            IndexDriver::Flat,
-        )
-        .unwrap();
+    fn metric_scale_rejected_without_weighting() {
+        let mut model =
+            crate::test_helpers::test_model(rows(10, 2, 3), Array2::zeros((10, 1)), None, false);
         assert!(model
             .set_metric_scale(Array1::from(vec![1.0, 1.0]), false)
             .is_err());

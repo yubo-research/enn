@@ -3,8 +3,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-
 
 @pytest.mark.slow
 def test_disk_persisted_store_10k_reopens_fast(tmp_path):
@@ -20,7 +18,6 @@ def test_disk_persisted_store_10k_reopens_fast(tmp_path):
     model = EpistemicNearestNeighbors(
         np.empty((0, num_dim)),
         np.empty((0, 1)),
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
     )
     batch = 500
@@ -37,7 +34,6 @@ def test_disk_persisted_store_10k_reopens_fast(tmp_path):
     EpistemicNearestNeighbors(
         np.empty((0, num_dim)),
         np.empty((0, 1)),
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work_dir),
     )
     init_s = time.perf_counter() - t0

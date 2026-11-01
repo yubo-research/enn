@@ -8,6 +8,7 @@ import pytest
 
 from enn import EpistemicNearestNeighbors, SemanticInputTransform
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 
 
 class Encoder:
@@ -143,8 +144,12 @@ def test_enn_paths_match_explicit_augmentation(relationships):
     rng = np.random.default_rng(2)
     x = rng.uniform(0, 2, (12, 3))
     y = rng.normal(size=(12, 2 if relationships else 1))
-    model = EpistemicNearestNeighbors(x[:10], y[:10], input_transform=transform)
-    manual = EpistemicNearestNeighbors(transform.transform(x[:10]), y[:10])
+    model = EpistemicNearestNeighbors(
+        x[:10], y[:10], input_transform=transform, work_dir=fresh_work_dir()
+    )
+    manual = EpistemicNearestNeighbors(
+        transform.transform(x[:10]), y[:10], work_dir=fresh_work_dir()
+    )
     model.add(x[10:], y[10:])
     manual.add(transform.transform(x[10:]), y[10:])
     params = ENNParams(3, 1.0, 0.0)
@@ -180,8 +185,12 @@ def test_conditional_draws_and_fitter_use_same_features(relationships):
     transform = make_transform(relationships)
     x = np.random.default_rng(3).uniform(0, 2, (15, 3))
     y = np.sin(x[:, :1])
-    model = EpistemicNearestNeighbors(x, y, input_transform=transform)
-    manual = EpistemicNearestNeighbors(transform.transform(x), y)
+    model = EpistemicNearestNeighbors(
+        x, y, input_transform=transform, work_dir=fresh_work_dir()
+    )
+    manual = EpistemicNearestNeighbors(
+        transform.transform(x), y, work_dir=fresh_work_dir()
+    )
     params = ENNParams(3, 1.0, 0.0)
     kwargs = {"params": params, "function_seeds": [19]}
     actual = model.conditional_posterior_function_draw(x[:1], y[:1], x[2:4], **kwargs)
@@ -242,6 +251,7 @@ def test_optimizer_keeps_original_bounds_and_observations(relationships):
         enn=ENNSurrogateConfig(
             input_transform=transform,
             fit=ENNFitConfig(num_fit_samples=5, num_fit_candidates=3),
+            work_dir=fresh_work_dir(),
         ),
         num_init=4,
         acq_type=AcqType.THOMPSON,
@@ -279,13 +289,16 @@ def test_fit_helpers_accept_semantic_model(relationships):
     transform = make_transform(relationships)
     x = np.random.default_rng(4).uniform(0, 2, (15, 3))
     y = np.cos(x[:, :1])
-    model = EpistemicNearestNeighbors(x, y, input_transform=transform)
+    model = EpistemicNearestNeighbors(
+        x[:0], y[:0], input_transform=transform, work_dir=fresh_work_dir()
+    )
     params = enn_fit(
         model,
         k=3,
         num_fit_candidates=3,
         num_fit_samples=5,
         rng=np.random.default_rng(5),
+        incremental=model.add(x, y),
     )
     scores = subsample_loglik(
         model, x, y, paramss=[params], P=5, rng=np.random.default_rng(6)

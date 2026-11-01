@@ -1,6 +1,6 @@
 //! `train_rows_at` matches full in-memory views on random index sets.
 
-use ennbo::{EpistemicNearestNeighbors, IndexDriver};
+use ennbo::EpistemicNearestNeighbors;
 use ndarray::array;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -13,8 +13,14 @@ fn train_rows_at_matches_train_x_y_views() {
 
     let train_x = array![[0.0, 1.0], [1.0, 0.0], [0.5, 0.5], [2.0, 3.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.5], [2.0], [0.5]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let model = EpistemicNearestNeighbors::new(
+        train_x,
+        train_y,
+        None,
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
+    )
+    .unwrap();
 
     for _ in 0..20 {
         let n = model.len();
@@ -44,8 +50,14 @@ fn single_index_train_rows_at_matches_full_gather() {
 
     let train_x = array![[0.0, 1.0], [1.0, 0.0], [0.5, 0.5], [2.0, 3.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.5], [2.0], [0.5]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let model = EpistemicNearestNeighbors::new(
+        train_x,
+        train_y,
+        None,
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
+    )
+    .unwrap();
 
     for _ in 0..20 {
         let i = rng.gen_range(0..model.len());
@@ -61,8 +73,14 @@ fn single_index_train_rows_at_matches_full_gather() {
 fn scale_x_true_append_to_nonempty_succeeds() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
-    let mut model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Flat).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut model = EpistemicNearestNeighbors::new(
+        train_x,
+        train_y,
+        None,
+        ennbo::EnnLayout::new(dir.path(), true).unwrap(),
+    )
+    .unwrap();
     model
         .add(&array![[0.5, 0.5]].view(), &array![[0.5]].view(), None)
         .expect("scale_x=true append to nonempty model must succeed");

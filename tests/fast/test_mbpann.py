@@ -14,11 +14,11 @@ from enn.enn.mbpann import (
     MBPANNMetric,
     auto_uses_learned_metric,
 )
-from enn.turbo.config.enn_index_driver import ENNIndexDriver, index_driver_to_wire
 from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 from enn.turbo.config.optimizer_config import OptimizerConfig
 from enn.turbo.rust_optimizer_helpers import _config_to_rust_overrides
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def _data(n: int = 400, d: int = 3, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
@@ -34,7 +34,6 @@ def _model(
         x,
         y,
         weighting=(metric_learning is ENNMetricLearning.AUTO),
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
     )
     return x, y, model
@@ -44,11 +43,7 @@ def _exact(x: np.ndarray, q: np.ndarray, w: np.ndarray, k: int) -> np.ndarray:
     return np.argsort(((x - q) ** 2) @ w, kind="stable")[:k]
 
 
-def test_scale_x_and_metric_learning_are_separate_enums() -> None:
-    assert [d.name for d in ENNIndexDriver] == ["FLAT", "BPANN_DISK"]
-    assert index_driver_to_wire(ENNIndexDriver.BPANN_DISK) == "BPANN_DISK"
-    assert index_driver_to_wire(ENNIndexDriver.FLAT) == "FLAT"
-    assert [s.name for s in ENNScaleX] == ["OFF", "ON"]
+def test_metric_learning_enum_names() -> None:
     assert [s.name for s in ENNMetricLearning] == ["NONE", "AUTO"]
 
 
@@ -107,7 +102,6 @@ def test_mbpann_metric_validation(tmp_path) -> None:
 def test_bpann_disk_without_metric_learning_rejects_metric_updates(tmp_path) -> None:
     x, _, model = _model(tmp_path, ENNMetricLearning.NONE)
     assert model.metric_learning == ENNMetricLearning.NONE
-    assert model.scale_x == ENNScaleX.OFF
     assert model.metric is None
     with pytest.raises(ValueError, match="metric_learning=AUTO"):
         MBPANNMetric(model)
@@ -119,22 +113,22 @@ def test_bpann_disk_without_metric_learning_rejects_metric_updates(tmp_path) -> 
 
 def test_weighting_and_directory_contract(tmp_path) -> None:
     x, y = _data(10)
-    for wrapper, driver in [
-        (EpistemicNearestNeighbors, ENNIndexDriver.BPANN_DISK),
-        (RustENN, "BPANN_DISK"),
-    ]:
+    for wrapper in [EpistemicNearestNeighbors, RustENN]:
         with pytest.raises(ValueError, match="work_dir"):
-            wrapper(x, y, index_driver=driver, weighting=True)
+            wrapper(x, y, work_dir="", weighting=True)
+        with pytest.raises(TypeError, match="work_dir"):
+            wrapper(x, y)
+        with pytest.raises(TypeError):
+            wrapper(x, y, work_dir=None)
+        with pytest.raises(TypeError):
+            wrapper(x, y, index_driver="BPANN_DISK")
         with pytest.raises(TypeError):
             wrapper(x, y, scale_x=True)
         with pytest.raises(TypeError):
             wrapper(x, y, metric_learning="AUTO")
         with pytest.raises(TypeError):
             wrapper(x, y, enn_storage="MEMORY")
-    with pytest.raises(ValueError, match="Unknown index_driver"):
-        RustENN(x, y, index_driver="exact")
-    with pytest.raises(ValueError, match="FLAT"):
-        EpistemicNearestNeighbors(x, y, work_dir=tmp_path)
+    assert len(EpistemicNearestNeighbors(x, y, work_dir=tmp_path)) == 10
 
 
 def test_disk_weighting_preserves_neighbor_metric_through_adds(tmp_path) -> None:
@@ -146,7 +140,6 @@ def test_disk_weighting_preserves_neighbor_metric_through_adds(tmp_path) -> None
         x[:10],
         y[:10],
         weighting=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
     )
     assert model.weighting and model.metric is not None
@@ -160,16 +153,16 @@ def test_disk_weighting_preserves_neighbor_metric_through_adds(tmp_path) -> None
 
 def test_optimizer_config_forwards_only_weighting_and_directory() -> None:
     for weighting in [False, True]:
-        config = OptimizerConfig(surrogate=ENNSurrogateConfig(weighting=weighting))
+        config = OptimizerConfig(
+            surrogate=ENNSurrogateConfig(weighting=weighting, work_dir=fresh_work_dir())
+        )
         sent = _config_to_rust_overrides(config)
         assert sent["weighting"] is weighting
         assert not {"scale_x", "metric_learning", "enn_storage"}.intersection(sent)
-    disk = ENNSurrogateConfig(
-        weighting=True, index_driver=ENNIndexDriver.BPANN_DISK, work_dir="/tmp/enn_auto"
-    )
+    disk = ENNSurrogateConfig(weighting=True, work_dir="/tmp/enn_auto")
     sent = _config_to_rust_overrides(OptimizerConfig(surrogate=disk))
-    assert sent["work_dir"] == "/tmp/enn_auto"
-    assert sent["index_driver"] == "BPANN_DISK" and sent["weighting"]
+    assert "work_dir" not in sent
+    assert "index_driver" not in sent and sent["weighting"]
 
 
 def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:
@@ -181,7 +174,6 @@ def test_reopen_after_metric_change_uses_identity_metric(tmp_path) -> None:
         np.zeros((0, 3)),
         np.zeros((0, 1)),
         weighting=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
     )
     q = np.array([[0.5, 0.5, 0.5]])
@@ -203,7 +195,6 @@ def _stream(tmp_path, f, n: int, batch: int = 50, seed: int = 0):
         x[:batch],
         y[:batch],
         weighting=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
     )
     counts = [model.metric.num_refits]
@@ -234,7 +225,6 @@ def test_refit_growth_and_capacity_reach_the_rust_policy(tmp_path) -> None:
         x[:50],
         y[:50],
         weighting=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path,
     )
     MBPANNMetric(model, refit_growth=3.0)
@@ -248,7 +238,6 @@ def test_refit_growth_and_capacity_reach_the_rust_policy(tmp_path) -> None:
         x[:5],
         y[:5],
         weighting=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=tmp_path / "small",
     )
     MBPANNMetric(small, reservoir_capacity=8, seed=3)

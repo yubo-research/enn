@@ -6,12 +6,13 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def _tiny_model():
     train_x = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=float)
     train_y = np.array([[0.1], [0.2], [0.3]], dtype=float)
-    return EpistemicNearestNeighbors(train_x, train_y)
+    return EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
 
 
 def test_posterior_function_draw_flags_none_matches_explicit_default():
@@ -82,14 +83,13 @@ def test_function_draw_golden_values_fixed_seed_arrays():
     """Byte-level guard on one deterministic draw (update only if ENN math intentionally changes)."""
     train_x = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=float)
     train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
     x = np.array([[0.25, 0.25]], dtype=float)
     params = ENNParams(2, 1.0, 0.1)
     seeds = np.array([42, 43], dtype=np.int64)
     draws, _idx = model.posterior_function_draw(
         x, params, function_seeds=seeds, flags=PosteriorFlags()
     )
-
 
     expected = np.array(
         [[[-0.71338448, -0.40793862]]],

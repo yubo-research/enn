@@ -7,22 +7,18 @@ import numpy as np
 
 from enn._rust import ENNAddToken, InputHistory
 from enn._rust import EpistemicNearestNeighbors as _RustENN
-from enn.turbo.config.enn_index_driver import (
-    ENNIndexDriver,
-    index_driver_from_wire,
-    index_driver_to_wire,
-)
 from enn.turbo.config.enn_surrogate_config import validate_enn_placement
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 from .cat_ties import resolve_tied_groups
-from .enn_class_support import _to_rust_seeds
+from .enn_class_support import _to_rust_seeds, rust_params
 from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from enn.semantic import SemanticInputTransform
+    from enn.semantic_outputs import SemanticOutputProjection
 
     from .enn_normal import ENNNormal
     from .enn_params import ENNParams, PosteriorFlags
@@ -30,16 +26,8 @@ if TYPE_CHECKING:
 
 class _EnnRustView:
     @property
-    def _index_driver(self) -> ENNIndexDriver:
-        return index_driver_from_wire(str(self._rust_model.index_driver))
-
-    @property
     def tied_dims(self) -> tuple[tuple[int, ...], ...]:
         return tuple(tuple(int(i) for i in g) for g in self._rust_model.tied_groups())
-
-    @property
-    def scale_x(self) -> ENNScaleX:
-        return ENNScaleX.ON if bool(self._rust_model.scale_x) else ENNScaleX.OFF
 
     @property
     def metric_learning(self) -> ENNMetricLearning:
@@ -66,9 +54,7 @@ def _posterior_flags_coerced(flags):
 
 def _rust_function_draw_kwargs(params, flags, seeds: list[int]) -> dict[str, Any]:
     return {
-        "k_num_neighbors": params.k_num_neighbors,
-        "epistemic_variance_scale": params.epistemic_variance_scale,
-        "aleatoric_variance_scale": params.aleatoric_variance_scale,
+        "params": rust_params(params),
         "function_seeds": seeds,
         "exclude_nearest": flags.exclude_nearest,
         "observation_noise": flags.observation_noise,
@@ -85,6 +71,7 @@ def _finalize_function_draw(
 
 class EpistemicNearestNeighbors(_EnnRustView):
     input_transform: SemanticInputTransform | None = None
+    output_projection: SemanticOutputProjection | None = None
     semantic_only: bool = False
     _original_inputs = None
 
@@ -103,12 +90,13 @@ class EpistemicNearestNeighbors(_EnnRustView):
         train_yvar: np.ndarray | None = None,
         tied_dims: Sequence[Sequence[int]] | None = None,
         input_transform: SemanticInputTransform | None = None,
+        output_projection: SemanticOutputProjection | None = None,
         *,
+        work_dir: str | os.PathLike[str],
         weighting: bool = False,
-        index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
-        work_dir: str | os.PathLike[str] | None = None,
         y_bounds: np.ndarray | None = None,
         semantic_only: bool = False,
+        output_alpha: float | None = None,
     ) -> None:
         if input_transform is not None:
             self.input_transform = input_transform
@@ -127,29 +115,35 @@ class EpistemicNearestNeighbors(_EnnRustView):
             train_x = input_transform.transform(train_x, semantic_only=semantic_only)
         elif semantic_only:
             raise ValueError("semantic_only requires input_transform")
-        validate_enn_placement(
-            index_driver=index_driver,
-            work_dir=work_dir,
-            weighting=weighting,
-        )
+        validate_enn_placement(work_dir)
         train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
         rust_kwargs: dict[str, Any] = {
             "train_x": train_x,
             "train_y": train_y,
+            "work_dir": os.fspath(work_dir),
             "train_yvar": train_yvar,
             "weighting": weighting,
-            "index_driver": index_driver_to_wire(index_driver),
             "tied_dims": groups,
         }
-        if work_dir is not None:
-            rust_kwargs["work_dir"] = os.fspath(work_dir)
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
         if input_transform is not None:
             self._original_inputs = InputHistory(original_inputs, self._rust_model)
+        self._configure_outputs(output_projection, output_alpha)
+
+    def _configure_outputs(self, output_projection, output_alpha) -> None:
+        if output_projection is None:
+            if output_alpha is not None:
+                raise ValueError("output_alpha requires output_projection")
+            return
+        self.output_projection = output_projection
+        self._rust_model.set_semantic_outputs(
+            output_projection.loadings,
+            None if output_alpha is None else float(output_alpha),
+        )
 
     def add(
         self,
@@ -240,9 +234,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
 
         mu, se, se_epi, se_ale, idx = self._rust_model.posterior(
             self.transform_inputs(x),
-            k_num_neighbors=params.k_num_neighbors,
-            epistemic_variance_scale=params.epistemic_variance_scale,
-            aleatoric_variance_scale=params.aleatoric_variance_scale,
+            params=rust_params(params),
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
@@ -267,9 +259,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
             self.transform_inputs(x_whatif),
             y_whatif,
             self.transform_inputs(x),
-            k_num_neighbors=params.k_num_neighbors,
-            epistemic_variance_scale=params.epistemic_variance_scale,
-            aleatoric_variance_scale=params.aleatoric_variance_scale,
+            params=rust_params(params),
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
@@ -298,6 +288,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
             aleatoric_scales=aleatoric_scales,
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
+            output_blends=[p.output_blend for p in paramss],
         )
         idx_arr = np.asarray(idx, dtype=int) if idx is not None else None
         yb = np.asarray(self._rust_model.y_bounds, dtype=float)

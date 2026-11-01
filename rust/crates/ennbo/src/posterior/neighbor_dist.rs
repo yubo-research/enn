@@ -61,17 +61,13 @@ pub(crate) fn row_dist2s_for_query(
 
 #[cfg(test)]
 mod kiss_coverage_tests {
-    use crate::model::EpistemicNearestNeighbors;
-    use crate::IndexDriver;
     use ndarray::array;
 
     #[test]
     fn neighbor_dist_units_are_linked() {
         let train_x = array![[0.0, 0.0], [1.0, 0.0]];
         let train_y = array![[0.0], [1.0]];
-        let model =
-            EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-                .unwrap();
+        let model = crate::test_helpers::test_model(train_x, train_y, None, false);
         let dists =
             crate::posterior::neighbor_dist::row_dist2s_for_query(&model, array![0.5, 0.0].view());
         assert_eq!(dists.len(), 2);

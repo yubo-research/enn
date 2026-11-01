@@ -12,6 +12,7 @@ from enn.turbo.config import (
     turbo_zero_config,
 )
 from enn.turbo.config.validation import validate_optimizer_config
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def test_hybrid_init_runtime_strategy_is_not_a_python_object():
@@ -32,7 +33,7 @@ def test_validate_optimizer_config_lhd_only_requires_no_surrogate_direct_call():
     class Dummy:
         def __init__(self) -> None:
             self.init = InitConfig(init_strategy=LHDOnlyInit())
-            self.surrogate = ENNSurrogateConfig()
+            self.surrogate = ENNSurrogateConfig(work_dir=fresh_work_dir())
             self.acquisition = RandomAcquisitionConfig()
 
     validate_optimizer_config(turbo_zero_config())
@@ -47,7 +48,7 @@ def test_validate_optimizer_config_rejects_unknown_acquisition():
 
     bad = type("Cfg", (), {})()
     bad.init = InitConfig(init_strategy=LHDOnlyInit())
-    bad.surrogate = ENNSurrogateConfig()
+    bad.surrogate = ENNSurrogateConfig(work_dir=fresh_work_dir())
     bad.acquisition = NotAnAcquisition()
     with pytest.raises(TypeError, match="AcquisitionConfig"):
         validate_optimizer_config(bad)

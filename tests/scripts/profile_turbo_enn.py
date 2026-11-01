@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import cProfile
 import pstats
+import tempfile
 import time
 from dataclasses import dataclass
 
@@ -40,6 +41,7 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
             num_fit_samples=cfg.num_fit_samples,
             num_fit_candidates=cfg.num_fit_candidates,
         ),
+        work_dir=tempfile.mkdtemp(prefix="enn_profile_turbo_"),
     )
     candidates = (
         CandidateGenConfig(
@@ -119,7 +121,6 @@ def _time_tell(opt: object, rng: np.random.Generator, cfg: ProfileConfig) -> flo
     y = -np.sum(x**2, axis=1)
     if y.ndim == 1:
         y = y.reshape(-1, 1)
-
 
     prof = cProfile.Profile()
     prof.enable()
@@ -215,7 +216,6 @@ def run_profile(cfg: ProfileConfig, *, profile: bool, profile_center: bool) -> N
     rng = np.random.default_rng(cfg.seed)
     opt = _make_optimizer(cfg)
     _seed_observations(opt, rng, cfg)
-
 
     _ = opt.ask(num_arms=cfg.num_arms)
 

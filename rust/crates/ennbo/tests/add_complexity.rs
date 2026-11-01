@@ -1,9 +1,10 @@
-use ennbo::{EpistemicNearestNeighbors, IndexDriver};
+use ennbo::EpistemicNearestNeighbors;
 use ndarray::Array2;
 use std::collections::HashMap;
 use std::hint::black_box;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use tempfile::TempDir;
 
 const ROW_COUNTS: [usize; 5] = [1_000, 3_000, 10_000, 30_000, 100_000];
 const BASELINE_ROWS: usize = ROW_COUNTS[0];
@@ -61,24 +62,26 @@ fn deterministic_yvar(n: usize) -> Array2<f64> {
     cached_array(&YVAR_CACHE, n, |n| Array2::from_elem((n, 1), 1e-6))
 }
 
-fn model_with_rows(n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
+fn layout(dir: &TempDir, weighting: bool) -> ennbo::EnnLayout {
+    ennbo::EnnLayout::new(dir.path(), weighting).unwrap()
+}
+
+fn model_with_rows(dir: &TempDir, n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
     EpistemicNearestNeighbors::new(
         deterministic_x(n),
         deterministic_y(n),
         None,
-        scale_x,
-        IndexDriver::Flat,
+        layout(dir, scale_x),
     )
     .unwrap()
 }
 
-fn model_with_rows_and_yvar(n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
+fn model_with_rows_and_yvar(dir: &TempDir, n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
     EpistemicNearestNeighbors::new(
         deterministic_x(n),
         deterministic_y(n),
         Some(deterministic_yvar(n)),
-        scale_x,
-        IndexDriver::Flat,
+        layout(dir, scale_x),
     )
     .unwrap()
 }
@@ -89,10 +92,11 @@ fn timed_single_row_adds_with_yvar(
     scale_x: bool,
     with_yvar: bool,
 ) -> Duration {
+    let dir = TempDir::new().unwrap();
     let mut model = if with_yvar {
-        model_with_rows_and_yvar(starting_rows, scale_x)
+        model_with_rows_and_yvar(&dir, starting_rows, scale_x)
     } else {
-        model_with_rows(starting_rows, scale_x)
+        model_with_rows(&dir, starting_rows, scale_x)
     };
 
     let warm_x = deterministic_x(1);
@@ -226,7 +230,8 @@ fn single_row_add_flat_growth_scale_x_false_yvar_true() {
 
 #[test]
 fn scale_x_true_incremental_add_succeeds() {
-    let mut model = model_with_rows(100, true);
+    let dir = TempDir::new().unwrap();
+    let mut model = model_with_rows(&dir, 100, true);
     let x = deterministic_x(1);
     let y = deterministic_y(1);
     model

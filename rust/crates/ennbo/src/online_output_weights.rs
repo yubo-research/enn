@@ -1,6 +1,6 @@
 use ndarray::{Array1, Array2, ArrayView1};
 
-const PRIOR_ALPHA: f64 = 0.3;
+pub(crate) const PRIOR_ALPHA: f64 = 0.3;
 const SHRINK_ROWS: f64 = 12.0;
 const TINY: f64 = 1e-12;
 
@@ -33,6 +33,10 @@ impl OutputWeights {
             den_factor: Array1::from_elem(factors, TINY),
             rows: 0.0,
         }
+    }
+
+    pub fn loadings(&self) -> &Array2<f64> {
+        &self.loadings
     }
 
     pub fn projector(&self) -> &Array2<f64> {
@@ -84,11 +88,6 @@ impl OutputWeights {
         let weights = self.factor_weights();
         let scaled = &self.loadings * &weights;
         scaled.dot(&self.loadings.t())
-    }
-
-    pub fn blend(&self, mean: ArrayView1<f64>) -> Array1<f64> {
-        let shared = mean.dot(&self.projector);
-        &mean + &((&shared - &mean) * self.alpha())
     }
 }
 
@@ -187,14 +186,5 @@ mod tests {
         assert_eq!(state.rows(), 2000);
         assert_eq!(state.num_output.len(), 3);
         assert_eq!(state.num_factor.len(), 1);
-    }
-
-    #[test]
-    fn blend_moves_each_output_toward_the_shared_mean() {
-        let mut state = OutputWeights::new(one_group());
-        state.num_output = array![0.0, 0.0, 0.0];
-        let blended = state.blend(array![1.0, 0.0, -1.0].view());
-        assert!((blended.sum()).abs() < 1e-12);
-        assert!((blended[0] - (1.0 - PRIOR_ALPHA)).abs() < 1e-12);
     }
 }

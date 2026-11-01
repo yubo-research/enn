@@ -28,12 +28,11 @@ def main():
         "adaptive",
         "adaptive_inputs",
         "adaptive_outputs",
-        "adaptive_linear",
     )
     timings = {}
     for kind in ("xx", "xy", "yy"):
         start = time.perf_counter()
-        used = methods if kind == "yy" else methods[:4] + ("adaptive_linear",)
+        used = methods if kind == "yy" else methods[:5]
         run_adapt(
             kind,
             seeds=args.seeds,
@@ -45,8 +44,6 @@ def main():
     files = [
         Path(name)
         for name in (
-            "src/enn/adaptive.py",
-            "src/enn/adaptive_model.py",
             "evals/harness/adapt.py",
             "evals/harness/adapt_problem.py",
         )
@@ -58,7 +55,6 @@ def main():
         "platform": platform.platform(),
         "python": platform.python_version(),
         "numpy": np.__version__,
-        "capacity": 300,
         "checkpoints": [30, 100, 300],
         "test_rows": 128,
         "source_sha256": {

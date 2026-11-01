@@ -7,6 +7,7 @@ use crate::config::{
     OptimizerInitKind, SurrogateConfig,
 };
 use crate::error::ENNError;
+use crate::layout::EnnLayout;
 use crate::neighbor_count::NeighborCount;
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
@@ -24,21 +25,23 @@ fn resolve_num_init(num_init: Option<usize>) -> usize {
 
 pub fn create_optimizer_enn(
     bounds: Array2<f64>,
+    layout: EnnLayout,
     k: Option<i32>,
     num_init: Option<usize>,
     seed: u64,
 ) -> Result<Optimizer, ENNError> {
-    create_optimizer_enn_with_overrides(bounds, k, num_init, seed, None)
+    create_optimizer_enn_with_overrides(bounds, layout, k, num_init, seed, None)
 }
 
 pub fn create_optimizer_enn_with_overrides(
     bounds: Array2<f64>,
+    layout: EnnLayout,
     k: Option<i32>,
     num_init: Option<usize>,
     seed: u64,
     overrides: Option<&ConfigOverrides>,
 ) -> Result<Optimizer, ENNError> {
-    let mut config = turbo_enn_config();
+    let mut config = turbo_enn_config(layout);
     if let SurrogateConfig::ENN(enn_cfg) = &mut config.surrogate {
         enn_cfg.k = resolve_k(k)?;
     }
@@ -111,7 +114,15 @@ mod tests {
     fn create_optimizer_public_wrappers_smoke() {
         let bounds = array![[0.0, 1.0], [0.0, 1.0]];
 
-        let mut enn = create_optimizer_enn(bounds.clone(), Some(3), Some(2), 101).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut enn = create_optimizer_enn(
+            bounds.clone(),
+            crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            Some(3),
+            Some(2),
+            101,
+        )
+        .unwrap();
         let _ = enn.ask(1).unwrap();
 
         let mut zero = create_optimizer_zero(bounds.clone(), Some(2), 101).unwrap();
@@ -125,9 +136,16 @@ mod tests {
     fn create_optimizer_enn_rejects_nonpositive_k_at_build() {
         let bounds = array![[0.0, 1.0], [0.0, 1.0]];
         for k in [0, -3] {
-            let err = create_optimizer_enn(bounds.clone(), Some(k), Some(3), 0)
-                .err()
-                .expect("k < 1 must be rejected");
+            let dir = tempfile::tempdir().unwrap();
+            let err = create_optimizer_enn(
+                bounds.clone(),
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+                Some(k),
+                Some(3),
+                0,
+            )
+            .err()
+            .expect("k < 1 must be rejected");
             assert!(err.to_string().contains("k (number of neighbors)"), "{err}");
         }
     }
@@ -142,9 +160,17 @@ mod tests {
             ..Default::default()
         };
         let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-        let err = create_optimizer_enn_with_overrides(bounds, None, Some(3), 0, Some(&overrides))
-            .err()
-            .expect("ignored tied_dims must be rejected");
+        let dir = tempfile::tempdir().unwrap();
+        let err = create_optimizer_enn_with_overrides(
+            bounds,
+            crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            None,
+            Some(3),
+            0,
+            Some(&overrides),
+        )
+        .err()
+        .expect("ignored tied_dims must be rejected");
         assert!(err.to_string().contains("tied_dims entries"), "{err}");
     }
 }

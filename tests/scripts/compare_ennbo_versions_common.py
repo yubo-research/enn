@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import MISSING, asdict, dataclass
 from typing import Any
 
 import numpy as np
@@ -255,6 +256,7 @@ def build_optimizer_config(
             enn=ENNSurrogateConfig(
                 k=10,
                 fit=_fit_config(ENNFitConfig, affine_calibrate),
+                **_work_dir_kwargs(ENNSurrogateConfig),
             ),
             trust_region=morbo_tr,
             acq_type=AcqType.UCB,
@@ -274,6 +276,7 @@ def build_optimizer_config(
             enn=ENNSurrogateConfig(
                 k=10,
                 fit=_fit_config(ENNFitConfig, affine_calibrate),
+                **_work_dir_kwargs(ENNSurrogateConfig),
             ),
             trust_region=trust_region,
             acq_type=acq_type,
@@ -299,6 +302,14 @@ class BenchmarkResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _work_dir_kwargs(surrogate_config: Any) -> dict[str, str]:
+    """Released versions keep rows in memory; only a required work_dir is passed."""
+    work_dir = surrogate_config.__dataclass_fields__.get("work_dir")
+    if work_dir is None or work_dir.default is not MISSING:
+        return {}
+    return {"work_dir": tempfile.mkdtemp(prefix="enn_compare_versions_")}
 
 
 def _fit_config(enn_fit_config: Any, affine_calibrate: bool) -> Any:

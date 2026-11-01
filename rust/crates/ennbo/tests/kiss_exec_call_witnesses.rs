@@ -7,7 +7,6 @@ fn kiss_call_witness_chunk_0() {
     fn aleatoric_variance_scale() {}
     fn amalgamate_smallest_pair() {}
     fn amalgamate_smallest_run() {}
-    fn apply_exclude_nearest_identity() {}
     fn apply_scalar_overrides() {}
     fn arms_from_pareto_fronts_py() {}
     fn ask() {}
@@ -27,7 +26,6 @@ fn kiss_call_witness_chunk_0() {
     aleatoric_variance_scale();
     amalgamate_smallest_pair();
     amalgamate_smallest_run();
-    apply_exclude_nearest_identity();
     apply_scalar_overrides();
     arms_from_pareto_fronts_py();
     ask();
@@ -54,7 +52,6 @@ fn kiss_call_witness_chunk_1() {
     fn hypervolume_2d_max_py() {}
     fn incumbent_x_unit() {}
     fn IndexBuildContext() {}
-    fn IndexDriver() {}
     fn IndexHeader() {}
     fn index_memory_bytes() {}
     fn index_neighbor_distances_and_indices() {}
@@ -74,7 +71,6 @@ fn kiss_call_witness_chunk_1() {
     hypervolume_2d_max_py();
     incumbent_x_unit();
     IndexBuildContext();
-    IndexDriver();
     IndexHeader();
     index_memory_bytes();
     index_neighbor_distances_and_indices();

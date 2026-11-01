@@ -1,6 +1,6 @@
 //! Semantic features affect only the surrogate, preserving observation coordinates.
 use ennbo::surrogate::{ENNSurrogate, ENNSurrogateConfig, Surrogate};
-use ennbo::{EnnLayout, FitSamples};
+use ennbo::FitSamples;
 use ndarray::array;
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -15,20 +15,22 @@ fn check_feature_mode(semantic_only: bool) {
     let x = array![[0.0, 0.1], [0.2, 0.8], [0.7, 0.3], [1.0, 0.9]];
     let y = array![[0.3], [0.5], [-0.2], [0.7]];
     let features = ennbo::semantic::features(&x.view(), Some(&projection), semantic_only).unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let config = ENNSurrogateConfig {
         k: ennbo::NeighborCount::new(2).unwrap(),
         fit_samples: FitSamples::Frozen,
         semantic_projection: Some(Box::new(projection.clone())),
         semantic_only,
-        ..Default::default()
+        ..ENNSurrogateConfig::new(ennbo::EnnLayout::new(dir.path(), false).unwrap())
     };
     config.validate(2).unwrap();
     assert!(config.validate(3).is_err());
     let mut actual = ENNSurrogate::new(config);
+    let dir = tempfile::tempdir().unwrap();
     let mut manual = ENNSurrogate::new(ENNSurrogateConfig {
         k: ennbo::NeighborCount::new(2).unwrap(),
         fit_samples: FitSamples::Frozen,
-        ..Default::default()
+        ..ENNSurrogateConfig::new(ennbo::EnnLayout::new(dir.path(), false).unwrap())
     });
     let mut rng = StdRng::seed_from_u64(4);
     actual.fit(&x.view(), &y.view(), None, &mut rng).unwrap();
@@ -72,13 +74,13 @@ fn check_feature_mode(semantic_only: bool) {
 
 #[test]
 fn semantic_config_accepts_adaptive_scaling_and_rejects_nonfinite_projection() {
+    let dir = tempfile::tempdir().unwrap();
     let mut config = ENNSurrogateConfig {
         semantic_projection: Some(Box::new(array![[1.0], [-1.0]])),
-        layout: EnnLayout::flat(true),
-        ..Default::default()
+        ..ENNSurrogateConfig::new(ennbo::EnnLayout::new(dir.path(), true).unwrap())
     };
     assert!(config.validate(2).is_ok());
-    config.layout = EnnLayout::flat(false);
+    config.layout = ennbo::EnnLayout::new(dir.path(), false).unwrap();
     config.semantic_projection = Some(Box::new(array![[f64::NAN], [0.0]]));
     assert!(config.validate(2).is_err());
 }

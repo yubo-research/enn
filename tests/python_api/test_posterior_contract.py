@@ -9,13 +9,14 @@ import pytest
 
 from enn import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+from evals.harness.work_dirs import fresh_work_dir
 
 
 @pytest.fixture
 def simple_model():
     train_x = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=float)
     train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
-    return EpistemicNearestNeighbors(train_x, train_y)
+    return EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
 
 
 @pytest.fixture
@@ -191,9 +192,7 @@ class TestPosteriorFunctionDrawContract:
 
     def test_conditional_posterior_function_draw_exists_and_callable(self):
         assert hasattr(EpistemicNearestNeighbors, "conditional_posterior_function_draw")
-        assert callable(
-            EpistemicNearestNeighbors.conditional_posterior_function_draw
-        )
+        assert callable(EpistemicNearestNeighbors.conditional_posterior_function_draw)
 
     def test_conditional_posterior_function_draw_returns_draws_and_idx(
         self, simple_model, query

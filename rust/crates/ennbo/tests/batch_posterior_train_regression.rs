@@ -1,4 +1,3 @@
-use ennbo::index::IndexDriver;
 use ennbo::model::EpistemicNearestNeighbors;
 use ennbo::params::{ENNParams, PosteriorFlags};
 use ndarray::array;
@@ -7,17 +6,23 @@ use ndarray::array;
 fn batch_posterior_on_train_matches_posterior_when_no_neighbors() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x.clone(), train_y, None, false, IndexDriver::Flat)
-            .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let model = EpistemicNearestNeighbors::new(
+        train_x.clone(),
+        train_y,
+        None,
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
+    )
+    .unwrap();
     let bad = ENNParams {
         k_num_neighbors: 0,
         epistemic_variance_scale: 1.0,
         aleatoric_variance_scale: 0.1,
+        output_blend: None,
     };
     let flags = PosteriorFlags::new();
     let batch = model
-        .batch_posterior(&train_x.view(), &[bad], &flags)
+        .batch_posterior(&train_x.view(), std::slice::from_ref(&bad), &flags)
         .unwrap();
     let ind = model.posterior(&train_x.view(), &bad, &flags).unwrap();
     for i in 0..train_x.nrows() {
@@ -35,25 +40,26 @@ fn batch_posterior_on_train_row_matches_single_query_posterior() {
         let z = (i as f64 + 1.0) * 0.37 - 2.1;
         z * 100.0
     });
+    let dir = tempfile::tempdir().unwrap();
     let model = EpistemicNearestNeighbors::new(
         train_x.clone(),
         train_y,
         Some(ndarray::Array2::zeros((20, 1))),
-        false,
-        IndexDriver::Flat,
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
     )
     .unwrap();
     let params = ENNParams {
         k_num_neighbors: 10,
         epistemic_variance_scale: 80.0,
         aleatoric_variance_scale: 0.0,
+        output_blend: None,
     };
     let flags = PosteriorFlags {
         exclude_nearest: false,
         observation_noise: false,
     };
     let batch = model
-        .batch_posterior(&train_x.view(), &[params], &flags)
+        .batch_posterior(&train_x.view(), std::slice::from_ref(&params), &flags)
         .unwrap();
     for i in 0..train_x.nrows() {
         let row = train_x.slice(ndarray::s![i..i + 1, ..]);
@@ -78,7 +84,7 @@ fn assert_mixed_batch_matches(
         .collect();
     params.push(ENNParams {
         k_num_neighbors: 0,
-        ..params[0]
+        ..params[0].clone()
     });
     let flags = PosteriorFlags {
         exclude_nearest: exclude,
@@ -117,8 +123,14 @@ fn mixed_batch_light_handles_ties_self_queries_and_clipped_counts() {
             }
         });
         let y = ndarray::Array2::from_shape_fn((100, 2), |(i, j)| (i + j) as f64);
-        let model =
-            EpistemicNearestNeighbors::new(x.clone(), y, None, false, IndexDriver::Flat).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let model = EpistemicNearestNeighbors::new(
+            x.clone(),
+            y,
+            None,
+            ennbo::EnnLayout::new(dir.path(), false).unwrap(),
+        )
+        .unwrap();
         for exclude in [false, true] {
             assert_mixed_batch_matches(&model, &x, exclude);
             assert_mixed_batch_matches(&model, &array![[0.3, 0.7]], exclude);
@@ -131,7 +143,14 @@ fn mixed_batch_light_handles_empty_models_and_queries() {
     for n in [0, 1, 3] {
         let x = ndarray::Array2::zeros((n, 2));
         let y = ndarray::Array2::ones((n, 2));
-        let model = EpistemicNearestNeighbors::new(x, y, None, false, IndexDriver::Flat).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let model = EpistemicNearestNeighbors::new(
+            x,
+            y,
+            None,
+            ennbo::EnnLayout::new(dir.path(), false).unwrap(),
+        )
+        .unwrap();
         assert_mixed_batch_matches(&model, &array![[0.3, 0.7]], false);
         assert_mixed_batch_matches(&model, &ndarray::Array2::zeros((0, 2)), false);
         let params = [
@@ -162,6 +181,13 @@ fn mixed_batch_preserves_each_k_search_before_f64_refinement() {
     let mut x = ndarray::Array2::from_shape_fn((100, 1), |(i, _)| 1.0 + i as f64 * 1e-10);
     x[[0, 0]] = 0.0;
     let y = ndarray::Array2::from_shape_fn((100, 2), |(i, j)| (i + j) as f64);
-    let model = EpistemicNearestNeighbors::new(x, y, None, false, IndexDriver::Flat).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let model = EpistemicNearestNeighbors::new(
+        x,
+        y,
+        None,
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
+    )
+    .unwrap();
     assert_mixed_batch_matches(&model, &array![[2.0]], false);
 }

@@ -51,22 +51,21 @@ def turbo_zero_config(
 
 def turbo_enn_config(
     *,
-    enn: sur.ENNSurrogateConfig | None = None,
+    enn: sur.ENNSurrogateConfig,
     trust_region: tr.TrustRegionConfig | None = None,
     candidates: CandidateGenConfig | None = None,
     num_init: int | None = None,
     acq_type: AcqType = AcqType.PARETO,
 ) -> OptimizerConfig:
     acquisition = _acquisition(acq_type)
-    surrogate = enn if enn is not None else sur.ENNSurrogateConfig()
     from enn._rust import require_num_fit_samples
 
-    require_num_fit_samples(acq.acquisition_kind(acquisition), surrogate.num_fit_samples)
+    require_num_fit_samples(acq.acquisition_kind(acquisition), enn.num_fit_samples)
     return OptimizerConfig(
         trust_region=trust_region or tr.TurboTRConfig(),
         candidates=candidates or CandidateGenConfig(),
         init=InitConfig(num_init=num_init),
-        surrogate=surrogate,
+        surrogate=enn,
         acquisition=acquisition,
         observation_history=ObservationHistoryConfig(),
     )

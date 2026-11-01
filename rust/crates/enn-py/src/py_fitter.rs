@@ -58,7 +58,6 @@ impl PyENNStatefulFitter {
         params_warm_start: Option<PyENNParams>,
         affine_calibrate: bool,
     ) -> PyResult<PyENNParams> {
-        let warm = params_warm_start.as_ref().map(|p| p.inner);
         let search = ennbo::ScaleSearch {
             infer_aleatoric_variance: self.infer_aleatoric_variance,
             affine_calibrate,
@@ -67,7 +66,12 @@ impl PyENNStatefulFitter {
         };
         let result = self
             .inner
-            .ask(&model.inner, &search, warm.as_ref(), &mut self.rng)
+            .ask(
+                &model.inner,
+                &search,
+                params_warm_start.as_ref().map(|p| &p.inner),
+                &mut self.rng,
+            )
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(PyENNParams { inner: result })
     }
@@ -103,23 +107,22 @@ impl PyENNStatefulFitter {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (model, x, scales, exclude_nearest=false, observation_noise=false))]
+    #[pyo3(signature = (model, x, params, exclude_nearest=false, observation_noise=false))]
     fn posterior_calibrated<'py>(
         &self,
         py: Python<'py>,
         model: &PyEpistemicNearestNeighbors,
         x: PyReadonlyArray2<f64>,
-        scales: PyReadonlyArray1<f64>,
+        params: PyENNParams,
         exclude_nearest: bool,
         observation_noise: bool,
     ) -> PyResult<PosteriorPyOut<'py>> {
-        let params = enn_params(&scales)?;
         let flags = posterior_flags(exclude_nearest, observation_noise);
         let cal = self.inner.calibrator().cloned();
         let out = ennbo::surrogate_affine::calibrated_posterior(
             &model.inner,
             &x.as_array(),
-            &params,
+            &params.inner,
             &flags,
             cal.as_ref(),
         )
@@ -134,24 +137,23 @@ impl PyENNStatefulFitter {
     }
 
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[pyo3(signature = (model, x, scales, function_seeds, exclude_nearest=false, observation_noise=false))]
+    #[pyo3(signature = (model, x, params, function_seeds, exclude_nearest=false, observation_noise=false))]
     fn function_draw_calibrated<'py>(
         &self,
         py: Python<'py>,
         model: &PyEpistemicNearestNeighbors,
         x: PyReadonlyArray2<f64>,
-        scales: PyReadonlyArray1<f64>,
+        params: PyENNParams,
         function_seeds: Vec<i64>,
         exclude_nearest: bool,
         observation_noise: bool,
     ) -> PyResult<(Bound<'py, PyArrayDyn<f64>>, Vec<Vec<usize>>)> {
-        let params = enn_params(&scales)?;
         let flags = posterior_flags(exclude_nearest, observation_noise);
         let cal = self.inner.calibrator().cloned();
         let (draws, idx) = ennbo::surrogate_affine::calibrated_function_draw(
             &model.inner,
             &x.as_array(),
-            &params,
+            &params.inner,
             &function_seeds,
             &flags,
             cal.as_ref(),
@@ -161,16 +163,6 @@ impl PyENNStatefulFitter {
     }
 }
 
-fn enn_params(scales: &PyReadonlyArray1<f64>) -> PyResult<ennbo::ENNParams> {
-    let s = scales.as_slice()?;
-    if s.len() != 3 {
-        return Err(PyValueError::new_err(
-            "scales must be [k, epistemic, aleatoric]",
-        ));
-    }
-    ennbo::ENNParams::new(s[0] as i32, s[1], s[2]).map_err(|e| PyValueError::new_err(e.to_string()))
-}
-
 fn posterior_flags(exclude_nearest: bool, observation_noise: bool) -> ennbo::PosteriorFlags {
     ennbo::PosteriorFlags::new()
         .with_exclude_nearest(exclude_nearest)
@@ -178,7 +170,7 @@ fn posterior_flags(exclude_nearest: bool, observation_noise: bool) -> ennbo::Pos
 }
 
 #[pyfunction]
-#[pyo3(signature = (model, k, epistemic, aleatoric, num_fit_samples, seed, observation_noise=false))]
+#[pyo3(signature = (model, k, epistemic, aleatoric, num_fit_samples, seed, observation_noise=false, output_blend=None))]
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn fit_model_affine<'py>(
     py: Python<'py>,
@@ -189,14 +181,14 @@ pub fn fit_model_affine<'py>(
     num_fit_samples: i64,
     seed: u64,
     observation_noise: bool,
+    output_blend: Option<crate::py_params::PyOutputBlend>,
 ) -> PyResult<(
     Bound<'py, PyArray1<f64>>,
     Bound<'py, PyArray1<f64>>,
     Bound<'py, PyArray1<f64>>,
 )> {
     let num_fit_samples = usize::try_from(num_fit_samples).unwrap_or(0);
-    let params = ennbo::ENNParams::new(k, epistemic, aleatoric)
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let params = crate::py_params::params_with_blend(k, epistemic, aleatoric, output_blend)?;
     let mut rng = StdRng::seed_from_u64(seed);
     let cal = ennbo::surrogate_affine::fit_calibrator(
         &model.inner,

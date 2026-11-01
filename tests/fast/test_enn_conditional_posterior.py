@@ -4,6 +4,7 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def test_conditional_posterior_matches_posterior_when_no_whatifs():
@@ -29,7 +30,9 @@ def test_conditional_posterior_includes_whatif_points_and_does_not_mutate_index(
     d = 3
     train_x = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0]], dtype=float)
     train_y = np.array([[0.0], [0.0]], dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar=None, work_dir=fresh_work_dir()
+    )
     x_test = np.zeros((1, d), dtype=float)
     x_whatif = np.zeros((1, d), dtype=float)
     y_whatif = np.array([[5.0]], dtype=float)
@@ -55,7 +58,9 @@ def test_conditional_posterior_exclude_nearest_drops_whatif_point():
     train_x = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0]], dtype=float)
     train_y = np.array([[1.0], [2.0]], dtype=float)
     train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar=train_yvar, work_dir=fresh_work_dir()
+    )
     x_test = np.zeros((1, d), dtype=float)
     x_whatif = np.zeros((1, d), dtype=float)
     y_whatif = np.array([[100.0]], dtype=float)
@@ -92,7 +97,9 @@ def test_conditional_posterior_matches_augmented_model_exactly():
         k_num_neighbors=4, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
-    enn_a = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+    enn_a = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar=None, work_dir=fresh_work_dir()
+    )
     post_a = enn_a.conditional_posterior(
         x_whatif, y_whatif, x_test, params=params, flags=flags
     )
@@ -100,6 +107,7 @@ def test_conditional_posterior_matches_augmented_model_exactly():
         np.concatenate([train_x, x_whatif], axis=0),
         np.concatenate([train_y, y_whatif], axis=0),
         train_yvar=None,
+        work_dir=fresh_work_dir(),
     )
     post_b = enn_b.posterior(x_test, params=params, flags=flags)
     assert np.allclose(post_a.mu, post_b.mu)

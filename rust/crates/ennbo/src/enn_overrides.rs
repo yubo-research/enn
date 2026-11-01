@@ -1,10 +1,7 @@
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 
 use crate::error::ENNError;
 use crate::fit_samples::{FitSamples, ScaleSearch};
-use crate::index::IndexDriver;
-use crate::layout::EnnLayout;
 use crate::surrogate::ENNSurrogateConfig;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -55,27 +52,15 @@ pub enum FitOverride {
 
 #[derive(Debug, Clone, Default)]
 pub struct EnnOverrides {
-    pub index_driver: Option<IndexDriver>,
     pub fit: Option<FitOverride>,
     pub weighting: Option<bool>,
     pub y_bounds: Option<ndarray::Array2<f64>>,
-    pub work_dir: Option<PathBuf>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
     pub semantic_only: Option<bool>,
     pub semantic_projection: Option<ndarray::Array2<f64>>,
 }
 
 impl EnnOverrides {
-    fn layout(&self, layout: &EnnLayout) -> Result<EnnLayout, ENNError> {
-        let driver = self.index_driver.unwrap_or(layout.index_driver());
-        let dir = self.work_dir.clone().or_else(|| {
-            (driver == layout.index_driver())
-                .then(|| layout.work_dir().map(|p| p.to_path_buf()))
-                .flatten()
-        });
-        EnnLayout::new(driver, dir, self.weighting.unwrap_or(layout.weighting()))
-    }
-
     pub fn apply(&self, base: &ENNSurrogateConfig) -> Result<ENNSurrogateConfig, ENNError> {
         let mut enn = base.clone();
         match self.fit {
@@ -85,7 +70,9 @@ impl EnnOverrides {
                 enn.fit_samples = FitSamples::Draw(search.apply(enn.fit_samples)?);
             }
         }
-        enn.layout = self.layout(&enn.layout)?;
+        if let Some(weighting) = self.weighting {
+            enn.layout = enn.layout.with_weighting(weighting);
+        }
         if let Some(only) = self.semantic_only {
             enn.semantic_only = only;
         }
@@ -108,7 +95,9 @@ mod tests {
 
     #[test]
     fn apply_replaces_only_set_fields() {
-        let base = ENNSurrogateConfig::default();
+        let dir = tempfile::tempdir().unwrap();
+        let base =
+            ENNSurrogateConfig::new(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
         let overrides = EnnOverrides {
             fit: Some(FitOverride::Frozen),
             weighting: Some(true),
@@ -117,7 +106,7 @@ mod tests {
         };
         let out = overrides.apply(&base).unwrap();
         assert_eq!(out.fit_samples, FitSamples::Frozen);
-        assert!(out.layout.scale_x());
+        assert!(out.layout.weighting());
         assert_eq!(out.tied_dims, vec![vec![0, 1]]);
         assert_eq!(out.k, base.k);
     }
@@ -147,24 +136,5 @@ mod tests {
         assert_eq!(s.num_fit_samples.get(), 3);
         assert!(!s.infer_aleatoric_variance && s.affine_calibrate);
         assert_eq!(counted.apply(base).unwrap().num_fit_candidates.get(), 7);
-    }
-
-    #[test]
-    fn disk_override_requires_directory_and_selects_auto_weighting() {
-        let mut overrides = EnnOverrides {
-            index_driver: Some(IndexDriver::BpAnnDisk),
-            weighting: Some(true),
-            ..Default::default()
-        };
-        assert!(overrides
-            .layout(&ENNSurrogateConfig::default().layout)
-            .is_err());
-        overrides.work_dir = Some("rows".into());
-        assert!(matches!(
-            overrides
-                .layout(&ENNSurrogateConfig::default().layout)
-                .unwrap(),
-            EnnLayout::DiskAuto { .. }
-        ));
     }
 }

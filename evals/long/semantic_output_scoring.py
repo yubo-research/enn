@@ -3,7 +3,39 @@ from time import perf_counter
 
 import numpy as np
 
-from enn import SemanticMultiOutputENN, SemanticOutputProjection
+from enn import EpistemicNearestNeighbors, SemanticOutputProjection
+from enn.enn.enn_fit import enn_fit
+from evals.harness.work_dirs import fresh_work_dir
+
+NEIGHBORS = 8
+NUM_FIT_CANDIDATES = 30
+
+
+class PinnedAlphaENN:
+    def __init__(self, projection, alpha, seed=0):
+        self.projection = projection
+        self.alpha = alpha
+        self.seed = seed
+
+    def fit(self, x, y):
+        self.model = EpistemicNearestNeighbors(
+            x[:0],
+            y[:0],
+            output_projection=self.projection,
+            output_alpha=self.alpha,
+            work_dir=fresh_work_dir(),
+        )
+        self.params = enn_fit(
+            self.model,
+            k=NEIGHBORS,
+            num_fit_candidates=NUM_FIT_CANDIDATES,
+            rng=np.random.default_rng(self.seed),
+            incremental=self.model.add(x, y),
+        )
+        return self
+
+    def posterior(self, x):
+        return self.model.posterior(x, params=self.params)
 
 
 def scores(y, posterior, scale):
@@ -30,7 +62,7 @@ def select_model(x, y, validation, definition, settings):
         for alpha in alphas:
             if alpha == 0 and cutoff != cutoffs[0]:
                 continue
-            model = SemanticMultiOutputENN(projection, alpha=alpha, folds=3).fit(x, y)
+            model = PinnedAlphaENN(projection, alpha).fit(x, y)
             score = scores(validation[1], model.posterior(validation[0]), scale)[
                 "nrmse"
             ].mean()

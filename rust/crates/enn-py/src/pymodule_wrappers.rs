@@ -28,8 +28,6 @@ pub fn pymodule_hash(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[pyo3(name = "util")]
 pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_semantic::PyInputHistory>()?;
-    m.add_class::<crate::py_adaptive::PyAdaptiveSemanticENN>()?;
-    m.add_class::<crate::py_multi_output::PySemanticMultiOutputENN>()?;
     m.add_class::<crate::py_cat_encoder::PyCatEncoder>()?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_log_width, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_column_plan, m)?)?;
@@ -114,18 +112,14 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[pyo3(name = "model")]
 pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_model::PyEpistemicNearestNeighbors>()?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_adaptive::small_flat_selection_means,
-        m
-    )?)?;
     m.add_class::<crate::py_model::PyENNParams>()?;
+    m.add_class::<crate::py_params::PyOutputBlend>()?;
     m.add_function(wrap_pyfunction!(crate::py_model::train_rows_at_warped, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_layout::validate_enn_placement_py,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(crate::py_layout::resolve_tied_groups, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_model::set_unscaled_dims, m)?)?;
     m.add_class::<crate::py_metric::MetricSnapshot>()?;
     m.add_function(wrap_pyfunction!(crate::py_metric::metric_snapshot, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_metric::metric_set_weights, m)?)?;

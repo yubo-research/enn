@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import numpy as np
@@ -96,9 +95,6 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
     overrides.update(_trust_region_to_override(config))
     surrogate = config.surrogate
     if isinstance(surrogate, ENNSurrogateConfig):
-        from .config.enn_index_driver import index_driver_to_wire
-
-        overrides["index_driver"] = index_driver_to_wire(surrogate.index_driver)
         if surrogate.num_fit_samples is None:
             overrides["freeze_params"] = True
         else:
@@ -113,8 +109,6 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
         _metric_overrides(surrogate, overrides)
         if surrogate.y_bounds is not None:
             overrides["y_bounds"] = np.asarray(surrogate.y_bounds, dtype=float)
-        if surrogate.work_dir is not None:
-            overrides["work_dir"] = os.fspath(surrogate.work_dir)
     return overrides if overrides else None
 
 

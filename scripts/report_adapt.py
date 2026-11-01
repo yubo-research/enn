@@ -75,7 +75,6 @@ def tables(rows):
                 "adaptive_inputs",
                 "adaptive_outputs",
                 "adaptive",
-                "adaptive_linear",
             )
         ]
         ablation.append(" & ".join([case, *fields]) + " \\\\")
@@ -117,15 +116,19 @@ def curves(rows):
         ax.xaxis.set_minor_locator(NullLocator())
     saturation = json.loads((ROOT / "saturation.json").read_text())
     ax = axes.flat[-1]
-    for key, label in (("retained", "Retained replay rows"),):
-        counts = sorted({r["n"] for r in saturation})
-        means = [np.mean([r[key] for r in saturation if r["n"] == n]) for n in counts]
-        ax.plot(counts, means, label=label)
+    counts = sorted({r["n"] for r in saturation})
+    ax.plot(
+        counts,
+        [
+            1000 * np.mean([r["update_s"] for r in saturation if r["n"] == n])
+            for n in counts
+        ],
+    )
     ax.set(
         xlabel="Observations seen",
-        ylabel="Rows retained",
-        title="Replay bound (capacity 300)",
-        ylim=(0, 350),
+        ylabel="Add and fit time (ms)",
+        title="Update time, 100 rows per batch",
+        ylim=(0, None),
     )
     axes.flat[0].legend(frameon=False, fontsize=7)
     fig.savefig(ROOT / "curves.pdf")

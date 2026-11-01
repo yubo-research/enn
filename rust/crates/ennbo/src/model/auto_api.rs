@@ -2,7 +2,6 @@ use ndarray::{Array1, ArrayView2};
 
 use super::EpistemicNearestNeighbors;
 use crate::error::ENNError;
-use crate::layout::EnnLayout;
 use crate::metric_auto::{AutoMetric, MetricSnapshot};
 use crate::metric_weights::validate_tied_dims;
 
@@ -31,19 +30,12 @@ impl EpistemicNearestNeighbors {
         x: &ArrayView2<f64>,
         y: &ArrayView2<f64>,
     ) -> Result<(), ENNError> {
-        if !matches!(self.layout, EnnLayout::DiskAuto { .. }) {
+        if !self.layout.weighting() {
             return Err(ENNError::InvalidParameter(
-                "enable_auto_metric requires EnnLayout::DiskAuto".into(),
+                "enable_auto_metric requires weighting".into(),
             ));
         }
         validate_tied_dims(&tied, self.num_dim)?;
-        let uniq: Vec<usize> = {
-            let mut flat: Vec<usize> = tied.iter().flatten().copied().collect();
-            flat.sort_unstable();
-            flat.dedup();
-            flat
-        };
-        self.set_unscaled_dims(uniq)?;
         self.auto_metric = Some(AutoMetric::new(self.num_dim, self.num_metrics, tied, 0)?);
         self.observe_auto_metric(x, y)
     }

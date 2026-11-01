@@ -1,5 +1,8 @@
 use ndarray::{Array2, ArrayD};
+use std::sync::Arc;
 use thiserror::Error;
+
+use crate::output_blend::OutputBlend;
 
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ParamsError {
@@ -11,11 +14,12 @@ pub enum ParamsError {
     InvalidAleatoricVariance(f64),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ENNParams {
     pub k_num_neighbors: i32,
     pub epistemic_variance_scale: f64,
     pub aleatoric_variance_scale: f64,
+    pub output_blend: Option<Arc<OutputBlend>>,
 }
 
 impl ENNParams {
@@ -44,7 +48,13 @@ impl ENNParams {
             k_num_neighbors,
             epistemic_variance_scale,
             aleatoric_variance_scale,
+            output_blend: None,
         })
+    }
+
+    pub fn with_output_blend(mut self, output_blend: Option<Arc<OutputBlend>>) -> Self {
+        self.output_blend = output_blend;
+        self
     }
 }
 

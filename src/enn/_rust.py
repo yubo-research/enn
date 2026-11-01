@@ -64,7 +64,7 @@ ENNNormal = _ext.util.ENNNormal
 Ackley = _ext.util.Ackley
 DoubleAckley = _ext.util.DoubleAckley
 ENNParams = _ext.model.ENNParams
-set_unscaled_dims = _ext.model.set_unscaled_dims
+ENNOutputBlend = _ext.model.ENNOutputBlend
 ENNStatefulFitter = _ext.fit.ENNStatefulFitter
 subsample_loglik = _ext.fit.subsample_loglik
 ENNAddToken = _ext.fit.ENNAddToken
@@ -80,6 +80,7 @@ validate_enn_placement = _ext.model.validate_enn_placement
 
 __all__ = [
     "ENNAddToken",
+    "ENNOutputBlend",
     "ENNParams",
     "ENNStatefulFitter",
     "EpistemicNearestNeighbors",
@@ -95,7 +96,6 @@ __all__ = [
     "normal_hash_batch_multi_seed_fast",
     "pareto_front_2d_maximize",
     "set_config_path",
-    "set_unscaled_dims",
     "sobol_sequence",
     "standardize_y",
     "subsample_loglik",
@@ -120,9 +120,6 @@ semantic_encode = _ext.util.semantic_encode
 semantic_text_projection = _ext.util.semantic_text_projection
 semantic_input_output_projection = _ext.util.semantic_input_output_projection
 
-AdaptiveSemanticENN = _ext.util.AdaptiveSemanticENN
-
-SemanticMultiOutputENN = _ext.util.SemanticMultiOutputENN
 semantic_relationship_texts = _ext.util.semantic_relationship_texts
 semantic_output_definition = _ext.util.semantic_output_definition
 semantic_output_embeddings = _ext.util.semantic_output_embeddings

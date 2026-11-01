@@ -49,11 +49,8 @@ pub mod incremental_fit;
 #[allow(missing_docs)]
 pub mod incumbent_tracker;
 #[allow(missing_docs)]
-pub mod index;
-#[allow(missing_docs)]
-pub mod knn;
-#[allow(missing_docs)]
 pub mod layout;
+
 #[allow(missing_docs)]
 pub mod link_search;
 #[allow(missing_docs)]
@@ -128,8 +125,6 @@ pub use acquisition::ThompsonAcquisition;
 pub use acquisition::UCBAcquisition;
 pub use backend::DiskBpannEnnBackend;
 pub use backend::EnnBackend;
-pub use backend::EnnStorage;
-pub use backend::InMemoryEnnBackend;
 pub use benchmarks::Ackley;
 pub use benchmarks::DoubleAckley;
 pub use calibration::AffineCalibrator;
@@ -178,9 +173,6 @@ pub use hash::normal_hash_batch_multi_seed_fast;
 pub use hypervolume::hypervolume_2d_max;
 pub use incremental_fit::{AddToken, IncrementalAsk, IncrementalFit};
 pub use incumbent_tracker::IncrementalIncumbentTracker;
-pub use index::ENNIndex;
-pub use index::IndexDriver;
-pub use index::IndexError;
 pub use layout::EnnLayout;
 pub use model::EnnIndexAccess;
 pub use model::EnnRowAccess;
@@ -197,6 +189,8 @@ pub use optimizer_factory::create_optimizer_enn;
 pub use optimizer_factory::create_optimizer_enn_with_overrides;
 pub use optimizer_factory::create_optimizer_lhd;
 pub use optimizer_factory::create_optimizer_zero;
+pub use output_blend::OutputBlend;
+pub use output_blend::SemanticOutputs;
 pub use params::ENNNormal;
 pub use params::ENNParams;
 pub use params::ParamsError;
@@ -227,7 +221,6 @@ pub use y_bounds::unbounded_bounds;
 pub use y_bounds::validate_bounds;
 
 pub mod semantic_definition;
-pub mod semantic_multi_output;
 pub mod semantic_projection;
 pub mod semantic_relationships;
 
@@ -244,15 +237,6 @@ mod categorical_values;
 pub mod semantic_encoder;
 pub mod semantic_text;
 
-pub mod adaptive;
-pub mod adaptive_basis;
-mod adaptive_fitter;
-mod adaptive_geometry;
-mod adaptive_predictor;
-mod adaptive_scales;
-mod adaptive_selection;
-#[cfg(test)]
-mod adaptive_tests;
-mod adaptive_weight;
-pub mod online_input_scales;
 pub mod online_output_weights;
+pub mod output_blend;
+mod output_blend_fit;

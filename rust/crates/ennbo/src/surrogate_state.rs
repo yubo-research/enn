@@ -8,7 +8,6 @@ pub(crate) const BULK_DISK_TELL_SKIP_FIT_ROWS: usize = 4_096;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct AppendInput {
-    pub(crate) on_disk: bool,
     pub(crate) rows: usize,
     pub(crate) frozen: bool,
     pub(crate) has_params: bool,
@@ -25,22 +24,21 @@ pub(crate) struct AppendPlan {
 impl AppendPlan {
     pub(crate) fn new(input: AppendInput) -> Self {
         let AppendInput {
-            on_disk,
             rows,
             frozen,
             has_params,
             initial,
         } = input;
-        let bulk = on_disk && rows >= BULK_DISK_TELL_SKIP_FIT_ROWS;
+        let bulk = rows >= BULK_DISK_TELL_SKIP_FIT_ROWS;
         if initial {
             let act = frozen || !bulk;
             return Self {
-                sync: act && on_disk,
+                sync: act,
                 search: act && !frozen,
-                release: act && on_disk,
+                release: act,
             };
         }
-        let skip_fit = bulk || (on_disk && has_params);
+        let skip_fit = bulk || has_params;
         Self {
             sync: !skip_fit || bulk,
             search: !frozen && !skip_fit,
@@ -98,7 +96,6 @@ mod tests {
 
     fn input(rows: usize, flags: u8) -> AppendInput {
         AppendInput {
-            on_disk: flags & 1 != 0,
             rows,
             frozen: flags & 2 != 0,
             has_params: flags & 4 != 0,
@@ -114,58 +111,42 @@ mod tests {
             release,
         };
         let bulk = BULK_DISK_TELL_SKIP_FIT_ROWS;
-        const DISK: u8 = 1;
         const FROZEN: u8 = 2;
         const PARAMS: u8 = 4;
         const INITIAL: u8 = 8;
-        for flags in [0, PARAMS, FROZEN, FROZEN | PARAMS] {
-            let search = flags & FROZEN == 0;
-            assert_eq!(AppendPlan::new(input(1, flags)), plan(true, search, true));
-            assert_eq!(
-                AppendPlan::new(input(bulk, flags)),
-                plan(true, search, true)
-            );
-            assert_eq!(
-                AppendPlan::new(input(1, flags | INITIAL)),
-                plan(false, search, false)
-            );
-        }
         for params in [0, PARAMS] {
             assert_eq!(
-                AppendPlan::new(input(bulk, DISK | params | INITIAL)),
+                AppendPlan::new(input(bulk, params | INITIAL)),
                 plan(false, false, false)
             );
             assert_eq!(
-                AppendPlan::new(input(bulk, DISK | params)),
+                AppendPlan::new(input(bulk, params)),
                 plan(true, false, true)
             );
             assert_eq!(
-                AppendPlan::new(input(bulk, DISK | FROZEN | params | INITIAL)),
+                AppendPlan::new(input(bulk, FROZEN | params | INITIAL)),
                 plan(true, false, true)
             );
             assert_eq!(
-                AppendPlan::new(input(bulk, DISK | FROZEN | params)),
+                AppendPlan::new(input(bulk, FROZEN | params)),
                 plan(true, false, true)
             );
         }
+        assert_eq!(AppendPlan::new(input(bulk - 1, 0)), plan(true, true, true));
         assert_eq!(
-            AppendPlan::new(input(bulk - 1, DISK)),
-            plan(true, true, true)
-        );
-        assert_eq!(
-            AppendPlan::new(input(bulk - 1, DISK | PARAMS)),
+            AppendPlan::new(input(bulk - 1, PARAMS)),
             plan(false, false, false)
         );
         assert_eq!(
-            AppendPlan::new(input(bulk - 1, DISK | INITIAL)),
+            AppendPlan::new(input(bulk - 1, INITIAL)),
             plan(true, true, true)
         );
         assert_eq!(
-            AppendPlan::new(input(bulk - 1, DISK | FROZEN | PARAMS | INITIAL)),
+            AppendPlan::new(input(bulk - 1, FROZEN | PARAMS | INITIAL)),
             plan(true, false, true)
         );
         assert_eq!(
-            AppendPlan::new(input(bulk - 1, DISK | FROZEN | PARAMS)),
+            AppendPlan::new(input(bulk - 1, FROZEN | PARAMS)),
             plan(false, false, false)
         );
     }

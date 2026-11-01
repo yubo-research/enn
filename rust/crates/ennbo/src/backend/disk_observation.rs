@@ -4,8 +4,8 @@ use std::sync::Mutex;
 
 use ndarray::{Array1, Array2, ArrayView2};
 
+use super::MmapColumnStore;
 use crate::error::ENNError;
-use crate::knn::MmapColumnStore;
 
 pub type MmapTrainRowsAt = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
 

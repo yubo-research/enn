@@ -7,11 +7,6 @@ from enum import Enum, auto
 from enn._rust import validate_tied_dims as _validate_tied_dims
 
 
-class ENNScaleX(Enum):
-    OFF = auto()
-    ON = auto()
-
-
 class ENNMetricLearning(Enum):
     NONE = auto()
     AUTO = auto()

@@ -1,62 +1,47 @@
-_CLI_DESCRIPTION = "Record paired adaptation quality and steady-state update latency.\n\nRun with PYTHONPATH=src:. python scripts/benchmark_adapt.py --output DIR.\nUse --reference DIR with saved adaptive.py and adaptive_model.py for a paired comparison.\nRun each version separately, on an otherwise idle machine.\nUse --geometry-weight 30 to evaluate the opt-in fixed-weight update policy.\n"
+_CLI_DESCRIPTION = "Record adaptation quality and steady-state update latency.\n\nRun with PYTHONPATH=src:. python scripts/benchmark_adapt.py --output DIR.\nRun on an otherwise idle machine.\n"
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 import platform
 import sys
 import time
-from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
 
 
-def load_reference(directory):
-    import enn
-
-    native = next(directory.glob("enn_rust*.so"), None)
-    if native is not None:
-        spec = importlib.util.spec_from_file_location("enn.enn_rust", native)
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        enn.enn_rust = module
-    for name in ("adaptive_model", "adaptive"):
-        spec = importlib.util.spec_from_file_location(
-            f"enn.{name}", directory / f"{name}.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        setattr(enn, name, module)
-    enn.AdaptiveSemanticENN = module.AdaptiveSemanticENN
-
-
-def measure(kind, case, seed, counts, geometry_weight):
-    from enn import AdaptiveSemanticENN
-    from evals.harness.adapt import score
+def measure(kind, case, seed, counts):
+    from enn.enn.enn_fit import enn_fit
+    from evals.harness.adapt import (
+        NUM_FIT_CANDIDATES,
+        PARAMS,
+        WORKFLOWS,
+        alpha_summary,
+        score,
+        workflow_model,
+    )
     from evals.harness.adapt_problem import make_problem
 
     problem = make_problem(kind, case, seed, count=max(counts) + 128)
-    model = AdaptiveSemanticENN(
-        input_transform=problem.input_transform,
-        output_projection=problem.output_projection,
-    )
+    model = workflow_model(problem, WORKFLOWS["adaptive"])
+    fit_rng = np.random.default_rng(seed)
     rows, predictions = [], []
     for count in counts:
         cpu_start = time.process_time()
         start = time.perf_counter()
-        model.add(
-            problem.x[model.num_seen : count],
-            problem.y[model.num_seen : count],
-            geometry_weight=geometry_weight,
+        first = len(model)
+        params = enn_fit(
+            model,
+            k=PARAMS.k_num_neighbors,
+            num_fit_candidates=NUM_FIT_CANDIDATES,
+            rng=fit_rng,
+            incremental=model.add(problem.x[first:count], problem.y[first:count]),
         )
         elapsed = time.perf_counter() - start
         cpu_elapsed = time.process_time() - cpu_start
-        posterior = model.posterior(problem.x[-128:])
+        posterior = model.posterior(problem.x[-128:], params=params)
         rows.append(
             dict(
                 kind=kind,
@@ -65,7 +50,7 @@ def measure(kind, case, seed, counts, geometry_weight):
                 n=count,
                 update_s=elapsed,
                 update_cpu_s=cpu_elapsed,
-                choice=asdict(model.choice),
+                mean_alpha=alpha_summary(params),
                 **score(posterior, problem.y[-128:]),
             )
         )
@@ -73,7 +58,7 @@ def measure(kind, case, seed, counts, geometry_weight):
     return rows, np.stack(predictions)
 
 
-def benchmark(seeds, geometry_weight):
+def benchmark(seeds):
     rows, predictions = [], {}
     for kind in ("xx", "xy", "yy"):
         cases = (
@@ -83,17 +68,13 @@ def benchmark(seeds, geometry_weight):
         )
         for case in cases:
             for seed in range(seeds):
-                result, prediction = measure(
-                    kind, case, seed, (30, 100, 300), geometry_weight
-                )
+                result, prediction = measure(kind, case, seed, (30, 100, 300))
                 rows.extend(result)
                 predictions[f"{kind}_{case}_{seed}"] = prediction
     latency = []
     for kind, case in (("xx", "misleading"), ("xy", "misleading"), ("yy", "opposing")):
         for seed in range(3):
-            result, _ = measure(
-                kind, case, seed, tuple(range(100, 3001, 100)), geometry_weight
-            )
+            result, _ = measure(kind, case, seed, tuple(range(100, 3001, 100)))
             latency.extend(result)
     return rows, predictions, latency
 
@@ -101,17 +82,11 @@ def benchmark(seeds, geometry_weight):
 def main():
     parser = argparse.ArgumentParser(description=_CLI_DESCRIPTION)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--reference", type=Path)
     parser.add_argument("--seeds", type=int, default=10)
-    parser.add_argument("--geometry-weight", type=float)
     args = parser.parse_args()
-    if args.reference is not None:
-        load_reference(args.reference)
-    rows, predictions, latency = benchmark(args.seeds, args.geometry_weight)
-    source = (args.reference or Path("src/enn")) / "adaptive_model.py"
+    rows, predictions, latency = benchmark(args.seeds)
     args.output.mkdir(parents=True, exist_ok=True)
     payload = {
-        "geometry_weight": args.geometry_weight,
         "quality": rows,
         "latency": latency,
         "platform": platform.platform(),
@@ -121,7 +96,6 @@ def main():
             name: os.getenv(name)
             for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS")
         },
-        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "native_sha256": hashlib.sha256(
             Path(sys.modules["enn.enn_rust"].__file__).read_bytes()
         ).hexdigest(),

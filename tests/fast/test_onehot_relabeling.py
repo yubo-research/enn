@@ -6,7 +6,6 @@ from enn import EpistemicNearestNeighbors
 from enn.enn.cat_codes import CatEncoder, CatEncoding, DimKind
 from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import PosteriorFlags
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 
 def _sparse_categories():
@@ -29,7 +28,6 @@ def _model(x, y, path):
         x,
         y,
         weighting=True,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=path,
     )
 

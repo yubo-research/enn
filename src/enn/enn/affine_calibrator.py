@@ -134,6 +134,7 @@ def fit_affine_calibrator(
         int(num_samples),
         seed,
         bool(observation_noise),
+        params.output_blend,
     )
     return AffineCalibrator(
         a=np.asarray(a, dtype=float),

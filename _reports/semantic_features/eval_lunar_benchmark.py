@@ -11,7 +11,6 @@ import numpy as np
 from _reports.semantic_features.tlunar import DESCRIPTIONS, NAMES, tlunar_fn
 from enn import SemanticInputTransform, create_optimizer
 from enn.turbo.config import (
-    ENNIndexDriver,
     ENNSurrogateConfig,
     turbo_enn_config,
 )
@@ -76,7 +75,6 @@ def prediction_case(seed):
 def optimizer(method, seed, directory):
     transform = None if method == "real" else lunar_projection()
     surrogate = ENNSurrogateConfig(
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=directory,
         weighting=True,
         input_transform=transform,

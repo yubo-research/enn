@@ -22,10 +22,9 @@ struct FrozenFitter {
     fitter: ENNFitter,
     rng: StdRng,
     k: i32,
-    seed: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct IncrementalAsk {
     pub k: i32,
     pub seed: u64,
@@ -64,7 +63,7 @@ impl IncrementalFit {
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<AddToken, ENNError> {
-        let start = model.len();
+        let start = self.pending.map_or(model.len(), |(_, start, _)| start);
         model.add(x, y, yvar)?;
         self.generation += 1;
         self.pending = Some((self.generation, start, model.len()));
@@ -74,12 +73,11 @@ impl IncrementalFit {
         })
     }
 
-    fn check_frozen(&self, k: i32, seed: u64) -> Result<(), ENNError> {
+    fn check_frozen(&self, k: i32) -> Result<(), ENNError> {
         match &self.frozen {
-            Some(f) if f.k != k || f.seed != seed => Err(ENNError::InvalidParameter(format!(
-                "incremental enn_fit freezes k and the fitter seed on the first call; \
-                 frozen k={}, frozen seed={}, got k={k}, seed={seed}",
-                f.k, f.seed
+            Some(f) if f.k != k => Err(ENNError::InvalidParameter(format!(
+                "incremental enn_fit freezes k on the first call; frozen k={}, got k={k}",
+                f.k
             ))),
             _ => Ok(()),
         }
@@ -108,24 +106,28 @@ impl IncrementalFit {
         token: AddToken,
         opts: &IncrementalAsk,
     ) -> Result<ENNParams, ENNError> {
-        self.check_frozen(opts.k, opts.seed)?;
+        self.check_frozen(opts.k)?;
         let search = ScaleSearch::from_counts(opts.num_fit_samples, opts.num_fit_candidates)?;
         let (start, end) = self.take(token)?;
+        let is_first_ask = self.frozen.is_none();
         let frozen = self.frozen.get_or_insert_with(|| FrozenFitter {
             fitter: ENNFitter::new(opts.k),
             rng: StdRng::seed_from_u64(opts.seed),
             k: opts.k,
-            seed: opts.seed,
         });
-        let indices: Vec<usize> = (start..end).collect();
-        let (x, y, yvar) = model.train_rows_at(&indices)?;
-        let yvar_view = yvar.as_ref().map(|v| v.view());
-        frozen.fitter.tell(
-            &x.view(),
-            &y.view(),
-            yvar_view.as_ref(),
-            Some(model.y_bounds()),
-        )?;
+        if is_first_ask {
+            frozen.fitter.seed_y_stats(model);
+        } else {
+            let indices: Vec<usize> = (start..end).collect();
+            let (x, y, yvar) = model.train_rows_at(&indices)?;
+            let yvar_view = yvar.as_ref().map(|v| v.view());
+            frozen.fitter.tell(
+                &x.view(),
+                &y.view(),
+                yvar_view.as_ref(),
+                Some(model.y_bounds()),
+            )?;
+        }
         frozen.fitter.ask(
             model,
             &search,
@@ -138,18 +140,10 @@ impl IncrementalFit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::EnnLayout;
     use ndarray::Array2;
 
-    fn empty_model() -> EpistemicNearestNeighbors {
-        EpistemicNearestNeighbors::new_with_storage(
-            Array2::zeros((0, 2)),
-            Array2::zeros((0, 1)),
-            None,
-            EnnLayout::flat(false),
-            None,
-        )
-        .unwrap()
+    fn empty_model() -> crate::test_helpers::TestModel {
+        crate::test_helpers::test_model(Array2::zeros((0, 2)), Array2::zeros((0, 1)), None, false)
     }
 
     fn opts(k: i32, seed: u64) -> IncrementalAsk {
@@ -199,7 +193,77 @@ mod tests {
         let second = add_row(&mut fit, &mut model, 0.9);
         let err = fit.ask(&model, second, &opts(3, 1)).unwrap_err();
         assert!(err.to_string().contains("freezes k"));
-        let params = fit.ask(&model, second, &opts(2, 1)).unwrap();
+        let params = fit.ask(&model, second, &opts(2, 9)).unwrap();
         assert_eq!(params.k_num_neighbors, 2);
+    }
+
+    #[test]
+    fn seeded_y_stats_match_tell_with_y_bounds_and_on_disk_reopen() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let x = Array2::from_shape_fn((6, 2), |(i, j)| (i * (j + 1)) as f64 * 0.1);
+        let y = Array2::from_shape_fn((6, 1), |(i, _)| 0.1 + i as f64 * 0.1);
+        let bounds = ndarray::array![[0.0, 1.0]];
+        let open = |x, y| {
+            EpistemicNearestNeighbors::new_with_storage(
+                x,
+                y,
+                None,
+                crate::layout::EnnLayout::new(dir.path().to_path_buf(), false).unwrap(),
+                Some(bounds.clone()),
+            )
+            .unwrap()
+        };
+        let model = open(x.clone(), y.clone());
+        model.persist_index_to_disk().unwrap();
+        drop(model);
+        let mut reopened = open(Array2::zeros((0, 2)), Array2::zeros((0, 1)));
+        let mut fit = IncrementalFit::new();
+        let token = add_row(&mut fit, &mut reopened, 0.7);
+        fit.ask(&reopened, token, &opts(2, 1)).unwrap();
+        let all_x = ndarray::concatenate![ndarray::Axis(0), x, Array2::from_elem((1, 2), 0.7)];
+        let all_y = ndarray::concatenate![ndarray::Axis(0), y, ndarray::array![[0.49]]];
+        let mut told = ENNFitter::new(2);
+        told.tell(&all_x.view(), &all_y.view(), None, Some(&bounds))
+            .unwrap();
+        let got = fit.frozen.as_ref().unwrap().fitter.y_std()[0];
+        assert!((got - told.y_std()[0]).abs() < 1e-9);
+    }
+
+    #[test]
+    fn rows_from_skipped_tokens_still_reach_the_fitter() {
+        let mut model = empty_model();
+        let mut fit = IncrementalFit::new();
+        let token = add_row(&mut fit, &mut model, 0.1);
+        fit.ask(&model, token, &opts(2, 1)).unwrap();
+        add_row(&mut fit, &mut model, 0.5);
+        let token = add_row(&mut fit, &mut model, 0.7);
+        fit.ask(&model, token, &opts(2, 1)).unwrap();
+        let want = ndarray::array![0.01f64, 0.25, 0.49].std(0.0);
+        let got = fit.frozen.as_ref().unwrap().fitter.y_std()[0];
+        assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+    }
+
+    #[test]
+    fn first_ask_seeds_y_stats_from_constructor_rows_and_later_adds_accumulate() {
+        let x = Array2::from_shape_fn((4, 2), |(i, j)| (i + j) as f64);
+        let y = Array2::from_shape_fn((4, 1), |(i, _)| (i * i) as f64);
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = EpistemicNearestNeighbors::new_with_storage(
+            x,
+            y.clone(),
+            None,
+            crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            None,
+        )
+        .unwrap();
+        let mut fit = IncrementalFit::new();
+        let token = add_row(&mut fit, &mut model, 2.0);
+        fit.ask(&model, token, &opts(2, 1)).unwrap();
+        let token = add_row(&mut fit, &mut model, 3.0);
+        fit.ask(&model, token, &opts(2, 1)).unwrap();
+        let all = ndarray::concatenate![ndarray::Axis(0), y, ndarray::array![[4.0], [9.0]]];
+        let want = all.std_axis(ndarray::Axis(0), 0.0)[0];
+        let got = fit.frozen.as_ref().unwrap().fitter.y_std()[0];
+        assert!((got - want).abs() < 1e-12, "{got} vs {want}");
     }
 }
