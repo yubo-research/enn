@@ -361,3 +361,64 @@ impl Optimizer {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    fn recipe(kind: RunKind) -> RunRecipe {
+        RunRecipe::new(kind, array![[0.0, 1.0], [0.0, 2.0]], Some(3), Some(3), None)
+    }
+
+    fn objective(x: &Array2<f64>) -> Array2<f64> {
+        x.map_axis(Axis(1), |row| -row.sum()).insert_axis(Axis(1))
+    }
+
+    fn run_with_reopen(kind: RunKind) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut kept = create_run(recipe(kind), 7, dir.path().join("kept")).unwrap();
+        let resumed_dir = dir.path().join("resumed");
+        let mut resumed = create_run(recipe(kind), 7, resumed_dir.clone()).unwrap();
+        for _ in 0..6 {
+            let x = kept.ask(2).unwrap();
+            assert_eq!(resumed.ask(2).unwrap(), x);
+            let y = objective(&x);
+            kept.tell(&x.view(), &y.view(), None).unwrap();
+            resumed.tell(&x.view(), &y.view(), None).unwrap();
+            drop(resumed);
+            resumed = Optimizer::open(&resumed_dir).unwrap();
+            assert_eq!(resumed.x_obs(), kept.x_obs());
+            assert_eq!(resumed.incumbent_x(), kept.incumbent_x());
+            assert_eq!(resumed.tr_length(), kept.tr_length());
+        }
+    }
+
+    #[test]
+    fn a_reopened_run_matches_a_single_instance_in_every_mode() {
+        for kind in [RunKind::Zero, RunKind::Lhd] {
+            run_with_reopen(kind);
+        }
+    }
+
+    #[test]
+    fn a_used_work_dir_and_an_empty_work_dir_are_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("w");
+        let run = create_run(recipe(RunKind::Zero), 1, path.clone()).unwrap();
+        drop(run);
+        let used = create_run(recipe(RunKind::Zero), 1, path).err().unwrap();
+        assert!(used.to_string().contains("Optimizer.open"), "{used}");
+        let empty = Optimizer::open(dir.path()).err().unwrap();
+        assert!(empty.to_string().contains("create_optimizer"), "{empty}");
+    }
+
+    #[test]
+    fn a_recipe_round_trips_through_json() {
+        let text = serde_json::to_string(&recipe(RunKind::Enn)).unwrap();
+        let loaded: RunRecipe = serde_json::from_str(&text).unwrap();
+        assert_eq!(loaded.kind, RunKind::Enn);
+        assert_eq!(loaded.k, Some(3));
+        assert_eq!(loaded.bounds, recipe(RunKind::Enn).bounds);
+    }
+}

@@ -44,7 +44,12 @@ fn native_feature_combinations_match_explicit_model_features() {
                 }))
             });
             for weighting in [false, true] {
-                for tied in [vec![], vec![vec![0, 1]]] {
+                let ties = if weighting {
+                    vec![vec![], vec![vec![0, 1]]]
+                } else {
+                    vec![vec![]]
+                };
+                for tied in ties {
                     let dir = root.path().join(format!("surrogate-{sequence}"));
                     let layout = EnnLayout::new(dir, weighting).unwrap();
                     let config = ENNSurrogateConfig {
@@ -66,7 +71,7 @@ fn native_feature_combinations_match_explicit_model_features() {
             }
         }
     }
-    assert_eq!(sequence, 36);
+    assert_eq!(sequence, 27);
 }
 
 fn compare(

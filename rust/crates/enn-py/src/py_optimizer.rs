@@ -339,7 +339,6 @@ pub fn validate_optimizer_rules_py(
 
 #[pyfunction(name = "create_optimizer_run")]
 #[pyo3(signature = (kind, bounds, work_dir, k=None, num_init=None, seed=42, config_overrides=None))]
-#[allow(clippy::too_many_arguments)]
 pub fn create_optimizer_run_py(
     kind: &str,
     bounds: PyReadonlyArray2<f64>,
