@@ -82,7 +82,7 @@ def test_out_of_range_tied_dims_are_rejected():
             None,
             3,
             0,
-            config_overrides={"tied_dims": [[0, 99]]},
+            config_overrides={"tied_dims": [[0, 99]], "weighting": True},
         )
     with pytest.raises(ValueError, match="disjoint"):
         ENNSurrogateConfig(tied_dims=((0, 99), (0,)))

@@ -121,7 +121,11 @@ def test_model_ties_encoded_categoricals(tmp_path) -> None:
     assert plain.tied_dims == ()
     with pytest.raises(ValueError, match="categorical blocks"):
         EpistemicNearestNeighbors(
-            x[:30], y[:30, None], tied_dims=[[0, 1]], work_dir=fresh_work_dir()
+            x[:30],
+            y[:30, None],
+            tied_dims=[[0, 1]],
+            weighting=True,
+            work_dir=fresh_work_dir(),
         )
 
 
@@ -192,7 +196,11 @@ def test_auto_metric_shares_one_weight_across_tied_dims(tmp_path) -> None:
         )
     with pytest.raises(ValueError, match="disjoint"):
         EpistemicNearestNeighbors(
-            x, y[:, None], tied_dims=[[2, 3], [3, 4]], work_dir=fresh_work_dir()
+            x,
+            y[:, None],
+            tied_dims=[[2, 3], [3, 4]],
+            weighting=True,
+            work_dir=fresh_work_dir(),
         )
 
 
@@ -217,3 +225,39 @@ def test_auto_metric_ties_group_weights(tmp_path) -> None:
         np.testing.assert_array_equal(
             model.neighbors(q[i : i + 1], 5)[0], np.argsort(d2, kind="stable")[:5]
         )
+
+
+def _rows(n=20, d=3):
+    x = np.random.default_rng(0).random((n, d))
+    return x, x.sum(axis=1, keepdims=True)
+
+
+def test_explicit_ties_without_weighting_raise_and_leave_work_dir_untouched(tmp_path):
+    x, y = _rows()
+    work_dir = tmp_path / "w"
+    with pytest.raises(ValueError, match="tied_dims requires weighting=True"):
+        EpistemicNearestNeighbors(x, y, tied_dims=[[0, 1]], work_dir=work_dir)
+    assert not work_dir.exists() or list(work_dir.iterdir()) == []
+
+
+def test_optimizer_rejects_ties_without_weighting():
+    from enn import ENNSurrogateConfig, create_optimizer, turbo_enn_config
+
+    config = turbo_enn_config(enn=ENNSurrogateConfig(k=3, tied_dims=((0, 1),)))
+    with pytest.raises(ValueError, match="tied_dims requires weighting=True"):
+        create_optimizer(
+            bounds=np.array([[0.0, 1.0]] * 3),
+            config=config,
+            seed=0,
+            work_dir=fresh_work_dir(),
+        )
+
+
+@pytest.mark.parametrize("weighting", [False, True])
+def test_categorical_rows_work_with_and_without_weighting(weighting):
+    _encoder, x, y = _encoded_mixed(40)
+    model = EpistemicNearestNeighbors(
+        x, y[:, None], weighting=weighting, work_dir=fresh_work_dir()
+    )
+    assert len(model) == 40
+    assert bool(model.tied_dims) is weighting

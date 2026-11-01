@@ -58,7 +58,7 @@ def test_supervised_feature_combinations(
     x, y, transform = problem(encoding)
     tied = (
         (((0, 1),) if semantics == "only" else getattr(x, "tied_dims", ((0, 1),)))
-        if use_ties
+        if use_ties and weighting
         else ()
     )
     if not use_ties:
@@ -106,7 +106,7 @@ def test_optimizer_feature_combinations(
     x, y, transform = problem(encoding)
     tied = (
         (((0, 1),) if semantics == "only" else getattr(x, "tied_dims", ((0, 1),)))
-        if use_ties
+        if use_ties and weighting
         else ()
     )
     if not use_ties:

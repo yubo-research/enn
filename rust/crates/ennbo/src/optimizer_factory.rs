@@ -163,14 +163,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let err = create_optimizer_enn_with_overrides(
             bounds,
-            crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            crate::layout::EnnLayout::new(dir.path(), true).unwrap(),
             None,
             Some(3),
             0,
             Some(&overrides),
         )
         .err()
-        .expect("ignored tied_dims must be rejected");
+        .expect("out-of-range tied_dims must be rejected");
         assert!(err.to_string().contains("tied_dims entries"), "{err}");
     }
 }

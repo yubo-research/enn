@@ -121,6 +121,10 @@ impl ENNSurrogateConfig {
         if self.tied_dims.is_empty() {
             return Ok(());
         }
+        crate::metric_weights::require_weighting_for_ties(
+            &self.tied_dims,
+            self.layout.weighting(),
+        )?;
         let dimensions = crate::semantic::feature_count(
             self.semantic_projection.as_deref(),
             num_dim,
@@ -1196,7 +1200,8 @@ mod tests {
             tied_dims: vec![vec![0, 1]],
             ..ENNSurrogateConfig::new(crate::layout::EnnLayout::new(dir.path(), false).unwrap())
         };
-        cfg.validate(2).unwrap();
+        let err = cfg.validate(2).unwrap_err();
+        assert!(err.to_string().contains("requires weighting=True"), "{err}");
         cfg.layout =
             crate::layout::EnnLayout::new(std::path::PathBuf::from("/tmp/unused"), true).unwrap();
         cfg.validate(2).unwrap();

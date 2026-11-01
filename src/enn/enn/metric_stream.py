@@ -79,7 +79,7 @@ def dependence_weights(
     floor: float | None = None,
     tied: Sequence[Sequence[int]] = (),
 ) -> np.ndarray:
-    groups = [list(g) for g in resolve_tied_groups(x, tied)]
+    groups = [list(g) for g in resolve_tied_groups(x, tied, weighting=True)]
     x = np.asarray(x, dtype=float)
     y = _y2(y)
     used = None if floor is None else float(floor)
@@ -97,7 +97,7 @@ def loo_loglik(x: np.ndarray, y: np.ndarray, a: np.ndarray, k: int) -> float:
 def auto_weights(
     x: np.ndarray, y: np.ndarray, k: int, tied: Sequence[Sequence[int]] = ()
 ) -> tuple[np.ndarray, float]:
-    groups = [list(g) for g in resolve_tied_groups(x, tied)]
+    groups = [list(g) for g in resolve_tied_groups(x, tied, weighting=True)]
     x = np.asarray(x, dtype=float)
     y = _y2(y)
     w, gain = _rust.auto_weights(x, y, int(k), groups)

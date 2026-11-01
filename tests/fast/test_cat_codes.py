@@ -161,7 +161,6 @@ def test_codes_ignore_arbitrary_id_magnitudes() -> None:
     model = EpistemicNearestNeighbors(
         coded.encode(raw),
         y.reshape(-1, 1),
-        tied_dims=coded.tied_dims(),
         work_dir=fresh_work_dir(),
     )
     mu = model.posterior(coded.encode(query), params=ENNParams(15, 0.05, 0.01)).mu[:, 0]

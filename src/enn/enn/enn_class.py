@@ -118,7 +118,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         groups = [
             list(g)
             for g in resolve_tied_groups(
-                train_x, tied_dims, semantic_only=semantic_only
+                train_x, tied_dims, weighting=weighting, semantic_only=semantic_only
             )
         ]
         if input_transform is not None:

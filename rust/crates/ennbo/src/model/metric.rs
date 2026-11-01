@@ -13,6 +13,7 @@ impl EpistemicNearestNeighbors {
     }
 
     pub fn set_tied_groups(&mut self, groups: Vec<Vec<usize>>) -> Result<(), ENNError> {
+        crate::metric_weights::require_weighting_for_ties(&groups, self.weighting())?;
         crate::metric_weights::validate_tied_dims(&groups, self.num_dim)?;
         self.tied_groups = groups;
         Ok(())

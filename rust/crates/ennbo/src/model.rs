@@ -95,6 +95,7 @@ impl EpistemicNearestNeighbors {
         y_bounds: Option<Array2<f64>>,
         tied_dims: Vec<Vec<usize>>,
     ) -> Result<Self, ENNError> {
+        crate::metric_weights::require_weighting_for_ties(&tied_dims, layout.weighting())?;
         crate::metric_weights::validate_tied_dims(&tied_dims, train_x.ncols())?;
         Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
         reject_existing_store(layout.work_dir())?;

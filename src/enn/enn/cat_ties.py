@@ -31,13 +31,14 @@ def _groups_on(values) -> tuple[tuple[int, ...], ...]:
     return getattr(values, "tied_dims", ())
 
 
-def resolve_tied_groups(values, tied_dims, *, semantic_only=False):
+def resolve_tied_groups(values, tied_dims, *, weighting, semantic_only=False):
     from enn._rust import resolve_tied_groups as resolve
 
     groups = resolve(
         [list(g) for g in _groups_on(values)],
         None if tied_dims is None else [list(g) for g in tied_dims],
         semantic_only,
+        weighting,
     )
     return tuple(tuple(g) for g in groups)
 
