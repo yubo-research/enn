@@ -12,7 +12,7 @@ pub struct Choice {
     pub geometry: String,
     pub weight: f64,
     pub output: String,
-    pub neighbors: usize,
+    pub params: ENNParams,
     pub alpha: f64,
 }
 
@@ -52,16 +52,21 @@ impl Predictor {
         })
     }
 
-    pub fn posterior(&self, x: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
-        self.posterior_blend(x, None)
+    fn params(&self) -> Result<ENNParams, ENNError> {
+        let chosen = self.choice.params;
+        ENNParams::new(
+            chosen.k_num_neighbors.min(self.model.len() as i32),
+            chosen.epistemic_variance_scale,
+            chosen.aleatoric_variance_scale,
+        )
+        .map_err(invalid)
     }
 
     pub fn standardized_mean(&self, x: &Array2<f64>) -> Result<Array2<f64>, ENNError> {
         let features = self
             .basis
             .features(x, &self.choice.geometry, self.choice.weight)?;
-        let params = ENNParams::new(self.choice.neighbors.min(self.model.len()) as i32, 1.0, 0.0)
-            .map_err(invalid)?;
+        let params = self.params()?;
         let posterior =
             self.model
                 .posterior(&features.view(), &params, &PosteriorFlags::default())?;
@@ -80,8 +85,7 @@ impl Predictor {
         let features = self
             .basis
             .features(x, &self.choice.geometry, self.choice.weight)?;
-        let params = ENNParams::new(self.choice.neighbors.min(self.model.len()) as i32, 1.0, 0.0)
-            .map_err(invalid)?;
+        let params = self.params()?;
         let posterior =
             self.model
                 .posterior(&features.view(), &params, &PosteriorFlags::default())?;
@@ -141,13 +145,12 @@ pub(crate) struct Epoch {
     pub predictor: Predictor,
     pub blend: Option<(Array2<f64>, Array1<f64>)>,
     pub floor: Array1<f64>,
-    pub calibration: Array1<f64>,
 }
 impl Epoch {
     pub fn posterior(&self, x: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
         let (mu, mut se) = self.predictor.posterior_blend(x, self.blend.as_ref())?;
         for ((_, j), value) in se.indexed_iter_mut() {
-            *value = (value.powi(2).max(self.floor[j].powi(2)) * self.calibration[j]).sqrt();
+            *value = (value.powi(2).max(self.floor[j].powi(2))).sqrt();
         }
         Ok((mu, se))
     }

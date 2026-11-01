@@ -45,7 +45,7 @@ fn validate_subsample_inputs(
     Ok(())
 }
 
-fn compute_single_loglik(
+pub(crate) fn compute_single_loglik(
     y_scaled: &ArrayView2<f64>,
     mu_i: &ArrayView2<f64>,
     se_i: &ArrayView2<f64>,

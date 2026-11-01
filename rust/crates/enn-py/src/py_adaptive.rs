@@ -90,7 +90,7 @@ impl PyAdaptiveSemanticENN {
                 c.geometry.clone(),
                 c.weight,
                 c.output.clone(),
-                c.neighbors,
+                c.params.k_num_neighbors as usize,
                 c.alpha,
             )
         })

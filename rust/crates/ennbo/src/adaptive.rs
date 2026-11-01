@@ -1,15 +1,18 @@
 use crate::adaptive_basis::Metadata;
+use crate::adaptive_fitter::AdaptiveInputs;
 use crate::adaptive_geometry::invalid;
 use crate::adaptive_predictor::{Choice, Epoch};
 use crate::adaptive_scales::centered;
-use crate::adaptive_selection::fit_epoch;
 use crate::adaptive_weight::{GeometryWeight, PRIOR_WEIGHT};
 use crate::error::ENNError;
+use crate::fit_samples::ScaleSearch;
+use crate::fitter::ENNFitter;
 use crate::online_input_scales::InputScales;
 use crate::online_output_weights::OutputWeights;
 use ndarray::{Array1, Array2, Axis};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
+const FITTER_NEIGHBORS: i32 = 10;
 const SCALE_NEIGHBORS: usize = 10;
 const SCALE_RESERVOIR: usize = 300;
 const SCALE_SEED: u64 = 0x5ca1e;
@@ -21,6 +24,7 @@ pub struct AdaptiveSemanticENN {
     linear_mean: bool,
     adaptation: String,
     rng: StdRng,
+    fitter: ENNFitter,
     sample: Option<(Array2<f64>, Array2<f64>, Vec<f64>)>,
     scales: Option<Vec<InputScales>>,
     output_weights: Option<OutputWeights>,
@@ -54,6 +58,7 @@ impl AdaptiveSemanticENN {
             linear_mean,
             adaptation,
             rng: StdRng::seed_from_u64(seed),
+            fitter: ENNFitter::new(FITTER_NEIGHBORS),
             sample: None,
             scales: None,
             output_weights: None,
@@ -121,16 +126,23 @@ impl AdaptiveSemanticENN {
         );
         let mut order: Vec<_> = (0..keep.len()).collect();
         order.shuffle(&mut rng);
-        let epoch = fit_epoch(
-            &sample.0.select(Axis(0), &order),
-            &sample.1.select(Axis(0), &order),
-            &self.metadata,
-            self.linear_mean,
-            &self.adaptation,
-            Some(geometry_weight),
-            learned.as_ref(),
+        let (fit_x, fit_y) = (
+            sample.0.select(Axis(0), &order),
+            sample.1.select(Axis(0), &order),
+        );
+        let mut epoch = self.fitter.ask_adaptive(
+            &AdaptiveInputs {
+                x: &fit_x,
+                y: &fit_y,
+                metadata: &self.metadata,
+                trend: self.linear_mean,
+                adaptation: &self.adaptation,
+                weight: geometry_weight,
+                column_scale: learned.as_ref(),
+            },
+            &ScaleSearch::default(),
+            &mut rng,
         )?;
-        let mut epoch = epoch;
         if let Some(weights) = output_weights
             .as_ref()
             .filter(|w| w.rows() >= MIN_LEARNED_ROWS)

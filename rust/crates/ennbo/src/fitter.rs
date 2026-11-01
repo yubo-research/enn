@@ -10,8 +10,9 @@ use crate::params::ENNParams;
 use crate::y_bounds::{bounds_match, is_identity_bounds, validate_bounds, warp_y, warp_yvar};
 
 pub struct ENNFitter {
-    k: i32,
-    params: Option<ENNParams>,
+    pub(crate) k: i32,
+    pub(crate) params: Option<ENNParams>,
+    pub(crate) incumbent: Option<crate::adaptive_predictor::Choice>,
     y_sum: Array1<f64>,
     y_sumsq: Array1<f64>,
     y_count: usize,
@@ -26,6 +27,7 @@ impl ENNFitter {
         Self {
             k,
             params: None,
+            incumbent: None,
             y_sum: Array1::zeros(0),
             y_sumsq: Array1::zeros(0),
             y_count: 0,

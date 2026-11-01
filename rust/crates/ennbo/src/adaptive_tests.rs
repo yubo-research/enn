@@ -1,10 +1,14 @@
 //! Behavioral contracts for native adaptation and learned output mixing.
 use crate::adaptive::AdaptiveSemanticENN;
 use crate::adaptive_basis::{Basis, Metadata};
+use crate::adaptive_fitter::AdaptiveInputs;
 use crate::adaptive_geometry::{fixed_rank, quadratic, ridge};
 use crate::adaptive_predictor::{Choice, Predictor};
 use crate::adaptive_scales::{bake, centered, distance_scales};
-use crate::adaptive_selection::{fit_epoch, mixing};
+use crate::adaptive_selection::{allowed_output, geometries};
+use crate::fit_samples::ScaleSearch;
+use crate::fitter::ENNFitter;
+use crate::params::ENNParams;
 use crate::posterior::neighbor_dist::posterior_row_sq_l2;
 use ndarray::{array, s, Array2, Axis};
 
@@ -26,32 +30,145 @@ fn metadata() -> Metadata {
     }
 }
 
-#[test]
-fn calibration_labels_cannot_change_choice_or_fitted_mean() {
+fn ask(
+    fitter: &mut ENNFitter,
+    adaptation: &str,
+    meta: &Metadata,
+    seed: u64,
+) -> crate::adaptive_predictor::Epoch {
+    use rand::{rngs::StdRng, SeedableRng};
     let (x, y) = observations();
-    let mut changed = y.clone();
-    changed.slice_mut(s![48.., ..]).mapv_inplace(|v| v + 100.0);
-    let model = fit_epoch(&x, &y, &metadata(), false, "all", None, None).unwrap();
-    let other = fit_epoch(&x, &changed, &metadata(), false, "all", None, None).unwrap();
-    assert_eq!(model.predictor.choice, other.predictor.choice);
-    assert_eq!(
-        model.predictor.posterior(&x).unwrap().0,
-        other.predictor.posterior(&x).unwrap().0
-    );
-    assert!(other.calibration.sum() > model.calibration.sum() * 10.0);
+    let inputs = AdaptiveInputs {
+        x: &x,
+        y: &y,
+        metadata: meta,
+        trend: false,
+        adaptation,
+        weight: 3.0,
+        column_scale: None,
+    };
+    let mut rng = StdRng::seed_from_u64(seed);
+    fitter
+        .ask_adaptive(&inputs, &ScaleSearch::default(), &mut rng)
+        .unwrap()
 }
 
 #[test]
-fn continuous_mixing_recovers_interior_and_boundary_optima() {
-    let mean = array![[1., 2.], [3., 4.]];
-    let projector = array![[0.5, 0.5], [0.5, 0.5]];
-    for alpha in [0.0, 0.1, 0.3, 1.0] {
-        let target = &mean + &(mean.dot(&projector) - &mean) * alpha;
-        assert!((mixing(&mean, &target, &projector) - alpha).abs() < 1e-12);
+fn incumbent_is_stored_and_competes_on_the_next_add() {
+    let mut fitter = ENNFitter::new(10);
+    assert!(fitter.incumbent.is_none());
+    let first = ask(&mut fitter, "all", &metadata(), 1);
+    let stored = fitter.incumbent.clone().unwrap();
+    assert_eq!(first.predictor.choice, stored);
+    assert_eq!(fitter.params(), Some(&stored.params));
+    let (x, y) = observations();
+    let meta = metadata();
+    let inputs = AdaptiveInputs {
+        x: &x,
+        y: &y,
+        metadata: &meta,
+        trend: false,
+        adaptation: "all",
+        weight: 3.0,
+        column_scale: None,
+    };
+    let run = |incumbent: &Choice, candidates: usize, seed: u64| {
+        use rand::{rngs::StdRng, SeedableRng};
+        let search = ScaleSearch::from_counts(Some(10), Some(candidates)).unwrap();
+        let mut copy = ENNFitter::new(10);
+        copy.incumbent = Some(incumbent.clone());
+        let epoch = copy
+            .ask_adaptive(&inputs, &search, &mut StdRng::seed_from_u64(seed))
+            .unwrap();
+        assert_eq!(copy.incumbent.as_ref(), Some(&epoch.predictor.choice));
+        epoch.predictor.choice
+    };
+    let kept = (0..20)
+        .filter(|seed| run(&stored, 1, *seed) == stored)
+        .count();
+    assert!(kept >= 10, "kept {kept} of 20");
+    let mut poor = stored.clone();
+    poor.params = ENNParams::new(10, 1000.0, 1000.0).unwrap();
+    for seed in 0..5 {
+        assert_ne!(run(&poor, 30, seed), poor);
     }
-    assert_eq!(mixing(&mean, &(-&mean), &Array2::zeros((2, 2))), 1.0);
-    assert_eq!(mixing(&mean, &(&mean * 2.0), &Array2::zeros((2, 2))), 0.0);
-    assert_eq!(mixing(&mean, &mean, &Array2::eye(2)), 0.0);
+}
+
+#[test]
+fn neighbor_count_is_frozen_across_adds() {
+    let (x, y) = observations();
+    let mut model = AdaptiveSemanticENN::new(metadata(), 30, 3, false, "all".into()).unwrap();
+    for _ in 0..4 {
+        model.add(x.clone(), y.clone(), None).unwrap();
+        assert_eq!(model.choice().unwrap().params.k_num_neighbors, 10);
+    }
+}
+
+#[test]
+fn adaptation_modes_restrict_geometries_and_operators() {
+    let meta = metadata();
+    for (mode, geometry_names, operator) in [
+        ("outputs", vec!["fixed"], None),
+        ("none", vec!["fixed"], Some("semantic")),
+        ("inputs", vec![], Some("independent")),
+    ] {
+        for seed in 0..5 {
+            let epoch = ask(&mut ENNFitter::new(10), mode, &meta, seed);
+            let choice = &epoch.predictor.choice;
+            if !geometry_names.is_empty() {
+                assert!(geometry_names.contains(&choice.geometry.as_str()), "{mode}");
+            }
+            if let Some(name) = operator {
+                assert_eq!(choice.output, name, "{mode}");
+            }
+            assert!(allowed_output(&choice.output, mode, true));
+            let menu = geometries(&meta, mode, Some(3.0), false);
+            assert!(menu.iter().any(|(g, _)| *g == choice.geometry));
+        }
+    }
+}
+
+#[test]
+fn mixing_is_pinned_for_independent_and_lowrank() {
+    let meta = metadata();
+    for seed in 0..30 {
+        let epoch = ask(&mut ENNFitter::new(10), "all", &meta, seed);
+        let choice = &epoch.predictor.choice;
+        match choice.output.as_str() {
+            "independent" => assert_eq!(choice.alpha, 0.0),
+            "lowrank" => assert_eq!(choice.alpha, 1.0),
+            _ => assert!((0.0..=1.0).contains(&choice.alpha)),
+        }
+    }
+}
+
+#[test]
+fn scale_only_fits_leave_geometry_alone() {
+    use rand::{rngs::StdRng, SeedableRng};
+    let (x, y) = observations();
+    let model = crate::model::EpistemicNearestNeighbors::new(
+        x,
+        y,
+        None,
+        false,
+        crate::index::IndexDriver::Flat,
+    )
+    .unwrap();
+    let mut fitter = ENNFitter::new(5);
+    fitter
+        .tell(
+            &model.train_x_view_opt().unwrap(),
+            &model.train_y_view_opt().unwrap(),
+            None,
+            None,
+        )
+        .unwrap();
+    let mut rng = StdRng::seed_from_u64(0);
+    let params: ENNParams = fitter
+        .ask(&model, &ScaleSearch::default(), None, &mut rng)
+        .unwrap();
+    assert_eq!(params.k_num_neighbors, 5);
+    assert!(fitter.incumbent.is_none());
 }
 
 #[test]
@@ -165,7 +282,7 @@ fn column_scales_store_factors_and_reject_failed_batches() {
             geometry: "scales".into(),
             weight: 1.0,
             output: "independent".into(),
-            neighbors: 3,
+            params: ENNParams::new(3, 1.0, 0.0).unwrap(),
             alpha: 0.0,
         },
         false,
@@ -282,9 +399,9 @@ fn stream(rows: usize, seed: u64, opposed: bool) -> (Array2<f64>, Array2<f64>) {
 
 #[test]
 fn output_sharing_is_learned_per_output_as_batches_arrive() {
-    let third = (1.0_f64 / 3.0).sqrt();
+    let half = 0.5_f64.sqrt();
     let meta = Metadata {
-        output: Some(array![[third], [third], [third]]),
+        output: Some(array![[0.0], [half], [half]]),
         ..Default::default()
     };
     let (x, y) = stream(300, 7, true);

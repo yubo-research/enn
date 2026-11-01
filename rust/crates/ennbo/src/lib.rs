@@ -246,6 +246,7 @@ pub mod semantic_text;
 
 pub mod adaptive;
 pub mod adaptive_basis;
+mod adaptive_fitter;
 mod adaptive_geometry;
 mod adaptive_predictor;
 mod adaptive_scales;

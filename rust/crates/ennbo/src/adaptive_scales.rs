@@ -14,6 +14,7 @@ pub(crate) fn distance_scales(coefficients: &Array1<f64>, dimensions: usize) -> 
     scale
 }
 
+#[cfg(test)]
 pub(crate) fn bake(features: &mut Array2<f64>, coefficients: &Array1<f64>) {
     let offset = features.ncols() - coefficients.len();
     for mut row in features.rows_mut() {
