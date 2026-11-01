@@ -4,7 +4,7 @@ use crate::error::{invalid, ENNError};
 use crate::params::ENNNormal;
 use crate::semantic_definition::checked_loadings;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SemanticOutputs {
     pub loadings: Array2<f64>,
     pub alpha: Option<f64>,

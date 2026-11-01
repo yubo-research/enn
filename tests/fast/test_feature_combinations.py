@@ -4,11 +4,15 @@ import numpy as np
 import pytest
 
 from enn import (
+    AcqType,
     CatEncoder,
     CatEncoding,
     DimKind,
     EpistemicNearestNeighbors,
+    MorboTRConfig,
+    MultiObjectiveConfig,
     SemanticInputTransform,
+    SemanticOutputProjection,
     create_optimizer,
 )
 from enn.enn.enn_fitter import ENNStatefulFitter
@@ -205,3 +209,64 @@ def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, wei
     del reopened
     again = EpistemicNearestNeighbors.open(kwargs["work_dir"])
     np.testing.assert_array_equal(again.train_rows_at([23, 0])[0], x[[23, 0]])
+
+
+def _output_projection():
+    embeddings = np.array([[1.0, 0.0], [0.9, 0.1]])
+    return SemanticOutputProjection.from_embeddings(["p", "q"], embeddings)
+
+
+def _morbo_run(fit, acq, projection, seed=0):
+    surrogate = ENNSurrogateConfig(k=3, fit=fit, output_projection=projection)
+    optimizer = create_optimizer(
+        bounds=np.array([[0.0, 1.0], [0.0, 1.0]]),
+        config=turbo_enn_config(
+            enn=surrogate,
+            num_init=4,
+            acq_type=acq,
+            trust_region=MorboTRConfig(MultiObjectiveConfig(num_metrics=2)),
+        ),
+        seed=seed,
+        work_dir=fresh_work_dir(),
+    )
+    arms = []
+    rng = np.random.default_rng(seed)
+    for _ in range(12):
+        x = optimizer.ask(2)
+        y = np.column_stack(
+            [-np.sum((x - 0.3) ** 2, axis=1), -np.sum((x - 0.35) ** 2, axis=1)]
+        )
+        optimizer.tell(x, y + 0.01 * rng.standard_normal(y.shape))
+        arms.append(x)
+    return np.vstack(arms)
+
+
+SEARCHED = ENNFitConfig(num_fit_samples=8, num_fit_candidates=4)
+
+
+@pytest.mark.parametrize(
+    ("fit", "acq"),
+    [
+        (ENNFitConfig(), AcqType.PARETO),
+        (SEARCHED, AcqType.PARETO),
+        (SEARCHED, AcqType.UCB),
+        (SEARCHED, AcqType.THOMPSON),
+    ],
+)
+def test_output_projection_reaches_every_acquisition(fit, acq):
+    plain = _morbo_run(fit, acq, None)
+    blended = _morbo_run(fit, acq, _output_projection())
+    assert np.isfinite(blended).all()
+    assert not np.array_equal(plain[8:], blended[8:])
+
+
+def test_output_projection_must_match_the_metric_count():
+    embeddings = np.array([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
+    projection = SemanticOutputProjection.from_embeddings(["a", "b", "c"], embeddings)
+    with pytest.raises(ValueError, match="output_projection has 3 outputs"):
+        _morbo_run(ENNFitConfig(), AcqType.PARETO, projection)
+
+
+def test_output_alpha_requires_output_projection():
+    with pytest.raises(ValueError, match="output_alpha requires output_projection"):
+        ENNSurrogateConfig(output_alpha=0.5)

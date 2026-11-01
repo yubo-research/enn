@@ -197,14 +197,7 @@ fn semantic_only_originals_follow_disk_model_lifecycle() {
     model.persist_index_to_disk().unwrap();
     drop(history);
     drop(model);
-    let model = EpistemicNearestNeighbors::new_with_storage(
-        Array2::zeros((0, 1)),
-        Array2::zeros((0, 1)),
-        None,
-        layout,
-        None,
-    )
-    .unwrap();
+    let model = EpistemicNearestNeighbors::open(layout.work_dir()).unwrap();
     let history = InputHistory::for_model(Array2::zeros((0, 3)), &model).unwrap();
     assert_eq!(
         history.gather(&[2, 0]).unwrap(),
@@ -219,4 +212,43 @@ fn semantic_only_originals_follow_disk_model_lifecycle() {
         .set_len(25)
         .unwrap();
     assert!(InputHistory::for_model(Array2::zeros((0, 3)), &model).is_err());
+}
+
+#[test]
+fn output_projection_blends_optimizer_predictions() {
+    let dir = tempfile::tempdir().unwrap();
+    let overrides = ennbo::ConfigOverrides {
+        acquisition: Some(ennbo::AcquisitionConfig::Pareto),
+        enn: Some(ennbo::EnnOverrides {
+            fit: Some(ennbo::enn_overrides::FitOverride::Frozen),
+            semantic_outputs: Some(ennbo::SemanticOutputs {
+                loadings: ndarray::Array2::from_elem((2, 1), 0.5f64.sqrt()),
+                alpha: Some(0.5),
+            }),
+            ..Default::default()
+        }),
+        morbo: Some(ennbo::morbo_override::MorboOverride {
+            num_metrics: 2,
+            alpha: 0.05,
+            rescalarize: ennbo::Rescalarize::OnRestart,
+        }),
+        trust_region_kind: Some(ennbo::TrustRegionKind::Morbo),
+        ..Default::default()
+    };
+    let mut optimizer = ennbo::create_optimizer_enn_with_overrides(
+        ndarray::array![[0.0, 1.0], [0.0, 1.0]],
+        ennbo::EnnLayout::new(dir.path(), false).unwrap(),
+        Some(3),
+        Some(4),
+        0,
+        Some(&overrides),
+    )
+    .unwrap();
+    for _ in 0..4 {
+        let x = optimizer.ask(2).unwrap();
+        let y = x.map_axis(ndarray::Axis(1), |row| row.sum());
+        let y = ndarray::stack(ndarray::Axis(1), &[y.view(), y.view()]).unwrap();
+        optimizer.tell(&x.view(), &y.view(), None).unwrap();
+    }
+    assert!(optimizer.ask(1).unwrap().iter().all(|v| v.is_finite()));
 }

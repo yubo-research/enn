@@ -1,6 +1,7 @@
 use crate::fit_samples::ScaleSearch;
 use crate::fitter::ENNFitter;
 use crate::model::EpistemicNearestNeighbors;
+use crate::output_blend_fit::OutputBlendFit;
 use crate::params::ENNParams;
 
 pub(crate) const BULK_DISK_TELL_SKIP_FIT_ROWS: usize = 4_096;
@@ -57,6 +58,7 @@ pub(crate) enum FitState {
     Frozen {
         model: EpistemicNearestNeighbors,
         params: ENNParams,
+        output_fit: Option<Box<OutputBlendFit>>,
     },
     Searched {
         model: EpistemicNearestNeighbors,

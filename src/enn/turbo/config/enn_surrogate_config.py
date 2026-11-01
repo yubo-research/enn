@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from enn.semantic import SemanticInputTransform
+from enn.semantic_outputs import SemanticOutputProjection
 
 from .enn_fit_config import ENNFitConfig
 from .enn_x_scaling import validate_tied_dims
@@ -25,12 +26,18 @@ class ENNSurrogateConfig:
     tied_dims: tuple = ()
     input_transform: SemanticInputTransform | None = field(default=None, kw_only=True)
     semantic_only: bool = field(default=False, kw_only=True)
+    output_projection: SemanticOutputProjection | None = field(
+        default=None, kw_only=True
+    )
+    output_alpha: float | None = field(default=None, kw_only=True)
     y_bounds: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         self._check_tied_dims()
         if self.semantic_only and self.input_transform is None:
             raise ValueError("semantic_only requires input_transform")
+        if self.output_alpha is not None and self.output_projection is None:
+            raise ValueError("output_alpha requires output_projection")
         if self.y_bounds is not None:
             object.__setattr__(self, "y_bounds", np.asarray(self.y_bounds, dtype=float))
 

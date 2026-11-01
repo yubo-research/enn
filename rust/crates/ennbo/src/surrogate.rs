@@ -8,6 +8,8 @@ use crate::fitter::ENNFitter;
 use crate::layout::EnnLayout;
 use crate::model::EpistemicNearestNeighbors;
 use crate::neighbor_count::NeighborCount;
+use crate::output_blend::SemanticOutputs;
+use crate::output_blend_fit::OutputBlendFit;
 use crate::params::{ENNParams, PosteriorFlags};
 use crate::surrogate_state::{AppendInput, AppendPlan, FitState, ScaleFit};
 
@@ -70,6 +72,7 @@ pub struct ENNSurrogateConfig {
     pub tied_dims: Vec<Vec<usize>>,
     pub semantic_only: bool,
     pub semantic_projection: Option<Box<Array2<f64>>>,
+    pub semantic_outputs: Option<Box<SemanticOutputs>>,
 }
 
 impl ENNSurrogateConfig {
@@ -82,7 +85,31 @@ impl ENNSurrogateConfig {
             tied_dims: Vec::new(),
             semantic_only: false,
             semantic_projection: None,
+            semantic_outputs: None,
         }
+    }
+
+    pub fn validate_outputs(&self, num_metrics: usize) -> Result<(), ENNError> {
+        match &self.semantic_outputs {
+            Some(outputs) if outputs.loadings.nrows() != num_metrics => {
+                Err(ENNError::InvalidParameter(format!(
+                    "output_projection has {} outputs but the optimizer has {num_metrics} metrics",
+                    outputs.loadings.nrows()
+                )))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub(crate) fn store_layout(&self) -> EnnLayout {
+        let outputs = self.semantic_outputs.as_deref();
+        self.layout
+            .clone()
+            .with_semantic_only(self.semantic_only)
+            .with_output_identity(
+                outputs.map(|o| crate::semantic::output_fingerprint(&o.loadings.view())),
+                outputs.and_then(|o| o.alpha),
+            )
     }
 
     pub fn validate(&self, num_dim: usize) -> Result<(), ENNError> {
@@ -158,14 +185,39 @@ impl ENNSurrogate {
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<EpistemicNearestNeighbors, ENNError> {
-        EpistemicNearestNeighbors::new_configured(
+        let mut model = EpistemicNearestNeighbors::new_configured(
             x.to_owned(),
             y.to_owned(),
             yvar.map(|v| v.to_owned()),
-            self.config.layout.clone(),
+            self.config.store_layout(),
             self.config.y_bounds.clone(),
             self.config.tied_dims.clone(),
-        )
+        )?;
+        model.set_outputs(self.config.semantic_outputs.as_deref().cloned());
+        Ok(model)
+    }
+
+    fn refresh_output_blend(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
+        match &mut self.state {
+            FitState::Frozen {
+                model,
+                params,
+                output_fit: Some(fit),
+            } => {
+                if let Some(outputs) = model.semantic_outputs() {
+                    let k = params.k_num_neighbors;
+                    params.output_blend = Some(fit.fit(model, outputs, k, None, rng)?);
+                }
+            }
+            FitState::Searched { model, fit } => {
+                let ScaleFit { fitter, params, .. } = fit.as_mut();
+                if let Some(params) = params.as_mut() {
+                    params.output_blend = fitter.fit_output_blend(model, None, rng)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn search_scales(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
@@ -190,6 +242,8 @@ impl ENNSurrogate {
         }
         if plan.search {
             self.search_scales(rng)?;
+        } else {
+            self.refresh_output_blend(rng)?;
         }
         if plan.release {
             self.fitted_model()?
@@ -236,6 +290,9 @@ impl ENNSurrogate {
         let model = self.construct_model(x_new, y_new, yvar_new)?;
         self.state = match self.config.fit_samples {
             FitSamples::Frozen => FitState::Frozen {
+                output_fit: model
+                    .semantic_outputs()
+                    .map(|outputs| Box::new(OutputBlendFit::new(outputs))),
                 model,
                 params: self.config.default_params()?,
             },
@@ -532,6 +589,55 @@ mod tests {
         let pred = surrogate.predict(&x_query.view()).unwrap();
         assert_eq!(pred.mu.shape(), &[1, 1]);
         assert!(pred.mu[[0, 0]].is_finite());
+    }
+
+    fn output_config(dir: &std::path::Path, fit_samples: FitSamples) -> ENNSurrogateConfig {
+        ENNSurrogateConfig {
+            k: crate::NeighborCount::new(2).unwrap(),
+            fit_samples,
+            semantic_outputs: Some(Box::new(SemanticOutputs {
+                loadings: ndarray::Array2::from_elem((2, 1), 0.5f64.sqrt()),
+                alpha: None,
+            })),
+            ..ENNSurrogateConfig::new(EnnLayout::new(dir, false).unwrap())
+        }
+    }
+
+    #[test]
+    fn frozen_and_searched_scales_both_keep_learning_the_output_blend() {
+        for fit_samples in [FitSamples::Frozen, FitSamples::draw(4, 2).unwrap()] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut surrogate = ENNSurrogate::new(output_config(dir.path(), fit_samples));
+            let mut rng = StdRng::seed_from_u64(1);
+            let rows = |n: usize, start: usize| {
+                let x = ndarray::Array2::from_shape_fn((n, 1), |(i, _)| (start + i) as f64 * 0.1);
+                let y = ndarray::Array2::from_shape_fn((n, 2), |(i, j)| {
+                    ((start + i) as f64 * 0.3 + j as f64).sin()
+                });
+                (x, y)
+            };
+            let (x, y) = rows(4, 0);
+            surrogate
+                .fit_append(&x.view(), &y.view(), None, &mut rng)
+                .unwrap();
+            let early = surrogate.params().unwrap().output_blend.clone().unwrap();
+            let (x, y) = rows(30, 4);
+            surrogate
+                .fit_append(&x.view(), &y.view(), None, &mut rng)
+                .unwrap();
+            let later = surrogate.params().unwrap().output_blend.clone().unwrap();
+            assert_ne!(early.alpha, later.alpha, "{fit_samples:?}");
+            assert!(surrogate.predict(&array![[0.2]].view()).is_ok());
+        }
+    }
+
+    #[test]
+    fn output_projection_must_match_the_metric_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = output_config(dir.path(), FitSamples::Frozen);
+        config.validate_outputs(2).unwrap();
+        let err = config.validate_outputs(3).unwrap_err();
+        assert!(err.to_string().contains("output_projection"), "{err}");
     }
 
     #[test]

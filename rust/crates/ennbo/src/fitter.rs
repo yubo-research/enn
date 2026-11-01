@@ -89,7 +89,7 @@ impl ENNFitter {
         Ok(best)
     }
 
-    fn fit_output_blend<R: Rng>(
+    pub(crate) fn fit_output_blend<R: Rng>(
         &mut self,
         model: &EpistemicNearestNeighbors,
         warm: Option<&Arc<OutputBlend>>,
