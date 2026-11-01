@@ -111,6 +111,9 @@ def test_shared_limit_and_opposing_outputs():
     independent = EpistemicNearestNeighbors(x, (y - mean) / scale)
     projected = independent.posterior(x[:4], params=params).mu @ projection().loadings
     np.testing.assert_allclose(latent.mu, projected, atol=1e-12)
+    shared_se = latent.se @ np.abs(projection().loadings.T)
+    posterior = model._fitted.predict(x[:4], 1.0)
+    np.testing.assert_allclose(posterior[1], shared_se * scale, rtol=1e-9)
     np.testing.assert_allclose(model.posterior(x[:4]).mu, expected, atol=1e-12)
     # Opposite standardized outputs cancel in the common semantic direction.
     np.testing.assert_allclose(

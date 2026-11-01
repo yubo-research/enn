@@ -25,24 +25,27 @@ class _OutputModels:
             params.epistemic_variance_scale,
             params.aleatoric_variance_scale,
         )
-        self.independent = EpistemicNearestNeighbors(x, z)
-        self.latent = (
-            EpistemicNearestNeighbors(x, z @ loadings) if loadings.shape[1] else None
-        )
+        self.model = EpistemicNearestNeighbors(x, z)
+        self.latent_scale = _latent_scale(z @ loadings) if loadings.shape[1] else None
 
     def predict(self, x, alpha):
-        posterior = self.independent.posterior(x, params=self.params)
-        independent, independent_se = posterior.mu, posterior.se
-        if self.latent and alpha > 0:
-            posterior = self.latent.posterior(x, params=self.params)
-            latent, latent_se = posterior.mu, posterior.se
-            shared = latent @ self.loadings.T
-            shared_se = latent_se @ np.abs(self.loadings.T)
-            independent = (1 - alpha) * independent + alpha * shared
-            independent_se = (1 - alpha) * independent_se + alpha * shared_se
-        independent[:, self.constant] = 0
-        independent_se[:, self.constant] = 0
-        return independent * self.scale + self.mean, independent_se * self.scale
+        posterior = self.model.posterior(x, params=self.params)
+        mean, se = posterior.mu, posterior.se
+        if self.latent_scale is not None and alpha > 0:
+            factor = se[:, :1] / self.model.rust_backend.y_scale_row[:, :1]
+            shared_se = (factor * self.latent_scale) @ np.abs(self.loadings.T)
+            shared = (mean @ self.loadings) @ self.loadings.T
+            mean = (1 - alpha) * mean + alpha * shared
+            se = (1 - alpha) * se + alpha * shared_se
+        mean[:, self.constant] = 0
+        se[:, self.constant] = 0
+        return mean * self.scale + self.mean, se * self.scale
+
+
+def _latent_scale(h):
+    mean = h.mean(axis=0)
+    std = np.sqrt(np.maximum((h**2).mean(axis=0) - mean**2, 0.0))
+    return np.where(np.isfinite(std) & (std > 0), std, 1.0)
 
 
 def _training_rows(x, y, outputs):
