@@ -152,14 +152,14 @@ class EpistemicNearestNeighbors(_EnnRustView):
 
     def add(
         self,
-        x: np.ndarray,
-        y: np.ndarray,
-        yvar: np.ndarray | None = None,
+        train_x: np.ndarray,
+        train_y: np.ndarray,
+        train_yvar: np.ndarray | None = None,
     ) -> None:
-        x, y, yvar = self._coerce_inputs(x, y, yvar)
-        self._rust_model.add(self.transform_inputs(x), y, yvar)
+        train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
+        self._rust_model.add(self.transform_inputs(train_x), train_y, train_yvar)
         if self._original_inputs is not None:
-            self._original_inputs.append(x)
+            self._original_inputs.append(train_x)
 
     def transform_inputs(self, x):
         return (

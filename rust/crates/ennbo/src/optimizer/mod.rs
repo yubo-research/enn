@@ -191,26 +191,26 @@ impl Optimizer {
 
     pub fn tell(
         &mut self,
-        x: &ArrayView2<f64>,
-        y: &ArrayView2<f64>,
-        yvar: Option<&ArrayView2<f64>>,
+        train_x: &ArrayView2<f64>,
+        train_y: &ArrayView2<f64>,
+        train_yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        if x.ncols() != self.num_dim {
+        if train_x.ncols() != self.num_dim {
             return Err(ENNError::InvalidShape {
-                expected: vec![x.nrows(), self.num_dim],
-                got: vec![x.nrows(), x.ncols()],
+                expected: vec![train_x.nrows(), self.num_dim],
+                got: vec![train_x.nrows(), train_x.ncols()],
             });
         }
-        if y.nrows() != x.nrows() {
+        if train_y.nrows() != train_x.nrows() {
             return Err(ENNError::InvalidShape {
-                expected: vec![x.nrows(), y.ncols()],
-                got: vec![y.nrows(), y.ncols()],
+                expected: vec![train_x.nrows(), train_y.ncols()],
+                got: vec![train_y.nrows(), train_y.ncols()],
             });
         }
-        if x.nrows() == 0 {
+        if train_x.nrows() == 0 {
             return Ok(());
         }
-        let has_yvar = yvar.is_some();
+        let has_yvar = train_yvar.is_some();
         match self.yvar_on_tell {
             None => self.yvar_on_tell = Some(has_yvar),
             Some(expected) if expected != has_yvar => {
@@ -221,7 +221,7 @@ impl Optimizer {
             }
             Some(_) => {}
         }
-        let x_unit = crate::candidates::to_unit(x, &self.bounds.view());
+        let x_unit = crate::candidates::to_unit(train_x, &self.bounds.view());
         let start = std::time::Instant::now();
         let mut rng = self.rng.clone();
 
@@ -231,13 +231,13 @@ impl Optimizer {
 
         let mut strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
-        let result = strategy.tell(self, &x_unit.view(), y, yvar, &mut telemetry, &mut rng);
+        let result = strategy.tell(self, &x_unit.view(), train_y, train_yvar, &mut telemetry, &mut rng);
         self.strategy = strategy;
         self.telemetry = telemetry;
         self.rng = rng;
 
         self.telemetry.dt_tell = start.elapsed().as_secs_f64();
-        if result.is_ok() && x.nrows() < 64 {
+        if result.is_ok() && train_x.nrows() < 64 {
             if let Some(surrogate) = self.surrogate.as_ref() {
                 surrogate.schedule_background_flush()?;
             }

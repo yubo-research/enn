@@ -215,21 +215,21 @@ impl EpistemicNearestNeighbors {
 
     pub fn add(
         &mut self,
-        x: &ArrayView2<f64>,
-        y: &ArrayView2<f64>,
-        yvar: Option<&ArrayView2<f64>>,
+        train_x: &ArrayView2<f64>,
+        train_y: &ArrayView2<f64>,
+        train_yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        if let Some(err) = self.validate_add(x, y, yvar) {
+        if let Some(err) = self.validate_add(train_x, train_y, train_yvar) {
             return Err(err);
         }
-        if x.nrows() > 0 {
-            let (y_z, yvar_z) = self.warp_observations(y, yvar)?;
+        if train_x.nrows() > 0 {
+            let (y_z, yvar_z) = self.warp_observations(train_y, train_yvar)?;
             let yvar_view = yvar_z.as_ref().map(|v| v.view());
             self.backend.wait_for_flush()?;
             self.backend
-                .append_rows(x, &y_z.view(), yvar_view.as_ref())?;
+                .append_rows(train_x, &y_z.view(), yvar_view.as_ref())?;
             if let Some(history) = &mut self.original_y {
-                history.append(y)?;
+                history.append(train_y)?;
             }
             accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y_z.view());
             let n = self.backend.len();
@@ -237,7 +237,7 @@ impl EpistemicNearestNeighbors {
 
             self.num_obs = n;
             self.persist_y_bounds_metadata()?;
-            self.observe_auto_metric(x, y)?;
+            self.observe_auto_metric(train_x, train_y)?;
         }
         Ok(())
     }
