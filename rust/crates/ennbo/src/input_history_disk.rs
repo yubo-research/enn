@@ -19,43 +19,29 @@ fn invalid(message: impl std::fmt::Display) -> ENNError {
 }
 
 impl DiskInputs {
-    pub(crate) fn open(
+    pub(crate) fn create(
         directory: &Path,
         filename: &str,
         rows: &ArrayView2<f64>,
-        expected_rows: usize,
     ) -> Result<Self, ENNError> {
-        let path = directory.join(filename);
-        let reopen = rows.nrows() == 0 && path.exists();
-        if !reopen && rows.nrows() != expected_rows {
-            return Err(invalid("missing original rows for disk model"));
-        }
         let mut file = OpenOptions::new()
-            .create(!reopen)
-            .truncate(!reopen)
+            .create(true)
+            .truncate(true)
             .read(true)
             .write(true)
-            .open(path)
+            .open(directory.join(filename))
             .map_err(invalid)?;
         let ncols = rows.ncols();
-        let nrows = if reopen {
-            read_header(&mut file, ncols, expected_rows)?;
-            expected_rows
-        } else {
-            file.write_all(MAGIC).map_err(invalid)?;
-            file.write_all(&(ncols as u64).to_le_bytes())
-                .map_err(invalid)?;
-            file.write_all(&0_u64.to_le_bytes()).map_err(invalid)?;
-            0
-        };
+        file.write_all(MAGIC).map_err(invalid)?;
+        file.write_all(&(ncols as u64).to_le_bytes())
+            .map_err(invalid)?;
+        file.write_all(&0_u64.to_le_bytes()).map_err(invalid)?;
         let mut store = Self {
             file: Mutex::new(file),
             ncols,
-            nrows,
+            nrows: 0,
         };
-        if !reopen {
-            store.append(rows)?;
-        }
+        store.append(rows)?;
         Ok(store)
     }
 
@@ -72,21 +58,40 @@ impl DiskInputs {
             .write(true)
             .open(path)
             .map_err(invalid)?;
-        let mut header = [0; HEADER_BYTES as usize];
-        file.read_exact(&mut header).map_err(invalid)?;
-        let ncols = u64::from_le_bytes(header[8..16].try_into().map_err(invalid)?) as usize;
-        let nrows = u64::from_le_bytes(header[16..24].try_into().map_err(invalid)?) as usize;
-        if &header[..8] != MAGIC {
-            return Err(invalid("not an observation log"));
-        }
-        file.set_len(HEADER_BYTES + (ncols * nrows * 8) as u64)
-            .map_err(invalid)?;
-        let log = Self {
+        let (ncols, nrows) = read_header(&mut file)?;
+        let mut log = Self {
             file: Mutex::new(file),
             ncols,
             nrows,
         };
+        log.keep_rows(nrows)?;
         Ok(Some((log, nrows)))
+    }
+
+    pub(crate) fn keep_rows(&mut self, rows: usize) -> Result<(), ENNError> {
+        if rows > self.nrows {
+            return Err(invalid("stored original rows do not match the disk model"));
+        }
+        let end = self.row_offset(rows)?;
+        let file = self.file.get_mut().map_err(invalid)?;
+        if file.metadata().map_err(invalid)?.len() < end {
+            return Err(invalid("stored original rows do not match the disk model"));
+        }
+        file.set_len(end).map_err(invalid)?;
+        file.seek(SeekFrom::Start(16)).map_err(invalid)?;
+        file.write_all(&(rows as u64).to_le_bytes())
+            .map_err(invalid)?;
+        file.sync_data().map_err(invalid)?;
+        self.nrows = rows;
+        Ok(())
+    }
+
+    fn row_offset(&self, rows: usize) -> Result<u64, ENNError> {
+        (self.ncols as u64)
+            .checked_mul(rows as u64)
+            .and_then(|v| v.checked_mul(8))
+            .and_then(|v| v.checked_add(HEADER_BYTES))
+            .ok_or_else(|| invalid("file size overflow"))
     }
 
     pub(crate) fn append(&mut self, rows: &ArrayView2<f64>) -> Result<(), ENNError> {
@@ -142,22 +147,13 @@ impl DiskInputs {
     }
 }
 
-fn read_header(file: &mut File, dimensions: usize, rows: usize) -> Result<(), ENNError> {
+fn read_header(file: &mut File) -> Result<(usize, usize), ENNError> {
     let mut header = [0; HEADER_BYTES as usize];
     file.read_exact(&mut header).map_err(invalid)?;
-    let width = u64::from_le_bytes(header[8..16].try_into().map_err(invalid)?);
-    let count = u64::from_le_bytes(header[16..24].try_into().map_err(invalid)?);
-    let bytes = width
-        .checked_mul(count)
-        .and_then(|v| v.checked_mul(8))
-        .and_then(|v| v.checked_add(HEADER_BYTES))
-        .ok_or_else(|| invalid("file size overflow"))?;
-    if &header[..8] != MAGIC
-        || width != dimensions as u64
-        || count != rows as u64
-        || file.metadata().map_err(invalid)?.len() != bytes
-    {
-        return Err(invalid("stored original rows do not match the disk model"));
+    if &header[..8] != MAGIC {
+        return Err(invalid("not an observation log"));
     }
-    Ok(())
+    let ncols = u64::from_le_bytes(header[8..16].try_into().map_err(invalid)?);
+    let nrows = u64::from_le_bytes(header[16..24].try_into().map_err(invalid)?);
+    Ok((ncols as usize, nrows as usize))
 }

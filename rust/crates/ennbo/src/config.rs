@@ -125,6 +125,15 @@ fn apply_trust_region_overrides(
         });
         return Ok(());
     }
+    if overrides.trust_region_kind == Some(TrustRegionKind::Global) {
+        if lengths_set {
+            return Err(ENNError::InvalidParameter(
+                "length settings require a trust region".into(),
+            ));
+        }
+        config.trust_region = TrustRegionConfig::Global;
+        return Ok(());
+    }
     if !lengths_set && overrides.trust_region_kind != Some(TrustRegionKind::Turbo) {
         return Ok(());
     }
@@ -246,6 +255,7 @@ impl OptimizerConfig {
             &OptimizerRuleSet {
                 lhd_only: kind == OptimizerInitKind::LhdOnly,
                 has_surrogate,
+                has_trust_region: !matches!(self.trust_region, TrustRegionConfig::Global),
             },
             &self.acquisition,
         )?;
@@ -283,7 +293,7 @@ pub fn require_fit_samples(
 pub fn lhd_only_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::None,
-        trust_region: TrustRegionConfig::default(),
+        trust_region: TrustRegionConfig::Global,
         candidates: CandidateConfig {
             min_candidates: 1,
             max_candidates: 1_000_000_000,
@@ -365,6 +375,31 @@ mod tests {
         assert!(matches!(config.surrogate, SurrogateConfig::None));
         assert!(matches!(config.acquisition, AcquisitionConfig::Random));
         assert_eq!(config.candidates.candidate_rv, CandidateRV::RAASP);
+    }
+
+    #[test]
+    fn a_global_override_replaces_the_region_and_refuses_lengths() {
+        let global = ConfigOverrides {
+            trust_region_kind: Some(TrustRegionKind::Global),
+            ..Default::default()
+        };
+        let applied = global.apply_to(turbo_zero_config()).unwrap();
+        assert!(matches!(applied.trust_region, TrustRegionConfig::Global));
+        let with_lengths = ConfigOverrides {
+            length_init: Some(0.5),
+            ..global
+        };
+        let err = with_lengths.apply_to(turbo_zero_config()).err().unwrap();
+        assert!(err.to_string().contains("length settings"), "{err}");
+    }
+
+    #[test]
+    fn lhd_only_runs_reject_a_trust_region() {
+        let mut config = lhd_only_config();
+        config.validate_kind(OptimizerInitKind::LhdOnly).unwrap();
+        config.trust_region = TrustRegionConfig::default();
+        let err = config.validate_kind(OptimizerInitKind::LhdOnly).unwrap_err();
+        assert!(err.to_string().contains("NoTRConfig"), "{err}");
     }
 
     #[test]

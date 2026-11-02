@@ -6,17 +6,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from enn._rust import EpistemicNearestNeighbors as _RustENN
-from enn._rust import InputHistory
+from enn._rust import semantic_original_rows
 from enn.turbo.config.enn_surrogate_config import validate_enn_placement
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 from .cat_ties import resolve_tied_groups
 from .enn_class_support import _to_rust_seeds, rust_params
-from .enn_store import (
-    open_input_transform,
-    open_output_projection,
-    save_store_artifacts,
-)
+from .enn_store import open_input_transform, open_output_projection
 from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
@@ -78,14 +74,20 @@ def _rust_output_argument(output_projection, output_alpha):
     if output_projection is None:
         return None
     alpha = None if output_alpha is None else float(output_alpha)
-    return output_projection.loadings, alpha
+    return output_projection.loadings, alpha, output_projection.npz_bytes()
+
+
+def _rust_input_argument(input_transform, original_inputs, semantic_only):
+    if input_transform is None:
+        return None
+    fingerprint = input_transform.fingerprint(semantic_only=semantic_only)
+    return original_inputs, fingerprint, input_transform.npz_bytes()
 
 
 class EpistemicNearestNeighbors(_EnnRustView):
     input_transform: SemanticInputTransform | None = None
     output_projection: SemanticOutputProjection | None = None
     semantic_only: bool = False
-    _original_inputs = None
 
     @staticmethod
     def _coerce_inputs(train_x, train_y, train_yvar):
@@ -140,19 +142,14 @@ class EpistemicNearestNeighbors(_EnnRustView):
             "weighting": weighting,
             "tied_dims": groups,
             "semantic_only": semantic_only,
-            "input_fingerprint": (
-                None
-                if input_transform is None
-                else input_transform.fingerprint(semantic_only=semantic_only)
+            "input": _rust_input_argument(
+                input_transform, original_inputs, semantic_only
             ),
             "output": _rust_output_argument(output_projection, output_alpha),
         }
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
-        if input_transform is not None:
-            self._original_inputs = InputHistory(original_inputs, self._rust_model)
-        save_store_artifacts(work_dir, input_transform, output_projection)
 
     @classmethod
     def open(cls, work_dir: str | os.PathLike[str]) -> EpistemicNearestNeighbors:
@@ -160,10 +157,8 @@ class EpistemicNearestNeighbors(_EnnRustView):
         self = cls.__new__(cls)
         self._rust_model = _RustENN.open(os.fspath(work_dir))
         self.semantic_only = bool(self._rust_model.store_settings[1])
-        self.input_transform, self._original_inputs = open_input_transform(
-            self._rust_model, work_dir
-        )
-        self.output_projection = open_output_projection(self._rust_model, work_dir)
+        self.input_transform = open_input_transform(self._rust_model)
+        self.output_projection = open_output_projection(self._rust_model)
         return self
 
     def add(
@@ -173,9 +168,12 @@ class EpistemicNearestNeighbors(_EnnRustView):
         train_yvar: np.ndarray | None = None,
     ) -> None:
         train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
-        self._rust_model.add(self.transform_inputs(train_x), train_y, train_yvar)
-        if self._original_inputs is not None:
-            self._original_inputs.append(train_x)
+        self._rust_model.add(
+            self.transform_inputs(train_x),
+            train_y,
+            train_yvar,
+            None if self.input_transform is None else train_x,
+        )
 
     def transform_inputs(self, x):
         return (
@@ -199,8 +197,10 @@ class EpistemicNearestNeighbors(_EnnRustView):
         idx = [int(i) for i in np.asarray(indices, dtype=int).ravel()]
         x, y, yvar = self._rust_model.train_rows_at(idx)
         x_arr = np.asarray(x, dtype=float)
-        if self._original_inputs is not None:
-            x_arr = self._original_inputs.gather(idx)
+        if self.input_transform is not None:
+            x_arr = np.asarray(
+                semantic_original_rows(self._rust_model, idx), dtype=float
+            )
         y_arr = np.asarray(y, dtype=float)
         yvar_arr = None if yvar is None else np.asarray(yvar, dtype=float)
         return x_arr, y_arr, yvar_arr

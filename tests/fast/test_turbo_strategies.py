@@ -8,6 +8,7 @@ from enn.turbo.config import (
     HybridInit,
     InitConfig,
     LHDOnlyInit,
+    NoTRConfig,
     RandomAcquisitionConfig,
     turbo_zero_config,
 )
@@ -32,6 +33,7 @@ def test_validate_optimizer_config_lhd_only_requires_no_surrogate_direct_call():
         def __init__(self) -> None:
             self.init = InitConfig(init_strategy=LHDOnlyInit())
             self.surrogate = ENNSurrogateConfig()
+            self.trust_region = NoTRConfig()
             self.acquisition = RandomAcquisitionConfig()
 
     validate_optimizer_config(turbo_zero_config())
@@ -47,6 +49,7 @@ def test_validate_optimizer_config_rejects_unknown_acquisition():
     bad = type("Cfg", (), {})()
     bad.init = InitConfig(init_strategy=LHDOnlyInit())
     bad.surrogate = ENNSurrogateConfig()
+    bad.trust_region = NoTRConfig()
     bad.acquisition = NotAnAcquisition()
     with pytest.raises(TypeError, match="AcquisitionConfig"):
         validate_optimizer_config(bad)

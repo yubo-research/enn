@@ -104,6 +104,8 @@ semantic_weighted = _ext.util.semantic_weighted
 semantic_input_fingerprint = _ext.util.semantic_input_fingerprint
 semantic_output_fingerprint = _ext.util.semantic_output_fingerprint
 semantic_transform = _ext.util.semantic_transform
+semantic_artifact_paths = _ext.util.semantic_artifact_paths
+semantic_original_rows = _ext.util.semantic_original_rows
 semantic_output_projection = _ext.util.semantic_output_projection
 
 cat_log_width = _ext.util.cat_log_width
@@ -111,7 +113,6 @@ cat_log_width = _ext.util.cat_log_width
 CatEncoder = _ext.util.CatEncoder
 cat_column_plan = _ext.util.cat_column_plan
 
-InputHistory = _ext.util.InputHistory
 
 resolve_tied_groups = _ext.model.resolve_tied_groups
 

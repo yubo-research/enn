@@ -55,6 +55,7 @@ impl TurboEnnBuilder {
 pub struct OptimizerRuleSet {
     pub lhd_only: bool,
     pub has_surrogate: bool,
+    pub has_trust_region: bool,
 }
 
 pub fn validate_optimizer_rules(
@@ -64,6 +65,11 @@ pub fn validate_optimizer_rules(
     if rules.lhd_only && rules.has_surrogate {
         return Err(ENNError::InvalidParameter(
             "init_strategy='lhd_only' requires NoSurrogateConfig surrogate".into(),
+        ));
+    }
+    if rules.lhd_only && rules.has_trust_region {
+        return Err(ENNError::InvalidParameter(
+            "init_strategy='lhd_only' requires NoTRConfig trust region".into(),
         ));
     }
     if !rules.has_surrogate && matches!(acquisition, AcquisitionConfig::Thompson) {

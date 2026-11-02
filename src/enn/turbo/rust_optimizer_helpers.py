@@ -10,7 +10,8 @@ from .config.init_strategies import LHDOnlyInit
 from .config.morbo_tr_config import MorboTRConfig
 from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
-from .config.trust_region import NoTRConfig, TurboTRConfig
+from .config.trust_region import NoTRConfig
+from .config.turbo_tr_config import TurboTRConfig
 
 
 def _acquisition_to_override(config: OptimizerConfig) -> dict[str, Any]:
@@ -70,9 +71,10 @@ def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
         if tr.noise_aware:
             out["noise_aware"] = True
         return out
-    if not isinstance(tr, TurboTRConfig):
-        return out
-    _put_set_lengths(out, tr)
+    if isinstance(tr, NoTRConfig):
+        out["trust_region"] = "global"
+    else:
+        _put_set_lengths(out, tr)
     if tr.noise_aware:
         out["noise_aware"] = True
     return out
@@ -123,8 +125,4 @@ def is_rust_supported_config(config: OptimizerConfig) -> bool:
 
 
 def _is_lhd_only_config(config: OptimizerConfig) -> bool:
-    return (
-        isinstance(config.trust_region, NoTRConfig)
-        and isinstance(config.init.init_strategy, LHDOnlyInit)
-        and isinstance(config.surrogate, NoSurrogateConfig)
-    )
+    return isinstance(config.init.init_strategy, LHDOnlyInit)

@@ -32,6 +32,10 @@ pub fn bpann_lock_store(work_dir: &Path) -> Result<File, BpannError> {
 
 pub fn bpann_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), BpannError> {
     let body = serde_json::to_string(value).map_err(|e| invalid(path, e))?;
+    bpann_replace_json_text(path, &body)
+}
+
+pub fn bpann_replace_json_text(path: &Path, body: &str) -> Result<(), BpannError> {
     let staged = path.with_extension("json.tmp");
     fs::write(&staged, body).map_err(|e| invalid(&staged, e))?;
     fs::rename(&staged, path).map_err(|e| invalid(path, e))
@@ -73,6 +77,18 @@ mod tests {
             Some(vec![1.0, 2.5])
         );
         assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn replacing_text_keeps_no_staged_copy_and_leaves_old_text_if_a_stage_is_abandoned() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("header.json");
+        bpann_replace_json_text(&path, "[1]").unwrap();
+        assert!(!path.with_extension("json.tmp").exists());
+        fs::write(path.with_extension("json.tmp"), "").unwrap();
+        assert_eq!(bpann_read_json::<Vec<f64>>(&path).unwrap(), Some(vec![1.0]));
+        bpann_replace_json_text(&path, "[2]").unwrap();
+        assert_eq!(bpann_read_json::<Vec<f64>>(&path).unwrap(), Some(vec![2.0]));
     }
 
     #[test]

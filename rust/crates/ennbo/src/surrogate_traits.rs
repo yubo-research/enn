@@ -42,11 +42,7 @@ pub trait Surrogate: Send + Sync {
         Ok(None)
     }
 
-    fn restore_state(
-        &mut self,
-        _saved: Option<SurrogateState>,
-        _num_dim: usize,
-    ) -> Result<(), ENNError> {
+    fn restore_state(&mut self, _saved: Option<SurrogateState>) -> Result<(), ENNError> {
         Ok(())
     }
 

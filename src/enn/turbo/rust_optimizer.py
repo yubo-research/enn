@@ -55,6 +55,16 @@ class Optimizer:
         return None if arr is None else np.asarray(arr, dtype=float)
 
     @property
+    def best_x(self) -> np.ndarray | None:
+        arr = self._inner.best_x()
+        return None if arr is None else np.asarray(arr, dtype=float)
+
+    @property
+    def best_y(self) -> np.ndarray | None:
+        arr = self._inner.best_y()
+        return None if arr is None else np.asarray(arr, dtype=float)
+
+    @property
     def tr_obs_count(self) -> int:
         return int(self._inner.tr_obs_count())
 

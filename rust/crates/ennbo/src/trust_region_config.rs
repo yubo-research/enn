@@ -6,6 +6,7 @@ use crate::trust_region::TRLengthConfig;
 pub enum TrustRegionKind {
     Turbo,
     Morbo,
+    Global,
 }
 
 impl TrustRegionKind {
@@ -13,6 +14,7 @@ impl TrustRegionKind {
         match name {
             "turbo" => Ok(Self::Turbo),
             "morbo" => Ok(Self::Morbo),
+            "global" => Ok(Self::Global),
             _ => Err(ENNError::InvalidParameter(format!(
                 "Unknown trust_region: {name}"
             ))),
@@ -24,6 +26,7 @@ impl TrustRegionKind {
 pub enum TrustRegionConfig {
     Turbo(TRLengthConfig),
     Morbo(MorboTRSettings),
+    Global,
 }
 
 impl Default for TrustRegionConfig {
@@ -46,6 +49,10 @@ mod tests {
         assert_eq!(
             TrustRegionKind::parse("turbo").unwrap(),
             TrustRegionKind::Turbo
+        );
+        assert_eq!(
+            TrustRegionKind::parse("global").unwrap(),
+            TrustRegionKind::Global
         );
         assert!(TrustRegionKind::parse("MORBO").is_err());
     }

@@ -282,6 +282,18 @@ impl PyOptimizer {
             .map(|x| x.into_dyn().into_pyarray_bound(py))
     }
 
+    fn best_x<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
+        self.inner
+            .best_x()
+            .map(|x| x.into_dyn().into_pyarray_bound(py))
+    }
+
+    fn best_y<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArrayDyn<f64>>> {
+        self.inner
+            .best_y()
+            .map(|y| y.clone().into_dyn().into_pyarray_bound(py))
+    }
+
     fn bounds<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
         self.inner
             .bounds()
@@ -332,6 +344,7 @@ pub fn validate_optimizer_rules_py(
     let rules = ennbo::OptimizerRuleSet {
         lhd_only: optimizer_flag(flags, "lhd_only")?,
         has_surrogate: optimizer_flag(flags, "has_surrogate")?,
+        has_trust_region: optimizer_flag(flags, "has_trust_region")?,
     };
     let kind = acquisition_from_name(acquisition)?;
     ennbo::validate_optimizer_rules(&rules, &kind).map_err(|e| PyValueError::new_err(e.to_string()))
@@ -473,6 +486,8 @@ mod kiss_pymethods_coverage {
             PyOptimizer::x_obs,
             PyOptimizer::y_obs,
             PyOptimizer::incumbent_x,
+            PyOptimizer::best_x,
+            PyOptimizer::best_y,
             PyOptimizer::bounds,
             std::mem::size_of::<PyOptimizer>,
             std::mem::size_of::<PyTelemetry>,

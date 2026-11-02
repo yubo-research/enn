@@ -5,7 +5,8 @@ use crate::backend::{EnnBackend, TrainRowsAtResult};
 use crate::error::ENNError;
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
-use crate::store_identity::{reject_existing_store, StoreIdentity};
+use crate::input_history::{InputHistory, ORIGINAL_OUTPUTS_FILE};
+use crate::store_identity::{claim_store_dir, StoreIdentity};
 use crate::y_bounds::{is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar};
 
 impl EpistemicNearestNeighbors {
@@ -14,18 +15,18 @@ impl EpistemicNearestNeighbors {
         rows: Option<Array2<f64>>,
         reopen: bool,
     ) -> Result<(), ENNError> {
-        if let Some(rows) = rows {
-            let rows = if reopen {
-                Array2::zeros((0, self.num_metrics))
-            } else {
-                rows
-            };
-            self.original_y = Some(crate::input_history::InputHistory::for_named_model(
-                rows,
-                self,
-                crate::input_history::ORIGINAL_OUTPUTS_FILE,
-            )?);
-        }
+        let Some(rows) = rows else {
+            return Ok(());
+        };
+        let work_dir = self.layout.work_dir();
+        self.original_y = if reopen {
+            let history = InputHistory::recover(work_dir, ORIGINAL_OUTPUTS_FILE, self.backend.len())?;
+            Some(history.ok_or_else(|| {
+                ENNError::InvalidParameter("original inputs: missing original rows for disk model".into())
+            })?)
+        } else {
+            Some(InputHistory::create(work_dir, ORIGINAL_OUTPUTS_FILE, &rows.view())?)
+        };
         Ok(())
     }
 
@@ -37,17 +38,19 @@ impl EpistemicNearestNeighbors {
         y_bounds: Option<Array2<f64>>,
     ) -> Result<Self, ENNError> {
         let work_dir = layout.work_dir();
-        reject_existing_store(work_dir)?;
+        claim_store_dir(work_dir)?;
         let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics)?;
+        let identity = StoreIdentity::of(&layout, (num_dim, num_metrics), &[], &y_bounds);
+        identity.record(work_dir)?;
         let backend = EnnBackend::new_empty_disk(
             work_dir.to_path_buf(),
             num_dim,
             num_metrics,
             pending_flush_threshold,
         )?;
-        StoreIdentity::of(&layout, (num_dim, num_metrics), &[], &y_bounds).record(work_dir)?;
         let auto = layout.metric_learning() == MetricLearning::Auto;
         let mut model = Self {
+            original_x: None,
             original_y: None,
             layout,
             backend,
@@ -72,12 +75,13 @@ impl EpistemicNearestNeighbors {
             )?;
         }
         if !is_identity_bounds(&model.y_bounds) {
-            model.original_y = Some(crate::input_history::InputHistory::for_named_model(
-                Array2::zeros((0, num_metrics)),
-                &model,
-                crate::input_history::ORIGINAL_OUTPUTS_FILE,
+            model.original_y = Some(InputHistory::create(
+                model.layout.work_dir(),
+                ORIGINAL_OUTPUTS_FILE,
+                &Array2::zeros((0, num_metrics)).view(),
             )?);
         }
+        identity.commit(model.layout.work_dir())?;
         Ok(model)
     }
 

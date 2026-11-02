@@ -250,7 +250,8 @@ pub fn write_metadata(
     let json = format!(
         "{{\"format_version\":{FORMAT_VERSION},\"num_obs\":{num_obs},\"num_dim\":{num_dim},\"num_metrics\":{num_metrics},\"scale_x\":{scale_x},\"index_backend\":\"{index_backend}\",\"indexed_rows\":{indexed_rows}}}"
     );
-    fs::write(meta_path, json).map_err(|e| ENNError::InvalidParameter(e.to_string()))
+    ennbo_bpann::bpann_replace_json_text(&meta_path, &json)
+        .map_err(|e| ENNError::InvalidParameter(e.to_string()))
 }
 
 pub fn validate_dim_limits(num_dim: usize, record_stride: usize) -> Result<(), ENNError> {

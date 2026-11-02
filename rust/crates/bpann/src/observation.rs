@@ -185,7 +185,7 @@ pub fn bpann_write_metadata(
             "{{\"format_version\":{FORMAT_VERSION},\"num_obs\":{num_obs},\"num_dim\":{num_dim},\"num_metrics\":{num_metrics},\"scale_x\":{scale_x},\"index_backend\":\"{INDEX_BACKEND}\",\"indexed_rows\":{indexed_rows}}}"
         ),
     };
-    fs::write(meta_path, json).map_err(|e| BpannError::InvalidParameter(e.to_string()))
+    crate::store_file::bpann_replace_json_text(&meta_path, &json)
 }
 
 fn preserve_metadata_extension_fields(text: &str) -> Option<String> {

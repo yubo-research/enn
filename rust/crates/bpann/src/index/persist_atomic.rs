@@ -122,9 +122,7 @@ pub(crate) fn persist_index_files_with(
         }
         let header_json = serde_json::to_string_pretty(header)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        fs::write(index_dir.join("header.json"), header_json)
-            .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        Ok(())
+        crate::store_file::bpann_replace_json_text(&index_dir.join("header.json"), &header_json)
     })();
     let failed = persist_result.is_err();
     restore_backup(&pages_path, &pages_bak, pages_kept, failed);

@@ -214,36 +214,29 @@ pub fn semantic_transform<'py>(
     };
     Ok(out.into_pyarray_bound(py))
 }
-#[pyclass(name = "InputHistory")]
-pub struct PyInputHistory {
-    inner: ennbo::input_history::InputHistory,
+
+#[pyfunction]
+pub fn semantic_artifact_paths(
+    model: PyRef<'_, crate::py_model::PyEpistemicNearestNeighbors>,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let work_dir = model.inner.layout().work_dir();
+    (
+        ennbo::input_history::input_transform_path(work_dir),
+        ennbo::input_history::output_projection_path(work_dir),
+    )
 }
-#[pymethods]
-impl PyInputHistory {
-    #[new]
-    fn new(
-        rows: PyReadonlyArray2<f64>,
-        model: PyRef<'_, crate::py_model::PyEpistemicNearestNeighbors>,
-    ) -> PyResult<Self> {
-        ennbo::input_history::InputHistory::for_model(rows.as_array().to_owned(), &model.inner)
-            .map(|inner| Self { inner })
-            .map_err(|e| PyValueError::new_err(e.to_string()))
-    }
-    fn append(&mut self, rows: PyReadonlyArray2<f64>) -> PyResult<()> {
-        self.inner
-            .append(&rows.as_array())
-            .map_err(|e| PyValueError::new_err(e.to_string()))
-    }
-    fn gather<'py>(
-        &self,
-        py: Python<'py>,
-        indices: Vec<usize>,
-    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        self.inner
-            .gather(&indices)
-            .map(|v| v.into_pyarray_bound(py))
-            .map_err(|e| PyValueError::new_err(e.to_string()))
-    }
+
+#[pyfunction]
+pub fn semantic_original_rows<'py>(
+    py: Python<'py>,
+    model: PyRef<'_, crate::py_model::PyEpistemicNearestNeighbors>,
+    indices: Vec<usize>,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    model
+        .inner
+        .original_rows_at(&indices)
+        .map(|rows| rows.into_pyarray_bound(py))
+        .map_err(value_error)
 }
 
 #[pyfunction]

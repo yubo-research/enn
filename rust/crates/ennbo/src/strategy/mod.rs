@@ -255,6 +255,7 @@ fn tell_common(
             .morbo_update_ranges_only(&delta.y_new_view())?;
     }
 
+    optimizer.record_best_observation(x, y);
     optimizer.update_incumbent(rng)?;
 
     if optimizer.trust_region().is_morbo() {

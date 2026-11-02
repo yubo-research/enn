@@ -177,46 +177,121 @@ fn integer_category_ids_roundtrip_without_float_rounding() {
     );
 }
 
+fn semantic_store(dir: &std::path::Path) -> EpistemicNearestNeighbors {
+    EpistemicNearestNeighbors::new_attached(
+        (
+            ndarray::array![[2.], [5.]],
+            ndarray::array![[1.], [4.]],
+            None,
+        ),
+        ennbo::EnnLayout::new(dir.to_path_buf(), false).unwrap(),
+        None,
+        Vec::new(),
+        ennbo::input_history::StoreAttachments {
+            original_inputs: Some(ndarray::array![[1., 2., 3.], [4., 5., 6.]]),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+}
+
 #[test]
 fn semantic_only_originals_follow_disk_model_lifecycle() {
-    use ennbo::input_history::InputHistory;
     let dir = tempfile::tempdir().unwrap();
-    let x = ndarray::array![[1., 2., 3.], [4., 5., 6.]];
-    let features = ndarray::array![[2.], [5.]];
-    let y = ndarray::array![[1.], [4.]];
-    let layout = ennbo::EnnLayout::new(dir.path().to_path_buf(), false).unwrap();
-    let mut model =
-        EpistemicNearestNeighbors::new_with_storage(features, y, None, layout.clone(), None)
-            .unwrap();
-    let mut history = InputHistory::for_model(x.clone(), &model).unwrap();
+    let mut model = semantic_store(dir.path());
     model
-        .add(
+        .add_with_original(
             &ndarray::array![[8.]].view(),
+            Some(&ndarray::array![[7., 8., 9.]].view()),
             &ndarray::array![[7.]].view(),
             None,
         )
         .unwrap();
-    history
-        .append(&ndarray::array![[7., 8., 9.]].view())
-        .unwrap();
     model.persist_index_to_disk().unwrap();
-    drop(history);
     drop(model);
-    let model = EpistemicNearestNeighbors::open(layout.work_dir()).unwrap();
-    let history = InputHistory::for_model(Array2::zeros((0, 3)), &model).unwrap();
+    let model = EpistemicNearestNeighbors::open(dir.path()).unwrap();
     assert_eq!(
-        history.gather(&[2, 0]).unwrap(),
+        model.original_rows_at(&[2, 0]).unwrap(),
         ndarray::array![[7., 8., 9.], [1., 2., 3.]]
     );
-    assert!(history.gather(&[3]).is_err());
-    drop(history);
+    assert!(model.original_rows_at(&[3]).is_err());
+    drop(model);
     std::fs::OpenOptions::new()
         .write(true)
         .open(dir.path().join("original_inputs.bin"))
         .unwrap()
         .set_len(25)
         .unwrap();
-    assert!(InputHistory::for_model(Array2::zeros((0, 3)), &model).is_err());
+    assert!(EpistemicNearestNeighbors::open(dir.path()).is_err());
+}
+
+#[test]
+fn a_store_with_original_inputs_refuses_rows_without_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut model = semantic_store(dir.path());
+    let err = model
+        .add(
+            &ndarray::array![[8.]].view(),
+            &ndarray::array![[7.]].view(),
+            None,
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("requires them"), "{err}");
+    let short = model.add_with_original(
+        &ndarray::array![[8.], [9.]].view(),
+        Some(&ndarray::array![[7., 8., 9.]].view()),
+        &ndarray::array![[7.], [8.]].view(),
+        None,
+    );
+    assert!(short.is_err());
+    assert_eq!(model.len(), 2);
+}
+
+#[test]
+fn a_crash_after_the_original_row_and_before_the_model_row_is_recovered() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = semantic_store(dir.path());
+    model.persist_index_to_disk().unwrap();
+    drop(model);
+    let path = dir.path().join("original_inputs.bin");
+    let mut grown = std::fs::read(&path).unwrap();
+    grown[16] = 3;
+    grown.extend_from_slice(&[0; 24]);
+    std::fs::write(&path, grown).unwrap();
+    let reopened = EpistemicNearestNeighbors::open(dir.path()).unwrap();
+    assert_eq!(reopened.len(), 2);
+    assert!(reopened.original_rows_at(&[2]).is_err());
+    assert_eq!(
+        reopened.original_rows_at(&[1]).unwrap(),
+        ndarray::array![[4., 5., 6.]]
+    );
+}
+
+#[test]
+fn a_failed_store_creation_leaves_a_directory_that_can_be_created_again() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("store_identity.json"),
+        std::fs::read_to_string(unfinished_identity().path().join("store_identity.json")).unwrap(),
+    )
+    .unwrap();
+    let err = EpistemicNearestNeighbors::open(dir.path()).err().unwrap();
+    assert!(err.to_string().contains("never finished"), "{err}");
+    let model = semantic_store(dir.path());
+    assert_eq!(model.len(), 2);
+    drop(model);
+    assert_eq!(EpistemicNearestNeighbors::open(dir.path()).unwrap().len(), 2);
+}
+
+fn unfinished_identity() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    drop(semantic_store(dir.path()));
+    let path = dir.path().join("store_identity.json");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let unfinished = text.replace("\"committed\":true", "\"committed\":false");
+    assert_ne!(unfinished, text);
+    std::fs::write(&path, unfinished).unwrap();
+    dir
 }
 
 #[test]

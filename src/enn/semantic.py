@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -114,6 +115,9 @@ class SemanticInputTransform:
         )
 
     def save(self, path):
+        Path(path).write_bytes(self.npz_bytes())
+
+    def npz_bytes(self):
         metadata = json.dumps(
             {
                 "names": self.names,
@@ -123,13 +127,14 @@ class SemanticInputTransform:
                 "version": SEMANTIC_FORMAT_VERSION,
             }
         )
-        with Path(path).open("wb") as stream:
-            np.savez(
-                stream,
-                bounds=self.bounds,
-                projection=self.projection,
-                metadata=metadata,
-            )
+        stream = BytesIO()
+        np.savez(
+            stream,
+            bounds=self.bounds,
+            projection=self.projection,
+            metadata=metadata,
+        )
+        return stream.getvalue()
 
     @classmethod
     def load(cls, path):

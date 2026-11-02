@@ -27,7 +27,6 @@ pub fn pymodule_hash(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[pymodule]
 #[pyo3(name = "util")]
 pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::py_semantic::PyInputHistory>()?;
     m.add_class::<crate::py_cat_encoder::PyCatEncoder>()?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_log_width, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_column_plan, m)?)?;
@@ -79,6 +78,8 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_transform, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_artifact_paths, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_original_rows, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_semantic::semantic_output_projection,
         m

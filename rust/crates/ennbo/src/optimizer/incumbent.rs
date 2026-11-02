@@ -1,11 +1,49 @@
-use ndarray::Array2;
+use ndarray::{Array1, Array2, ArrayView2, Axis};
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 
 use super::Optimizer;
 use crate::error::ENNError;
 use crate::util::argmax_random_tie;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(super) struct BestObservation {
+    #[serde(with = "crate::exact")]
+    x_unit: Array1<f64>,
+    #[serde(with = "crate::exact")]
+    y: Array1<f64>,
+}
+
 impl Optimizer {
+    pub(crate) fn record_best_observation(&mut self, x_unit: &ArrayView2<f64>, y: &ArrayView2<f64>) {
+        if self.tr_state.is_morbo() {
+            return;
+        }
+        for (x_row, y_row) in x_unit.rows().into_iter().zip(y.rows()) {
+            let better = match &self.best_observation {
+                Some(best) => y_row[0] > best.y[0],
+                None => !y_row[0].is_nan(),
+            };
+            if better {
+                self.best_observation = Some(BestObservation {
+                    x_unit: x_row.to_owned(),
+                    y: y_row.to_owned(),
+                });
+            }
+        }
+    }
+
+    pub fn best_x(&self) -> Option<Array1<f64>> {
+        let best = self.best_observation.as_ref()?;
+        let row = best.x_unit.view().insert_axis(Axis(0));
+        let natural = crate::candidates::from_unit(&row, &self.bounds.view());
+        Some(natural.row(0).to_owned())
+    }
+
+    pub fn best_y(&self) -> Option<&Array1<f64>> {
+        self.best_observation.as_ref().map(|best| &best.y)
+    }
+
     #[allow(dead_code)]
     pub(crate) fn reset_incumbent_tracker(&mut self) {
         self.incumbent_tracker.reset();

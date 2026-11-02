@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -87,14 +88,18 @@ class SemanticOutputProjection:
         return semantic_output_fingerprint(self.loadings)
 
     def save(self, path):
-        with Path(path).open("wb") as stream:
-            np.savez(
-                stream,
-                names=self.names,
-                embeddings=self.embeddings,
-                loadings=self.loadings,
-                version=SEMANTIC_FORMAT_VERSION,
-            )
+        Path(path).write_bytes(self.npz_bytes())
+
+    def npz_bytes(self):
+        stream = BytesIO()
+        np.savez(
+            stream,
+            names=self.names,
+            embeddings=self.embeddings,
+            loadings=self.loadings,
+            version=SEMANTIC_FORMAT_VERSION,
+        )
+        return stream.getvalue()
 
     @classmethod
     def load(cls, path):

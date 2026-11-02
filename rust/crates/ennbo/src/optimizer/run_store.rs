@@ -102,6 +102,8 @@ pub(super) struct OptimizerState {
     incumbent_x_unit: Option<Array1<f64>>,
     #[serde(with = "crate::exact")]
     incumbent_y_scalar: Option<Array1<f64>>,
+    #[serde(default)]
+    best_observation: Option<super::incumbent::BestObservation>,
     restart_generation: usize,
     yvar_on_tell: Option<bool>,
     reinit_left: Option<usize>,
@@ -138,7 +140,7 @@ impl RunStore {
         match &mut self.observations {
             Some(log) => log.append(&rows.view()),
             None => {
-                let log = DiskInputs::open(&self.work_dir, OBSERVATIONS_FILE, &rows.view(), rows.nrows())?;
+                let log = DiskInputs::create(&self.work_dir, OBSERVATIONS_FILE, &rows.view())?;
                 self.observations = Some(log);
                 Ok(())
             }
@@ -194,7 +196,7 @@ pub fn create_run(recipe: RunRecipe, seed: u64, work_dir: PathBuf) -> Result<Opt
         }
     }
     if recipe.kind == RunKind::Enn {
-        crate::store_identity::reject_existing_store(&work_dir)?;
+        crate::store_identity::claim_store_dir(&work_dir)?;
     }
     let mut optimizer = recipe.build(&work_dir, seed)?;
     std::fs::create_dir_all(&work_dir).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
@@ -255,6 +257,7 @@ impl Optimizer {
             incumbent_idx: self.incumbent_idx,
             incumbent_x_unit: self.incumbent_x_unit.clone(),
             incumbent_y_scalar: self.incumbent_y_scalar.clone(),
+            best_observation: self.best_observation.clone(),
             restart_generation: self.restart_generation,
             yvar_on_tell: self.yvar_on_tell,
             reinit_left: self.reinit_left,
@@ -294,6 +297,7 @@ impl Optimizer {
         self.incumbent_idx = state.incumbent_idx;
         self.incumbent_x_unit = state.incumbent_x_unit;
         self.incumbent_y_scalar = state.incumbent_y_scalar;
+        self.best_observation = state.best_observation;
         self.restart_generation = state.restart_generation;
         self.yvar_on_tell = state.yvar_on_tell;
         self.reinit_left = state.reinit_left;
@@ -310,7 +314,17 @@ impl Optimizer {
             return self.finish_pending_restart();
         }
         self.restore_rows(state.surrogate)?;
+        self.backfill_best_observation();
         self.reconcile_rows(state.obs_count)
+    }
+
+    fn backfill_best_observation(&mut self) {
+        if self.best_observation.is_some() {
+            return;
+        }
+        if let (Some(x), Some(y)) = (self.x_obs_unit(), self.y_obs()) {
+            self.record_best_observation(&x.view(), &y.view());
+        }
     }
 
     fn finish_pending_restart(&mut self) -> Result<(), ENNError> {
@@ -324,7 +338,7 @@ impl Optimizer {
 
     fn restore_rows(&mut self, saved: Option<SurrogateState>) -> Result<(), ENNError> {
         if let Some(surrogate) = self.surrogate.as_mut() {
-            return surrogate.restore_state(saved, self.num_dim);
+            return surrogate.restore_state(saved);
         }
         let num_dim = self.num_dim;
         let Some(store) = self.run_store.as_mut() else {
@@ -419,6 +433,66 @@ mod tests {
         for kind in [RunKind::Zero, RunKind::Lhd] {
             run_with_reopen(kind);
         }
+    }
+
+    fn shrinking_recipe() -> RunRecipe {
+        let overrides = ConfigOverrides {
+            length_init: Some(0.015),
+            length_min: Some(0.01),
+            length_max: Some(0.02),
+            ..Default::default()
+        };
+        RunRecipe::new(
+            RunKind::Zero,
+            array![[0.0, 1.0], [0.0, 2.0]],
+            None,
+            Some(3),
+            Some(overrides),
+        )
+    }
+
+    fn told_best_survives_restarts_and_reopen(work_dir: PathBuf, recipe: RunRecipe) {
+        let mut run = create_run(recipe, 3, work_dir.clone()).unwrap();
+        let mut best = f64::NEG_INFINITY;
+        let mut best_x = None;
+        for _ in 0..200 {
+            let x = run.ask(1).unwrap();
+            let y = objective(&x);
+            if y[[0, 0]] > best {
+                best = y[[0, 0]];
+                best_x = Some(x.row(0).to_owned());
+            }
+            run.tell(&x.view(), &y.view(), None).unwrap();
+        }
+        assert!(run.restart_generation() > 0, "the run never restarted");
+        assert_eq!(run.best_y().unwrap()[0], best);
+        drop(run);
+        let reopened = Optimizer::open(&work_dir).unwrap();
+        assert_eq!(reopened.best_y().unwrap()[0], best);
+        let told_x = best_x.unwrap();
+        let kept_x = reopened.best_x().unwrap();
+        assert!((kept_x - told_x).iter().all(|d| d.abs() < 1e-12));
+    }
+
+    #[test]
+    fn the_best_observation_survives_restarts_and_a_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        told_best_survives_restarts_and_reopen(dir.path().join("w"), shrinking_recipe());
+    }
+
+    #[test]
+    fn a_snapshot_written_before_the_best_record_existed_recovers_it_from_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("w");
+        let mut run = create_run(recipe(RunKind::Zero), 7, path.clone()).unwrap();
+        let x = run.ask(3).unwrap();
+        let y = objective(&x);
+        run.tell(&x.view(), &y.view(), None).unwrap();
+        let best = run.best_y().unwrap()[0];
+        run.best_observation = None;
+        run.write_snapshot(false).unwrap();
+        drop(run);
+        assert_eq!(Optimizer::open(&path).unwrap().best_y().unwrap()[0], best);
     }
 
     #[test]

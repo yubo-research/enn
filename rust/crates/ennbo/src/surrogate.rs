@@ -6,6 +6,7 @@ pub use crate::surrogate_config::ENNSurrogateConfig;
 pub use crate::surrogate_traits::{BoxedSurrogate, Surrogate, SurrogatePrediction};
 
 use crate::error::ENNError;
+use crate::input_history::StoreAttachments;
 use crate::fit_samples::FitSamples;
 use crate::fitter::ENNFitter;
 use crate::model::EpistemicNearestNeighbors;
@@ -23,7 +24,6 @@ fn next_function_seeds(rng: &mut dyn RngCore, num_samples: usize) -> Vec<i64> {
 pub struct ENNSurrogate {
     config: ENNSurrogateConfig,
     state: FitState,
-    original_x: Option<crate::input_history::InputHistory>,
     replaying: bool,
 }
 
@@ -32,7 +32,6 @@ impl ENNSurrogate {
         Self {
             config,
             state: FitState::Unfitted,
-            original_x: None,
             replaying: false,
         }
     }
@@ -61,16 +60,19 @@ impl ENNSurrogate {
     fn construct_model(
         &self,
         x: &ArrayView2<f64>,
+        original_x: Option<&ArrayView2<f64>>,
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<EpistemicNearestNeighbors, ENNError> {
-        let mut model = EpistemicNearestNeighbors::new_configured(
-            x.to_owned(),
-            y.to_owned(),
-            yvar.map(|v| v.to_owned()),
+        let mut model = EpistemicNearestNeighbors::new_attached(
+            (x.to_owned(), y.to_owned(), yvar.map(|v| v.to_owned())),
             self.config.store_layout(),
             self.config.y_bounds.clone(),
             self.config.tied_dims.clone(),
+            StoreAttachments {
+                original_inputs: original_x.map(|v| v.to_owned()),
+                ..Default::default()
+            },
         )?;
         model.set_outputs(self.config.semantic_outputs.as_deref().cloned());
         Ok(model)
@@ -135,15 +137,18 @@ impl ENNSurrogate {
     fn fit_append_internal(
         &mut self,
         x_new: &ArrayView2<f64>,
+        original_x: Option<&ArrayView2<f64>>,
         y_new: &ArrayView2<f64>,
         yvar_new: Option<&ArrayView2<f64>>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
         match &mut self.state {
-            FitState::Unfitted => return self.start_model(x_new, y_new, yvar_new, None, rng),
+            FitState::Unfitted => {
+                return self.start_model(x_new, original_x, y_new, yvar_new, None, rng)
+            }
             FitState::Frozen { model, .. } | FitState::Searched { model, .. } => {
                 if !self.replaying {
-                    model.add(x_new, y_new, yvar_new)?;
+                    model.add_with_original(x_new, original_x, y_new, yvar_new)?;
                 }
             }
         }
@@ -163,12 +168,13 @@ impl ENNSurrogate {
     fn start_model(
         &mut self,
         x_new: &ArrayView2<f64>,
+        original_x: Option<&ArrayView2<f64>>,
         y_new: &ArrayView2<f64>,
         yvar_new: Option<&ArrayView2<f64>>,
         warm: Option<ENNParams>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
-        let model = self.construct_model(x_new, y_new, yvar_new)?;
+        let model = self.construct_model(x_new, original_x, y_new, yvar_new)?;
         self.state = match self.config.fit_samples {
             FitSamples::Frozen => FitState::Frozen {
                 output_fit: model
@@ -209,10 +215,11 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn observation_row_x(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
-        if let Some(x) = &self.original_x {
+        let model = self.fitted_model()?;
+        if let Some(x) = model.original_inputs() {
             return Ok(x.gather(&[idx])?.row(0).to_owned());
         }
-        self.fitted_model()?.rows().row_x(idx)
+        model.rows().row_x(idx)
     }
 
     fn observation_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
@@ -268,7 +275,7 @@ impl Surrogate for ENNSurrogate {
             return Ok(None);
         }
         let indices: Vec<_> = (0..model.len()).collect();
-        if let Some(x) = &self.original_x {
+        if let Some(x) = model.original_inputs() {
             return Ok(Some(x.gather(&indices)?));
         }
         Ok(Some(model.rows().train_rows_at(&indices)?.0))
@@ -295,14 +302,8 @@ impl Surrogate for ENNSurrogate {
             self.config.semantic_projection.as_deref(),
             self.config.semantic_only,
         )?;
-        self.start_model(&features.view(), y, yvar, warm, &mut local_rng)?;
-        if self.config.semantic_projection.is_some() {
-            self.original_x = Some(crate::input_history::InputHistory::for_model(
-                x.to_owned(),
-                self.fitted_model()?,
-            )?);
-        }
-        Ok(())
+        let original_x = self.config.semantic_projection.is_some().then_some(x);
+        self.start_model(&features.view(), original_x, y, yvar, warm, &mut local_rng)
     }
 
     fn fit_append(
@@ -320,19 +321,8 @@ impl Surrogate for ENNSurrogate {
             self.config.semantic_projection.as_deref(),
             self.config.semantic_only,
         )?;
-        self.fit_append_internal(&features.view(), y_new, yvar_new, &mut local_rng)?;
-        if self.replaying {
-            return Ok(());
-        }
-        if let Some(history) = &mut self.original_x {
-            history.append(x_new)?;
-        } else if self.config.semantic_projection.is_some() {
-            self.original_x = Some(crate::input_history::InputHistory::for_model(
-                x_new.to_owned(),
-                self.fitted_model()?,
-            )?);
-        }
-        Ok(())
+        let original_x = self.config.semantic_projection.is_some().then_some(x_new);
+        self.fit_append_internal(&features.view(), original_x, y_new, yvar_new, &mut local_rng)
     }
 
     fn schedule_background_flush(&self) -> Result<(), ENNError> {
@@ -368,7 +358,6 @@ impl Surrogate for ENNSurrogate {
             None => false,
         };
         self.state = FitState::Unfitted;
-        self.original_x = None;
         if had_model {
             crate::input_history::remove_store(self.config.layout.work_dir())?;
         }
@@ -451,25 +440,17 @@ impl Surrogate for ENNSurrogate {
         }))
     }
 
-    fn restore_state(
-        &mut self,
-        saved: Option<SurrogateState>,
-        num_dim: usize,
-    ) -> Result<(), ENNError> {
+    fn restore_state(&mut self, saved: Option<SurrogateState>) -> Result<(), ENNError> {
         let work_dir = self.config.layout.work_dir();
-        if !work_dir
-            .join(crate::store_identity::STORE_IDENTITY_FILE)
-            .exists()
-        {
+        if !crate::store_identity::holds_committed_store(work_dir)? {
             return Ok(());
         }
         let mut model = EpistemicNearestNeighbors::open(work_dir)?;
         model.set_outputs(self.config.semantic_outputs.as_deref().cloned());
-        if self.config.semantic_projection.is_some() {
-            self.original_x = Some(crate::input_history::InputHistory::for_model(
-                Array2::zeros((0, num_dim)),
-                &model,
-            )?);
+        if self.config.semantic_projection.is_some() && model.original_inputs().is_none() {
+            return Err(ENNError::InvalidParameter(
+                "original inputs: missing original rows for disk model".into(),
+            ));
         }
         let (params, fitter_params, output_fit) = match saved {
             Some(saved) => {
