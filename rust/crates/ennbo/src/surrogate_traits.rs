@@ -27,6 +27,15 @@ pub trait Surrogate: Send + Sync {
         rng: &mut dyn RngCore,
     ) -> Result<(), ENNError>;
 
+    fn validate_append(
+        &self,
+        _x_new: &ArrayView2<f64>,
+        _y_new: &ArrayView2<f64>,
+        _yvar_new: Option<&ArrayView2<f64>>,
+    ) -> Result<(), ENNError> {
+        Ok(())
+    }
+
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError>;
 
     fn sample(

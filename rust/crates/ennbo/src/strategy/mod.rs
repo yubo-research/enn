@@ -120,6 +120,10 @@ impl Strategy {
         }
     }
 
+    pub fn updates_trust_region(&self) -> bool {
+        !matches!(self, Strategy::Init(_))
+    }
+
     pub fn init_plan(&self) -> (usize, InitStrategy) {
         match self {
             Strategy::Init(state) => (state.num_init, state.strategy_type),
@@ -221,26 +225,8 @@ fn tell_common(
     telemetry: Option<&mut Telemetry>,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
-    if optimizer.trust_region().is_morbo() {
-        let nm = optimizer.trust_region().num_metrics();
-        if y.ncols() != nm {
-            return Err(ENNError::InvalidParameter(format!(
-                "y has {} metric columns but Morbo expects {nm}",
-                y.ncols()
-            )));
-        }
-    }
-
     let delta = optimizer.add_observations(x, y)?;
 
-    if let Some(nm) = optimizer.surrogate().and_then(|s| s.fitted_num_metrics()) {
-        if nm != y.ncols() {
-            return Err(ENNError::InvalidParameter(format!(
-                "y has {} metric columns but the fitted model has {nm}; changing output width is unsupported",
-                y.ncols()
-            )));
-        }
-    }
     if let Some(surrogate) = optimizer.surrogate_mut() {
         let start = std::time::Instant::now();
         surrogate.fit_append(&delta.x_new_view(), &delta.y_new_view(), yvar, rng)?;
@@ -288,8 +274,9 @@ fn tell_init(
     yvar: Option<&ArrayView2<f64>>,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
+    tell_common(optimizer, x, y, yvar, None, rng)?;
     state.completed += x.nrows();
-    tell_common(optimizer, x, y, yvar, None, rng)
+    Ok(())
 }
 
 fn draw_turbo_candidates(

@@ -15,6 +15,7 @@ mod access;
 mod auto_api;
 mod metric;
 mod outputs_api;
+mod row_validation;
 mod y_bounds_api;
 pub use access::{EnnIndexAccess, EnnRowAccess};
 pub use outputs_api::OutputMoments;
@@ -46,30 +47,6 @@ pub struct EpistemicNearestNeighbors {
 }
 
 impl EpistemicNearestNeighbors {
-    fn validate_shapes(
-        train_x: &Array2<f64>,
-        train_y: &Array2<f64>,
-        train_yvar: Option<&Array2<f64>>,
-    ) -> Result<(), ENNError> {
-        if train_x.nrows() != train_y.nrows() {
-            return Err(ENNError::InvalidShape {
-                expected: vec![train_y.nrows(), train_x.ncols()],
-                got: vec![train_x.nrows(), train_x.ncols()],
-            });
-        }
-        if let Some(yvar) = train_yvar {
-            if yvar.shape() != train_y.shape() {
-                return Err(ENNError::InvalidShape {
-                    expected: train_y.shape().to_vec(),
-                    got: yvar.shape().to_vec(),
-                });
-            }
-        }
-        let yvar_view = train_yvar.map(|v| v.view());
-        validate_finite_xy(&train_x.view(), &train_y.view(), yvar_view.as_ref())?;
-        Ok(())
-    }
-
     pub fn new(
         train_x: Array2<f64>,
         train_y: Array2<f64>,
@@ -112,7 +89,8 @@ impl EpistemicNearestNeighbors {
     ) -> Result<Self, ENNError> {
         crate::metric_weights::require_weighting_for_ties(&tied_dims, layout.weighting())?;
         crate::metric_weights::validate_tied_dims(&tied_dims, train_x.ncols())?;
-        Self::validate_shapes(&train_x, &train_y, train_yvar.as_ref())?;
+        let yvar_view = train_yvar.as_ref().map(|v| v.view());
+        Self::validate_shapes(&train_x.view(), &train_y.view(), yvar_view.as_ref())?;
         if let Some(original) = &attachments.original_inputs {
             if original.nrows() != train_x.nrows() {
                 return Err(ENNError::InvalidShape {
@@ -269,43 +247,6 @@ impl EpistemicNearestNeighbors {
         Self::new_empty_with_y_bounds(num_dim, num_metrics, layout, pending_flush_threshold, None)
     }
 
-    fn validate_add(
-        &self,
-        x: &ArrayView2<f64>,
-        y: &ArrayView2<f64>,
-        yvar: Option<&ArrayView2<f64>>,
-    ) -> Option<ENNError> {
-        if x.nrows() != y.nrows() || x.ncols() != self.num_dim || y.ncols() != self.num_metrics {
-            return Some(ENNError::InvalidShape {
-                expected: vec![y.nrows(), self.num_metrics],
-                got: vec![x.nrows(), x.ncols()],
-            });
-        }
-        if y.ncols() != self.num_metrics {
-            return Some(ENNError::InvalidParameter(format!(
-                "y has {} metric columns but model expects {}",
-                y.ncols(),
-                self.num_metrics
-            )));
-        }
-        if let Err(e) = validate_finite_xy(x, y, yvar) {
-            return Some(e);
-        }
-        match (yvar, self.rows().row_yvar(0).ok().flatten().is_some()) {
-            (Some(yv), _) if yv.shape() != y.shape() => Some(ENNError::InvalidShape {
-                expected: y.shape().to_vec(),
-                got: yv.shape().to_vec(),
-            }),
-            (Some(_), false) if self.num_obs > 0 => Some(ENNError::InvalidParameter(
-                "yvar provided but model has no existing yvar".to_string(),
-            )),
-            (None, true) if self.num_obs > 0 => Some(ENNError::InvalidParameter(
-                "yvar must be provided if model has existing yvar".to_string(),
-            )),
-            _ => None,
-        }
-    }
-
     pub fn add(
         &mut self,
         train_x: &ArrayView2<f64>,
@@ -315,28 +256,6 @@ impl EpistemicNearestNeighbors {
         self.add_with_original(train_x, None, train_y, train_yvar)
     }
 
-    fn validate_original(
-        &self,
-        train_x: &ArrayView2<f64>,
-        original_x: Option<&ArrayView2<f64>>,
-    ) -> Result<(), ENNError> {
-        match (original_x, self.original_x.is_some()) {
-            (None, true) => Err(ENNError::InvalidParameter(
-                "this store keeps original inputs, so add() requires them".into(),
-            )),
-            (Some(_), false) => Err(ENNError::InvalidParameter(
-                "this store keeps no original inputs".into(),
-            )),
-            (Some(original), true) if original.nrows() != train_x.nrows() => {
-                Err(ENNError::InvalidShape {
-                    expected: vec![train_x.nrows(), original.ncols()],
-                    got: vec![original.nrows(), original.ncols()],
-                })
-            }
-            _ => Ok(()),
-        }
-    }
-
     pub fn add_with_original(
         &mut self,
         train_x: &ArrayView2<f64>,
@@ -344,12 +263,8 @@ impl EpistemicNearestNeighbors {
         train_y: &ArrayView2<f64>,
         train_yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        if let Some(err) = self.validate_add(train_x, train_y, train_yvar) {
-            return Err(err);
-        }
-        self.validate_original(train_x, original_x)?;
+        let (y_z, yvar_z) = self.prepare_new_rows(train_x, original_x, train_y, train_yvar)?;
         if train_x.nrows() > 0 {
-            let (y_z, yvar_z) = self.warp_observations(train_y, train_yvar)?;
             let yvar_view = yvar_z.as_ref().map(|v| v.view());
             self.backend.wait_for_flush()?;
             let first_row = self.backend.len();
@@ -488,36 +403,6 @@ impl EpistemicNearestNeighbors {
     ) -> Result<(Array2<f64>, Array2<i64>), ENNError> {
         self.backend.search(x, search_k, exclude_nearest)
     }
-}
-
-fn validate_finite_xy(
-    x: &ArrayView2<f64>,
-    y: &ArrayView2<f64>,
-    yvar: Option<&ArrayView2<f64>>,
-) -> Result<(), ENNError> {
-    if x.iter().any(|v| !v.is_finite()) {
-        return Err(ENNError::InvalidParameter(
-            "x must contain only finite values".to_string(),
-        ));
-    }
-    if y.iter().any(|v| !v.is_finite()) {
-        return Err(ENNError::InvalidParameter(
-            "y must contain only finite values".to_string(),
-        ));
-    }
-    if let Some(yv) = yvar {
-        if yv.iter().any(|v| !v.is_finite()) {
-            return Err(ENNError::InvalidParameter(
-                "yvar must contain only finite values".to_string(),
-            ));
-        }
-        if yv.iter().any(|&v| v < 0.0) {
-            return Err(ENNError::InvalidParameter(
-                "yvar must be non-negative".to_string(),
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<(), ENNError> {

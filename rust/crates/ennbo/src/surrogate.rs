@@ -325,6 +325,31 @@ impl Surrogate for ENNSurrogate {
         self.fit_append_internal(&features.view(), original_x, y_new, yvar_new, &mut local_rng)
     }
 
+    fn validate_append(
+        &self,
+        x_new: &ArrayView2<f64>,
+        y_new: &ArrayView2<f64>,
+        yvar_new: Option<&ArrayView2<f64>>,
+    ) -> Result<(), ENNError> {
+        let features = crate::semantic::features(
+            x_new,
+            self.config.semantic_projection.as_deref(),
+            self.config.semantic_only,
+        )?;
+        let Some(model) = self.state.model() else {
+            return EpistemicNearestNeighbors::validate_first_rows(
+                &features.view(),
+                y_new,
+                yvar_new,
+                self.config.y_bounds.as_ref(),
+            );
+        };
+        let original_x = self.config.semantic_projection.is_some().then_some(x_new);
+        model
+            .prepare_new_rows(&features.view(), original_x, y_new, yvar_new)
+            .map(|_| ())
+    }
+
     fn schedule_background_flush(&self) -> Result<(), ENNError> {
         if let Some(model) = self.state.model() {
             model.backend.schedule_background_flush()

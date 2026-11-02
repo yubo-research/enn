@@ -222,21 +222,50 @@ impl Optimizer {
         if train_x.nrows() == 0 {
             return Ok(());
         }
-        let has_yvar = train_yvar.is_some();
-        match self.yvar_on_tell {
-            None => self.yvar_on_tell = Some(has_yvar),
-            Some(expected) if expected != has_yvar => {
+        let x_unit = crate::candidates::to_unit(train_x, &self.bounds.view());
+        self.validate_tell(&x_unit.view(), train_y, train_yvar)?;
+        self.apply_tell(&x_unit.view(), train_y, train_yvar)?;
+        self.yvar_on_tell = Some(train_yvar.is_some());
+        self.flush_rows()?;
+        self.write_snapshot(false)
+    }
+
+    fn validate_tell(
+        &self,
+        x_unit: &ArrayView2<f64>,
+        train_y: &ArrayView2<f64>,
+        train_yvar: Option<&ArrayView2<f64>>,
+    ) -> Result<(), ENNError> {
+        if let Some(expected) = self.yvar_on_tell {
+            if expected != train_yvar.is_some() {
                 return Err(ENNError::InvalidParameter(format!(
                     "train_yvar must be {} on every tell()",
                     if expected { "provided" } else { "omitted" }
                 )));
             }
-            Some(_) => {}
         }
-        let x_unit = crate::candidates::to_unit(train_x, &self.bounds.view());
-        self.apply_tell(&x_unit.view(), train_y, train_yvar)?;
-        self.flush_rows()?;
-        self.write_snapshot(false)
+        let num_metrics = train_y.ncols();
+        if let Some(surrogate) = self.surrogate.as_ref() {
+            surrogate.wait_for_background_flush()?;
+            if let Some(fitted) = surrogate.fitted_num_metrics() {
+                if fitted != num_metrics {
+                    return Err(ENNError::InvalidParameter(format!(
+                        "y has {num_metrics} metric columns but the fitted model has {fitted}; changing output width is unsupported"
+                    )));
+                }
+            }
+        }
+        let width_is_fixed = self.tr_state.is_morbo() || self.strategy.updates_trust_region();
+        if width_is_fixed && num_metrics != self.tr_state.num_metrics() {
+            return Err(ENNError::InvalidParameter(format!(
+                "y has {num_metrics} metric columns but the trust region expects {}",
+                self.tr_state.num_metrics()
+            )));
+        }
+        match self.surrogate.as_ref() {
+            Some(surrogate) => surrogate.validate_append(x_unit, train_y, train_yvar),
+            None => Ok(()),
+        }
     }
 
     fn apply_tell(
@@ -257,7 +286,9 @@ impl Optimizer {
         let result = strategy.tell(self, x_unit, train_y, train_yvar, &mut telemetry, &mut rng);
         self.strategy = strategy;
         self.telemetry = telemetry;
-        self.rng = rng;
+        if result.is_ok() {
+            self.rng = rng;
+        }
 
         self.telemetry.dt_tell = start.elapsed().as_secs_f64();
         if result.is_ok() && x_unit.nrows() < 64 {
