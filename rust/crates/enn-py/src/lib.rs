@@ -29,7 +29,6 @@ pub mod py_numpy_normal;
 pub mod py_optimizer;
 pub mod py_params;
 pub mod py_ports;
-pub mod py_semantic;
 pub mod py_util;
 
 mod pymodule_wrappers;

@@ -5,31 +5,16 @@ use std::sync::Arc;
 use crate::error::ENNError;
 use crate::fit_samples::ScaleSearch;
 use crate::model::EpistemicNearestNeighbors;
-use crate::output_blend::OutputBlend;
-use crate::output_blend_fit::OutputBlendFit;
 use crate::params::ENNParams;
 
 pub struct ENNFitter {
     pub(crate) k: i32,
     pub(crate) params: Option<ENNParams>,
-    output_fit: Option<OutputBlendFit>,
 }
 
 impl ENNFitter {
     pub fn new(k: i32) -> Self {
-        Self {
-            k,
-            params: None,
-            output_fit: None,
-        }
-    }
-
-    pub(crate) fn output_fit(&self) -> Option<&OutputBlendFit> {
-        self.output_fit.as_ref()
-    }
-
-    pub(crate) fn set_output_fit(&mut self, output_fit: Option<OutputBlendFit>) {
-        self.output_fit = output_fit;
+        Self { k, params: None }
     }
 
     pub fn params(&self) -> Option<&ENNParams> {
@@ -97,22 +82,6 @@ impl ENNFitter {
         Ok(best)
     }
 
-    pub(crate) fn fit_output_blend<R: Rng>(
-        &mut self,
-        model: &EpistemicNearestNeighbors,
-        warm: Option<&Arc<OutputBlend>>,
-        rng: &mut R,
-    ) -> Result<Option<Arc<OutputBlend>>, ENNError> {
-        let Some(outputs) = model.semantic_outputs() else {
-            return Ok(None);
-        };
-        let k = self.k;
-        self.output_fit
-            .get_or_insert_with(|| OutputBlendFit::new(outputs))
-            .fit(model, outputs, k, warm, rng)
-            .map(Some)
-    }
-
     pub fn ask<R: Rng>(
         &mut self,
         model: &EpistemicNearestNeighbors,
@@ -123,14 +92,10 @@ impl ENNFitter {
         let num_fit_samples = search.num_fit_samples.get();
         let affine_calibrate = search.affine_calibrate;
         let warm = params_warm_start.or(self.params.as_ref()).cloned();
-        let warm_blend = params_warm_start.and_then(|w| w.output_blend.as_ref());
-        let blend = self.fit_output_blend(model, warm_blend, rng)?;
         if model.num_obs() < 2 {
-            let best = ENNParams::new(self.k, 1.0, 0.0)
-                .map_err(|e| {
-                    ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
-                })?
-                .with_output_blend(blend);
+            let best = ENNParams::new(self.k, 1.0, 0.0).map_err(|e| {
+                ENNError::InvalidParameter(format!("Failed to create default params: {e}"))
+            })?;
             return self.commit_ask(model, best, num_fit_samples, rng, affine_calibrate);
         }
         let mut paramss = self.build_random_param_candidates(
@@ -150,9 +115,6 @@ impl ENNFitter {
             )
             .map_err(|e| ENNError::InvalidParameter(format!("Invalid warm-start params: {e}")))?;
             paramss.push(warm_params);
-        }
-        for params in &mut paramss {
-            params.output_blend.clone_from(&blend);
         }
         let indices: Vec<usize> = {
             let n = model.len();
@@ -188,7 +150,7 @@ impl ENNFitter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{array, Array2, Axis};
+    use ndarray::array;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
@@ -258,133 +220,6 @@ mod tests {
         assert_eq!(p.k_num_neighbors, 3);
         assert!((p.epistemic_variance_scale - 1.0).abs() < 1e-12);
         assert!((p.aleatoric_variance_scale - 0.0).abs() < 1e-12);
-    }
-
-    fn yy_model(alpha: Option<f64>) -> crate::test_helpers::TestModel {
-        let x = Array2::from_shape_fn((30, 1), |(i, _)| i as f64 * 0.1);
-        let y = Array2::from_shape_fn((30, 2), |(i, j)| (i as f64 * 0.1 + j as f64).sin());
-        let mut model = crate::test_helpers::test_model(x, y, None, false);
-        let loading = 0.5f64.sqrt();
-        model
-            .set_semantic_outputs(array![[loading], [loading]].into_dyn().view(), alpha)
-            .unwrap();
-        model
-    }
-
-    #[test]
-    fn yy_model_returns_a_blend_on_every_candidate_path() {
-        let model = yy_model(Some(0.3));
-        let mut fitter = ENNFitter::new(3);
-        let search = crate::fit_samples::test_search(5, 3, true);
-        let mut rng = StdRng::seed_from_u64(0);
-        let p = fitter.ask(&model, &search, None, &mut rng).unwrap();
-        let blend = p.output_blend.as_ref().expect("blend");
-        assert_eq!(blend.alpha, array![0.3, 0.3]);
-        assert_eq!(fitter.params().unwrap(), &p);
-    }
-
-    #[test]
-    fn yy_model_with_one_row_returns_defaults_with_a_blend() {
-        let x = array![[0.0]];
-        let y = array![[1.0, 2.0]];
-        let mut model = crate::test_helpers::test_model(x, y, None, false);
-        let loading = 0.5f64.sqrt();
-        model
-            .set_semantic_outputs(array![[loading], [loading]].into_dyn().view(), None)
-            .unwrap();
-        let mut rng = StdRng::seed_from_u64(0);
-        let p = ENNFitter::new(3)
-            .ask(
-                &model,
-                &crate::fit_samples::test_search(3, 5, true),
-                None,
-                &mut rng,
-            )
-            .unwrap();
-        assert_eq!(p.epistemic_variance_scale, 1.0);
-        assert_eq!(p.output_blend.unwrap().alpha, array![0.3, 0.3]);
-    }
-
-    fn grow(model: &mut EpistemicNearestNeighbors) {
-        let x = array![[10.0], [11.0], [12.0]];
-        let y = array![[5.0, 7.0], [6.0, 8.0], [7.0, 9.0]];
-        model.add(&x.view(), &y.view(), None).unwrap();
-    }
-
-    fn short_yy_model() -> crate::test_helpers::TestModel {
-        let x = Array2::from_shape_fn((4, 1), |(i, _)| i as f64);
-        let y = Array2::from_shape_fn((4, 2), |(i, j)| (i * (j + 1)) as f64 * 0.1);
-        let mut model = crate::test_helpers::test_model(x, y, None, false);
-        let loading = 0.5f64.sqrt();
-        model
-            .set_semantic_outputs(array![[loading], [loading]].into_dyn().view(), None)
-            .unwrap();
-        model
-    }
-
-    #[test]
-    fn prior_blend_keeps_tracking_the_model_before_twelve_rows() {
-        let mut model = short_yy_model();
-        let mut fitter = ENNFitter::new(3);
-        let search = crate::fit_samples::test_search(5, 3, true);
-        let mut rng = StdRng::seed_from_u64(0);
-        let first = fitter.ask(&model, &search, None, &mut rng).unwrap();
-        grow(&mut model);
-        let second = fitter.ask(&model, &search, None, &mut rng).unwrap();
-        let center = |p: &ENNParams| p.output_blend.as_ref().unwrap().center.clone();
-        assert_ne!(center(&first), center(&second));
-        let indices: Vec<usize> = (0..model.len()).collect();
-        let (_, y, _) = model.train_rows_at(&indices).unwrap();
-        let want = y.mean_axis(Axis(0)).unwrap();
-        assert!((center(&second) - want).iter().all(|d| d.abs() < 1e-12));
-    }
-
-    #[test]
-    fn warm_blend_given_once_is_kept_until_twelve_rows() {
-        let mut model = short_yy_model();
-        let mut fitter = ENNFitter::new(3);
-        let search = crate::fit_samples::test_search(5, 3, true);
-        let mut rng = StdRng::seed_from_u64(0);
-        let warm_blend = Arc::new(
-            OutputBlend::new(
-                array![0.7, 0.2],
-                Array2::eye(2),
-                array![0.0, 0.0],
-                array![1.0, 1.0],
-            )
-            .unwrap(),
-        );
-        let warm = ENNParams::new(3, 1.0, 0.1)
-            .unwrap()
-            .with_output_blend(Some(warm_blend.clone()));
-        fitter.ask(&model, &search, Some(&warm), &mut rng).unwrap();
-        grow(&mut model);
-        let later = fitter.ask(&model, &search, None, &mut rng).unwrap();
-        assert!(Arc::ptr_eq(
-            later.output_blend.as_ref().unwrap(),
-            &warm_blend
-        ));
-    }
-
-    #[test]
-    fn plain_model_draws_the_same_candidates_and_returns_no_blend() {
-        let plain = {
-            let x = Array2::from_shape_fn((30, 1), |(i, _)| i as f64 * 0.1);
-            let y = Array2::from_shape_fn((30, 2), |(i, j)| (i as f64 * 0.1 + j as f64).sin());
-            crate::test_helpers::test_model(x, y, None, false)
-        };
-        let pinned_zero = yy_model(Some(0.0));
-        let search = crate::fit_samples::test_search(5, 3, true);
-        let ask = |model| {
-            ENNFitter::new(3)
-                .ask(model, &search, None, &mut StdRng::seed_from_u64(4))
-                .unwrap()
-        };
-        let got = ask(&plain);
-        let zero = ask(&pinned_zero);
-        assert!(got.output_blend.is_none());
-        assert_eq!(got.epistemic_variance_scale, zero.epistemic_variance_scale);
-        assert_eq!(got.aleatoric_variance_scale, zero.aleatoric_variance_scale);
     }
 
     #[test]

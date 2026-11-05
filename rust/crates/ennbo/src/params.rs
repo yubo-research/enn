@@ -3,7 +3,6 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::calibration::AffineCalibrator;
-use crate::output_blend::OutputBlend;
 
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ParamsError {
@@ -22,8 +21,6 @@ pub struct ENNParams {
     pub epistemic_variance_scale: f64,
     #[serde(with = "crate::exact")]
     pub aleatoric_variance_scale: f64,
-    #[serde(with = "crate::exact")]
-    pub output_blend: Option<Arc<OutputBlend>>,
     #[serde(with = "crate::exact")]
     pub calibrator: Option<Arc<AffineCalibrator>>,
 }
@@ -54,14 +51,8 @@ impl ENNParams {
             k_num_neighbors,
             epistemic_variance_scale,
             aleatoric_variance_scale,
-            output_blend: None,
             calibrator: None,
         })
-    }
-
-    pub fn with_output_blend(mut self, output_blend: Option<Arc<OutputBlend>>) -> Self {
-        self.output_blend = output_blend;
-        self
     }
 
     pub fn with_calibrator(mut self, calibrator: Option<Arc<AffineCalibrator>>) -> Self {

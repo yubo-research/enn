@@ -30,60 +30,6 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_cat_encoder::PyCatEncoder>()?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_log_width, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_column_plan, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_texts, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_relationship_texts,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::validate_semantic_definition,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::validate_semantic_cache,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::validate_semantic_outputs,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_output_definition,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_output_embeddings,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_encode, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_text_projection,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_input_output_projection,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_projection,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_weighted, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_input_fingerprint,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_output_fingerprint,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_transform, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_artifact_paths, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_semantic::semantic_original_rows, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_semantic::semantic_output_projection,
-        m
-    )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::standardize_y_py, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_util::pareto_front_2d_maximize_py,
@@ -122,7 +68,6 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
 pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_model::PyEpistemicNearestNeighbors>()?;
     m.add_class::<crate::py_model::PyENNParams>()?;
-    m.add_class::<crate::py_params::PyOutputBlend>()?;
     m.add_function(wrap_pyfunction!(crate::py_model::train_rows_at_warped, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_layout::validate_enn_placement_py,
@@ -185,7 +130,10 @@ pub fn pymodule_optimizer(m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::py_optimizer::create_optimizer_enn_py,
         m
     )?)?;
-    m.add_function(wrap_pyfunction!(crate::py_optimizer::create_optimizer_run_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_optimizer::create_optimizer_run_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(crate::py_optimizer::open_optimizer_py, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_optimizer::create_optimizer_zero_py,

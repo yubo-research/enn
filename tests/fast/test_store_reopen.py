@@ -5,26 +5,13 @@ import textwrap
 import numpy as np
 import pytest
 
-from enn import (
-    ENNStatefulFitter,
-    EpistemicNearestNeighbors,
-    SemanticInputTransform,
-    SemanticOutputProjection,
-)
+from enn import ENNStatefulFitter, EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.enn.mbpann import MBPANNMetric
 
 PARAMS = ENNParams(
     k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
 )
-
-
-class _Encoder:
-    def __init__(self, seed):
-        self.seed = seed
-
-    def encode(self, texts):
-        return np.random.default_rng(self.seed).normal(size=(len(texts), 16))
 
 
 def _sparse_rows(n, seed=0, num_dim=8):
@@ -34,15 +21,6 @@ def _sparse_rows(n, seed=0, num_dim=8):
 
 def _rmse(model, x, y):
     return float(np.sqrt(np.mean((model.posterior(x, params=PARAMS).mu - y) ** 2)))
-
-
-def _transform(seed=1, relative_weight=0.25):
-    return SemanticInputTransform(
-        ["a", "b", "c"],
-        np.array([[0.0, 1.0]] * 3),
-        encoder=_Encoder(seed),
-        relative_weight=relative_weight,
-    )
 
 
 def _plain_store(work_dir, num_dim=3, **kwargs):
@@ -123,17 +101,6 @@ def test_constructor_rejects_any_existing_store(
     assert len(EpistemicNearestNeighbors.open(tmp_path / "w")) == 30
 
 
-def test_constructor_rejects_an_existing_store_with_a_transform(tmp_path):
-    _plain_store(tmp_path / "w")
-    with pytest.raises(ValueError, match=r"EpistemicNearestNeighbors\.open"):
-        EpistemicNearestNeighbors(
-            np.zeros((0, 3)),
-            np.zeros((0, 1)),
-            input_transform=_transform(),
-            work_dir=tmp_path / "w",
-        )
-
-
 def test_an_empty_model_in_a_fresh_directory_is_legal(tmp_path):
     model = EpistemicNearestNeighbors(
         np.zeros((0, 3)), np.zeros((0, 1)), work_dir=tmp_path / "fresh"
@@ -150,82 +117,6 @@ def test_store_without_an_identity_file_is_not_supported(tmp_path):
     _plain_store(tmp_path / "w")
     (tmp_path / "w" / "store_identity.json").unlink()
     with pytest.raises(ValueError, match=r"store_identity\.json"):
-        EpistemicNearestNeighbors.open(tmp_path / "w")
-
-
-def _transform_store(work_dir, **kwargs):
-    x = np.random.default_rng(0).random((30, 3))
-    model = EpistemicNearestNeighbors(
-        x,
-        x.sum(axis=1, keepdims=True),
-        input_transform=_transform(),
-        work_dir=work_dir,
-        **kwargs,
-    )
-    del model
-    return x
-
-
-@pytest.mark.parametrize("semantic_only", [False, True])
-def test_open_restores_the_transform_from_the_store(tmp_path, semantic_only):
-    x = _transform_store(tmp_path / "w", semantic_only=semantic_only)
-    reopened = EpistemicNearestNeighbors.open(tmp_path / "w")
-    assert reopened.semantic_only is semantic_only
-    original = _transform()
-    np.testing.assert_array_equal(
-        reopened.input_transform.weighted_projection, original.weighted_projection
-    )
-    np.testing.assert_array_equal(reopened.train_rows_at([0])[0], x[:1])
-    reopened.add(x[:2], x[:2].sum(axis=1, keepdims=True))
-    assert len(reopened) == 32
-
-
-def test_open_rejects_a_replaced_transform(tmp_path):
-    _transform_store(tmp_path / "w")
-    _transform(seed=2).save(tmp_path / "w" / "input_transform.npz")
-    with pytest.raises(ValueError, match="fingerprint"):
-        EpistemicNearestNeighbors.open(tmp_path / "w")
-
-
-def test_open_rejects_a_missing_transform(tmp_path):
-    _transform_store(tmp_path / "w")
-    (tmp_path / "w" / "input_transform.npz").unlink()
-    with pytest.raises(FileNotFoundError):
-        EpistemicNearestNeighbors.open(tmp_path / "w")
-
-
-def _output_projection(seed=0):
-    embeddings = np.random.default_rng(seed).normal(size=(2, 4))
-    return SemanticOutputProjection.from_embeddings(["p", "q"], embeddings)
-
-
-def _output_store(work_dir):
-    x = np.random.default_rng(0).random((30, 3))
-    y = np.column_stack([x.sum(axis=1), x[:, 0]])
-    model = EpistemicNearestNeighbors(
-        x,
-        y,
-        output_projection=_output_projection(),
-        output_alpha=0.25,
-        work_dir=work_dir,
-    )
-    del model
-
-
-def test_open_restores_the_output_projection_and_alpha(tmp_path):
-    _output_store(tmp_path / "w")
-    reopened = EpistemicNearestNeighbors.open(tmp_path / "w")
-    np.testing.assert_array_equal(
-        reopened.output_projection.loadings, _output_projection().loadings
-    )
-    params = ENNStatefulFitter(3, seed=0).ask(reopened, num_fit_candidates=2)
-    np.testing.assert_array_equal(params.output_blend.alpha, [0.25, 0.25])
-
-
-def test_open_rejects_a_replaced_output_projection(tmp_path):
-    _output_store(tmp_path / "w")
-    _output_projection(seed=1).save(tmp_path / "w" / "output_projection.npz")
-    with pytest.raises(ValueError, match="fingerprint"):
         EpistemicNearestNeighbors.open(tmp_path / "w")
 
 

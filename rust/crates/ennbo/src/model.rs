@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use crate::backend::EnnBackend;
 use crate::error::ENNError;
+use crate::input_history::InputHistory;
 use crate::layout::EnnLayout;
 use crate::metric_auto::AutoMetric;
-use crate::input_history::{InputHistory, StoreAttachments, ORIGINAL_INPUTS_FILE};
 use crate::store_identity::{claim_store_dir, StoreIdentity};
 use crate::y_bounds::resolve_y_bounds;
 
@@ -18,17 +18,14 @@ mod outputs_api;
 mod row_validation;
 mod y_bounds_api;
 pub use access::{EnnIndexAccess, EnnRowAccess};
-pub use outputs_api::OutputMoments;
 
 struct ModelRows {
     train_x: Array2<f64>,
     train_y: Array2<f64>,
     train_yvar: Option<Array2<f64>>,
-    attachments: StoreAttachments,
 }
 
 pub struct EpistemicNearestNeighbors {
-    original_x: Option<InputHistory>,
     original_y: Option<InputHistory>,
     pub(crate) layout: EnnLayout,
     pub(crate) backend: EnnBackend,
@@ -43,7 +40,6 @@ pub struct EpistemicNearestNeighbors {
     y_sumsq: Array1<f64>,
     pub(crate) auto_metric: Option<AutoMetric>,
     tied_groups: Vec<Vec<usize>>,
-    semantic_outputs: Option<crate::output_blend::SemanticOutputs>,
 }
 
 impl EpistemicNearestNeighbors {
@@ -75,37 +71,16 @@ impl EpistemicNearestNeighbors {
         y_bounds: Option<Array2<f64>>,
         tied_dims: Vec<Vec<usize>>,
     ) -> Result<Self, ENNError> {
-        let attachments = StoreAttachments::default();
-        let rows = (train_x, train_y, train_yvar);
-        Self::new_attached(rows, layout, y_bounds, tied_dims, attachments)
-    }
-
-    pub fn new_attached(
-        (train_x, train_y, train_yvar): (Array2<f64>, Array2<f64>, Option<Array2<f64>>),
-        layout: EnnLayout,
-        y_bounds: Option<Array2<f64>>,
-        tied_dims: Vec<Vec<usize>>,
-        attachments: StoreAttachments,
-    ) -> Result<Self, ENNError> {
         crate::metric_weights::require_weighting_for_ties(&tied_dims, layout.weighting())?;
         crate::metric_weights::validate_tied_dims(&tied_dims, train_x.ncols())?;
         let yvar_view = train_yvar.as_ref().map(|v| v.view());
         Self::validate_shapes(&train_x.view(), &train_y.view(), yvar_view.as_ref())?;
-        if let Some(original) = &attachments.original_inputs {
-            if original.nrows() != train_x.nrows() {
-                return Err(ENNError::InvalidShape {
-                    expected: vec![train_x.nrows(), original.ncols()],
-                    got: vec![original.nrows(), original.ncols()],
-                });
-            }
-        }
         claim_store_dir(layout.work_dir())?;
         Self::assemble(
             ModelRows {
                 train_x,
                 train_y,
                 train_yvar,
-                attachments,
             },
             layout,
             y_bounds,
@@ -123,7 +98,6 @@ impl EpistemicNearestNeighbors {
                 train_x: Array2::zeros((0, identity.num_dim)),
                 train_y: Array2::zeros((0, identity.num_metrics)),
                 train_yvar: None,
-                attachments: StoreAttachments::default(),
             },
             layout,
             Some(identity.y_bounds()),
@@ -143,7 +117,6 @@ impl EpistemicNearestNeighbors {
             train_x,
             train_y,
             train_yvar,
-            attachments,
         } = rows;
         let auto_rows = (layout.metric_learning() == crate::metric_auto::MetricLearning::Auto)
             .then(|| (train_x.clone(), train_y.clone()));
@@ -176,7 +149,6 @@ impl EpistemicNearestNeighbors {
         )?;
 
         let mut model = Self {
-            original_x: None,
             original_y: None,
             layout,
             backend,
@@ -191,7 +163,6 @@ impl EpistemicNearestNeighbors {
             y_sumsq,
             auto_metric: None,
             tied_groups: Vec::new(),
-            semantic_outputs: None,
         };
         if let Some(scale) = model.backend.metric_scale()? {
             model.scale_x = true;
@@ -200,9 +171,7 @@ impl EpistemicNearestNeighbors {
         if reopen || model.num_obs != model.backend.len() {
             sync_obs_stats_from_backend(&mut model)?;
         }
-        model.store_original_inputs(&attachments, reopen)?;
         model.store_original_outputs(original_y, reopen)?;
-        attachments.write_artifacts(model.layout.work_dir())?;
         model.set_tied_groups(tied_dims.clone())?;
         if let Some((x, y)) = auto_rows {
             model.enable_auto_metric(tied_dims, &x.view(), &y.view())?;
@@ -214,28 +183,6 @@ impl EpistemicNearestNeighbors {
             identity.commit(model.layout.work_dir())?;
         }
         Ok(model)
-    }
-
-    fn store_original_inputs(
-        &mut self,
-        attachments: &StoreAttachments,
-        reopen: bool,
-    ) -> Result<(), ENNError> {
-        let work_dir = self.layout.work_dir();
-        self.original_x = if reopen {
-            let history = InputHistory::recover(work_dir, ORIGINAL_INPUTS_FILE, self.backend.len())?;
-            if history.is_none() && self.layout.input_fingerprint().is_some() {
-                return Err(ENNError::InvalidParameter(
-                    "original inputs: missing original rows for disk model".into(),
-                ));
-            }
-            history
-        } else if let Some(rows) = &attachments.original_inputs {
-            Some(InputHistory::create(work_dir, ORIGINAL_INPUTS_FILE, &rows.view())?)
-        } else {
-            None
-        };
-        Ok(())
     }
 
     pub fn new_empty(
@@ -253,24 +200,11 @@ impl EpistemicNearestNeighbors {
         train_y: &ArrayView2<f64>,
         train_yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        self.add_with_original(train_x, None, train_y, train_yvar)
-    }
-
-    pub fn add_with_original(
-        &mut self,
-        train_x: &ArrayView2<f64>,
-        original_x: Option<&ArrayView2<f64>>,
-        train_y: &ArrayView2<f64>,
-        train_yvar: Option<&ArrayView2<f64>>,
-    ) -> Result<(), ENNError> {
-        let (y_z, yvar_z) = self.prepare_new_rows(train_x, original_x, train_y, train_yvar)?;
+        let (y_z, yvar_z) = self.prepare_new_rows(train_x, train_y, train_yvar)?;
         if train_x.nrows() > 0 {
             let yvar_view = yvar_z.as_ref().map(|v| v.view());
             self.backend.wait_for_flush()?;
             let first_row = self.backend.len();
-            if let (Some(history), Some(rows)) = (&mut self.original_x, original_x) {
-                history.write_at(first_row, rows)?;
-            }
             if let Some(history) = &mut self.original_y {
                 history.write_at(first_row, train_y)?;
             }
@@ -284,17 +218,6 @@ impl EpistemicNearestNeighbors {
             self.observe_auto_metric(train_x, train_y)?;
         }
         Ok(())
-    }
-
-    pub(crate) fn original_inputs(&self) -> Option<&InputHistory> {
-        self.original_x.as_ref()
-    }
-
-    pub fn original_rows_at(&self, indices: &[usize]) -> Result<Array2<f64>, ENNError> {
-        self.original_x
-            .as_ref()
-            .ok_or_else(|| ENNError::InvalidParameter("this store keeps no original inputs".into()))?
-            .gather(indices)
     }
 
     pub fn schedule_background_flush(&self) -> Result<(), ENNError> {
@@ -445,7 +368,11 @@ fn column_sums_and_sumsq(a: ArrayView2<f64>) -> (Array1<f64>, Array1<f64>) {
     (sum, sumsq)
 }
 
-pub(crate) fn accumulate_columns(sum: &mut Array1<f64>, sumsq: &mut Array1<f64>, extra: ArrayView2<f64>) {
+pub(crate) fn accumulate_columns(
+    sum: &mut Array1<f64>,
+    sumsq: &mut Array1<f64>,
+    extra: ArrayView2<f64>,
+) {
     let ncol = extra.ncols();
     for row in extra.axis_iter(ndarray::Axis(0)) {
         for j in 0..ncol {

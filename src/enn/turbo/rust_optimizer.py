@@ -119,9 +119,6 @@ def create_optimizer(
         raise ValueError(f"Unsupported optimizer config: {type(config.surrogate)}")
 
     bounds_arr = np.asarray(bounds, dtype=float)
-    transform = getattr(config.surrogate, "input_transform", None)
-    if transform is not None and not np.array_equal(transform.bounds, bounds_arr):
-        raise ValueError("semantic transform bounds must match optimizer bounds")
     seed = int(seed)
     work_dir = os.fspath(work_dir)
     validate_enn_placement(work_dir)

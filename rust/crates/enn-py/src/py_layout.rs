@@ -9,18 +9,12 @@ pub fn validate_enn_placement_py(work_dir: String) -> PyResult<()> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (carried, explicit, semantic_only, weighting))]
+#[pyo3(signature = (carried, explicit, weighting))]
 pub fn resolve_tied_groups(
     carried: Vec<Vec<usize>>,
     explicit: Option<Vec<Vec<usize>>>,
-    semantic_only: bool,
     weighting: bool,
 ) -> PyResult<Vec<Vec<usize>>> {
-    ennbo::metric_weights::resolve_tied_groups(
-        &carried,
-        explicit.as_deref(),
-        semantic_only,
-        weighting,
-    )
+    ennbo::metric_weights::resolve_tied_groups(&carried, explicit.as_deref(), weighting)
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }

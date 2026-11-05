@@ -4,27 +4,16 @@ import numpy as np
 import pytest
 
 from enn import (
-    AcqType,
     CatEncoder,
     CatEncoding,
     DimKind,
     EpistemicNearestNeighbors,
-    MorboTRConfig,
-    MultiObjectiveConfig,
-    SemanticInputTransform,
-    SemanticOutputProjection,
     create_optimizer,
 )
-from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config
 from evals.harness.work_dirs import fresh_work_dir
-
-
-class Encoder:
-    def encode(self, texts):
-        return np.eye(len(texts))
 
 
 def problem(encoding):
@@ -40,53 +29,29 @@ def problem(encoding):
         )
         x = encoder.encode(x)
     bounds = np.column_stack((np.full(x.shape[1], -1.0), np.full(x.shape[1], 2.0)))
-    transform = SemanticInputTransform(
-        [f"x{i}" for i in range(x.shape[1])], bounds, encoder=Encoder()
-    )
-    return x, np.sin(x[:, :1] * 3), transform
+    return x, np.sin(x[:, :1] * 3), bounds
+
+
+def tied_groups(x, use_ties, weighting):
+    return getattr(x, "tied_dims", ((0, 1),)) if use_ties and weighting else ()
 
 
 @pytest.mark.parametrize("weighting", [False, True])
 @pytest.mark.parametrize("use_ties", [False, True])
-@pytest.mark.parametrize("semantics", ["none", "both", "only"])
 @pytest.mark.parametrize(
     "encoding", [None, CatEncoding.ONE_HOT, CatEncoding.RADEMACHER]
 )
-def test_supervised_feature_combinations(
-    tmp_path, weighting, semantics, encoding, use_ties
-):
-    x, y, transform = problem(encoding)
-    tied = (
-        (((0, 1),) if semantics == "only" else getattr(x, "tied_dims", ((0, 1),)))
-        if use_ties and weighting
-        else ()
-    )
+def test_supervised_feature_combinations(tmp_path, weighting, encoding, use_ties):
+    x, y, _ = problem(encoding)
+    tied = tied_groups(x, use_ties, weighting)
     if not use_ties:
         x = np.asarray(x)
-    kwargs = {
-        "weighting": weighting,
-        "tied_dims": tied,
-        "work_dir": tmp_path / "actual",
-    }
-    if semantics != "none":
-        kwargs.update(input_transform=transform, semantic_only=semantics == "only")
-    actual = EpistemicNearestNeighbors(x[:16], y[:16], **kwargs)
-    features = (
-        x
-        if semantics == "none"
-        else transform.transform(x, semantic_only=semantics == "only")
+    actual = EpistemicNearestNeighbors(
+        x[:16], y[:16], weighting=weighting, tied_dims=tied, work_dir=tmp_path
     )
-    kwargs["work_dir"] = tmp_path / "manual"
-    kwargs.pop("input_transform", None)
-    kwargs.pop("semantic_only", None)
-    manual = EpistemicNearestNeighbors(np.asarray(features[:16]), y[:16], **kwargs)
     actual.add(x[16:], y[16:])
-    manual.add(features[16:], y[16:])
-    params = ENNParams(3, 1.0, 0.1)
-    a = actual.posterior(x[:3], params=params)
-    b = manual.posterior(features[:3], params=params)
-    np.testing.assert_allclose(a.mu, b.mu)
-    np.testing.assert_allclose(a.se, b.se)
+    posterior = actual.posterior(x[:3], params=ENNParams(3, 1.0, 0.1))
+    assert np.isfinite(posterior.mu).all() and np.isfinite(posterior.se).all()
     original, values, _ = actual.train_rows_at([23, 0, 17])
     np.testing.assert_allclose(original, x[[23, 0, 17]], atol=1e-14)
     np.testing.assert_allclose(values, y[[23, 0, 17]])
@@ -96,30 +61,21 @@ def test_supervised_feature_combinations(
 
 @pytest.mark.parametrize("weighting", [False, True])
 @pytest.mark.parametrize("use_ties", [False, True])
-@pytest.mark.parametrize("semantics", ["none", "both", "only"])
 @pytest.mark.parametrize(
     "encoding", [None, CatEncoding.ONE_HOT, CatEncoding.RADEMACHER]
 )
-def test_optimizer_feature_combinations(
-    tmp_path, weighting, semantics, encoding, use_ties
-):
-    x, y, transform = problem(encoding)
-    tied = (
-        (((0, 1),) if semantics == "only" else getattr(x, "tied_dims", ((0, 1),)))
-        if use_ties and weighting
-        else ()
-    )
+def test_optimizer_feature_combinations(weighting, encoding, use_ties):
+    x, y, bounds = problem(encoding)
+    tied = tied_groups(x, use_ties, weighting)
     if not use_ties:
         x = np.asarray(x)
     surrogate = ENNSurrogateConfig(
         weighting=weighting,
         tied_dims=tied,
-        input_transform=transform if semantics != "none" else None,
-        semantic_only=semantics == "only",
         fit=ENNFitConfig(num_fit_samples=5, num_fit_candidates=3),
     )
     optimizer = create_optimizer(
-        bounds=transform.bounds,
+        bounds=bounds,
         config=turbo_enn_config(enn=surrogate, num_init=3),
         seed=int(np.random.default_rng(4).integers(2**63 - 1)),
         work_dir=fresh_work_dir(),
@@ -131,29 +87,6 @@ def test_optimizer_feature_combinations(
     optimizer.tell(x[16:], y[16:])
     assert np.isfinite(optimizer.ask(1)).all()
     np.testing.assert_allclose(optimizer.x_obs, x, atol=1e-14)
-
-
-def test_semantic_only_fitting_and_invalid_add_preserve_original_rows():
-    x, y, transform = problem(None)
-    model = EpistemicNearestNeighbors(
-        x[:0],
-        y[:0],
-        input_transform=transform,
-        semantic_only=True,
-        weighting=True,
-        work_dir=fresh_work_dir(),
-    )
-    model.add(x[:12], y[:12])
-    with pytest.raises(ValueError):
-        model.add(x[12:13], np.zeros((1, 2)))
-    assert len(model) == 12
-    np.testing.assert_allclose(model.train_rows_at([11])[0], x[11:12])
-    fitter = ENNStatefulFitter(
-        k=3,
-        seed=int(np.random.default_rng(1).integers(2**63 - 1)),
-    )
-    params = fitter.ask(model, num_fit_samples=4, num_fit_candidates=3)
-    assert np.isfinite(model.posterior(x[:2], params=params).mu).all()
 
 
 def test_work_dir_is_required_even_when_the_environment_names_one(
@@ -179,94 +112,3 @@ def test_native_optimizer_rejects_replaced_options(obsolete):
         create_optimizer_enn(
             np.array([[0.0, 1.0]]), fresh_work_dir(), config_overrides={obsolete: True}
         )
-
-
-@pytest.mark.parametrize("weighting", [False, True])
-def test_semantic_only_disk_reopen_preserves_original_observations(tmp_path, weighting):
-    x, y, transform = problem(None)
-    kwargs = {
-        "work_dir": tmp_path,
-        "weighting": weighting,
-        "input_transform": transform,
-        "semantic_only": True,
-    }
-    model = EpistemicNearestNeighbors(x[:12], y[:12], **kwargs)
-    model.add(x[12:18], y[12:18])
-    model.persist_index_to_disk()
-    del model
-    reopened = EpistemicNearestNeighbors.open(kwargs["work_dir"])
-    original, observations, _ = reopened.train_rows_at([17, 0, 12])
-    np.testing.assert_array_equal(original, x[[17, 0, 12]])
-    np.testing.assert_allclose(observations, y[[17, 0, 12]])
-    reopened.add(x[18:], y[18:])
-    reopened.persist_index_to_disk()
-    fitter = ENNStatefulFitter(
-        k=3,
-        seed=int(np.random.default_rng(1).integers(2**63 - 1)),
-    )
-    params = fitter.ask(reopened, num_fit_samples=4, num_fit_candidates=3)
-    assert np.isfinite(reopened.posterior(x[:2], params=params).mu).all()
-    del reopened
-    again = EpistemicNearestNeighbors.open(kwargs["work_dir"])
-    np.testing.assert_array_equal(again.train_rows_at([23, 0])[0], x[[23, 0]])
-
-
-def _output_projection():
-    embeddings = np.array([[1.0, 0.0], [0.9, 0.1]])
-    return SemanticOutputProjection.from_embeddings(["p", "q"], embeddings)
-
-
-def _morbo_run(fit, acq, projection, seed=0):
-    surrogate = ENNSurrogateConfig(k=3, fit=fit, output_projection=projection)
-    optimizer = create_optimizer(
-        bounds=np.array([[0.0, 1.0], [0.0, 1.0]]),
-        config=turbo_enn_config(
-            enn=surrogate,
-            num_init=4,
-            acq_type=acq,
-            trust_region=MorboTRConfig(MultiObjectiveConfig(num_metrics=2)),
-        ),
-        seed=seed,
-        work_dir=fresh_work_dir(),
-    )
-    arms = []
-    rng = np.random.default_rng(seed)
-    for _ in range(12):
-        x = optimizer.ask(2)
-        y = np.column_stack(
-            [-np.sum((x - 0.3) ** 2, axis=1), -np.sum((x - 0.35) ** 2, axis=1)]
-        )
-        optimizer.tell(x, y + 0.01 * rng.standard_normal(y.shape))
-        arms.append(x)
-    return np.vstack(arms)
-
-
-SEARCHED = ENNFitConfig(num_fit_samples=8, num_fit_candidates=4)
-
-
-@pytest.mark.parametrize(
-    ("fit", "acq"),
-    [
-        (ENNFitConfig(), AcqType.PARETO),
-        (SEARCHED, AcqType.PARETO),
-        (SEARCHED, AcqType.UCB),
-        (SEARCHED, AcqType.THOMPSON),
-    ],
-)
-def test_output_projection_reaches_every_acquisition(fit, acq):
-    plain = _morbo_run(fit, acq, None)
-    blended = _morbo_run(fit, acq, _output_projection())
-    assert np.isfinite(blended).all()
-    assert not np.array_equal(plain[8:], blended[8:])
-
-
-def test_output_projection_must_match_the_metric_count():
-    embeddings = np.array([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
-    projection = SemanticOutputProjection.from_embeddings(["a", "b", "c"], embeddings)
-    with pytest.raises(ValueError, match="output_projection has 3 outputs"):
-        _morbo_run(ENNFitConfig(), AcqType.PARETO, projection)
-
-
-def test_output_alpha_requires_output_projection():
-    with pytest.raises(ValueError, match="output_alpha requires output_projection"):
-        ENNSurrogateConfig(output_alpha=0.5)

@@ -83,13 +83,6 @@ def _trust_region_to_override(config: OptimizerConfig) -> dict[str, Any]:
 def _metric_overrides(surrogate: ENNSurrogateConfig, overrides: dict[str, Any]) -> None:
     if surrogate.tied_dims:
         overrides["tied_dims"] = [list(g) for g in surrogate.tied_dims]
-    if surrogate.input_transform is not None:
-        overrides["semantic_projection"] = surrogate.input_transform.weighted_projection
-        overrides["semantic_only"] = surrogate.semantic_only
-    if surrogate.output_projection is not None:
-        overrides["semantic_output_loadings"] = surrogate.output_projection.loadings
-        if surrogate.output_alpha is not None:
-            overrides["output_alpha"] = float(surrogate.output_alpha)
     if surrogate.fit.affine_calibrate:
         overrides["affine_calibrate"] = True
 

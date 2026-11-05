@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 
-from _reports.semantic_features import eval_lunar_benchmark
 from _reports.semantic_features import tlunar_interaction_report as report
 from _reports.semantic_features.eval_tlunar_interactions import (
     CORNERS,
@@ -62,17 +61,6 @@ def test_mixed_contrast_rejects_product_and_accepts_additive_objectives():
 def test_scale_interventions_reject_invalid_weights(factor):
     with pytest.raises(ValueError):
         scaled_point(np.zeros(12), range(4, 12), factor)
-
-
-def test_historical_projection_cannot_silently_use_revised_names(tmp_path, monkeypatch):
-    from enn import SemanticInputTransform
-    from tests.fast.test_semantic import Encoder
-
-    transform = SemanticInputTransform(["old_name"], [[-1, 1]], encoder=Encoder())
-    transform.save(tmp_path / "lunar_projection.npz")
-    monkeypatch.setattr(eval_lunar_benchmark, "ROOT", tmp_path)
-    with pytest.raises(ValueError, match="historical parameter names"):
-        eval_lunar_benchmark.lunar_projection()
 
 
 def test_report_preserves_interactions_that_cancel_across_simulator_seeds():

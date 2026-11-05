@@ -11,7 +11,7 @@ use crate::error::ENNError;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 
-pub(super) fn batch_posterior_unblended(
+pub(super) fn batch_posterior_warped(
     model: &EpistemicNearestNeighbors,
     x: &ArrayView2<f64>,
     paramss: &[ENNParams],

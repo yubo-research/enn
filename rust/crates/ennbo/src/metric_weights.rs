@@ -206,15 +206,10 @@ pub fn require_weighting_for_ties(
 pub fn resolve_tied_groups(
     carried: &[Vec<usize>],
     explicit: Option<&[Vec<usize>]>,
-    semantic_only: bool,
     weighting: bool,
 ) -> Result<Vec<Vec<usize>>, ENNError> {
     require_weighting_for_ties(explicit.unwrap_or_default(), weighting)?;
-    let carried = if semantic_only || !weighting {
-        &[][..]
-    } else {
-        carried
-    };
+    let carried = if !weighting { &[][..] } else { carried };
     match explicit.filter(|g| !g.is_empty()) {
         None => Ok(carried.to_vec()),
         Some(groups) if !carried.is_empty() && groups != carried => Err(
@@ -239,31 +234,22 @@ mod tied_feature_tests {
     }
 
     #[test]
-    fn projected_ties_do_not_inherit_removed_categorical_columns() {
+    fn explicit_ties_must_match_carried_categorical_blocks() {
         let carried = vec![vec![2, 3, 4]];
-        let projected = vec![vec![0, 1]];
-        assert_eq!(
-            resolve_tied_groups(&carried, None, false, true).unwrap(),
-            carried
-        );
-        assert!(resolve_tied_groups(&carried, Some(&projected), false, true).is_err());
-        assert!(resolve_tied_groups(&carried, None, true, true)
-            .unwrap()
-            .is_empty());
-        assert_eq!(
-            resolve_tied_groups(&carried, Some(&projected), true, true).unwrap(),
-            projected
-        );
+        let other = vec![vec![0, 1]];
+        assert_eq!(resolve_tied_groups(&carried, None, true).unwrap(), carried);
+        assert!(resolve_tied_groups(&carried, Some(&other), true).is_err());
+        assert_eq!(resolve_tied_groups(&[], Some(&other), true).unwrap(), other);
     }
 
     #[test]
     fn without_weighting_carried_groups_vanish_and_explicit_groups_are_rejected() {
         let groups = vec![vec![0, 1]];
-        assert!(resolve_tied_groups(&groups, None, false, false)
+        assert!(resolve_tied_groups(&groups, None, false)
             .unwrap()
             .is_empty());
-        let err = resolve_tied_groups(&[], Some(&groups), false, false).unwrap_err();
+        let err = resolve_tied_groups(&[], Some(&groups), false).unwrap_err();
         assert!(err.to_string().contains("requires weighting=True"), "{err}");
-        assert!(resolve_tied_groups(&[], Some(&[]), false, false).is_ok());
+        assert!(resolve_tied_groups(&[], Some(&[]), false).is_ok());
     }
 }

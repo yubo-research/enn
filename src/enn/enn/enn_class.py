@@ -6,20 +6,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from enn._rust import EpistemicNearestNeighbors as _RustENN
-from enn._rust import semantic_original_rows
 from enn.turbo.config.enn_surrogate_config import validate_enn_placement
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 from .cat_ties import resolve_tied_groups
 from .enn_class_support import _to_rust_seeds, rust_params
-from .enn_store import open_input_transform, open_output_projection
 from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    from enn.semantic import SemanticInputTransform
-    from enn.semantic_outputs import SemanticOutputProjection
 
     from .enn_normal import ENNNormal
     from .enn_params import ENNParams, PosteriorFlags
@@ -70,25 +65,7 @@ def _finalize_function_draw(
     return draws_arr, idx_arr
 
 
-def _rust_output_argument(output_projection, output_alpha):
-    if output_projection is None:
-        return None
-    alpha = None if output_alpha is None else float(output_alpha)
-    return output_projection.loadings, alpha, output_projection.npz_bytes()
-
-
-def _rust_input_argument(input_transform, original_inputs, semantic_only):
-    if input_transform is None:
-        return None
-    fingerprint = input_transform.fingerprint(semantic_only=semantic_only)
-    return original_inputs, fingerprint, input_transform.npz_bytes()
-
-
 class EpistemicNearestNeighbors(_EnnRustView):
-    input_transform: SemanticInputTransform | None = None
-    output_projection: SemanticOutputProjection | None = None
-    semantic_only: bool = False
-
     @staticmethod
     def _coerce_inputs(train_x, train_y, train_yvar):
         train_x = np.asarray(train_x, dtype=float)
@@ -103,37 +80,19 @@ class EpistemicNearestNeighbors(_EnnRustView):
         train_y: np.ndarray,
         train_yvar: np.ndarray | None = None,
         tied_dims: Sequence[Sequence[int]] | None = None,
-        input_transform: SemanticInputTransform | None = None,
-        output_projection: SemanticOutputProjection | None = None,
         *,
         work_dir: str | os.PathLike[str],
         weighting: bool = False,
         y_bounds: np.ndarray | None = None,
-        semantic_only: bool = False,
-        output_alpha: float | None = None,
     ) -> None:
-        self.input_transform = input_transform
-        self.semantic_only = bool(semantic_only)
-        original_inputs = (
-            np.asarray(train_x, dtype=float) if input_transform is not None else None
-        )
         groups = [
             list(g)
-            for g in resolve_tied_groups(
-                train_x, tied_dims, weighting=weighting, semantic_only=semantic_only
-            )
+            for g in resolve_tied_groups(train_x, tied_dims, weighting=weighting)
         ]
-        if input_transform is not None:
-            train_x = input_transform.transform(train_x, semantic_only=semantic_only)
-        elif semantic_only:
-            raise ValueError("semantic_only requires input_transform")
         validate_enn_placement(work_dir)
         train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
-        if output_alpha is not None and output_projection is None:
-            raise ValueError("output_alpha requires output_projection")
-        self.output_projection = output_projection
         rust_kwargs: dict[str, Any] = {
             "train_x": train_x,
             "train_y": train_y,
@@ -141,11 +100,6 @@ class EpistemicNearestNeighbors(_EnnRustView):
             "train_yvar": train_yvar,
             "weighting": weighting,
             "tied_dims": groups,
-            "semantic_only": semantic_only,
-            "input": _rust_input_argument(
-                input_transform, original_inputs, semantic_only
-            ),
-            "output": _rust_output_argument(output_projection, output_alpha),
         }
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
@@ -156,9 +110,6 @@ class EpistemicNearestNeighbors(_EnnRustView):
         validate_enn_placement(work_dir)
         self = cls.__new__(cls)
         self._rust_model = _RustENN.open(os.fspath(work_dir))
-        self.semantic_only = bool(self._rust_model.store_settings[1])
-        self.input_transform = open_input_transform(self._rust_model)
-        self.output_projection = open_output_projection(self._rust_model)
         return self
 
     def add(
@@ -168,19 +119,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         train_yvar: np.ndarray | None = None,
     ) -> None:
         train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
-        self._rust_model.add(
-            self.transform_inputs(train_x),
-            train_y,
-            train_yvar,
-            None if self.input_transform is None else train_x,
-        )
-
-    def transform_inputs(self, x):
-        return (
-            x
-            if self.input_transform is None
-            else self.input_transform.transform(x, semantic_only=self.semantic_only)
-        )
+        self._rust_model.add(train_x, train_y, train_yvar)
 
     def ensure_index_sync(self) -> None:
         self._rust_model.ensure_index_sync()
@@ -197,10 +136,6 @@ class EpistemicNearestNeighbors(_EnnRustView):
         idx = [int(i) for i in np.asarray(indices, dtype=int).ravel()]
         x, y, yvar = self._rust_model.train_rows_at(idx)
         x_arr = np.asarray(x, dtype=float)
-        if self.input_transform is not None:
-            x_arr = np.asarray(
-                semantic_original_rows(self._rust_model, idx), dtype=float
-            )
         y_arr = np.asarray(y, dtype=float)
         yvar_arr = None if yvar is None else np.asarray(yvar, dtype=float)
         return x_arr, y_arr, yvar_arr
@@ -253,7 +188,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags = _posterior_flags_coerced(flags)
 
         mu, se, se_epi, se_ale, idx = self._rust_model.posterior(
-            self.transform_inputs(np.asarray(x, dtype=float)),
+            np.asarray(x, dtype=float),
             params=rust_params(params),
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
@@ -276,9 +211,9 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags = _posterior_flags_coerced(flags)
 
         mu, se, se_epi, se_ale, idx = self._rust_model.conditional_posterior(
-            self.transform_inputs(np.asarray(x_whatif, dtype=float)),
+            np.asarray(x_whatif, dtype=float),
             np.asarray(y_whatif, dtype=float),
-            self.transform_inputs(np.asarray(x, dtype=float)),
+            np.asarray(x, dtype=float),
             params=rust_params(params),
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
@@ -299,7 +234,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags = _posterior_flags_coerced(flags)
         x = np.asarray(x, dtype=float)
         mu_all, se_all, se_epi_all, se_ale_all, idx = self._rust_model.batch_posterior(
-            self.transform_inputs(x),
+            x,
             paramss=[rust_params(p) for p in paramss],
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
@@ -315,9 +250,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
     ) -> np.ndarray:
         x = np.asarray(x, dtype=float)
         return np.asarray(
-            self._rust_model.neighbors(
-                self.transform_inputs(x), int(k), exclude_nearest=exclude_nearest
-            ),
+            self._rust_model.neighbors(x, int(k), exclude_nearest=exclude_nearest),
             dtype=np.int64,
         )
 
@@ -333,9 +266,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         x = np.asarray(x, dtype=float)
         seeds = _to_rust_seeds(function_seeds)
         kw = _rust_function_draw_kwargs(params, flags, seeds)
-        draws, idx = self._rust_model.posterior_function_draw(
-            self.transform_inputs(x), **kw
-        )
+        draws, idx = self._rust_model.posterior_function_draw(x, **kw)
         return _finalize_function_draw(x, draws, idx)
 
     def conditional_posterior_function_draw(
@@ -353,9 +284,9 @@ class EpistemicNearestNeighbors(_EnnRustView):
         seeds = _to_rust_seeds(function_seeds)
         kw = _rust_function_draw_kwargs(params, flags, seeds)
         draws, idx = self._rust_model.conditional_posterior_function_draw(
-            self.transform_inputs(np.asarray(x_whatif, dtype=float)),
+            np.asarray(x_whatif, dtype=float),
             np.asarray(y_whatif, dtype=float),
-            self.transform_inputs(x),
+            x,
             **kw,
         )
         return _finalize_function_draw(x, draws, idx)

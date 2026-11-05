@@ -76,39 +76,15 @@ impl EpistemicNearestNeighbors {
         }
     }
 
-    fn validate_original(
-        &self,
-        train_x: &ArrayView2<f64>,
-        original_x: Option<&ArrayView2<f64>>,
-    ) -> Result<(), ENNError> {
-        match (original_x, self.original_x.is_some()) {
-            (None, true) => Err(ENNError::InvalidParameter(
-                "this store keeps original inputs, so add() requires them".into(),
-            )),
-            (Some(_), false) => Err(ENNError::InvalidParameter(
-                "this store keeps no original inputs".into(),
-            )),
-            (Some(original), true) if original.nrows() != train_x.nrows() => {
-                Err(ENNError::InvalidShape {
-                    expected: vec![train_x.nrows(), original.ncols()],
-                    got: vec![original.nrows(), original.ncols()],
-                })
-            }
-            _ => Ok(()),
-        }
-    }
-
     pub(crate) fn prepare_new_rows(
         &self,
         train_x: &ArrayView2<f64>,
-        original_x: Option<&ArrayView2<f64>>,
         train_y: &ArrayView2<f64>,
         train_yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(Array2<f64>, Option<Array2<f64>>), ENNError> {
         if let Some(err) = self.validate_add(train_x, train_y, train_yvar) {
             return Err(err);
         }
-        self.validate_original(train_x, original_x)?;
         self.warp_observations(train_y, train_yvar)
     }
 }

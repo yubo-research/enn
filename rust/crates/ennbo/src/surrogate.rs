@@ -6,11 +6,9 @@ pub use crate::surrogate_config::ENNSurrogateConfig;
 pub use crate::surrogate_traits::{BoxedSurrogate, Surrogate, SurrogatePrediction};
 
 use crate::error::ENNError;
-use crate::input_history::StoreAttachments;
 use crate::fit_samples::FitSamples;
 use crate::fitter::ENNFitter;
 use crate::model::EpistemicNearestNeighbors;
-use crate::output_blend_fit::OutputBlendFit;
 use crate::params::{ENNParams, PosteriorFlags};
 use crate::surrogate_state::{AppendInput, AppendPlan, FitState, ScaleFit, SurrogateState};
 
@@ -60,45 +58,17 @@ impl ENNSurrogate {
     fn construct_model(
         &self,
         x: &ArrayView2<f64>,
-        original_x: Option<&ArrayView2<f64>>,
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<EpistemicNearestNeighbors, ENNError> {
-        let mut model = EpistemicNearestNeighbors::new_attached(
-            (x.to_owned(), y.to_owned(), yvar.map(|v| v.to_owned())),
-            self.config.store_layout(),
+        EpistemicNearestNeighbors::new_configured(
+            x.to_owned(),
+            y.to_owned(),
+            yvar.map(|v| v.to_owned()),
+            self.config.layout.clone(),
             self.config.y_bounds.clone(),
             self.config.tied_dims.clone(),
-            StoreAttachments {
-                original_inputs: original_x.map(|v| v.to_owned()),
-                ..Default::default()
-            },
-        )?;
-        model.set_outputs(self.config.semantic_outputs.as_deref().cloned());
-        Ok(model)
-    }
-
-    fn refresh_output_blend(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
-        match &mut self.state {
-            FitState::Frozen {
-                model,
-                params,
-                output_fit: Some(fit),
-            } => {
-                if let Some(outputs) = model.semantic_outputs() {
-                    let k = params.k_num_neighbors;
-                    params.output_blend = Some(fit.fit(model, outputs, k, None, rng)?);
-                }
-            }
-            FitState::Searched { model, fit } => {
-                let ScaleFit { fitter, params, .. } = fit.as_mut();
-                if let Some(params) = params.as_mut() {
-                    params.output_blend = fitter.fit_output_blend(model, None, rng)?;
-                }
-            }
-            _ => {}
-        }
-        Ok(())
+        )
     }
 
     fn search_scales(&mut self, rng: &mut rand::rngs::StdRng) -> Result<(), ENNError> {
@@ -123,8 +93,6 @@ impl ENNSurrogate {
         }
         if plan.search {
             self.search_scales(rng)?;
-        } else {
-            self.refresh_output_blend(rng)?;
         }
         if plan.release {
             self.fitted_model()?
@@ -137,18 +105,15 @@ impl ENNSurrogate {
     fn fit_append_internal(
         &mut self,
         x_new: &ArrayView2<f64>,
-        original_x: Option<&ArrayView2<f64>>,
         y_new: &ArrayView2<f64>,
         yvar_new: Option<&ArrayView2<f64>>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
         match &mut self.state {
-            FitState::Unfitted => {
-                return self.start_model(x_new, original_x, y_new, yvar_new, None, rng)
-            }
+            FitState::Unfitted => return self.start_model(x_new, y_new, yvar_new, None, rng),
             FitState::Frozen { model, .. } | FitState::Searched { model, .. } => {
                 if !self.replaying {
-                    model.add_with_original(x_new, original_x, y_new, yvar_new)?;
+                    model.add(x_new, y_new, yvar_new)?;
                 }
             }
         }
@@ -168,18 +133,14 @@ impl ENNSurrogate {
     fn start_model(
         &mut self,
         x_new: &ArrayView2<f64>,
-        original_x: Option<&ArrayView2<f64>>,
         y_new: &ArrayView2<f64>,
         yvar_new: Option<&ArrayView2<f64>>,
         warm: Option<ENNParams>,
         rng: &mut rand::rngs::StdRng,
     ) -> Result<(), ENNError> {
-        let model = self.construct_model(x_new, original_x, y_new, yvar_new)?;
+        let model = self.construct_model(x_new, y_new, yvar_new)?;
         self.state = match self.config.fit_samples {
             FitSamples::Frozen => FitState::Frozen {
-                output_fit: model
-                    .semantic_outputs()
-                    .map(|outputs| Box::new(OutputBlendFit::new(outputs))),
                 model,
                 params: self.config.default_params()?,
             },
@@ -215,11 +176,7 @@ impl Surrogate for ENNSurrogate {
     }
 
     fn observation_row_x(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
-        let model = self.fitted_model()?;
-        if let Some(x) = model.original_inputs() {
-            return Ok(x.gather(&[idx])?.row(0).to_owned());
-        }
-        model.rows().row_x(idx)
+        self.fitted_model()?.rows().row_x(idx)
     }
 
     fn observation_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
@@ -275,9 +232,6 @@ impl Surrogate for ENNSurrogate {
             return Ok(None);
         }
         let indices: Vec<_> = (0..model.len()).collect();
-        if let Some(x) = model.original_inputs() {
-            return Ok(Some(x.gather(&indices)?));
-        }
         Ok(Some(model.rows().train_rows_at(&indices)?.0))
     }
 
@@ -297,13 +251,7 @@ impl Surrogate for ENNSurrogate {
             .cloned()
             .map(|p| p.with_calibrator(None));
         self.clear_observations()?;
-        let features = crate::semantic::features(
-            x,
-            self.config.semantic_projection.as_deref(),
-            self.config.semantic_only,
-        )?;
-        let original_x = self.config.semantic_projection.is_some().then_some(x);
-        self.start_model(&features.view(), original_x, y, yvar, warm, &mut local_rng)
+        self.start_model(x, y, yvar, warm, &mut local_rng)
     }
 
     fn fit_append(
@@ -316,13 +264,7 @@ impl Surrogate for ENNSurrogate {
         let mut seed_bytes = [0u8; 32];
         rng.fill_bytes(&mut seed_bytes);
         let mut local_rng = rand::rngs::StdRng::from_seed(seed_bytes);
-        let features = crate::semantic::features(
-            x_new,
-            self.config.semantic_projection.as_deref(),
-            self.config.semantic_only,
-        )?;
-        let original_x = self.config.semantic_projection.is_some().then_some(x_new);
-        self.fit_append_internal(&features.view(), original_x, y_new, yvar_new, &mut local_rng)
+        self.fit_append_internal(x_new, y_new, yvar_new, &mut local_rng)
     }
 
     fn validate_append(
@@ -331,23 +273,15 @@ impl Surrogate for ENNSurrogate {
         y_new: &ArrayView2<f64>,
         yvar_new: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        let features = crate::semantic::features(
-            x_new,
-            self.config.semantic_projection.as_deref(),
-            self.config.semantic_only,
-        )?;
         let Some(model) = self.state.model() else {
             return EpistemicNearestNeighbors::validate_first_rows(
-                &features.view(),
+                x_new,
                 y_new,
                 yvar_new,
                 self.config.y_bounds.as_ref(),
             );
         };
-        let original_x = self.config.semantic_projection.is_some().then_some(x_new);
-        model
-            .prepare_new_rows(&features.view(), original_x, y_new, yvar_new)
-            .map(|_| ())
+        model.prepare_new_rows(x_new, y_new, yvar_new).map(|_| ())
     }
 
     fn schedule_background_flush(&self) -> Result<(), ENNError> {
@@ -392,12 +326,6 @@ impl Surrogate for ENNSurrogate {
     fn predict(&self, x: &ArrayView2<f64>) -> Result<SurrogatePrediction, ENNError> {
         let model = self.fitted_model()?;
         let params = self.params_or_default()?;
-        let features = crate::semantic::features(
-            x,
-            self.config.semantic_projection.as_deref(),
-            self.config.semantic_only,
-        )?;
-        let x = &features.view();
 
         let flags = PosteriorFlags::new();
         let posterior = model.posterior(x, &params, &flags)?;
@@ -422,12 +350,6 @@ impl Surrogate for ENNSurrogate {
     ) -> Result<Array3<f64>, ENNError> {
         let model = self.fitted_model()?;
         let params = self.params_or_default()?;
-        let features = crate::semantic::features(
-            x,
-            self.config.semantic_projection.as_deref(),
-            self.config.semantic_only,
-        )?;
-        let x = &features.view();
 
         let flags = PosteriorFlags::new();
         let function_seeds = next_function_seeds(rng, num_samples);
@@ -447,18 +369,13 @@ impl Surrogate for ENNSurrogate {
             return Ok(None);
         };
         let (y_sum, y_sumsq) = model.moments();
-        let (fitter_params, output_fit) = match &self.state {
-            FitState::Frozen { output_fit, .. } => (None, output_fit.as_deref().cloned()),
-            FitState::Searched { fit, .. } => (
-                fit.fitter.params().cloned(),
-                fit.fitter.output_fit().cloned(),
-            ),
-            FitState::Unfitted => (None, None),
+        let fitter_params = match &self.state {
+            FitState::Searched { fit, .. } => fit.fitter.params().cloned(),
+            FitState::Frozen { .. } | FitState::Unfitted => None,
         };
         Ok(Some(SurrogateState {
             params: self.state.params().cloned(),
             fitter_params,
-            output_fit,
             y_sum,
             y_sumsq,
             num_obs: model.len(),
@@ -471,26 +388,15 @@ impl Surrogate for ENNSurrogate {
             return Ok(());
         }
         let mut model = EpistemicNearestNeighbors::open(work_dir)?;
-        model.set_outputs(self.config.semantic_outputs.as_deref().cloned());
-        if self.config.semantic_projection.is_some() && model.original_inputs().is_none() {
-            return Err(ENNError::InvalidParameter(
-                "original inputs: missing original rows for disk model".into(),
-            ));
-        }
-        let (params, fitter_params, output_fit) = match saved {
+        let (params, fitter_params) = match saved {
             Some(saved) => {
                 model.restore_moments(saved.y_sum, saved.y_sumsq, saved.num_obs)?;
-                (saved.params, saved.fitter_params, saved.output_fit)
+                (saved.params, saved.fitter_params)
             }
-            None => (None, None, None),
+            None => (None, None),
         };
         self.state = match self.config.fit_samples {
             FitSamples::Frozen => FitState::Frozen {
-                output_fit: output_fit.map(Box::new).or_else(|| {
-                    model
-                        .semantic_outputs()
-                        .map(|outputs| Box::new(OutputBlendFit::new(outputs)))
-                }),
                 params: match params {
                     Some(params) => params,
                     None => self.config.default_params()?,
@@ -499,7 +405,6 @@ impl Surrogate for ENNSurrogate {
             },
             FitSamples::Draw(search) => {
                 let mut fitter = ENNFitter::new(self.config.k.get());
-                fitter.set_output_fit(output_fit);
                 if let Some(saved) = fitter_params {
                     fitter.set_params(saved);
                 }
@@ -535,13 +440,8 @@ impl Surrogate for ENNSurrogate {
             return None;
         }
         let weights = self.state.model()?.metric_weights()?;
-        let weights = crate::semantic::original_weights(
-            weights,
-            self.config.semantic_projection.as_deref(),
-            self.config.semantic_only,
-        );
         Some(Array1::from(crate::metric_weights::trust_region_sides(
-            &weights,
+            weights,
         )))
     }
 }
@@ -550,7 +450,6 @@ impl Surrogate for ENNSurrogate {
 mod tests {
     use super::*;
     use crate::layout::EnnLayout;
-    use crate::output_blend::SemanticOutputs;
     use ndarray::array;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -578,55 +477,6 @@ mod tests {
         let pred = surrogate.predict(&x_query.view()).unwrap();
         assert_eq!(pred.mu.shape(), &[1, 1]);
         assert!(pred.mu[[0, 0]].is_finite());
-    }
-
-    fn output_config(dir: &std::path::Path, fit_samples: FitSamples) -> ENNSurrogateConfig {
-        ENNSurrogateConfig {
-            k: crate::NeighborCount::new(2).unwrap(),
-            fit_samples,
-            semantic_outputs: Some(Box::new(SemanticOutputs {
-                loadings: ndarray::Array2::from_elem((2, 1), 0.5f64.sqrt()),
-                alpha: None,
-            })),
-            ..ENNSurrogateConfig::new(EnnLayout::new(dir, false).unwrap())
-        }
-    }
-
-    #[test]
-    fn frozen_and_searched_scales_both_keep_learning_the_output_blend() {
-        for fit_samples in [FitSamples::Frozen, FitSamples::draw(4, 2).unwrap()] {
-            let dir = tempfile::tempdir().unwrap();
-            let mut surrogate = ENNSurrogate::new(output_config(dir.path(), fit_samples));
-            let mut rng = StdRng::seed_from_u64(1);
-            let rows = |n: usize, start: usize| {
-                let x = ndarray::Array2::from_shape_fn((n, 1), |(i, _)| (start + i) as f64 * 0.1);
-                let y = ndarray::Array2::from_shape_fn((n, 2), |(i, j)| {
-                    ((start + i) as f64 * 0.3 + j as f64).sin()
-                });
-                (x, y)
-            };
-            let (x, y) = rows(4, 0);
-            surrogate
-                .fit_append(&x.view(), &y.view(), None, &mut rng)
-                .unwrap();
-            let early = surrogate.params().unwrap().output_blend.clone().unwrap();
-            let (x, y) = rows(30, 4);
-            surrogate
-                .fit_append(&x.view(), &y.view(), None, &mut rng)
-                .unwrap();
-            let later = surrogate.params().unwrap().output_blend.clone().unwrap();
-            assert_ne!(early.alpha, later.alpha, "{fit_samples:?}");
-            assert!(surrogate.predict(&array![[0.2]].view()).is_ok());
-        }
-    }
-
-    #[test]
-    fn output_projection_must_match_the_metric_count() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = output_config(dir.path(), FitSamples::Frozen);
-        config.validate_outputs(2).unwrap();
-        let err = config.validate_outputs(3).unwrap_err();
-        assert!(err.to_string().contains("output_projection"), "{err}");
     }
 
     #[test]

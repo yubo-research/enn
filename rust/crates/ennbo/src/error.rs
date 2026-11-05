@@ -23,10 +23,6 @@ impl From<ndarray::ShapeError> for ENNError {
 
 pub const EPS_VAR: f64 = 1e-9;
 
-pub(crate) fn invalid(error: impl std::fmt::Display) -> ENNError {
-    ENNError::InvalidParameter(error.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

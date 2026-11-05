@@ -30,7 +30,6 @@ def py_params(rust_result: Any) -> Any:
         k_num_neighbors=rust_result.k_num_neighbors,
         epistemic_variance_scale=rust_result.epistemic_variance_scale,
         aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
-        output_blend=rust_result.output_blend,
         calibrator=_py_calibrator(rust_result.calibrator),
     )
 
@@ -56,7 +55,6 @@ def subsample_loglik(
     k_values = [p.k_num_neighbors for p in paramss]
     epi_scales = [p.epistemic_variance_scale for p in paramss]
     ale_scales = [p.aleatoric_variance_scale for p in paramss]
-    blends = [p.output_blend for p in paramss]
 
     y_std_arr = None
     if y_std is not None:
@@ -64,7 +62,7 @@ def subsample_loglik(
 
     return _rust_subsample_loglik(
         model.rust_backend,
-        model.transform_inputs(x_array),
+        x_array,
         y_array,
         k_values,
         epi_scales,
@@ -72,7 +70,6 @@ def subsample_loglik(
         P,
         int(seed),
         y_std_arr,
-        blends,
     )
 
 

@@ -3,9 +3,9 @@ use ndarray::{Array1, Array2, ArrayView2};
 use super::EpistemicNearestNeighbors;
 use crate::backend::{EnnBackend, TrainRowsAtResult};
 use crate::error::ENNError;
+use crate::input_history::{InputHistory, ORIGINAL_OUTPUTS_FILE};
 use crate::layout::EnnLayout;
 use crate::metric_auto::MetricLearning;
-use crate::input_history::{InputHistory, ORIGINAL_OUTPUTS_FILE};
 use crate::store_identity::{claim_store_dir, StoreIdentity};
 use crate::y_bounds::{is_identity_bounds, resolve_y_bounds, warp_y, warp_yvar};
 
@@ -20,12 +20,19 @@ impl EpistemicNearestNeighbors {
         };
         let work_dir = self.layout.work_dir();
         self.original_y = if reopen {
-            let history = InputHistory::recover(work_dir, ORIGINAL_OUTPUTS_FILE, self.backend.len())?;
+            let history =
+                InputHistory::recover(work_dir, ORIGINAL_OUTPUTS_FILE, self.backend.len())?;
             Some(history.ok_or_else(|| {
-                ENNError::InvalidParameter("original inputs: missing original rows for disk model".into())
+                ENNError::InvalidParameter(
+                    "original inputs: missing original rows for disk model".into(),
+                )
             })?)
         } else {
-            Some(InputHistory::create(work_dir, ORIGINAL_OUTPUTS_FILE, &rows.view())?)
+            Some(InputHistory::create(
+                work_dir,
+                ORIGINAL_OUTPUTS_FILE,
+                &rows.view(),
+            )?)
         };
         Ok(())
     }
@@ -50,7 +57,6 @@ impl EpistemicNearestNeighbors {
         )?;
         let auto = layout.metric_learning() == MetricLearning::Auto;
         let mut model = Self {
-            original_x: None,
             original_y: None,
             layout,
             backend,
@@ -65,7 +71,6 @@ impl EpistemicNearestNeighbors {
             y_sumsq: Array1::zeros(num_metrics),
             auto_metric: None,
             tied_groups: Vec::new(),
-            semantic_outputs: None,
         };
         if auto {
             model.enable_auto_metric(

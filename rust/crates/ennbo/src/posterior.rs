@@ -8,7 +8,7 @@ pub(crate) use neighbor::index_search;
 
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2};
 
-use self::batch::batch_posterior_unblended;
+use self::batch::batch_posterior_warped;
 #[cfg(test)]
 use self::batch::{
     assign_posterior_results, compute_batch_separate_neighbors, compute_batch_with_shared_neighbors,
@@ -55,9 +55,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         paramss: &[ENNParams],
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        let mut out = batch_posterior_unblended(self, x, paramss, flags)?;
-        self.apply_batch_blends(&mut out, paramss)?;
-        Ok(out)
+        batch_posterior_warped(self, x, paramss, flags)
     }
 
     fn posterior_function_draw(
@@ -102,8 +100,7 @@ impl PosteriorComputation for EpistemicNearestNeighbors {
         let (y_z, _) = self.warp_observations(y_whatif, None)?;
         let internals =
             compute_conditional_posterior_internals(self, x, x_whatif, &y_z.view(), params, flags)?;
-        let mut draws = draw_from_internals(self, &internals, function_seeds)?;
-        self.apply_draw_blend(&mut draws, params)?;
+        let draws = draw_from_internals(self, &internals, function_seeds)?;
         let draws = self.calibrate_published_draws(draws, params, |bare| {
             self.conditional_posterior(x_whatif, y_whatif, x, bare, flags)
         })?;
@@ -476,7 +473,3 @@ mod tests_conditional;
 #[cfg(test)]
 #[path = "posterior/tests_y_bounds.rs"]
 mod tests_y_bounds;
-
-#[cfg(test)]
-#[path = "posterior/tests_blend.rs"]
-mod tests_blend;

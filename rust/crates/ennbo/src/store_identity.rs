@@ -15,10 +15,6 @@ pub(crate) struct StoreIdentity {
     pub(crate) num_dim: usize,
     pub(crate) num_metrics: usize,
     weighting: bool,
-    input_fingerprint: Option<String>,
-    semantic_only: bool,
-    output_fingerprint: Option<String>,
-    output_alpha: Option<f64>,
     pub(crate) tied_dims: Vec<Vec<usize>>,
     y_bounds: Vec<(Option<f64>, Option<f64>)>,
     #[serde(default = "committed_by_default")]
@@ -73,10 +69,6 @@ impl StoreIdentity {
             num_dim: shape.0,
             num_metrics: shape.1,
             weighting: layout.weighting(),
-            input_fingerprint: layout.input_fingerprint().map(str::to_owned),
-            semantic_only: layout.semantic_only(),
-            output_fingerprint: layout.output_fingerprint().map(str::to_owned),
-            output_alpha: layout.output_alpha(),
             tied_dims: tied_dims.to_vec(),
             y_bounds: y_bounds
                 .rows()
@@ -106,10 +98,7 @@ impl StoreIdentity {
     }
 
     pub(crate) fn layout(&self, work_dir: PathBuf) -> Result<EnnLayout, ENNError> {
-        Ok(EnnLayout::new(work_dir, self.weighting)?
-            .with_input_fingerprint(self.input_fingerprint.clone())
-            .with_semantic_only(self.semantic_only)
-            .with_output_identity(self.output_fingerprint.clone(), self.output_alpha))
+        EnnLayout::new(work_dir, self.weighting)
     }
 
     pub(crate) fn y_bounds(&self) -> Array2<f64> {
@@ -141,11 +130,7 @@ mod tests {
     #[test]
     fn identity_round_trips_every_setting_including_open_bounds() {
         let dir = TempDir::new().unwrap();
-        let layout = EnnLayout::new(dir.path(), true)
-            .unwrap()
-            .with_input_fingerprint(Some("in".into()))
-            .with_semantic_only(true)
-            .with_output_identity(Some("out".into()), Some(0.25));
+        let layout = EnnLayout::new(dir.path(), true).unwrap();
         let bounds = array![[0.0, 1.0], [f64::NEG_INFINITY, f64::INFINITY]];
         let recorded = StoreIdentity::of(&layout, (3, 2), &[vec![0, 1]], &bounds);
         recorded.clone().commit(dir.path()).unwrap();

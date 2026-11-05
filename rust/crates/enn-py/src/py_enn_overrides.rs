@@ -12,10 +12,6 @@ pub(crate) const ENN_OVERRIDE_KEYS: &[&str] = &[
     "y_bounds",
     "tied_dims",
     "affine_calibrate",
-    "semantic_projection",
-    "semantic_only",
-    "semantic_output_loadings",
-    "output_alpha",
 ];
 
 fn to_py_err(e: ennbo::ENNError) -> PyErr {
@@ -51,20 +47,6 @@ fn parse_fit_samples(
     }
 }
 
-fn parse_semantic_outputs(
-    dict: &Bound<'_, pyo3::types::PyDict>,
-) -> PyResult<Option<ennbo::SemanticOutputs>> {
-    let alpha = crate::py_optimizer::optional_f64(dict, "output_alpha")?;
-    let Some(loadings) = dict.get_item("semantic_output_loadings")? else {
-        return Ok(None);
-    };
-    let loadings = loadings.extract::<numpy::PyReadonlyArray2<f64>>()?;
-    let view = loadings.as_array();
-    ennbo::SemanticOutputs::new(view.into_dyn(), alpha, view.nrows())
-        .map(Some)
-        .map_err(to_py_err)
-}
-
 fn any_enn_key(dict: &Bound<'_, pyo3::types::PyDict>) -> PyResult<bool> {
     for key in ENN_OVERRIDE_KEYS {
         if dict.contains(*key)? {
@@ -97,32 +79,17 @@ pub(crate) fn parse_enn_overrides(
         weighting: optional_bool(dict, "weighting")?,
         y_bounds,
         tied_dims,
-        semantic_only: optional_bool(dict, "semantic_only")?,
-        semantic_projection: dict
-            .get_item("semantic_projection")?
-            .map(|v| {
-                Ok::<_, PyErr>(
-                    v.extract::<numpy::PyReadonlyArray2<f64>>()?
-                        .as_array()
-                        .to_owned(),
-                )
-            })
-            .transpose()?,
-        semantic_outputs: parse_semantic_outputs(dict)?,
     }))
 }
 
 #[cfg(test)]
 mod kiss_coverage_tests {
-    use super::{
-        any_enn_key, parse_enn_overrides, parse_fit_samples, parse_semantic_outputs, to_py_err,
-    };
+    use super::{any_enn_key, parse_enn_overrides, parse_fit_samples, to_py_err};
 
     #[test]
     fn py_enn_override_helpers_are_linked() {
         let _ = (
             parse_fit_samples as fn(_) -> _,
-            parse_semantic_outputs as fn(_) -> _,
             any_enn_key as fn(_) -> _,
             parse_enn_overrides as fn(_) -> _,
             to_py_err as fn(_) -> _,

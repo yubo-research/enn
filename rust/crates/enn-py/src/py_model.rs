@@ -6,7 +6,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::py_args::matrix_view;
-use crate::py_params::{params_with_blend, PyOutputBlend};
+use crate::py_params::make_params;
 
 pub(crate) type PosteriorPyOut<'py> = (
     Bound<'py, PyArrayDyn<f64>>,
@@ -15,9 +15,6 @@ pub(crate) type PosteriorPyOut<'py> = (
     Bound<'py, PyArrayDyn<f64>>,
     Option<Bound<'py, PyArrayDyn<i64>>>,
 );
-
-pub(crate) type SemanticInputArgument<'a> = (PyReadonlyArray2<'a, f64>, String, Vec<u8>);
-pub(crate) type SemanticOutputArgument<'a> = (PyReadonlyArrayDyn<'a, f64>, Option<f64>, Vec<u8>);
 
 pub(crate) type TrainRowsAtPyOut<'py> = (
     Bound<'py, PyArray2<f64>>,
@@ -29,24 +26,18 @@ pub(crate) fn params_list(
     k_values: Vec<i32>,
     epistemic_scales: Vec<f64>,
     aleatoric_scales: Vec<f64>,
-    output_blends: Option<Vec<Option<PyOutputBlend>>>,
 ) -> PyResult<Vec<ennbo::ENNParams>> {
     let n_params = k_values.len();
-    let blends = output_blends.unwrap_or_else(|| vec![None; n_params]);
-    if epistemic_scales.len() != n_params
-        || aleatoric_scales.len() != n_params
-        || blends.len() != n_params
-    {
+    if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {
         return Err(PyValueError::new_err(
-            "k_values, epistemic_scales, aleatoric_scales, and output_blends must have same length",
+            "k_values, epistemic_scales, and aleatoric_scales must have same length",
         ));
     }
     k_values
         .into_iter()
         .zip(epistemic_scales)
         .zip(aleatoric_scales)
-        .zip(blends)
-        .map(|(((k, epi), ale), blend)| params_with_blend(k, epi, ale, blend))
+        .map(|((k, epi), ale)| make_params(k, epi, ale))
         .collect()
 }
 
@@ -64,8 +55,7 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None, input=None, semantic_only=false, output=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None))]
     fn new(
         train_x: PyReadonlyArrayDyn<f64>,
         train_y: PyReadonlyArrayDyn<f64>,
@@ -74,48 +64,26 @@ impl PyEpistemicNearestNeighbors {
         weighting: bool,
         y_bounds: Option<PyReadonlyArray2<f64>>,
         tied_dims: Option<Vec<Vec<usize>>>,
-        input: Option<SemanticInputArgument<'_>>,
-        semantic_only: bool,
-        output: Option<SemanticOutputArgument<'_>>,
     ) -> PyResult<Self> {
         let train_x = matrix_view("train_x", &train_x)?.to_owned();
         let train_y = matrix_view("train_y", &train_y)?.to_owned();
-        let output_alpha = output.as_ref().and_then(|(_, alpha, _)| *alpha);
-        let outputs = output
-            .as_ref()
-            .map(|(loadings, alpha, _)| {
-                ennbo::SemanticOutputs::new(loadings.as_array(), *alpha, train_y.ncols())
-                    .map_err(|e| PyValueError::new_err(e.to_string()))
-            })
-            .transpose()?;
-        let output_fingerprint = outputs
-            .as_ref()
-            .map(|o| ennbo::semantic::output_fingerprint(&o.loadings.view()));
         let layout = ennbo::EnnLayout::new(work_dir, weighting)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?
-            .with_input_fingerprint(input.as_ref().map(|(_, print, _)| print.clone()))
-            .with_semantic_only(semantic_only)
-            .with_output_identity(output_fingerprint, output_alpha);
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_yvar = train_yvar
             .as_ref()
             .map(|v| matrix_view("train_yvar", v).map(|m| m.to_owned()))
             .transpose()?;
-        let attachments = ennbo::input_history::StoreAttachments {
-            original_inputs: input.as_ref().map(|(rows, _, _)| rows.as_array().to_owned()),
-            input_transform: input.as_ref().map(|(_, _, npz)| npz.clone()),
-            output_projection: output.as_ref().map(|(_, _, npz)| npz.clone()),
-        };
-        let mut model = ennbo::EpistemicNearestNeighbors::new_attached(
-            (train_x, train_y, train_yvar),
+        let inner = ennbo::EpistemicNearestNeighbors::new_configured(
+            train_x,
+            train_y,
+            train_yvar,
             layout,
             y_bounds,
             tied_dims.unwrap_or_default(),
-            attachments,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        model.set_outputs(outputs);
-        Ok(Self { inner: model })
+        Ok(Self { inner })
     }
 
     #[staticmethod]
@@ -125,28 +93,6 @@ impl PyEpistemicNearestNeighbors {
         Ok(Self { inner })
     }
 
-    #[getter]
-    fn store_settings(&self) -> (Option<String>, bool, Option<String>, Option<f64>) {
-        let layout = self.inner.layout();
-        (
-            layout.input_fingerprint().map(str::to_owned),
-            layout.semantic_only(),
-            layout.output_fingerprint().map(str::to_owned),
-            layout.output_alpha(),
-        )
-    }
-
-    #[pyo3(signature = (loadings, alpha=None))]
-    fn set_semantic_outputs(
-        &mut self,
-        loadings: PyReadonlyArrayDyn<f64>,
-        alpha: Option<f64>,
-    ) -> PyResult<()> {
-        self.inner
-            .set_semantic_outputs(loadings.as_array(), alpha)
-            .map_err(|e| PyValueError::new_err(e.to_string()))
-    }
-
     #[pyo3(signature = (x_scale, rebuild=false))]
     fn set_metric_scale(&mut self, x_scale: PyReadonlyArray1<f64>, rebuild: bool) -> PyResult<()> {
         self.inner
@@ -154,26 +100,20 @@ impl PyEpistemicNearestNeighbors {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    #[pyo3(signature = (train_x, train_y, train_yvar=None, original_x=None))]
+    #[pyo3(signature = (train_x, train_y, train_yvar=None))]
     fn add(
         &mut self,
         train_x: PyReadonlyArrayDyn<f64>,
         train_y: PyReadonlyArrayDyn<f64>,
         train_yvar: Option<PyReadonlyArrayDyn<f64>>,
-        original_x: Option<PyReadonlyArrayDyn<f64>>,
     ) -> PyResult<()> {
         let train_yvar = train_yvar
             .as_ref()
             .map(|v| matrix_view("train_yvar", v))
             .transpose()?;
-        let original_x = original_x
-            .as_ref()
-            .map(|v| matrix_view("original_x", v))
-            .transpose()?;
         self.inner
-            .add_with_original(
+            .add(
                 &matrix_view("train_x", &train_x)?,
-                original_x.as_ref(),
                 &matrix_view("train_y", &train_y)?,
                 train_yvar.as_ref(),
             )
@@ -271,7 +211,12 @@ impl PyEpistemicNearestNeighbors {
         let flags = py_posterior_flags(exclude_nearest, observation_noise);
         let (draws, idx) = self
             .inner
-            .posterior_function_draw(&matrix_view("x", &x)?, &params.inner, &function_seeds, &flags)
+            .posterior_function_draw(
+                &matrix_view("x", &x)?,
+                &params.inner,
+                &function_seeds,
+                &flags,
+            )
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((draws.into_dyn().into_pyarray_bound(py), idx))
     }
@@ -498,10 +443,8 @@ mod kiss_coverage_tests {
         let _ = (
             PyEpistemicNearestNeighbors::new,
             PyEpistemicNearestNeighbors::open,
-            PyEpistemicNearestNeighbors::store_settings,
             PyEpistemicNearestNeighbors::add,
             PyEpistemicNearestNeighbors::set_metric_scale,
-            PyEpistemicNearestNeighbors::set_semantic_outputs,
             PyEpistemicNearestNeighbors::ensure_index_sync,
             PyEpistemicNearestNeighbors::schedule_background_flush,
             PyEpistemicNearestNeighbors::persist_index_to_disk,
@@ -527,14 +470,7 @@ mod kiss_coverage_tests {
             PyENNParams::k_num_neighbors,
             PyENNParams::epistemic_variance_scale,
             PyENNParams::aleatoric_variance_scale,
-            PyENNParams::output_blend,
             PyENNParams::calibrator,
-            crate::py_params::PyOutputBlend::new,
-            crate::py_params::PyOutputBlend::alpha,
-            crate::py_params::PyOutputBlend::projector,
-            crate::py_params::PyOutputBlend::center,
-            crate::py_params::PyOutputBlend::scale,
-            crate::py_params::PyOutputBlend::__eq__,
             params_list,
             std::mem::size_of::<PyEpistemicNearestNeighbors>,
             std::mem::size_of::<PyENNParams>,

@@ -54,7 +54,7 @@ impl PyENNStatefulFitter {
 }
 
 #[pyfunction]
-#[pyo3(signature = (model, k, epistemic, aleatoric, num_fit_samples, seed, observation_noise=false, output_blend=None))]
+#[pyo3(signature = (model, k, epistemic, aleatoric, num_fit_samples, seed, observation_noise=false))]
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn fit_model_affine<'py>(
     py: Python<'py>,
@@ -65,14 +65,13 @@ pub fn fit_model_affine<'py>(
     num_fit_samples: i64,
     seed: u64,
     observation_noise: bool,
-    output_blend: Option<crate::py_params::PyOutputBlend>,
 ) -> PyResult<(
     Bound<'py, PyArray1<f64>>,
     Bound<'py, PyArray1<f64>>,
     Bound<'py, PyArray1<f64>>,
 )> {
     let num_fit_samples = usize::try_from(num_fit_samples).unwrap_or(0);
-    let params = crate::py_params::params_with_blend(k, epistemic, aleatoric, output_blend)?;
+    let params = crate::py_params::make_params(k, epistemic, aleatoric)?;
     let mut rng = StdRng::seed_from_u64(seed);
     let cal = ennbo::surrogate_affine::fit_calibrator(
         &model.inner,

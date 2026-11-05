@@ -57,10 +57,6 @@ pub struct EnnOverrides {
     #[serde(with = "crate::exact")]
     pub y_bounds: Option<ndarray::Array2<f64>>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
-    pub semantic_only: Option<bool>,
-    #[serde(with = "crate::exact")]
-    pub semantic_projection: Option<ndarray::Array2<f64>>,
-    pub semantic_outputs: Option<crate::output_blend::SemanticOutputs>,
 }
 
 impl EnnOverrides {
@@ -75,15 +71,6 @@ impl EnnOverrides {
         }
         if let Some(weighting) = self.weighting {
             enn.layout = enn.layout.with_weighting(weighting);
-        }
-        if let Some(only) = self.semantic_only {
-            enn.semantic_only = only;
-        }
-        if let Some(p) = &self.semantic_projection {
-            enn.semantic_projection = Some(Box::new(p.clone()));
-        }
-        if let Some(outputs) = &self.semantic_outputs {
-            enn.semantic_outputs = Some(Box::new(outputs.clone()));
         }
         if let Some(yb) = self.y_bounds.clone() {
             enn.y_bounds = Some(yb);

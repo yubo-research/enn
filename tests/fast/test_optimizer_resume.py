@@ -12,8 +12,6 @@ from enn import (
     MorboTRConfig,
     MultiObjectiveConfig,
     Optimizer,
-    SemanticInputTransform,
-    SemanticOutputProjection,
     TRLengthConfig,
     TurboTRConfig,
     create_optimizer,
@@ -25,20 +23,6 @@ from enn import (
 BOUNDS = np.array([[0.0, 1.0], [-1.0, 2.0], [0.0, 3.0]])
 SEARCHED = ENNFitConfig(num_fit_samples=8, num_fit_candidates=4)
 CANDIDATES = CandidateGenConfig(max_candidates=64)
-
-
-class _Encoder:
-    def encode(self, texts):
-        return np.random.default_rng(1).normal(size=(len(texts), 16))
-
-
-def _transform():
-    return SemanticInputTransform(["a", "b", "c"], BOUNDS, encoder=_Encoder())
-
-
-def _projection():
-    embeddings = np.array([[1.0, 0.0], [0.9, 0.1]])
-    return SemanticOutputProjection.from_embeddings(["p", "q"], embeddings)
 
 
 def _morbo():
@@ -65,12 +49,7 @@ CONFIGS = {
         )
     ),
     "weighting": lambda: _enn(ENNSurrogateConfig(k=3, weighting=True)),
-    "semantic": lambda: _enn(ENNSurrogateConfig(k=3, input_transform=_transform())),
     "morbo": lambda: _enn(ENNSurrogateConfig(k=3), trust_region=_morbo()),
-    "projection": lambda: _enn(
-        ENNSurrogateConfig(k=3, output_projection=_projection()),
-        trust_region=_morbo(),
-    ),
     "sobol": lambda: turbo_enn_config(
         enn=ENNSurrogateConfig(k=3),
         num_init=4,
@@ -88,7 +67,7 @@ CONFIGS["restarting_enn"] = lambda: _enn(
 CONFIGS["restarting_zero"] = lambda: turbo_zero_config(
     num_init=4, candidates=CANDIDATES, trust_region=SHORT_REGION
 )
-MULTI = {"morbo", "projection"}
+MULTI = {"morbo"}
 
 
 def _objective(kind, x, noise):
@@ -155,7 +134,7 @@ def test_reopening_every_round_matches_a_single_optimizer(tmp_path, kind):
     _run_pair(tmp_path, kind, rounds=10)
 
 
-@pytest.mark.parametrize("kind", ["projection", "morbo", "weighting", "sobol"])
+@pytest.mark.parametrize("kind", ["morbo", "weighting", "sobol"])
 def test_long_runs_with_large_batches_stay_exact(tmp_path, kind):
     _run_pair(tmp_path, kind, rounds=20, arms=8)
 

@@ -64,7 +64,6 @@ ENNNormal = _ext.util.ENNNormal
 Ackley = _ext.util.Ackley
 DoubleAckley = _ext.util.DoubleAckley
 ENNParams = _ext.model.ENNParams
-ENNOutputBlend = _ext.model.ENNOutputBlend
 ENNStatefulFitter = _ext.fit.ENNStatefulFitter
 subsample_loglik = _ext.fit.subsample_loglik
 Optimizer = _ext.optimizer.Optimizer
@@ -79,7 +78,6 @@ validate_enn_placement = _ext.model.validate_enn_placement
 
 
 __all__ = [
-    "ENNOutputBlend",
     "ENNParams",
     "ENNStatefulFitter",
     "EpistemicNearestNeighbors",
@@ -99,14 +97,6 @@ __all__ = [
     "subsample_loglik",
 ]
 
-semantic_projection = _ext.util.semantic_projection
-semantic_weighted = _ext.util.semantic_weighted
-semantic_input_fingerprint = _ext.util.semantic_input_fingerprint
-semantic_output_fingerprint = _ext.util.semantic_output_fingerprint
-semantic_transform = _ext.util.semantic_transform
-semantic_artifact_paths = _ext.util.semantic_artifact_paths
-semantic_original_rows = _ext.util.semantic_original_rows
-semantic_output_projection = _ext.util.semantic_output_projection
 
 cat_log_width = _ext.util.cat_log_width
 
@@ -116,17 +106,6 @@ cat_column_plan = _ext.util.cat_column_plan
 
 resolve_tied_groups = _ext.model.resolve_tied_groups
 
-semantic_texts = _ext.util.semantic_texts
-semantic_encode = _ext.util.semantic_encode
-semantic_text_projection = _ext.util.semantic_text_projection
-semantic_input_output_projection = _ext.util.semantic_input_output_projection
-
-semantic_relationship_texts = _ext.util.semantic_relationship_texts
-semantic_output_definition = _ext.util.semantic_output_definition
-semantic_output_embeddings = _ext.util.semantic_output_embeddings
-validate_semantic_definition = _ext.util.validate_semantic_definition
-validate_semantic_cache = _ext.util.validate_semantic_cache
-validate_semantic_outputs = _ext.util.validate_semantic_outputs
 
 validate_candidate_counts = _ext.optimizer.validate_candidate_counts
 validate_fit_settings = _ext.optimizer.validate_fit_settings

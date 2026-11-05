@@ -10,12 +10,6 @@ def test_list_eval_names_includes_known_evals() -> None:
     assert names == [
         "long/prediction",
         "long/scaling",
-        "long/semantic_benchmark",
-        "long/semantic_outputs",
-        "long/yy",
-        "short/adapt_xx",
-        "short/adapt_xy",
-        "short/adapt_yy",
         "short/optimization",
         "short/prediction",
     ]

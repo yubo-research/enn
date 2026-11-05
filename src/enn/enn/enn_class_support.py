@@ -16,7 +16,6 @@ def rust_params(params: Any | None) -> RustENNParams | None:
         params.k_num_neighbors,
         params.epistemic_variance_scale,
         params.aleatoric_variance_scale,
-        params.output_blend,
         calibrator_coefficients(params.calibrator),
     )
 
