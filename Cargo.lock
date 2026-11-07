@@ -321,15 +321,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
-name = "cmake"
-version = "0.1.58"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -647,7 +638,6 @@ dependencies = [
  "approx",
  "candle-core",
  "ennbo-bpann",
- "faiss",
  "memmap2",
  "ndarray",
  "ndarray-linalg",
@@ -726,24 +716,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d817e038c30374a4bcb22f94d0a8a0e216958d4c3dcde369b1439fec4bdda6e6"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "faiss"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3618cbbe48ebdc63b461cd1bf52f64c27a40e4d294beceedbf2fd4898571e204"
-dependencies = [
- "faiss-sys",
-]
-
-[[package]]
-name = "faiss-sys"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4a8fa67f7070bb81f41dc71c98813b3e40a66bedab12d6c2ac2af50f0837a7e"
-dependencies = [
- "cmake",
 ]
 
 [[package]]

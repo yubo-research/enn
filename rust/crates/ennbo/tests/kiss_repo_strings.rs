@@ -1,12 +1,10 @@
 use ennbo::ennbo_build::{
     kiss_ennbo_build_touch_01, kiss_ennbo_build_touch_02, kiss_ennbo_build_touch_03,
-    kiss_ennbo_build_touch_04, kiss_ennbo_build_touch_05, kiss_ennbo_build_touch_06,
-    kiss_ennbo_build_touch_07, kiss_ennbo_build_touch_08, kiss_ennbo_build_touch_09, main,
+    kiss_ennbo_build_touch_04, kiss_ennbo_build_touch_05, kiss_ennbo_build_touch_06, main,
     run_ennbo_build,
 };
 use ennbo::link_search::{
-    emit_blas_lapack_link_search_linux, emit_faiss_link_search, emit_link_search,
-    emit_openblas_link, has_blas_for_link, has_faiss_c, openblas_for_link,
+    emit_blas_lapack_link_search_linux, emit_openblas_link, has_blas_for_link, openblas_for_link,
 };
 
 #[test]
@@ -96,13 +94,10 @@ fn kiss_fullrepo_static_name_registry_core() {
 #[test]
 fn kiss_cargo_build_helpers() {
     let _ = (
-        emit_link_search,
-        has_faiss_c,
         has_blas_for_link,
         openblas_for_link,
         emit_openblas_link,
         emit_blas_lapack_link_search_linux,
-        emit_faiss_link_search,
     );
 }
 
@@ -117,9 +112,6 @@ fn kiss_ennbo_build_main() {
         kiss_ennbo_build_touch_04 as fn(),
         kiss_ennbo_build_touch_05 as fn(),
         kiss_ennbo_build_touch_06 as fn(),
-        kiss_ennbo_build_touch_07 as fn(),
-        kiss_ennbo_build_touch_08 as fn(),
-        kiss_ennbo_build_touch_09 as fn(),
     );
 }
 

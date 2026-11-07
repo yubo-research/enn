@@ -32,7 +32,6 @@ Source = "https://github.com/yubo-research/enn"
 [project.optional-dependencies]
 with-deps = [
     "numpy>=1.26.4,<2.0.0",
-    "faiss-cpu>=1.9.0",
     "scipy>=1.15.3",
 ]
 dev = [
@@ -56,8 +55,6 @@ module-name = "enn.enn_rust"
 profile = "release"
 # Linux release builds should repair wheels; macOS wheels are repaired in CI with delocate.
 auditwheel = "repair"
-# Linux builds link Faiss statically by Rust target configuration; macOS builds link
-# Homebrew/CI dylibs and bundle them into the wheel during repair.
 # `.cargo/` is outside the Rust workspace; include it for any workspace-level Cargo config.
 include = [
     { path = ".cargo/**/*", format = "sdist" },

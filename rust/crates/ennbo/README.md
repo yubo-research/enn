@@ -8,7 +8,6 @@ ENN estimates a function's value and epistemic uncertainty using K-Nearest Neigh
 
 - **EpistemicNearestNeighbors** — ENN surrogate with posterior computation
 - **TuRBO-ENN optimizer** — Thompson sampling, UCB, RAASP candidate generation
-- Neighbor search via Faiss in-memory (`IndexDriver::Flat`)
 - Disk mode: mmap `train_*.bin` + B+ANN index under `work_dir`
   - `IndexDriver::BpAnnDisk` — disk-backed B+ANN index via the `ennbo-bpann` crate
 
