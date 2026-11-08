@@ -1,5 +1,3 @@
-"""Read-only view of the Rust AUTO metric on a BPANN_DISK model."""
-
 from __future__ import annotations
 
 import numpy as np
@@ -20,12 +18,6 @@ def auto_uses_learned_metric(heldout_gain: float) -> bool:
 
 
 class MBPANNMetric:
-    """View of the Rust AUTO metric.
-
-    Omitted numeric arguments are left as they are. Passing one field does not
-    reset the seed, the refit growth, or the reservoir capacity.
-    """
-
     def __init__(
         self,
         model,
@@ -36,7 +28,7 @@ class MBPANNMetric:
         seed: int | None = None,
         reservoir_capacity: int | None = None,
     ) -> None:
-        self._inner = model.rust_backend if hasattr(model, "rust_backend") else model
+        self._inner = model.rust_backend
         groups = None if tied_dims is None else [list(map(int, g)) for g in tied_dims]
         _rust.metric_configure(
             self._inner,

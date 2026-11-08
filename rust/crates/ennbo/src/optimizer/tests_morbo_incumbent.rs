@@ -13,15 +13,15 @@ use rand::SeedableRng;
 fn morbo_optimizer_with_tied_obs(seed: u64) -> Optimizer {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
     });
-    let mut opt =
-        Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
+    let mut opt = Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
     let y_fit = array![[1.0, 2.0], [2.0, 1.0], [1.5, 1.5]];
     let y_inc = array![1.0, 2.0];
     let morbo = opt.trust_region_mut().morbo_mut().expect("morbo tr");
@@ -32,12 +32,7 @@ fn morbo_optimizer_with_tied_obs(seed: u64) -> Optimizer {
     let delta = opt.add_observations(&x.view(), &y.view()).unwrap();
     let surrogate = opt.surrogate_mut().expect("enn surrogate");
     surrogate
-        .fit_append(
-            &delta.x_new_view(),
-            &delta.y_new_view(),
-            None,
-            &mut rng,
-        )
+        .fit_append(&delta.x_new_view(), &delta.y_new_view(), None, &mut rng)
         .unwrap();
     opt
 }

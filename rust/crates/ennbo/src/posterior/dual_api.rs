@@ -1,8 +1,5 @@
-//! Dual warped/natural posterior API (kiss statements_per_file split).
-
 use ndarray::{Array2, Array3, ArrayView2};
 
-/// `(num_samples, batch, metrics)` to `(batch, metrics, num_samples)`.
 pub(crate) fn transpose_num_samples_last(draws: Array3<f64>) -> Array3<f64> {
     let (samples, batch, metrics) = draws.dim();
     let mut out = Array3::zeros((batch, metrics, samples));
@@ -19,20 +16,21 @@ pub(crate) fn transpose_num_samples_last(draws: Array3<f64>) -> Array3<f64> {
 use super::draw_compute::draw_from_internals;
 use super::light::{compute_posterior_light, idx_nested_to_array2};
 use super::{compute_conditional_posterior_internals, compute_posterior_internals};
+use crate::calibration::AffineCalibrator;
 use crate::error::ENNError;
 use crate::model::EpistemicNearestNeighbors;
 use crate::params::{ENNNormal, ENNParams, PosteriorFlags};
 use crate::traits::PosteriorComputation;
-use crate::y_bounds::{inv_y, is_identity_bounds, naturalize_mu_se};
+use crate::y_bounds::{inv_y, is_identity_bounds, naturalize_mu_se, warp_y};
 
 impl EpistemicNearestNeighbors {
-    /// Crate-internal posterior in warped `z` space (storage / fit / acq).
     pub(crate) fn posterior_warped(
         &self,
         x: &ArrayView2<f64>,
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
+        crate::util::check_finite_query(x)?;
         let (mu, se, se_epi, se_ale, idx) = if !flags.observation_noise && !self.has_yvar() {
             compute_posterior_light(self, x, params, flags)?
         } else {
@@ -54,7 +52,6 @@ impl EpistemicNearestNeighbors {
         ))
     }
 
-    /// Public posterior in natural y units.
     pub fn posterior(
         &self,
         x: &ArrayView2<f64>,
@@ -63,7 +60,63 @@ impl EpistemicNearestNeighbors {
     ) -> Result<ENNNormal, ENNError> {
         let mut out = self.posterior_warped(x, params, flags)?;
         self.naturalize_enn_normal(&mut out)?;
+        self.calibrate_normal(&mut out, params)?;
         Ok(out)
+    }
+
+    fn checked_calibrator<'a>(
+        &self,
+        params: &'a ENNParams,
+    ) -> Result<Option<&'a AffineCalibrator>, ENNError> {
+        let Some(cal) = params.calibrator.as_deref() else {
+            return Ok(None);
+        };
+        if cal.a.len() != self.num_metrics() {
+            return Err(ENNError::InvalidParameter(format!(
+                "calibrator has {} outputs but the model has {}",
+                cal.a.len(),
+                self.num_metrics()
+            )));
+        }
+        Ok(Some(cal))
+    }
+
+    fn calibrate_normal(&self, out: &mut ENNNormal, params: &ENNParams) -> Result<(), ENNError> {
+        if let Some(cal) = self.checked_calibrator(params)? {
+            crate::surrogate_affine::calibrate_normal(cal, out, self.y_bounds())?;
+        }
+        Ok(())
+    }
+
+    fn calibrate_batch(&self, out: &mut ENNNormal, paramss: &[ENNParams]) -> Result<(), ENNError> {
+        for (entry, params) in paramss.iter().enumerate() {
+            let Some(cal) = self.checked_calibrator(params)? else {
+                continue;
+            };
+            let mut slice = out.batch_entry(entry);
+            crate::surrogate_affine::calibrate_normal(cal, &mut slice, self.y_bounds())?;
+            out.assign_batch_entry(entry, &slice);
+        }
+        Ok(())
+    }
+
+    pub(super) fn calibrate_published_draws(
+        &self,
+        mut draws: Array3<f64>,
+        params: &ENNParams,
+        uncalibrated_posterior: impl FnOnce(&ENNParams) -> Result<ENNNormal, ENNError>,
+    ) -> Result<Array3<f64>, ENNError> {
+        self.naturalize_draws_3d(&mut draws);
+        if let Some(cal) = self.checked_calibrator(params)? {
+            let post = uncalibrated_posterior(&params.clone().with_calibrator(None))?;
+            draws = crate::surrogate_affine::calibrate_natural_draws(
+                cal,
+                draws,
+                &post,
+                self.y_bounds(),
+            )?;
+        }
+        Ok(transpose_num_samples_last(draws))
     }
 
     pub(crate) fn posterior_function_draw_warped(
@@ -85,20 +138,10 @@ impl EpistemicNearestNeighbors {
         function_seeds: &[i64],
         flags: &PosteriorFlags,
     ) -> Result<(Array3<f64>, Vec<Vec<usize>>), ENNError> {
-        let (draws, idx) =
-            self.posterior_function_draw_warped(x, params, function_seeds, flags)?;
-        Ok((self.publish_draws(draws), idx))
-    }
-
-    /// Naturalize sample-first draws, then move `num_samples` to the last axis.
-    pub(crate) fn publish_draws(&self, mut draws: Array3<f64>) -> Array3<f64> {
-        self.naturalize_draws_3d(&mut draws);
-        transpose_num_samples_last(draws)
-    }
-
-    /// Move `num_samples` from axis 0 to the last axis. Draws are already natural.
-    pub(crate) fn samples_last(draws: Array3<f64>) -> Array3<f64> {
-        transpose_num_samples_last(draws)
+        let (draws, idx) = self.posterior_function_draw_warped(x, params, function_seeds, flags)?;
+        let draws =
+            self.calibrate_published_draws(draws, params, |bare| self.posterior(x, bare, flags))?;
+        Ok((draws, idx))
     }
 
     pub(crate) fn conditional_posterior_warped(
@@ -110,14 +153,8 @@ impl EpistemicNearestNeighbors {
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
         let (y_z, _) = self.warp_observations(y_whatif, None)?;
-        let internals = compute_conditional_posterior_internals(
-            self,
-            x,
-            x_whatif,
-            &y_z.view(),
-            params,
-            flags,
-        )?;
+        let internals =
+            compute_conditional_posterior_internals(self, x, x_whatif, &y_z.view(), params, flags)?;
         Ok(ENNNormal::new(
             internals.mu.into_dyn(),
             internals.se.into_dyn(),
@@ -135,9 +172,9 @@ impl EpistemicNearestNeighbors {
         params: &ENNParams,
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
-        let mut out =
-            self.conditional_posterior_warped(x_whatif, y_whatif, x, params, flags)?;
+        let mut out = self.conditional_posterior_warped(x_whatif, y_whatif, x, params, flags)?;
         self.naturalize_enn_normal(&mut out)?;
+        self.calibrate_normal(&mut out, params)?;
         Ok(out)
     }
 
@@ -215,15 +252,28 @@ impl EpistemicNearestNeighbors {
         }
     }
 
-    /// Public batch posterior in natural units.
+    pub(crate) fn warp_draws_3d(&self, draws: &mut Array3<f64>) -> Result<(), ENNError> {
+        if is_identity_bounds(self.y_bounds()) {
+            return Ok(());
+        }
+        let bounds = self.y_bounds();
+        for mut sample in draws.axis_iter_mut(ndarray::Axis(0)) {
+            let warped = warp_y(sample.view(), bounds)?;
+            sample.assign(&warped);
+        }
+        Ok(())
+    }
+
     pub fn batch_posterior(
         &self,
         x: &ArrayView2<f64>,
         paramss: &[ENNParams],
         flags: &PosteriorFlags,
     ) -> Result<ENNNormal, ENNError> {
+        crate::util::check_finite_query(x)?;
         let mut out = <Self as PosteriorComputation>::batch_posterior(self, x, paramss, flags)?;
         self.naturalize_enn_normal(&mut out)?;
+        self.calibrate_batch(&mut out, paramss)?;
         Ok(out)
     }
 }

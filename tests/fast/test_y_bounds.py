@@ -8,16 +8,17 @@ import pytest
 from enn import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
 from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig, turbo_enn_config
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage
 from enn.turbo.rust_optimizer import create_optimizer
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def test_public_posterior_and_train_y_natural_logit():
     bounds = np.array([[0.0, 1.0]], dtype=float)
     train_x = np.array([[0.0], [1.0]], dtype=float)
     train_y = np.array([[0.1], [0.9]], dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y, y_bounds=bounds)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, y_bounds=bounds, work_dir=fresh_work_dir()
+    )
 
     np.testing.assert_allclose(model._train_y, train_y)
 
@@ -50,6 +51,7 @@ def test_oob_rejected():
             np.array([[0.0]], dtype=float),
             np.array([[0.0]], dtype=float),
             y_bounds=bounds,
+            work_dir=fresh_work_dir(),
         )
 
 
@@ -60,13 +62,14 @@ def test_shape_strict_no_broadcast():
             np.array([[0.0], [1.0]], dtype=float),
             np.array([[0.1, 0.2], [0.3, 0.4]], dtype=float),
             y_bounds=bounds,
+            work_dir=fresh_work_dir(),
         )
 
 
 def test_unbounded_default_matches_identity():
     train_x = np.array([[0.0], [1.0]], dtype=float)
     train_y = np.array([[1.0], [2.0]], dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y)
+    model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
     params = ENNParams(
         k_num_neighbors=1,
         epistemic_variance_scale=1.0,
@@ -92,12 +95,13 @@ def test_optimizer_bounded_open_unit_interval():
     opt = create_optimizer(
         bounds=np.array([[0.0, 1.0]], dtype=float),
         config=cfg,
-        rng=rng,
+        seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     x = opt.ask(2)
     y = np.array([[0.2], [0.8]], dtype=float)
     opt.tell(x, y)
-    y_obs = opt._y_obs.view()
+    y_obs = opt.y_obs.view()
     assert y_obs.shape[0] >= 2
     assert np.all(y_obs > 0.0) and np.all(y_obs < 1.0)
     x2 = opt.ask(1)
@@ -113,36 +117,23 @@ def test_disk_reopen_loads_y_bounds(tmp_path):
         train_x,
         train_y,
         y_bounds=bounds,
-        index_driver=ENNIndexDriver.BPANN_DISK,
         work_dir=str(work),
-        enn_storage=ENNStorage.DISK,
     )
     model.persist_index_to_disk()
+    del model
 
-    reopened = EpistemicNearestNeighbors(
-        np.zeros((0, 1)),
-        np.zeros((0, 1)),
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        work_dir=str(work),
-        enn_storage=ENNStorage.DISK,
-    )
+    reopened = EpistemicNearestNeighbors.open(work)
     np.testing.assert_allclose(reopened._train_y, train_y)
-    with pytest.raises(ValueError, match="do not match"):
-        EpistemicNearestNeighbors(
-            np.zeros((0, 1)),
-            np.zeros((0, 1)),
-            y_bounds=np.array([[0.0, 2.0]], dtype=float),
-            index_driver=ENNIndexDriver.BPANN_DISK,
-            work_dir=str(work),
-            enn_storage=ENNStorage.DISK,
-        )
+    np.testing.assert_array_equal(reopened.rust_backend.y_bounds, bounds)
 
 
 def test_multi_metric_bounds():
     bounds = np.array([[0.0, 1.0], [0.0, np.inf]], dtype=float)
     train_x = np.array([[0.0], [1.0]], dtype=float)
     train_y = np.array([[0.2, 1.5], [0.8, 3.0]], dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y, y_bounds=bounds)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, y_bounds=bounds, work_dir=fresh_work_dir()
+    )
     np.testing.assert_allclose(model._train_y, train_y)
     params = ENNParams(
         k_num_neighbors=1,

@@ -8,6 +8,7 @@ import numpy as np
 
 from enn import create_optimizer
 from enn.turbo.config.optimizer_config import OptimizerConfig
+from evals.harness.work_dirs import fresh_work_dir
 
 from .catalog import (
     FIXTURE_OBJECTIVES,
@@ -70,7 +71,12 @@ def assert_fixture_contracts(data: dict[str, Any], config: OptimizerConfig) -> N
     assert_fixture_json_invariants(data)
     bounds = np.array(data["bounds"], dtype=float)
     rng = np.random.default_rng(int(data["seed"]))
-    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = create_optimizer(
+        bounds=bounds,
+        config=config,
+        seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
+    )
     num_arms = int(data["num_arms"])
     for step in data["steps"]:
         x_golden = np.array(step["ask"], dtype=float)

@@ -1,5 +1,3 @@
-//! NumPy `SeedSequence` (pool size 4) for integer entropy.
-
 const INIT_A: u32 = 0x43b0_d7e5;
 const MULT_A: u32 = 0x931e_8875;
 const INIT_B: u32 = 0x8b51_f9dd;
@@ -16,7 +14,9 @@ fn hashmix(mut value: u32, hash_const: &mut u32) -> u32 {
 }
 
 fn mix(x: u32, y: u32) -> u32 {
-    let mut result = MIX_MULT_L.wrapping_mul(x).wrapping_sub(MIX_MULT_R.wrapping_mul(y));
+    let mut result = MIX_MULT_L
+        .wrapping_mul(x)
+        .wrapping_sub(MIX_MULT_R.wrapping_mul(y));
     result ^= result >> XSHIFT;
     result
 }
@@ -57,7 +57,6 @@ fn mix_entropy(pool: &mut [u32], entropy: &[u32]) {
     }
 }
 
-/// `SeedSequence(entropy).generate_state(n_u64, dtype=uint64)`.
 pub fn seed_sequence_u64(entropy: u64, n_u64: usize) -> Vec<u64> {
     let mut pool = [0u32; 4];
     let words = entropy_words(entropy);

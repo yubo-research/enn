@@ -14,6 +14,7 @@ from enn.turbo.config.candidate_gen_config import CandidateGenConfig
 from enn.turbo.config.enn_surrogate_config import ENNFitConfig, ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config
 from enn.turbo.config.trust_region import TurboTRConfig
+from evals.harness.work_dirs import fresh_work_dir
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,12 @@ def _make_optimizer(cfg: ProfileConfig) -> object:
         num_init=1,
         candidates=candidates,
     )
-    return create_optimizer(bounds=bounds, config=opt_config, rng=rng)
+    return create_optimizer(
+        bounds=bounds,
+        config=opt_config,
+        seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
+    )
 
 
 def _seed_observations(
@@ -92,8 +98,8 @@ def _time_find_center(opt: object, rng: np.random.Generator) -> float:
     if not hasattr(opt, "_surrogate"):
         _ = opt.ask(num_arms=1)
         return 0.0
-    x_obs = opt._x_obs.view()
-    y_obs = opt._y_obs.view()
+    x_obs = opt.x_obs.view()
+    y_obs = opt.y_obs.view()
     _ = opt._surrogate.fit(x_obs, y_obs, None, num_steps=0, rng=rng)
     t0 = time.perf_counter()
     _ = opt._find_x_center(x_obs, y_obs)
@@ -105,8 +111,8 @@ def _time_fit(opt: object, rng: np.random.Generator) -> float:
         t0 = time.perf_counter()
         _ = opt.ask(num_arms=1)
         return time.perf_counter() - t0
-    x_obs = opt._x_obs.view()
-    y_obs = opt._y_obs.view()
+    x_obs = opt.x_obs.view()
+    y_obs = opt.y_obs.view()
     t0 = time.perf_counter()
     _ = opt._surrogate.fit(x_obs, y_obs, None, num_steps=0, rng=rng)
     return time.perf_counter() - t0
@@ -119,7 +125,6 @@ def _time_tell(opt: object, rng: np.random.Generator, cfg: ProfileConfig) -> flo
     y = -np.sum(x**2, axis=1)
     if y.ndim == 1:
         y = y.reshape(-1, 1)
-
 
     prof = cProfile.Profile()
     prof.enable()
@@ -215,7 +220,6 @@ def run_profile(cfg: ProfileConfig, *, profile: bool, profile_center: bool) -> N
     rng = np.random.default_rng(cfg.seed)
     opt = _make_optimizer(cfg)
     _seed_observations(opt, rng, cfg)
-
 
     _ = opt.ask(num_arms=cfg.num_arms)
 

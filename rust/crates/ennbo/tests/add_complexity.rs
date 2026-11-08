@@ -1,9 +1,10 @@
-use ennbo::{EpistemicNearestNeighbors, IndexDriver};
+use ennbo::EpistemicNearestNeighbors;
 use ndarray::Array2;
 use std::collections::HashMap;
 use std::hint::black_box;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use tempfile::TempDir;
 
 const ROW_COUNTS: [usize; 5] = [1_000, 3_000, 10_000, 30_000, 100_000];
 const BASELINE_ROWS: usize = ROW_COUNTS[0];
@@ -16,7 +17,11 @@ fn row_f64(i: usize) -> f64 {
     f64::from(u32::try_from(i).unwrap_or(u32::MAX))
 }
 
-fn cached_array<F>(cache: &OnceLock<Mutex<HashMap<usize, Array2<f64>>>>, n: usize, build: F) -> Array2<f64>
+fn cached_array<F>(
+    cache: &OnceLock<Mutex<HashMap<usize, Array2<f64>>>>,
+    n: usize,
+    build: F,
+) -> Array2<f64>
 where
     F: FnOnce(usize) -> Array2<f64>,
 {
@@ -57,24 +62,26 @@ fn deterministic_yvar(n: usize) -> Array2<f64> {
     cached_array(&YVAR_CACHE, n, |n| Array2::from_elem((n, 1), 1e-6))
 }
 
-fn model_with_rows(n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
+fn layout(dir: &TempDir, weighting: bool) -> ennbo::EnnLayout {
+    ennbo::EnnLayout::new(dir.path(), weighting).unwrap()
+}
+
+fn model_with_rows(dir: &TempDir, n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
     EpistemicNearestNeighbors::new(
         deterministic_x(n),
         deterministic_y(n),
         None,
-        scale_x,
-        IndexDriver::Flat,
+        layout(dir, scale_x),
     )
     .unwrap()
 }
 
-fn model_with_rows_and_yvar(n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
+fn model_with_rows_and_yvar(dir: &TempDir, n: usize, scale_x: bool) -> EpistemicNearestNeighbors {
     EpistemicNearestNeighbors::new(
         deterministic_x(n),
         deterministic_y(n),
         Some(deterministic_yvar(n)),
-        scale_x,
-        IndexDriver::Flat,
+        layout(dir, scale_x),
     )
     .unwrap()
 }
@@ -85,10 +92,11 @@ fn timed_single_row_adds_with_yvar(
     scale_x: bool,
     with_yvar: bool,
 ) -> Duration {
+    let dir = TempDir::new().unwrap();
     let mut model = if with_yvar {
-        model_with_rows_and_yvar(starting_rows, scale_x)
+        model_with_rows_and_yvar(&dir, starting_rows, scale_x)
     } else {
-        model_with_rows(starting_rows, scale_x)
+        model_with_rows(&dir, starting_rows, scale_x)
     };
 
     let warm_x = deterministic_x(1);
@@ -116,8 +124,7 @@ fn timed_single_row_adds_with_yvar(
             ],
         )
         .unwrap();
-        let y = Array2::from_shape_vec((1, 1), vec![fi.mul_add(0.013, 10_000.0).cos()])
-            .unwrap();
+        let y = Array2::from_shape_vec((1, 1), vec![fi.mul_add(0.013, 10_000.0).cos()]).unwrap();
         let yvar = if with_yvar {
             Some(deterministic_yvar(1))
         } else {
@@ -167,7 +174,9 @@ fn flat_growth_violation(
         .map(|(_, t)| *t)
         .expect("baseline row count must be measured");
     if baseline_secs <= 0.0 {
-        return Some(format!("baseline timing must be positive: {measurements:?}"));
+        return Some(format!(
+            "baseline timing must be positive: {measurements:?}"
+        ));
     }
 
     let budget_secs = baseline_secs * MAX_SECS_PER_BASELINE_SEC;
@@ -198,10 +207,7 @@ fn assert_flat_growth_for_config(scale_x: bool, with_yvar: bool) {
         let measurements = measure_flat_growth(scale_x, with_yvar);
         last_measurements.clone_from(&measurements);
         if let Some(message) = flat_growth_violation(&measurements, scale_x, with_yvar) {
-            assert!(
-                attempt + 1 != MAX_MEASUREMENT_ATTEMPTS,
-                "{message}",
-            );
+            assert!(attempt + 1 != MAX_MEASUREMENT_ATTEMPTS, "{message}",);
             continue;
         }
         return;
@@ -224,7 +230,8 @@ fn single_row_add_flat_growth_scale_x_false_yvar_true() {
 
 #[test]
 fn scale_x_true_incremental_add_succeeds() {
-    let mut model = model_with_rows(100, true);
+    let dir = TempDir::new().unwrap();
+    let mut model = model_with_rows(&dir, 100, true);
     let x = deterministic_x(1);
     let y = deterministic_y(1);
     model

@@ -3,15 +3,8 @@ use std::collections::HashMap;
 use crate::error::BpannError;
 use crate::mmap_store::MmapColumnStore;
 
-/// Squared-distance threshold treated as an exact self hit (LOO identity).
 const SELF_DIST_EPS: f64 = 1e-15;
 
-/// Exclude the query's own training row when present among candidates.
-///
-/// - If `self_id` is known and present: remove that id (even if not nearest).
-/// - If `self_id` is known but absent: do not strip a neighbor (approx miss).
-/// - If `self_id` is unknown: remove a zero-distance hit if any; otherwise keep
-///   the true NN (Exact LOO parity for novel queries that are not training rows).
 pub fn bpann_apply_exclude_nearest(
     ranked: &mut Vec<(u32, f64)>,
     exclude_nearest: bool,
@@ -31,7 +24,6 @@ pub fn bpann_apply_exclude_nearest(
     }
 }
 
-/// Exact float row match of `query` against training rows (identity for LOO).
 pub fn find_query_train_id(train_x: &MmapColumnStore, query: &[f64]) -> Option<u32> {
     let n = train_x.nrows;
     for i in 0..n {
@@ -45,7 +37,6 @@ pub fn find_query_train_id(train_x: &MmapColumnStore, query: &[f64]) -> Option<u
     None
 }
 
-/// Exact float match of `query` in a flat train matrix.
 pub fn find_query_train_id_flat<T: PartialEq>(
     flat: &[T],
     total: usize,
@@ -100,8 +91,6 @@ pub fn bpann_merge_topk_candidates(
         if let Some((id, _)) = ranked.iter().find(|(_, d)| *d <= SELF_DIST_EPS) {
             Some(*id)
         } else {
-
-
             find_query_train_id(train_x, query)
         }
     } else {
@@ -159,7 +148,8 @@ mod kiss_coverage_tests {
     #[test]
     fn merge_units_are_linked() {
         let dir = TempDir::new().unwrap();
-        let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
         store
             .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
             .unwrap();
@@ -211,7 +201,6 @@ mod kiss_coverage_tests {
         crate::merge::bpann_apply_exclude_nearest(&mut ranked, true, None);
         assert!(!ranked.iter().any(|(id, _)| *id == 7));
 
-
         let mut ranked2 = vec![(3u32, 0.5), (4u32, 1.0)];
         crate::merge::bpann_apply_exclude_nearest(&mut ranked2, true, None);
         assert_eq!(ranked2[0].0, 3);
@@ -221,7 +210,8 @@ mod kiss_coverage_tests {
     #[test]
     fn find_query_train_id_matches_exact_row() {
         let dir = TempDir::new().unwrap();
-        let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
         store
             .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
             .unwrap();

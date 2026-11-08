@@ -64,39 +64,51 @@ ENNNormal = _ext.util.ENNNormal
 Ackley = _ext.util.Ackley
 DoubleAckley = _ext.util.DoubleAckley
 ENNParams = _ext.model.ENNParams
-set_unscaled_dims = _ext.model.set_unscaled_dims
 ENNStatefulFitter = _ext.fit.ENNStatefulFitter
 subsample_loglik = _ext.fit.subsample_loglik
-ENNAddToken = _ext.fit.ENNAddToken
-enn_fit_incremental = _ext.fit.enn_fit_incremental
 Optimizer = _ext.optimizer.Optimizer
 create_optimizer_enn = _ext.optimizer.create_optimizer_enn
 create_optimizer_zero = _ext.optimizer.create_optimizer_zero
 create_optimizer_lhd = _ext.optimizer.create_optimizer_lhd
+create_optimizer_run = _ext.optimizer.create_optimizer_run
+open_optimizer = _ext.optimizer.open_optimizer
 require_num_fit_samples = _ext.optimizer.require_num_fit_samples
 validate_optimizer_rules = _ext.optimizer.validate_optimizer_rules
 validate_enn_placement = _ext.model.validate_enn_placement
 
 
 __all__ = [
+    "ENNParams",
+    "ENNStatefulFitter",
+    "EpistemicNearestNeighbors",
+    "Optimizer",
+    "arms_from_pareto_fronts",
+    "calculate_sobol_indices",
+    "create_optimizer_enn",
+    "create_optimizer_lhd",
+    "create_optimizer_zero",
+    "ensure_config_file",
     "hypervolume_2d_max",
     "normal_hash_batch_multi_seed_fast",
-    "standardize_y",
     "pareto_front_2d_maximize",
-    "calculate_sobol_indices",
-    "sobol_sequence",
-    "arms_from_pareto_fronts",
     "set_config_path",
-    "ensure_config_file",
-    "EpistemicNearestNeighbors",
-    "ENNParams",
-    "set_unscaled_dims",
-    "ENNStatefulFitter",
+    "sobol_sequence",
+    "standardize_y",
     "subsample_loglik",
-    "ENNAddToken",
-    "enn_fit_incremental",
-    "Optimizer",
-    "create_optimizer_enn",
-    "create_optimizer_zero",
-    "create_optimizer_lhd",
 ]
+
+
+cat_log_width = _ext.util.cat_log_width
+
+CatEncoder = _ext.util.CatEncoder
+cat_column_plan = _ext.util.cat_column_plan
+
+
+resolve_tied_groups = _ext.model.resolve_tied_groups
+
+
+validate_candidate_counts = _ext.optimizer.validate_candidate_counts
+validate_fit_settings = _ext.optimizer.validate_fit_settings
+validate_num_init = _ext.optimizer.validate_num_init
+validate_multi_objective = _ext.optimizer.validate_multi_objective
+validate_length_overrides = _ext.optimizer.validate_length_overrides

@@ -8,6 +8,7 @@ pub mod metric;
 pub mod mmap_store;
 pub mod observation;
 pub mod small_n_search;
+pub mod store_file;
 pub mod tuning;
 
 pub use backend::{
@@ -16,15 +17,18 @@ pub use backend::{
 };
 pub use error::BpannError;
 pub use index::{BpannIndex, IncrementalIndex};
+pub use large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 pub use merge::{
     bpann_apply_exclude_nearest, bpann_merge_topk_candidates, merge_topk_precomputed_dist,
     merge_topk_precomputed_dist_with_self,
 };
 pub use observation::{bpann_remove_store, MAX_NUM_DIM, MAX_RECORD_STRIDE};
-pub use large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 pub use small_n_search::{
-    load_or_build_small_n_cache, score_queries_flat, topk_flat_sq_l2, OrderedF32,
-    ScoreQueriesFlat, SMALL_N_INCORE_SEARCH_LIMIT,
+    load_or_build_small_n_cache, score_queries_flat, topk_flat_sq_l2, OrderedF32, ScoreQueriesFlat,
+    SMALL_N_INCORE_SEARCH_LIMIT,
+};
+pub use store_file::{
+    bpann_lock_store, bpann_read_json, bpann_replace_json_text, bpann_write_json,
 };
 pub use tuning::{
     clear_tuning_provider, current_tuning, set_tuning_provider, BpannTuning,
@@ -157,9 +161,7 @@ mod acceptance_tests {
         let page_bytes = b.page_bytes();
         let sentinel_bytes = 12345.6789f64.to_le_bytes();
         assert!(
-            !page_bytes
-                .windows(8)
-                .any(|w| w == sentinel_bytes),
+            !page_bytes.windows(8).any(|w| w == sentinel_bytes),
             "y payload found in index pages"
         );
     }
@@ -184,7 +186,8 @@ mod acceptance_tests {
     fn test_search_returns_correct_shapes() {
         let dir = TempDir::new().unwrap();
         let (x, y) = synthetic_train(32, 8, 1);
-        let mut b = BpannBackend::new(dir.path().to_path_buf(), x, y, None, false, Array1::ones(8)).unwrap();
+        let mut b = BpannBackend::new(dir.path().to_path_buf(), x, y, None, false, Array1::ones(8))
+            .unwrap();
         b.ensure_index_sync().unwrap();
         let queries = Array2::zeros((3, 8));
         let (d, i) = b.search(&queries.view(), 5, false).unwrap();
@@ -204,11 +207,7 @@ mod acceptance_tests {
                 (i as i64, acc)
             })
             .collect();
-        scored.sort_by(|a, b| {
-            a.1.partial_cmp(&b.1)
-                .unwrap()
-                .then_with(|| a.0.cmp(&b.0))
-        });
+        scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then_with(|| a.0.cmp(&b.0)));
         scored.truncate(k);
         scored.into_iter().map(|(id, _)| id).collect()
     }
@@ -217,10 +216,20 @@ mod acceptance_tests {
     fn test_search_single_query_matches_brute_force_small_n() {
         let dir = TempDir::new().unwrap();
         let (x, y) = synthetic_train(64, 8, 3);
-        let mut b = BpannBackend::new(dir.path().to_path_buf(), x.clone(), y, None, false, Array1::ones(8)).unwrap();
+        let mut b = BpannBackend::new(
+            dir.path().to_path_buf(),
+            x.clone(),
+            y,
+            None,
+            false,
+            Array1::ones(8),
+        )
+        .unwrap();
         b.ensure_index_sync().unwrap();
         let q = x.row(0).to_owned();
-        let (d, idx) = b.search(&q.view().insert_axis(ndarray::Axis(0)), 10, false).unwrap();
+        let (d, idx) = b
+            .search(&q.view().insert_axis(ndarray::Axis(0)), 10, false)
+            .unwrap();
         let expected = brute_force_oracle(&b, q.as_slice().unwrap(), 10);
         let got: Vec<i64> = idx.row(0).iter().copied().collect();
         assert_eq!(got, expected);
@@ -246,9 +255,7 @@ mod acceptance_tests {
         )
         .unwrap();
         b.ensure_index_sync().unwrap();
-        let (_, idx) = b
-            .search(&array![[0.0, 0.0]].view(), 1, true)
-            .unwrap();
+        let (_, idx) = b.search(&array![[0.0, 0.0]].view(), 1, true).unwrap();
         assert_eq!(idx[[0, 0]], 1);
     }
 
@@ -276,9 +283,7 @@ mod acceptance_tests {
         )
         .unwrap();
         assert_eq!(b.pending_rows(), 0);
-        let (_, idx) = b
-            .search(&array![[0.0]].view(), 1, true)
-            .unwrap();
+        let (_, idx) = b.search(&array![[0.0]].view(), 1, true).unwrap();
         assert_eq!(
             idx[[0, 0]],
             3,
@@ -308,9 +313,7 @@ mod acceptance_tests {
         )
         .unwrap();
         assert_eq!(b.pending_rows(), 0);
-        let (_, idx) = b
-            .search(&array![[0.0]].view(), 4, true)
-            .unwrap();
+        let (_, idx) = b.search(&array![[0.0]].view(), 4, true).unwrap();
         let got: Vec<i64> = idx.row(0).iter().copied().collect();
         assert_eq!(
             got,
@@ -323,7 +326,15 @@ mod acceptance_tests {
     fn test_search_batch_matches_rowwise() {
         let dir = TempDir::new().unwrap();
         let (x, y) = synthetic_train(48, 6, 11);
-        let mut b = BpannBackend::new(dir.path().to_path_buf(), x.clone(), y, None, false, Array1::ones(6)).unwrap();
+        let mut b = BpannBackend::new(
+            dir.path().to_path_buf(),
+            x.clone(),
+            y,
+            None,
+            false,
+            Array1::ones(6),
+        )
+        .unwrap();
         b.ensure_index_sync().unwrap();
         let batch = x.slice(ndarray::s![0..3, ..]).to_owned();
         let (bd, bi) = b.search(&batch.view(), 5, false).unwrap();
@@ -378,10 +389,7 @@ mod acceptance_tests {
                 .unwrap();
             let got: Vec<i64> = idx.row(0).iter().copied().collect();
             let expected = brute_force_oracle(&b, query.as_slice().unwrap(), k);
-            let hits = got
-                .iter()
-                .filter(|id| expected.contains(id))
-                .count();
+            let hits = got.iter().filter(|id| expected.contains(id)).count();
             total_recall += hits as f64 / k as f64;
         }
         let recall = total_recall / num_queries as f64;
@@ -427,10 +435,7 @@ mod acceptance_tests {
                 .unwrap();
             let got: Vec<i64> = idx.row(0).iter().copied().collect();
             let expected = brute_force_oracle(&b, query.as_slice().unwrap(), k);
-            let hits = got
-                .iter()
-                .filter(|id| expected.contains(id))
-                .count();
+            let hits = got.iter().filter(|id| expected.contains(id)).count();
             total_recall += hits as f64 / k as f64;
         }
         let recall = total_recall / num_queries as f64;
@@ -459,10 +464,20 @@ mod acceptance_tests {
         let dir = TempDir::new().unwrap();
         let (x, y) = synthetic_train(16, 4, 5);
         let scale = array![2.0, 1.0, 4.0, 2.0];
-        let mut b = BpannBackend::new(dir.path().to_path_buf(), x.clone(), y, None, true, scale.clone()).unwrap();
+        let mut b = BpannBackend::new(
+            dir.path().to_path_buf(),
+            x.clone(),
+            y,
+            None,
+            true,
+            scale.clone(),
+        )
+        .unwrap();
         b.ensure_index_sync().unwrap();
         let q = x.row(0);
-        let (d, idx) = b.search(&q.view().insert_axis(ndarray::Axis(0)), 3, false).unwrap();
+        let (d, idx) = b
+            .search(&q.view().insert_axis(ndarray::Axis(0)), 3, false)
+            .unwrap();
         let neighbor = b.mmap_row_slice(idx[[0, 0]] as usize).unwrap();
         let expected = row_sq_l2(q.view(), neighbor.into(), true, scale.view());
         assert!((d[[0, 0]] - expected).abs() < 1e-9);
@@ -504,7 +519,6 @@ mod acceptance_tests {
         .unwrap();
         b.ensure_index_sync().unwrap();
 
-
         b.append_rows(
             &array![[2.0, 4.0], [4.0, 8.0]].view(),
             &array![[2.0], [3.0]].view(),
@@ -529,12 +543,8 @@ mod acceptance_tests {
         )
         .unwrap();
         b.ensure_index_sync().unwrap();
-        b.append_rows(
-            &array![[100.0, 100.0]].view(),
-            &array![[2.0]].view(),
-            None,
-        )
-        .unwrap();
+        b.append_rows(&array![[100.0, 100.0]].view(), &array![[2.0]].view(), None)
+            .unwrap();
         let (_, idx) = b.search(&array![[100.0, 100.0]].view(), 1, false).unwrap();
         assert_eq!(idx[[0, 0]], 2);
         assert_eq!(b.indexed_rows(), 3);
@@ -553,12 +563,8 @@ mod acceptance_tests {
         )
         .unwrap();
         b.ensure_index_sync().unwrap();
-        b.append_rows(
-            &array![[2.0, 2.0]].view(),
-            &array![[2.0]].view(),
-            None,
-        )
-        .unwrap();
+        b.append_rows(&array![[2.0, 2.0]].view(), &array![[2.0]].view(), None)
+            .unwrap();
         let pages_path = dir.path().join("index/pages.bin");
         let size_before = fs::metadata(&pages_path).map(|m| m.len()).unwrap_or(0);
         let indexed_before = b.indexed_rows();
@@ -688,7 +694,6 @@ mod acceptance_tests {
 
     #[test]
     fn ensure_index_sync_in_place_drains_pending_and_is_idempotent() {
-
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1)
             .unwrap()
@@ -733,7 +738,6 @@ mod acceptance_tests {
 
     #[test]
     fn metamorphic_hard_cap_clears_all_pending_not_trim() {
-
         let dir = TempDir::new().unwrap();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 3, 1)
             .unwrap()
@@ -768,7 +772,11 @@ mod acceptance_tests {
             let x = Array2::from_shape_fn((batch, 2), |(i, j)| ((trial + i) + j) as f64);
             let y = Array2::from_shape_fn((batch, 1), |(i, _)| i as f64);
             b.append_rows(&x.view(), &y.view(), None).unwrap();
-            assert_eq!(b.pending_rows(), 0, "trial={trial} soft={soft} hard={hard} batch={batch}");
+            assert_eq!(
+                b.pending_rows(),
+                0,
+                "trial={trial} soft={soft} hard={hard} batch={batch}"
+            );
             assert_eq!(b.indexed_rows(), batch, "trial={trial}");
         }
     }
@@ -779,12 +787,8 @@ mod acceptance_tests {
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 8, 1).unwrap();
         let mem0 = b.index_memory_bytes();
         for i in 0..100 {
-            b.append_row(
-                &Array1::from_elem(8, i as f64),
-                &array![i as f64],
-                None,
-            )
-            .unwrap();
+            b.append_row(&Array1::from_elem(8, i as f64), &array![i as f64], None)
+                .unwrap();
         }
         let mem1 = b.index_memory_bytes();
         assert_eq!(mem0, mem1);
@@ -822,7 +826,9 @@ mod acceptance_tests {
         };
         let b2 = BpannBackend::reopen(path).unwrap();
         let (x, _) = synthetic_train(32, 4, 9);
-        let (post_d, post_i) = b2.search(&x.slice(ndarray::s![0..2, ..]), 5, false).unwrap();
+        let (post_d, post_i) = b2
+            .search(&x.slice(ndarray::s![0..2, ..]), 5, false)
+            .unwrap();
         assert_eq!(pre_i, post_i);
         for i in 0..2 {
             for j in 0..5 {
@@ -856,7 +862,12 @@ mod acceptance_tests {
         let (x, y) = synthetic_train(124, 4, 5);
         let (pre_d, pre_i) = {
             let mut b = BpannBackend::new_empty(path.clone(), 4, 1).unwrap();
-            b.append_rows(&x.slice(ndarray::s![..24, ..]), &y.slice(ndarray::s![..24, ..]), None).unwrap();
+            b.append_rows(
+                &x.slice(ndarray::s![..24, ..]),
+                &y.slice(ndarray::s![..24, ..]),
+                None,
+            )
+            .unwrap();
             b.persist_index_to_disk().unwrap();
             for lo in (24..124).step_by(20) {
                 let rows = ndarray::s![lo..lo + 20, ..];
@@ -867,9 +878,14 @@ mod acceptance_tests {
         };
         let b2 = BpannBackend::reopen(path).unwrap();
         assert_eq!((b2.len(), b2.indexed_rows()), (124, 124));
-        let (post_d, post_i) = b2.search(&x.slice(ndarray::s![0..3, ..]), 5, false).unwrap();
+        let (post_d, post_i) = b2
+            .search(&x.slice(ndarray::s![0..3, ..]), 5, false)
+            .unwrap();
         assert_eq!(pre_i, post_i);
-        assert!(pre_d.iter().zip(post_d.iter()).all(|(a, b)| (a - b).abs() < 1e-6));
+        assert!(pre_d
+            .iter()
+            .zip(post_d.iter())
+            .all(|(a, b)| (a - b).abs() < 1e-6));
     }
 
     #[test]
@@ -878,13 +894,25 @@ mod acceptance_tests {
         let d = 32usize;
         let dir = TempDir::new().unwrap();
         let (x, y) = synthetic_train(n, d, 42);
-        let mut b = BpannBackend::new(dir.path().to_path_buf(), x.clone(), y, None, false, Array1::ones(d)).unwrap();
+        let mut b = BpannBackend::new(
+            dir.path().to_path_buf(),
+            x.clone(),
+            y,
+            None,
+            false,
+            Array1::ones(d),
+        )
+        .unwrap();
         b.ensure_index_sync().unwrap();
-        let (d_out, i_out) = b.search(&x.slice(ndarray::s![0..1, ..]), 10.min(n), false).unwrap();
+        let (d_out, i_out) = b
+            .search(&x.slice(ndarray::s![0..1, ..]), 10.min(n), false)
+            .unwrap();
         assert!(d_out[[0, 0]].is_finite());
         assert!(i_out[[0, 0]] >= 0);
         let q = x.row(0).to_owned();
-        let (_, i_out) = b.search(&q.view().insert_axis(ndarray::Axis(0)), 10.min(n), false).unwrap();
+        let (_, i_out) = b
+            .search(&q.view().insert_axis(ndarray::Axis(0)), 10.min(n), false)
+            .unwrap();
         let expected = brute_force_oracle(&b, q.as_slice().unwrap(), 10.min(n));
         let got: Vec<i64> = i_out.row(0).iter().copied().collect();
         assert_eq!(got, expected);
@@ -897,12 +925,22 @@ mod acceptance_tests {
         let d = 32usize;
         let dir = TempDir::new().unwrap();
         let (x, y) = synthetic_train(n, d, 42);
-        let mut b = BpannBackend::new(dir.path().to_path_buf(), x.clone(), y, None, false, Array1::ones(d)).unwrap();
+        let mut b = BpannBackend::new(
+            dir.path().to_path_buf(),
+            x.clone(),
+            y,
+            None,
+            false,
+            Array1::ones(d),
+        )
+        .unwrap();
         b.ensure_index_sync().unwrap();
         let mut hits = 0usize;
         for i in 0..3 {
             let q = x.row(i).to_owned();
-            let (_, idx) = b.search(&q.view().insert_axis(ndarray::Axis(0)), 10, false).unwrap();
+            let (_, idx) = b
+                .search(&q.view().insert_axis(ndarray::Axis(0)), 10, false)
+                .unwrap();
             let expected = brute_force_oracle(&b, q.as_slice().unwrap(), 10);
             hits += idx.row(0).iter().filter(|id| expected.contains(id)).count();
         }

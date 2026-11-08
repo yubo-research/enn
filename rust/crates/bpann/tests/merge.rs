@@ -9,7 +9,8 @@ use tempfile::TempDir;
 #[test]
 fn test_bpann_merge_topk_candidates_excludes_self() {
     let dir = TempDir::new().unwrap();
-    let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+    let mut store =
+        MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
     store
         .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
         .unwrap();
@@ -30,13 +31,7 @@ fn test_bpann_merge_topk_candidates_excludes_self() {
 
 #[test]
 fn test_merge_topk_precomputed_dist_excludes_nearest() {
-    let merged = merge_topk_precomputed_dist(
-        &[(0, 0.0), (1, 1.0), (2, 4.0)],
-        &[],
-        1,
-        3,
-        true,
-    );
+    let merged = merge_topk_precomputed_dist(&[(0, 0.0), (1, 1.0), (2, 4.0)], &[], 1, 3, true);
     assert_eq!(merged.len(), 1);
     assert_eq!(merged[0].0, 1);
 }
@@ -52,7 +47,8 @@ fn test_bpann_apply_exclude_nearest_identity_and_find_query() {
     assert_eq!(missed.len(), 2);
 
     let dir = TempDir::new().unwrap();
-    let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+    let mut store =
+        MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
     store
         .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
         .unwrap();
@@ -62,13 +58,7 @@ fn test_bpann_apply_exclude_nearest_identity_and_find_query() {
         Some(1)
     );
 
-    let out = merge_topk_precomputed_dist_with_self(
-        &[(0, 0.0), (1, 1.0)],
-        &[],
-        1,
-        2,
-        true,
-        Some(0),
-    );
+    let out =
+        merge_topk_precomputed_dist_with_self(&[(0, 0.0), (1, 1.0)], &[], 1, 2, true, Some(0));
     assert_eq!(out[0].0, 1);
 }

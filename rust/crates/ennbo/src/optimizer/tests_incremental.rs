@@ -6,8 +6,6 @@ use crate::config::turbo_enn_config;
 use crate::fitter::ENNFitter;
 use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
 use crate::optimizer::{ObservationDelta, Optimizer};
-use crate::index::IndexDriver;
-use crate::model::EpistemicNearestNeighbors;
 use crate::strategy::Strategy;
 use crate::surrogate::{ENNSurrogate, ENNSurrogateConfig, Surrogate};
 use crate::trust_region::TRLengthConfig;
@@ -17,14 +15,11 @@ use crate::trust_region_config::TrustRegionConfig;
 fn scale_x_false_index_not_stale_after_add() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
-    let mut model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
+    let mut model = crate::test_helpers::test_model(train_x, train_y, None, false);
     model.ensure_index_sync().unwrap();
-    assert!(!model.index_access().is_stale());
     let x_add = array![[0.5, 0.5]];
     let y_add = array![[0.5]];
     model.add(&x_add.view(), &y_add.view(), None).unwrap();
-    assert!(!model.index_access().is_stale());
     model.ensure_index_sync().unwrap();
     assert_eq!(model.num_obs(), 3);
     assert_eq!(model.index_access().len(), 3);
@@ -34,8 +29,7 @@ fn scale_x_false_index_not_stale_after_add() {
 fn scale_x_true_add_to_nonempty_succeeds() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0]];
     let train_y = array![[0.0], [1.0]];
-    let mut model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Flat).unwrap();
+    let mut model = crate::test_helpers::test_model(train_x, train_y, None, true);
     model.ensure_index_sync().unwrap();
     let x_add = array![[0.5, 0.5]];
     let y_add = array![[0.5]];
@@ -48,36 +42,20 @@ fn scale_x_true_add_to_nonempty_succeeds() {
 }
 
 #[test]
-fn scale_x_true_index_stale_after_add() {
-    let train_x = array![[0.0, 0.0], [1.0, 0.0]];
-    let train_y = array![[0.0], [1.0]];
-    let mut model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Flat).unwrap();
-    model.ensure_index_sync().unwrap();
-    assert!(!model.index_access().is_stale());
-    let x_add = array![[0.5, 0.5]];
-    let y_add = array![[0.5]];
-    model.add(&x_add.view(), &y_add.view(), None).unwrap();
-    assert!(
-        model.index_access().is_stale(),
-        "scale_x append must mark index stale before ensure_sync"
-    );
-    model.ensure_index_sync().unwrap();
-    assert!(!model.index_access().is_stale());
-}
-
-#[test]
 fn enn_fitter_ask_always_fits_with_enough_obs() {
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat).unwrap();
+    let model = crate::test_helpers::test_model(train_x, train_y, None, false);
     let mut fitter = ENNFitter::new(2);
-    let all: Vec<usize> = (0..model.len()).collect();
-    let (_, ty, _) = model.rows().train_rows_at(&all).unwrap();
-    fitter.reset_y_stats(&ty.view());
     let mut rng = StdRng::seed_from_u64(99);
-    let p = fitter.ask(&model, &crate::fit_samples::test_search(3, 4, true), None, &mut rng).unwrap();
+    let p = fitter
+        .ask(
+            &model,
+            &crate::fit_samples::test_search(3, 4, true),
+            None,
+            &mut rng,
+        )
+        .unwrap();
     assert_eq!(p.k_num_neighbors, 2);
     assert!(p.epistemic_variance_scale > 0.0);
 }
@@ -96,19 +74,22 @@ fn observation_delta_views() {
 
 #[test]
 fn enn_surrogate_fit_append_grows_model() {
+    let dir = tempfile::tempdir().unwrap();
     let config = ENNSurrogateConfig {
         k: crate::NeighborCount::new(2).unwrap(),
         fit_samples: crate::FitSamples::draw(2, 4).unwrap(),
-        ..Default::default()
+        ..ENNSurrogateConfig::new(crate::layout::EnnLayout::new(dir.path(), false).unwrap())
     };
     let mut sur = ENNSurrogate::new(config);
     let mut rng = StdRng::seed_from_u64(42);
     let x0 = array![[0.0, 0.0], [1.0, 0.0]];
     let y0 = array![[0.0], [1.0]];
-    sur.fit_append(&x0.view(), &y0.view(), None, &mut rng).unwrap();
+    sur.fit_append(&x0.view(), &y0.view(), None, &mut rng)
+        .unwrap();
     let x1 = array![[0.5, 0.5]];
     let y1 = array![[1.5]];
-    sur.fit_append(&x1.view(), &y1.view(), None, &mut rng).unwrap();
+    sur.fit_append(&x1.view(), &y1.view(), None, &mut rng)
+        .unwrap();
     assert_eq!(sur.model().unwrap().num_obs(), 3);
 }
 
@@ -116,7 +97,8 @@ fn enn_surrogate_fit_append_grows_model() {
 fn tell_rejects_changing_num_metrics() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(88);
-    let cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     let mut opt = Optimizer::new(bounds, cfg, &mut rng).unwrap();
     let x0 = array![[0.2, 0.3]];
     let y0 = array![[1.0]];
@@ -133,18 +115,40 @@ fn tell_rejects_changing_num_metrics() {
 }
 
 #[test]
+fn rejected_tell_leaves_generator_and_init_count_unchanged() {
+    let bounds = array![[0.0, 1.0], [0.0, 1.0]];
+    let mut rng = StdRng::seed_from_u64(89);
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
+    let strategy = Strategy::init(crate::config::InitStrategy::LHD, 4);
+    let mut opt = Optimizer::new_with_strategy(bounds, cfg, strategy, &mut rng).unwrap();
+    let x = array![[0.2, 0.3], [0.4, 0.5]];
+    let rng_before = opt.rng.clone();
+    assert!(opt
+        .tell(&x.view(), &array![[1.0], [f64::NAN]].view(), None)
+        .is_err());
+    assert_eq!(opt.rng, rng_before);
+    assert_eq!(opt.init_progress(), Some((0, 4)));
+    assert_eq!(opt.obs_count(), 0);
+    opt.tell(&x.view(), &array![[1.0], [2.0]].view(), None)
+        .unwrap();
+    assert_eq!(opt.init_progress(), Some((2, 4)));
+    assert_ne!(opt.rng, rng_before);
+}
+
+#[test]
 fn morbo_ask_without_tell_preserves_y_ranges() {
     let bounds = array![[0.0, 1.0], [0.0, 1.0]];
     let mut rng = StdRng::seed_from_u64(77);
-    let mut cfg = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg.trust_region = TrustRegionConfig::Morbo(MorboTRSettings {
         num_metrics: 2,
         alpha: 0.05,
         length: TRLengthConfig::default(),
         rescalarize: Rescalarize::OnRestart,
     });
-    let mut opt =
-        Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
+    let mut opt = Optimizer::new_with_strategy(bounds, cfg, Strategy::turbo(), &mut rng).unwrap();
     let x0 = array![[0.1, 0.2], [0.3, 0.4]];
     let y0 = array![[1.0, 0.5], [0.2, 0.9]];
     opt.tell(&x0.view(), &y0.view(), None).unwrap();
@@ -153,6 +157,16 @@ fn morbo_ask_without_tell_preserves_y_ranges() {
     let ymax_before = morbo.y_max().expect("y_max").to_owned();
     let _ = opt.ask(2).unwrap();
     let morbo_after = opt.trust_region().morbo().expect("morbo");
-    assert!(morbo_after.y_min().unwrap().iter().zip(ymin_before.iter()).all(|(a, b)| (a - b).abs() < 1e-12));
-    assert!(morbo_after.y_max().unwrap().iter().zip(ymax_before.iter()).all(|(a, b)| (a - b).abs() < 1e-12));
+    assert!(morbo_after
+        .y_min()
+        .unwrap()
+        .iter()
+        .zip(ymin_before.iter())
+        .all(|(a, b)| (a - b).abs() < 1e-12));
+    assert!(morbo_after
+        .y_max()
+        .unwrap()
+        .iter()
+        .zip(ymax_before.iter())
+        .all(|(a, b)| (a - b).abs() < 1e-12));
 }

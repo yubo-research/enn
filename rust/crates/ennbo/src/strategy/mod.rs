@@ -1,9 +1,9 @@
-//! Optimization strategies for ask/tell pattern.
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::RngCore;
 
-use crate::candidates::{generate_candidates, generate_lhd, generate_sobol_masked, generate_uniform};
+use crate::candidates::{
+    generate_candidates, generate_lhd, generate_sobol_masked, generate_uniform,
+};
 use crate::config::InitStrategy;
 use crate::error::ENNError;
 use crate::optimizer::{Optimizer, Telemetry};
@@ -16,8 +16,7 @@ use select::{
     select_with_ucb,
 };
 
-/// Strategy state for initialization phase.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InitStrategyState {
     pub strategy_type: InitStrategy,
     pub num_init: usize,
@@ -34,18 +33,13 @@ impl InitStrategyState {
     }
 }
 
-/// Strategy state for TuRBO normal phase.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TurboStrategyState;
 
-/// Strategy enum - uses concrete types instead of trait objects.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Strategy {
-    /// Initialization-only strategy.
     Init(InitStrategyState),
-    /// TuRBO normal strategy.
     Turbo(TurboStrategyState),
-    /// Hybrid: initialization then TuRBO.
     Hybrid {
         init: InitStrategyState,
         turbo: TurboStrategyState,
@@ -54,17 +48,14 @@ pub enum Strategy {
 }
 
 impl Strategy {
-    /// Create a new initialization-only strategy.
     pub fn init(strategy_type: InitStrategy, num_init: usize) -> Self {
         Strategy::Init(InitStrategyState::new(strategy_type, num_init))
     }
 
-    /// Create a new TuRBO strategy.
     pub fn turbo() -> Self {
         Strategy::Turbo(TurboStrategyState)
     }
 
-    /// Create a new hybrid strategy.
     pub fn hybrid(init_strategy: InitStrategy, num_init: usize) -> Self {
         Strategy::Hybrid {
             init: InitStrategyState::new(init_strategy, num_init),
@@ -73,7 +64,6 @@ impl Strategy {
         }
     }
 
-    /// Generate candidates (ask).
     pub fn ask(
         &self,
         optimizer: &mut Optimizer,
@@ -96,7 +86,6 @@ impl Strategy {
         }
     }
 
-    /// Process observations (tell).
     pub fn tell(
         &mut self,
         optimizer: &mut Optimizer,
@@ -131,7 +120,10 @@ impl Strategy {
         }
     }
 
-    /// Budget and design of the initial sample. TuRBO-only has no sample.
+    pub fn updates_trust_region(&self) -> bool {
+        !matches!(self, Strategy::Init(_))
+    }
+
     pub fn init_plan(&self) -> (usize, InitStrategy) {
         match self {
             Strategy::Init(state) => (state.num_init, state.strategy_type),
@@ -140,7 +132,6 @@ impl Strategy {
         }
     }
 
-    /// Get initialization progress if applicable.
     pub fn init_progress(&self) -> Option<(usize, usize)> {
         match self {
             Strategy::Init(state) => Some((state.completed, state.num_init)),
@@ -154,7 +145,6 @@ impl Strategy {
     }
 }
 
-/// Ask for initialization phase.
 fn ask_init(
     state: &InitStrategyState,
     optimizer: &mut Optimizer,
@@ -179,7 +169,6 @@ fn ask_init(
     Ok(candidates)
 }
 
-/// Fresh Latin hypercube (or uniform draw) after a collapsed trust region.
 fn ask_local_reinit(
     optimizer: &mut Optimizer,
     num_arms: usize,
@@ -203,7 +192,6 @@ fn tell_local_reinit(
     Ok(())
 }
 
-/// Ask for initialization phase in hybrid mode.
 fn ask_init_hybrid(
     state: &InitStrategyState,
     optimizer: &mut Optimizer,
@@ -218,7 +206,6 @@ fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError>
         return Ok(());
     }
 
-
     let Some(y_all) = optimizer.y_obs() else {
         return Ok(());
     };
@@ -230,7 +217,6 @@ fn morbo_sync_ranges_from_obs(optimizer: &mut Optimizer) -> Result<(), ENNError>
         .morbo_update_ranges_only(&y_all.view())
 }
 
-/// Common tell logic: add observations, fit surrogate, update incumbent.
 fn tell_common(
     optimizer: &mut Optimizer,
     x: &ArrayView2<f64>,
@@ -239,46 +225,23 @@ fn tell_common(
     telemetry: Option<&mut Telemetry>,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
-    if optimizer.trust_region().is_morbo() {
-        let nm = optimizer.trust_region().num_metrics();
-        if y.ncols() != nm {
-            return Err(ENNError::InvalidParameter(format!(
-                "y has {} metric columns but Morbo expects {nm}",
-                y.ncols()
-            )));
-        }
-    }
-
     let delta = optimizer.add_observations(x, y)?;
 
-    if let Some(nm) = optimizer.surrogate().and_then(|s| s.fitted_num_metrics()) {
-        if nm != y.ncols() {
-            return Err(ENNError::InvalidParameter(format!(
-                "y has {} metric columns but the fitted model has {nm}; changing output width is unsupported",
-                y.ncols()
-            )));
-        }
-    }
     if let Some(surrogate) = optimizer.surrogate_mut() {
         let start = std::time::Instant::now();
-        surrogate.fit_append(
-            &delta.x_new_view(),
-            &delta.y_new_view(),
-            yvar,
-            rng,
-        )?;
+        surrogate.fit_append(&delta.x_new_view(), &delta.y_new_view(), yvar, rng)?;
         if let Some(tel) = telemetry {
             tel.dt_fit = start.elapsed().as_secs_f64();
         }
     }
 
     if optimizer.trust_region().is_morbo() && delta.new_n > delta.old_n {
-
         optimizer
             .trust_region_mut()
             .morbo_update_ranges_only(&delta.y_new_view())?;
     }
 
+    optimizer.record_best_observation(x, y);
     optimizer.update_incumbent(rng)?;
 
     if optimizer.trust_region().is_morbo() {
@@ -288,15 +251,11 @@ fn tell_common(
                 .incumbent_y_scalar()
                 .ok_or_else(|| ENNError::InvalidParameter("Missing incumbent y".to_string()))?
                 .to_owned();
-            optimizer.trust_region_mut().morbo_update_incumbent_only(
-                &y_inc.view(),
-                num_obs,
-            )?;
+            optimizer
+                .trust_region_mut()
+                .morbo_update_incumbent_only(&y_inc.view(), num_obs)?;
         }
     }
-
-
-
 
     if x.nrows() >= 64 {
         if let Some(surrogate) = optimizer.surrogate() {
@@ -307,7 +266,6 @@ fn tell_common(
     Ok(())
 }
 
-/// Tell for initialization phase.
 fn tell_init(
     state: &mut InitStrategyState,
     optimizer: &mut Optimizer,
@@ -316,8 +274,9 @@ fn tell_init(
     yvar: Option<&ArrayView2<f64>>,
     rng: &mut dyn RngCore,
 ) -> Result<(), ENNError> {
+    tell_common(optimizer, x, y, yvar, None, rng)?;
     state.completed += x.nrows();
-    tell_common(optimizer, x, y, yvar, None, rng)
+    Ok(())
 }
 
 fn draw_turbo_candidates(
@@ -340,8 +299,7 @@ fn draw_turbo_candidates(
             20,
         );
     }
-    if optimizer.trust_region().is_morbo()
-        && candidate_rv == crate::candidates::CandidateRV::Sobol
+    if optimizer.trust_region().is_morbo() && candidate_rv == crate::candidates::CandidateRV::Sobol
     {
         if let Some(engine) = optimizer.sobol_engine_mut() {
             return generate_sobol_masked(
@@ -367,7 +325,6 @@ fn draw_turbo_candidates(
     )
 }
 
-/// Ask for TuRBO phase.
 fn ask_turbo(
     optimizer: &mut Optimizer,
     num_arms: usize,
@@ -389,7 +346,6 @@ fn ask_turbo(
         .trust_region()
         .compute_bounds_1d(&x_center.view(), ls_ref.as_ref());
 
-
     let num_dim = optimizer.num_dim();
     let config = optimizer.config().candidates.clone();
     let num_candidates = config.num_candidates(num_dim, num_arms);
@@ -408,7 +364,6 @@ fn ask_turbo(
         num_candidates,
         rng,
     )?;
-
 
     let start = std::time::Instant::now();
     let selected = select_arms(optimizer, &x_cand_unit.view(), num_arms, rng)?;
@@ -433,7 +388,6 @@ fn seed_turbo_scale_history(optimizer: &mut Optimizer, prev: usize) {
         .turbo_seed_scale_history(&prefix.view());
 }
 
-/// Tell for TuRBO phase.
 fn tell_turbo(
     optimizer: &mut Optimizer,
     x: &ArrayView2<f64>,
@@ -451,21 +405,14 @@ fn tell_turbo(
         .to_owned();
     optimizer.trust_region_mut().set_num_arms(x.nrows());
     if !optimizer.trust_region().is_morbo() {
-
-
-
         if optimizer.trust_region().turbo_prev_num_obs() == 0 {
             let prev = num_obs.saturating_sub(y.nrows());
             seed_turbo_scale_history(optimizer, prev);
-            optimizer
-                .trust_region_mut()
-                .set_turbo_prev_num_obs(prev);
+            optimizer.trust_region_mut().set_turbo_prev_num_obs(prev);
         }
-        optimizer.trust_region_mut().tell_update_new_batch(
-            y,
-            &y_incumbent.view(),
-            num_obs,
-        )?;
+        optimizer
+            .trust_region_mut()
+            .tell_update_new_batch(y, &y_incumbent.view(), num_obs)?;
     }
     if optimizer.trust_region().needs_restart() && optimizer.trust_region().is_morbo() {
         optimizer.trust_region_mut().restart(Some(rng));

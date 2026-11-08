@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import numpy as np
-from numpy.random import Generator
 
 from .. import _rust
+from .config.enn_surrogate_config import validate_enn_placement
 from .config.optimizer_config import OptimizerConfig
 from .config.surrogate import ENNSurrogateConfig, NoSurrogateConfig
 from .rust_optimizer_helpers import (
@@ -16,41 +17,52 @@ from .rust_optimizer_helpers import (
 from .types.telemetry import Telemetry
 
 
-def _tell_estimate(inner: Any, x_native: np.ndarray, y_in: np.ndarray) -> np.ndarray:
-    """Posterior mean at the points just told. Raw y if there is no surrogate."""
+def _tell_estimate(inner: Any, train_x: np.ndarray, train_y: np.ndarray) -> np.ndarray:
     if not inner.has_surrogate():
-        return y_in
-    x = np.asarray(x_native, dtype=float)
-    if x.ndim == 1:
-        x = x.reshape(1, -1)
-    mu = np.asarray(inner.posterior_mu(x), dtype=float)
-    if y_in.ndim == 1 and mu.ndim == 2 and mu.shape[1] == 1:
-        return mu.reshape(-1)
-    return mu
+        return train_y
+    return np.asarray(inner.posterior_mu(train_x), dtype=float)
 
 
-class RustOptimizer:
-    """Facade over the Rust optimizer. The only field is the Rust object."""
-
+class Optimizer:
     def __init__(self, inner: Any) -> None:
         self._inner = inner
 
-    def _dim(self) -> int:
-        return int(np.asarray(self._inner.bounds()).shape[0])
+    @classmethod
+    def open(cls, work_dir: str | os.PathLike[str]) -> Optimizer:
+        return cls(_rust.open_optimizer(os.fspath(work_dir)))
 
     @property
-    def _x_obs(self) -> np.ndarray:
+    def bounds(self) -> np.ndarray:
+        return np.asarray(self._inner.bounds(), dtype=float)
+
+    @property
+    def x_obs(self) -> np.ndarray:
         arr = self._inner.x_obs()
         if arr is None:
-            return np.empty((0, self._dim()))
+            return np.empty((0, self.bounds.shape[0]))
         return np.asarray(arr, dtype=float)
 
     @property
-    def _y_obs(self) -> np.ndarray:
+    def y_obs(self) -> np.ndarray:
         arr = self._inner.y_obs()
         if arr is None:
             return np.empty((0, 1))
         return np.asarray(arr, dtype=float)
+
+    @property
+    def incumbent_x(self) -> np.ndarray | None:
+        arr = self._inner.incumbent_x()
+        return None if arr is None else np.asarray(arr, dtype=float)
+
+    @property
+    def best_x(self) -> np.ndarray | None:
+        arr = self._inner.best_x()
+        return None if arr is None else np.asarray(arr, dtype=float)
+
+    @property
+    def best_y(self) -> np.ndarray | None:
+        arr = self._inner.best_y()
+        return None if arr is None else np.asarray(arr, dtype=float)
 
     @property
     def tr_obs_count(self) -> int:
@@ -81,52 +93,55 @@ class RustOptimizer:
         return np.asarray(self._inner.ask(int(num_arms)), dtype=float)
 
     def tell(
-        self, x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None = None
+        self,
+        train_x: np.ndarray,
+        train_y: np.ndarray,
+        train_yvar: np.ndarray | None = None,
     ) -> np.ndarray:
-        x_native = np.asarray(x, dtype=float)
-        y_in = np.asarray(y, dtype=float)
-        y_native = y_in.reshape(-1, 1) if y_in.ndim == 1 else y_in
-        if y_native.shape[0] == 0:
-            return y_in
-        if y_var is None:
-            self._inner.tell(x_native, y_native)
-        else:
-            y_var_native = np.asarray(y_var, dtype=float)
-            if y_var_native.ndim == 1:
-                y_var_native = y_var_native.reshape(-1, 1)
-            self._inner.tell(x_native, y_native, y_var_native)
-        return _tell_estimate(self._inner, x_native, y_in)
+        train_x = np.asarray(train_x, dtype=float)
+        train_y = np.asarray(train_y, dtype=float)
+        if train_yvar is not None:
+            train_yvar = np.asarray(train_yvar, dtype=float)
+        self._inner.tell(train_x, train_y, train_yvar)
+        if train_y.shape[0] == 0:
+            return train_y
+        return _tell_estimate(self._inner, train_x, train_y)
 
 
 def create_optimizer(
     *,
     bounds: np.ndarray,
     config: OptimizerConfig,
-    rng: Generator,
-) -> Any:
-    """Create a Rust optimizer. `rng` is used only to draw the construction seed."""
+    seed: int,
+    work_dir: str | os.PathLike[str],
+) -> Optimizer:
     if not is_rust_supported_config(config):
         raise ValueError(f"Unsupported optimizer config: {type(config.surrogate)}")
 
     bounds_arr = np.asarray(bounds, dtype=float)
-    seed = int(rng.integers(2**63 - 1))
+    seed = int(seed)
+    work_dir = os.fspath(work_dir)
+    validate_enn_placement(work_dir)
     num_init = config.init.num_init
     overrides = _config_to_rust_overrides(config)
 
     if _is_lhd_only_config(config):
-        inner = _rust.create_optimizer_lhd(
-            bounds_arr, num_init, seed, config_overrides=overrides
-        )
+        kind, k = "lhd", None
     elif isinstance(config.surrogate, ENNSurrogateConfig):
+        kind = "enn"
         k = None if config.surrogate.k is None else int(config.surrogate.k)
-        inner = _rust.create_optimizer_enn(
-            bounds_arr, k, num_init, seed, config_overrides=overrides
-        )
     elif isinstance(config.surrogate, NoSurrogateConfig):
-        inner = _rust.create_optimizer_zero(
-            bounds_arr, num_init, seed, config_overrides=overrides
-        )
+        kind, k = "zero", None
     else:
         raise ValueError(f"Unsupported surrogate config: {type(config.surrogate)}")
 
-    return RustOptimizer(inner)
+    inner = _rust.create_optimizer_run(
+        kind,
+        bounds_arr,
+        work_dir,
+        k,
+        num_init,
+        seed,
+        config_overrides=overrides,
+    )
+    return Optimizer(inner)

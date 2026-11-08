@@ -1,14 +1,10 @@
 import numpy as np
-from numpy.random import Generator
 
 from enn._rust import DoubleAckley as _RustDoubleAckley
 
 
 class DoubleAckley:
-    """Facade over the Rust DoubleAckley benchmark. The only field is the Rust object."""
-
-    def __init__(self, noise: float, rng: Generator):
-        seed = int(rng.integers(0, 2**63 - 1))
+    def __init__(self, noise: float, seed: int):
         self._inner = _RustDoubleAckley(float(noise), seed)
 
     @property

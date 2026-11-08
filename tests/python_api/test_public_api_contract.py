@@ -46,7 +46,6 @@ class TestPublicAPIExports:
             TurboTRConfig,
         )
 
-
         assert inspect.isclass(OptimizerConfig)
         assert inspect.isclass(TurboTRConfig)
         assert inspect.isclass(MorboTRConfig)

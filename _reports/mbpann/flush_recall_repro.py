@@ -24,8 +24,16 @@ N, D, B, K = 15000, 6, 500, 10
 def recall(metric_learning, rebuild_drift=None, flush=True):
     rng = np.random.default_rng(3)
     x, y, q = rng.random((N, D)), rng.random((N, 1)), rng.random((300, D))
-    m = EpistemicNearestNeighbors(x[:B], y[:B], metric_learning=metric_learning, index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp())
-    metric = None if rebuild_drift is None else MBPANNMetric(m, rebuild_drift=rebuild_drift)
+    m = EpistemicNearestNeighbors(
+        x[:B],
+        y[:B],
+        weighting=(metric_learning is ENNMetricLearning.AUTO),
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=tempfile.mkdtemp(),
+    )
+    metric = (
+        None if rebuild_drift is None else MBPANNMetric(m, rebuild_drift=rebuild_drift)
+    )
     for i, lo in enumerate(range(B, N, B)):
         m.add(x[lo : lo + B], y[lo : lo + B])
         if flush and i % 3 == 0:
@@ -34,14 +42,25 @@ def recall(metric_learning, rebuild_drift=None, flush=True):
             for _ in range(2):
                 metric.set_weights(np.exp(rng.uniform(-3, 3, D)))
     w = np.ones(D) if metric is None else metric.weights
-    p = ENNParams(k_num_neighbors=K, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1)
+    p = ENNParams(
+        k_num_neighbors=K, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
     idx = np.asarray(m.batch_posterior(q, [p], flags=PosteriorFlags()).idx)
     exact = [np.argsort(((x - v) ** 2) @ w)[:K] for v in q]
     return float(np.mean([len(set(a) & set(b)) / K for a, b in zip(idx, exact)]))
 
 
 if __name__ == "__main__":
-    print("BPANN_DISK, no metric, background flush:", recall(ENNMetricLearning.OFF))
-    print("BPANN_DISK + metric learning, rescale, background flush:", recall(ENNMetricLearning.ON, np.inf))
-    print("BPANN_DISK + metric learning, rescale, no flush:", recall(ENNMetricLearning.ON, np.inf, flush=False))
-    print("BPANN_DISK + metric learning, re-index every change, background flush:", recall(ENNMetricLearning.ON, 0.0))
+    print("BPANN_DISK, no metric, background flush:", recall(ENNMetricLearning.NONE))
+    print(
+        "BPANN_DISK + metric learning, rescale, background flush:",
+        recall(ENNMetricLearning.AUTO, np.inf),
+    )
+    print(
+        "BPANN_DISK + metric learning, rescale, no flush:",
+        recall(ENNMetricLearning.AUTO, np.inf, flush=False),
+    )
+    print(
+        "BPANN_DISK + metric learning, re-index every change, background flush:",
+        recall(ENNMetricLearning.AUTO, 0.0),
+    )

@@ -1,16 +1,14 @@
-//! Acceptance #4: TuRBO tell/ask with disk-backed ENN matches in-memory incumbent.
+//! Acceptance #4: TuRBO tell/ask incumbents do not depend on the work_dir location.
 
-use ennbo::backend::EnnStorage;
 use ennbo::candidates::CandidateRV;
-use ennbo::config::{CandidateConfig, OptimizerConfig, SurrogateConfig, turbo_enn_config};
+use ennbo::config::{turbo_enn_config, CandidateConfig, OptimizerConfig, SurrogateConfig};
 use ennbo::optimizer::Optimizer;
 use ennbo::strategy::Strategy;
-use ennbo::surrogate::ENNSurrogateConfig;
-use ennbo::{InitStrategy, ENNError};
+use ennbo::{ENNError, InitStrategy};
 use ndarray::{Array2, ArrayView2};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::path::PathBuf;
+use std::path::Path;
 use tempfile::TempDir;
 
 type TellSchedule = (Vec<Array2<f64>>, Vec<Array2<f64>>);
@@ -20,20 +18,11 @@ type IncumbentReplay = (
     usize,
 );
 
-fn turbo_test_config(storage: EnnStorage, work_dir: Option<PathBuf>) -> OptimizerConfig {
-    let mut cfg = turbo_enn_config();
+fn turbo_test_config(work_dir: &Path) -> OptimizerConfig {
+    let mut cfg = turbo_enn_config(ennbo::EnnLayout::new(work_dir, false).unwrap());
     if let SurrogateConfig::ENN(ref mut enn) = cfg.surrogate {
-        let layout = match storage {
-            EnnStorage::Disk => ennbo::EnnLayout::disk(work_dir.expect("disk work_dir"), false),
-            EnnStorage::InMemory => ennbo::EnnLayout::memory(ennbo::IndexDriver::Flat, false),
-        };
-        *enn = ENNSurrogateConfig {
-            k: ennbo::NeighborCount::new(3).unwrap(),
-            fit_samples: ennbo::FitSamples::draw(3, 5).unwrap(),
-            layout,
-            y_bounds: None,
-            tied_dims: Vec::new(),
-        };
+        enn.k = ennbo::NeighborCount::new(3).unwrap();
+        enn.fit_samples = ennbo::FitSamples::draw(3, 5).unwrap();
     }
     cfg.candidates = CandidateConfig {
         min_candidates: 20,
@@ -113,45 +102,54 @@ fn replay_tells(
 }
 
 #[test]
-fn turbo_disk_backend_matches_in_memory_incumbent() {
+fn turbo_incumbent_does_not_depend_on_work_dir_location() {
     let dir = TempDir::new().expect("tempdir");
-    let work_dir = dir.path().to_path_buf();
+    let work_dir = dir.path().join("disk");
     let seed = 42_u64;
     let num_init = 8;
     let num_arms = 2;
     let num_rounds = 20;
 
-    let mem_cfg = turbo_test_config(EnnStorage::InMemory, None);
-    let disk_cfg = turbo_test_config(EnnStorage::Disk, Some(work_dir.clone()));
+    let (xs, ys) = record_tell_schedule(
+        turbo_test_config(&dir.path().join("recording")),
+        seed,
+        num_init,
+        num_arms,
+        num_rounds,
+    )
+    .unwrap();
 
-    let (xs, ys) =
-        record_tell_schedule(mem_cfg.clone(), seed, num_init, num_arms, num_rounds).unwrap();
-
-    let (x_mem, y_mem, n_mem) =
-        replay_tells(mem_cfg, seed, num_init, &xs, &ys).unwrap();
+    let (x_other, y_other, n_other) = replay_tells(
+        turbo_test_config(&dir.path().join("other")),
+        seed,
+        num_init,
+        &xs,
+        &ys,
+    )
+    .unwrap();
     let (x_disk, y_disk, n_disk) =
-        replay_tells(disk_cfg, seed, num_init, &xs, &ys).unwrap();
+        replay_tells(turbo_test_config(&work_dir), seed, num_init, &xs, &ys).unwrap();
 
-    assert_eq!(n_mem, n_disk);
+    assert_eq!(n_other, n_disk);
     assert!(n_disk >= num_init + num_rounds * num_arms);
 
-    let x_mem = x_mem.expect("memory incumbent x");
-    let y_mem = y_mem.expect("memory incumbent y");
+    let x_other = x_other.expect("other incumbent x");
+    let y_other = y_other.expect("other incumbent y");
     let x_disk = x_disk.expect("disk incumbent x");
     let y_disk = y_disk.expect("disk incumbent y");
 
-    for i in 0..x_mem.len() {
+    for i in 0..x_other.len() {
         assert!(
-            (x_mem[i] - x_disk[i]).abs() < 1e-6,
-            "incumbent x[{i}] mem={} disk={}",
-            x_mem[i],
+            (x_other[i] - x_disk[i]).abs() < 1e-6,
+            "incumbent x[{i}] other={} disk={}",
+            x_other[i],
             x_disk[i]
         );
     }
     assert!(
-        (y_mem[0] - y_disk[0]).abs() < 1e-6,
-        "incumbent y mem={} disk={}",
-        y_mem[0],
+        (y_other[0] - y_disk[0]).abs() < 1e-6,
+        "incumbent y other={} disk={}",
+        y_other[0],
         y_disk[0]
     );
 

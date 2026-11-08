@@ -6,9 +6,6 @@ from enn import EpistemicNearestNeighbors
 from enn.enn.cat_codes import CatEncoder, CatEncoding, DimKind
 from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import PosteriorFlags
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 
 def _sparse_categories():
@@ -30,9 +27,7 @@ def _model(x, y, path):
     return EpistemicNearestNeighbors(
         x,
         y,
-        metric_learning=ENNMetricLearning.AUTO,
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        enn_storage=ENNStorage.DISK,
+        weighting=True,
         work_dir=path,
     )
 
@@ -49,7 +44,7 @@ def test_fixed_metric_onehot_neighbors_match_exact_after_relabeling(tmp_path):
         if expected is None:
             expected = exact[:, :10]
         np.testing.assert_array_equal(exact[:, :10], expected)
-        actual = np.array([model.neighbors(row, 10) for row in q])
+        actual = model.neighbors(q, 10)
         np.testing.assert_array_equal(actual, expected)
         permutation = np.random.default_rng(505).permutation(128)
         raw[:, -1] = permutation[raw[:, -1].astype(int)]
@@ -63,8 +58,9 @@ def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
     for label in range(2):
         x, q = encoder.encode(raw), encoder.encode(query)
         model = _model(x, y, tmp_path / str(label))
-        fitter = ENNStatefulFitter(k=10, rng=np.random.default_rng([404, 4]))
-        fitter.tell(x, y)
+        fitter = ENNStatefulFitter(
+            k=10, seed=int(np.random.default_rng([404, 4]).integers(2**63 - 1))
+        )
         params = fitter.ask(
             model,
             num_fit_candidates=30,
@@ -72,11 +68,9 @@ def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
             affine_calibrate=True,
         )
         assert model.metric.uses_learned_metric
-        neighbors.append(np.array([model.neighbors(row, 10) for row in q]))
-        posterior = fitter.affine_calibrator.apply(
-            model.posterior(
-                q, params=params, flags=PosteriorFlags(observation_noise=True)
-            )
+        neighbors.append(model.neighbors(q, 10))
+        posterior = model.posterior(
+            q, params=params, flags=PosteriorFlags(observation_noise=True)
         )
         results.append((posterior.mu, posterior.se**2))
         permutation = np.random.default_rng(505).permutation(128)

@@ -1,12 +1,15 @@
-use ennbo::numpy_pcg::NumpyPcg64;
 use ennbo::ndtri::ndtri;
+use ennbo::numpy_pcg::NumpyPcg64;
 use ennbo::numpy_seed::seed_sequence_u64;
 use ennbo::philox::NumpyPhilox;
 
 #[test]
 fn philox_seed_123_matches_numpy_key_and_random() {
     let key = seed_sequence_u64(123, 2);
-    assert_eq!(key, [12_770_025_807_176_811_766, 11_695_957_281_888_622_767]);
+    assert_eq!(
+        key,
+        [12_770_025_807_176_811_766, 11_695_957_281_888_622_767]
+    );
     let mut rng = NumpyPhilox::from_seed(123);
     let got = [rng.random(), rng.random(), rng.random(), rng.random()];
     let expect = [
@@ -25,6 +28,24 @@ fn pcg64_seed_0_integers_match_numpy() {
     let mut rng = NumpyPcg64::from_seed(0);
     let got: Vec<u64> = (0..8).map(|_| rng.integers_high(10)).collect();
     assert_eq!(got, vec![8, 6, 5, 2, 3, 0, 0, 0]);
+}
+
+#[test]
+fn pcg64_permutation_matches_numpy_generator() {
+    assert_eq!(
+        NumpyPcg64::from_seed(0).permutation(10),
+        vec![4, 6, 2, 7, 3, 5, 9, 0, 8, 1]
+    );
+    assert_eq!(
+        NumpyPcg64::from_seed(4).permutation(18),
+        vec![0, 7, 9, 16, 5, 8, 1, 10, 17, 2, 13, 11, 15, 6, 4, 3, 12, 14]
+    );
+    assert_eq!(
+        NumpyPcg64::from_seed(123456).permutation(7),
+        vec![2, 0, 5, 4, 6, 1, 3]
+    );
+    assert_eq!(NumpyPcg64::from_seed(0).permutation(0), Vec::<usize>::new());
+    assert_eq!(NumpyPcg64::from_seed(0).permutation(1), vec![0]);
 }
 
 #[test]

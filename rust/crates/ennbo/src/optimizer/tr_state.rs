@@ -1,15 +1,25 @@
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use rand::RngCore;
 
-use crate::trust_region_config::TrustRegionConfig;
 use crate::error::ENNError;
 use crate::morbo_trust_region::{MorboTrustRegion, Rescalarize};
 use crate::trust_region::{TrustRegionError, TurboTrustRegion};
+use crate::trust_region_config::TrustRegionConfig;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TrustRegionState {
     Turbo(TurboTrustRegion),
     Morbo(Box<MorboTrustRegion>),
+    Global,
+}
+
+fn require_one_objective(columns: usize) -> Result<(), ENNError> {
+    if columns != 1 {
+        return Err(ENNError::InvalidParameter(format!(
+            "this trust region expects 1 objective column, got {columns}"
+        )));
+    }
+    Ok(())
 }
 
 impl TrustRegionState {
@@ -19,12 +29,13 @@ impl TrustRegionState {
         rng: &mut dyn RngCore,
     ) -> Result<Self, TrustRegionError> {
         match config {
-            TrustRegionConfig::Turbo(cfg) => {
-                Ok(TrustRegionState::Turbo(TurboTrustRegion::new(num_dim, *cfg)))
-            }
+            TrustRegionConfig::Turbo(cfg) => Ok(TrustRegionState::Turbo(TurboTrustRegion::new(
+                num_dim, *cfg,
+            ))),
             TrustRegionConfig::Morbo(settings) => Ok(TrustRegionState::Morbo(Box::new(
                 MorboTrustRegion::new(num_dim, settings.clone(), rng)?,
             ))),
+            TrustRegionConfig::Global => Ok(TrustRegionState::Global),
         }
     }
 
@@ -50,21 +61,21 @@ impl TrustRegionState {
         match self {
             TrustRegionState::Turbo(t) => t.length(),
             TrustRegionState::Morbo(m) => m.as_ref().length(),
+            TrustRegionState::Global => 1.0,
         }
     }
 
-    /// Observations accounted for by the TuRBO length-adaptation state (0 for Morbo).
     pub fn turbo_prev_num_obs(&self) -> usize {
         match self {
             TrustRegionState::Turbo(t) => t.prev_num_obs(),
-            TrustRegionState::Morbo(_) => 0,
+            TrustRegionState::Morbo(_) | TrustRegionState::Global => 0,
         }
     }
 
     pub fn set_turbo_prev_num_obs(&mut self, prev_num_obs: usize) {
         match self {
             TrustRegionState::Turbo(t) => t.set_prev_num_obs(prev_num_obs),
-            TrustRegionState::Morbo(_) => {}
+            TrustRegionState::Morbo(_) | TrustRegionState::Global => {}
         }
     }
 
@@ -74,11 +85,11 @@ impl TrustRegionState {
         }
     }
 
-    /// Single-objective restart: drop the local length baseline as well as the length.
     pub fn restart_local(&mut self) {
         match self {
             TrustRegionState::Turbo(t) => t.restart_local(),
             TrustRegionState::Morbo(m) => m.as_mut().restart(None),
+            TrustRegionState::Global => {}
         }
     }
 
@@ -86,6 +97,7 @@ impl TrustRegionState {
         match self {
             TrustRegionState::Turbo(t) => t.set_num_arms(num_arms),
             TrustRegionState::Morbo(m) => m.as_mut().set_num_arms(num_arms),
+            TrustRegionState::Global => {}
         }
     }
 
@@ -97,6 +109,9 @@ impl TrustRegionState {
         match self {
             TrustRegionState::Turbo(t) => t.compute_bounds_1d(x_center, lengthscales),
             TrustRegionState::Morbo(m) => m.as_ref().compute_bounds_1d(x_center, lengthscales),
+            TrustRegionState::Global => {
+                (Array1::zeros(x_center.len()), Array1::ones(x_center.len()))
+            }
         }
     }
 
@@ -104,6 +119,7 @@ impl TrustRegionState {
         match self {
             TrustRegionState::Turbo(t) => t.needs_restart(),
             TrustRegionState::Morbo(m) => m.as_ref().needs_restart(),
+            TrustRegionState::Global => false,
         }
     }
 
@@ -111,6 +127,7 @@ impl TrustRegionState {
         match self {
             TrustRegionState::Turbo(t) => t.restart(),
             TrustRegionState::Morbo(m) => m.as_mut().restart(rng),
+            TrustRegionState::Global => {}
         }
     }
 
@@ -124,7 +141,7 @@ impl TrustRegionState {
 
     pub fn num_metrics(&self) -> usize {
         match self {
-            TrustRegionState::Turbo(_) => 1,
+            TrustRegionState::Turbo(_) | TrustRegionState::Global => 1,
             TrustRegionState::Morbo(m) => m.as_ref().num_metrics(),
         }
     }
@@ -188,12 +205,7 @@ impl TrustRegionState {
     ) -> Result<(), ENNError> {
         match self {
             TrustRegionState::Turbo(t) => {
-                if y_all.ncols() != 1 {
-                    return Err(ENNError::InvalidParameter(format!(
-                        "Turbo TR expects 1 objective column, got {}",
-                        y_all.ncols()
-                    )));
-                }
+                require_one_objective(y_all.ncols())?;
                 if y_incumbent.len() != 1 {
                     return Err(ENNError::InvalidParameter(format!(
                         "Turbo TR expects 1 incumbent scalar, got {}",
@@ -208,10 +220,10 @@ impl TrustRegionState {
                 .as_mut()
                 .update(&y_all.view(), y_incumbent)
                 .map_err(|e| ENNError::InvalidParameter(e.to_string())),
+            TrustRegionState::Global => require_one_objective(y_all.ncols()),
         }
     }
 
-    /// TuRBO trust-region update from the newly told batch only (O(batch), not O(history)).
     pub fn tell_update_new_batch(
         &mut self,
         y_new: &ArrayView2<f64>,
@@ -220,12 +232,7 @@ impl TrustRegionState {
     ) -> Result<(), ENNError> {
         match self {
             TrustRegionState::Turbo(t) => {
-                if y_new.ncols() != 1 {
-                    return Err(ENNError::InvalidParameter(format!(
-                        "Turbo TR expects 1 objective column, got {}",
-                        y_new.ncols()
-                    )));
-                }
+                require_one_objective(y_new.ncols())?;
                 if y_incumbent.len() != 1 {
                     return Err(ENNError::InvalidParameter(format!(
                         "Turbo TR expects 1 incumbent scalar, got {}",
@@ -240,6 +247,7 @@ impl TrustRegionState {
                 .as_mut()
                 .update(&y_new.view(), y_incumbent)
                 .map_err(|e| ENNError::InvalidParameter(e.to_string())),
+            TrustRegionState::Global => require_one_objective(y_new.ncols()),
         }
     }
 }
@@ -252,9 +260,32 @@ mod tests {
 
     use ndarray::array;
 
-    use crate::trust_region_config::TrustRegionConfig;
     use crate::morbo_trust_region::{MorboTRSettings, Rescalarize};
     use crate::trust_region::TRLengthConfig;
+    use crate::trust_region_config::TrustRegionConfig;
+
+    #[test]
+    fn a_global_region_spans_the_box_and_never_restarts() {
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut tr =
+            TrustRegionState::from_config(2, &TrustRegionConfig::Global, &mut rng).unwrap();
+        let center = array![0.2, 0.9];
+        let (lower, upper) = tr.compute_bounds_1d(&center.view(), None);
+        assert_eq!(lower, array![0.0, 0.0]);
+        assert_eq!(upper, array![1.0, 1.0]);
+        let incumbent = array![0.0];
+        for num_obs in 1..50 {
+            let y = array![[-(num_obs as f64)]];
+            tr.tell_update_new_batch(&y.view(), &incumbent.view(), num_obs)
+                .unwrap();
+            assert!(!tr.needs_restart());
+        }
+        assert_eq!(tr.length(), 1.0);
+        let wide = array![[1.0, 2.0]];
+        assert!(tr
+            .tell_update_new_batch(&wide.view(), &incumbent.view(), 1)
+            .is_err());
+    }
 
     #[test]
     fn trust_region_state_morbo_from_config() {

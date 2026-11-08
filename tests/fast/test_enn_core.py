@@ -6,7 +6,7 @@ from enn_helpers import enn_all_train_rows
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
-from enn.turbo.config.enn_x_scaling import ENNScaleX
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def _params(
@@ -65,7 +65,7 @@ def test_epistemic_nearest_neighbors_with_no_observations_returns_prior_like_pos
     x = np.zeros((0, d), dtype=float)
     y = np.zeros((0, 1), dtype=float)
     yvar = np.ones_like(y, dtype=float)
-    model = EpistemicNearestNeighbors(x, y, yvar)
+    model = EpistemicNearestNeighbors(x, y, yvar, work_dir=fresh_work_dir())
     x_test = rng.standard_normal((5, d))
     post = model.posterior(
         x_test,
@@ -90,7 +90,7 @@ def test_epistemic_nearest_neighbors_with_few_observations_has_valid_posterior(
     x = rng.standard_normal((num_obs, d))
     y = (x.sum(axis=1, keepdims=True)).astype(float)
     yvar = 0.1 * np.ones_like(y)
-    model = EpistemicNearestNeighbors(x, y, yvar)
+    model = EpistemicNearestNeighbors(x, y, yvar, work_dir=fresh_work_dir())
     x_test = rng.standard_normal((5, d))
     post = model.posterior(x_test, params=_params(3))
     assert post.mu.shape == (5, 1)
@@ -119,7 +119,7 @@ def test_batch_posterior_matches_individual_posterior_calls(flags, k_vals):
         )
         for i, k in enumerate(k_vals)
     ]
-    post_batch = model.batch_posterior(x_test, paramss, flags=flags)
+    post_batch = model.batch_posterior(x_test, paramss=paramss, flags=flags)
     assert post_batch.mu.shape == (len(paramss), x_test.shape[0], model.num_outputs)
     assert post_batch.se.shape == (len(paramss), x_test.shape[0], model.num_outputs)
     for i, params in enumerate(paramss):
@@ -136,7 +136,7 @@ def test_epistemic_nearest_neighbors_with_sobol_indices():
     x = rng.standard_normal((n, d))
     y = (x[:, 0] + 0.1 * x[:, 1] + 0.01 * rng.standard_normal(n)).reshape(-1, 1)
     yvar = 0.1 * np.ones_like(y)
-    model = EpistemicNearestNeighbors(x, y, yvar)
+    model = EpistemicNearestNeighbors(x, y, yvar, work_dir=fresh_work_dir())
     x_test = rng.standard_normal((4, d))
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -153,7 +153,7 @@ def test_epistemic_nearest_neighbors_multiple_metrics():
     x = rng.standard_normal((n, d))
     y = rng.standard_normal((n, 2))
     yvar = 0.1 * np.ones_like(y)
-    model = EpistemicNearestNeighbors(x, y, yvar)
+    model = EpistemicNearestNeighbors(x, y, yvar, work_dir=fresh_work_dir())
     x_test = rng.standard_normal((4, d))
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -169,13 +169,15 @@ def test_batch_posterior_exclude_nearest_with_k_larger_than_available():
     train_x = rng.standard_normal((n, d))
     train_y = (train_x.sum(axis=1, keepdims=True)).astype(float)
     train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((4, d))
     params = ENNParams(
         k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     post = model.batch_posterior(
-        x_test, [params], flags=PosteriorFlags(exclude_nearest=True)
+        x_test, paramss=[params], flags=PosteriorFlags(exclude_nearest=True)
     )
     assert post.mu.shape == (1, 4, 1) and post.se.shape == (1, 4, 1)
     assert np.all(np.isfinite(post.mu))
@@ -189,14 +191,16 @@ def test_batch_posterior_exclude_nearest_mixed_self_novel_k_equals_n():
     train_x = rng.standard_normal((n, d)) * 10.0
     train_y = rng.standard_normal((n, 1))
     train_yvar = 0.01 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar, scale_x=ENNScaleX.ON)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, weighting=True, work_dir=fresh_work_dir()
+    )
     x_query = np.vstack([train_x[:5], rng.standard_normal((5, d)) * 10.0])
     params = ENNParams(
         k_num_neighbors=k, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
     )
     post = model.batch_posterior(
         x_query,
-        [params],
+        paramss=[params],
         flags=PosteriorFlags(exclude_nearest=True, observation_noise=True),
     )
     assert post.mu.shape == (1, 10, 1)
@@ -210,7 +214,9 @@ def test_epistemic_nearest_neighbors_with_yvar_none():
     d = 3
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True) + rng.standard_normal((n, 1)) * 0.1
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar=None, work_dir=fresh_work_dir()
+    )
     assert len(model) == n
     _, _, yvar = enn_all_train_rows(model)
     assert yvar is None
@@ -232,7 +238,9 @@ def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
     train_x = rng.standard_normal((n, d))
     train_y = np.zeros((n, 1), dtype=float)
     train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((5, d))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -245,18 +253,30 @@ def test_epistemic_nearest_neighbors_constant_y_scale_is_safe():
 def test_epistemic_nearest_neighbors_init_validates_inputs():
     rng = np.random.default_rng(0)
     with pytest.raises(ValueError):
-        EpistemicNearestNeighbors(rng.random(10), np.zeros((10, 1)))
-    with pytest.raises(ValueError):
-        EpistemicNearestNeighbors(rng.random((10, 3)), rng.random(10))
-    with pytest.raises(ValueError):
-        EpistemicNearestNeighbors(rng.random((10, 3)), rng.random((5, 1)))
-    with pytest.raises(ValueError):
         EpistemicNearestNeighbors(
-            rng.random((10, 3)), rng.random((10, 1)), rng.random(10)
+            rng.random(10), np.zeros((10, 1)), work_dir=fresh_work_dir()
         )
     with pytest.raises(ValueError):
         EpistemicNearestNeighbors(
-            rng.random((10, 3)), rng.random((10, 1)), rng.random((10, 2))
+            rng.random((10, 3)), rng.random(10), work_dir=fresh_work_dir()
+        )
+    with pytest.raises(ValueError):
+        EpistemicNearestNeighbors(
+            rng.random((10, 3)), rng.random((5, 1)), work_dir=fresh_work_dir()
+        )
+    with pytest.raises(ValueError):
+        EpistemicNearestNeighbors(
+            rng.random((10, 3)),
+            rng.random((10, 1)),
+            rng.random(10),
+            work_dir=fresh_work_dir(),
+        )
+    with pytest.raises(ValueError):
+        EpistemicNearestNeighbors(
+            rng.random((10, 3)),
+            rng.random((10, 1)),
+            rng.random((10, 2)),
+            work_dir=fresh_work_dir(),
         )
 
 
@@ -266,7 +286,9 @@ def test_epistemic_nearest_neighbors_init_explicit():
     train_x = rng.standard_normal((n, d))
     train_y = train_x.sum(axis=1, keepdims=True)
     train_yvar = 0.1 * np.ones_like(train_y)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar, work_dir=fresh_work_dir()
+    )
     assert len(model) == n
     assert model.num_outputs == 1
     x_at, y_at, yvar_at = enn_all_train_rows(model)
@@ -286,22 +308,20 @@ def test_add_updates_y_scale_for_posterior_se():
     rng = np.random.default_rng(42)
     d = 3
 
-
     x_init = rng.random((5, d))
     y_init = rng.random((5, 1)) * 0.1
 
-    model_incremental = EpistemicNearestNeighbors(x_init, y_init)
-
+    model_incremental = EpistemicNearestNeighbors(
+        x_init, y_init, work_dir=fresh_work_dir()
+    )
 
     x_new = rng.random((3, d))
     y_new = rng.random((3, 1)) * 100
     model_incremental.add(x_new, y_new)
 
-
     all_x = np.vstack([x_init, x_new])
     all_y = np.vstack([y_init, y_new])
-    model_fresh = EpistemicNearestNeighbors(all_x, all_y)
-
+    model_fresh = EpistemicNearestNeighbors(all_x, all_y, work_dir=fresh_work_dir())
 
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
@@ -311,16 +331,13 @@ def test_add_updates_y_scale_for_posterior_se():
     post_incremental = model_incremental.posterior(x_test, params=params)
     post_fresh = model_fresh.posterior(x_test, params=params)
 
-
     np.testing.assert_allclose(post_incremental.mu, post_fresh.mu, rtol=1e-6)
-
-
 
     np.testing.assert_allclose(post_incremental.se, post_fresh.se, rtol=0.01)
 
 
-def test_incremental_add_scale_x_matches_fresh_model():
-    """Regression: incremental add() with scale_x=ENNScaleX.ON must match fresh construction."""
+def test_incremental_add_weighting_matches_fresh_model():
+    """Regression: incremental add() with weighting must match fresh construction."""
     rng = np.random.default_rng(42)
     d = 3
     x_init = rng.standard_normal((10, d))
@@ -328,12 +345,16 @@ def test_incremental_add_scale_x_matches_fresh_model():
     x_new = rng.standard_normal((5, d))
     y_new = rng.standard_normal((5, 1))
 
-    model_incremental = EpistemicNearestNeighbors(x_init, y_init, scale_x=ENNScaleX.ON)
+    model_incremental = EpistemicNearestNeighbors(
+        x_init, y_init, weighting=True, work_dir=fresh_work_dir()
+    )
     model_incremental.add(x_new, y_new)
 
     all_x = np.vstack([x_init, x_new])
     all_y = np.vstack([y_init, y_new])
-    model_fresh = EpistemicNearestNeighbors(all_x, all_y, scale_x=ENNScaleX.ON)
+    model_fresh = EpistemicNearestNeighbors(
+        all_x, all_y, weighting=True, work_dir=fresh_work_dir()
+    )
 
     params = ENNParams(
         k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1

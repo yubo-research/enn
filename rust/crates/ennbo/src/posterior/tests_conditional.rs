@@ -1,5 +1,4 @@
 use super::*;
-use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use crate::test_helpers::test_epistemic_model_exact_unit_square as create_test_model;
 use ndarray::array;
@@ -102,13 +101,9 @@ fn test_conditional_posterior_exclude_nearest() {
 
 #[test]
 fn conditional_exclude_nearest_keeps_nearest_whatif_for_novel_query() {
-
-
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [2.0, 2.0]];
     let train_y = array![[0.0], [1.0], [1.0], [0.3]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-            .unwrap();
+    let model = crate::test_helpers::test_model(train_x, train_y, None, false);
     let params = ENNParams::new(2, 1.0, 0.0).unwrap();
     let query = array![[5.05, 5.05]];
     let x_whatif = array![[5.0, 5.0]];
@@ -143,9 +138,7 @@ fn conditional_exclude_nearest_keeps_nearest_whatif_for_novel_query() {
 fn test_conditional_posterior_scaled_model() {
     let train_x = array![[0.0, 0.0], [2.0, 2.0], [4.0, 4.0]];
     let train_y = array![[0.0], [1.0], [2.0]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, true, IndexDriver::Flat)
-            .unwrap();
+    let model = crate::test_helpers::test_model(train_x, train_y, None, true);
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
     let query = array![[1.0, 1.0]];
@@ -168,9 +161,7 @@ fn test_conditional_posterior_scaled_model() {
 fn test_conditional_scale_single_row() {
     let train_x = array![[0.0, 0.0]];
     let train_y = array![[1.0]];
-    let model =
-        EpistemicNearestNeighbors::new(train_x, train_y, None, false, IndexDriver::Flat)
-            .unwrap();
+    let model = crate::test_helpers::test_model(train_x, train_y, None, false);
     let params = ENNParams::new(1, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
     let query = array![[0.0, 0.0]];
@@ -265,23 +256,13 @@ fn test_conditional_posterior_nan_in_x_whatif_returns_error_not_panic() {
     );
 }
 
-
-
 #[test]
 fn test_empty_query_posterior_with_yvar_no_panic() {
-
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
     let train_yvar = array![[0.1], [0.1], [0.1], [0.1]];
 
-    let model = EpistemicNearestNeighbors::new(
-        train_x,
-        train_y,
-        Some(train_yvar),
-        false,
-        IndexDriver::Flat,
-    )
-    .unwrap();
+    let model = crate::test_helpers::test_model(train_x, train_y, Some(train_yvar), false);
 
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
@@ -300,7 +281,6 @@ fn test_empty_query_posterior_with_yvar_no_panic() {
 
 #[test]
 fn test_empty_query_conditional_posterior_no_panic() {
-
     let model = create_test_model();
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
@@ -328,19 +308,11 @@ fn test_empty_query_conditional_posterior_no_panic() {
 
 #[test]
 fn test_empty_query_conditional_posterior_with_yvar_no_panic() {
-
     let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let train_y = array![[0.0], [1.0], [1.0], [2.0]];
     let train_yvar = array![[0.1], [0.1], [0.1], [0.1]];
 
-    let model = EpistemicNearestNeighbors::new(
-        train_x,
-        train_y,
-        Some(train_yvar),
-        false,
-        IndexDriver::Flat,
-    )
-    .unwrap();
+    let model = crate::test_helpers::test_model(train_x, train_y, Some(train_yvar), false);
 
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
     let flags = PosteriorFlags::new();
@@ -383,7 +355,10 @@ fn test_compute_weighted_posterior_empty_idx() {
     };
 
     let result = compute_weighted_posterior(&model, data, None);
-    assert!(result.is_ok(), "compute_weighted_posterior with empty idx should not panic");
+    assert!(
+        result.is_ok(),
+        "compute_weighted_posterior with empty idx should not panic"
+    );
 }
 
 #[test]
@@ -395,7 +370,7 @@ fn kiss_weighted_posterior_data_type() {
 fn kiss_posterior_batch_units_are_linked() {
     let model = create_test_model();
     let params = ENNParams::new(2, 1.0, 0.1).unwrap();
-    let paramss = vec![params, params];
+    let paramss = vec![params.clone(), params];
     let flags = PosteriorFlags::new();
     let query = array![[0.5, 0.5]];
     let mut mu_all = Array3::zeros((2, 1, 1));
@@ -436,4 +411,16 @@ fn kiss_posterior_batch_units_are_linked() {
         compute_batch_separate_neighbors,
         EpistemicNearestNeighbors::conditional_posterior_function_draw,
     );
+}
+
+#[test]
+fn test_posterior_and_neighbors_reject_non_finite_query() {
+    let model = create_test_model();
+    let params = ENNParams::new(2, 1.0, 0.1).unwrap();
+    let flags = PosteriorFlags::new();
+    for bad in [f64::NAN, f64::INFINITY] {
+        let query = array![[bad, 0.5]];
+        assert!(model.posterior(&query.view(), &params, &flags).is_err());
+        assert!(model.neighbors(&query.view(), 1, false).is_err());
+    }
 }

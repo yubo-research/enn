@@ -1,5 +1,3 @@
-//! Factory functions for creating optimizers with preset configs.
-
 use ndarray::Array2;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -9,13 +7,12 @@ use crate::config::{
     OptimizerInitKind, SurrogateConfig,
 };
 use crate::error::ENNError;
+use crate::layout::EnnLayout;
 use crate::neighbor_count::NeighborCount;
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
 
-/// Default neighbor count when `k` is omitted.
 pub const DEFAULT_ENN_K: i32 = 10;
-/// Default initialization budget when `num_init` is omitted.
 pub const DEFAULT_NUM_INIT: usize = 10;
 
 fn resolve_k(k: Option<i32>) -> Result<NeighborCount, ENNError> {
@@ -26,28 +23,25 @@ fn resolve_num_init(num_init: Option<usize>) -> usize {
     num_init.unwrap_or(DEFAULT_NUM_INIT)
 }
 
-/// Create an optimizer for TuRBO-ENN.
-///
-/// `k` and `num_init` use [`DEFAULT_ENN_K`] and [`DEFAULT_NUM_INIT`] when omitted.
-/// `seed` initializes the optimizer's owned `StdRng` once.
 pub fn create_optimizer_enn(
     bounds: Array2<f64>,
+    layout: EnnLayout,
     k: Option<i32>,
     num_init: Option<usize>,
     seed: u64,
 ) -> Result<Optimizer, ENNError> {
-    create_optimizer_enn_with_overrides(bounds, k, num_init, seed, None)
+    create_optimizer_enn_with_overrides(bounds, layout, k, num_init, seed, None)
 }
 
-/// Create TuRBO-ENN with optional config overrides (for future Python pass-through).
 pub fn create_optimizer_enn_with_overrides(
     bounds: Array2<f64>,
+    layout: EnnLayout,
     k: Option<i32>,
     num_init: Option<usize>,
     seed: u64,
     overrides: Option<&ConfigOverrides>,
 ) -> Result<Optimizer, ENNError> {
-    let mut config = turbo_enn_config();
+    let mut config = turbo_enn_config(layout);
     if let SurrogateConfig::ENN(enn_cfg) = &mut config.surrogate {
         enn_cfg.k = resolve_k(k)?;
     }
@@ -61,7 +55,6 @@ pub fn create_optimizer_enn_with_overrides(
     Optimizer::new_with_strategy(bounds, config, strategy, &mut rng)
 }
 
-/// Create an optimizer for TuRBO-ZERO.
 pub fn create_optimizer_zero(
     bounds: Array2<f64>,
     num_init: Option<usize>,
@@ -70,7 +63,6 @@ pub fn create_optimizer_zero(
     create_optimizer_zero_with_overrides(bounds, num_init, seed, None)
 }
 
-/// Create TuRBO-ZERO with optional config overrides.
 pub fn create_optimizer_zero_with_overrides(
     bounds: Array2<f64>,
     num_init: Option<usize>,
@@ -88,7 +80,6 @@ pub fn create_optimizer_zero_with_overrides(
     Optimizer::new_with_strategy(bounds, config, strategy, &mut rng)
 }
 
-/// Create an optimizer for LHD-only.
 pub fn create_optimizer_lhd(
     bounds: Array2<f64>,
     num_init: Option<usize>,
@@ -97,7 +88,6 @@ pub fn create_optimizer_lhd(
     create_optimizer_lhd_with_overrides(bounds, num_init, seed, None)
 }
 
-/// Create LHD-only with optional config overrides.
 pub fn create_optimizer_lhd_with_overrides(
     bounds: Array2<f64>,
     num_init: Option<usize>,
@@ -124,7 +114,15 @@ mod tests {
     fn create_optimizer_public_wrappers_smoke() {
         let bounds = array![[0.0, 1.0], [0.0, 1.0]];
 
-        let mut enn = create_optimizer_enn(bounds.clone(), Some(3), Some(2), 101).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut enn = create_optimizer_enn(
+            bounds.clone(),
+            crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            Some(3),
+            Some(2),
+            101,
+        )
+        .unwrap();
         let _ = enn.ask(1).unwrap();
 
         let mut zero = create_optimizer_zero(bounds.clone(), Some(2), 101).unwrap();
@@ -138,15 +136,22 @@ mod tests {
     fn create_optimizer_enn_rejects_nonpositive_k_at_build() {
         let bounds = array![[0.0, 1.0], [0.0, 1.0]];
         for k in [0, -3] {
-            let err = create_optimizer_enn(bounds.clone(), Some(k), Some(3), 0)
-                .err()
-                .expect("k < 1 must be rejected");
+            let dir = tempfile::tempdir().unwrap();
+            let err = create_optimizer_enn(
+                bounds.clone(),
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+                Some(k),
+                Some(3),
+                0,
+            )
+            .err()
+            .expect("k < 1 must be rejected");
             assert!(err.to_string().contains("k (number of neighbors)"), "{err}");
         }
     }
 
     #[test]
-    fn create_optimizer_enn_rejects_tied_dims_without_auto_metric() {
+    fn create_optimizer_enn_rejects_out_of_range_tied_dims() {
         let overrides = ConfigOverrides {
             enn: Some(crate::EnnOverrides {
                 tied_dims: Some(vec![vec![0, 99]]),
@@ -155,9 +160,17 @@ mod tests {
             ..Default::default()
         };
         let bounds = array![[0.0, 1.0], [0.0, 1.0]];
-        let err = create_optimizer_enn_with_overrides(bounds, None, Some(3), 0, Some(&overrides))
-            .err()
-            .expect("ignored tied_dims must be rejected");
-        assert!(err.to_string().contains("tied_dims require"), "{err}");
+        let dir = tempfile::tempdir().unwrap();
+        let err = create_optimizer_enn_with_overrides(
+            bounds,
+            crate::layout::EnnLayout::new(dir.path(), true).unwrap(),
+            None,
+            Some(3),
+            0,
+            Some(&overrides),
+        )
+        .err()
+        .expect("out-of-range tied_dims must be rejected");
+        assert!(err.to_string().contains("tied_dims entries"), "{err}");
     }
 }

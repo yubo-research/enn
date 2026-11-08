@@ -8,6 +8,7 @@ import numpy as np
 
 from enn import ENNStatefulFitter, EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 
 
 class TestENNStatefulFitterContract:
@@ -15,11 +16,12 @@ class TestENNStatefulFitterContract:
         sig = inspect.signature(ENNStatefulFitter.__init__)
         params = list(sig.parameters.keys())
         assert "k" in params
-        assert "rng" in params
+        assert "seed" in params
+        assert "rng" not in params
         assert "infer_aleatoric_variance_scale" in params
 
-    def test_tell_and_ask_signatures(self):
-        assert "tell" in dir(ENNStatefulFitter)
+    def test_ask_signature_and_no_tell(self):
+        assert "tell" not in dir(ENNStatefulFitter)
         sig = inspect.signature(ENNStatefulFitter.ask)
         params = list(sig.parameters.keys())
         assert "model" in params
@@ -33,11 +35,10 @@ class TestENNStatefulFitterContract:
             dtype=float,
         )
         train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
-        model = EpistemicNearestNeighbors(train_x, train_y)
+        model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
         rng = np.random.default_rng(42)
 
-        fitter = ENNStatefulFitter(k=2, rng=rng)
-        fitter.tell(train_x, train_y)
+        fitter = ENNStatefulFitter(k=2, seed=int(rng.integers(2**63 - 1)))
         result = fitter.ask(
             model,
             num_fit_candidates=3,

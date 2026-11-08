@@ -2,7 +2,6 @@
 
 use super::draw_turbo_candidates;
 use crate::config::{turbo_enn_config, SurrogateConfig};
-use crate::layout::EnnLayout;
 use crate::metric_weights::trust_region_sides;
 use crate::optimizer::Optimizer;
 use crate::strategy::Strategy;
@@ -81,17 +80,15 @@ fn morbo_bounds_use_the_same_sides() {
 }
 
 fn disk_auto_optimizer(dir: &std::path::Path, num_dim: usize, seed: u64) -> Optimizer {
-    let layout = EnnLayout::DiskAuto {
-        work_dir: dir.to_path_buf(),
-    };
-    let mut cfg = turbo_enn_config();
+    let layout = crate::layout::EnnLayout::new(dir.to_path_buf(), true).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     // Scale fitting does not affect coordinate sampling or AUTO side lengths.
     cfg.acquisition = crate::config::AcquisitionConfig::Pareto;
     cfg.surrogate = SurrogateConfig::ENN(ENNSurrogateConfig {
         k: crate::NeighborCount::new(10).unwrap(),
         fit_samples: crate::FitSamples::Frozen,
-        layout,
-        ..Default::default()
+        ..ENNSurrogateConfig::new(layout)
     });
     let bounds = Array2::from_shape_fn((num_dim, 2), |(_, j)| j as f64);
     let mut rng = StdRng::seed_from_u64(seed);
@@ -110,25 +107,35 @@ fn raasp_rates_stay_uniform_under_unequal_auto_weights() {
     let y = Array2::from_shape_fn((120, 1), |(i, _)| (6.0 * x[[i, 0]]).sin());
     opt.tell(&x.view(), &y.view(), None).unwrap();
 
-    let s = opt.surrogate().and_then(|s| s.lengthscales()).expect("DiskAuto sides");
+    let s = opt
+        .surrogate()
+        .and_then(|s| s.lengthscales())
+        .expect("DiskAuto sides");
     assert_eq!(s.len(), num_dim);
     assert!(s[0] < 0.5 * s[1], "x0 should get the shortest side: {s:?}");
 
     let center = Array1::from_elem(num_dim, 0.5);
-    let (lb, ub) = opt.trust_region().compute_bounds_1d(&center.view(), Some(&s.view()));
+    let (lb, ub) = opt
+        .trust_region()
+        .compute_bounds_1d(&center.view(), Some(&s.view()));
     let num_candidates = 1000;
-    let cand =
-        draw_turbo_candidates(&mut opt, &center.view(), &lb, &ub, num_candidates, &mut rng).unwrap();
+    let cand = draw_turbo_candidates(&mut opt, &center.view(), &lb, &ub, num_candidates, &mut rng)
+        .unwrap();
     let rates: Vec<f64> = (0..num_dim)
         .map(|j| {
-            let moved = (0..num_candidates).filter(|&i| cand[[i, j]] != center[j]).count();
+            let moved = (0..num_candidates)
+                .filter(|&i| cand[[i, j]] != center[j])
+                .count();
             moved as f64 / num_candidates as f64
         })
         .collect();
     let mean = rates.iter().sum::<f64>() / num_dim as f64;
     // The default RAASP driver draws 20 times with replacement.
     let expected = 1.0 - (1.0 - 1.0 / num_dim as f64).powi(20);
-    assert!((mean - expected).abs() < 0.02, "expected {expected}, got {mean}");
+    assert!(
+        (mean - expected).abs() < 0.02,
+        "expected {expected}, got {mean}"
+    );
     for (j, r) in rates.iter().enumerate() {
         assert!((r - mean).abs() < 0.06, "dim {j} rate {r} vs mean {mean}");
     }

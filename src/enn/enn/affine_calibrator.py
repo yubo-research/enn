@@ -16,24 +16,14 @@ def _column(arr: np.ndarray) -> np.ndarray:
     return out
 
 
-def _rows(arr: np.ndarray) -> tuple[np.ndarray, tuple[int, ...]]:
-    out = np.asarray(arr, dtype=float)
-    if out.ndim == 1:
-        return out.reshape(-1, 1), out.shape
-    return out.reshape(-1, out.shape[-1]), out.shape
-
-
 def _bounds(y_bounds: np.ndarray | None) -> np.ndarray | None:
     if y_bounds is None:
         return None
     return np.asarray(y_bounds, dtype=float)
 
 
-def _align(arr: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
-    out = np.asarray(arr, dtype=float)
-    while out.ndim < len(shape):
-        out = np.expand_dims(out, axis=-2)
-    return np.broadcast_to(out, shape)
+def _array(arr: np.ndarray | None) -> np.ndarray | None:
+    return None if arr is None else np.asarray(arr, dtype=float)
 
 
 @dataclass
@@ -99,15 +89,11 @@ class AffineCalibrator:
         y_bounds: np.ndarray | None = None,
         se: np.ndarray | None = None,
     ) -> np.ndarray:
-        mu_arr = np.asarray(mu, dtype=float)
-        rows, shape = _rows(mu_arr)
         from enn._rust import affine_map_mu
 
-        se_flat = None
-        if se is not None:
-            se_flat = _rows(np.asarray(_align(np.asarray(se), mu_arr.shape)))[0]
-        out = affine_map_mu(self.a, self.b, rows, _bounds(y_bounds), se_flat)
-        return np.asarray(out, dtype=float).reshape(shape)
+        return affine_map_mu(
+            self.a, self.b, np.asarray(mu, dtype=float), _bounds(y_bounds), _array(se)
+        )
 
     def map_draws(
         self,
@@ -116,47 +102,36 @@ class AffineCalibrator:
         y_bounds: np.ndarray | None = None,
         se: np.ndarray | None = None,
     ) -> np.ndarray:
-        draws_arr = np.asarray(draws, dtype=float)
-        mu_arr = np.asarray(mu, dtype=float)
         from enn._rust import affine_map_draws
 
-        draws_rows, shape = _rows(draws_arr)
-        mu_rows = _rows(np.asarray(_align(mu_arr, draws_arr.shape)))[0]
-        se_flat = None
-        if se is not None:
-            se_flat = _rows(np.asarray(_align(np.asarray(se), draws_arr.shape)))[0]
-        out = affine_map_draws(
+        return affine_map_draws(
             self.a,
             self.b,
             self.c,
-            draws_rows,
-            mu_rows,
+            np.asarray(draws, dtype=float),
+            np.asarray(mu, dtype=float),
             _bounds(y_bounds),
-            se_flat,
+            _array(se),
         )
-        return np.asarray(out, dtype=float).reshape(shape)
 
 
 def fit_affine_calibrator(
     model: Any,
-    params: Any,
     *,
+    params: Any,
     num_samples: int,
-    rng: Any,
+    seed: int,
     observation_noise: bool = False,
 ) -> AffineCalibrator:
     from enn._rust import fit_model_affine
 
-    samples = int(num_samples)
-    samples = max(samples, 0)
-    seed = int(rng.integers(0, 2**63 - 1))
     a, b, c = fit_model_affine(
         model.rust_backend,
         int(params.k_num_neighbors),
         float(params.epistemic_variance_scale),
         float(params.aleatoric_variance_scale),
-        samples,
-        seed,
+        int(num_samples),
+        int(seed),
         bool(observation_noise),
     )
     return AffineCalibrator(

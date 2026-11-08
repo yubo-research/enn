@@ -69,7 +69,6 @@ build_macos_arm64_cp311() {
   deployment_target="$(deployment_target_from_macos_tag "$mac_tag")"
 
   echo "Building ${mac_tag}..."
-  brew list faiss >/dev/null 2>&1 || brew install faiss
   brew list libomp >/dev/null 2>&1 || brew install libomp
   brew list openblas >/dev/null 2>&1 || brew install openblas
   brew list pkg-config >/dev/null 2>&1 || brew install pkg-config
@@ -108,7 +107,6 @@ build_linux_x86_64_cp312() {
       --platform linux/amd64 \
       -e POLICY="$policy" \
       -e REPAIR_POLICY="$repair_policy" \
-        -e CMAKE_INSTALL_LIBDIR=lib \
       -e HOST_UID="$(id -u)" \
       -e HOST_GID="$(id -g)" \
       -v "$ROOT":/io \
@@ -121,27 +119,12 @@ build_linux_x86_64_cp312() {
         . "$HOME/.cargo/env"
         yum install -y blas-devel lapack-devel openblas-devel
         /opt/python/cp312-cp312/bin/python -m pip install --upgrade pip maturin
-        rm -rf /io/rust/target/release/build/faiss-sys-* \
-          /io/rust/target/release/deps/*faiss*
-        build_wheel() {
-          /opt/python/cp312-cp312/bin/maturin build \
-            --release \
-            --interpreter /opt/python/cp312-cp312/bin/python \
-            --manylinux "$REPAIR_POLICY" \
-            --auditwheel repair \
-            --out "/io/dist/manylinux_${POLICY}"
-        }
-        repair_faiss_libdir() {
-          for out in /io/rust/target/release/build/faiss-sys-*/out; do
-            [ -d "$out/lib64" ] || continue
-            [ -e "$out/lib" ] || ln -s lib64 "$out/lib"
-          done
-          rm -f /io/rust/target/release/deps/*faiss*
-        }
-        build_wheel || {
-          repair_faiss_libdir
-          build_wheel
-        }
+        /opt/python/cp312-cp312/bin/maturin build \
+          --release \
+          --interpreter /opt/python/cp312-cp312/bin/python \
+          --manylinux "$REPAIR_POLICY" \
+          --auditwheel repair \
+          --out "/io/dist/manylinux_${POLICY}"
         if [ "$POLICY" != "$REPAIR_POLICY" ]; then
           /opt/python/cp312-cp312/bin/python -m pip install wheel
           /opt/python/cp312-cp312/bin/python -m wheel tags \

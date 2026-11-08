@@ -1,80 +1,45 @@
-//! ENN parameter and configuration data structures.
-
-use ndarray::{Array2, ArrayD};
+use ndarray::{Array2, ArrayD, Axis};
+use std::sync::Arc;
 use thiserror::Error;
 
-/// Errors that can occur when creating ENN parameters.
+use crate::calibration::AffineCalibrator;
+
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ParamsError {
-    /// Invalid number of neighbors.
     #[error("k_num_neighbors must be > 0, got {0}")]
     InvalidK(i32),
-    /// Invalid epistemic variance scale.
     #[error("epistemic_variance_scale must be >= 0 and finite, got {0}")]
     InvalidEpistemicVariance(f64),
-    /// Invalid aleatoric variance scale.
     #[error("aleatoric_variance_scale must be >= 0 and finite, got {0}")]
     InvalidAleatoricVariance(f64),
 }
 
-/// Parameters for Epistemic Nearest Neighbors computation.
-///
-/// These parameters control the behavior of the ENN posterior computation,
-/// including the number of neighbors and variance scaling factors.
-///
-/// # Fields
-///
-/// * `k_num_neighbors` - Number of nearest neighbors to use (must be > 0)
-/// * `epistemic_variance_scale` - Scale factor for epistemic (model) uncertainty
-/// * `aleatoric_variance_scale` - Scale factor for aleatoric (observation) noise
-///
-/// # Example
-///
-/// ```
-/// use ennbo::params::ENNParams;
-///
-/// let params = ENNParams::new(5, 1.0, 0.1).unwrap();
-/// assert_eq!(params.k_num_neighbors, 5);
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ENNParams {
-    /// Number of nearest neighbors to use.
     pub k_num_neighbors: i32,
-    /// Scale factor for epistemic uncertainty.
+    #[serde(with = "crate::exact")]
     pub epistemic_variance_scale: f64,
-    /// Scale factor for aleatoric noise.
+    #[serde(with = "crate::exact")]
     pub aleatoric_variance_scale: f64,
+    #[serde(with = "crate::exact")]
+    pub calibrator: Option<Arc<AffineCalibrator>>,
 }
 
 impl ENNParams {
-    /// Create a new ENNParams instance with validation.
-    ///
-    /// # Arguments
-    ///
-    /// * `k_num_neighbors` - Number of neighbors (must be > 0)
-    /// * `epistemic_variance_scale` - Epistemic variance scale (must be >= 0 and finite)
-    /// * `aleatoric_variance_scale` - Aleatoric variance scale (must be >= 0 and finite)
-    ///
-    /// # Errors
-    ///
-    /// Returns `ParamsError` if any parameter is invalid.
     pub fn new(
         k_num_neighbors: i32,
         epistemic_variance_scale: f64,
         aleatoric_variance_scale: f64,
     ) -> Result<Self, ParamsError> {
-
         if k_num_neighbors <= 0 {
             return Err(ParamsError::InvalidK(k_num_neighbors));
         }
-
 
         if !epistemic_variance_scale.is_finite() || epistemic_variance_scale < 0.0 {
             return Err(ParamsError::InvalidEpistemicVariance(
                 epistemic_variance_scale,
             ));
         }
-
 
         if !aleatoric_variance_scale.is_finite() || aleatoric_variance_scale < 0.0 {
             return Err(ParamsError::InvalidAleatoricVariance(
@@ -86,76 +51,49 @@ impl ENNParams {
             k_num_neighbors,
             epistemic_variance_scale,
             aleatoric_variance_scale,
+            calibrator: None,
         })
+    }
+
+    pub fn with_calibrator(mut self, calibrator: Option<Arc<AffineCalibrator>>) -> Self {
+        self.calibrator = calibrator;
+        self
     }
 }
 
-/// Flags controlling posterior computation behavior.
-///
-/// These flags allow fine-grained control over how the ENN posterior
-/// is computed.
-///
-/// # Fields
-///
-/// * `exclude_nearest` - Whether to exclude the nearest neighbor from computation
-/// * `observation_noise` - Whether to include observation noise in the uncertainty
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PosteriorFlags {
-    /// Exclude the nearest neighbor from computation.
     pub exclude_nearest: bool,
-    /// Include observation noise in uncertainty computation.
     pub observation_noise: bool,
 }
 
 impl PosteriorFlags {
-    /// Create new PosteriorFlags with default values (all false).
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set exclude_nearest flag.
     pub fn with_exclude_nearest(mut self, value: bool) -> Self {
         self.exclude_nearest = value;
         self
     }
 
-    /// Set observation_noise flag.
     pub fn with_observation_noise(mut self, value: bool) -> Self {
         self.observation_noise = value;
         self
     }
 }
 
-/// Normal distribution result from ENN posterior computation.
-///
-/// Represents the posterior predictive distribution as a Gaussian
-/// with mean and standard error.
-///
-/// # Fields
-///
-/// * `mu` - Predictive mean for each query point
-/// * `se` - Predictive standard error for each query point
-/// * `se_epi` - Epistemic (model) standard error component
-/// * `se_ale` - Aleatoric (observation) standard error component
-/// * `idx` - Optional neighbor indices used for each prediction
 #[derive(Debug, Clone, PartialEq)]
 pub struct ENNNormal {
-    /// Predictive means.
     pub mu: ArrayD<f64>,
-    /// Predictive standard errors.
     pub se: ArrayD<f64>,
-    /// Epistemic standard error component.
     pub se_epi: ArrayD<f64>,
-    /// Aleatoric standard error component.
     pub se_ale: ArrayD<f64>,
-    /// Optional neighbor indices, shape `(n_query, k)`.
     pub idx: Option<Array2<i64>>,
-    /// Natural-unit `y` bounds used by [`Self::sample`] and [`Self::confidence_interval`].
     pub y_bounds: Option<Array2<f64>>,
 }
 
 impl ENNNormal {
-    /// Create a new ENNNormal instance.
     pub fn new(
         mu: ArrayD<f64>,
         se: ArrayD<f64>,
@@ -173,13 +111,11 @@ impl ENNNormal {
         }
     }
 
-    /// Attach bounds used by sampling and intervals.
     pub fn with_y_bounds(mut self, y_bounds: Array2<f64>) -> Self {
         self.y_bounds = Some(y_bounds);
         self
     }
 
-    /// Draw `num_samples` along the last axis. `seed` is used as-is.
     pub fn sample(
         &self,
         num_samples: usize,
@@ -196,25 +132,40 @@ impl ENNNormal {
         )
     }
 
-    /// Gaussian interval `(lower, upper)` at `level`, same warp as [`Self::sample`].
     pub fn confidence_interval(
         &self,
         level: f64,
     ) -> Result<(ArrayD<f64>, ArrayD<f64>), crate::error::ENNError> {
-        crate::normal_sample::confidence_interval(
-            &self.mu,
-            &self.se,
-            self.y_bounds.as_ref(),
-            level,
-        )
+        crate::normal_sample::confidence_interval(&self.mu, &self.se, self.y_bounds.as_ref(), level)
     }
 
-    /// Get the number of query points.
+    pub(crate) fn batch_entry(&self, entry: usize) -> Self {
+        let pick = |a: &ArrayD<f64>| a.index_axis(Axis(0), entry).to_owned();
+        Self {
+            mu: pick(&self.mu),
+            se: pick(&self.se),
+            se_epi: pick(&self.se_epi),
+            se_ale: pick(&self.se_ale),
+            idx: None,
+            y_bounds: None,
+        }
+    }
+
+    pub(crate) fn assign_batch_entry(&mut self, entry: usize, value: &Self) {
+        self.mu.index_axis_mut(Axis(0), entry).assign(&value.mu);
+        self.se.index_axis_mut(Axis(0), entry).assign(&value.se);
+        self.se_epi
+            .index_axis_mut(Axis(0), entry)
+            .assign(&value.se_epi);
+        self.se_ale
+            .index_axis_mut(Axis(0), entry)
+            .assign(&value.se_ale);
+    }
+
     pub fn len(&self) -> usize {
         self.mu.len()
     }
 
-    /// Check if there are no query points.
     pub fn is_empty(&self) -> bool {
         self.mu.is_empty()
     }

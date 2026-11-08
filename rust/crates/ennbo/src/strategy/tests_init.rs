@@ -93,19 +93,19 @@ fn test_select_arms_acquisition_branches() {
     let out_random = select_arms(&opt_random, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_random.nrows(), 2);
 
-    let mut cfg_ucb = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg_ucb = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg_ucb.acquisition = AcquisitionConfig::UCB { beta: 1.0 };
     let mut opt_ucb =
         Optimizer::new_with_strategy(bounds.clone(), cfg_ucb, Strategy::turbo(), &mut rng).unwrap();
     let x_fit = array![[0.0, 0.0], [1.0, 1.0], [0.2, 0.8], [0.8, 0.2]];
     let y_fit = array![[0.0], [1.0], [0.5], [0.4]];
-    opt_ucb
-        .tell(&x_fit.view(), &y_fit.view(), None)
-        .unwrap();
+    opt_ucb.tell(&x_fit.view(), &y_fit.view(), None).unwrap();
     let out_ucb = select_arms(&opt_ucb, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_ucb.nrows(), 2);
 
-    let mut cfg_ts = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg_ts = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg_ts.acquisition = AcquisitionConfig::Thompson;
     let mut opt_ts =
         Optimizer::new_with_strategy(bounds.clone(), cfg_ts, Strategy::turbo(), &mut rng).unwrap();
@@ -113,13 +113,13 @@ fn test_select_arms_acquisition_branches() {
     let out_ts = select_arms(&opt_ts, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_ts.nrows(), 2);
 
-    let mut cfg_pareto = turbo_enn_config();
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg_pareto =
+        turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
     cfg_pareto.acquisition = AcquisitionConfig::Pareto;
     let mut opt_pareto =
         Optimizer::new_with_strategy(bounds, cfg_pareto, Strategy::turbo(), &mut rng).unwrap();
-    opt_pareto
-        .tell(&x_fit.view(), &y_fit.view(), None)
-        .unwrap();
+    opt_pareto.tell(&x_fit.view(), &y_fit.view(), None).unwrap();
     let out_pareto = select_arms(&opt_pareto, &x_cand.view(), 2, &mut rng).unwrap();
     assert_eq!(out_pareto.nrows(), 2);
 }

@@ -1,44 +1,27 @@
-//! Acquisition function optimizers for TuRBO.
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use thiserror::Error;
 
-/// Errors in acquisition optimization.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum AcquisitionError {
-    /// Invalid parameter.
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
-    /// Empty candidate set.
     #[error("No candidates available")]
     NoCandidates,
 }
 
-/// Result of acquisition optimization.
 pub type AcquisitionResult = Result<Vec<usize>, AcquisitionError>;
 
-/// UCB (Upper Confidence Bound) acquisition optimizer.
 pub struct UCBAcquisition {
-    /// Beta parameter (exploration weight).
     beta: f64,
 }
 
 impl UCBAcquisition {
-    /// Create new UCB acquisition optimizer.
     pub fn new(beta: f64) -> Self {
         Self { beta }
     }
 
-    /// Select arms using UCB acquisition.
-    ///
-    /// # Arguments
-    ///
-    /// * `mu` - Predictive means, shape (n_candidates,)
-    /// * `sigma` - Predictive standard deviations, shape (n_candidates,)
-    /// * `num_arms` - Number of arms to select
-    /// * `rng` - Random number generator
     pub fn select<R: Rng + ?Sized>(
         &self,
         mu: &ArrayView1<f64>,
@@ -54,13 +37,10 @@ impl UCBAcquisition {
             return Ok(Vec::new());
         }
 
-
         let ucb: Array1<f64> = mu + &(sigma * self.beta);
-
 
         let mut indices: Vec<usize> = (0..ucb.len()).collect();
         indices.shuffle(rng);
-
 
         indices.sort_by(|&a, &b| {
             let ucb_a = ucb[a];
@@ -68,29 +48,18 @@ impl UCBAcquisition {
             ucb_b.total_cmp(&ucb_a)
         });
 
-
         let result: Vec<usize> = indices.into_iter().take(num_arms).collect();
         Ok(result)
     }
 }
 
-/// Thompson sampling acquisition optimizer.
 pub struct ThompsonAcquisition;
 
 impl ThompsonAcquisition {
-    /// Create new Thompson sampling acquisition optimizer.
     pub fn new() -> Self {
         Self
     }
 
-    /// Select arms using Thompson sampling.
-    ///
-    /// # Arguments
-    ///
-    /// * `mu` - Predictive means, shape (n_candidates,)
-    /// * `sigma` - Predictive standard deviations, shape (n_candidates,)
-    /// * `num_arms` - Number of arms to select
-    /// * `rng` - Random number generator
     pub fn select<R: Rng + ?Sized>(
         &self,
         mu: &ArrayView1<f64>,
@@ -111,7 +80,6 @@ impl ThompsonAcquisition {
         const CLIP_MIN: f64 = 1e-12;
         const CLIP_MAX: f64 = 1.0 - 1e-12;
 
-
         let mut samples = Array1::zeros(mu.len());
         for i in 0..mu.len() {
             let mean = mu[i];
@@ -124,12 +92,9 @@ impl ThompsonAcquisition {
             samples[i] = mean + std * z;
         }
 
-
         let mut indices: Vec<usize> = (0..samples.len()).collect();
         indices.shuffle(rng);
-        indices.sort_by(|&a, &b| {
-            samples[b].total_cmp(&samples[a])
-        });
+        indices.sort_by(|&a, &b| samples[b].total_cmp(&samples[a]));
 
         Ok(indices.into_iter().take(num_arms).collect())
     }
@@ -141,16 +106,13 @@ impl Default for ThompsonAcquisition {
     }
 }
 
-/// Random acquisition optimizer (baseline).
 pub struct RandomAcquisition;
 
 impl RandomAcquisition {
-    /// Create new random acquisition optimizer.
     pub fn new() -> Self {
         Self
     }
 
-    /// Select random arms.
     pub fn select<R: Rng + ?Sized>(
         &self,
         n_candidates: usize,
@@ -173,19 +135,13 @@ impl Default for RandomAcquisition {
     }
 }
 
-/// Pareto front acquisition optimizer for multi-objective problems.
 pub struct ParetoAcquisition;
 
 impl ParetoAcquisition {
-    /// Create new Pareto acquisition optimizer.
     pub fn new() -> Self {
         Self
     }
 
-    /// Select arms from Pareto front.
-    ///
-    /// For multi-objective, uses non-dominated sorting.
-    /// For single-objective, delegates to arms_from_pareto_fronts_2d.
     pub fn select<R: Rng + ?Sized>(
         &self,
         mu: &ArrayView2<f64>,
@@ -223,11 +179,8 @@ impl ParetoAcquisition {
             );
         }
 
-
-
         let objectives = Self::interleave_mu_se(mu, se);
         let pareto_fronts = self.non_domin_sort(&objectives.view());
-
 
         let mut selected = Vec::with_capacity(num_arms);
         for front in pareto_fronts {
@@ -239,7 +192,6 @@ impl ParetoAcquisition {
             if front.len() <= remaining {
                 selected.extend(front);
             } else {
-
                 let mut front_indices = front;
                 front_indices.shuffle(rng);
                 selected.extend(front_indices.into_iter().take(remaining));
@@ -249,7 +201,6 @@ impl ParetoAcquisition {
         Ok(selected)
     }
 
-    /// Build objectives as (y_1, se_1, y_2, se_2, …) for multi-obj ranking.
     fn interleave_mu_se(mu: &ArrayView2<f64>, se: &ArrayView2<f64>) -> Array2<f64> {
         let n_candidates = mu.nrows();
         let n_objectives = mu.ncols();
@@ -261,7 +212,6 @@ impl ParetoAcquisition {
         objectives
     }
 
-    /// Non-dominated sorting (simplified implementation).
     fn non_domin_sort(&self, objectives: &ArrayView2<f64>) -> Vec<Vec<usize>> {
         if objectives.ncols() == 2 {
             return self.non_domin_sort_2d(objectives);
@@ -274,18 +224,15 @@ impl ParetoAcquisition {
             return Vec::new();
         }
 
-
         let mut domination_count: Vec<usize> = vec![0; n];
         let mut dominated: Vec<Vec<usize>> = vec![Vec::new(); n];
         let mut fronts: Vec<Vec<usize>> = Vec::new();
-
 
         for i in 0..n {
             for j in 0..n {
                 if i == j {
                     continue;
                 }
-
 
                 let mut all_gte = true;
                 let mut any_gt = false;
@@ -302,7 +249,6 @@ impl ParetoAcquisition {
                 if all_gte && any_gt {
                     dominated[i].push(j);
                 } else if !all_gte {
-
                     let mut j_gte = true;
                     let mut j_gt = false;
                     for k in 0..m {
@@ -320,7 +266,6 @@ impl ParetoAcquisition {
                 }
             }
         }
-
 
         let mut current_front: Vec<usize> = (0..n).filter(|&i| domination_count[i] == 0).collect();
 
@@ -341,9 +286,6 @@ impl ParetoAcquisition {
         fronts
     }
 
-    /// Non-dominated sorting specialized for 2 objectives.
-    ///
-    /// Uses skyline peeling with objective-0 sort + objective-1 sweep.
     fn non_domin_sort_2d(&self, objectives: &ArrayView2<f64>) -> Vec<Vec<usize>> {
         let n = objectives.nrows();
         if n == 0 {
@@ -354,13 +296,11 @@ impl ParetoAcquisition {
         let mut fronts: Vec<Vec<usize>> = Vec::new();
 
         while !remaining.is_empty() {
-
             remaining.sort_by(|&i, &j| {
                 objectives[[j, 0]]
                     .total_cmp(&objectives[[i, 0]])
                     .then_with(|| objectives[[j, 1]].total_cmp(&objectives[[i, 1]]))
             });
-
 
             let mut front: Vec<usize> = Vec::new();
             let mut best_obj1 = f64::NEG_INFINITY;
@@ -376,7 +316,6 @@ impl ParetoAcquisition {
                     last_obj0 = obj0;
                     last_obj1 = obj1;
                 } else if obj1 == best_obj1 && obj0 == last_obj0 && obj1 == last_obj1 {
-
                     front.push(idx);
                 }
             }
@@ -392,7 +331,6 @@ impl ParetoAcquisition {
         fronts
     }
 
-    /// Select arms from 2D Pareto fronts (used for single-objective).
     fn arms_from_pareto_fronts_2d<R: Rng + ?Sized>(
         mu: &ArrayView1<f64>,
         sigma: &ArrayView1<f64>,
@@ -407,14 +345,8 @@ impl ParetoAcquisition {
         let num_arms = num_arms.min(n);
         let dummy_x = ndarray::Array2::<f64>::zeros((n, 1));
         let seed = rng.r#gen::<u64>();
-        crate::util::arms_from_pareto_fronts(
-            &dummy_x.view(),
-            mu,
-            sigma,
-            num_arms,
-            seed,
-        )
-        .map_err(|e| AcquisitionError::InvalidParameter(e.to_string()))
+        crate::util::arms_from_pareto_fronts(&dummy_x.view(), mu, sigma, num_arms, seed)
+            .map_err(|e| AcquisitionError::InvalidParameter(e.to_string()))
     }
 }
 

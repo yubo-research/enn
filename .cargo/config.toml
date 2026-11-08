@@ -1,3 +1,0 @@
-[env]
-CMAKE = { value = "rust/crates/ennbo/cmake/enn_cmake.sh", relative = true }
-CMAKE_TOOLCHAIN_FILE = { value = "rust/crates/ennbo/cmake/faiss_blas_toolchain.cmake", relative = true }

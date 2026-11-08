@@ -7,7 +7,6 @@ from ..init_strategy_base import InitStrategy
 
 if TYPE_CHECKING:
     import numpy as np
-    from numpy.random import Generator
 
 
 @dataclass(frozen=True)
@@ -16,10 +15,9 @@ class LHDOnlyInit(InitStrategy):
         self,
         *,
         bounds: np.ndarray,
-        rng: Generator,
         num_init: int | None,
     ) -> Any:
-        del bounds, rng, num_init
+        del bounds, num_init
         raise RuntimeError(
             "LHDOnlyInit is a Rust-routing config marker for lhd_only_config; "
             "use create_optimizer, not a runtime strategy object"

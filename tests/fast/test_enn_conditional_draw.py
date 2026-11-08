@@ -4,13 +4,16 @@ import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def test_conditional_posterior_function_draw_matches_unconditional_when_no_whatifs():
     rng = np.random.default_rng(0)
     train_x = rng.standard_normal((20, 3))
     train_y = train_x.sum(axis=1, keepdims=True)
-    model = EpistemicNearestNeighbors(train_x, train_y, 0.1 * np.ones_like(train_y))
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, 0.1 * np.ones_like(train_y), work_dir=fresh_work_dir()
+    )
     x_test = rng.standard_normal((5, 3))
     params = ENNParams(
         k_num_neighbors=5, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.0
@@ -18,7 +21,7 @@ def test_conditional_posterior_function_draw_matches_unconditional_when_no_whati
     flags = PosteriorFlags(exclude_nearest=False, observation_noise=True)
     seeds = [1, 2, 3]
     draws, idx = model.posterior_function_draw(
-        x_test, params, function_seeds=seeds, flags=flags
+        x_test, params=params, function_seeds=seeds, flags=flags
     )
     draws_cond, idx_cond = model.conditional_posterior_function_draw(
         np.zeros((0, 3), dtype=float),
@@ -36,7 +39,9 @@ def test_conditional_posterior_function_draw_is_deterministic_and_does_not_mutat
     d = 3
     train_x = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0]], dtype=float)
     train_y = np.array([[0.0], [0.0]], dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar=None, work_dir=fresh_work_dir()
+    )
     x_test = np.zeros((1, d), dtype=float)
     x_whatif = np.zeros((1, d), dtype=float)
     y_whatif = np.array([[5.0]], dtype=float)
@@ -73,7 +78,9 @@ def test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_ne
     d = 3
     train_x = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0]], dtype=float)
     train_y = np.array([[1.0], [2.0]], dtype=float)
-    model = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+    model = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar=None, work_dir=fresh_work_dir()
+    )
     x_test = np.zeros((1, d), dtype=float)
     x_whatif = np.zeros((1, d), dtype=float)
     y_whatif = np.array([[100.0]], dtype=float)
@@ -81,9 +88,9 @@ def test_conditional_posterior_function_draw_changes_with_whatifs_and_exclude_ne
         k_num_neighbors=1, epistemic_variance_scale=1.0, aleatoric_variance_scale=1.0
     )
     seeds = [7]
-    draw_base = model.posterior_function_draw(x_test, params, function_seeds=seeds)[0][
-        0, 0, 0
-    ]
+    draw_base = model.posterior_function_draw(
+        x_test, params=params, function_seeds=seeds
+    )[0][0, 0, 0]
     draw_incl = model.conditional_posterior_function_draw(
         x_whatif,
         y_whatif,
@@ -117,7 +124,9 @@ def test_conditional_posterior_function_draw_matches_augmented_model_exactly():
     )
     flags = PosteriorFlags(exclude_nearest=True, observation_noise=True)
     function_seeds = [11, 12, 13]
-    enn_a = EpistemicNearestNeighbors(train_x, train_y, train_yvar=None)
+    enn_a = EpistemicNearestNeighbors(
+        train_x, train_y, train_yvar=None, work_dir=fresh_work_dir()
+    )
     draws_a, idx_a = enn_a.conditional_posterior_function_draw(
         x_whatif,
         y_whatif,
@@ -130,9 +139,10 @@ def test_conditional_posterior_function_draw_matches_augmented_model_exactly():
         np.concatenate([train_x, x_whatif], axis=0),
         np.concatenate([train_y, y_whatif], axis=0),
         train_yvar=None,
+        work_dir=fresh_work_dir(),
     )
     draws_b, idx_b = enn_b.posterior_function_draw(
-        x_test, params, function_seeds=function_seeds, flags=flags
+        x_test, params=params, function_seeds=function_seeds, flags=flags
     )
     assert np.allclose(draws_a, draws_b)
     assert np.all(idx_a == idx_b)

@@ -11,8 +11,6 @@ import numpy as np
 import pytest
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage
 
 
 def _live_rss_bytes() -> int:
@@ -32,9 +30,7 @@ def test_disk_row_y_iteration_does_not_fault_full_train_x():
         model = EpistemicNearestNeighbors(
             np.empty((0, d)),
             np.empty((0, 1)),
-            index_driver=ENNIndexDriver.BPANN_DISK,
             work_dir=work,
-            enn_storage=ENNStorage.DISK,
         )
         rng = np.random.default_rng(0)
         x = rng.normal(size=(n, d))

@@ -1,5 +1,3 @@
-//! Diagonal dependence weights from Sobol indices.
-
 use crate::error::ENNError;
 use crate::metric_sobol::{
     group_cell_count, group_sobol_index, null_sd, sobol_index, DEPENDENCE_Z, MIN_DEPENDENCE_ROWS,
@@ -51,6 +49,11 @@ pub fn validate_tied_dims_signed(tied: &[Vec<i64>], num_dim: usize) -> Result<()
         converted.push(row);
     }
     validate_tied_dims(&converted, num_dim)
+}
+
+pub fn smallest_tied_dim_count(tied: &[Vec<i64>]) -> usize {
+    let largest = tied.iter().flatten().copied().max().unwrap_or(0);
+    usize::try_from(largest).map_or(1, |j| j.saturating_add(1))
 }
 
 fn column(y: &[f64], n: usize, m: usize, j: usize) -> Vec<f64> {
@@ -176,8 +179,6 @@ pub fn dependence_weights(
     Ok((0..d).map(|j| (u * s[unit[j]] / s_sum) / spr[j]).collect())
 }
 
-/// Trust-region side multipliers from metric weights, normalized like TuRBO-1 lengthscales:
-/// `s = 1 / w`, divided by its arithmetic mean, then by its geometric mean.
 pub fn trust_region_sides(weights: &[f64]) -> Vec<f64> {
     let inv: Vec<f64> = weights.iter().map(|w| 1.0 / w).collect();
     let mean = inv.iter().sum::<f64>() / inv.len() as f64;
@@ -188,4 +189,67 @@ pub fn trust_region_sides(weights: &[f64]) -> Vec<f64> {
 
 pub fn too_few_rows(n: usize) -> bool {
     n < MIN_DEPENDENCE_ROWS
+}
+
+pub fn require_weighting_for_ties(
+    tied_dims: &[Vec<usize>],
+    weighting: bool,
+) -> Result<(), ENNError> {
+    if !tied_dims.is_empty() && !weighting {
+        return Err(ENNError::InvalidParameter(
+            "tied_dims requires weighting=True".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub fn resolve_tied_groups(
+    carried: &[Vec<usize>],
+    explicit: Option<&[Vec<usize>]>,
+    weighting: bool,
+) -> Result<Vec<Vec<usize>>, ENNError> {
+    require_weighting_for_ties(explicit.unwrap_or_default(), weighting)?;
+    let carried = if !weighting { &[][..] } else { carried };
+    match explicit.filter(|g| !g.is_empty()) {
+        None => Ok(carried.to_vec()),
+        Some(groups) if !carried.is_empty() && groups != carried => Err(
+            ENNError::InvalidParameter("tied_dims do not match the categorical blocks on x".into()),
+        ),
+        Some(groups) => Ok(groups.to_vec()),
+    }
+}
+
+#[cfg(test)]
+mod tied_feature_tests {
+    use super::{resolve_tied_groups, smallest_tied_dim_count};
+    #[test]
+    fn smallest_tied_dim_count_covers_largest_entry() {
+        assert_eq!(smallest_tied_dim_count(&[vec![2, 7], vec![0]]), 8);
+        assert_eq!(smallest_tied_dim_count(&[vec![-1]]), 1);
+        assert_eq!(smallest_tied_dim_count(&[vec![]]), 1);
+        assert_eq!(
+            smallest_tied_dim_count(&[vec![i64::MAX]]),
+            i64::MAX as usize + 1
+        );
+    }
+
+    #[test]
+    fn explicit_ties_must_match_carried_categorical_blocks() {
+        let carried = vec![vec![2, 3, 4]];
+        let other = vec![vec![0, 1]];
+        assert_eq!(resolve_tied_groups(&carried, None, true).unwrap(), carried);
+        assert!(resolve_tied_groups(&carried, Some(&other), true).is_err());
+        assert_eq!(resolve_tied_groups(&[], Some(&other), true).unwrap(), other);
+    }
+
+    #[test]
+    fn without_weighting_carried_groups_vanish_and_explicit_groups_are_rejected() {
+        let groups = vec![vec![0, 1]];
+        assert!(resolve_tied_groups(&groups, None, false)
+            .unwrap()
+            .is_empty());
+        let err = resolve_tied_groups(&[], Some(&groups), false).unwrap_err();
+        assert!(err.to_string().contains("requires weighting=True"), "{err}");
+        assert!(resolve_tied_groups(&[], Some(&[]), false).is_ok());
+    }
 }

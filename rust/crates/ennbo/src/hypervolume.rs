@@ -1,58 +1,20 @@
-//! 2D hypervolume calculation for maximization problems.
-
-use ndarray::{ArrayView1, ArrayView2};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewD, Ix1, Ix2};
 use thiserror::Error;
 
-/// Errors that can occur during hypervolume calculation.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum HypervolumeError {
-    /// Input array has wrong dimensionality.
     #[error("y must be 2-dimensional, got shape {0:?}")]
     InvalidDimension(Vec<usize>),
-    /// Input array has wrong number of columns.
     #[error("y must have 2 columns, got shape {0:?}")]
     InvalidColumnCount(Vec<usize>),
-    /// Reference point has wrong shape.
     #[error("ref_point must have 2 elements, got shape {0:?}")]
     InvalidRefPoint(usize),
 }
 
-/// Calculate 2D hypervolume for maximization problems.
-///
-/// This implements the "walking frontier" algorithm for computing
-/// the hypervolume indicator in 2D objective space.
-///
-/// # Arguments
-///
-/// * `y` - Array of shape (N, 2) containing objective values to maximize
-/// * `ref_point` - Array of shape (2,) containing reference point for hypervolume
-///
-/// # Returns
-///
-/// The hypervolume as a float, or an error if inputs are invalid.
-///
-/// # Algorithm
-///
-/// 1. Filter points that dominate the reference point in both dimensions
-/// 2. Sort remaining points by first objective in descending order (stable)
-/// 3. Walk the frontier, accumulating rectangular areas
-///
-/// # Example
-///
-/// ```
-/// use ndarray::array;
-/// use ennbo::hypervolume_2d_max;
-///
-/// let y = array![[1.0, 0.5], [0.5, 1.0]];
-/// let ref_point = array![0.0, 0.0];
-/// let hv = hypervolume_2d_max(&y.view(), &ref_point.view()).unwrap();
-/// assert!((hv - 0.75).abs() < 1e-10);
-/// ```
 pub fn hypervolume_2d_max(
     y: &ArrayView2<f64>,
     ref_point: &ArrayView1<f64>,
 ) -> Result<f64, HypervolumeError> {
-
     if y.ndim() != 2 {
         return Err(HypervolumeError::InvalidDimension(y.shape().to_vec()));
     }
@@ -63,14 +25,12 @@ pub fn hypervolume_2d_max(
         return Err(HypervolumeError::InvalidRefPoint(ref_point.len()));
     }
 
-
     if y.nrows() == 0 {
         return Ok(0.0);
     }
 
     let ref0 = ref_point[0];
     let ref1 = ref_point[1];
-
 
     let mut dominating: Vec<(f64, f64)> = Vec::with_capacity(y.nrows());
     for row in y.rows() {
@@ -81,15 +41,11 @@ pub fn hypervolume_2d_max(
         }
     }
 
-
     if dominating.is_empty() {
         return Ok(0.0);
     }
 
-
-
     dominating.sort_by(|a, b| b.0.total_cmp(&a.0));
-
 
     let mut hv = 0.0;
     let mut best_y1 = ref1;
@@ -97,11 +53,9 @@ pub fn hypervolume_2d_max(
     for i in 0..dominating.len() {
         let (x0, y1) = dominating[i];
 
-
         if y1 > best_y1 {
             best_y1 = y1;
         }
-
 
         let x_next = if i + 1 < dominating.len() {
             dominating[i + 1].0
@@ -109,18 +63,30 @@ pub fn hypervolume_2d_max(
             ref0
         };
 
-
         hv += (x0 - x_next) * (best_y1 - ref1);
     }
 
     Ok(hv)
 }
 
-/// Convenience function for 1D arrays.
-///
-/// # Panics
-///
-/// Panics if the conversion from 1D to 2D view fails.
+pub fn hypervolume_2d_max_any_rank(
+    y: &ArrayViewD<f64>,
+    ref_point: &ArrayViewD<f64>,
+) -> Result<f64, HypervolumeError> {
+    if y.is_empty() {
+        return Ok(0.0);
+    }
+    let matrix = y
+        .view()
+        .into_dimensionality::<Ix2>()
+        .map_err(|_| HypervolumeError::InvalidDimension(y.shape().to_vec()))?;
+    let reference = ref_point
+        .view()
+        .into_dimensionality::<Ix1>()
+        .map_err(|_| HypervolumeError::InvalidRefPoint(ref_point.ndim()))?;
+    hypervolume_2d_max(&matrix, &reference)
+}
+
 pub fn hypervolume_2d_max_1d(
     y: &ArrayView1<f64>,
     ref_point: &ArrayView1<f64>,
@@ -137,6 +103,24 @@ mod tests {
     fn hypervolume_at_origin(y: &ArrayView2<f64>) -> f64 {
         let ref_point = array![0.0, 0.0];
         hypervolume_2d_max(y, &ref_point.view()).unwrap()
+    }
+
+    #[test]
+    fn any_rank_treats_empty_as_zero_and_rejects_vectors() {
+        let empty = Array2::<f64>::zeros((0, 2)).into_dyn();
+        let reference = array![0.0, 0.0].into_dyn();
+        assert_eq!(
+            hypervolume_2d_max_any_rank(&empty.view(), &reference.view()),
+            Ok(0.0)
+        );
+        let vector = array![1.0, 1.0].into_dyn();
+        assert!(hypervolume_2d_max_any_rank(&vector.view(), &reference.view()).is_err());
+        let matrix = array![[1.0, 2.0]].into_dyn();
+        assert_eq!(
+            hypervolume_2d_max_any_rank(&matrix.view(), &reference.view()),
+            Ok(2.0)
+        );
+        assert!(hypervolume_2d_max_any_rank(&matrix.view(), &matrix.view()).is_err());
     }
 
     #[test]

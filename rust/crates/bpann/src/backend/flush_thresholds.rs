@@ -22,7 +22,6 @@ impl BpannBackend {
         self.pending_hard_flush_threshold
     }
 
-    /// Update soft/hard pending flush thresholds (keeps `hard >= soft`).
     pub fn reconfigure_flush_thresholds(&mut self, soft: usize, hard: usize) {
         let soft = soft.max(1);
         self.pending_flush_threshold = soft;

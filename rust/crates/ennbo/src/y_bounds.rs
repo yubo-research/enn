@@ -1,12 +1,7 @@
-//! Per-metric output bounds and strictly increasing warps φ(y) → z.
-//!
-//! Storage / fit / acquisition stay in warped `z`. Public APIs naturalize.
-
 use ndarray::{Array2, ArrayView2, Zip};
 
 use crate::error::ENNError;
 
-/// Default unbounded bounds for `num_metrics` columns: each `(−∞, +∞)`.
 pub fn unbounded_bounds(num_metrics: usize) -> Array2<f64> {
     let mut b = Array2::zeros((num_metrics, 2));
     for i in 0..num_metrics {
@@ -16,7 +11,6 @@ pub fn unbounded_bounds(num_metrics: usize) -> Array2<f64> {
     b
 }
 
-/// True when every column is `(−∞, +∞)`.
 pub fn is_identity_bounds(bounds: &Array2<f64>) -> bool {
     bounds.nrows() == 0
         || bounds
@@ -25,7 +19,6 @@ pub fn is_identity_bounds(bounds: &Array2<f64>) -> bool {
             .all(|row| row[0] == f64::NEG_INFINITY && row[1] == f64::INFINITY)
 }
 
-/// Validate shape `(num_metrics, 2)` and `a < b` when both finite.
 pub fn validate_bounds(bounds: &Array2<f64>, num_metrics: usize) -> Result<(), ENNError> {
     if bounds.nrows() != num_metrics || bounds.ncols() != 2 {
         return Err(ENNError::InvalidShape {
@@ -60,7 +53,6 @@ pub fn validate_bounds(bounds: &Array2<f64>, num_metrics: usize) -> Result<(), E
     Ok(())
 }
 
-/// Open-interval check: reject `y <= a` or `y >= b` on finite sides.
 pub fn validate_y_in_open_interval(
     y: ArrayView2<f64>,
     bounds: &Array2<f64>,
@@ -129,7 +121,6 @@ fn inv_scalar(z: f64, a: f64, b: f64) -> f64 {
     }
 }
 
-/// dφ⁻¹/dz at warped z.
 #[inline]
 pub fn d_inv_dz(z: f64, a: f64, b: f64) -> f64 {
     match (a.is_finite(), b.is_finite()) {
@@ -143,7 +134,6 @@ pub fn d_inv_dz(z: f64, a: f64, b: f64) -> f64 {
     }
 }
 
-/// dφ/dy at natural y (for yvar Jacobian).
 #[inline]
 fn d_warp_dy(y: f64, a: f64, b: f64) -> Result<f64, ENNError> {
     let d = match (a.is_finite(), b.is_finite()) {
@@ -164,7 +154,6 @@ fn d_warp_dy(y: f64, a: f64, b: f64) -> Result<f64, ENNError> {
     }
 }
 
-/// Warp a batch of natural y → z. Validates open interval and finite z.
 pub fn warp_y(y: ArrayView2<f64>, bounds: &Array2<f64>) -> Result<Array2<f64>, ENNError> {
     validate_y_in_open_interval(y, bounds)?;
     let mut z = Array2::zeros(y.raw_dim());
@@ -176,7 +165,6 @@ pub fn warp_y(y: ArrayView2<f64>, bounds: &Array2<f64>) -> Result<Array2<f64>, E
     Ok(z)
 }
 
-/// Inverse-warp a batch of z → natural y.
 pub fn inv_y(z: ArrayView2<f64>, bounds: &Array2<f64>) -> Array2<f64> {
     let mut y = Array2::zeros(z.raw_dim());
     for i in 0..z.nrows() {
@@ -187,7 +175,6 @@ pub fn inv_y(z: ArrayView2<f64>, bounds: &Array2<f64>) -> Array2<f64> {
     y
 }
 
-/// Warp observation noise: `yvar_z = (φ'(y))² · yvar_y`.
 pub fn warp_yvar(
     y: ArrayView2<f64>,
     yvar: ArrayView2<f64>,
@@ -216,7 +203,6 @@ pub fn warp_yvar(
     Ok(out)
 }
 
-/// Naturalize posterior moments: μ_nat = φ⁻¹(μ_z), se_nat = |dφ⁻¹/dz|(μ_z) · se_z.
 pub fn naturalize_mu_se(
     mu_z: &mut Array2<f64>,
     se_z: &mut Array2<f64>,
@@ -245,7 +231,6 @@ pub fn naturalize_mu_se(
         });
 }
 
-/// Naturalize draws with shape `(..., metrics)` along the last axis matching bounds columns.
 pub fn inv_last_axis(values: &mut Array2<f64>, bounds: &Array2<f64>) {
     if is_identity_bounds(bounds) {
         return;
@@ -257,7 +242,6 @@ pub fn inv_last_axis(values: &mut Array2<f64>, bounds: &Array2<f64>) {
     }
 }
 
-/// Compare two bound matrices with `null`↔`±∞` semantics (exact f64 match).
 pub fn bounds_match(a: &Array2<f64>, b: &Array2<f64>) -> bool {
     if a.shape() != b.shape() {
         return false;
@@ -270,151 +254,15 @@ pub fn bounds_match(a: &Array2<f64>, b: &Array2<f64>) -> bool {
     })
 }
 
-/// Serialize bounds as JSON array of `[lo, hi]` with `null` for open sides.
-pub fn bounds_to_json(bounds: &Array2<f64>) -> String {
-    let mut parts = Vec::with_capacity(bounds.nrows());
-    for row in bounds.rows() {
-        let lo = if row[0].is_finite() {
-            format!("{}", row[0])
-        } else {
-            "null".to_string()
-        };
-        let hi = if row[1].is_finite() {
-            format!("{}", row[1])
-        } else {
-            "null".to_string()
-        };
-        parts.push(format!("[{lo},{hi}]"));
-    }
-    format!("[{}]", parts.join(","))
-}
-
-/// Parse a `[lo,hi]` pair where `null` means open (−∞ or +∞).
-pub fn parse_bound_pair(lo_tok: &str, hi_tok: &str) -> Result<(f64, f64), ENNError> {
-    let lo = if lo_tok == "null" {
-        f64::NEG_INFINITY
-    } else {
-        lo_tok
-            .parse()
-            .map_err(|_| ENNError::InvalidParameter(format!("bad y_bounds lo: {lo_tok}")))?
-    };
-    let hi = if hi_tok == "null" {
-        f64::INFINITY
-    } else {
-        hi_tok
-            .parse()
-            .map_err(|_| ENNError::InvalidParameter(format!("bad y_bounds hi: {hi_tok}")))?
-    };
-    Ok((lo, hi))
-}
-
-/// Robust metadata parse using string splitting (avoids null-position ambiguity).
-pub fn load_y_bounds_from_metadata_text(
-    text: &str,
-    num_metrics: usize,
-) -> Result<Option<Array2<f64>>, ENNError> {
-    let key = "\"y_bounds\":";
-    let Some(start) = text.find(key) else {
-        return Ok(None);
-    };
-    let after = &text[start + key.len()..];
-    let after = after.trim_start();
-    if !after.starts_with('[') {
-        return Err(ENNError::InvalidParameter(
-            "y_bounds in metadata is not an array".to_string(),
-        ));
-    }
-
-    let mut depth = 0i32;
-    let mut end = None;
-    for (i, c) in after.char_indices() {
-        match c {
-            '[' => depth += 1,
-            ']' => {
-                depth -= 1;
-                if depth == 0 {
-                    end = Some(i);
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    let end = end.ok_or_else(|| {
-        ENNError::InvalidParameter("y_bounds array not closed".to_string())
-    })?;
-    let inner = &after[1..end];
-    let mut bounds = Array2::zeros((num_metrics, 2));
-    let mut metric = 0usize;
-    let mut rest = inner.trim();
-    while !rest.is_empty() {
-        rest = rest.trim_start_matches(|c: char| c == ',' || c.is_whitespace());
-        if rest.is_empty() {
-            break;
-        }
-        if !rest.starts_with('[') {
-            return Err(ENNError::InvalidParameter(
-                "y_bounds expected [lo,hi] pair".to_string(),
-            ));
-        }
-        let close = rest.find(']').ok_or_else(|| {
-            ENNError::InvalidParameter("y_bounds pair not closed".to_string())
-        })?;
-        let pair = &rest[1..close];
-        let mut parts = pair.splitn(2, ',');
-        let lo_tok = parts
-            .next()
-            .ok_or_else(|| ENNError::InvalidParameter("y_bounds missing lo".to_string()))?
-            .trim();
-        let hi_tok = parts
-            .next()
-            .ok_or_else(|| ENNError::InvalidParameter("y_bounds missing hi".to_string()))?
-            .trim();
-        let (lo, hi) = parse_bound_pair(lo_tok, hi_tok)?;
-        if metric >= num_metrics {
-            return Err(ENNError::InvalidParameter(format!(
-                "y_bounds has more than {num_metrics} metrics"
-            )));
-        }
-        bounds[[metric, 0]] = lo;
-        bounds[[metric, 1]] = hi;
-        metric += 1;
-        rest = &rest[close + 1..];
-    }
-    if metric != num_metrics {
-        return Err(ENNError::InvalidParameter(format!(
-            "y_bounds length {metric} != num_metrics {num_metrics}"
-        )));
-    }
-    validate_bounds(&bounds, num_metrics)?;
-    Ok(Some(bounds))
-}
-
-/// Resolve construction-time bounds: None → unbounded (or load from disk text).
 pub fn resolve_y_bounds(
     requested: Option<&Array2<f64>>,
     num_metrics: usize,
-    disk_metadata: Option<&str>,
 ) -> Result<Array2<f64>, ENNError> {
-    let loaded = match disk_metadata {
-        Some(text) => load_y_bounds_from_metadata_text(text, num_metrics)?,
-        None => None,
-    };
-    match (requested, loaded) {
-        (None, None) => Ok(unbounded_bounds(num_metrics)),
-        (None, Some(b)) => Ok(b),
-        (Some(req), None) => {
-            validate_bounds(req, num_metrics)?;
-            Ok(req.clone())
-        }
-        (Some(req), Some(disk)) => {
-            validate_bounds(req, num_metrics)?;
-            if !bounds_match(req, &disk) {
-                return Err(ENNError::InvalidParameter(
-                    "y_bounds do not match disk metadata".to_string(),
-                ));
-            }
-            Ok(req.clone())
+    match requested {
+        None => Ok(unbounded_bounds(num_metrics)),
+        Some(bounds) => {
+            validate_bounds(bounds, num_metrics)?;
+            Ok(bounds.clone())
         }
     }
 }
@@ -435,11 +283,7 @@ mod tests {
 
     #[test]
     fn log_and_neglog_and_logit_roundtrip() {
-        let b = array![
-            [0.0, f64::INFINITY],
-            [f64::NEG_INFINITY, 5.0],
-            [0.0, 1.0]
-        ];
+        let b = array![[0.0, f64::INFINITY], [f64::NEG_INFINITY, 5.0], [0.0, 1.0]];
         let y = array![[0.1, 4.0, 0.25], [2.0, 1.0, 0.75]];
         let z = warp_y(y.view(), &b).unwrap();
         let y2 = inv_y(z.view(), &b);
@@ -468,26 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn metadata_null_roundtrip() {
-        let b = array![[0.0, f64::INFINITY], [f64::NEG_INFINITY, 1.0], [0.0, 1.0]];
-        let json = bounds_to_json(&b);
-        assert_eq!(json, "[[0,null],[null,1],[0,1]]");
-        let text = format!("{{\"y_bounds\":{json}}}");
-        let loaded = load_y_bounds_from_metadata_text(&text, 3).unwrap().unwrap();
-        assert!(bounds_match(&b, &loaded));
-    }
-
-    #[test]
-    fn resolve_must_match() {
-        let disk = array![[0.0, 1.0]];
-        let text = format!("{{\"y_bounds\":{}}}", bounds_to_json(&disk));
-        let ok = resolve_y_bounds(Some(&disk), 1, Some(&text)).unwrap();
-        assert!(bounds_match(&ok, &disk));
-        let bad = array![[0.0, 2.0]];
-        assert!(resolve_y_bounds(Some(&bad), 1, Some(&text)).is_err());
-    }
-
-    #[test]
     fn strict_shape_no_broadcast() {
         let b = array![[0.0, 1.0]];
         assert!(validate_bounds(&b, 2).is_err());
@@ -502,7 +326,6 @@ mod tests {
 
     #[test]
     fn d_inv_dz_matches_inverse_of_d_warp_dy() {
-
         assert!((d_inv_dz(1.5, f64::NEG_INFINITY, f64::INFINITY) - 1.0).abs() < 1e-15);
 
         let y = 3.0_f64;
@@ -510,7 +333,10 @@ mod tests {
         let z = (y - a).ln();
         let dinv = d_inv_dz(z, a, f64::INFINITY);
         let dwarp = d_warp_dy(y, a, f64::INFINITY).unwrap();
-        assert!((dinv * dwarp - 1.0).abs() < 1e-12, "dinv={dinv} dwarp={dwarp}");
+        assert!(
+            (dinv * dwarp - 1.0).abs() < 1e-12,
+            "dinv={dinv} dwarp={dwarp}"
+        );
 
         let b = 5.0_f64;
         let y = 2.0_f64;

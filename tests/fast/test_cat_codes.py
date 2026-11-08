@@ -12,6 +12,7 @@ from enn.enn.cat_codes import (
 )
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def test_log_code_width_tracks_domain_size() -> None:
@@ -158,10 +159,14 @@ def test_codes_ignore_arbitrary_id_magnitudes() -> None:
         seed=2,
     )
     model = EpistemicNearestNeighbors(
-        coded.encode(raw), y.reshape(-1, 1), tied_dims=coded.tied_dims()
+        coded.encode(raw),
+        y.reshape(-1, 1),
+        work_dir=fresh_work_dir(),
     )
     mu = model.posterior(coded.encode(query), params=ENNParams(15, 0.05, 0.01)).mu[:, 0]
-    ordinal = EpistemicNearestNeighbors(raw.astype(float), y.reshape(-1, 1))
+    ordinal = EpistemicNearestNeighbors(
+        raw.astype(float), y.reshape(-1, 1), work_dir=fresh_work_dir()
+    )
     mu_ord = ordinal.posterior(
         query.astype(float), params=ENNParams(15, 0.05, 0.01)
     ).mu[:, 0]
@@ -188,7 +193,9 @@ def test_user_chooses_one_hot_rademacher_or_auto() -> None:
     assert forced.num_dim == 1 + 3 + 1000
     wide = CatEncoder(kinds, cards, encoding=CatEncoding.RADEMACHER, seed=4)
     assert wide.styles == ("code", "code")
-    plain = EpistemicNearestNeighbors(np.ones((4, 3)), np.ones((4, 1)))
+    plain = EpistemicNearestNeighbors(
+        np.ones((4, 3)), np.ones((4, 1)), work_dir=fresh_work_dir()
+    )
     assert plain.tied_dims == ()
 
 
@@ -249,3 +256,29 @@ def test_public_names() -> None:
     assert enn.CatEncoding.AUTO is CatEncoding.AUTO
     assert enn.DimKind.CONTINUOUS is DimKind.CONTINUOUS
     assert enn.DimKind.CATEGORICAL is DimKind.CATEGORICAL
+
+
+def test_integer_category_identity_survives_values_above_float_precision():
+    labels = np.array([[2**53], [2**53 + 1], [-(2**63)], [2**63 - 1]], dtype=np.int64)
+    encoder = CatEncoder(
+        [DimKind.CATEGORICAL], encoding=CatEncoding.RADEMACHER, code_dim=64
+    )
+    codes = encoder.encode(labels)
+    assert not np.array_equal(codes[0], codes[1])
+    np.testing.assert_array_equal(encoder.snap(codes, [labels[:, 0]]), labels)
+
+
+def test_mixed_object_rows_preserve_large_category_labels():
+    labels = np.array([2**53, 2**53 + 1, -(2**63), 2**63 - 1], dtype=np.int64)
+    rows = np.empty((4, 2), dtype=object)
+    rows[:, 0] = [0.25, 0.5, 0.75, 1.0]
+    rows[:, 1] = labels
+    encoder = CatEncoder(
+        [DimKind.CONTINUOUS, DimKind.CATEGORICAL],
+        encoding=CatEncoding.RADEMACHER,
+        code_dim=64,
+    )
+    codes = encoder.encode(rows)
+    np.testing.assert_array_equal(codes[:, 0], rows[:, 0])
+    assert not np.array_equal(codes[0, 1:], codes[1, 1:])
+    np.testing.assert_array_equal(encoder.snap(codes, [labels])[:, 0], labels)

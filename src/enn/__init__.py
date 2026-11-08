@@ -8,23 +8,36 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "AffineCalibrator": (".enn.affine_calibrator", "AffineCalibrator"),
     "fit_affine_calibrator": (".enn.affine_calibrator", "fit_affine_calibrator"),
     "create_optimizer": (".turbo.rust_optimizer", "create_optimizer"),
-    "create_optimizer_enn": ("._rust", "create_optimizer_enn"),
-    "create_optimizer_zero": ("._rust", "create_optimizer_zero"),
-    "create_optimizer_lhd": ("._rust", "create_optimizer_lhd"),
+    "Optimizer": (".turbo.rust_optimizer", "Optimizer"),
     "Telemetry": (".turbo.types.telemetry", "Telemetry"),
-    "OptimizerConfig": (".turbo.optimizer_config", "OptimizerConfig"),
-    "turbo_zero_config": (".turbo.optimizer_config", "turbo_zero_config"),
-    "turbo_enn_config": (".turbo.optimizer_config", "turbo_enn_config"),
-    "lhd_only_config": (".turbo.optimizer_config", "lhd_only_config"),
+    "OptimizerConfig": (".turbo.config", "OptimizerConfig"),
+    "turbo_zero_config": (".turbo.config", "turbo_zero_config"),
+    "turbo_enn_config": (".turbo.config", "turbo_enn_config"),
+    "lhd_only_config": (".turbo.config", "lhd_only_config"),
     "TurboTRConfig": (".turbo.config.trust_region", "TurboTRConfig"),
     "MorboTRConfig": (".turbo.config.trust_region", "MorboTRConfig"),
     "NoTRConfig": (".turbo.config.trust_region", "NoTRConfig"),
-    "CandidateRV": (".turbo.optimizer_config", "CandidateRV"),
-    "InitStrategy": (".turbo.optimizer_config", "InitStrategy"),
-    "AcqType": (".turbo.optimizer_config", "AcqType"),
+    "CandidateRV": (".turbo.config", "CandidateRV"),
+    "InitStrategy": (".turbo.config", "InitStrategy"),
+    "AcqType": (".turbo.config", "AcqType"),
     "CatEncoder": (".enn.cat_codes", "CatEncoder"),
     "CatEncoding": (".enn.cat_codes", "CatEncoding"),
     "DimKind": (".enn.cat_codes", "DimKind"),
+    "ENNParams": (".enn.enn_params", "ENNParams"),
+    "PosteriorFlags": (".enn.enn_params", "PosteriorFlags"),
+    "ENNNormal": (".enn.enn_normal", "ENNNormal"),
+    "ENNSurrogateConfig": (".turbo.config.surrogate", "ENNSurrogateConfig"),
+    "ENNFitConfig": (".turbo.config.enn_fit_config", "ENNFitConfig"),
+    "NoSurrogateConfig": (".turbo.config.surrogate", "NoSurrogateConfig"),
+    "MultiObjectiveConfig": (
+        ".turbo.config.multi_objective_config",
+        "MultiObjectiveConfig",
+    ),
+    "CandidateGenConfig": (".turbo.config.candidate_gen_config", "CandidateGenConfig"),
+    "TRLengthConfig": (".turbo.config.tr_length_config", "TRLengthConfig"),
+    "Rescalarize": (".turbo.config.rescalarize", "Rescalarize"),
+    "RAASPDriver": (".turbo.config.raasp_driver", "RAASPDriver"),
+    "ENNMetricLearning": (".turbo.config.enn_x_scaling", "ENNMetricLearning"),
 }
 
 
@@ -38,6 +51,4 @@ def __getattr__(name: str):
     )
 
 
-__all__: list[str] = [
-    *_LAZY_ATTRS.keys(),
-]
+__all__: list[str] = list(_LAZY_ATTRS)

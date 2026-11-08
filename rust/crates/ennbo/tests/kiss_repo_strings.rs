@@ -1,12 +1,10 @@
 use ennbo::ennbo_build::{
     kiss_ennbo_build_touch_01, kiss_ennbo_build_touch_02, kiss_ennbo_build_touch_03,
-    kiss_ennbo_build_touch_04, kiss_ennbo_build_touch_05, kiss_ennbo_build_touch_06,
-    kiss_ennbo_build_touch_07, kiss_ennbo_build_touch_08, kiss_ennbo_build_touch_09, main,
+    kiss_ennbo_build_touch_04, kiss_ennbo_build_touch_05, kiss_ennbo_build_touch_06, main,
     run_ennbo_build,
 };
 use ennbo::link_search::{
-    emit_blas_lapack_link_search_linux, emit_faiss_link_search, emit_link_search,
-    emit_openblas_link, has_blas_for_link, has_faiss_c, openblas_for_link,
+    emit_blas_lapack_link_search_linux, emit_openblas_link, has_blas_for_link, openblas_for_link,
 };
 
 #[test]
@@ -22,8 +20,6 @@ fn kiss_fullrepo_static_name_registry_core() {
         "EpistemicNearestNeighbors",
         "HashError",
         "HypervolumeError",
-        "IndexDriver",
-        "IndexError",
         "NeighborData",
         "NoTrustRegion",
         "ObservationDelta",
@@ -36,7 +32,6 @@ fn kiss_fullrepo_static_name_registry_core() {
         "ENNFitter",
         "fit_append",
         "tell",
-        "is_index_stale",
         "morbo_update_ranges_only",
         "morbo_update_incumbent_only",
         "morbo_rescalarize_incumbent",
@@ -99,13 +94,10 @@ fn kiss_fullrepo_static_name_registry_core() {
 #[test]
 fn kiss_cargo_build_helpers() {
     let _ = (
-        emit_link_search,
-        has_faiss_c,
         has_blas_for_link,
         openblas_for_link,
         emit_openblas_link,
         emit_blas_lapack_link_search_linux,
-        emit_faiss_link_search,
     );
 }
 
@@ -120,9 +112,6 @@ fn kiss_ennbo_build_main() {
         kiss_ennbo_build_touch_04 as fn(),
         kiss_ennbo_build_touch_05 as fn(),
         kiss_ennbo_build_touch_06 as fn(),
-        kiss_ennbo_build_touch_07 as fn(),
-        kiss_ennbo_build_touch_08 as fn(),
-        kiss_ennbo_build_touch_09 as fn(),
     );
 }
 
@@ -138,25 +127,13 @@ fn kiss_fullrepo_static_name_registry_extra() {
         "optional_f64",
         "optional_usize",
         "argmax_random_tie",
-        "faiss_spec",
-        "faiss_map_err",
-        "arr2_rows_to_f32",
-        "make_faiss",
-        "pad_neighbor_cols_to_search_k",
-        "unpack_faiss_search",
-        "KnnBackend",
-        "FaissBackend",
         "rebuild",
         "add",
         "search",
-        "unpack_batch_search",
         "open_or_create",
         "index_row_range",
         "load_indexed_rows",
         "memory_usage_bytes",
-        "RowStorage",
-        "from_array2",
-        "push_rows",
         "MmapColumnStore",
         "mmap_open_or_create",
         "mmap_append",
@@ -182,7 +159,6 @@ fn kiss_fullrepo_static_name_registry_extra() {
         "BpAnnDisk",
         "append_rows",
         "EnnBackend",
-        "EnnStorage",
         "InMemoryEnnBackend",
         "new_with_storage",
         "sync_obs_stats_from_backend",

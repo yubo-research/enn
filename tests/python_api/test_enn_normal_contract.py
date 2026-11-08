@@ -9,6 +9,7 @@ import numpy as np
 from enn import EpistemicNearestNeighbors
 from enn.enn.enn_normal import ENNNormal
 from enn.enn.enn_params import ENNParams, PosteriorFlags
+from evals.harness.work_dirs import fresh_work_dir
 
 
 class TestENNNormalContract:
@@ -50,7 +51,7 @@ class TestENNNormalContract:
             [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=float
         )
         train_y = np.array([[0.0], [1.0], [1.0], [2.0]], dtype=float)
-        model = EpistemicNearestNeighbors(train_x, train_y)
+        model = EpistemicNearestNeighbors(train_x, train_y, work_dir=fresh_work_dir())
         params = ENNParams(
             k_num_neighbors=2,
             epistemic_variance_scale=1.0,

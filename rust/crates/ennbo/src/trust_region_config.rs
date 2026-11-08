@@ -1,24 +1,20 @@
-//! Trust-region configuration variants for the optimizer.
-
 use crate::error::ENNError;
 use crate::morbo_trust_region::MorboTRSettings;
 use crate::trust_region::TRLengthConfig;
 
-/// Which trust-region family a config override selects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TrustRegionKind {
-    /// Single-objective TuRBO.
     Turbo,
-    /// Multi-objective MORBO.
     Morbo,
+    Global,
 }
 
 impl TrustRegionKind {
-    /// Accept only the two wire spellings Python sends.
     pub fn parse(name: &str) -> Result<Self, ENNError> {
         match name {
             "turbo" => Ok(Self::Turbo),
             "morbo" => Ok(Self::Morbo),
+            "global" => Ok(Self::Global),
             _ => Err(ENNError::InvalidParameter(format!(
                 "Unknown trust_region: {name}"
             ))),
@@ -26,11 +22,11 @@ impl TrustRegionKind {
     }
 }
 
-/// Trust-region configuration (TuRBO or Morbo).
 #[derive(Debug, Clone)]
 pub enum TrustRegionConfig {
     Turbo(TRLengthConfig),
     Morbo(MorboTRSettings),
+    Global,
 }
 
 impl Default for TrustRegionConfig {
@@ -46,8 +42,18 @@ mod tests {
     #[test]
     fn trust_region_kind_rejects_unknown_spelling() {
         assert!(TrustRegionKind::parse("not_morbo").is_err());
-        assert_eq!(TrustRegionKind::parse("morbo").unwrap(), TrustRegionKind::Morbo);
-        assert_eq!(TrustRegionKind::parse("turbo").unwrap(), TrustRegionKind::Turbo);
+        assert_eq!(
+            TrustRegionKind::parse("morbo").unwrap(),
+            TrustRegionKind::Morbo
+        );
+        assert_eq!(
+            TrustRegionKind::parse("turbo").unwrap(),
+            TrustRegionKind::Turbo
+        );
+        assert_eq!(
+            TrustRegionKind::parse("global").unwrap(),
+            TrustRegionKind::Global
+        );
         assert!(TrustRegionKind::parse("MORBO").is_err());
     }
 }

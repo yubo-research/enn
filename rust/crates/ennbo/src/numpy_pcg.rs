@@ -1,5 +1,3 @@
-//! NumPy `Generator(PCG64(seed))` for `integers(0, high)`.
-
 use crate::numpy_seed::seed_sequence_u64;
 
 const MULT_HI: u128 = 2549297995355413924;
@@ -15,7 +13,12 @@ pub struct NumpyPcg64 {
 
 impl NumpyPcg64 {
     pub fn from_parts(state: u128, inc: u128) -> Self {
-        Self { state, inc, has_u32: false, u32_buf: 0 }
+        Self {
+            state,
+            inc,
+            has_u32: false,
+            u32_buf: 0,
+        }
     }
 
     pub fn from_seed(seed: u64) -> Self {
@@ -27,14 +30,18 @@ impl NumpyPcg64 {
         state = state.wrapping_mul(MULT).wrapping_add(inc);
         state = state.wrapping_add(initstate);
         state = state.wrapping_mul(MULT).wrapping_add(inc);
-        Self { state, inc, has_u32: false, u32_buf: 0 }
+        Self {
+            state,
+            inc,
+            has_u32: false,
+            u32_buf: 0,
+        }
     }
 
     pub fn next_f64(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 * (1.0 / 9007199254740992.0)
     }
 
-    /// `Generator.standard_normal`, NumPy's ziggurat.
     pub fn standard_normal(&mut self) -> f64 {
         use crate::numpy_ziggurat_tables::{
             FI_DOUBLE, KI_DOUBLE, WI_DOUBLE, ZIGGURAT_NOR_INV_R, ZIGGURAT_NOR_R,
@@ -90,7 +97,6 @@ impl NumpyPcg64 {
         next as u32
     }
 
-    /// `Generator.integers(0, high)` for `high >= 1` (exclusive upper bound).
     pub fn integers_high(&mut self, high: u64) -> u64 {
         debug_assert!(high >= 1);
         let rng = high - 1;
@@ -104,6 +110,29 @@ impl NumpyPcg64 {
             return u64::from(self.lemire32(rng as u32));
         }
         self.lemire64(rng)
+    }
+
+    pub fn permutation(&mut self, count: usize) -> Vec<usize> {
+        let mut values: Vec<usize> = (0..count).collect();
+        for high in (1..count).rev() {
+            values.swap(high, self.masked_interval(high) as usize);
+        }
+        values
+    }
+
+    fn masked_interval(&mut self, max: usize) -> u64 {
+        let max = max as u64;
+        let mask = u64::MAX >> max.leading_zeros();
+        loop {
+            let value = if max <= u64::from(u32::MAX) {
+                u64::from(self.next_u32()) & mask
+            } else {
+                self.next_u64() & mask
+            };
+            if value <= max {
+                return value;
+            }
+        }
     }
 
     fn lemire32(&mut self, rng: u32) -> u32 {

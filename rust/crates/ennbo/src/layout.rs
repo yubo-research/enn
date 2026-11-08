@@ -1,156 +1,45 @@
-//! Index, storage, and metric combinations that can be constructed.
-
+use crate::error::ENNError;
+use crate::metric_auto::MetricLearning;
 use std::path::{Path, PathBuf};
 
-use crate::backend::EnnStorage;
-use crate::error::ENNError;
-use crate::index::IndexDriver;
-use crate::metric_auto::MetricLearning;
-
-/// Legal placement of an ENN model.
-///
-/// Disk storage exists only with `BpAnnDisk`. `Auto` exists only on disk with
-/// `scale_x` false. A flat index on disk, and Auto on any other layout, have
-/// no variant.
 #[derive(Debug, Clone, PartialEq)]
-pub enum EnnLayout {
-    /// In-memory index. `driver` may be flat or B+ANN.
-    Memory {
-        /// Neighbor index.
-        driver: IndexDriver,
-        /// Divide `x` by per-dimension scales.
-        scale_x: bool,
-    },
-    /// On-disk B+ANN with a fixed metric.
-    Disk {
-        /// Directory for rows and the index.
-        work_dir: PathBuf,
-        /// Divide `x` by per-dimension scales.
-        scale_x: bool,
-    },
-    /// On-disk B+ANN with Auto metric learning. `scale_x` is false.
-    DiskAuto {
-        /// Directory for rows and the index.
-        work_dir: PathBuf,
-    },
-}
-
-fn auto_rejected() -> ENNError {
-    ENNError::InvalidParameter(
-        "metric_learning=Auto requires IndexDriver::BpAnnDisk, disk storage, and scale_x=false"
-            .into(),
-    )
-}
-
-fn memory_layout(
-    driver: IndexDriver,
-    scale_x: bool,
-    metric: MetricLearning,
-) -> Result<EnnLayout, ENNError> {
-    if metric == MetricLearning::Auto {
-        return Err(auto_rejected());
-    }
-    Ok(EnnLayout::Memory { driver, scale_x })
-}
-
-fn require_disk_dir(work_dir: Option<PathBuf>) -> Result<PathBuf, ENNError> {
-    work_dir.or_else(EnnStorage::work_dir_from_env).ok_or_else(|| {
-        ENNError::InvalidParameter(
-            "Disk storage requires work_dir or ENN_WORK_DIR".into(),
-        )
-    })
-}
-
-fn disk_layout(
-    driver: IndexDriver,
-    work_dir: Option<PathBuf>,
-    scale_x: bool,
-    metric: MetricLearning,
-) -> Result<EnnLayout, ENNError> {
-    if driver != IndexDriver::BpAnnDisk {
-        return Err(ENNError::InvalidParameter(
-            "Disk storage requires IndexDriver::BpAnnDisk".into(),
-        ));
-    }
-    let work_dir = require_disk_dir(work_dir)?;
-    if metric != MetricLearning::Auto {
-        return Ok(EnnLayout::Disk { work_dir, scale_x });
-    }
-    if scale_x {
-        return Err(auto_rejected());
-    }
-    Ok(EnnLayout::DiskAuto { work_dir })
+pub struct EnnLayout {
+    work_dir: PathBuf,
+    weighting: bool,
 }
 
 impl EnnLayout {
-    /// In-memory layout. Metric learning is off.
-    pub fn memory(driver: IndexDriver, scale_x: bool) -> Self {
-        Self::Memory { driver, scale_x }
-    }
-
-    /// On-disk B+ANN with a fixed metric.
-    pub fn disk(work_dir: PathBuf, scale_x: bool) -> Self {
-        Self::Disk { work_dir, scale_x }
-    }
-
-    /// Whether `x` is divided by per-dimension scales.
-    pub fn scale_x(&self) -> bool {
-        match self {
-            Self::Memory { scale_x, .. } | Self::Disk { scale_x, .. } => *scale_x,
-            Self::DiskAuto { .. } => false,
-        }
-    }
-
-    /// Neighbor index used by this layout.
-    pub fn index_driver(&self) -> IndexDriver {
-        match self {
-            Self::Memory { driver, .. } => *driver,
-            Self::Disk { .. } | Self::DiskAuto { .. } => IndexDriver::BpAnnDisk,
-        }
-    }
-
-    /// Row storage used by this layout.
-    pub fn storage(&self) -> EnnStorage {
-        match self {
-            Self::Memory { .. } => EnnStorage::InMemory,
-            Self::Disk { .. } | Self::DiskAuto { .. } => EnnStorage::Disk,
-        }
-    }
-
-    /// Disk directory, if this layout stores rows on disk.
-    pub fn work_dir(&self) -> Option<&Path> {
-        match self {
-            Self::Memory { .. } => None,
-            Self::Disk { work_dir, .. } | Self::DiskAuto { work_dir } => Some(work_dir),
-        }
-    }
-
-    /// Metric policy implied by this layout.
-    pub fn metric_learning(&self) -> MetricLearning {
-        match self {
-            Self::DiskAuto { .. } => MetricLearning::Auto,
-            Self::Memory { .. } | Self::Disk { .. } => MetricLearning::None,
-        }
-    }
-
-    /// Build a layout from the pieces a caller can set independently.
-    ///
-    /// `work_dir` without `Some(Disk)` is an error. It does not select disk.
-    pub fn try_from_parts(
-        driver: IndexDriver,
-        storage: Option<EnnStorage>,
-        work_dir: Option<PathBuf>,
-        scale_x: bool,
-        metric: MetricLearning,
-    ) -> Result<Self, ENNError> {
-        if work_dir.is_some() && !matches!(storage, Some(EnnStorage::Disk)) {
+    pub fn new(work_dir: impl Into<PathBuf>, weighting: bool) -> Result<Self, ENNError> {
+        let work_dir = work_dir.into();
+        if work_dir.as_os_str().is_empty() {
             return Err(ENNError::InvalidParameter(
-                "work_dir does not select storage; pass disk storage explicitly".into(),
+                "work_dir must not be empty".into(),
             ));
         }
-        match storage {
-            Some(EnnStorage::Disk) => disk_layout(driver, work_dir, scale_x, metric),
-            Some(EnnStorage::InMemory) | None => memory_layout(driver, scale_x, metric),
+        Ok(Self {
+            work_dir,
+            weighting,
+        })
+    }
+
+    pub fn with_weighting(mut self, weighting: bool) -> Self {
+        self.weighting = weighting;
+        self
+    }
+
+    pub fn weighting(&self) -> bool {
+        self.weighting
+    }
+
+    pub fn work_dir(&self) -> &Path {
+        &self.work_dir
+    }
+
+    pub fn metric_learning(&self) -> MetricLearning {
+        if self.weighting {
+            MetricLearning::Auto
+        } else {
+            MetricLearning::None
         }
     }
 }
@@ -160,74 +49,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn flat_disk_and_auto_on_flat_are_rejected() {
-        let dir = PathBuf::from("/tmp/enn_layout");
-        let flat_disk = EnnLayout::try_from_parts(
-            IndexDriver::Flat,
-            Some(EnnStorage::Disk),
-            Some(dir.clone()),
-            false,
-            MetricLearning::None,
-        );
-        assert!(flat_disk.unwrap_err().to_string().contains("BpAnnDisk"));
-        let auto_flat = EnnLayout::try_from_parts(
-            IndexDriver::Flat,
-            None,
-            None,
-            false,
-            MetricLearning::Auto,
-        );
-        assert!(auto_flat.unwrap_err().to_string().contains("scale_x=false"));
-        let auto_scaled = EnnLayout::try_from_parts(
-            IndexDriver::BpAnnDisk,
-            Some(EnnStorage::Disk),
-            Some(dir),
-            true,
-            MetricLearning::Auto,
-        );
-        assert!(auto_scaled.unwrap_err().to_string().contains("scale_x=false"));
+    fn weighting_selects_metric_learning() {
+        for weighting in [false, true] {
+            let layout = EnnLayout::new("rows", weighting).unwrap();
+            assert_eq!(layout.weighting(), weighting);
+            assert_eq!(layout.metric_learning() == MetricLearning::Auto, weighting);
+            assert_eq!(layout.work_dir(), Path::new("rows"));
+        }
     }
 
     #[test]
-    fn work_dir_alone_does_not_select_disk() {
-        let err = EnnLayout::try_from_parts(
-            IndexDriver::BpAnnDisk,
-            None,
-            Some(PathBuf::from("/tmp/enn_layout")),
-            false,
-            MetricLearning::None,
-        );
-        assert!(err.unwrap_err().to_string().contains("does not select storage"));
+    fn with_weighting_keeps_the_work_dir() {
+        let layout = EnnLayout::new("rows", false).unwrap().with_weighting(true);
+        assert!(layout.weighting());
+        assert_eq!(layout.work_dir(), Path::new("rows"));
     }
 
     #[test]
-    fn disk_without_work_dir_is_rejected() {
-        let err = EnnLayout::try_from_parts(
-            IndexDriver::BpAnnDisk,
-            Some(EnnStorage::Disk),
-            None,
-            false,
-            MetricLearning::None,
-        );
-        assert!(err.unwrap_err().to_string().contains("work_dir"));
-    }
-
-    #[test]
-    fn disk_auto_keeps_bpann_disk_fields() {
-        let layout = EnnLayout::try_from_parts(
-            IndexDriver::BpAnnDisk,
-            Some(EnnStorage::Disk),
-            Some(PathBuf::from("/tmp/enn_layout")),
-            false,
-            MetricLearning::Auto,
-        )
-        .unwrap();
-        assert!(!layout.scale_x());
-        assert_eq!(layout.index_driver(), IndexDriver::BpAnnDisk);
-        assert_eq!(layout.storage(), EnnStorage::Disk);
-        assert_eq!(layout.metric_learning(), MetricLearning::Auto);
-        let fixed = EnnLayout::disk(PathBuf::from("/tmp/enn_layout"), true);
-        assert!(fixed.scale_x());
-        assert!(EnnLayout::memory(IndexDriver::Flat, false).work_dir().is_none());
+    fn empty_work_dir_is_rejected() {
+        let err = EnnLayout::new("", false).unwrap_err();
+        assert!(err.to_string().contains("work_dir"));
     }
 }

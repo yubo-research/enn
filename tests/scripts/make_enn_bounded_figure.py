@@ -1,12 +1,13 @@
-
 """Generate side-by-side ENN posterior figure with noise-field samples."""
 
 from __future__ import annotations
 
+import tempfile
+
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.posterior_flags import PosteriorFlags
 from ops.qa import make_bounded_1d_xy, y_bounds_array
 
@@ -28,14 +29,17 @@ def fit_model(
     y_train: np.ndarray,
     y_bounds: np.ndarray | None,
 ) -> tuple[EpistemicNearestNeighbors, object]:
-    model = EpistemicNearestNeighbors(x_train, y_train, y_bounds=y_bounds)
-    params = enn_fit(
-        model,
-        k=K,
-        num_fit_candidates=30,
-        num_fit_samples=20,
-        rng=np.random.default_rng(SEED + 1),
+    model = EpistemicNearestNeighbors(
+        x_train[:0],
+        y_train[:0],
+        y_bounds=y_bounds,
+        work_dir=tempfile.mkdtemp(prefix="enn_bounded_figure_"),
     )
+    model.add(x_train, y_train)
+    fitter = ENNStatefulFitter(
+        k=K, seed=int(np.random.default_rng(SEED + 1).integers(2**63 - 1))
+    )
+    params = fitter.ask(model, num_fit_candidates=30, num_fit_samples=20)
     return model, params
 
 
@@ -52,7 +56,7 @@ def compute_figure_ylim(
     ymax = float(upper[:, 0].max())
     draws, _idx = model.posterior_function_draw(
         x_grid,
-        params,
+        params=params,
         function_seeds=list(range(NUM_FUNCTION_DRAWS)),
         flags=PosteriorFlags(),
     )
@@ -84,7 +88,7 @@ def plot_panel(
     seeds = list(range(NUM_FUNCTION_DRAWS))
     draws, _idx = model.posterior_function_draw(
         x_grid,
-        params,
+        params=params,
         function_seeds=seeds,
         flags=PosteriorFlags(),
     )

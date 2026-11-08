@@ -1,79 +1,43 @@
-//! Configuration types for the optimizer.
-
 use crate::candidates::CandidateRV;
 use crate::enn_overrides::EnnOverrides;
 use crate::error::ENNError;
 use crate::fit_samples::FitSamples;
+use crate::layout::EnnLayout;
 use crate::morbo_override::MorboOverride;
 use crate::morbo_trust_region::MorboTRSettings;
-use crate::neighbor_count::NeighborCount;
 use crate::surrogate::ENNSurrogateConfig;
 use crate::trust_region::TRLengthConfig;
 use crate::trust_region_config::{TrustRegionConfig, TrustRegionKind};
 
 mod rules;
-pub use rules::{validate_optimizer_rules, OptimizerInitKind, OptimizerRuleSet, TurboEnnBuilder};
+pub use rules::{
+    validate_candidate_counts, validate_fit_settings, validate_multi_objective,
+    validate_optimizer_rules, validate_positive_option, FitSettings, OptimizerInitKind,
+    OptimizerRuleSet, TurboEnnBuilder,
+};
 
-/// Optimizer configuration.
 #[derive(Debug, Clone)]
 pub struct OptimizerConfig {
-    /// Surrogate configuration.
     pub surrogate: SurrogateConfig,
-    /// Trust region configuration.
     pub trust_region: TrustRegionConfig,
-    /// Candidate generation configuration.
     pub candidates: CandidateConfig,
-    /// Acquisition function configuration.
     pub acquisition: AcquisitionConfig,
-    /// Use surrogate posterior mean for incumbent selection among candidates.
     pub noise_aware: bool,
 }
 
-impl Default for OptimizerConfig {
-    fn default() -> Self {
-        Self {
-            surrogate: SurrogateConfig::ENN(ENNSurrogateConfig::default()),
-            trust_region: TrustRegionConfig::default(),
-            candidates: CandidateConfig::default(),
-            acquisition: AcquisitionConfig::default(),
-            noise_aware: false,
-        }
-    }
-}
-
-/// Surrogate type configuration.
 #[derive(Debug, Clone)]
 pub enum SurrogateConfig {
-    /// ENN surrogate.
     ENN(ENNSurrogateConfig),
-    /// No surrogate (for LHD/random).
     None,
 }
 
-impl Default for SurrogateConfig {
-    #[doc = "kiss-coverage-off"]
-    fn default() -> Self {
-        SurrogateConfig::ENN(ENNSurrogateConfig::default())
-    }
-}
-
-/// Candidate generation configuration.
-///
-/// Pool size is owned here:
-/// `max(min_candidates, min(max_candidates, per_dim * dim + per_arm * arms))`.
 #[derive(Debug, Clone)]
 pub struct CandidateConfig {
-    /// Floor on the pool size.
     pub min_candidates: usize,
-    /// Cap on the pool size.
     pub max_candidates: usize,
-    /// Added once per input dimension.
     pub num_candidates_per_dim: usize,
-    /// Added once per arm.
     pub num_candidates_per_arm: usize,
-    /// Random variable type for candidates.
     pub candidate_rv: CandidateRV,
-    /// `RAASPDriver.FAST` when true. Ignored unless `candidate_rv` is RAASP.
     pub raasp_fast: bool,
 }
 
@@ -91,7 +55,6 @@ impl Default for CandidateConfig {
 }
 
 impl CandidateConfig {
-    /// Pool size for this dimension and arm count.
     pub fn num_candidates(&self, num_dim: usize, num_arms: usize) -> usize {
         let per_dim = self.num_candidates_per_dim.saturating_mul(num_dim);
         let per_arm = self.num_candidates_per_arm.saturating_mul(num_arms);
@@ -100,9 +63,7 @@ impl CandidateConfig {
     }
 }
 
-/// Optional overrides to apply on top of factory default config.
-/// Used for Python→Rust config pass-through.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ConfigOverrides {
     pub acquisition: Option<AcquisitionConfig>,
     pub candidate_rv: Option<CandidateRV>,
@@ -110,15 +71,16 @@ pub struct ConfigOverrides {
     pub min_candidates: Option<usize>,
     pub max_candidates: Option<usize>,
     pub num_candidates_per_arm: Option<usize>,
+    #[serde(with = "crate::exact")]
     pub length_init: Option<f64>,
+    #[serde(with = "crate::exact")]
     pub length_min: Option<f64>,
+    #[serde(with = "crate::exact")]
     pub length_max: Option<f64>,
     pub noise_aware: Option<bool>,
     pub trust_region_kind: Option<crate::trust_region_config::TrustRegionKind>,
-    /// Present only as a complete MORBO triple: metric count, alpha, and rescalarize mode.
     pub morbo: Option<MorboOverride>,
     pub raasp_fast: Option<bool>,
-    /// ENN-surrogate fields. Applying them to a config without a surrogate is an error.
     pub enn: Option<EnnOverrides>,
 }
 
@@ -163,6 +125,15 @@ fn apply_trust_region_overrides(
         });
         return Ok(());
     }
+    if overrides.trust_region_kind == Some(TrustRegionKind::Global) {
+        if lengths_set {
+            return Err(ENNError::InvalidParameter(
+                "length settings require a trust region".into(),
+            ));
+        }
+        config.trust_region = TrustRegionConfig::Global;
+        return Ok(());
+    }
     if !lengths_set && overrides.trust_region_kind != Some(TrustRegionKind::Turbo) {
         return Ok(());
     }
@@ -172,7 +143,9 @@ fn apply_trust_region_overrides(
         overrides.length_max,
     )?;
     config.trust_region = match &config.trust_region {
-        TrustRegionConfig::Morbo(m) if overrides.trust_region_kind != Some(TrustRegionKind::Turbo) => {
+        TrustRegionConfig::Morbo(m)
+            if overrides.trust_region_kind != Some(TrustRegionKind::Turbo) =>
+        {
             let mut morbo = m.clone();
             morbo.length = length;
             TrustRegionConfig::Morbo(morbo)
@@ -183,7 +156,6 @@ fn apply_trust_region_overrides(
 }
 
 impl ConfigOverrides {
-    /// Apply overrides to an existing config.
     pub fn apply_to(&self, mut config: OptimizerConfig) -> Result<OptimizerConfig, ENNError> {
         if let Some(acq) = self.acquisition {
             config.acquisition = acq;
@@ -217,20 +189,17 @@ impl ConfigOverrides {
     }
 }
 
-/// Acquisition function configuration.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum AcquisitionConfig {
-    /// Upper Confidence Bound.
-    UCB { beta: f64 },
-    /// Thompson sampling.
+    UCB {
+        #[serde(with = "crate::exact")]
+        beta: f64,
+    },
     Thompson,
-    /// Random acquisition.
     Random,
-    /// Pareto front acquisition (multi-objective).
     Pareto,
 }
 
-/// UCB exploration weight used when none is given.
 pub const DEFAULT_UCB_BETA: f64 = 2.0;
 
 impl Default for AcquisitionConfig {
@@ -241,13 +210,10 @@ impl Default for AcquisitionConfig {
     }
 }
 
-/// Initialization strategy type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum InitStrategy {
-    /// Latin Hypercube Design.
     #[default]
     LHD,
-    /// Random uniform.
     Random,
 }
 
@@ -258,14 +224,9 @@ fn turbo_candidate_config() -> CandidateConfig {
     }
 }
 
-/// Create a TuRBO-ENN configuration.
-pub fn turbo_enn_config() -> OptimizerConfig {
+pub fn turbo_enn_config(layout: EnnLayout) -> OptimizerConfig {
     OptimizerConfig {
-        surrogate: SurrogateConfig::ENN(ENNSurrogateConfig {
-            k: NeighborCount::default(),
-            fit_samples: FitSamples::default(),
-            ..Default::default()
-        }),
+        surrogate: SurrogateConfig::ENN(ENNSurrogateConfig::new(layout)),
         trust_region: TrustRegionConfig::default(),
         candidates: turbo_candidate_config(),
         acquisition: AcquisitionConfig::default(),
@@ -273,7 +234,6 @@ pub fn turbo_enn_config() -> OptimizerConfig {
     }
 }
 
-/// Create a TuRBO-ZERO configuration.
 pub fn turbo_zero_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::None,
@@ -285,18 +245,17 @@ pub fn turbo_zero_config() -> OptimizerConfig {
 }
 
 impl OptimizerConfig {
-    /// Reject illegal acquisition, surrogate, and fit-sample combinations.
     pub fn validate(&self) -> Result<(), ENNError> {
         self.validate_kind(OptimizerInitKind::Hybrid)
     }
 
-    /// Reject illegal acquisition and surrogate combinations for this init kind.
     pub fn validate_kind(&self, kind: OptimizerInitKind) -> Result<(), ENNError> {
         let has_surrogate = matches!(self.surrogate, SurrogateConfig::ENN(_));
         validate_optimizer_rules(
             &OptimizerRuleSet {
                 lhd_only: kind == OptimizerInitKind::LhdOnly,
                 has_surrogate,
+                has_trust_region: !matches!(self.trust_region, TrustRegionConfig::Global),
             },
             &self.acquisition,
         )?;
@@ -306,23 +265,23 @@ impl OptimizerConfig {
         Ok(())
     }
 
-    /// Start a TuRBO-ENN builder. [`TurboEnnBuilder::build`] runs [`Self::validate`].
-    pub fn turbo_enn() -> TurboEnnBuilder {
+    pub fn turbo_enn(layout: EnnLayout) -> TurboEnnBuilder {
         TurboEnnBuilder {
-            config: turbo_enn_config(),
+            config: turbo_enn_config(layout),
             kind: OptimizerInitKind::Hybrid,
             num_init: None,
         }
     }
 }
 
-/// Error when an acquisition that reads fitted ENN scales gets a frozen surrogate.
-/// Pareto and Random acquisition may run with frozen scales.
 pub fn require_fit_samples(
     acquisition: &AcquisitionConfig,
     fit_samples: FitSamples,
 ) -> Result<(), ENNError> {
-    let exempt = matches!(acquisition, AcquisitionConfig::Pareto | AcquisitionConfig::Random);
+    let exempt = matches!(
+        acquisition,
+        AcquisitionConfig::Pareto | AcquisitionConfig::Random
+    );
     if fit_samples.is_frozen() && !exempt {
         return Err(ENNError::InvalidParameter(format!(
             "enn.num_fit_samples required for acq_type={acquisition:?}"
@@ -331,11 +290,10 @@ pub fn require_fit_samples(
     Ok(())
 }
 
-/// Create an LHD-only configuration.
 pub fn lhd_only_config() -> OptimizerConfig {
     OptimizerConfig {
         surrogate: SurrogateConfig::None,
-        trust_region: TrustRegionConfig::default(),
+        trust_region: TrustRegionConfig::Global,
         candidates: CandidateConfig {
             min_candidates: 1,
             max_candidates: 1_000_000_000,
@@ -352,7 +310,6 @@ pub fn lhd_only_config() -> OptimizerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::EnnStorage;
     use crate::candidates::CandidateRV;
     use crate::enn_overrides::{FitOverride, SearchOverrides};
     use crate::morbo_trust_region::Rescalarize;
@@ -404,14 +361,9 @@ mod tests {
     }
 
     #[test]
-    fn test_config_defaults() {
-        let config = OptimizerConfig::default();
-        assert!(matches!(config.acquisition, AcquisitionConfig::UCB { .. }));
-    }
-
-    #[test]
     fn test_turbo_enn_config() {
-        let config = turbo_enn_config();
+        let dir = tempfile::tempdir().unwrap();
+        let config = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
         assert!(matches!(config.surrogate, SurrogateConfig::ENN(_)));
         assert!(matches!(config.acquisition, AcquisitionConfig::UCB { .. }));
         assert_eq!(config.candidates.candidate_rv, CandidateRV::RAASP);
@@ -423,6 +375,33 @@ mod tests {
         assert!(matches!(config.surrogate, SurrogateConfig::None));
         assert!(matches!(config.acquisition, AcquisitionConfig::Random));
         assert_eq!(config.candidates.candidate_rv, CandidateRV::RAASP);
+    }
+
+    #[test]
+    fn a_global_override_replaces_the_region_and_refuses_lengths() {
+        let global = ConfigOverrides {
+            trust_region_kind: Some(TrustRegionKind::Global),
+            ..Default::default()
+        };
+        let applied = global.apply_to(turbo_zero_config()).unwrap();
+        assert!(matches!(applied.trust_region, TrustRegionConfig::Global));
+        let with_lengths = ConfigOverrides {
+            length_init: Some(0.5),
+            ..global
+        };
+        let err = with_lengths.apply_to(turbo_zero_config()).err().unwrap();
+        assert!(err.to_string().contains("length settings"), "{err}");
+    }
+
+    #[test]
+    fn lhd_only_runs_reject_a_trust_region() {
+        let mut config = lhd_only_config();
+        config.validate_kind(OptimizerInitKind::LhdOnly).unwrap();
+        config.trust_region = TrustRegionConfig::default();
+        let err = config
+            .validate_kind(OptimizerInitKind::LhdOnly)
+            .unwrap_err();
+        assert!(err.to_string().contains("NoTRConfig"), "{err}");
     }
 
     #[test]
@@ -442,30 +421,30 @@ mod tests {
 
     #[test]
     fn test_config_overrides_apply_to() {
-        use crate::index::IndexDriver;
-
         let overrides = ConfigOverrides {
             acquisition: Some(AcquisitionConfig::Thompson),
             candidate_rv: Some(CandidateRV::Sobol),
             enn: Some(EnnOverrides {
-                index_driver: Some(IndexDriver::Flat),
                 fit: Some(draw_override(123, 456)),
-                scale_x: Some(true),
+                weighting: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
         };
 
-        let config = turbo_enn_config();
+        let dir = tempfile::tempdir().unwrap();
+        let config = turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
         let applied = overrides.apply_to(config).unwrap();
 
         assert!(matches!(applied.acquisition, AcquisitionConfig::Thompson));
         assert_eq!(applied.candidates.candidate_rv, CandidateRV::Sobol);
         if let SurrogateConfig::ENN(enn) = &applied.surrogate {
-            assert_eq!(enn.layout.index_driver(), IndexDriver::Flat);
             assert_eq!(enn.fit_samples.count(), Some(123));
-            assert_eq!(enn.fit_samples.search().unwrap().num_fit_candidates.get(), 456);
-            assert!(enn.layout.scale_x());
+            assert_eq!(
+                enn.fit_samples.search().unwrap().num_fit_candidates.get(),
+                456
+            );
+            assert!(enn.layout.weighting());
         } else {
             panic!("expected ENN surrogate");
         }
@@ -475,16 +454,21 @@ mod tests {
     fn test_config_overrides_scale_x_apply() {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
-                scale_x: Some(true),
+                weighting: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let applied = overrides
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
-        assert!(enn.layout.scale_x());
+        assert!(enn.layout.weighting());
     }
 
     #[test]
@@ -503,7 +487,12 @@ mod tests {
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let applied = overrides
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap();
         let TrustRegionConfig::Morbo(settings) = applied.trust_region else {
             panic!("expected Morbo trust region");
         };
@@ -534,41 +523,44 @@ mod tests {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
                 fit: Some(draw_override(7, 11)),
-                scale_x: Some(true),
+                weighting: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let applied = overrides
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
         assert_eq!(enn.fit_samples.count(), Some(7));
-        assert_eq!(enn.fit_samples.search().unwrap().num_fit_candidates.get(), 11);
-        assert!(enn.layout.scale_x());
+        assert_eq!(
+            enn.fit_samples.search().unwrap().num_fit_candidates.get(),
+            11
+        );
+        assert!(enn.layout.weighting());
     }
 
     #[test]
-    fn config_overrides_apply_enn_storage_and_work_dir() {
-        use crate::index::IndexDriver;
-        use std::path::PathBuf;
-
+    fn config_overrides_keep_the_work_dir_of_the_layout() {
         let overrides = ConfigOverrides {
             enn: Some(EnnOverrides {
-                index_driver: Some(IndexDriver::BpAnnDisk),
-                enn_storage: Some(EnnStorage::Disk),
-                work_dir: Some(PathBuf::from("/tmp/enn_work")),
+                weighting: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let layout = EnnLayout::new("/tmp/enn_work", false).unwrap();
+        let applied = overrides.apply_to(turbo_enn_config(layout)).unwrap();
         let SurrogateConfig::ENN(enn) = applied.surrogate else {
             panic!("expected ENN surrogate");
         };
-        assert_eq!(enn.layout.index_driver(), IndexDriver::BpAnnDisk);
-        assert_eq!(enn.layout.storage(), EnnStorage::Disk);
-        assert_eq!(enn.layout.work_dir(), Some(Path::new("/tmp/enn_work")));
+        assert_eq!(enn.layout.work_dir(), Path::new("/tmp/enn_work"));
+        assert!(enn.layout.weighting());
     }
 
     #[test]
@@ -582,7 +574,10 @@ mod tests {
         };
         for base in [turbo_zero_config(), lhd_only_config()] {
             let err = overrides.apply_to(base).unwrap_err();
-            assert!(err.to_string().contains("require an ENN surrogate"), "{err}");
+            assert!(
+                err.to_string().contains("require an ENN surrogate"),
+                "{err}"
+            );
         }
         let mut config = turbo_zero_config();
         apply_enn_overrides(&mut config, &EnnOverrides::default()).unwrap_err();
@@ -607,12 +602,17 @@ mod tests {
 
     #[test]
     fn validate_rejects_frozen_enn_with_ucb() {
-        let mut config = turbo_enn_config();
+        let dir = tempfile::tempdir().unwrap();
+        let mut config =
+            turbo_enn_config(crate::layout::EnnLayout::new(dir.path(), false).unwrap());
         if let SurrogateConfig::ENN(enn) = &mut config.surrogate {
             enn.fit_samples = FitSamples::Frozen;
         }
         let err = config.validate().unwrap_err();
-        assert!(err.to_string().contains("enn.num_fit_samples required"), "{err}");
+        assert!(
+            err.to_string().contains("enn.num_fit_samples required"),
+            "{err}"
+        );
         config.acquisition = AcquisitionConfig::Pareto;
         config.validate().unwrap();
     }
@@ -628,7 +628,12 @@ mod tests {
             }),
             ..Default::default()
         };
-        let applied = overrides.apply_to(turbo_enn_config()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let applied = overrides
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap();
         let TrustRegionConfig::Morbo(settings) = applied.trust_region else {
             panic!("expected Morbo trust region");
         };
@@ -654,7 +659,12 @@ mod tests {
             trust_region_kind: Some(TrustRegionKind::Morbo),
             ..Default::default()
         };
-        let err = missing.apply_to(turbo_enn_config()).unwrap_err();
+        let dir = tempfile::tempdir().unwrap();
+        let err = missing
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap_err();
         assert!(
             err.to_string().contains("num_metrics and alpha"),
             "unexpected error: {err}"
@@ -667,7 +677,12 @@ mod tests {
             }),
             ..Default::default()
         };
-        let err = unpaired.apply_to(turbo_enn_config()).unwrap_err();
+        let dir = tempfile::tempdir().unwrap();
+        let err = unpaired
+            .apply_to(turbo_enn_config(
+                crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
+            ))
+            .unwrap_err();
         assert!(
             err.to_string().contains("require trust_region MORBO"),
             "unexpected error: {err}"

@@ -20,11 +20,18 @@ fn observation_helpers_called() {
     ennbo_bpann::observation::write_indexed_rows(dir.path(), 0).unwrap();
     let mut counter = ennbo_bpann::observation::NumObsCounter::open(dir.path()).unwrap();
     counter.set(0);
-    assert_eq!(ennbo_bpann::observation::bpann_load_num_obs(dir.path()), Some(0));
-    ennbo_bpann::observation::bpann_validate_index_backend(dir.path(), ennbo_bpann::observation::INDEX_BACKEND)
-        .unwrap();
+    assert_eq!(
+        ennbo_bpann::observation::bpann_load_num_obs(dir.path()),
+        Some(0)
+    );
+    ennbo_bpann::observation::bpann_validate_index_backend(
+        dir.path(),
+        ennbo_bpann::observation::INDEX_BACKEND,
+    )
+    .unwrap();
     let yv = array![[0.1]];
-    let mut yvar = ennbo_bpann::observation::bpann_open_or_append_yvar(dir.path(), 1, Some(&yv)).unwrap();
+    let mut yvar =
+        ennbo_bpann::observation::bpann_open_or_append_yvar(dir.path(), 1, Some(&yv)).unwrap();
     ennbo_bpann::observation::bpann_append_yvar_on_add(
         dir.path(),
         1,
@@ -36,7 +43,10 @@ fn observation_helpers_called() {
     ennbo_bpann::observation::bpann_mark_index_dirty(&dirty);
     ennbo_bpann::observation::bpann_load_indexed_rows(dir.path());
     ennbo_bpann::observation::bpann_load_index_backend(dir.path());
-    ennbo_bpann::observation::bpann_parse_json_string_field(r#"{"index_backend":"bpann_disk"}"#, "index_backend");
+    ennbo_bpann::observation::bpann_parse_json_string_field(
+        r#"{"index_backend":"bpann_disk"}"#,
+        "index_backend",
+    );
     let mut x = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
     let mut y = MmapColumnStore::mmap_open_or_create(dir.path().join("y.bin"), 1, None).unwrap();
     x.mmap_append(&array![[0.0, 0.0]].view()).unwrap();
@@ -60,22 +70,42 @@ fn search_helpers_called() {
     let _ = ennbo_bpann::index::search::search_exhaustive_leaves(&index, &[0.0, 0.0], 1);
     let _ = ennbo_bpann::index::search::search_greedy_blocks_only(&index, &[0.0, 0.0], 1, 2);
     let mut log = Vec::new();
-    let _ = ennbo_bpann::index::search::search_with_skip_refinement(&index, &[0.0, 0.0], 1, 2, &mut log);
-    let _ = ennbo_bpann::index::search::bpann_mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
+    let _ = ennbo_bpann::index::search::search_with_skip_refinement(
+        &index,
+        &[0.0, 0.0],
+        1,
+        2,
+        &mut log,
+    );
+    let _ =
+        ennbo_bpann::index::search::bpann_mean_recall_at_k(&vectors, &[vec![0.0, 0.0]], 1, &index);
     let _ = ennbo_bpann::index::search::bpann_brute_force_topk(&vectors, &[0.0, 0.0], 1);
 }
 
 #[test]
 fn merge_distance_mmap_called() {
     let dir = TempDir::new().unwrap();
-    let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+    let mut store =
+        MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
     store
         .mmap_append(&array![[0.0, 0.0], [1.0, 0.0]].view())
         .unwrap();
     let mut buf = Vec::new();
     ennbo_bpann::distance::bpann_row_to_f32(&[1.0, 0.0], false, &[1.0, 1.0], &mut buf);
-    let _ = ennbo_bpann::distance::batched_sq_l2_f64_rows(&[0.0, 0.0], &store, &[0, 1], false, &[1.0, 1.0]).unwrap();
-    let _ = ennbo_bpann::distance::row_sq_l2(array![0.0, 0.0].view(), array![1.0, 0.0].view(), false, array![1.0, 1.0].view());
+    let _ = ennbo_bpann::distance::batched_sq_l2_f64_rows(
+        &[0.0, 0.0],
+        &store,
+        &[0, 1],
+        false,
+        &[1.0, 1.0],
+    )
+    .unwrap();
+    let _ = ennbo_bpann::distance::row_sq_l2(
+        array![0.0, 0.0].view(),
+        array![1.0, 0.0].view(),
+        false,
+        array![1.0, 1.0].view(),
+    );
     let _ = ennbo_bpann::merge::bpann_merge_topk_candidates(
         &store,
         &[0.0, 0.0],
@@ -88,7 +118,16 @@ fn merge_distance_mmap_called() {
         &[1.0, 1.0],
     )
     .unwrap();
-    let _ = ennbo_bpann::index::search::bpann_brute_force_topk_mmap(&store, 0, 2, &[0.0, 0.0], 1, false, &[1.0, 1.0]).unwrap();
+    let _ = ennbo_bpann::index::search::bpann_brute_force_topk_mmap(
+        &store,
+        0,
+        2,
+        &[0.0, 0.0],
+        1,
+        false,
+        &[1.0, 1.0],
+    )
+    .unwrap();
 }
 
 #[test]
@@ -161,8 +200,10 @@ fn backend_scale_and_row_accessors() {
     let (_, idx3) = b.search(&array![[2.0, 0.0]].view(), 1, false).unwrap();
     assert_eq!(idx3[[0, 0]], 2);
     b.mark_index_stale();
-    b.ensure_index_sync_with_scale(true, &array![1.0, 1.0]).unwrap();
-    b.ensure_index_sync_with_scale(false, &array![1.0, 1.0]).unwrap();
+    b.ensure_index_sync_with_scale(true, &array![1.0, 1.0])
+        .unwrap();
+    b.ensure_index_sync_with_scale(false, &array![1.0, 1.0])
+        .unwrap();
     let (_, idx) = b.search(&array![[0.1, 0.1]].view(), 1, false).unwrap();
     assert_eq!(idx[[0, 0]], 0);
 }
@@ -216,11 +257,20 @@ fn incremental_batch_compact_and_precomputed_merge() {
             .unwrap();
     }
     assert_eq!(b.indexed_rows(), 20);
-    let (_, idx) = b.search(&array![[5.0, 0.0, 0.0, 0.0]].view(), 3, false).unwrap();
+    let (_, idx) = b
+        .search(&array![[5.0, 0.0, 0.0, 0.0]].view(), 3, false)
+        .unwrap();
     assert_eq!(idx[[0, 0]], 5);
+    drop(b);
     let reopened = BpannBackend::reopen(dir.path().to_path_buf()).unwrap();
     assert_eq!(reopened.indexed_rows(), 20);
-    let merged = ennbo_bpann::merge::merge_topk_precomputed_dist(&[(0, 0.0), (1, 4.0)], &[(2, 1.0)], 2, 3, false);
+    let merged = ennbo_bpann::merge::merge_topk_precomputed_dist(
+        &[(0, 0.0), (1, 4.0)],
+        &[(2, 1.0)],
+        2,
+        3,
+        false,
+    );
     assert_eq!(merged.len(), 2);
     assert_eq!(merged[0].0, 0);
 }
@@ -246,12 +296,15 @@ fn multi_fragment_persist_to_disk_reopen_matches_row_count() {
         assert_eq!(b.indexed_rows(), rows);
         b.persist_index_to_disk().unwrap();
     }
-    let header_text =
-        fs::read_to_string(path.join("index/header.json")).expect("header.json");
-    assert!(header_text.contains("\"indexed_rows\": 2500"), "header: {header_text}");
+    let header_text = fs::read_to_string(path.join("index/header.json")).expect("header.json");
+    assert!(
+        header_text.contains("\"indexed_rows\": 2500"),
+        "header: {header_text}"
+    );
     let b2 = BpannBackend::reopen(path.clone()).unwrap();
     assert_eq!(b2.indexed_rows(), rows);
     let pages_first = fs::read(path.join("index/pages.bin")).unwrap();
+    drop(b2);
     let b3 = BpannBackend::reopen(path.clone()).unwrap();
     assert_eq!(b3.indexed_rows(), rows);
     let pages_second = fs::read(path.join("index/pages.bin")).unwrap();
@@ -292,7 +345,9 @@ fn multi_batch_compact_above_medium_threshold() {
     b.append_rows(&x1.view(), &y1.view(), None).unwrap();
     assert_eq!(b.indexed_rows(), 1100);
     assert!(b.indexed_rows() > 1000);
-    let (_, idx) = b.search(&array![[50.0, 0.0, 0.0, 0.0]].view(), 5, false).unwrap();
+    let (_, idx) = b
+        .search(&array![[50.0, 0.0, 0.0, 0.0]].view(), 5, false)
+        .unwrap();
     assert!(idx[[0, 0]] >= 0);
 }
 

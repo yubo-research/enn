@@ -38,7 +38,7 @@ repos:
 
   # Linting, formatting, and import sorting via Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.14
+    rev: v0.17.0
     hooks:
       - id: ruff
         args: ["--fix"]

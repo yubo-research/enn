@@ -10,12 +10,7 @@ use crate::index::tree::Tree;
 use crate::index::IncrementalIndex;
 use crate::large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 use crate::mmap_store::MmapColumnStore;
-use crate::observation::{
-    self as obs, TrainRowsAt, INDEX_BACKEND, MAX_NUM_DIM, MAX_RECORD_STRIDE,
-};
-use crate::small_n_search::{
-    score_queries_flat, ScoreQueriesFlat, SMALL_N_INCORE_SEARCH_LIMIT,
-};
+use crate::observation::{self as obs, TrainRowsAt, INDEX_BACKEND, MAX_NUM_DIM, MAX_RECORD_STRIDE};
 
 mod flush_thresholds;
 
@@ -41,9 +36,8 @@ pub struct BpannBackend {
     indexed_rows_written: usize,
     index_dirty: Mutex<bool>,
     num_obs_counter: obs::NumObsCounter,
-    /// Resident flat `N·D` f64 train cache for the small-N search path.
-    /// Invalidated on append and metric changes. Arc so parallel queries share one buffer.
     pub(crate) small_n_x_cache: Mutex<Option<(usize, Arc<[f64]>)>>,
+    _store_lock: fs::File,
 }
 
 impl BpannBackend {
@@ -57,6 +51,7 @@ impl BpannBackend {
     ) -> Result<Self, BpannError> {
         obs::bpann_validate_dim_limits(train_x.ncols())?;
         fs::create_dir_all(&work_dir).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+        let store_lock = crate::store_file::bpann_lock_store(&work_dir)?;
         obs::bpann_validate_index_backend(&work_dir, INDEX_BACKEND)?;
         let num_obs_counter = obs::NumObsCounter::open(&work_dir)?;
 
@@ -85,8 +80,6 @@ impl BpannBackend {
             train_y_store.mmap_append(&train_y.view())?;
         }
         if train_x_store.nrows == 0 {
-
-
             train_x_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
             train_y_store.ensure_capacity(crate::mmap_store::MMAP_GROW_ROWS)?;
             train_x_store.pretouch();
@@ -124,6 +117,7 @@ impl BpannBackend {
             index_dirty: Mutex::new(indexed_rows < n),
             num_obs_counter,
             small_n_x_cache: Mutex::new(None),
+            _store_lock: store_lock,
         };
         backend.insert_unindexed_rows()?;
         let indexed_rows = backend.index.indexed_rows;
@@ -139,7 +133,11 @@ impl BpannBackend {
         Ok(backend)
     }
 
-    pub fn new_empty(work_dir: PathBuf, num_dim: usize, num_metrics: usize) -> Result<Self, BpannError> {
+    pub fn new_empty(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+    ) -> Result<Self, BpannError> {
         Self::new(
             work_dir,
             Array2::zeros((0, num_dim)),
@@ -195,8 +193,7 @@ impl BpannBackend {
 
     fn reset_index(&mut self) {
         self.index.reset();
-        self.pending_unindexed
-            .store(self.len(), Ordering::Relaxed);
+        self.pending_unindexed.store(self.len(), Ordering::Relaxed);
         *self.index_dirty.lock().expect("index_dirty") = true;
     }
 
@@ -250,7 +247,6 @@ impl BpannBackend {
         self.insert_unindexed_rows()
     }
 
-    /// Insert every not-yet-indexed row into the tree (`O(log N)` per row).
     fn insert_unindexed_rows(&mut self) -> Result<(), BpannError> {
         let x_rows_inserted = self.len().saturating_sub(self.index.indexed_rows);
         self.index.ensure_sync_for_backend(
@@ -268,28 +264,20 @@ impl BpannBackend {
         Ok(())
     }
 
-    /// Soft sync: insert any unindexed rows into the in-memory tree and write
-    /// `indexed_rows.bin`. Does not write `pages.bin` / `skip_edges.bin` and does
-    /// not clear `index_dirty` (hard persist alone clears disk-dirty).
-    ///
-    /// `append_rows` already inserts each new row, so rows are unindexed only after
-    /// an index reset (metric or scale change) or a reopen. Observation pages are
-    /// released, and `indexed_rows.bin` rewritten, once per
-    /// `pending_hard_flush_threshold` rows rather than per call; a hard persist
-    /// always writes it.
     pub fn ensure_index_sync(&mut self) -> Result<(), BpannError> {
         if self.index.indexed_rows < self.len() {
             self.insert_unindexed_rows()?;
         }
         self.pending_unindexed.store(0, Ordering::Relaxed);
-        if self.index.indexed_rows.abs_diff(self.indexed_rows_written) >= self.pending_hard_flush_threshold {
+        if self.index.indexed_rows.abs_diff(self.indexed_rows_written)
+            >= self.pending_hard_flush_threshold
+        {
             obs::write_indexed_rows(&self.work_dir, self.index.indexed_rows)?;
             self.indexed_rows_written = self.index.indexed_rows;
         }
         Ok(())
     }
 
-    /// Remap observation mmaps so faulted/dirty pages leave process RSS.
     pub fn release_observation_pages(&mut self) -> Result<(), BpannError> {
         self.rows_since_release = 0;
         self.train_x.release_resident_pages()?;
@@ -347,7 +335,6 @@ impl BpannBackend {
         }
         let k_req = search_k.min(total);
 
-
         let k_eff = k_req;
         let pool_k = if exclude_nearest {
             (k_eff + 1).min(total)
@@ -355,45 +342,14 @@ impl BpannBackend {
             k_eff
         };
         if k_eff == 0 {
-            return Ok((
-                Array2::zeros((n_query, 0)),
-                Array2::zeros((n_query, 0)),
-            ));
+            return Ok((Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0))));
         }
 
         let mut dist2s = Array2::from_elem((n_query, k_eff), f64::INFINITY);
         let mut indices = Array2::from_elem((n_query, k_eff), -1i64);
         let scale_x = self.scale_x;
         let x_scale_vec = self.x_scale.as_slice().unwrap().to_vec();
-        let num_dim = self.num_dim;
-        let query_rows: Vec<Vec<f64>> = (0..n_query)
-            .map(|q| queries.row(q).to_vec())
-            .collect();
-
-
-        if total <= SMALL_N_INCORE_SEARCH_LIMIT {
-            let flat = crate::small_n_search::load_or_build_small_n_cache(self, total)?;
-            let per_query = score_queries_flat(
-                &query_rows,
-                &ScoreQueriesFlat {
-                    flat: &flat,
-                    total,
-                    num_dim,
-                    scale_x,
-                    x_scale: &x_scale_vec,
-                    k_eff,
-                    pool_k,
-                    exclude_nearest,
-                },
-            );
-            for (q, (dist_row, idx_row)) in per_query.into_iter().enumerate() {
-                for j in 0..k_eff {
-                    dist2s[[q, j]] = dist_row[j];
-                    indices[[q, j]] = idx_row[j];
-                }
-            }
-            return Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices));
-        }
+        let query_rows: Vec<Vec<f64>> = (0..n_query).map(|q| queries.row(q).to_vec()).collect();
 
         search_indexed_and_pending(
             self,
@@ -407,7 +363,7 @@ impl BpannBackend {
                 exclude_nearest,
                 scale_x,
                 x_scale: &x_scale_vec,
-                num_dim,
+                num_dim: self.num_dim,
             },
         )?;
         Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices))
@@ -418,18 +374,18 @@ impl BpannBackend {
     }
 
     pub fn page_bytes(&self) -> Vec<u8> {
-        self.index.tree.as_ref().map(Tree::page_bytes).unwrap_or_default()
+        self.index
+            .tree
+            .as_ref()
+            .map(Tree::page_bytes)
+            .unwrap_or_default()
     }
 
     pub fn mmap_row_slice(&self, i: usize) -> Result<&[f64], BpannError> {
         self.train_x.mmap_row_slice(i)
     }
 
-    /// Y (and optional yvar) row slices without touching `train_x`.
-    pub fn mmap_row_y_and_yvar(
-        &self,
-        i: usize,
-    ) -> Result<(&[f64], Option<&[f64]>), BpannError> {
+    pub fn mmap_row_y_and_yvar(&self, i: usize) -> Result<(&[f64], Option<&[f64]>), BpannError> {
         let y = self.train_y.mmap_row_slice(i)?;
         let yvar = match self.train_yvar.as_ref() {
             None => None,
@@ -462,8 +418,6 @@ impl BpannBackend {
     }
 }
 
-
-/// Drop trailing neighbor columns that are invalid (`idx < 0`) in every query row.
 fn trim_trailing_invalid_neighbor_cols(
     dist2s: Array2<f64>,
     indices: Array2<i64>,
@@ -476,10 +430,7 @@ fn trim_trailing_invalid_neighbor_cols(
     if width == indices.ncols() {
         (dist2s, indices)
     } else if width == 0 {
-        (
-            Array2::zeros((n_query, 0)),
-            Array2::zeros((n_query, 0)),
-        )
+        (Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0)))
     } else {
         (
             dist2s
@@ -492,8 +443,6 @@ fn trim_trailing_invalid_neighbor_cols(
     }
 }
 
-/// Build a soft-sync result under a shared borrow (no publish).
-/// Readers may search the live index concurrently while this runs.
 pub fn soft_sync_build(backend: &BpannBackend) -> Result<Option<IncrementalIndex>, BpannError> {
     let end = backend.len();
     if backend.index.indexed_rows >= end {
@@ -510,12 +459,9 @@ pub fn soft_sync_build(backend: &BpannBackend) -> Result<Option<IncrementalIndex
     Ok(Some(working))
 }
 
-/// Publish a detached soft-sync result under exclusive borrow.
 pub fn soft_sync_publish(backend: &mut BpannBackend, built: IncrementalIndex) {
     backend.index = built;
-    backend
-        .pending_unindexed
-        .store(0, Ordering::Relaxed);
+    backend.pending_unindexed.store(0, Ordering::Relaxed);
 }
 
 pub fn open_rejects_num_dim(num_dim: usize) -> Result<(), BpannError> {

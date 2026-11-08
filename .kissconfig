@@ -2,7 +2,7 @@
 min_similarity = 0.9
 duplication_enabled = true
 comment_removal_enabled = true
-docs_allowed = ["./"]
+docs_allowed = ["./ops"]
 orphan_allowed = []
 
 [test]

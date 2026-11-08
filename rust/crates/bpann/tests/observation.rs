@@ -6,7 +6,10 @@ use tempfile::TempDir;
 #[test]
 fn bpann_validate_dim_limits() {
     ennbo_bpann::observation::bpann_validate_dim_limits(4).unwrap();
-    assert!(ennbo_bpann::observation::bpann_validate_dim_limits(ennbo_bpann::observation::MAX_NUM_DIM + 1).is_err());
+    assert!(ennbo_bpann::observation::bpann_validate_dim_limits(
+        ennbo_bpann::observation::MAX_NUM_DIM + 1
+    )
+    .is_err());
 }
 
 #[test]
@@ -18,15 +21,21 @@ fn bpann_check_append_row_limit() {
 fn bpann_validate_index_backend() {
     let dir = TempDir::new().unwrap();
     ennbo_bpann::observation::bpann_write_metadata(dir.path(), 0, 4, 1, false, 0).unwrap();
-    ennbo_bpann::observation::bpann_validate_index_backend(dir.path(), ennbo_bpann::observation::INDEX_BACKEND)
-        .unwrap();
+    ennbo_bpann::observation::bpann_validate_index_backend(
+        dir.path(),
+        ennbo_bpann::observation::INDEX_BACKEND,
+    )
+    .unwrap();
 }
 
 #[test]
 fn bpann_load_indexed_rows() {
     let dir = TempDir::new().unwrap();
     ennbo_bpann::observation::bpann_write_metadata(dir.path(), 0, 4, 1, false, 2).unwrap();
-    assert_eq!(ennbo_bpann::observation::bpann_load_indexed_rows(dir.path()), Some(2));
+    assert_eq!(
+        ennbo_bpann::observation::bpann_load_indexed_rows(dir.path()),
+        Some(2)
+    );
 }
 
 #[test]
@@ -48,17 +57,26 @@ fn bpann_write_metadata() {
 #[test]
 fn bpann_open_or_append_yvar() {
     let dir = TempDir::new().unwrap();
-    assert!(ennbo_bpann::observation::bpann_open_or_append_yvar(dir.path(), 1, Some(&array![[0.1]]))
-        .unwrap()
-        .is_some());
+    assert!(ennbo_bpann::observation::bpann_open_or_append_yvar(
+        dir.path(),
+        1,
+        Some(&array![[0.1]])
+    )
+    .unwrap()
+    .is_some());
 }
 
 #[test]
 fn bpann_append_yvar_on_add() {
     let dir = TempDir::new().unwrap();
     let mut slot = None;
-    ennbo_bpann::observation::bpann_append_yvar_on_add(dir.path(), 1, &mut slot, Some(&array![[0.2]].view()))
-        .unwrap();
+    ennbo_bpann::observation::bpann_append_yvar_on_add(
+        dir.path(),
+        1,
+        &mut slot,
+        Some(&array![[0.2]].view()),
+    )
+    .unwrap();
     assert!(slot.is_some());
 }
 
@@ -84,11 +102,20 @@ fn num_obs_counter_and_sidecars() {
     let dir = TempDir::new().unwrap();
     let mut counter = ennbo_bpann::observation::NumObsCounter::open(dir.path()).unwrap();
     counter.set(42);
-    assert_eq!(ennbo_bpann::observation::bpann_load_num_obs(dir.path()), Some(42));
+    assert_eq!(
+        ennbo_bpann::observation::bpann_load_num_obs(dir.path()),
+        Some(42)
+    );
     ennbo_bpann::observation::write_num_obs(dir.path(), 7).unwrap();
-    assert_eq!(ennbo_bpann::observation::bpann_load_num_obs(dir.path()), Some(7));
+    assert_eq!(
+        ennbo_bpann::observation::bpann_load_num_obs(dir.path()),
+        Some(7)
+    );
     ennbo_bpann::observation::write_indexed_rows(dir.path(), 5).unwrap();
-    assert_eq!(ennbo_bpann::observation::bpann_load_indexed_rows(dir.path()), Some(5));
+    assert_eq!(
+        ennbo_bpann::observation::bpann_load_indexed_rows(dir.path()),
+        Some(5)
+    );
 }
 
 #[test]

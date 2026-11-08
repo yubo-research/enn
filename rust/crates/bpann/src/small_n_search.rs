@@ -1,28 +1,15 @@
-//! In-RAM exhaustive search for small/mid observation counts (N ≤ 8192).
-//! Keep coordinates and distances in f64: f32 can erase continuous-distance
-//! differences beside large, tied one-hot categorical contributions.
-
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::distance::row_sq_l2;
-use crate::merge::{
-    find_query_train_id_flat, merge_topk_precomputed_dist_with_self,
-};
+use crate::merge::{find_query_train_id_flat, merge_topk_precomputed_dist_with_self};
 use rayon::prelude::*;
 
-/// When `len() ≤` this, search uses a resident flat f64 matrix + heap top-k.
-///
-/// Covers turbo-enn mid checkpoints (N=1232, N=3000) under `--tell-all`, and
-/// bridges the post-4096 immature indexed+pending window without riding
-/// late in-core O(N) cost up to 16k (which relocates the cum-mean peak).
 pub const SMALL_N_INCORE_SEARCH_LIMIT: usize = 8192;
 
-/// Total order wrapper so squared distances can live in a binary heap.
 #[derive(Copy, Clone, Debug)]
 pub struct OrderedFloat<T = f32>(pub T);
 
-/// Retain the original name for f32 index search callers.
 pub use OrderedFloat as OrderedF32;
 
 impl<T: PartialEq> PartialEq for OrderedFloat<T> {
@@ -42,7 +29,6 @@ impl<T: PartialOrd> Ord for OrderedFloat<T> {
     }
 }
 
-/// k-smallest squared-L2 neighbors against a flat `N·D` f64 matrix (max-heap of size k).
 pub fn topk_flat_sq_l2(
     query: &[f64],
     flat: &[f64],
@@ -59,7 +45,12 @@ pub fn topk_flat_sq_l2(
     let mut heap: BinaryHeap<(OrderedFloat<f64>, u32)> = BinaryHeap::with_capacity(k);
     for i in 0..n {
         let row = &flat[i * d..(i + 1) * d];
-        let dist = row_sq_l2(query.into(), row.into(), false, ndarray::ArrayView1::from(&[]));
+        let dist = row_sq_l2(
+            query.into(),
+            row.into(),
+            false,
+            ndarray::ArrayView1::from(&[]),
+        );
         let id = i as u32;
         if heap.len() < k {
             heap.push((OrderedFloat(dist), id));
@@ -82,7 +73,6 @@ pub fn topk_flat_sq_l2(
     out
 }
 
-/// Parameters for [`score_queries_flat`].
 pub struct ScoreQueriesFlat<'a> {
     pub flat: &'a [f64],
     pub total: usize,
@@ -94,7 +84,6 @@ pub struct ScoreQueriesFlat<'a> {
     pub exclude_nearest: bool,
 }
 
-/// Score every query against a flat train matrix; return per-query (dists, ids).
 pub fn score_queries_flat(
     query_rows: &[Vec<f64>],
     args: &ScoreQueriesFlat<'_>,
@@ -142,12 +131,13 @@ pub fn score_queries_flat(
 
 fn scaled_row(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f64>) {
     out.clear();
-    out.extend(row.iter().enumerate().map(|(j, &v)| {
-        if scale_x { v / x_scale[j] } else { v }
-    }));
+    out.extend(
+        row.iter()
+            .enumerate()
+            .map(|(j, &v)| if scale_x { v / x_scale[j] } else { v }),
+    );
 }
 
-/// Load or build the resident flat f64 train cache for small-N search.
 pub fn load_or_build_small_n_cache(
     backend: &crate::backend::BpannBackend,
     n: usize,
@@ -199,7 +189,6 @@ mod tests {
 
     #[test]
     fn topk_flat_prefers_closer_2d_rows() {
-
         let flat = [0.0f64, 0.0, 3.0, 0.0, 1.0, 0.0];
         let hits = topk_flat_sq_l2(&[0.0, 0.0], &flat, 3, 2, 2);
         assert_eq!(hits.iter().map(|h| h.0).collect::<Vec<_>>(), vec![0, 2]);
@@ -229,8 +218,8 @@ mod tests {
     #[test]
     fn small_n_cache_rebuilds_after_append() {
         let dir = TempDir::new().unwrap();
-        let mut b = crate::backend::BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1)
-            .unwrap();
+        let mut b =
+            crate::backend::BpannBackend::new_empty(dir.path().to_path_buf(), 1, 1).unwrap();
         b.append_rows(&array![[0.0]].view(), &array![[0.0]].view(), None)
             .unwrap();
         let c1 = load_or_build_small_n_cache(&b, 1).unwrap();

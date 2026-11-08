@@ -23,7 +23,6 @@ fn test_draw_from_internals_observation_noise_adds_independent_aleatoric() {
     let draw_on = draw_from_internals(&model, &on, &seeds).unwrap();
     assert!((draw_on[[0, 0, 0]] - draw_off[[0, 0, 0]]).abs() > 1e-12);
 
-
     let mut on_epi_only = on.clone();
     on_epi_only.se_ale.fill(0.0);
     let draw_epi = draw_from_internals(&model, &on_epi_only, &seeds).unwrap();

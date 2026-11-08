@@ -13,6 +13,7 @@ import numpy as np
 
 from enn import AcqType, create_optimizer, turbo_enn_config
 from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def make_bounds(num_dim: int) -> np.ndarray:
@@ -142,7 +143,16 @@ def _build_optimizer(
         num_init=num_arms,
         acq_type=AcqType.UCB,
     )
-    return bounds, rng, create_optimizer(bounds=bounds, config=config, rng=rng)
+    return (
+        bounds,
+        rng,
+        create_optimizer(
+            bounds=bounds,
+            config=config,
+            seed=int(rng.integers(2**63 - 1)),
+            work_dir=fresh_work_dir(),
+        ),
+    )
 
 
 def _run_ask_timings(

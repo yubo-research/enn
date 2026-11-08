@@ -1,16 +1,18 @@
-//! Optimizer state machine for ask/tell pattern.
-
+mod durable_sync;
 mod incumbent;
 pub mod obs_access;
 mod observation_delta;
 mod restart;
+mod run_store;
 mod tr_state;
 
 pub use observation_delta::ObservationDelta;
+pub use run_store::{create_run, RunKind, RunRecipe};
 
 use ndarray::{Array1, Array2, ArrayView2};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
+use rand_chacha::ChaCha12Rng;
 
 use crate::candidates::SobolEngine;
 use crate::config::{InitStrategy, OptimizerConfig, SurrogateConfig};
@@ -44,7 +46,6 @@ fn sobol_seed_for_state(
     z & 0xFFFF_FFFF
 }
 
-/// Telemetry for timing.
 #[derive(Debug, Clone, Default)]
 pub struct Telemetry {
     pub dt_fit: f64,
@@ -54,7 +55,6 @@ pub struct Telemetry {
     pub num_candidates: usize,
 }
 
-/// Optimizer state machine.
 pub struct Optimizer {
     bounds: Array2<f64>,
     num_dim: usize,
@@ -67,24 +67,22 @@ pub struct Optimizer {
     incumbent_idx: Option<usize>,
     incumbent_x_unit: Option<Array1<f64>>,
     incumbent_y_scalar: Option<Array1<f64>>,
+    best_observation: Option<incumbent::BestObservation>,
     restart_generation: usize,
     sobol_engine: Option<SobolEngine>,
     sobol_seed_base: u64,
     telemetry: Telemetry,
     incumbent_tracker: IncrementalIncumbentTracker,
-    /// RNG owned for the life of the optimizer. `ask` and `tell` draw from it.
-    rng: StdRng,
-    /// `Some(true)` after the first non-empty tell that included `yvar`.
+    rng: ChaCha12Rng,
     yvar_on_tell: Option<bool>,
-    /// Points in the fresh local sample drawn after a collapsed trust region.
     local_init_budget: usize,
     local_init_kind: InitStrategy,
-    /// `Some(remaining)` while that fresh sample is still being collected.
     reinit_left: Option<usize>,
+    run_store: Option<run_store::RunStore>,
+    replay_base: Option<usize>,
 }
 
 impl Optimizer {
-    /// Create a new optimizer.
     pub fn new(
         bounds: Array2<f64>,
         config: OptimizerConfig,
@@ -93,7 +91,6 @@ impl Optimizer {
         Self::new_with_strategy(bounds, config, Strategy::hybrid(InitStrategy::LHD, 10), rng)
     }
 
-    /// Create a new optimizer with an explicit strategy.
     pub fn new_with_strategy(
         bounds: Array2<f64>,
         config: OptimizerConfig,
@@ -132,7 +129,8 @@ impl Optimizer {
         let mut seed_bytes = [0u8; 8];
         rng.fill_bytes(&mut seed_bytes);
         let sobol_seed_base = u64::from_le_bytes(seed_bytes) % (1u64 << 31);
-        let owned_rng = StdRng::from_rng(rng).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+        let owned_rng =
+            ChaCha12Rng::from_rng(rng).map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
         let num_metrics = tr_state.num_metrics();
         let tracker_m = match &config.surrogate {
             SurrogateConfig::ENN(enn_config) => tracker_m_from_enn_k(enn_config.k),
@@ -153,6 +151,7 @@ impl Optimizer {
             incumbent_idx: None,
             incumbent_x_unit: None,
             incumbent_y_scalar: None,
+            best_observation: None,
             restart_generation: 0,
             sobol_engine,
             sobol_seed_base,
@@ -163,14 +162,11 @@ impl Optimizer {
             local_init_budget,
             local_init_kind,
             reinit_left: None,
+            run_store: None,
+            replay_base: None,
         })
     }
 
-    /// Ask for `num_arms` points in natural units (inside `bounds`).
-    ///
-    /// Draws from the `StdRng` stored at construction. Rejects `num_arms == 0`.
-    /// A trust-region restart happens here, not in the `tell` that collapsed the
-    /// box, because that `tell` still owes the caller a posterior.
     pub fn ask(&mut self, num_arms: usize) -> Result<Array2<f64>, ENNError> {
         if num_arms == 0 {
             return Err(ENNError::InvalidParameter(format!(
@@ -197,47 +193,86 @@ impl Optimizer {
             }
         }
         let unit = result?;
-        Ok(crate::candidates::from_unit(&unit.view(), &self.bounds.view()))
+        self.write_snapshot(false)?;
+        Ok(crate::candidates::from_unit(
+            &unit.view(),
+            &self.bounds.view(),
+        ))
     }
 
-    /// Record observations in natural units. `x` is stored in the unit cube.
-    ///
-    /// The first non-empty tell fixes whether `yvar` is required. Later tells
-    /// must match. Zero rows return `Ok(())` and do not change that flag.
-    /// Draws from the owned `StdRng`.
     pub fn tell(
         &mut self,
-        x: &ArrayView2<f64>,
-        y: &ArrayView2<f64>,
-        yvar: Option<&ArrayView2<f64>>,
+        train_x: &ArrayView2<f64>,
+        train_y: &ArrayView2<f64>,
+        train_yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        if x.ncols() != self.num_dim {
+        if train_x.ncols() != self.num_dim {
             return Err(ENNError::InvalidShape {
-                expected: vec![x.nrows(), self.num_dim],
-                got: vec![x.nrows(), x.ncols()],
+                expected: vec![train_x.nrows(), self.num_dim],
+                got: vec![train_x.nrows(), train_x.ncols()],
             });
         }
-        if y.nrows() != x.nrows() {
+        if train_y.nrows() != train_x.nrows() {
             return Err(ENNError::InvalidShape {
-                expected: vec![x.nrows(), y.ncols()],
-                got: vec![y.nrows(), y.ncols()],
+                expected: vec![train_x.nrows(), train_y.ncols()],
+                got: vec![train_y.nrows(), train_y.ncols()],
             });
         }
-        if x.nrows() == 0 {
+        if train_x.nrows() == 0 {
             return Ok(());
         }
-        let has_yvar = yvar.is_some();
-        match self.yvar_on_tell {
-            None => self.yvar_on_tell = Some(has_yvar),
-            Some(expected) if expected != has_yvar => {
+        let x_unit = crate::candidates::to_unit(train_x, &self.bounds.view());
+        self.validate_tell(&x_unit.view(), train_y, train_yvar)?;
+        self.apply_tell(&x_unit.view(), train_y, train_yvar)?;
+        self.yvar_on_tell = Some(train_yvar.is_some());
+        self.flush_rows()?;
+        self.write_snapshot(false)
+    }
+
+    fn validate_tell(
+        &self,
+        x_unit: &ArrayView2<f64>,
+        train_y: &ArrayView2<f64>,
+        train_yvar: Option<&ArrayView2<f64>>,
+    ) -> Result<(), ENNError> {
+        if let Some(expected) = self.yvar_on_tell {
+            if expected != train_yvar.is_some() {
                 return Err(ENNError::InvalidParameter(format!(
-                    "y_var must be {} on every tell()",
+                    "train_yvar must be {} on every tell()",
                     if expected { "provided" } else { "omitted" }
                 )));
             }
-            Some(_) => {}
         }
-        let x_unit = crate::candidates::to_unit(x, &self.bounds.view());
+        let num_metrics = train_y.ncols();
+        if let Some(surrogate) = self.surrogate.as_ref() {
+            surrogate.wait_for_background_flush()?;
+            if let Some(fitted) = surrogate.fitted_num_metrics() {
+                if fitted != num_metrics {
+                    return Err(ENNError::InvalidParameter(format!(
+                        "y has {num_metrics} metric columns but the fitted model has {fitted}; changing output width is unsupported"
+                    )));
+                }
+            }
+        }
+        let width_is_fixed = self.tr_state.is_morbo() || self.strategy.updates_trust_region();
+        if width_is_fixed && num_metrics != self.tr_state.num_metrics() {
+            return Err(ENNError::InvalidParameter(format!(
+                "y has {num_metrics} metric columns but the trust region expects {}",
+                self.tr_state.num_metrics()
+            )));
+        }
+        match self.surrogate.as_ref() {
+            Some(surrogate) => surrogate.validate_append(x_unit, train_y, train_yvar),
+            None => Ok(()),
+        }
+    }
+
+    fn apply_tell(
+        &mut self,
+        x_unit: &ArrayView2<f64>,
+        train_y: &ArrayView2<f64>,
+        train_yvar: Option<&ArrayView2<f64>>,
+    ) -> Result<(), ENNError> {
         let start = std::time::Instant::now();
         let mut rng = self.rng.clone();
 
@@ -247,13 +282,15 @@ impl Optimizer {
 
         let mut strategy = std::mem::replace(&mut self.strategy, Strategy::turbo());
         let mut telemetry = std::mem::take(&mut self.telemetry);
-        let result = strategy.tell(self, &x_unit.view(), y, yvar, &mut telemetry, &mut rng);
+        let result = strategy.tell(self, x_unit, train_y, train_yvar, &mut telemetry, &mut rng);
         self.strategy = strategy;
         self.telemetry = telemetry;
-        self.rng = rng;
+        if result.is_ok() {
+            self.rng = rng;
+        }
 
         self.telemetry.dt_tell = start.elapsed().as_secs_f64();
-        if result.is_ok() && x.nrows() < 64 {
+        if result.is_ok() && x_unit.nrows() < 64 {
             if let Some(surrogate) = self.surrogate.as_ref() {
                 surrogate.schedule_background_flush()?;
             }
@@ -261,10 +298,6 @@ impl Optimizer {
         result
     }
 
-    /// Posterior mean at `x` in natural units, in natural `y` units.
-    ///
-    /// `x` is converted to the unit cube, matching `tell`. Returns an error
-    /// when [`Self::has_surrogate`] is false.
     pub fn posterior_mu(&self, x_natural: &ArrayView2<f64>) -> Result<Array2<f64>, ENNError> {
         if x_natural.ncols() != self.num_dim {
             return Err(ENNError::InvalidShape {
@@ -272,65 +305,55 @@ impl Optimizer {
                 got: vec![x_natural.nrows(), x_natural.ncols()],
             });
         }
-        let surrogate = self.surrogate.as_ref().ok_or_else(|| {
-            ENNError::InvalidParameter("No surrogate".to_string())
-        })?;
+        let surrogate = self
+            .surrogate
+            .as_ref()
+            .ok_or_else(|| ENNError::InvalidParameter("No surrogate".to_string()))?;
         let x_unit = crate::candidates::to_unit(x_natural, &self.bounds.view());
         let pred = surrogate.predict(&x_unit.view())?;
         Ok(pred.mu)
     }
 
-    /// Get current telemetry.
     pub fn telemetry(&self) -> &Telemetry {
         &self.telemetry
     }
 
-    /// Get bounds.
     pub fn bounds(&self) -> &Array2<f64> {
         &self.bounds
     }
 
-    /// Get number of dimensions.
     pub fn num_dim(&self) -> usize {
         self.num_dim
     }
 
-    /// Get configuration.
     pub fn config(&self) -> &OptimizerConfig {
         &self.config
     }
 
-    /// Get trust region state.
     pub fn trust_region(&self) -> &TrustRegionState {
         &self.tr_state
     }
 
-    /// Get mutable trust region state.
     pub fn trust_region_mut(&mut self) -> &mut TrustRegionState {
         &mut self.tr_state
     }
 
-    /// Trust region length (TuRBO or Morbo inner).
     pub fn tr_length(&self) -> f64 {
         self.tr_state.length()
     }
 
-    /// Row-level observation access (ENN surrogate or fallback store).
     pub fn obs_access(&self) -> obs_access::ObsAccess<'_> {
         obs_access::ObsAccess::new(self)
     }
 
-    /// Get surrogate.
     pub fn surrogate(&self) -> Option<&(dyn Surrogate + Send + Sync)> {
         self.surrogate.as_ref().map(|s| s.as_ref())
     }
 
-    /// Whether this optimizer fits a surrogate (false for TuRBO-ZERO and LHD-only).
     pub fn has_surrogate(&self) -> bool {
         self.surrogate.is_some()
     }
 
-    /// Get mutable surrogate.
     pub fn surrogate_mut(&mut self) -> Option<&mut (dyn Surrogate + Send + Sync)> {
         match self.surrogate.as_mut() {
             Some(s) => Some(s.as_mut()),
@@ -338,7 +361,6 @@ impl Optimizer {
         }
     }
 
-    /// Stored `x` in the unit cube (internal).
     pub(crate) fn x_obs_unit(&self) -> Option<Array2<f64>> {
         if let Some(surrogate) = self.surrogate.as_ref() {
             return surrogate.observations_x().ok().flatten();
@@ -349,13 +371,14 @@ impl Optimizer {
         Some(obs_access::build_obs_array2(&self.fallback_x))
     }
 
-    /// Observations in natural units.
     pub fn x_obs(&self) -> Option<Array2<f64>> {
         let unit = self.x_obs_unit()?;
-        Some(crate::candidates::from_unit(&unit.view(), &self.bounds.view()))
+        Some(crate::candidates::from_unit(
+            &unit.view(),
+            &self.bounds.view(),
+        ))
     }
 
-    /// Get observation values in natural units (ENN model or fallback store).
     pub fn y_obs(&self) -> Option<Array2<f64>> {
         let y_z = self.obs_access().y_obs_warped()?;
         if let Some(surrogate) = self.surrogate.as_ref() {
@@ -364,8 +387,6 @@ impl Optimizer {
         Some(y_z)
     }
 
-    /// Add observations (internal). `y` is natural-unit; incumbent stores natural units
-    /// so trust-region updates compare batch `y` and incumbent in the same space.
     pub fn add_observations(
         &mut self,
         x: &ArrayView2<f64>,
@@ -377,7 +398,13 @@ impl Optimizer {
                 got: vec![y.nrows(), y.ncols()],
             });
         }
-        let old_n = self.obs_count();
+        let replayed_from = self.replay_base.take();
+        let old_n = replayed_from.unwrap_or_else(|| self.obs_count());
+        if self.surrogate.is_none() && replayed_from.is_none() {
+            if let Some(store) = self.run_store.as_mut() {
+                store.append_observation(x, y)?;
+            }
+        }
         for i in 0..x.nrows() {
             let y_row: Array1<f64> = y.row(i).to_owned();
             self.incumbent_tracker.tell(old_n + i, &y_row);
@@ -389,12 +416,10 @@ impl Optimizer {
         observation_delta::observation_delta_from_batch(old_n, x, y)
     }
 
-    /// Incumbent `x` in the unit cube. Internal; callers use [`Self::incumbent_x`].
     pub(crate) fn incumbent_x_unit(&self) -> Option<&Array1<f64>> {
         self.incumbent_x_unit.as_ref()
     }
 
-    /// Incumbent `x` in natural units.
     pub fn incumbent_x(&self) -> Option<Array1<f64>> {
         let unit = self.incumbent_x_unit.as_ref()?;
         let row = unit.clone().insert_axis(ndarray::Axis(0));
@@ -402,17 +427,14 @@ impl Optimizer {
         Some(natural.row(0).to_owned())
     }
 
-    /// Get incumbent y scalar.
     pub fn incumbent_y_scalar(&self) -> Option<&Array1<f64>> {
         self.incumbent_y_scalar.as_ref()
     }
 
-    /// Get sobol engine.
     pub fn sobol_engine_mut(&mut self) -> Option<&mut SobolEngine> {
         self.sobol_engine.as_mut()
     }
 
-    /// Fresh scrambled Sobol draw for this ask. Matches Python's per-ask engine.
     pub fn reseed_sobol(&mut self, num_arms: usize) -> Result<(), ENNError> {
         let Some(engine) = self.sobol_engine.as_ref() else {
             return Ok(());
@@ -431,17 +453,14 @@ impl Optimizer {
         Ok(())
     }
 
-    /// Get sobol seed base.
     pub fn sobol_seed_base(&self) -> u64 {
         self.sobol_seed_base
     }
 
-    /// Get init progress from strategy.
     pub fn init_progress(&self) -> Option<(usize, usize)> {
         self.strategy.init_progress()
     }
 
-    /// Current number of stored observations.
     pub fn obs_count(&self) -> usize {
         if let Some(surrogate) = self.surrogate.as_ref() {
             return surrogate.observation_count().unwrap_or(0);

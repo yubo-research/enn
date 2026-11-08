@@ -1,6 +1,4 @@
-//! Post-hoc affine calibration of an ENN posterior.
-
-use ndarray::{Array1, Array2, ArrayView2};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::Rng;
 
 use crate::error::ENNError;
@@ -10,15 +8,17 @@ const BOUND_SE_MULT: f64 = 0.25;
 
 type ScaledSe = (Array2<f64>, Array2<f64>, Array2<f64>);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AffineCalibrator {
+    #[serde(with = "crate::exact")]
     pub a: Array1<f64>,
+    #[serde(with = "crate::exact")]
     pub b: Array1<f64>,
+    #[serde(with = "crate::exact")]
     pub c: Array1<f64>,
 }
 
 impl AffineCalibrator {
-    /// Rows are `(a, b, c)`, shape `(3, num_metrics)`.
     pub fn from_rows(rows: ArrayView2<f64>) -> Result<Self, ENNError> {
         if rows.nrows() != 3 {
             return Err(ENNError::InvalidShape {
@@ -30,6 +30,24 @@ impl AffineCalibrator {
             a: rows.row(0).to_owned(),
             b: rows.row(1).to_owned(),
             c: rows.row(2).to_owned(),
+        })
+    }
+
+    pub fn from_coefficients(
+        a: ArrayView1<f64>,
+        b: ArrayView1<f64>,
+        c: ArrayView1<f64>,
+    ) -> Result<Self, ENNError> {
+        if a.len() != b.len() || b.len() != c.len() {
+            return Err(ENNError::InvalidShape {
+                expected: vec![a.len()],
+                got: vec![b.len(), c.len()],
+            });
+        }
+        Ok(Self {
+            a: a.to_owned(),
+            b: b.to_owned(),
+            c: c.to_owned(),
         })
     }
 

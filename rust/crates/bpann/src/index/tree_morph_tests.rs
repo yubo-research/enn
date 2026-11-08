@@ -11,7 +11,8 @@ use tempfile::TempDir;
 fn store_with_rows(dir: &TempDir, n: usize, d: usize, seed: u64) -> MmapColumnStore {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let x = ndarray::Array2::from_shape_fn((n, d), |_| rng.gen::<f64>());
-    let mut store = MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), d, None).unwrap();
+    let mut store =
+        MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), d, None).unwrap();
     store.mmap_append(&x.view()).unwrap();
     store
 }
@@ -28,7 +29,10 @@ fn tree(idx: &IncrementalIndex) -> &Tree {
 /// Every row once, counts and parents consistent, page limits kept, radii bound rows.
 fn assert_valid(idx: &IncrementalIndex, store: &MmapColumnStore, scale: &[f64]) {
     let t = tree(idx);
-    assert_eq!(t.leaf_row_ids(), (0..idx.indexed_rows as u32).collect::<Vec<_>>());
+    assert_eq!(
+        t.leaf_row_ids(),
+        (0..idx.indexed_rows as u32).collect::<Vec<_>>()
+    );
     assert_eq!(t.header.indexed_rows, idx.indexed_rows);
     t.assert_counts_consistent();
     assert_eq!(t.store.parent(t.header.root_page_id), None);
@@ -38,13 +42,20 @@ fn assert_valid(idx: &IncrementalIndex, store: &MmapColumnStore, scale: &[f64]) 
             assert!(s.len(id) <= TREE_LEAF_CAPACITY);
             continue;
         }
-        assert!((2..=TREE_FANOUT).contains(&s.len(id)), "{} children", s.len(id));
+        assert!(
+            (2..=TREE_FANOUT).contains(&s.len(id)),
+            "{} children",
+            s.len(id)
+        );
         for (c, &child) in s.block(id).chunks_exact(scale.len()).zip(s.ids(id)) {
             let mut rows = Vec::new();
             rows_below(t, child, &mut rows);
             for row in rows {
                 let d = dist(&scaled_row(store, row, scale), c);
-                assert!(d <= s.radius(child) * 1.0001 + 1e-5, "row {row} outside page {child}");
+                assert!(
+                    d <= s.radius(child) * 1.0001 + 1e-5,
+                    "row {row} outside page {child}"
+                );
             }
         }
     }
@@ -54,7 +65,10 @@ fn rows_below(t: &Tree, page_id: u32, out: &mut Vec<u32>) {
     if t.store.is_leaf(page_id) {
         out.extend(t.store.ids(page_id));
     } else {
-        t.store.ids(page_id).iter().for_each(|&c| rows_below(t, c, out));
+        t.store
+            .ids(page_id)
+            .iter()
+            .for_each(|&c| rows_below(t, c, out));
     }
 }
 
@@ -64,8 +78,18 @@ fn leaf_spread(idx: &IncrementalIndex, d: usize) -> f64 {
     let t = tree(idx);
     for page_id in (0..t.num_pages() as u32).filter(|&p| t.store.is_leaf(p)) {
         let rows: Vec<&[f32]> = t.store.block(page_id).chunks_exact(d).collect();
-        let mean: Vec<f64> = (0..d).map(|j| rows.iter().map(|r| f64::from(r[j])).sum::<f64>() / rows.len() as f64).collect();
-        total += rows.iter().map(|r| r.iter().zip(&mean).map(|(&x, m)| (f64::from(x) - m).powi(2)).sum::<f64>()).sum::<f64>();
+        let mean: Vec<f64> = (0..d)
+            .map(|j| rows.iter().map(|r| f64::from(r[j])).sum::<f64>() / rows.len() as f64)
+            .collect();
+        total += rows
+            .iter()
+            .map(|r| {
+                r.iter()
+                    .zip(&mean)
+                    .map(|(&x, m)| (f64::from(x) - m).powi(2))
+                    .sum::<f64>()
+            })
+            .sum::<f64>();
         n += rows.len();
     }
     total / n as f64
@@ -79,7 +103,14 @@ fn run_morph(idx: &mut IncrementalIndex) {
 }
 
 fn sync(idx: &mut IncrementalIndex, store: &MmapColumnStore, scale: &[f64], end: usize) {
-    idx.ensure_sync_for_backend(store, scale.len(), true, &scale.iter().map(|s| 1.0 / s).collect::<Vec<_>>(), end).unwrap();
+    idx.ensure_sync_for_backend(
+        store,
+        scale.len(),
+        true,
+        &scale.iter().map(|s| 1.0 / s).collect::<Vec<_>>(),
+        end,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -96,7 +127,10 @@ fn morph_lap_keeps_the_tree_valid_and_reaches_a_fresh_partition() {
     let mut end = n0;
     while idx.morphing() {
         end += 100;
-        assert!(end <= n0 + MORPH_LAPS * 2 * end / MORPH_WORK_PER_ADD + 1000, "morph still running at {end}");
+        assert!(
+            end <= n0 + MORPH_LAPS * 2 * end / MORPH_WORK_PER_ADD + 1000,
+            "morph still running at {end}"
+        );
         sync(&mut idx, &store, &scale, end);
     }
     assert_valid(&idx, &store, &scale);
@@ -121,7 +155,10 @@ fn morph_moves_references_only_and_keeps_every_page() {
     let (pages, leaves) = (tree(&idx).num_pages(), tree(&idx).leaf_row_ids().len());
     let before = leaf_spread(&idx, d);
     run_morph(&mut idx);
-    assert_eq!((tree(&idx).num_pages(), tree(&idx).leaf_row_ids().len()), (pages, leaves));
+    assert_eq!(
+        (tree(&idx).num_pages(), tree(&idx).leaf_row_ids().len()),
+        (pages, leaves)
+    );
     assert_valid(&idx, &store, &scale);
     assert!(leaf_spread(&idx, d) < 0.2 * before);
 }
@@ -133,9 +170,13 @@ fn pages_with_two_leaves_are_pooled_with_their_neighbors() {
     let dir = TempDir::new().unwrap();
     let store = store_with_rows(&dir, n0, d, 6);
     let rows: Vec<u32> = (0..n0 as u32).collect();
-    let mut vs: Vec<f32> = (0..n0).flat_map(|r| scaled_row(&store, r as u32, &[1.0; 3])).collect();
-    let built = crate::index::tree_bulk::bulk_build(&rows, &mut vs, d, dir.path().join("index")).unwrap();
-    let pairs = (0..built.num_pages() as u32).filter(|&p| !built.store.is_leaf(p) && built.store.len(p) == 2);
+    let mut vs: Vec<f32> = (0..n0)
+        .flat_map(|r| scaled_row(&store, r as u32, &[1.0; 3]))
+        .collect();
+    let built =
+        crate::index::tree_bulk::bulk_build(&rows, &mut vs, d, dir.path().join("index")).unwrap();
+    let pairs = (0..built.num_pages() as u32)
+        .filter(|&p| !built.store.is_leaf(p) && built.store.len(p) == 2);
     assert_eq!(pairs.count(), 16);
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     (idx.tree, idx.indexed_rows) = (Some(built), n0);
@@ -160,7 +201,10 @@ fn bisect_gives_near_equal_groups_of_every_member() {
     let hi = |g: &[usize]| g.iter().map(|&i| pts[i][0] as i32).max().unwrap();
     let mut spans: Vec<(i32, i32)> = groups.iter().map(|g| (lo(g), hi(g))).collect();
     spans.sort_unstable();
-    assert!(spans.windows(2).all(|w| w[0].1 < w[1].0), "groups overlap: {spans:?}");
+    assert!(
+        spans.windows(2).all(|w| w[0].1 < w[1].0),
+        "groups overlap: {spans:?}"
+    );
 }
 
 #[test]
@@ -185,10 +229,19 @@ fn unbounded_search_stays_exact_during_a_morph() {
         assert_valid(&idx, &store, &scale);
         let q: Vec<f32> = scale.iter().map(|&s| rng.gen::<f32>() * s as f32).collect();
         let got = search_tree(tree(&idx), &q, 5, usize::MAX, &s).unwrap();
-        let mut all: Vec<(f32, u32)> =
-            (0..end as u32).map(|r| (crate::distance::l2_sq_f32(&q, &scaled_row(&store, r, &scale)), r)).collect();
+        let mut all: Vec<(f32, u32)> = (0..end as u32)
+            .map(|r| {
+                (
+                    crate::distance::l2_sq_f32(&q, &scaled_row(&store, r, &scale)),
+                    r,
+                )
+            })
+            .collect();
         all.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        assert_eq!(got.iter().map(|g| g.0).collect::<Vec<_>>(), all[..5].iter().map(|a| a.1).collect::<Vec<_>>());
+        assert_eq!(
+            got.iter().map(|g| g.0).collect::<Vec<_>>(),
+            all[..5].iter().map(|a| a.1).collect::<Vec<_>>()
+        );
     }
 }
 
@@ -203,7 +256,8 @@ fn morphed_tree_persists_and_is_adopted_on_reopen() {
     idx.start_morph();
     sync(&mut idx, &store, &scale, 2_500);
     assert!(!idx.morphing());
-    idx.persist_to_disk_for_backend(&store, 2, true, &[1.0, 20.0], dir.path(), 1).unwrap();
+    idx.persist_to_disk_for_backend(&store, 2, true, &[1.0, 20.0], dir.path(), 1)
+        .unwrap();
     let mut reopened = IncrementalIndex::new(idx.index_dir.clone());
     assert!(reopened.adopt_persisted().unwrap());
     sync(&mut reopened, &store, &scale, 2_500);
@@ -230,8 +284,11 @@ fn morph_leaves_a_tree_that_fits_the_metric_no_looser() {
     let dir = TempDir::new().unwrap();
     let store = store_with_rows(&dir, n0, d, 7);
     let rows: Vec<u32> = (0..n0 as u32).collect();
-    let mut vs: Vec<f32> = (0..n0).flat_map(|r| scaled_row(&store, r as u32, &[1.0; 4])).collect();
-    let built = crate::index::tree_bulk::bulk_build(&rows, &mut vs, d, dir.path().join("index")).unwrap();
+    let mut vs: Vec<f32> = (0..n0)
+        .flat_map(|r| scaled_row(&store, r as u32, &[1.0; 4]))
+        .collect();
+    let built =
+        crate::index::tree_bulk::bulk_build(&rows, &mut vs, d, dir.path().join("index")).unwrap();
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     (idx.tree, idx.indexed_rows) = (Some(built), n0);
     let before = leaf_spread(&idx, d);

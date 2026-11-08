@@ -1,5 +1,3 @@
-//! NumPy `Generator(Philox(seed)).random()`.
-
 use crate::numpy_seed::seed_sequence_u64;
 
 const PHILOX_M0: u64 = 0xD2E7_470E_E14C_6C93;
@@ -66,7 +64,6 @@ impl NumpyPhilox {
         self.buffer[0]
     }
 
-    /// NumPy `Generator.random()` in `[0, 1)`.
     pub fn random(&mut self) -> f64 {
         ((self.next_u64() >> 11) as f64) * (1.0 / 9_007_199_254_740_992.0)
     }

@@ -1,12 +1,8 @@
-//! Derived per-page state of the incremental tree: leaf blocks, radii and subtree
-//! counts, recomputed when a tree is read back from disk or its metric changes.
-
 use crate::distance::l2_sq_f32;
 use crate::error::BpannError;
 use crate::index::split::weighted_mean;
 use crate::index::tree::Tree;
 
-/// Recursion limit for a tree read from disk (a grown tree is far shallower).
 const MAX_DEPTH: usize = 64;
 
 pub fn dist(a: &[f32], b: &[f32]) -> f32 {
@@ -14,8 +10,6 @@ pub fn dist(a: &[f32], b: &[f32]) -> f32 {
 }
 
 impl Tree {
-    /// Fill every leaf block, reading leaf rows with `coords(row)`, and recompute
-    /// every radius; used after adopting a persisted tree.
     pub fn fill_blocks(
         &mut self,
         mut coords: impl FnMut(u32, &mut Vec<f32>) -> Result<(), BpannError>,
@@ -39,11 +33,12 @@ impl Tree {
             let r = self.subtree_radius(root, &c, 0);
             self.store.set_radius(root, r);
         }
+        self.coordinate_relative_error = f32::EPSILON as f64;
+        self.coordinate_absolute_error = f32::MIN_POSITIVE as f64;
         self.rows_cached = true;
         Ok(())
     }
 
-    /// Mean of a page's rows (a leaf) or count-weighted mean of its child centroids.
     pub fn page_centroid(&self, page: u32) -> Vec<f32> {
         let s = &self.store;
         let points: Vec<&[f32]> = s.block(page).chunks_exact(s.num_dim()).collect();
@@ -58,7 +53,12 @@ impl Tree {
     fn subtree_radius(&mut self, page: u32, centroid: &[f32], depth: usize) -> f32 {
         if self.store.is_leaf(page) {
             let d = self.store.num_dim();
-            return self.store.block(page).chunks_exact(d).map(|row| dist(row, centroid)).fold(0.0, f32::max);
+            return self
+                .store
+                .block(page)
+                .chunks_exact(d)
+                .map(|row| dist(row, centroid))
+                .fold(0.0, f32::max);
         }
         if depth >= MAX_DEPTH {
             return f32::INFINITY;
@@ -74,11 +74,14 @@ impl Tree {
         r
     }
 
-    /// Multiply every stored coordinate by `ratio` (one factor per dimension); radii
-    /// grow by the largest factor so they stay upper bounds.
     pub fn scale_rows(&mut self, ratio: &[f64]) {
         let dim = ratio.len().max(1);
-        let grow = ratio.iter().copied().fold(0.0f64, f64::max) as f32;
+        let maximum = ratio.iter().copied().fold(0.0f64, f64::max);
+        let grow = maximum as f32;
+        self.coordinate_relative_error =
+            (1.0 + self.coordinate_relative_error) * (1.0 + 4.0 * f32::EPSILON as f64) - 1.0;
+        self.coordinate_absolute_error =
+            self.coordinate_absolute_error * maximum + f32::MIN_POSITIVE as f64;
         for page in 0..self.num_pages() as u32 {
             for row in self.store.block_mut(page).chunks_mut(dim) {
                 for (v, &r) in row.iter_mut().zip(ratio) {
@@ -88,11 +91,19 @@ impl Tree {
             let r = self.store.radius(page);
             self.store.set_radius(page, r * grow);
         }
+        self.refresh_radii();
     }
 
-    /// Recompute every subtree count and parent from the root, for a tree whose pages
-    /// were all just loaded with count `u32::MAX` (unvisited). False unless every page
-    /// is reached exactly once and the leaves hold `indexed_rows` rows.
+    fn refresh_radii(&mut self) {
+        if !self.rows_cached || self.num_pages() == 0 {
+            return;
+        }
+        let root = self.header.root_page_id;
+        let centroid = self.page_centroid(root);
+        let radius = self.subtree_radius(root, &centroid, 0);
+        self.store.set_radius(root, radius);
+    }
+
     pub(crate) fn recount(&mut self) -> bool {
         let root = self.header.root_page_id;
         if root as usize >= self.num_pages() {
@@ -100,7 +111,8 @@ impl Tree {
         }
         self.store.set_parent(root, None);
         let total = self.count_subtree(root, 0);
-        let all_seen = (0..self.num_pages() as u32).all(|p| self.store.count(p) != u32::MAX as usize);
+        let all_seen =
+            (0..self.num_pages() as u32).all(|p| self.store.count(p) != u32::MAX as usize);
         total == Some(self.header.indexed_rows) && all_seen
     }
 
@@ -125,15 +137,22 @@ impl Tree {
         Some(n)
     }
 
-    /// Panic unless every page's count and parent match a recount from the root.
     #[cfg(test)]
     pub(crate) fn assert_counts_consistent(&self) {
         let mut copy = self.try_clone().expect("clone tree");
         (0..copy.num_pages() as u32).for_each(|p| copy.store.set_count(p, u32::MAX as usize));
         assert!(copy.recount(), "tree does not recount");
         for p in 0..self.num_pages() as u32 {
-            assert_eq!(self.store.count(p), copy.store.count(p), "count of page {p}");
-            assert_eq!(self.store.parent(p), copy.store.parent(p), "parent of page {p}");
+            assert_eq!(
+                self.store.count(p),
+                copy.store.count(p),
+                "count of page {p}"
+            );
+            assert_eq!(
+                self.store.parent(p),
+                copy.store.parent(p),
+                "parent of page {p}"
+            );
         }
     }
 }

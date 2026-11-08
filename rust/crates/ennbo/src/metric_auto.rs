@@ -1,10 +1,12 @@
-//! AUTO metric policy: reservoir, refit schedule, rescale versus re-partition.
-
 use crate::error::ENNError;
 use crate::metric_loo::loo_loglik;
 use crate::metric_sobol::MIN_DEPENDENCE_ROWS;
 use crate::metric_weights::{dependence_weights, too_few_rows, validate_tied_dims};
 use crate::reservoir::RowReservoir;
+use serde::{Deserialize, Serialize};
+
+mod state;
+pub(crate) use state::{AutoMetricState, METRIC_STATE_FILE};
 
 pub const DEFAULT_REBUILD_DRIFT: f64 = std::f64::consts::LN_2;
 pub const DRIFT_WEIGHT_FLOOR: f64 = 9.210_340_371_976_184;
@@ -14,7 +16,6 @@ pub const AUTO_K: usize = 10;
 pub const AUTO_REFIT_GROWTH: f64 = 1.5;
 pub const AUTO_RESCALE_TOL: f64 = 0.01;
 
-/// `None` leaves the metric fixed. `Auto` learns a diagonal metric from a reservoir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MetricLearning {
     #[default]
@@ -41,8 +42,6 @@ fn floored_log(w: &[f64]) -> Vec<f64> {
         .collect()
 }
 
-/// The leave-one-out Gram matrix is temporary. Return those pages so a later
-/// resident-set reading does not keep them.
 fn release_loo_pages() {
     #[cfg(target_os = "linux")]
     {
@@ -88,7 +87,7 @@ pub fn auto_weights(
     Ok((w, gain))
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MetricCounters {
     pub num_refits: usize,
     pub num_rescales: usize,
@@ -151,7 +150,6 @@ impl AutoMetric {
         &self.tied
     }
 
-    /// Update only the fields that are `Some`. Omitted fields stay as they are.
     pub fn configure(
         &mut self,
         refit_growth: Option<f64>,
@@ -206,6 +204,10 @@ impl AutoMetric {
 
     pub fn num_seen(&self) -> usize {
         self.rows.num_seen()
+    }
+
+    pub(crate) fn num_refits(&self) -> usize {
+        self.counters.num_refits
     }
 
     pub fn snapshot(&self) -> MetricSnapshot {

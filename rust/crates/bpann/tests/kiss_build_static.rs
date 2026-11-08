@@ -20,6 +20,5 @@ fn kiss_build_module_names_in_source() {
 
 #[test]
 fn kiss_needs_skip_edges_name_is_covered() {
-
     assert!(BUILD_SRC.contains("fn needs_skip_edges"));
 }

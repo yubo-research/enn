@@ -31,9 +31,18 @@ SCALE_LABEL = {"0.001": "$\\times 10^{-3}$", "0.25": "$\\times\\tfrac14$"}
 
 def load(arm, n0, shrink):
     rows, fresh = [], None
-    for kind, end, pages, q, rec, add, worst, morphing in LINE.findall(open(os.path.join(RUNS, f"{arm}_{n0}_{shrink}.out")).read()):
-        r = dict(k=(int(end) - n0) / 1000, pages=int(pages), q=float(q), recall=float(rec), add=float(add),
-                 worst=float(worst), morphing=morphing == "true")
+    for kind, end, pages, q, rec, add, worst, morphing in LINE.findall(
+        open(os.path.join(RUNS, f"{arm}_{n0}_{shrink}.out")).read()
+    ):
+        r = {
+            "k": (int(end) - n0) / 1000,
+            "pages": int(pages),
+            "q": float(q),
+            "recall": float(rec),
+            "add": float(add),
+            "worst": float(worst),
+            "morphing": morphing == "true",
+        }
         if kind == "fresh":
             fresh = r
         else:
@@ -55,8 +64,10 @@ def at(rows, k):
 def write_curve(path, rows):
     with open(path, "w") as f:
         f.write("k q recall add_us\n")
-        for r in rows:
-            f.write(f"{START_X if r['k'] == 0 else r['k']:g} {r['q']:.5g} {r['recall']:.4f} {r['add']:.4g}\n")
+        f.writelines(
+            f"{START_X if r['k'] == 0 else r['k']:g} {r['q']:.5g} {r['recall']:.4f} {r['add']:.4g}\n"
+            for r in rows
+        )
 
 
 def bold_math(expr, best):
@@ -65,7 +76,10 @@ def bold_math(expr, best):
 
 def best_flags(vals, higher):
     """True when no other value is strictly better. ``higher`` is False when a smaller number is better."""
-    return [not any((o > v if higher else o < v) for j, o in enumerate(vals) if j != i) for i, v in enumerate(vals)]
+    return [
+        not any((o > v if higher else o < v) for j, o in enumerate(vals) if j != i)
+        for i, v in enumerate(vals)
+    ]
 
 
 def morph_stats(arm, n0, shrink, rows, fresh):
@@ -123,8 +137,10 @@ def case_rows(n0, shrink):
         if arm != "none":
             table.append(morph_stats(arm, n0, shrink, rows, fresh))
         else:
-            print(f"none N0={n0} shrink={shrink}: start q300 {rows[0]['q']:.4f} recall {rows[0]['recall']:.3f}; "
-                  f"end q300 {rows[-1]['q']:.4f} recall {rows[-1]['recall']:.3f}")
+            print(
+                f"none N0={n0} shrink={shrink}: start q300 {rows[0]['q']:.4f} recall {rows[0]['recall']:.3f}; "
+                f"end q300 {rows[-1]['q']:.4f} recall {rows[-1]['recall']:.3f}"
+            )
             last_k = rows[-1]["k"]
     q = sum(freshes) / len(freshes)
     with open(os.path.join(HERE, f"d_mb_fresh_{tag}.dat"), "w") as f:
@@ -135,8 +151,10 @@ def case_rows(n0, shrink):
 def print_control():
     for n0 in (100000, 400000):
         rows, fresh = load("none", n0, "1.0")
-        print(f"control (no change) N0={n0}: start q300 {rows[0]['q']:.4f}, end {rows[-1]['q']:.4f}, fresh {fresh['q']:.4f} "
-              f"(x{rows[-1]['q'] / fresh['q']:.2f})")
+        print(
+            f"control (no change) N0={n0}: start q300 {rows[0]['q']:.4f}, end {rows[-1]['q']:.4f}, fresh {fresh['q']:.4f} "
+            f"(x{rows[-1]['q'] / fresh['q']:.2f})"
+        )
 
 
 def main():

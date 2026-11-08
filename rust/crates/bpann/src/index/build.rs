@@ -30,8 +30,6 @@ pub struct BpannIndex {
     pub index_dir: PathBuf,
 }
 
-/// Skip edges are written only for the middle row-count band. Limits come from
-/// call-time tuning; on-disk edges still reflect whatever limits were active at build.
 fn needs_skip_edges(row_count: usize) -> bool {
     current_tuning().rows_need_skip_edges(row_count)
 }
@@ -188,11 +186,7 @@ impl BpannIndex {
     ) -> Result<Self, BpannError> {
         if row_ids.len() <= leaf_capacity {
             return Self::build_single_leaf_from_rows_with_persist(
-                row_ids,
-                vectors,
-                num_dim,
-                index_dir,
-                persist,
+                row_ids, vectors, num_dim, index_dir, persist,
             );
         }
         let partition = PartitionTree::build(row_ids, vectors, leaf_capacity, seed);
@@ -227,10 +221,11 @@ impl BpannIndex {
         let header_path = index_dir.join("header.json");
         let text = fs::read_to_string(&header_path)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        let header: IndexHeader = serde_json::from_str(&text)
-            .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+        let header: IndexHeader =
+            serde_json::from_str(&text).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
         let pages_path = index_dir.join("pages.bin");
-        let file = File::open(&pages_path).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+        let file =
+            File::open(&pages_path).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
         let mut reader = BufReader::new(file);
         let pages = crate::index::page::read_pages_index(&mut reader)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
@@ -257,16 +252,16 @@ impl BpannIndex {
     pub fn on_disk_index_matches(&self) -> Result<bool, BpannError> {
         let pages_path = self.index_dir.join("pages.bin");
         let skip_path = self.index_dir.join("skip_edges.bin");
-        let on_disk_pages = fs::read(&pages_path)
-            .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+        let on_disk_pages =
+            fs::read(&pages_path).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
         let mut expected_pages = Vec::new();
         write_pages_index(&self.pages, self.header.num_dim, &mut expected_pages)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
         if on_disk_pages != expected_pages {
             return Ok(false);
         }
-        let on_disk_skip = fs::read(&skip_path)
-            .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+        let on_disk_skip =
+            fs::read(&skip_path).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
         Ok(on_disk_skip == skip_edges_bytes(&self.skip_edges))
     }
 
@@ -297,8 +292,6 @@ impl BpannIndex {
             .unwrap_or_default()
     }
 
-    /// True when any leaf uses mmap row-range scoring (empty-leaf soft-sync pages).
-    /// Survives `concat_merge` and requires exhaustive scan with a mmap store.
     pub fn has_mmap_range_leaves(&self) -> bool {
         self.pages.iter().any(|page| {
             matches!(
@@ -311,14 +304,10 @@ impl BpannIndex {
         })
     }
 
-    /// Greedy beam search is invalid for these topologies; scan all leaves.
     pub fn requires_exhaustive_leaf_scan(&self) -> bool {
         self.is_flat_forest() || self.has_mmap_range_leaves()
     }
 
-    /// True when the index is a star-shaped soft-sync forest: exactly one internal
-    /// page (the root) whose children are all leaves. Greedy beam search cannot
-    /// navigate this topology; callers must scan all leaves exhaustively.
     pub fn is_flat_forest(&self) -> bool {
         let internal_count = self
             .pages
@@ -328,15 +317,14 @@ impl BpannIndex {
         if internal_count != 1 {
             return false;
         }
-        let Some(Page::Internal { child_page_ids, .. }) =
-            self.page_by_id(self.header.root_page_id)
+        let Some(Page::Internal { child_page_ids, .. }) = self.page_by_id(self.header.root_page_id)
         else {
             return false;
         };
         !child_page_ids.is_empty()
-            && child_page_ids.iter().all(|&child_id| {
-                matches!(self.page_by_id(child_id), Some(Page::Leaf { .. }))
-            })
+            && child_page_ids
+                .iter()
+                .all(|&child_id| matches!(self.page_by_id(child_id), Some(Page::Leaf { .. })))
     }
 
     pub fn leaf_row_ids(&self) -> Vec<u32> {
@@ -515,11 +503,7 @@ mod kiss_coverage_tests {
         let index_dir = dir.path().join("index");
         let index = BpannIndex::build_single_leaf_from_rows_with_persist(
             &[0u32, 1, 2],
-            &[
-                vec![0.0f32, 0.0],
-                vec![1.0, 0.0],
-                vec![0.5, 1.0],
-            ],
+            &[vec![0.0f32, 0.0], vec![1.0, 0.0], vec![0.5, 1.0]],
             2,
             index_dir.clone(),
             true,
@@ -566,14 +550,8 @@ mod kiss_coverage_tests {
         let grid: Vec<Vec<f32>> = (0..64)
             .map(|i| vec![(i % 8) as f32, (i / 8) as f32])
             .collect();
-        let kmeans = BpannIndex::build_from_vectors(
-            &grid,
-            2,
-            2,
-            0,
-            dir.path().join("kmeans"),
-        )
-        .unwrap();
+        let kmeans =
+            BpannIndex::build_from_vectors(&grid, 2, 2, 0, dir.path().join("kmeans")).unwrap();
         assert!(!kmeans.is_flat_forest());
 
         let flat = BpannIndex::from_pages_unpersisted(

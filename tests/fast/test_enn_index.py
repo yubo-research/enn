@@ -12,17 +12,14 @@ from enn.enn.enn_hash import (
     normal_hash_batch_multi_seed,
     normal_hash_batch_multi_seed_fast,
 )
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_x_scaling import ENNScaleX
+from evals.harness.work_dirs import fresh_work_dir
 
 
-def _enn(
-    train_x, *, scale_x=ENNScaleX.OFF, index_driver=ENNIndexDriver.FLAT, train_y=None
-):
+def _enn(train_x, *, weighting=False, train_y=None):
     if train_y is None:
         train_y = np.zeros((train_x.shape[0], 1), dtype=float)
     return EpistemicNearestNeighbors(
-        train_x, train_y, scale_x=scale_x, index_driver=index_driver
+        train_x, train_y, weighting=weighting, work_dir=fresh_work_dir()
     )
 
 
@@ -79,7 +76,7 @@ def test_enn_neighbor_search_flat_valid_indices_and_shapes():
     rng = np.random.default_rng(11)
     n_train, dim = 40, 3
     train_x = rng.standard_normal((n_train, dim))
-    enn = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
+    enn = _enn(train_x)
     query = rng.standard_normal((4, dim))
     search_k = 6
     dist2s, idx = enn_neighbor_distances_and_indices(
@@ -104,21 +101,21 @@ def test_enn_neighbor_search_init_and_search():
     assert np.all(idx >= 0) and np.all(idx < 20)
 
 
-@pytest.mark.parametrize("scale_x", [ENNScaleX.OFF, ENNScaleX.ON])
-def test_enn_index_neighbor_search_matches_faiss_when_no_ties(scale_x):
+@pytest.mark.parametrize("weighting", [False, True])
+def test_enn_index_neighbor_search_matches_backend_when_no_ties(weighting):
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    enn = _enn(train_x, scale_x=scale_x)
+    enn = _enn(train_x, weighting=weighting)
     query = rng.standard_normal((5, 3))
     search_k = 3
-    faiss_d2, faiss_idx = enn_neighbor_distances_and_indices(
+    backend_d2, backend_idx = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=search_k, exclude_nearest=False
     )
     exact_d2, exact_idx = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=search_k, exclude_nearest=False
     )
-    assert exact_d2.shape == faiss_d2.shape == (5, search_k)
-    assert exact_idx.shape == faiss_idx.shape
+    assert exact_d2.shape == backend_d2.shape == (5, search_k)
+    assert exact_idx.shape == backend_idx.shape
     assert np.all(exact_idx >= 0) and np.all(exact_idx < 20)
 
 
@@ -126,7 +123,7 @@ def test_enn_index_neighbor_search_exclude_nearest():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
     query = train_x[:3]
-    enn = _enn(train_x, index_driver=ENNIndexDriver.FLAT)
+    enn = _enn(train_x)
     dist2s, idx = enn_index_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=True
     )
@@ -191,7 +188,7 @@ def test_enn_neighbor_search_exclude_nearest():
 def test_enn_neighbor_search_with_scaling():
     rng = np.random.default_rng(42)
     train_x = rng.standard_normal((20, 3))
-    enn = _enn(train_x, scale_x=ENNScaleX.ON)
+    enn = _enn(train_x, weighting=True)
     query = rng.standard_normal((5, 3))
     dist2s, idx = enn_neighbor_distances_and_indices(
         enn.rust_backend, query, search_k=3, exclude_nearest=False

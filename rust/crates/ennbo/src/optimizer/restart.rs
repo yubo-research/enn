@@ -18,16 +18,16 @@ impl Optimizer {
         }
     }
 
-    /// Drop the local dataset and, when an init budget exists, draw it again.
-    ///
-    /// This is the TuRBO restart: the next asks are a new Latin hypercube, and
-    /// the surrogate is fit only on points collected after the restart.
     pub(crate) fn begin_local_restart(&mut self) -> Result<(), ENNError> {
         if self.tr_state.is_morbo() {
             return Ok(());
         }
+        self.write_snapshot(true)?;
         if let Some(surrogate) = self.surrogate.as_mut() {
             surrogate.clear_observations()?;
+        }
+        if let Some(store) = self.run_store.as_mut() {
+            store.clear_observations()?;
         }
         self.fallback_x.clear();
         self.fallback_y.clear();
@@ -45,12 +45,10 @@ impl Optimizer {
         Ok(())
     }
 
-    /// Increment restart generation.
     pub fn increment_restart_generation(&mut self) {
         self.restart_generation += 1;
     }
 
-    /// Get restart generation.
     pub fn restart_generation(&self) -> usize {
         self.restart_generation
     }

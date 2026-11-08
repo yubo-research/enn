@@ -5,27 +5,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from enn._rust import ENNAddToken
 from enn._rust import EpistemicNearestNeighbors as _RustENN
-from enn.turbo.config.enn_index_driver import (
-    ENNIndexDriver,
-    index_driver_from_wire,
-    index_driver_to_wire,
-)
-from enn.turbo.config.enn_surrogate_config import (
-    ENNStorage,
-    enn_storage_to_wire,
-    validate_enn_placement,
-)
-from enn.turbo.config.enn_x_scaling import (
-    ENNMetricLearning,
-    ENNScaleX,
-    metric_learning_to_wire,
-    scale_x_to_wire,
-)
+from enn.turbo.config.enn_surrogate_config import validate_enn_placement
+from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 from .cat_ties import resolve_tied_groups
-from .enn_class_support import _to_rust_seeds
+from .enn_class_support import _to_rust_seeds, rust_params
 from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
@@ -36,25 +21,19 @@ if TYPE_CHECKING:
 
 
 class _EnnRustView:
-    """Scale and metric properties, split off the main class for method count."""
-
-    @property
-    def _index_driver(self) -> ENNIndexDriver:
-        return index_driver_from_wire(str(self._rust_model.index_driver))
-
     @property
     def tied_dims(self) -> tuple[tuple[int, ...], ...]:
         return tuple(tuple(int(i) for i in g) for g in self._rust_model.tied_groups())
-
-    @property
-    def scale_x(self) -> ENNScaleX:
-        return ENNScaleX.ON if bool(self._rust_model.scale_x) else ENNScaleX.OFF
 
     @property
     def metric_learning(self) -> ENNMetricLearning:
         if bool(self._rust_model.metric_learning_auto):
             return ENNMetricLearning.AUTO
         return ENNMetricLearning.NONE
+
+    @property
+    def weighting(self) -> bool:
+        return bool(self._rust_model.weighting)
 
     @property
     def metric(self) -> MBPANNMetric | None:
@@ -71,9 +50,7 @@ def _posterior_flags_coerced(flags):
 
 def _rust_function_draw_kwargs(params, flags, seeds: list[int]) -> dict[str, Any]:
     return {
-        "k_num_neighbors": params.k_num_neighbors,
-        "epistemic_variance_scale": params.epistemic_variance_scale,
-        "aleatoric_variance_scale": params.aleatoric_variance_scale,
+        "params": rust_params(params),
         "function_seeds": seeds,
         "exclude_nearest": flags.exclude_nearest,
         "observation_noise": flags.observation_noise,
@@ -83,7 +60,6 @@ def _rust_function_draw_kwargs(params, flags, seeds: list[int]) -> dict[str, Any
 def _finalize_function_draw(
     x: np.ndarray, draws: np.ndarray, idx: list | None
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return draws as (batch, metrics, num_samples), matching ENNNormal.sample()."""
     draws_arr = np.asarray(draws, dtype=float)
     idx_arr = np.array(idx, dtype=int) if idx else np.zeros((x.shape[0], 0), dtype=int)
     return draws_arr, idx_arr
@@ -105,49 +81,45 @@ class EpistemicNearestNeighbors(_EnnRustView):
         train_yvar: np.ndarray | None = None,
         tied_dims: Sequence[Sequence[int]] | None = None,
         *,
-        scale_x: ENNScaleX = ENNScaleX.OFF,
-        metric_learning: ENNMetricLearning = ENNMetricLearning.NONE,
-        index_driver: ENNIndexDriver = ENNIndexDriver.FLAT,
-        work_dir: str | os.PathLike[str] | None = None,
-        enn_storage: ENNStorage | None = None,
+        work_dir: str | os.PathLike[str],
+        weighting: bool = False,
         y_bounds: np.ndarray | None = None,
     ) -> None:
-        validate_enn_placement(
-            index_driver=index_driver,
-            enn_storage=enn_storage,
-            work_dir=work_dir,
-            scale_x=scale_x,
-            metric_learning=metric_learning,
-        )
-        groups = [list(g) for g in resolve_tied_groups(train_x, tied_dims)]
+        groups = [
+            list(g)
+            for g in resolve_tied_groups(train_x, tied_dims, weighting=weighting)
+        ]
+        validate_enn_placement(work_dir)
         train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
         if y_bounds is not None:
             y_bounds = np.asarray(y_bounds, dtype=float)
         rust_kwargs: dict[str, Any] = {
             "train_x": train_x,
             "train_y": train_y,
+            "work_dir": os.fspath(work_dir),
             "train_yvar": train_yvar,
-            "scale_x": scale_x_to_wire(scale_x),
-            "index_driver": index_driver_to_wire(index_driver),
-            "metric_learning": metric_learning_to_wire(metric_learning),
+            "weighting": weighting,
             "tied_dims": groups,
         }
-        if work_dir is not None:
-            rust_kwargs["work_dir"] = os.fspath(work_dir)
-        if enn_storage is not None:
-            rust_kwargs["enn_storage"] = enn_storage_to_wire(enn_storage)
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
         self._rust_model = _RustENN(**rust_kwargs)
 
+    @classmethod
+    def open(cls, work_dir: str | os.PathLike[str]) -> EpistemicNearestNeighbors:
+        validate_enn_placement(work_dir)
+        self = cls.__new__(cls)
+        self._rust_model = _RustENN.open(os.fspath(work_dir))
+        return self
+
     def add(
         self,
-        x: np.ndarray,
-        y: np.ndarray,
-        yvar: np.ndarray | None = None,
-    ) -> ENNAddToken:
-        x, y, yvar = self._coerce_inputs(x, y, yvar)
-        return self._rust_model.add(x, y, yvar)
+        train_x: np.ndarray,
+        train_y: np.ndarray,
+        train_yvar: np.ndarray | None = None,
+    ) -> None:
+        train_x, train_y, train_yvar = self._coerce_inputs(train_x, train_y, train_yvar)
+        self._rust_model.add(train_x, train_y, train_yvar)
 
     def ensure_index_sync(self) -> None:
         self._rust_model.ensure_index_sync()
@@ -177,7 +149,6 @@ class EpistemicNearestNeighbors(_EnnRustView):
 
     @property
     def rust_backend(self):
-        """Rust surrogate implementation (same lifetime as this wrapper)."""
         return self._rust_model
 
     @property
@@ -217,10 +188,8 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags = _posterior_flags_coerced(flags)
 
         mu, se, se_epi, se_ale, idx = self._rust_model.posterior(
-            x,
-            k_num_neighbors=params.k_num_neighbors,
-            epistemic_variance_scale=params.epistemic_variance_scale,
-            aleatoric_variance_scale=params.aleatoric_variance_scale,
+            np.asarray(x, dtype=float),
+            params=rust_params(params),
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
@@ -242,12 +211,10 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags = _posterior_flags_coerced(flags)
 
         mu, se, se_epi, se_ale, idx = self._rust_model.conditional_posterior(
-            x_whatif,
-            y_whatif,
-            x,
-            k_num_neighbors=params.k_num_neighbors,
-            epistemic_variance_scale=params.epistemic_variance_scale,
-            aleatoric_variance_scale=params.aleatoric_variance_scale,
+            np.asarray(x_whatif, dtype=float),
+            np.asarray(y_whatif, dtype=float),
+            np.asarray(x, dtype=float),
+            params=rust_params(params),
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
@@ -258,22 +225,17 @@ class EpistemicNearestNeighbors(_EnnRustView):
     def batch_posterior(
         self,
         x: np.ndarray,
-        paramss: list[ENNParams],
         *,
+        paramss: list[ENNParams],
         flags: PosteriorFlags | None = None,
     ) -> ENNNormal:
         from .enn_normal import ENNNormal
 
         flags = _posterior_flags_coerced(flags)
         x = np.asarray(x, dtype=float)
-        k_values = [p.k_num_neighbors for p in paramss]
-        epistemic_scales = [p.epistemic_variance_scale for p in paramss]
-        aleatoric_scales = [p.aleatoric_variance_scale for p in paramss]
         mu_all, se_all, se_epi_all, se_ale_all, idx = self._rust_model.batch_posterior(
             x,
-            k_values=k_values,
-            epistemic_scales=epistemic_scales,
-            aleatoric_scales=aleatoric_scales,
+            paramss=[rust_params(p) for p in paramss],
             exclude_nearest=flags.exclude_nearest,
             observation_noise=flags.observation_noise,
         )
@@ -287,25 +249,21 @@ class EpistemicNearestNeighbors(_EnnRustView):
         self, x: np.ndarray, k: int, *, exclude_nearest: bool = False
     ) -> np.ndarray:
         x = np.asarray(x, dtype=float)
-        if x.ndim == 1:
-            x = x[np.newaxis, :]
-        idx_2d = np.asarray(
+        return np.asarray(
             self._rust_model.neighbors(x, int(k), exclude_nearest=exclude_nearest),
             dtype=np.int64,
         )
-        if idx_2d.size == 0:
-            return np.zeros((0,), dtype=np.int64)
-        return idx_2d[0, :]
 
     def posterior_function_draw(
         self,
         x: np.ndarray,
-        params: ENNParams,
         *,
+        params: ENNParams,
         function_seeds: np.ndarray | list[int],
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         flags = _posterior_flags_coerced(flags)
+        x = np.asarray(x, dtype=float)
         seeds = _to_rust_seeds(function_seeds)
         kw = _rust_function_draw_kwargs(params, flags, seeds)
         draws, idx = self._rust_model.posterior_function_draw(x, **kw)
@@ -322,12 +280,12 @@ class EpistemicNearestNeighbors(_EnnRustView):
         flags: PosteriorFlags | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         flags = _posterior_flags_coerced(flags)
-        x_whatif = np.asarray(x_whatif, dtype=float)
+        x = np.asarray(x, dtype=float)
         seeds = _to_rust_seeds(function_seeds)
         kw = _rust_function_draw_kwargs(params, flags, seeds)
         draws, idx = self._rust_model.conditional_posterior_function_draw(
-            x_whatif,
-            y_whatif,
+            np.asarray(x_whatif, dtype=float),
+            np.asarray(y_whatif, dtype=float),
             x,
             **kw,
         )

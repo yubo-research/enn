@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import sys
 from contextlib import asynccontextmanager
 
@@ -23,9 +24,9 @@ def _collect(names, call):
 def test_eval_command_runs_exact_eval_id() -> None:
     from ops.evaluate_modal import eval_command
 
-    cmd = eval_command("short/bpann_sphere_d10")
+    cmd = eval_command("short/prediction")
     assert cmd[0] == sys.executable
-    assert cmd[-1] == "short/bpann_sphere_d10"
+    assert cmd[-1] == "short/prediction"
     assert "load_evaluate" in cmd[2]
 
 
@@ -53,7 +54,10 @@ def test_format_result_marks_status_and_frames_output() -> None:
         "===== end short/a =====",
     ]
     bad = format_result("short/b", 2, "")
-    assert bad.splitlines() == ["===== short/b (FAILED rc=2) =====", "===== end short/b ====="]
+    assert bad.splitlines() == [
+        "===== short/b (FAILED rc=2) =====",
+        "===== end short/b =====",
+    ]
 
 
 def test_run_all_prints_each_eval_atomically_in_completion_order() -> None:
@@ -96,19 +100,19 @@ def test_run_model_command_and_alias(monkeypatch) -> None:
 
     monkeypatch.setattr(evaluate_modal, "run_on_modal", fake_run_on_modal)
     for command in ("run-model", "rm"):
-        result = CliRunner().invoke(evaluate.cli, [command, "short/y_"])
+        result = CliRunner().invoke(evaluate.cli, [command, "short/pred"])
         assert result.exit_code == 0, result.output
         assert "fake output" in result.output
-    assert seen == [evaluate.list_eval_names("short/y_")] * 2
+    assert seen == [evaluate.list_eval_names("short/pred")] * 2
 
 
 def test_run_model_command_fails_when_an_eval_fails(monkeypatch) -> None:
     from ops import evaluate, evaluate_modal
 
     monkeypatch.setattr(evaluate_modal, "run_on_modal", lambda names, echo: names[:1])
-    result = CliRunner().invoke(evaluate.cli, ["rm", "short/y_"])
+    result = CliRunner().invoke(evaluate.cli, ["rm", "short/pred"])
     assert result.exit_code != 0
-    assert "evals failed: short/y_bounds" in result.output
+    assert "evals failed: short/prediction" in result.output
 
 
 def test_run_model_unknown_prefix_fails() -> None:
@@ -117,3 +121,16 @@ def test_run_model_unknown_prefix_fails() -> None:
     result = CliRunner().invoke(evaluate.cli, ["rm", "does_not_exist_xyz"])
     assert result.exit_code != 0
     assert "no evals match" in result.output
+
+
+def test_local_helpers_do_not_import_modal() -> None:
+    code = (
+        "import sys; sys.modules['modal'] = None; "
+        "from ops.evaluate_modal import eval_command, format_result; "
+        "assert eval_command('short/x')[-1] == 'short/x'; "
+        "assert 'ok' in format_result('short/x', 0, '')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr

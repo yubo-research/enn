@@ -4,9 +4,7 @@ import pytest
 
 from enn.turbo.config.candidate_gen_config import CandidateGenConfig
 from enn.turbo.config.candidate_rv import CandidateRV
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.config.enn_surrogate_config import ENNStorage, ENNSurrogateConfig
-from enn.turbo.config.enn_x_scaling import ENNMetricLearning, ENNScaleX
+from enn.turbo.config.enn_surrogate_config import ENNSurrogateConfig
 from enn.turbo.config.factory import turbo_enn_config, turbo_zero_config
 from enn.turbo.config.tr_length_config import TRLengthConfig
 from enn.turbo.config.turbo_tr_config import TurboTRConfig
@@ -14,7 +12,10 @@ from enn.turbo.rust_optimizer_helpers import _config_to_rust_overrides
 
 
 def test_turbo_factories_leave_the_sampler_to_rust():
-    for config in (turbo_enn_config(), turbo_zero_config()):
+    for config in (
+        turbo_enn_config(enn=ENNSurrogateConfig()),
+        turbo_zero_config(),
+    ):
         assert config.candidate_rv is None
         overrides = _config_to_rust_overrides(config) or {}
         assert "candidate_rv" not in overrides
@@ -43,7 +44,8 @@ def test_candidate_params_reach_rust_overrides():
             max_candidates=40,
             num_candidates_per_dim=0,
             num_candidates_per_arm=3,
-        )
+        ),
+        enn=ENNSurrogateConfig(),
     )
     overrides = _config_to_rust_overrides(cfg)
     assert overrides["min_candidates"] == 10
@@ -53,10 +55,11 @@ def test_candidate_params_reach_rust_overrides():
 
 
 def test_unset_lengths_are_not_sent():
-    overrides = _config_to_rust_overrides(turbo_enn_config())
+    overrides = _config_to_rust_overrides(turbo_enn_config(enn=ENNSurrogateConfig()))
     assert overrides is None or "length_init" not in overrides
     explicit = turbo_enn_config(
-        trust_region=TurboTRConfig(length=TRLengthConfig(length_init=0.8))
+        trust_region=TurboTRConfig(length=TRLengthConfig(length_init=0.8)),
+        enn=ENNSurrogateConfig(),
     )
     sent = _config_to_rust_overrides(explicit)
     assert sent["length_init"] == 0.8
@@ -67,27 +70,10 @@ def test_length_order_is_checked_when_both_ends_are_set():
         TRLengthConfig(length_min=2.0, length_max=1.0)
 
 
-def test_disk_flat_and_auto_on_flat_are_rejected():
-    with pytest.raises(ValueError, match="BpAnnDisk"):
-        ENNSurrogateConfig(
-            index_driver=ENNIndexDriver.FLAT,
-            enn_storage=ENNStorage.DISK,
-            work_dir="/tmp/enn",
-        )
-    with pytest.raises(ValueError, match="scale_x=false"):
-        ENNSurrogateConfig(
-            index_driver=ENNIndexDriver.FLAT,
-            metric_learning=ENNMetricLearning.AUTO,
-        )
-    with pytest.raises(ValueError, match="does not select storage"):
-        ENNSurrogateConfig(
-            index_driver=ENNIndexDriver.BPANN_DISK,
-            work_dir="/tmp/enn",
-        )
-    ENNSurrogateConfig(
-        index_driver=ENNIndexDriver.BPANN_DISK,
-        enn_storage=ENNStorage.DISK,
-        work_dir="/tmp/enn",
-        metric_learning=ENNMetricLearning.AUTO,
-        scale_x=ENNScaleX.OFF,
-    )
+def test_surrogate_config_has_no_work_dir():
+    with pytest.raises(TypeError, match="work_dir"):
+        ENNSurrogateConfig(work_dir="/tmp/enn")
+    with pytest.raises(TypeError, match="enn"):
+        turbo_enn_config()
+    ENNSurrogateConfig(weighting=True)
+    ENNSurrogateConfig(weighting=True, tied_dims=((0, 1),))

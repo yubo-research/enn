@@ -50,7 +50,6 @@ pub fn bpann_validate_index_backend(work_dir: &Path, expected: &str) -> Result<(
     Ok(())
 }
 
-/// Files and directories a `BpannBackend` writes under `work_dir`.
 const STORE_FILES: &[&str] = &[
     "train_x.bin",
     "train_y.bin",
@@ -62,8 +61,6 @@ const STORE_FILES: &[&str] = &[
 ];
 const STORE_DIRS: &[&str] = &["index"];
 
-/// Delete the persisted store in `work_dir`, leaving other files alone.
-/// No backend may be open on `work_dir`.
 pub fn bpann_remove_store(work_dir: &Path) -> Result<(), BpannError> {
     let gone = |r: std::io::Result<()>| match r {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
@@ -103,11 +100,8 @@ pub fn bpann_load_num_obs(work_dir: &Path) -> Option<usize> {
 }
 
 pub fn write_num_obs(work_dir: &Path, num_obs: usize) -> Result<(), BpannError> {
-    fs::write(
-        work_dir.join("num_obs.bin"),
-        (num_obs as u64).to_le_bytes(),
-    )
-    .map_err(|e| BpannError::InvalidParameter(e.to_string()))
+    fs::write(work_dir.join("num_obs.bin"), (num_obs as u64).to_le_bytes())
+        .map_err(|e| BpannError::InvalidParameter(e.to_string()))
 }
 
 pub struct NumObsCounter {
@@ -180,7 +174,6 @@ pub fn bpann_write_metadata(
 ) -> Result<(), BpannError> {
     let meta_path = work_dir.join("metadata.json");
 
-
     let preserved = fs::read_to_string(&meta_path)
         .ok()
         .and_then(|text| preserve_metadata_extension_fields(&text));
@@ -192,10 +185,9 @@ pub fn bpann_write_metadata(
             "{{\"format_version\":{FORMAT_VERSION},\"num_obs\":{num_obs},\"num_dim\":{num_dim},\"num_metrics\":{num_metrics},\"scale_x\":{scale_x},\"index_backend\":\"{INDEX_BACKEND}\",\"indexed_rows\":{indexed_rows}}}"
         ),
     };
-    fs::write(meta_path, json).map_err(|e| BpannError::InvalidParameter(e.to_string()))
+    crate::store_file::bpann_replace_json_text(&meta_path, &json)
 }
 
-/// Keep non-core metadata keys (e.g. `"y_bounds":[...]`) across BPANN rewrites.
 fn preserve_metadata_extension_fields(text: &str) -> Option<String> {
     const CORE: &[&str] = &[
         "format_version",
@@ -313,7 +305,6 @@ pub fn bpann_open_or_append_yvar(
         }
         Ok(Some(store))
     } else if yv_path.exists() {
-
         let known_nrows = bpann_load_num_obs(work_dir);
         let store = MmapColumnStore::mmap_open_or_create(yv_path, num_metrics, known_nrows)?;
         Ok(Some(store))
@@ -359,9 +350,7 @@ pub fn bpann_train_rows_at(
     }
     let x = train_x.mmap_gather(indices)?;
     let y = train_y.mmap_gather(indices)?;
-    let yvar = train_yvar
-        .map(|s| s.mmap_gather(indices))
-        .transpose()?;
+    let yvar = train_yvar.map(|s| s.mmap_gather(indices)).transpose()?;
     Ok((x, y, yvar))
 }
 
@@ -381,9 +370,8 @@ pub(crate) fn parse_json_usize_field(text: &str, field: &str) -> Option<usize> {
 
 pub fn bpann_parse_json_string_field(text: &str, field: &str) -> Option<String> {
     let marker = format!("\"{field}\":\"");
-    text.split_once(&marker).and_then(|(_, tail)| {
-        tail.split_once('"').map(|(value, _)| value.to_string())
-    })
+    text.split_once(&marker)
+        .and_then(|(_, tail)| tail.split_once('"').map(|(value, _)| value.to_string()))
 }
 
 #[cfg(test)]
@@ -426,7 +414,10 @@ mod kiss_coverage_tests {
     fn observation_helpers_called() {
         let dir = TempDir::new().unwrap();
         crate::observation::bpann_validate_dim_limits(4).unwrap();
-        assert!(crate::observation::bpann_validate_dim_limits(crate::observation::MAX_NUM_DIM + 1).is_err());
+        assert!(
+            crate::observation::bpann_validate_dim_limits(crate::observation::MAX_NUM_DIM + 1)
+                .is_err()
+        );
         crate::observation::bpann_check_append_row_limit(10).unwrap();
         crate::observation::bpann_write_metadata(dir.path(), 0, 4, 1, false, 0).unwrap();
         crate::observation::write_num_obs(dir.path(), 0).unwrap();
@@ -434,14 +425,18 @@ mod kiss_coverage_tests {
         let mut counter = crate::observation::NumObsCounter::open(dir.path()).unwrap();
         counter.set(0);
         assert_eq!(crate::observation::bpann_load_num_obs(dir.path()), Some(0));
-        assert_eq!(crate::observation::bpann_load_indexed_rows(dir.path()), Some(0));
+        assert_eq!(
+            crate::observation::bpann_load_indexed_rows(dir.path()),
+            Some(0)
+        );
         assert_eq!(
             crate::observation::bpann_load_index_backend(dir.path()).as_deref(),
             Some(INDEX_BACKEND)
         );
         crate::observation::bpann_validate_index_backend(dir.path(), INDEX_BACKEND).unwrap();
         let mut yvar =
-            crate::observation::bpann_open_or_append_yvar(dir.path(), 1, Some(&array![[0.1]])).unwrap();
+            crate::observation::bpann_open_or_append_yvar(dir.path(), 1, Some(&array![[0.1]]))
+                .unwrap();
         crate::observation::bpann_append_yvar_on_add(
             dir.path(),
             1,

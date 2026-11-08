@@ -64,8 +64,13 @@ fn skip_edge_refinement_improves_or_matches_greedy() {
         let bf = ennbo_bpann::index::search::bpann_brute_force_topk(&vectors, q, k);
         let bf_set: HashSet<u32> = bf.iter().map(|(id, _)| *id).collect();
         let greedy = ennbo_bpann::index::search::search_greedy_blocks_only(&index, q, k, 2);
-        let skip =
-            ennbo_bpann::index::search::search_with_skip_refinement(&index, q, k, 2, &mut Vec::new());
+        let skip = ennbo_bpann::index::search::search_with_skip_refinement(
+            &index,
+            q,
+            k,
+            2,
+            &mut Vec::new(),
+        );
         greedy_total +=
             greedy.iter().filter(|(id, _)| bf_set.contains(id)).count() as f64 / k as f64;
         skip_total += skip.iter().filter(|(id, _)| bf_set.contains(id)).count() as f64 / k as f64;
@@ -174,9 +179,7 @@ fn brute_force_topk_and_mmap_paths() {
     let mut store =
         MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 3, None).unwrap();
     store
-        .mmap_append(
-            &ndarray::Array2::from_shape_fn((4, 3), |(i, j)| vectors[i][j] as f64).view(),
-        )
+        .mmap_append(&ndarray::Array2::from_shape_fn((4, 3), |(i, j)| vectors[i][j] as f64).view())
         .unwrap();
     let scaled = ennbo_bpann::index::search::bpann_brute_force_topk_mmap(
         &store,

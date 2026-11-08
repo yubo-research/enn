@@ -13,25 +13,22 @@ import numpy as np
 from enn import create_optimizer, turbo_enn_config, turbo_zero_config
 from enn.benchmarks import Ackley
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_fit import enn_fit
+from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.turbo.config import (
     AcqType,
     CandidateGenConfig,
+    CandidateRV,
     ENNFitConfig,
-    ENNIndexDriver,
     ENNSurrogateConfig,
     TurboTRConfig,
 )
-from enn.turbo.config.enn_surrogate_config import ENNStorage
-from enn.turbo.optimizer_config import CandidateRV
 
 NUM_DIM = 99
 NUM_ROUNDS = 101
 NUM_ARMS = 100
 ACKLEY_NOISE = 0.1
 SEED = 0
-INDEX_TYPE_CHOICES: tuple[str, ...] = ("flat", "bpann_disk")
 Y_BOUNDS_N_TRAIN = 80
 Y_BOUNDS_N_TEST = 200
 Y_BOUNDS_K = 10
@@ -65,32 +62,16 @@ Y_VAR_WRONG_SCALE = 0.01
 Y_VAR_SWEEP: tuple[float, ...] = (0.01, 0.09, 0.25, 1.0)
 
 
-def parse_index_driver(name: str) -> ENNIndexDriver:
-    mapping = {
-        "flat": ENNIndexDriver.FLAT,
-        "bpann_disk": ENNIndexDriver.BPANN_DISK,
-    }
-    if name not in mapping:
-        raise ValueError(f"Unknown index type: {name}")
-    return mapping[name]
-
-
-def build_ackley_enn_surrogate(index_driver: ENNIndexDriver) -> ENNSurrogateConfig:
-    """Build ENN surrogate config; BPANN_DISK requires disk storage + work_dir."""
-    enn_kwargs: dict[str, object] = {
-        "k": 10,
-        "fit": ENNFitConfig(num_fit_samples=100),
-        "index_driver": index_driver,
-    }
-    if index_driver == ENNIndexDriver.BPANN_DISK:
-        enn_kwargs["enn_storage"] = ENNStorage.DISK
-        enn_kwargs["work_dir"] = tempfile.mkdtemp(prefix="qa_ackley_bpann_")
-    return ENNSurrogateConfig(**enn_kwargs)
+def build_ackley_enn_surrogate() -> ENNSurrogateConfig:
+    """Build ENN surrogate config with its own work_dir."""
+    return ENNSurrogateConfig(
+        k=10,
+        fit=ENNFitConfig(num_fit_samples=100),
+    )
 
 
 def run_turbo_enn_ackley(
     *,
-    index_driver: ENNIndexDriver,
     num_dim: int = NUM_DIM,
     num_rounds: int = NUM_ROUNDS,
     num_arms: int = NUM_ARMS,
@@ -99,10 +80,10 @@ def run_turbo_enn_ackley(
 ) -> None:
     """Run TuRBO-ENN on Ackley; print EVAL metrics each round."""
     rng = np.random.default_rng(seed)
-    objective = Ackley(noise=noise, rng=rng)
+    objective = Ackley(noise=noise, seed=int(rng.integers(2**63 - 1)))
     bounds = np.array([objective.bounds] * num_dim, dtype=float)
     config = turbo_enn_config(
-        enn=build_ackley_enn_surrogate(index_driver),
+        enn=build_ackley_enn_surrogate(),
         candidates=CandidateGenConfig(candidate_rv=CandidateRV.UNIFORM),
         trust_region=TurboTRConfig(noise_aware=True),
         acq_type=AcqType.UCB,
@@ -110,7 +91,8 @@ def run_turbo_enn_ackley(
     optimizer = create_optimizer(
         bounds=bounds,
         config=config,
-        rng=np.random.default_rng(seed),
+        seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+        work_dir=tempfile.mkdtemp(prefix="qa_ackley_bpann_"),
     )
     y_var_scale = float(noise) ** 2
     y_best = -np.inf
@@ -119,7 +101,7 @@ def run_turbo_enn_ackley(
     for i_iter in range(num_rounds):
         x_arms = optimizer.ask(num_arms=num_arms)
         y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
-        optimizer.tell(x_arms, y_obs, y_var=y_var_scale * np.ones_like(y_obs))
+        optimizer.tell(x_arms, y_obs, train_yvar=y_var_scale * np.ones_like(y_obs))
         y_best = max(y_best, float(np.max(y_obs)))
         cumulative_num_arms += int(np.asarray(x_arms).shape[0])
         seconds_since_start_of_run = time.perf_counter() - t_start
@@ -136,10 +118,9 @@ def cli() -> None:
 
 
 @cli.command("ackley-99")
-@click.argument("index_type", type=click.Choice(INDEX_TYPE_CHOICES))
-def ackley_99(index_type: str) -> None:
+def ackley_99() -> None:
     """TuRBO-ENN optimization-performance check on 99-D Ackley."""
-    run_turbo_enn_ackley(index_driver=parse_index_driver(index_type))
+    run_turbo_enn_ackley()
 
 
 @dataclass(frozen=True)
@@ -239,9 +220,7 @@ def gaussian_nll(y: np.ndarray, mu: np.ndarray, se: np.ndarray) -> float:
     return float(0.5 * np.mean(np.log(2.0 * np.pi * var) + (y_arr - mu_arr) ** 2 / var))
 
 
-def frac_out_of_open_interval(
-    values: np.ndarray, lo: float, hi: float
-) -> float:
+def frac_out_of_open_interval(values: np.ndarray, lo: float, hi: float) -> float:
     flat = np.asarray(values, dtype=float).ravel()
     out = np.zeros(flat.shape, dtype=bool)
     if np.isfinite(lo):
@@ -295,24 +274,27 @@ def fit_and_eval_y_bounds(
     num_draws: int,
     interval: tuple[float, float] | None = None,
 ) -> YBoundsMetrics:
-    model = EpistemicNearestNeighbors(x_train, y_train, y_bounds=y_bounds)
-    params = enn_fit(
-        model,
-        k=k,
-        num_fit_candidates=num_fit_candidates,
-        num_fit_samples=num_fit_samples,
-        rng=rng,
-    )
-    return evaluate_natural_y(
-        model,
-        params,
-        x_test,
-        y_test,
-        name=name,
-        rng=rng,
-        num_draws=num_draws,
-        interval=interval,
-    )
+    with tempfile.TemporaryDirectory(prefix="qa_y_bounds_") as work_dir:
+        model = EpistemicNearestNeighbors(
+            x_train[:0], y_train[:0], y_bounds=y_bounds, work_dir=work_dir
+        )
+        model.add(x_train, y_train)
+        fitter = ENNStatefulFitter(k=k, seed=int(rng.integers(2**63 - 1)))
+        params = fitter.ask(
+            model,
+            num_fit_candidates=num_fit_candidates,
+            num_fit_samples=num_fit_samples,
+        )
+        return evaluate_natural_y(
+            model,
+            params,
+            x_test,
+            y_test,
+            name=name,
+            rng=rng,
+            num_draws=num_draws,
+            interval=interval,
+        )
 
 
 def compare_unbounded_vs_bounded(
@@ -526,7 +508,7 @@ def run_turbo_acq_seed(
 ) -> TurboAcqSeedResult:
     """One seed of TuRBO ask/tell on Ackley; returns y_best, time, and AUC."""
     obj_rng = np.random.default_rng(seed)
-    objective = Ackley(noise=noise, rng=obj_rng)
+    objective = Ackley(noise=noise, seed=int(obj_rng.integers(2**63 - 1)))
     bounds = np.array([objective.bounds] * num_dim, dtype=float)
     config = build_turbo_acq_config(
         acq_type=acq_type,
@@ -539,7 +521,8 @@ def run_turbo_acq_seed(
     optimizer = create_optimizer(
         bounds=bounds,
         config=config,
-        rng=np.random.default_rng(seed),
+        seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+        work_dir=tempfile.mkdtemp(prefix="qa_turbo_acq_"),
     )
     y_var_scale = float(noise) ** 2
     y_best = -np.inf
@@ -549,7 +532,7 @@ def run_turbo_acq_seed(
         x_arms = optimizer.ask(num_arms=num_arms)
         y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
         if noise > 0.0:
-            optimizer.tell(x_arms, y_obs, y_var=y_var_scale * np.ones_like(y_obs))
+            optimizer.tell(x_arms, y_obs, train_yvar=y_var_scale * np.ones_like(y_obs))
         else:
             optimizer.tell(x_arms, y_obs)
         y_best = max(y_best, float(np.max(y_obs)))
@@ -616,9 +599,7 @@ def sweep_turbo_acq(
     num_fit_samples: int,
 ) -> list[TurboAcqMetrics]:
     """Run acquisition methods over seeds; return aggregated metrics."""
-    methods: list[tuple[AcqType | None, bool]] = [
-        (acq, False) for acq in acq_types
-    ]
+    methods: list[tuple[AcqType | None, bool]] = [(acq, False) for acq in acq_types]
     if include_turbo_zero:
         methods.append((None, True))
     out: list[TurboAcqMetrics] = []
@@ -710,7 +691,9 @@ def run_turbo_acq(
 @click.option("--num-init", type=int, default=TURBO_ACQ_NUM_INIT, show_default=True)
 @click.option("--num-seeds", type=int, default=TURBO_ACQ_NUM_SEEDS, show_default=True)
 @click.option("--seed", type=int, default=SEED, show_default=True)
-@click.option("--no-noisy", "include_noisy", is_flag=True, flag_value=False, default=True)
+@click.option(
+    "--no-noisy", "include_noisy", is_flag=True, flag_value=False, default=True
+)
 @click.option(
     "--no-turbo-zero",
     "include_turbo_zero",
@@ -776,27 +759,28 @@ def evaluate_y_var_fit(
     num_fit_samples: int,
     rng: np.random.Generator,
 ) -> YVarNoiseMetrics:
-    model = EpistemicNearestNeighbors(x_train, y_train, train_yvar=train_yvar)
-    params = enn_fit(
-        model,
-        k=k,
-        num_fit_candidates=num_fit_candidates,
-        num_fit_samples=num_fit_samples,
-        rng=rng,
-    )
-    flags = PosteriorFlags(observation_noise=True)
-    post = model.posterior(x_test, params=params, flags=flags)
-    mu = np.asarray(post.mu, dtype=float).ravel()
-    se = np.asarray(post.se, dtype=float).ravel()
-    se_ale = np.asarray(post.se_ale, dtype=float).ravel()
-    y = np.asarray(y_test, dtype=float).ravel()
-    return YVarNoiseMetrics(
-        name=name,
-        nll=gaussian_nll(y, mu, se),
-        calib_1se=float(np.mean(np.abs(y - mu) <= se)),
-        mean_se=float(np.mean(se)),
-        mean_se_ale=float(np.mean(se_ale)),
-    )
+    with tempfile.TemporaryDirectory(prefix="qa_y_var_") as work_dir:
+        model = EpistemicNearestNeighbors(x_train[:0], y_train[:0], work_dir=work_dir)
+        model.add(x_train, y_train, train_yvar)
+        fitter = ENNStatefulFitter(k=k, seed=int(rng.integers(2**63 - 1)))
+        params = fitter.ask(
+            model,
+            num_fit_candidates=num_fit_candidates,
+            num_fit_samples=num_fit_samples,
+        )
+        flags = PosteriorFlags(observation_noise=True)
+        post = model.posterior(x_test, params=params, flags=flags)
+        mu = np.asarray(post.mu, dtype=float).ravel()
+        se = np.asarray(post.se, dtype=float).ravel()
+        se_ale = np.asarray(post.se_ale, dtype=float).ravel()
+        y = np.asarray(y_test, dtype=float).ravel()
+        return YVarNoiseMetrics(
+            name=name,
+            nll=gaussian_nll(y, mu, se),
+            calib_1se=float(np.mean(np.abs(y - mu) <= se)),
+            mean_se=float(np.mean(se)),
+            mean_se_ale=float(np.mean(se_ale)),
+        )
 
 
 def compare_y_var_noise(
@@ -901,8 +885,7 @@ def echo_y_var_noise_metrics(metrics: YVarNoiseMetrics) -> None:
 
 def echo_y_var_se_ale_point(scale: float, mean_se_ale: float) -> None:
     click.echo(
-        f"EVAL: yvar_scale = {scale:.04f} "
-        f"LARGER(mean_se_ale) = {mean_se_ale:.04f}"
+        f"EVAL: yvar_scale = {scale:.04f} LARGER(mean_se_ale) = {mean_se_ale:.04f}"
     )
 
 
@@ -919,9 +902,7 @@ def run_y_var_noise(
     yvar_scales: Sequence[float] = Y_VAR_SWEEP,
 ) -> tuple[list[YVarNoiseMetrics], list[tuple[float, float]]]:
     """Compare matched vs mismatched train_yvar; probe se_ale vs yvar scale."""
-    click.echo(
-        f"num_train={n_train} num_test={n_test} k={k} sigma={sigma:.04f}"
-    )
+    click.echo(f"num_train={n_train} num_test={n_test} k={k} sigma={sigma:.04f}")
     matched, none_m, wrong = compare_y_var_noise(
         n_train=n_train,
         n_test=n_test,

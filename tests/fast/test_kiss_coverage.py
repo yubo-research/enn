@@ -3,16 +3,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from evals.harness.work_dirs import fresh_work_dir
+
 # ---------------------------------------------------------------------------
 # Shared helpers (reduce duplication across config/trust-region tests)
 # ---------------------------------------------------------------------------
-
 
 
 def _load_tests_script(name: str):
     import importlib.util
     import sys
     from pathlib import Path
+
     path = Path(__file__).resolve().parent.parent / "scripts" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
@@ -21,6 +23,7 @@ def _load_tests_script(name: str):
     spec.loader.exec_module(mod)
     return mod
 
+
 def _morbo_tr_config():
     from enn.turbo.config import MorboTRConfig, MultiObjectiveConfig
 
@@ -28,16 +31,12 @@ def _morbo_tr_config():
     return MorboTRConfig(multi_objective=mo)
 
 
-
-
-
-
 def _enn_model():
     from enn.enn.enn_class import EpistemicNearestNeighbors
 
     x = np.array([[0.1, 0.2], [0.3, 0.4]])
     y = np.array([[1.0], [2.0]])
-    return EpistemicNearestNeighbors(x, y)
+    return EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
 
 
 def _optimizer():
@@ -46,7 +45,10 @@ def _optimizer():
 
     bounds = np.array([[0.0, 1.0], [0.0, 1.0]])
     return create_optimizer(
-        bounds=bounds, config=turbo_zero_config(), rng=np.random.default_rng(0)
+        bounds=bounds,
+        config=turbo_zero_config(),
+        seed=int(np.random.default_rng(0).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
 
 
@@ -92,7 +94,7 @@ def test_enn_surrogate_config_properties():
     from enn.turbo.config import ENNFitConfig, ENNSurrogateConfig
 
     cfg = ENNSurrogateConfig(
-        fit=ENNFitConfig(num_fit_samples=50, num_fit_candidates=30)
+        fit=ENNFitConfig(num_fit_samples=50, num_fit_candidates=30),
     )
     # num_fit_samples / num_fit_candidates
     assert cfg.num_fit_samples == 50
@@ -115,12 +117,6 @@ def test_trust_region_config_protocol():
     assert hasattr(InitStrategy, "create_runtime_strategy")
 
 
-def test_enn_index_driver_enum():
-    from enn.turbo.config.enn_index_driver import ENNIndexDriver
-
-    assert ENNIndexDriver.FLAT != ENNIndexDriver.BPANN_DISK
-
-
 def test_optimizer_config_properties():
     from enn.turbo.config import MorboTRConfig, MultiObjectiveConfig, OptimizerConfig
 
@@ -140,22 +136,9 @@ def test_optimizer_config_properties():
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Component protocols / properties
 # ---------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -225,19 +208,9 @@ def test_optimizer_init_progress():
 # ---------------------------------------------------------------------------
 
 
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
-
-
-
-
 
 
 def test_lazy_getattr():
@@ -267,5 +240,3 @@ def test_lazy_getattr_missing():
             mapping={},
             extra="pip install ennbo[with-deps]",
         )
-
-

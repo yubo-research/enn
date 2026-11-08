@@ -12,7 +12,6 @@ AcquisitionConfig = (
 
 
 def acquisition_kind(acq: object) -> str:
-    """Name passed to the Rust optimizer. Unknown classes are an error."""
     if isinstance(acq, UCBAcquisitionConfig):
         return "ucb"
     if isinstance(acq, DrawAcquisitionConfig):

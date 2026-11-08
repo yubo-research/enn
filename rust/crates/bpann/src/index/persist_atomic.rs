@@ -13,7 +13,6 @@ thread_local! {
         const { std::cell::Cell::new(false) };
 }
 
-/// Hold while injecting a mid-persist failure (thread-local; safe under parallel tests).
 #[cfg(test)]
 pub(crate) struct TestPersistFailGuard;
 
@@ -59,11 +58,14 @@ pub(crate) fn persist_index_files(
     pages: &[Page],
     skip_edges: &HashMap<u32, Vec<u32>>,
 ) -> Result<(), BpannError> {
-    persist_index_files_with(index_dir, header, |w| write_pages_index(pages, header.num_dim, w), skip_edges)
+    persist_index_files_with(
+        index_dir,
+        header,
+        |w| write_pages_index(pages, header.num_dim, w),
+        skip_edges,
+    )
 }
 
-/// Keep the current `path` (if any) as `backup` without reading it into memory: a
-/// hard link where the filesystem allows one, else a streamed copy.
 fn keep_backup(path: &Path, backup: &Path) -> Result<bool, BpannError> {
     if !path.exists() {
         return Ok(false);
@@ -75,7 +77,6 @@ fn keep_backup(path: &Path, backup: &Path) -> Result<bool, BpannError> {
     Ok(true)
 }
 
-/// Restore `path` from `backup` if one was kept, else leave `path` alone; drop the backup.
 fn restore_backup(path: &Path, backup: &Path, kept: bool, failed: bool) {
     if kept && failed {
         let _ = fs::rename(backup, path);
@@ -83,9 +84,6 @@ fn restore_backup(path: &Path, backup: &Path, kept: bool, failed: bool) {
     let _ = fs::remove_file(backup);
 }
 
-/// Atomically replace `pages.bin` (written by `write_pages`), `skip_edges.bin` and
-/// `header.json`; on failure the previous files are put back. Nothing is buffered
-/// in memory beyond the writer's buffer.
 pub(crate) fn persist_index_files_with(
     index_dir: &Path,
     header: &IndexHeader,
@@ -106,8 +104,7 @@ pub(crate) fn persist_index_files_with(
             let file = File::create(&pages_tmp)
                 .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
             let mut writer = BufWriter::new(file);
-            write_pages(&mut writer)
-                .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+            write_pages(&mut writer).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
             writer
                 .flush()
                 .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
@@ -125,9 +122,7 @@ pub(crate) fn persist_index_files_with(
         }
         let header_json = serde_json::to_string_pretty(header)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        fs::write(index_dir.join("header.json"), header_json)
-            .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        Ok(())
+        crate::store_file::bpann_replace_json_text(&index_dir.join("header.json"), &header_json)
     })();
     let failed = persist_result.is_err();
     restore_backup(&pages_path, &pages_bak, pages_kept, failed);
@@ -169,13 +164,7 @@ mod tests {
             false,
         )
         .unwrap();
-        persist_index_files(
-            &index_dir,
-            &index.header,
-            &index.pages,
-            &index.skip_edges,
-        )
-        .unwrap();
+        persist_index_files(&index_dir, &index.header, &index.pages, &index.skip_edges).unwrap();
         let pages_before = fs::read(index_dir.join("pages.bin")).unwrap();
         {
             let _fail = TestPersistFailGuard::after_pages_rename();
@@ -204,13 +193,7 @@ mod tests {
             false,
         )
         .unwrap();
-        persist_index_files(
-            &index_dir,
-            &index.header,
-            &index.pages,
-            &index.skip_edges,
-        )
-        .unwrap();
+        persist_index_files(&index_dir, &index.header, &index.pages, &index.skip_edges).unwrap();
         let opened = BpannIndex::open(index_dir.clone()).expect("initial open");
         assert_eq!(opened.header.indexed_rows, 3);
 

@@ -63,8 +63,6 @@ def test_lockfile_matches_workspace_version(manifest):
     version = _workspace_version(manifest)
     members = _members(manifest)
     locked = {
-        p["name"]: p["version"]
-        for p in _load(lock)["package"]
-        if p["name"] in members
+        p["name"]: p["version"] for p in _load(lock)["package"] if p["name"] in members
     }
     assert locked == dict.fromkeys(members, version)

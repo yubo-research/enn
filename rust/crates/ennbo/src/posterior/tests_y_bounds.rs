@@ -1,23 +1,17 @@
 //! Dual warped/natural posterior API under non-identity y_bounds.
 
 use super::*;
-use crate::backend::EnnStorage;
-use crate::index::IndexDriver;
 use crate::model::EpistemicNearestNeighbors;
 use ndarray::array;
 
-fn logit_unit_model() -> EpistemicNearestNeighbors {
+fn logit_unit_model() -> crate::test_helpers::TestModel {
     let train_x = array![[0.0], [1.0], [0.5]];
     let train_y = array![[0.1], [0.9], [0.5]];
     let bounds = array![[0.0, 1.0]];
-    EpistemicNearestNeighbors::new_with_storage(
-        train_x,
-        train_y,
-        None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
-        Some(bounds),
-    )
-    .unwrap()
+    crate::test_helpers::test_model_with(false, |layout| {
+        EpistemicNearestNeighbors::new_with_storage(train_x, train_y, None, layout, Some(bounds))
+            .unwrap()
+    })
 }
 
 #[test]
@@ -30,10 +24,10 @@ fn batch_posterior_naturalizes_under_y_bounds() {
     let query = array![[0.25]];
 
     let natural = model
-        .batch_posterior(&query.view(), &[params], &flags)
+        .batch_posterior(&query.view(), std::slice::from_ref(&params), &flags)
         .unwrap();
     let warped =
-        PosteriorComputation::batch_posterior(&model, &query.view(), &[params], &flags).unwrap();
+        PosteriorComputation::batch_posterior(&*model, &query.view(), &[params], &flags).unwrap();
 
     assert_eq!(natural.mu.shape(), &[1, 1, 1]);
     assert!(natural.mu[[0, 0, 0]] > 0.0 && natural.mu[[0, 0, 0]] < 1.0);
@@ -150,11 +144,12 @@ fn y_bounds_edge_lower_only_log_warp_roundtrip_and_oob() {
     let train_x = array![[0.0], [1.0], [0.5]];
     let train_y = array![[0.5], [2.0], [1.0]];
     let bounds = array![[0.0, f64::INFINITY]];
+    let dir = tempfile::tempdir().unwrap();
     let model = EpistemicNearestNeighbors::new_with_storage(
         train_x.clone(),
         train_y.clone(),
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
         Some(bounds.clone()),
     )
     .unwrap();
@@ -167,11 +162,12 @@ fn y_bounds_edge_lower_only_log_warp_roundtrip_and_oob() {
     let (_, y_z, _) = model.rows().train_rows_at(&all).unwrap();
     assert!((y_z[[0, 0]] - 0.5_f64.ln()).abs() < 1e-12);
 
+    let dir = tempfile::tempdir().unwrap();
     let oob = EpistemicNearestNeighbors::new_with_storage(
         train_x,
         array![[-0.1], [2.0], [1.0]],
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
         Some(bounds),
     );
     assert!(oob.is_err(), "y <= lower must be rejected for (0, inf)");
@@ -182,11 +178,12 @@ fn y_bounds_edge_upper_only_neglog_warp_and_samples_in_bounds() {
     let train_x = array![[0.0], [1.0], [0.5]];
     let train_y = array![[1.0], [4.0], [2.5]];
     let bounds = array![[f64::NEG_INFINITY, 5.0]];
+    let dir = tempfile::tempdir().unwrap();
     let model = EpistemicNearestNeighbors::new_with_storage(
         train_x,
         train_y,
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
         Some(bounds),
     )
     .unwrap();
@@ -206,11 +203,12 @@ fn y_bounds_edge_near_open_endpoints_logit() {
     let train_x = array![[0.0], [1.0], [0.5], [0.25]];
     let train_y = array![[1e-6], [1.0 - 1e-6], [0.5], [0.25]];
     let bounds = array![[0.0, 1.0]];
+    let dir = tempfile::tempdir().unwrap();
     let model = EpistemicNearestNeighbors::new_with_storage(
         train_x,
         train_y.clone(),
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
         Some(bounds),
     )
     .unwrap();
@@ -226,12 +224,11 @@ fn y_bounds_edge_near_open_endpoints_logit() {
 
 #[test]
 fn y_bounds_edge_empty_model_y_scale_row_is_ones() {
+    let dir = tempfile::tempdir().unwrap();
     let model = EpistemicNearestNeighbors::new_empty_with_y_bounds(
         1,
         1,
-        IndexDriver::Flat,
-        EnnStorage::InMemory,
-        None,
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
         None,
         Some(array![[0.0, 1.0]]),
     )
@@ -246,11 +243,12 @@ fn y_bounds_edge_empty_model_y_scale_row_is_ones() {
 fn y_bounds_edge_identity_equals_storage() {
     let train_x = array![[0.0], [1.0]];
     let train_y = array![[1.5], [-0.5]];
+    let dir = tempfile::tempdir().unwrap();
     let model = EpistemicNearestNeighbors::new_with_storage(
         train_x,
         train_y.clone(),
         None,
-        crate::layout::EnnLayout::memory(IndexDriver::Flat, false),
+        crate::layout::EnnLayout::new(dir.path(), false).unwrap(),
         None,
     )
     .unwrap();

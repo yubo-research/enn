@@ -1,12 +1,27 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+
+from enn._rust import ENNParams as RustENNParams
+
+from .enn_params_class import calibrator_coefficients
+
+
+def rust_params(params: Any | None) -> RustENNParams | None:
+    if params is None:
+        return None
+    return RustENNParams(
+        params.k_num_neighbors,
+        params.epistemic_variance_scale,
+        params.aleatoric_variance_scale,
+        calibrator_coefficients(params.calibrator),
+    )
 
 
 def _to_rust_seeds(function_seeds: np.ndarray | list[int]) -> list[int]:
-    if hasattr(function_seeds, "__iter__"):
-        return np.asarray(function_seeds, dtype=np.int64).tolist()
-    return list(function_seeds)
+    return np.asarray(function_seeds, dtype=np.int64).tolist()
 
 
 def enn_index_neighbor_distances_and_indices(

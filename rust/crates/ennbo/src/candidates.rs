@@ -1,5 +1,3 @@
-//! Candidate generation for trust region optimization.
-
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use rand::distributions::{Bernoulli, Uniform};
 use rand::rngs::StdRng;
@@ -17,19 +15,14 @@ fn sobol_params() -> &'static JoeKuoD6 {
     PARAMS.get_or_init(JoeKuoD6::extended)
 }
 
-/// Candidate random variable type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum CandidateRV {
-    /// Sobol quasi-random sequence.
     Sobol,
-    /// Uniform random sampling.
     #[default]
     Uniform,
-    /// RAASP (Random Axis-Aligned Subspace Perturbation).
     RAASP,
 }
 
-/// Convert from unit hypercube to bounds.
 pub fn from_unit(x_unit: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f64> {
     let n = x_unit.nrows();
     let d = x_unit.ncols();
@@ -45,7 +38,6 @@ pub fn from_unit(x_unit: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f
     result
 }
 
-/// Convert to unit hypercube from bounds.
 pub fn to_unit(x: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f64> {
     let n = x.nrows();
     let d = x.ncols();
@@ -66,7 +58,6 @@ pub fn to_unit(x: &ArrayView2<f64>, bounds: &ArrayView2<f64>) -> Array2<f64> {
     result
 }
 
-/// Generate candidates within trust region bounds.
 #[allow(clippy::too_many_arguments)]
 pub fn generate_candidates<R: Rng + ?Sized>(
     compute_bounds_1d: impl Fn() -> (Array1<f64>, Array1<f64>),
@@ -89,14 +80,12 @@ pub fn generate_candidates<R: Rng + ?Sized>(
                 for i in 0..num_candidates {
                     let sample = engine.sample(rng)?;
                     for j in 0..num_dim {
-
                         let unit = sample[j];
                         candidates[[i, j]] = lower_1d[j] + unit * (upper_1d[j] - lower_1d[j]);
                     }
                 }
                 Ok(candidates)
             } else {
-
                 generate_uniform(&lower_1d, &upper_1d, num_candidates, rng)
             }
         }
@@ -113,7 +102,6 @@ pub fn generate_candidates<R: Rng + ?Sized>(
     }
 }
 
-/// Sobol fill of a binomial subset of coordinates. Unselected coordinates stay at `x_center`.
 pub fn generate_sobol_masked<R: Rng + ?Sized>(
     x_center: &ArrayView1<f64>,
     lower: &Array1<f64>,
@@ -125,12 +113,13 @@ pub fn generate_sobol_masked<R: Rng + ?Sized>(
 ) -> Result<Array2<f64>, ENNError> {
     let num_dim = x_center.len();
     if num_dim == 0 {
-        return Err(ENNError::InvalidParameter("num_dim must be > 0".to_string()));
+        return Err(ENNError::InvalidParameter(
+            "num_dim must be > 0".to_string(),
+        ));
     }
     let prob = (num_pert as f64 / num_dim as f64).min(1.0);
-    let bern = Bernoulli::new(prob).map_err(|e| {
-        ENNError::InvalidParameter(format!("binomial mask: {e}"))
-    })?;
+    let bern = Bernoulli::new(prob)
+        .map_err(|e| ENNError::InvalidParameter(format!("binomial mask: {e}")))?;
     let mut candidates = Array2::zeros((num_candidates, num_dim));
     for i in 0..num_candidates {
         for j in 0..num_dim {
@@ -152,7 +141,6 @@ pub fn generate_sobol_masked<R: Rng + ?Sized>(
     Ok(candidates)
 }
 
-/// Generate uniformly random candidates.
 pub fn generate_uniform<R: Rng + ?Sized>(
     lower: &Array1<f64>,
     upper: &Array1<f64>,
@@ -186,7 +174,6 @@ fn raasp_dim_from_cdf(cdf: &Array1<f64>, r: f64, num_dim: usize) -> usize {
     lo
 }
 
-/// Generate RAASP candidates.
 fn generate_raasp<R: Rng + ?Sized>(
     x_center: &ArrayView1<f64>,
     lengthscales: Option<&ArrayView1<f64>>,
@@ -234,7 +221,6 @@ fn generate_raasp<R: Rng + ?Sized>(
     Ok(candidates)
 }
 
-/// `n` Sobol points in `dim` dimensions, scrambled with `seed`.
 pub fn sobol_sequence(dim: usize, n: usize, seed: u64) -> Result<Array2<f64>, ENNError> {
     let mut engine = SobolEngine::new(dim)?;
     let mut rng = StdRng::seed_from_u64(seed);
@@ -248,17 +234,14 @@ pub fn sobol_sequence(dim: usize, n: usize, seed: u64) -> Result<Array2<f64>, EN
     Ok(out)
 }
 
-/// Sobol quasi-random sequence generator.
 pub struct SobolEngine {
     dimension: usize,
     sequence: Sobol<f64>,
-    /// Random shift per dimension for scrambling (None = not scrambled).
-    /// When set, each sample is transformed: (x_d + shift_d) % 1.0
     shift: Option<Vec<f64>>,
+    position: u64,
 }
 
 impl SobolEngine {
-    /// Create a new Sobol engine.
     pub fn new(dimension: usize) -> Result<Self, ENNError> {
         if dimension == 0 || dimension > 21201 {
             return Err(ENNError::InvalidParameter(format!(
@@ -272,17 +255,16 @@ impl SobolEngine {
             dimension,
             sequence,
             shift: None,
+            position: 0,
         })
     }
 
-    /// Sample the next point from the Sobol sequence.
-    ///
-    /// If scrambled (via `scramble()`), applies random shift per dimension.
     pub fn sample<R: Rng + ?Sized>(&mut self, _rng: &mut R) -> Result<Vec<f64>, ENNError> {
         let mut sample = self
             .sequence
             .next()
             .ok_or_else(|| ENNError::InvalidParameter("Sobol sequence exhausted".to_string()))?;
+        self.position += 1;
         if sample.len() != self.dimension {
             return Err(ENNError::InvalidParameter(format!(
                 "Sobol sample dimension mismatch: expected {}, got {}",
@@ -305,11 +287,28 @@ impl SobolEngine {
         self.dimension
     }
 
-    /// Scramble the sequence using random digital shift per dimension.
-    ///
-    /// Closer to Owen-style scrambling than a simple offset skip: each dimension
-    /// gets a random shift in [0,1]; samples are (x + shift) mod 1.
-    /// Preserves low-discrepancy structure while randomizing.
+    pub(crate) fn position(&self) -> u64 {
+        self.position
+    }
+
+    pub(crate) fn shift(&self) -> Option<&[f64]> {
+        self.shift.as_deref()
+    }
+
+    pub(crate) fn restored(
+        dimension: usize,
+        position: u64,
+        shift: Option<Vec<f64>>,
+    ) -> Result<Self, ENNError> {
+        let mut engine = Self::new(dimension)?;
+        engine.shift = shift;
+        for _ in 0..position {
+            engine.sequence.next();
+        }
+        engine.position = position;
+        Ok(engine)
+    }
+
     pub fn scramble<R: RngCore + ?Sized>(&mut self, rng: &mut R) {
         self.shift = Some(
             (0..self.dimension)
@@ -324,7 +323,6 @@ impl SobolEngine {
     }
 }
 
-/// Generate Latin Hypercube samples.
 pub fn generate_lhd<R: Rng + ?Sized>(
     num_samples: usize,
     num_dim: usize,
@@ -337,7 +335,6 @@ pub fn generate_lhd<R: Rng + ?Sized>(
         let lower = bounds[[j, 0]];
         let upper = bounds[[j, 1]];
         let range = upper - lower;
-
 
         let mut perm: Vec<usize> = (0..num_samples).collect();
 
@@ -374,7 +371,6 @@ mod tests {
         let unit = to_unit(&x.view(), &bounds.view());
         let back = from_unit(&unit.view(), &bounds.view());
 
-
         for i in 0..x.nrows() {
             for j in 0..x.ncols() {
                 assert!((back[[i, j]] - x[[i, j]]).abs() < 1e-10);
@@ -393,7 +389,6 @@ mod tests {
         assert_eq!(candidates.nrows(), 10);
         assert_eq!(candidates.ncols(), 2);
 
-
         for i in 0..candidates.nrows() {
             for j in 0..candidates.ncols() {
                 assert!(candidates[[i, j]] >= lower[j]);
@@ -411,7 +406,6 @@ mod tests {
 
         assert_eq!(samples.nrows(), 5);
         assert_eq!(samples.ncols(), 2);
-
 
         for i in 0..samples.nrows() {
             for j in 0..samples.ncols() {
@@ -432,11 +426,9 @@ mod tests {
         assert_eq!(sample1.len(), 2);
         assert_eq!(sample2.len(), 2);
 
-
         for v in &sample1 {
             assert!(*v >= 0.0 && *v < 1.0);
         }
-
 
         assert_ne!(sample1, sample2);
     }
@@ -573,7 +565,10 @@ mod tests {
         let out = run();
         let out2 = run();
         assert_eq!(out.shape(), &[3, 3]);
-        assert!(out.iter().zip(out2.iter()).all(|(a, b)| (a - b).abs() < 1e-15));
+        assert!(out
+            .iter()
+            .zip(out2.iter())
+            .all(|(a, b)| (a - b).abs() < 1e-15));
         assert!(out.iter().all(|&v| (0.0..=1.0).contains(&v)));
     }
 
@@ -595,8 +590,6 @@ mod tests {
 
     #[test]
     fn test_sobol_engine_matches_scipy_reference_points() {
-
-
         let expected = [
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.5, 0.5, 0.5, 0.5, 0.5],

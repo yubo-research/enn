@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import MISSING, asdict, dataclass
 from typing import Any
 
 import numpy as np
+
+from evals.harness.work_dirs import fresh_work_dir
 
 BenchmarkObjective = Callable[[np.ndarray], np.ndarray]
 
@@ -107,12 +110,12 @@ class ProblemSpec:
 
         rng = np.random.default_rng(self.rng_seed)
         if self.name == "ackley_30d":
-            objective = Ackley(noise=self.noise, rng=rng)
+            objective = Ackley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
         elif self.name in {"double_ackley_30d", "ackley_pair_30d"}:
             objective = (
-                Ackley(noise=self.noise, rng=rng)
+                Ackley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
                 if self.name == "ackley_pair_30d"
-                else DoubleAckley(noise=self.noise, rng=rng)
+                else DoubleAckley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
             )
         else:
             raise ValueError(self.name)
@@ -126,7 +129,7 @@ class ProblemSpec:
 
         rng = np.random.default_rng(self.rng_seed)
         if self.name == "ackley_30d":
-            ackley = Ackley(noise=self.noise, rng=rng)
+            ackley = Ackley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
 
             def objective(x: np.ndarray) -> np.ndarray:
                 y = ackley(x)
@@ -135,11 +138,13 @@ class ProblemSpec:
             return objective
 
         if self.name == "double_ackley_30d":
-            double_ackley = DoubleAckley(noise=self.noise, rng=rng)
+            double_ackley = DoubleAckley(
+                noise=self.noise, seed=int(rng.integers(2**63 - 1))
+            )
             return double_ackley
 
         if self.name == "ackley_pair_30d":
-            ackley = Ackley(noise=self.noise, rng=rng)
+            ackley = Ackley(noise=self.noise, seed=int(rng.integers(2**63 - 1)))
             mid = self.num_dim // 2
 
             def objective(x: np.ndarray) -> np.ndarray:
@@ -255,6 +260,7 @@ def build_optimizer_config(
             enn=ENNSurrogateConfig(
                 k=10,
                 fit=_fit_config(ENNFitConfig, affine_calibrate),
+                **_work_dir_kwargs(ENNSurrogateConfig),
             ),
             trust_region=morbo_tr,
             acq_type=AcqType.UCB,
@@ -274,6 +280,7 @@ def build_optimizer_config(
             enn=ENNSurrogateConfig(
                 k=10,
                 fit=_fit_config(ENNFitConfig, affine_calibrate),
+                **_work_dir_kwargs(ENNSurrogateConfig),
             ),
             trust_region=trust_region,
             acq_type=acq_type,
@@ -301,6 +308,14 @@ class BenchmarkResult:
         return asdict(self)
 
 
+def _work_dir_kwargs(surrogate_config: Any) -> dict[str, str]:
+    """Released versions keep rows in memory; only a required work_dir is passed."""
+    work_dir = surrogate_config.__dataclass_fields__.get("work_dir")
+    if work_dir is None or work_dir.default is not MISSING:
+        return {}
+    return {"work_dir": tempfile.mkdtemp(prefix="enn_compare_versions_")}
+
+
 def _fit_config(enn_fit_config: Any, affine_calibrate: bool) -> Any:
     if affine_calibrate:
         return enn_fit_config(num_fit_samples=100, affine_calibrate=True)
@@ -322,7 +337,12 @@ def run_benchmark(
     config = build_optimizer_config(
         optimizer, problem, affine_calibrate=affine_calibrate
     )
-    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = create_optimizer(
+        bounds=bounds,
+        config=config,
+        seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
+    )
 
     best_y = -np.inf
     all_y: list[np.ndarray] = []

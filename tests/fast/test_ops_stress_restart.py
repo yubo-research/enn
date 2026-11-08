@@ -6,9 +6,7 @@ import struct
 
 import pytest
 
-_STRESS_ROW_RE = re.compile(
-    r"n = \d+ query_s = \d+\.\d{4} segment_s = \d+\.\d{4}"
-)
+_STRESS_ROW_RE = re.compile(r"n = \d+ query_s = \d+\.\d{4} segment_s = \d+\.\d{4}")
 
 
 def test_format_config_header_restart():
@@ -35,7 +33,7 @@ def test_load_num_obs_existing(tmp_path):
         "num_obs": 42,
         "num_dim": 10,
         "num_metrics": 1,
-        "scale_x": False,
+        "weighting": False,
         "index_backend": "bpann_disk",
         "indexed_rows": 42,
     }
@@ -47,10 +45,10 @@ def test_load_num_obs_existing(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "index_type,subdir",
-    [("bpann_disk", "enn_restart_bpann")],
+    "subdir",
+    ["enn_restart_bpann"],
 )
-def test_enn_stress_cli_disk_restart_header(tmp_path, index_type, subdir):
+def test_enn_stress_cli_disk_restart_header(tmp_path, subdir):
     from click.testing import CliRunner
 
     from ops.stress import cli
@@ -58,13 +56,13 @@ def test_enn_stress_cli_disk_restart_header(tmp_path, index_type, subdir):
     work_dir = tmp_path / subdir
     first = CliRunner().invoke(
         cli,
-        ["enn", index_type, "3", "--work-dir", str(work_dir)],
+        ["enn", "3", "--work-dir", str(work_dir)],
     )
     assert first.exit_code == 0, first.output
 
     second = CliRunner().invoke(
         cli,
-        ["enn", index_type, "10", "--work-dir", str(work_dir)],
+        ["enn", "10", "--work-dir", str(work_dir)],
     )
     assert second.exit_code == 0, second.output
     lines = second.output.strip().splitlines()

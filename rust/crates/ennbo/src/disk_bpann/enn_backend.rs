@@ -1,5 +1,3 @@
-//! Disk-backed ENN backend wrapping the standalone `ennbo-bpann` crate.
-
 use std::path::PathBuf;
 
 use ennbo_bpann::BpannBackend;
@@ -8,11 +6,12 @@ use ndarray::{Array1, Array2, ArrayView2};
 use crate::backend::TrainRowsAtResult;
 use crate::error::ENNError;
 use crate::file_config::install_bpann_tuning_from_config;
-use crate::index::IndexDriver;
 
 fn bpann_err(e: ennbo_bpann::BpannError) -> ENNError {
     match e {
-        ennbo_bpann::BpannError::InvalidShape { expected, got } => ENNError::InvalidShape { expected, got },
+        ennbo_bpann::BpannError::InvalidShape { expected, got } => {
+            ENNError::InvalidShape { expected, got }
+        }
         ennbo_bpann::BpannError::InvalidParameter(s) => ENNError::InvalidParameter(s),
     }
 }
@@ -26,7 +25,6 @@ fn apply_config_flush_threshold(inner: BpannBackend) -> BpannBackend {
 
 pub struct DiskBpannEnnBackend {
     inner: BpannBackend,
-    driver: IndexDriver,
     num_metrics: usize,
 }
 
@@ -45,7 +43,7 @@ impl DiskBpannEnnBackend {
             && work_dir.join("metadata.json").exists()
         {
             let mut reopened = BpannBackend::reopen(work_dir.clone()).map_err(bpann_err)?;
-            reopened.discard_metric_index_on_reopen().map_err(bpann_err)?;
+            reopened.restore_metric_on_reopen().map_err(bpann_err)?;
             reopened
         } else {
             BpannBackend::new(work_dir, train_x, train_y, train_yvar, scale_x, x_scale)
@@ -53,27 +51,19 @@ impl DiskBpannEnnBackend {
         };
         let inner = apply_config_flush_threshold(inner);
         let num_metrics = inner.num_metrics();
-        Ok(Self {
-            inner,
-            driver: IndexDriver::BpAnnDisk,
-            num_metrics,
-        })
+        Ok(Self { inner, num_metrics })
     }
 
-    pub fn new_empty(work_dir: PathBuf, num_dim: usize, num_metrics: usize) -> Result<Self, ENNError> {
+    pub fn new_empty(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+    ) -> Result<Self, ENNError> {
         install_bpann_tuning_from_config();
         let inner = apply_config_flush_threshold(
             BpannBackend::new_empty(work_dir, num_dim, num_metrics).map_err(bpann_err)?,
         );
-        Ok(Self {
-            inner,
-            driver: IndexDriver::BpAnnDisk,
-            num_metrics,
-        })
-    }
-
-    pub fn driver(&self) -> IndexDriver {
-        self.driver
+        Ok(Self { inner, num_metrics })
     }
 
     #[allow(clippy::len_without_is_empty)]
@@ -87,14 +77,6 @@ impl DiskBpannEnnBackend {
 
     pub fn num_metrics(&self) -> usize {
         self.num_metrics
-    }
-
-    pub fn defer_index_sync_for_search(&self) -> bool {
-        true
-    }
-
-    pub fn is_index_stale(&self) -> bool {
-        false
     }
 
     pub fn mark_index_stale(&mut self) {
@@ -124,9 +106,15 @@ impl DiskBpannEnnBackend {
             .map_err(bpann_err)
     }
 
-    /// Metric learning change: rescale the index in place, and with `rebuild` also
-    /// re-partition it in place over the following adds.
-    pub fn set_metric_scale(&mut self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
+    pub fn metric_scale(&self) -> Option<Array1<f64>> {
+        self.inner.metric_scale().cloned()
+    }
+
+    pub fn set_metric_scale(
+        &mut self,
+        x_scale: &Array1<f64>,
+        rebuild: bool,
+    ) -> Result<(), ENNError> {
         let result = if rebuild {
             self.inner.rebuild_metric(x_scale)
         } else {
@@ -150,8 +138,6 @@ impl DiskBpannEnnBackend {
     }
 
     pub fn row_y(&self, i: usize) -> Result<Array1<f64>, ENNError> {
-
-
         let (y, _) = self.inner.mmap_row_y_and_yvar(i).map_err(bpann_err)?;
         Ok(Array1::from(y.to_vec()))
     }
@@ -222,11 +208,7 @@ impl DiskBpannEnnBackend {
             .with_pending_flush_threshold(pending_flush_threshold)
             .with_pending_hard_flush_threshold(pending_hard_flush_threshold)
             .with_defer_append_indexing(true);
-        Ok(Self {
-            inner,
-            driver: IndexDriver::BpAnnDisk,
-            num_metrics,
-        })
+        Ok(Self { inner, num_metrics })
     }
 
     pub fn pending_unindexed_count(&self) -> usize {
@@ -253,14 +235,12 @@ impl DiskBpannEnnBackend {
         self.inner.defer_append_indexing()
     }
 
-    /// Build soft-sync fragments without mutating the published index.
     pub(crate) fn soft_sync_build_detached(
         &self,
     ) -> Result<Option<ennbo_bpann::IncrementalIndex>, ENNError> {
         ennbo_bpann::soft_sync_build(&self.inner).map_err(bpann_err)
     }
 
-    /// Publish a detached soft-sync result (short exclusive critical section).
     pub(crate) fn soft_sync_publish_detached(
         &mut self,
         built: ennbo_bpann::IncrementalIndex,
@@ -279,13 +259,9 @@ mod tests {
     #[test]
     fn new_empty_with_flush_threshold_sets_defer_sync() {
         let dir = TempDir::new().expect("tempdir");
-        let backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
-            dir.path().to_path_buf(),
-            2,
-            1,
-            5,
-        )
-        .expect("backend");
+        let backend =
+            DiskBpannEnnBackend::new_empty_with_flush_threshold(dir.path().to_path_buf(), 2, 1, 5)
+                .expect("backend");
         assert_eq!(backend.pending_flush_threshold(), 5);
         assert!(!backend.append_syncs_at_threshold());
         assert_eq!(backend.pending_unindexed_count(), 0);
@@ -297,11 +273,7 @@ mod tests {
         let mut backend =
             DiskBpannEnnBackend::new_empty(dir.path().to_path_buf(), 2, 1).expect("backend");
         let err = backend
-            .append_rows(
-                &array![[0.0, 0.0, 0.0]].view(),
-                &array![[0.0]].view(),
-                None,
-            )
+            .append_rows(&array![[0.0, 0.0, 0.0]].view(), &array![[0.0]].view(), None)
             .unwrap_err();
         assert!(matches!(err, ENNError::InvalidShape { .. }));
     }
@@ -310,7 +282,7 @@ mod tests {
     fn reopen_from_existing_work_dir() {
         let dir = TempDir::new().expect("tempdir");
         let path = dir.path().to_path_buf();
-        let _fresh = DiskBpannEnnBackend::new(
+        let fresh = DiskBpannEnnBackend::new(
             path.clone(),
             array![[0.0, 0.0], [1.0, 0.0]],
             array![[0.0], [1.0]],
@@ -319,6 +291,7 @@ mod tests {
             array![1.0, 1.0],
         )
         .expect("fresh");
+        drop(fresh);
         let reopened = DiskBpannEnnBackend::new(
             path,
             Array2::zeros((0, 2)),
@@ -335,7 +308,7 @@ mod tests {
     fn reopen_uses_persisted_num_metrics_not_placeholder_train_y() {
         let dir = TempDir::new().expect("tempdir");
         let path = dir.path().to_path_buf();
-        let _fresh = DiskBpannEnnBackend::new(
+        let fresh = DiskBpannEnnBackend::new(
             path.clone(),
             array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
             array![[0.0, 1.0], [1.0, 2.0], [1.0, 3.0]],
@@ -344,6 +317,7 @@ mod tests {
             array![1.0, 1.0],
         )
         .expect("fresh");
+        drop(fresh);
         let reopened = DiskBpannEnnBackend::new(
             path,
             Array2::zeros((0, 2)),
@@ -367,11 +341,7 @@ mod tests {
         )
         .expect("backend");
         backend
-            .append_rows(
-                &array![[0.0, 0.0]].view(),
-                &array![[1.0]].view(),
-                None,
-            )
+            .append_rows(&array![[0.0, 0.0]].view(), &array![[1.0]].view(), None)
             .expect("append");
         assert_eq!(backend.pending_unindexed_count(), 0);
         backend.mark_index_stale();
@@ -381,13 +351,9 @@ mod tests {
     #[test]
     fn soft_sync_inner_drains_pending_without_pages() {
         let dir = TempDir::new().expect("tempdir");
-        let mut backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
-            dir.path().to_path_buf(),
-            2,
-            1,
-            5,
-        )
-        .expect("backend");
+        let mut backend =
+            DiskBpannEnnBackend::new_empty_with_flush_threshold(dir.path().to_path_buf(), 2, 1, 5)
+                .expect("backend");
         assert!(backend.defer_append_indexing_for_flush());
         backend
             .append_rows(
@@ -399,9 +365,7 @@ mod tests {
         backend.mark_index_stale();
         assert!(backend.pending_unindexed_count() > 0);
         if let Some(built) = backend.soft_sync_build_detached().expect("build") {
-            backend
-                .soft_sync_publish_detached(built)
-                .expect("publish");
+            backend.soft_sync_publish_detached(built).expect("publish");
         }
         assert_eq!(backend.pending_unindexed_count(), 0);
         assert!(!dir.path().join("index/pages.bin").exists());

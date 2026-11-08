@@ -1,25 +1,20 @@
-//! Utility functions Python bindings.
-
-use ndarray::Array1;
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2,
+    PyReadonlyArrayDyn,
+};
 use pyo3::prelude::*;
 
-/// Python wrapper for standardize_y
 #[pyfunction(name = "standardize_y")]
-#[doc = "kiss-coverage-off"]
 pub fn standardize_y_py<'py>(py: Python<'py>, y: PyReadonlyArray1<f64>) -> PyResult<(f64, f64)> {
     let y_arr = y.as_array();
-
 
     let (center, scale) = py.allow_threads(|| ennbo::standardize_y(&y_arr));
 
     Ok((center, scale))
 }
 
-/// Python wrapper for pareto_front_2d_maximize
 #[pyfunction(name = "pareto_front_2d_maximize")]
 #[pyo3(signature = (a, b, idx=None))]
-#[doc = "kiss-coverage-off"]
 pub fn pareto_front_2d_maximize_py<'py>(
     py: Python<'py>,
     a: PyReadonlyArray1<f64>,
@@ -34,9 +29,8 @@ pub fn pareto_front_2d_maximize_py<'py>(
         Some(i) => {
             let mut out = Vec::with_capacity(i.as_array().len());
             for &x in i.as_array().iter() {
-                let u = usize::try_from(x).map_err(|_| {
-                    PyValueError::new_err(format!("idx entry {x} is negative"))
-                })?;
+                let u = usize::try_from(x)
+                    .map_err(|_| PyValueError::new_err(format!("idx entry {x} is negative")))?;
                 out.push(u);
             }
             Some(out)
@@ -44,7 +38,8 @@ pub fn pareto_front_2d_maximize_py<'py>(
         None => None,
     };
 
-    let result = py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, idx_vec.as_deref()));
+    let result =
+        py.allow_threads(|| ennbo::pareto_front_2d_maximize(&a_arr, &b_arr, idx_vec.as_deref()));
 
     let front = match result {
         Ok(v) => v,
@@ -54,25 +49,23 @@ pub fn pareto_front_2d_maximize_py<'py>(
     Ok(front.into_pyarray_bound(py))
 }
 
-/// Python wrapper for calculate_sobol_indices
 #[pyfunction(name = "calculate_sobol_indices")]
-#[doc = "kiss-coverage-off"]
 pub fn calculate_sobol_indices_py<'py>(
     py: Python<'py>,
-    x: PyReadonlyArray2<f64>,
-    y: PyReadonlyArray1<f64>,
+    x: PyReadonlyArrayDyn<f64>,
+    y: PyReadonlyArrayDyn<f64>,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let x_arr = x.as_array();
     let y_arr = y.as_array();
 
-    let sobol = py.allow_threads(|| ennbo::calculate_sobol_indices(&x_arr, &y_arr));
-    Ok(Array1::from_vec(sobol.to_vec()).into_pyarray_bound(py))
+    let sobol = py
+        .allow_threads(|| ennbo::util::calculate_sobol_indices_any_rank(&x_arr, &y_arr))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(sobol.into_pyarray_bound(py))
 }
 
-/// Python helper for deterministic Sobol sequence generation.
 #[pyfunction(name = "sobol_sequence")]
 #[pyo3(signature = (dimension, num_points, seed=0))]
-#[doc = "kiss-coverage-off"]
 pub fn sobol_sequence_py<'py>(
     py: Python<'py>,
     dimension: usize,
@@ -94,10 +87,8 @@ mod kiss_coverage_tests {
     }
 }
 
-/// Python wrapper for arms_from_pareto_fronts (returns selected candidate rows).
 #[pyfunction(name = "arms_from_pareto_fronts")]
 #[pyo3(signature = (x_cand, mu, se, num_arms, seed))]
-#[doc = "kiss-coverage-off"]
 pub fn arms_from_pareto_fronts_py<'py>(
     py: Python<'py>,
     x_cand: PyReadonlyArray2<f64>,
@@ -119,16 +110,17 @@ pub fn arms_from_pareto_fronts_py<'py>(
         )));
     }
 
-    let indices = py.allow_threads(|| {
-        ennbo::util::arms_from_pareto_fronts(
-            &x_arr.view(),
-            &mu_arr.view(),
-            &se_arr.view(),
-            num_arms,
-            seed,
-        )
-    })
-    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let indices = py
+        .allow_threads(|| {
+            ennbo::util::arms_from_pareto_fronts(
+                &x_arr.view(),
+                &mu_arr.view(),
+                &se_arr.view(),
+                num_arms,
+                seed,
+            )
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
     if indices.is_empty() {
         let empty = ndarray::Array2::<f64>::zeros((0, x_arr.ncols()));
         return Ok(empty.into_pyarray_bound(py));
@@ -143,18 +135,14 @@ pub fn arms_from_pareto_fronts_py<'py>(
     Ok(out.into_pyarray_bound(py))
 }
 
-/// Override ennbo config path (`None` restores `~/.ennbo/config.toml`).
 #[pyfunction(name = "set_config_path")]
 #[pyo3(signature = (path=None))]
-#[doc = "kiss-coverage-off"]
 pub fn set_config_path_py(path: Option<&str>) -> PyResult<()> {
     ennbo::set_config_path(path.map(std::path::PathBuf::from));
     Ok(())
 }
 
-/// Ensure `~/.ennbo/config.toml` (or override) exists and return its path.
 #[pyfunction(name = "ensure_config_file")]
-#[doc = "kiss-coverage-off"]
 pub fn ensure_config_file_py() -> PyResult<String> {
     Ok(ennbo::ensure_config_file().display().to_string())
 }

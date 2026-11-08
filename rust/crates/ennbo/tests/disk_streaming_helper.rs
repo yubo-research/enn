@@ -1,10 +1,10 @@
 //! Shared disk backend streaming smoke test body.
 
-use ennbo::{EnnStorage, EpistemicNearestNeighbors, IndexDriver};
+use ennbo::EpistemicNearestNeighbors;
 use ndarray::Array2;
 use rand::Rng;
-use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use tempfile::TempDir;
 
 const STREAMING_SEED: u64 = 99;
@@ -14,11 +14,7 @@ const STREAMING_FLUSH_THRESHOLD: usize = 5;
 const STREAMING_CROSS_ROWS: usize = STREAMING_FLUSH_THRESHOLD + 1;
 const STREAMING_N: usize = 120;
 
-fn random_batch(
-    rng: &mut ChaCha8Rng,
-    rows: usize,
-    d: usize,
-) -> (Array2<f64>, Array2<f64>) {
+fn random_batch(rng: &mut ChaCha8Rng, rows: usize, d: usize) -> (Array2<f64>, Array2<f64>) {
     let mut x = Array2::zeros((rows, d));
     let mut y = Array2::zeros((rows, 1));
     for i in 0..rows {
@@ -30,16 +26,13 @@ fn random_batch(
     (x, y)
 }
 
-pub fn run_disk_streaming_crosses_flush_threshold(driver: IndexDriver) {
-    assert_eq!(driver, IndexDriver::BpAnnDisk);
+pub fn run_disk_streaming_crosses_flush_threshold() {
     let mut rng = ChaCha8Rng::seed_from_u64(STREAMING_SEED);
     let dir = TempDir::new().expect("tempdir");
     let mut model = EpistemicNearestNeighbors::new_empty(
         STREAMING_D,
         1,
-        driver,
-        EnnStorage::Disk,
-        Some(dir.path().to_path_buf()),
+        ennbo::EnnLayout::new(dir.path().to_path_buf(), false).unwrap(),
         Some(STREAMING_FLUSH_THRESHOLD),
     )
     .expect("new_empty disk");
@@ -56,15 +49,13 @@ pub fn run_disk_streaming_crosses_flush_threshold(driver: IndexDriver) {
     assert_eq!(model.len(), STREAMING_CROSS_ROWS);
 }
 
-pub fn run_disk_streaming_add_sync_search(driver: IndexDriver) {
+pub fn run_disk_streaming_add_sync_search() {
     let mut rng = ChaCha8Rng::seed_from_u64(STREAMING_SEED);
     let dir = TempDir::new().expect("tempdir");
     let mut model = EpistemicNearestNeighbors::new_empty(
         STREAMING_D,
         1,
-        driver,
-        EnnStorage::Disk,
-        Some(dir.path().to_path_buf()),
+        ennbo::EnnLayout::new(dir.path().to_path_buf(), false).unwrap(),
         None,
     )
     .expect("new_empty disk");

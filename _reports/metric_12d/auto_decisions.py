@@ -7,9 +7,8 @@ Test-set queries are skipped. Usage: python reports/metric_12d/auto_decisions.py
 import tempfile
 from dataclasses import replace
 
-import numpy as np
-
 import evals.metric_12d as mod
+import numpy as np
 
 
 def replay(cfg, data=mod.make_data):

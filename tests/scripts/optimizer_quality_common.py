@@ -5,6 +5,8 @@ from typing import Any
 
 import numpy as np
 
+from evals.harness.work_dirs import fresh_work_dir
+
 
 def sphere_objective(x: np.ndarray) -> np.ndarray:
     return (-np.sum((x - 0.5) ** 2, axis=1)).reshape(-1, 1)
@@ -20,7 +22,12 @@ def run_best_y(
     create_optimizer: Callable[..., Any],
 ) -> float:
     rng = np.random.default_rng(seed)
-    opt = create_optimizer(bounds=bounds, config=config, rng=rng)
+    opt = create_optimizer(
+        bounds=bounds,
+        config=config,
+        seed=int(rng.integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
+    )
     evals = 0
     best = -np.inf
     while evals < budget:

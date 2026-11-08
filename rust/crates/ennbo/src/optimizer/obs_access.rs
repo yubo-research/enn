@@ -3,7 +3,6 @@ use ndarray::{Array1, Array2};
 use super::Optimizer;
 use crate::error::ENNError;
 
-/// Public accessor for optimizer observation row reads (kiss external-test surface).
 pub struct ObsAccess<'a> {
     opt: &'a Optimizer,
 }
@@ -21,25 +20,20 @@ impl<'a> ObsAccess<'a> {
         if let Some(surrogate) = self.opt.surrogate() {
             return surrogate.observation_row_x(idx);
         }
-        self.opt
-            .fallback_x
-            .get(idx)
-            .cloned()
-            .ok_or_else(|| ENNError::InvalidParameter(format!("observation index {idx} out of range")))
+        self.opt.fallback_x.get(idx).cloned().ok_or_else(|| {
+            ENNError::InvalidParameter(format!("observation index {idx} out of range"))
+        })
     }
 
     pub fn obs_row_y(&self, idx: usize) -> Result<Array1<f64>, ENNError> {
         if let Some(surrogate) = self.opt.surrogate() {
             return surrogate.observation_row_y(idx);
         }
-        self.opt
-            .fallback_y
-            .get(idx)
-            .cloned()
-            .ok_or_else(|| ENNError::InvalidParameter(format!("observation index {idx} out of range")))
+        self.opt.fallback_y.get(idx).cloned().ok_or_else(|| {
+            ENNError::InvalidParameter(format!("observation index {idx} out of range"))
+        })
     }
 
-    /// Observation values in warped storage units.
     pub(crate) fn y_obs_warped(&self) -> Option<Array2<f64>> {
         if let Some(surrogate) = self.opt.surrogate() {
             let y_nat = surrogate.observations_y().ok().flatten()?;

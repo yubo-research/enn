@@ -37,8 +37,6 @@ fn close(candidate: f32, reference: f64, len: usize) -> bool {
 
 #[test]
 fn l2_matches_scalar_reference_across_lengths() {
-
-
     let seed: u64 = rand::random();
     println!("l2_matches_scalar_reference_across_lengths seed={seed}");
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -59,8 +57,6 @@ fn l2_matches_scalar_reference_across_lengths() {
 
 #[test]
 fn l2_fuzz_random_lengths() {
-
-
     let seed: u64 = rand::random();
     println!("l2_fuzz_random_lengths seed={seed}");
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -93,17 +89,13 @@ fn l2_metamorphic_properties() {
         let b = rand_vec(&mut rng, len, 5.0);
         let base = l2_sq_f32(&a, &b);
 
-
         assert_eq!(l2_sq_f32(&a, &a), 0.0, "self-distance nonzero seed={seed}");
-
 
         assert_eq!(
             base,
             l2_sq_f32(&b, &a),
             "asymmetric distance seed={seed} len={len}"
         );
-
-
 
         let c = (rng.gen::<f32>() - 0.5) * 20.0;
         let a_shift: Vec<f32> = a.iter().map(|&v| v + c).collect();
@@ -113,8 +105,6 @@ fn l2_metamorphic_properties() {
             close(shifted, f64::from(base), len),
             "translation changed distance: base={base} shifted={shifted} c={c} seed={seed}"
         );
-
-
 
         let k = rng.gen_range(0.25f32..4.0);
         let a_scale: Vec<f32> = a.iter().map(|&v| v * k).collect();

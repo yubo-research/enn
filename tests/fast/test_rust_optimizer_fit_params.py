@@ -1,6 +1,6 @@
 """Regression test: num_fit_samples and num_fit_candidates passed to Rust backend.
 
-Bug: _config_to_rust_overrides() in rust_optimizer.py extracts index_driver but
+Bug: _config_to_rust_overrides() in rust_optimizer.py extracts work_dir but
 does not extract num_fit_samples or num_fit_candidates from ENNSurrogateConfig.
 This causes all experiments with different nfs= values to produce identical results.
 
@@ -9,13 +9,15 @@ See: enn_bug_report.md
 
 from __future__ import annotations
 
+import numpy as np
+
 from enn.turbo.config import (
     ENNFitConfig,
     ENNSurrogateConfig,
     turbo_enn_config,
 )
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
-from enn.turbo.rust_optimizer import _config_to_rust_overrides
+from enn.turbo.rust_optimizer import _config_to_rust_overrides, create_optimizer
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def _make_enn_config(num_fit_samples: int | None, num_fit_candidates: int | None):
@@ -78,14 +80,19 @@ def test_both_fit_params_passed_to_rust_overrides():
     assert overrides["num_fit_candidates"] == 200
 
 
-def test_rust_optimizer_passes_bpann_disk_index_driver():
-    config = turbo_enn_config(
-        enn=ENNSurrogateConfig(index_driver=ENNIndexDriver.BPANN_DISK)
+def test_optimizer_keeps_its_store_in_work_dir(tmp_path):
+    work_dir = tmp_path / "optimizer_store"
+    config = turbo_enn_config(enn=ENNSurrogateConfig(), num_init=1)
+    optimizer = create_optimizer(
+        bounds=np.array([[0.0, 1.0]]),
+        config=config,
+        seed=int(np.random.default_rng(0).integers(2**63 - 1)),
+        work_dir=work_dir,
     )
-    overrides = _config_to_rust_overrides(config)
+    x = optimizer.ask(num_arms=2)
+    optimizer.tell(x, x)
 
-    assert overrides is not None
-    assert overrides["index_driver"] == "BPANN_DISK"
+    assert (work_dir / "metadata.json").exists()
 
 
 def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
@@ -106,16 +113,23 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
         ],
         dtype=float,
     )
-    y = np.array([0.2, 1.5, -0.4, 0.7, 0.1], dtype=float)
+    y = np.array([[0.2], [1.5], [-0.4], [0.7], [0.1]], dtype=float)
     query = np.array([[0.55, 0.45, 0.35, 0.25]], dtype=float)
 
-    def query_mu(seed: int, num_fit_samples: int | None) -> tuple[np.ndarray, np.ndarray]:
+    def query_mu(
+        seed: int, num_fit_samples: int | None
+    ) -> tuple[np.ndarray, np.ndarray]:
         if num_fit_samples is None:
             fit = ENNFitConfig()
         else:
             fit = ENNFitConfig(num_fit_samples=num_fit_samples, num_fit_candidates=30)
         cfg = turbo_enn_config(enn=ENNSurrogateConfig(k=3, fit=fit), num_init=2)
-        opt = create_optimizer(bounds=bounds, config=cfg, rng=np.random.default_rng(seed))
+        opt = create_optimizer(
+            bounds=bounds,
+            config=cfg,
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+            work_dir=fresh_work_dir(),
+        )
         told = np.asarray(opt.tell(x, y), dtype=float)
         at_query = np.asarray(opt._inner.posterior_mu(query), dtype=float)
         return told, at_query
@@ -131,7 +145,8 @@ def test_none_fit_tell_returns_posterior_mean_and_frozen_query_is_seed_stable():
     zero = create_optimizer(
         bounds=bounds,
         config=turbo_zero_config(num_init=2),
-        rng=np.random.default_rng(0),
+        seed=int(np.random.default_rng(0).integers(2**63 - 1)),
+        work_dir=fresh_work_dir(),
     )
     echoed = np.asarray(zero.tell(x, y), dtype=float)
     assert np.allclose(echoed, y)

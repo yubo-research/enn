@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-_import_module = getattr(importlib, "import_module")
+_import_module = importlib.import_module
 
 
 def lazy_getattr(

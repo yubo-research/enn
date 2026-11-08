@@ -1,13 +1,14 @@
-//! Weighted 2-means split used when a tree page overflows.
-
 use std::cmp::Ordering;
 
 use crate::distance::l2_sq_f32;
 
 const TWO_MEANS_ITERS: usize = 6;
 
-/// Weighted mean of `points[i]` over `members`.
-pub fn weighted_mean<P: AsRef<[f32]>>(points: &[P], weights: &[f64], members: &[usize]) -> Vec<f32> {
+pub fn weighted_mean<P: AsRef<[f32]>>(
+    points: &[P],
+    weights: &[f64],
+    members: &[usize],
+) -> Vec<f32> {
     let dim = points.first().map_or(0, |p| p.as_ref().len());
     let mut acc = vec![0.0f64; dim];
     let mut total = 0.0f64;
@@ -33,10 +34,6 @@ fn farthest_from<P: AsRef<[f32]>>(points: &[P], anchor: &[f32]) -> usize {
     best.0
 }
 
-/// Split `points` (n >= 2) into two halves (sizes `n/2` and `n - n/2`) at the median
-/// of their projections onto the line through two far-apart points: `a`, the point
-/// farthest from `points[0]`, and `b`, the point farthest from `a`. Ties (and
-/// duplicate points) are broken by position, so the halves are always balanced.
 pub fn median_split<P: AsRef<[f32]>>(points: &[P]) -> (Vec<usize>, Vec<usize>) {
     let n = points.len();
     assert!(n >= 2, "median_split needs at least two points");
@@ -49,15 +46,16 @@ pub fn median_split<P: AsRef<[f32]>>(points: &[P]) -> (Vec<usize>, Vec<usize>) {
         .map(|(i, p)| (p.as_ref().iter().zip(&dir).map(|(&x, &d)| x * d).sum(), i))
         .collect();
     let half = n / 2;
-    proj.select_nth_unstable_by(half, |x, y| x.0.partial_cmp(&y.0).unwrap_or(Ordering::Equal).then(x.1.cmp(&y.1)));
+    proj.select_nth_unstable_by(half, |x, y| {
+        x.0.partial_cmp(&y.0)
+            .unwrap_or(Ordering::Equal)
+            .then(x.1.cmp(&y.1))
+    });
     let left = proj[..half].iter().map(|&(_, i)| i).collect();
     let right = proj[half..].iter().map(|&(_, i)| i).collect();
     (left, right)
 }
 
-/// Split `points` (n >= 2) into two non-empty groups of index positions by weighted
-/// 2-means. Each group keeps at least a quarter of the points, so repeated splits keep
-/// the tree balanced even for skewed or duplicate points.
 pub fn two_means_split<P: AsRef<[f32]>>(points: &[P], weights: &[f64]) -> (Vec<usize>, Vec<usize>) {
     let n = points.len();
     assert!(n >= 2, "two_means_split needs at least two points");
@@ -90,7 +88,11 @@ pub fn two_means_split<P: AsRef<[f32]>>(points: &[P], weights: &[f64]) -> (Vec<u
         ca = weighted_mean(points, weights, &a);
         cb = weighted_mean(points, weights, &b);
     }
-    margin.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(Ordering::Equal).then(x.1.cmp(&y.1)));
+    margin.sort_by(|x, y| {
+        x.0.partial_cmp(&y.0)
+            .unwrap_or(Ordering::Equal)
+            .then(x.1.cmp(&y.1))
+    });
     let count_a = margin.iter().filter(|(m, _)| *m <= 0.0).count();
     let min_side = (n / 4).max(1);
     let cut = count_a.clamp(min_side, n - min_side);
@@ -114,7 +116,9 @@ mod tests {
         let (a, b) = two_means_split(&pts, &w);
         assert_eq!(a.len(), 10);
         assert_eq!(b.len(), 10);
-        let side = |g: &[usize]| g.iter().all(|&i| pts[i][0] < 50.0) || g.iter().all(|&i| pts[i][0] > 50.0);
+        let side = |g: &[usize]| {
+            g.iter().all(|&i| pts[i][0] < 50.0) || g.iter().all(|&i| pts[i][0] > 50.0)
+        };
         assert!(side(&a) && side(&b));
     }
 
@@ -140,7 +144,9 @@ mod tests {
         }
         let (a, b) = median_split(&pts);
         assert_eq!((a.len(), b.len()), (10, 10));
-        let side = |g: &[usize]| g.iter().all(|&i| pts[i][0] < 50.0) || g.iter().all(|&i| pts[i][0] > 50.0);
+        let side = |g: &[usize]| {
+            g.iter().all(|&i| pts[i][0] < 50.0) || g.iter().all(|&i| pts[i][0] > 50.0)
+        };
         assert!(side(&a) && side(&b));
         let (a, b) = median_split(&vec![vec![1.0f32, 1.0]; 13]);
         assert_eq!((a.len(), b.len()), (6, 7));

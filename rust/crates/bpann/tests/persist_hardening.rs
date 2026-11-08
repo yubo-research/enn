@@ -62,6 +62,7 @@ fn persist_rewrites_corrupt_pages_with_matching_header() {
     let pages_healed = fs::read(&pages_path).unwrap();
     assert_eq!(pages_healed, pages_valid);
 
+    drop(b);
     let b2 = BpannBackend::reopen(path).unwrap();
     let query = ndarray::Array2::from_shape_fn((1, 4), |(_, j)| j as f64 * 0.01);
     b2.search(&query.view(), 5, false).unwrap();
@@ -69,7 +70,6 @@ fn persist_rewrites_corrupt_pages_with_matching_header() {
 
 #[test]
 fn soft_sync_search_metamorphic_matches_hard_persist() {
-
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
     let mut soft = BpannBackend::new_empty(path.clone(), 3, 1)
