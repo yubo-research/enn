@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::distance::{bpann_row_to_f32, l2_sq_f32};
 use crate::error::BpannError;
@@ -9,9 +10,103 @@ use crate::small_n_search::{OrderedF32, OrderedFloat};
 
 pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 128.0;
 
+static LEAF_COEFFICIENT_BITS: AtomicU64 = AtomicU64::new(0);
+
+pub fn leaf_coefficient() -> f64 {
+    let bits = LEAF_COEFFICIENT_BITS.load(Ordering::Relaxed);
+    if bits == 0 {
+        TREE_SEARCH_LEAVES_PER_LN_N
+    } else {
+        f64::from_bits(bits)
+    }
+}
+
+pub fn set_leaf_coefficient(value: f64) {
+    let bits = if value == TREE_SEARCH_LEAVES_PER_LN_N {
+        0
+    } else {
+        value.to_bits()
+    };
+    LEAF_COEFFICIENT_BITS.store(bits, Ordering::Relaxed);
+}
+
+static EXACT_FALLBACK: AtomicU64 = AtomicU64::new(0);
+
+pub fn exact_fallback() -> bool {
+    EXACT_FALLBACK.load(Ordering::Relaxed) != 0
+}
+
+pub fn set_exact_fallback(value: bool) {
+    EXACT_FALLBACK.store(u64::from(value), Ordering::Relaxed);
+}
+
+struct WalkMeter {
+    leaves: AtomicU64,
+    walks: AtomicU64,
+    budget_stops: AtomicU64,
+}
+
+impl WalkMeter {
+    const fn new() -> Self {
+        Self {
+            leaves: AtomicU64::new(0),
+            walks: AtomicU64::new(0),
+            budget_stops: AtomicU64::new(0),
+        }
+    }
+
+    fn record(&self, leaves: usize, stopped_on_budget: bool) {
+        self.walks.fetch_add(1, Ordering::Relaxed);
+        self.leaves.fetch_add(leaves as u64, Ordering::Relaxed);
+        if stopped_on_budget {
+            self.budget_stops.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn take(&self) -> (u64, u64, u64) {
+        (
+            self.leaves.swap(0, Ordering::Relaxed),
+            self.walks.swap(0, Ordering::Relaxed),
+            self.budget_stops.swap(0, Ordering::Relaxed),
+        )
+    }
+}
+
+static F32_WALKS: WalkMeter = WalkMeter::new();
+static F64_WALKS: WalkMeter = WalkMeter::new();
+static CERTIFIED_RETURNS: AtomicU64 = AtomicU64::new(0);
+static FALLBACK_RETURNS: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WalkTotals {
+    pub f32_leaves: u64,
+    pub f32_walks: u64,
+    pub f32_budget_stops: u64,
+    pub f64_leaves: u64,
+    pub f64_walks: u64,
+    pub f64_budget_stops: u64,
+    pub certified: u64,
+    pub fallbacks: u64,
+}
+
+pub fn take_walk_totals() -> WalkTotals {
+    let (f32_leaves, f32_walks, f32_budget_stops) = F32_WALKS.take();
+    let (f64_leaves, f64_walks, f64_budget_stops) = F64_WALKS.take();
+    WalkTotals {
+        f32_leaves,
+        f32_walks,
+        f32_budget_stops,
+        f64_leaves,
+        f64_walks,
+        f64_budget_stops,
+        certified: CERTIFIED_RETURNS.swap(0, Ordering::Relaxed),
+        fallbacks: FALLBACK_RETURNS.swap(0, Ordering::Relaxed),
+    }
+}
+
 pub fn leaf_budget(indexed_rows: usize) -> usize {
     let ln_n = (indexed_rows.max(1) as f64).ln();
-    ((TREE_SEARCH_LEAVES_PER_LN_N * ln_n).ceil() as usize).max(1)
+    ((leaf_coefficient() * ln_n).ceil() as usize).max(1)
 }
 
 pub const TREE_SEARCH_RADIUS_WEIGHT: f32 = 0.1;
@@ -77,7 +172,7 @@ pub fn search_tree(
     leaf_budget: usize,
     store: &MmapSearchStore<'_>,
 ) -> Result<Vec<(u32, f32)>, BpannError> {
-    let rows = search_tree_scored(tree, query, k, leaf_budget, |row, cached, _| {
+    let rows = search_tree_scored(tree, query, k, leaf_budget, &F32_WALKS, |row, cached, _| {
         if let Some(x) = cached {
             return Ok(Some(f64::from(l2_sq_f32(query, x))));
         }
@@ -112,16 +207,19 @@ pub fn search_tree_refined_with_extra(
     store: &MmapSearchStore<'_>,
     extra: usize,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
+    if exact_fallback() && !tree.rows_cached() {
+        FALLBACK_RETURNS.fetch_add(1, Ordering::Relaxed);
+        return search_tree_f64(tree, query, k, store);
+    }
     let pool = k.saturating_add(extra).min(tree.header.indexed_rows);
     let mut scaled = Vec::with_capacity(query.len());
     bpann_row_to_f32(query, store.scale_x, store.x_scale, &mut scaled);
-    let candidates = search_tree(
-        tree,
-        &scaled,
-        pool,
-        leaf_budget(tree.header.indexed_rows),
-        store,
-    )?;
+    let budget = if exact_fallback() {
+        usize::MAX
+    } else {
+        leaf_budget(tree.header.indexed_rows)
+    };
+    let candidates = search_tree(tree, &scaled, pool, budget, store)?;
     let boundary = candidates.last().map_or(0.0, |p| f64::from(p.1));
     let mut refined: Vec<(u32, f64)> = candidates
         .iter()
@@ -143,8 +241,10 @@ pub fn search_tree_refined_with_extra(
         .get(k.saturating_sub(1))
         .is_some_and(|p| refinement_lower_bound(tree, query, store, boundary) > p.1);
     if !all_rows && (!tree.rows_cached() || !certified) {
+        FALLBACK_RETURNS.fetch_add(1, Ordering::Relaxed);
         return search_tree_f64(tree, query, k, store);
     }
+    CERTIFIED_RETURNS.fetch_add(1, Ordering::Relaxed);
     refined.truncate(k);
     Ok(refined)
 }
@@ -198,11 +298,17 @@ pub fn search_tree_f64(
             }
         })
         .collect();
+    let budget = if exact_fallback() {
+        usize::MAX
+    } else {
+        leaf_budget(tree.header.indexed_rows)
+    };
     search_tree_scored(
         tree,
         &scaled,
         k,
-        leaf_budget(tree.header.indexed_rows),
+        budget,
+        &F64_WALKS,
         |row, _, limit| {
             let point = store.train_x.mmap_row_slice(row as usize)?;
             let mut distance = 0.0;
@@ -228,6 +334,7 @@ fn search_tree_scored(
     query: &[f32],
     k: usize,
     leaf_budget: usize,
+    meter: &WalkMeter,
     mut score: impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
     let mut top = TopK {
@@ -246,8 +353,10 @@ fn search_tree_scored(
         tree.header.root_page_id,
     )));
     let mut leaves = 0usize;
+    let mut stopped_on_budget = false;
     while let Some(Reverse((_, bound, page_id))) = frontier.pop() {
         if leaves >= leaf_budget && top.heap.len() >= k {
+            stopped_on_budget = true;
             break;
         }
         if top.cannot_improve(bound.0) {
@@ -283,12 +392,18 @@ fn search_tree_scored(
         }
         leaves += 1;
     }
+    meter.record(leaves, stopped_on_budget);
     Ok(top.into_sorted())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_fallback_defaults_off() {
+        assert!(!exact_fallback());
+    }
 
     #[test]
     fn leaf_budget_grows_like_ln_n() {

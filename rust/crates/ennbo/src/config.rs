@@ -398,7 +398,9 @@ mod tests {
         let mut config = lhd_only_config();
         config.validate_kind(OptimizerInitKind::LhdOnly).unwrap();
         config.trust_region = TrustRegionConfig::default();
-        let err = config.validate_kind(OptimizerInitKind::LhdOnly).unwrap_err();
+        let err = config
+            .validate_kind(OptimizerInitKind::LhdOnly)
+            .unwrap_err();
         assert!(err.to_string().contains("NoTRConfig"), "{err}");
     }
 

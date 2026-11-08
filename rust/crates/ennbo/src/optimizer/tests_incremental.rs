@@ -124,11 +124,14 @@ fn rejected_tell_leaves_generator_and_init_count_unchanged() {
     let mut opt = Optimizer::new_with_strategy(bounds, cfg, strategy, &mut rng).unwrap();
     let x = array![[0.2, 0.3], [0.4, 0.5]];
     let rng_before = opt.rng.clone();
-    assert!(opt.tell(&x.view(), &array![[1.0], [f64::NAN]].view(), None).is_err());
+    assert!(opt
+        .tell(&x.view(), &array![[1.0], [f64::NAN]].view(), None)
+        .is_err());
     assert_eq!(opt.rng, rng_before);
     assert_eq!(opt.init_progress(), Some((0, 4)));
     assert_eq!(opt.obs_count(), 0);
-    opt.tell(&x.view(), &array![[1.0], [2.0]].view(), None).unwrap();
+    opt.tell(&x.view(), &array![[1.0], [2.0]].view(), None)
+        .unwrap();
     assert_eq!(opt.init_progress(), Some((2, 4)));
     assert_ne!(opt.rng, rng_before);
 }

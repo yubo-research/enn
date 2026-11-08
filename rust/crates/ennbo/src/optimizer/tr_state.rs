@@ -109,10 +109,9 @@ impl TrustRegionState {
         match self {
             TrustRegionState::Turbo(t) => t.compute_bounds_1d(x_center, lengthscales),
             TrustRegionState::Morbo(m) => m.as_ref().compute_bounds_1d(x_center, lengthscales),
-            TrustRegionState::Global => (
-                Array1::zeros(x_center.len()),
-                Array1::ones(x_center.len()),
-            ),
+            TrustRegionState::Global => {
+                (Array1::zeros(x_center.len()), Array1::ones(x_center.len()))
+            }
         }
     }
 
@@ -268,7 +267,8 @@ mod tests {
     #[test]
     fn a_global_region_spans_the_box_and_never_restarts() {
         let mut rng = StdRng::seed_from_u64(1);
-        let mut tr = TrustRegionState::from_config(2, &TrustRegionConfig::Global, &mut rng).unwrap();
+        let mut tr =
+            TrustRegionState::from_config(2, &TrustRegionConfig::Global, &mut rng).unwrap();
         let center = array![0.2, 0.9];
         let (lower, upper) = tr.compute_bounds_1d(&center.view(), None);
         assert_eq!(lower, array![0.0, 0.0]);

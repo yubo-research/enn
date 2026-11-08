@@ -346,8 +346,10 @@ impl Optimizer {
         };
         if let Some(rows) = store.load_observations()? {
             for row in rows.rows() {
-                self.fallback_x.push(row.slice(ndarray::s![..num_dim]).to_owned());
-                self.fallback_y.push(row.slice(ndarray::s![num_dim..]).to_owned());
+                self.fallback_x
+                    .push(row.slice(ndarray::s![..num_dim]).to_owned());
+                self.fallback_y
+                    .push(row.slice(ndarray::s![num_dim..]).to_owned());
             }
         }
         Ok(())
@@ -368,7 +370,11 @@ impl Optimizer {
         Ok(())
     }
 
-    fn stored_rows(&self, start: usize, end: usize) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
+    fn stored_rows(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
         let access = super::obs_access::ObsAccess::new(self);
         let first_y = access.obs_row_y(start)?;
         let mut x = Array2::zeros((end - start, self.num_dim));

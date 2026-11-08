@@ -371,8 +371,7 @@ pub fn create_optimizer_run_py(
         "lhd" => ennbo::RunKind::Lhd,
         _ => return Err(PyValueError::new_err(format!("Unknown run kind: {kind}"))),
     };
-    let recipe =
-        ennbo::RunRecipe::new(kind, bounds.as_array().to_owned(), k, num_init, overrides);
+    let recipe = ennbo::RunRecipe::new(kind, bounds.as_array().to_owned(), k, num_init, overrides);
     let inner = ennbo::create_run(recipe, seed, work_dir.into())
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
     Ok(PyOptimizer { inner })

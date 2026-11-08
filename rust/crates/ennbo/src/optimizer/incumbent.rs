@@ -15,7 +15,11 @@ pub(super) struct BestObservation {
 }
 
 impl Optimizer {
-    pub(crate) fn record_best_observation(&mut self, x_unit: &ArrayView2<f64>, y: &ArrayView2<f64>) {
+    pub(crate) fn record_best_observation(
+        &mut self,
+        x_unit: &ArrayView2<f64>,
+        y: &ArrayView2<f64>,
+    ) {
         if self.tr_state.is_morbo() {
             return;
         }

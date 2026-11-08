@@ -88,7 +88,10 @@ impl<T: Serialize + DeserializeOwned + Clone> Exact for Arc<T> {
     }
 }
 
-pub(crate) fn serialize<T: Exact, S: Serializer>(value: &T, serializer: S) -> Result<S::Ok, S::Error> {
+pub(crate) fn serialize<T: Exact, S: Serializer>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
     value.to_repr().serialize(serializer)
 }
 

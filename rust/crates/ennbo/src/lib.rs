@@ -218,6 +218,28 @@ pub use y_bounds::is_identity_bounds;
 pub use y_bounds::unbounded_bounds;
 pub use y_bounds::validate_bounds;
 
+pub fn leaf_coefficient() -> f64 {
+    ennbo_bpann::index::tree_search::leaf_coefficient()
+}
+
+pub fn set_leaf_coefficient(value: f64) {
+    ennbo_bpann::index::tree_search::set_leaf_coefficient(value);
+}
+
+pub fn exact_fallback() -> bool {
+    ennbo_bpann::index::tree_search::exact_fallback()
+}
+
+pub fn set_exact_fallback(value: bool) {
+    ennbo_bpann::index::tree_search::set_exact_fallback(value);
+}
+
+pub use ennbo_bpann::index::tree_search::WalkTotals;
+
+pub fn take_walk_totals() -> WalkTotals {
+    ennbo_bpann::index::tree_search::take_walk_totals()
+}
+
 pub mod categorical;
 
 pub mod categorical_encoder;
