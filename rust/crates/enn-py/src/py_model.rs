@@ -55,7 +55,8 @@ pub struct PyEpistemicNearestNeighbors {
 #[pymethods]
 impl PyEpistemicNearestNeighbors {
     #[new]
-    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (train_x, train_y, work_dir, train_yvar=None, weighting=false, y_bounds=None, tied_dims=None, aggregate_duplicates=false))]
     fn new(
         train_x: PyReadonlyArrayDyn<f64>,
         train_y: PyReadonlyArrayDyn<f64>,
@@ -64,11 +65,13 @@ impl PyEpistemicNearestNeighbors {
         weighting: bool,
         y_bounds: Option<PyReadonlyArray2<f64>>,
         tied_dims: Option<Vec<Vec<usize>>>,
+        aggregate_duplicates: bool,
     ) -> PyResult<Self> {
         let train_x = matrix_view("train_x", &train_x)?.to_owned();
         let train_y = matrix_view("train_y", &train_y)?.to_owned();
         let layout = ennbo::EnnLayout::new(work_dir, weighting)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .with_aggregate_duplicates(aggregate_duplicates);
         let y_bounds = y_bounds.map(|v| v.as_array().to_owned());
         let train_yvar = train_yvar
             .as_ref()
@@ -353,6 +356,11 @@ impl PyEpistemicNearestNeighbors {
     #[getter]
     fn weighting(&self) -> bool {
         self.inner.weighting()
+    }
+
+    #[getter]
+    fn aggregate_duplicates(&self) -> bool {
+        self.inner.aggregates_duplicates()
     }
 
     #[getter]

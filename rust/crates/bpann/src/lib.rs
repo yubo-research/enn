@@ -7,6 +7,7 @@ pub mod merge;
 pub mod metric;
 pub mod mmap_store;
 pub mod observation;
+pub mod row_groups;
 pub mod small_n_search;
 pub mod store_file;
 pub mod tuning;

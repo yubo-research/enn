@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 pub struct EnnLayout {
     work_dir: PathBuf,
     weighting: bool,
+    aggregate_duplicates: bool,
 }
 
 impl EnnLayout {
@@ -19,12 +20,22 @@ impl EnnLayout {
         Ok(Self {
             work_dir,
             weighting,
+            aggregate_duplicates: false,
         })
     }
 
     pub fn with_weighting(mut self, weighting: bool) -> Self {
         self.weighting = weighting;
         self
+    }
+
+    pub fn with_aggregate_duplicates(mut self, aggregate_duplicates: bool) -> Self {
+        self.aggregate_duplicates = aggregate_duplicates;
+        self
+    }
+
+    pub fn aggregate_duplicates(&self) -> bool {
+        self.aggregate_duplicates
     }
 
     pub fn weighting(&self) -> bool {
@@ -63,6 +74,15 @@ mod tests {
         let layout = EnnLayout::new("rows", false).unwrap().with_weighting(true);
         assert!(layout.weighting());
         assert_eq!(layout.work_dir(), Path::new("rows"));
+    }
+
+    #[test]
+    fn aggregate_duplicates_is_off_by_default_and_keeps_the_other_settings() {
+        let layout = EnnLayout::new("rows", true).unwrap();
+        assert!(!layout.aggregate_duplicates());
+        let on = layout.with_aggregate_duplicates(true);
+        assert!(on.aggregate_duplicates() && on.weighting());
+        assert_eq!(on.work_dir(), Path::new("rows"));
     }
 
     #[test]

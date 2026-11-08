@@ -26,6 +26,7 @@ pub mod config;
 pub mod disk_bpann;
 #[allow(missing_docs)]
 pub mod draw;
+mod dup_table;
 #[allow(missing_docs)]
 pub mod enn_overrides;
 #[allow(missing_docs)]

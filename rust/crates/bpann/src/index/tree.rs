@@ -50,6 +50,7 @@ impl Tree {
                 root_page_id: 0,
                 leaf_capacity: TREE_LEAF_CAPACITY,
                 skip_neighbors: DEFAULT_SKIP_NEIGHBORS,
+                rows_seen: 0,
             },
             store: TreeStore::create(&index_dir, num_dim)?,
             index_dir,

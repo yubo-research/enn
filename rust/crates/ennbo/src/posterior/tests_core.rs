@@ -176,6 +176,7 @@ fn test_compute_weighted_stats_impl() {
         &dist2s.view(),
         &y_neighbors.view(),
         None,
+        None,
         &params,
         false,
         &model.y_scale().view(),
@@ -354,6 +355,7 @@ fn test_compute_weighted_stats_with_noise_decomposition() {
     let stats = compute_weighted_stats_impl(
         &dist2s.view(),
         &y_neighbors.view(),
+        None,
         None,
         &params,
         true,

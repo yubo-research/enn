@@ -40,17 +40,16 @@ fn merge_pending(
 }
 
 fn pending_topk(
-    train_x: &MmapColumnStore,
-    start: usize,
-    end: usize,
+    backend: &BpannBackend,
+    rows: std::ops::Range<usize>,
     query: &[f64],
     k: usize,
-    scale_x: bool,
-    x_scale: &[f64],
+    (scale_x, x_scale): (bool, &[f64]),
 ) -> Result<Vec<(u32, f64)>, BpannError> {
     use crate::small_n_search::OrderedFloat;
+    let train_x = &backend.train_x;
     let mut heap = std::collections::BinaryHeap::with_capacity(k + 1);
-    for row in start..end {
+    for row in rows.filter(|&row| backend.index.indexable(row)) {
         let distance = crate::distance::row_sq_l2(
             ndarray::ArrayView1::from(query),
             ndarray::ArrayView1::from(train_x.mmap_row_slice(row)?),
@@ -120,13 +119,11 @@ pub fn search_indexed_and_pending(
 
             let leg_b = if has_pending {
                 pending_topk(
-                    train_x,
-                    pending_start,
-                    total,
+                    backend,
+                    pending_start..total,
                     query_buf,
                     pool_k,
-                    scale_x,
-                    x_scale_vec,
+                    (scale_x, x_scale_vec),
                 )
                 .expect("pending_topk")
             } else {

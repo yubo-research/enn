@@ -11,6 +11,7 @@ use crate::index::IncrementalIndex;
 use crate::large_n_search::{search_indexed_and_pending, SearchPendingArgs};
 use crate::mmap_store::MmapColumnStore;
 use crate::observation::{self as obs, TrainRowsAt, INDEX_BACKEND, MAX_NUM_DIM, MAX_RECORD_STRIDE};
+use crate::row_groups::RowGroups;
 
 mod flush_thresholds;
 
@@ -28,6 +29,7 @@ pub struct BpannBackend {
     pub(crate) scale_x: bool,
     pub(crate) x_scale: Array1<f64>,
     pub(crate) index: IncrementalIndex,
+    row_groups: Option<Arc<RowGroups>>,
     pending_flush_threshold: usize,
     pending_hard_flush_threshold: usize,
     defer_append_indexing: bool,
@@ -48,6 +50,18 @@ impl BpannBackend {
         train_yvar: Option<Array2<f64>>,
         scale_x: bool,
         x_scale: Array1<f64>,
+    ) -> Result<Self, BpannError> {
+        Self::new_aggregating(work_dir, train_x, train_y, train_yvar, scale_x, x_scale, false)
+    }
+
+    pub fn new_aggregating(
+        work_dir: PathBuf,
+        train_x: Array2<f64>,
+        train_y: Array2<f64>,
+        train_yvar: Option<Array2<f64>>,
+        scale_x: bool,
+        x_scale: Array1<f64>,
+        aggregate_duplicates: bool,
     ) -> Result<Self, BpannError> {
         obs::bpann_validate_dim_limits(train_x.ncols())?;
         fs::create_dir_all(&work_dir).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
@@ -92,6 +106,11 @@ impl BpannBackend {
         let index_dir = work_dir.join("index");
         let indexed_rows = obs::bpann_load_indexed_rows(&work_dir).unwrap_or(0).min(n);
         let mut index = IncrementalIndex::new(index_dir.clone());
+        let row_groups = aggregate_duplicates.then(|| Arc::new(RowGroups::default()));
+        if let Some(groups) = &row_groups {
+            groups.register(&train_x_store, n)?;
+        }
+        index.row_filter = row_groups.clone();
         if index_dir.join("header.json").exists() && indexed_rows > 0 {
             let adopted = index.adopt_persisted()?;
             if !adopted || index.indexed_rows > indexed_rows {
@@ -108,6 +127,7 @@ impl BpannBackend {
             scale_x,
             x_scale,
             index,
+            row_groups,
             pending_flush_threshold: DEFAULT_PENDING_FLUSH_THRESHOLD,
             pending_hard_flush_threshold: DEFAULT_PENDING_HARD_FLUSH_THRESHOLD,
             defer_append_indexing: true,
@@ -146,6 +166,10 @@ impl BpannBackend {
             false,
             Array1::ones(num_dim),
         )
+    }
+
+    pub fn row_groups(&self) -> Option<&Arc<RowGroups>> {
+        self.row_groups.as_ref()
     }
 
     pub fn with_defer_append_indexing(mut self, defer: bool) -> Self {
@@ -241,6 +265,9 @@ impl BpannBackend {
             &mut self.train_yvar,
             yvar,
         )?;
+        if let Some(groups) = &self.row_groups {
+            groups.register(&self.train_x, self.train_x.nrows)?;
+        }
         *self.index_dirty.lock().expect("index_dirty") = true;
         *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.num_obs_counter.set(self.len());
@@ -399,6 +426,13 @@ impl BpannBackend {
     }
 
     pub fn reopen(work_dir: PathBuf) -> Result<Self, BpannError> {
+        Self::reopen_aggregating(work_dir, false)
+    }
+
+    pub fn reopen_aggregating(
+        work_dir: PathBuf,
+        aggregate_duplicates: bool,
+    ) -> Result<Self, BpannError> {
         let meta_path = work_dir.join("metadata.json");
         let text = fs::read_to_string(&meta_path)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
@@ -407,13 +441,14 @@ impl BpannBackend {
         let num_metrics = crate::observation::parse_json_usize_field(&text, "num_metrics")
             .ok_or_else(|| BpannError::InvalidParameter("missing num_metrics".to_string()))?;
         let scale_x = text.contains("\"scale_x\":true");
-        Self::new(
+        Self::new_aggregating(
             work_dir,
             Array2::zeros((0, num_dim)),
             Array2::zeros((0, num_metrics)),
             None,
             scale_x,
             Array1::ones(num_dim),
+            aggregate_duplicates,
         )
     }
 }

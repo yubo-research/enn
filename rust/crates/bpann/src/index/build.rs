@@ -19,6 +19,8 @@ pub struct IndexHeader {
     pub root_page_id: u32,
     pub leaf_capacity: usize,
     pub skip_neighbors: usize,
+    #[serde(default)]
+    pub rows_seen: usize,
 }
 
 #[derive(Clone)]
@@ -94,6 +96,7 @@ impl BpannIndex {
             root_page_id: 0,
             leaf_capacity,
             skip_neighbors: DEFAULT_SKIP_NEIGHBORS,
+            rows_seen: 0,
         };
         let pages = vec![page];
         let page_map = build_page_map(&pages);
@@ -130,6 +133,7 @@ impl BpannIndex {
                 root_page_id: 0,
                 leaf_capacity: leaf_capacity.max(1),
                 skip_neighbors: DEFAULT_SKIP_NEIGHBORS,
+                rows_seen: 0,
             },
             pages,
             skip_edges: HashMap::new(),
@@ -159,6 +163,7 @@ impl BpannIndex {
             root_page_id: 0,
             leaf_capacity,
             skip_neighbors: DEFAULT_SKIP_NEIGHBORS,
+            rows_seen: 0,
         };
         let pages = vec![page];
         let page_map = build_page_map(&pages);
@@ -203,6 +208,7 @@ impl BpannIndex {
             root_page_id,
             leaf_capacity,
             skip_neighbors: DEFAULT_SKIP_NEIGHBORS,
+            rows_seen: 0,
         };
         let index = Self {
             header: header.clone(),

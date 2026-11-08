@@ -2,6 +2,7 @@ use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
 
 use crate::backend::EnnBackend;
+use crate::dup_table::DupTable;
 use crate::error::ENNError;
 use crate::input_history::InputHistory;
 use crate::layout::EnnLayout;
@@ -14,6 +15,7 @@ const STATS_CHUNK_ROWS: usize = 1 << 16;
 mod access;
 mod auto_api;
 mod metric;
+mod neighbor_rows;
 mod outputs_api;
 mod row_validation;
 mod y_bounds_api;
@@ -40,6 +42,7 @@ pub struct EpistemicNearestNeighbors {
     y_sumsq: Array1<f64>,
     pub(crate) auto_metric: Option<AutoMetric>,
     tied_groups: Vec<Vec<usize>>,
+    pub(crate) dups: Option<DupTable>,
 }
 
 impl EpistemicNearestNeighbors {
@@ -146,7 +149,9 @@ impl EpistemicNearestNeighbors {
             train_y,
             train_yvar,
             x_scale.clone(),
+            layout.aggregate_duplicates(),
         )?;
+        let dups = DupTable::attach(&backend, num_metrics);
 
         let mut model = Self {
             original_y: None,
@@ -163,7 +168,9 @@ impl EpistemicNearestNeighbors {
             y_sumsq,
             auto_metric: None,
             tied_groups: Vec::new(),
+            dups,
         };
+        model.observe_stored_rows_for_dups()?;
         if let Some(scale) = model.backend.metric_scale()? {
             model.scale_x = true;
             model.x_scale = scale;
@@ -210,6 +217,7 @@ impl EpistemicNearestNeighbors {
             }
             self.backend
                 .append_rows(train_x, &y_z.view(), yvar_view.as_ref())?;
+            self.observe_dups(first_row, &y_z.view(), yvar_view.as_ref());
             accumulate_columns(&mut self.y_sum, &mut self.y_sumsq, y_z.view());
             let n = self.backend.len();
             self.y_scale = scale_from_moments(n, self.num_metrics, &self.y_sum, &self.y_sumsq, 0.0);

@@ -126,6 +126,7 @@ pub fn compute_weighted_posterior(
         .map(|v| v.to_owned())
         .unwrap_or_else(|| model.y_scale().clone());
 
+    let counts = neighbor_counts(model, data.idx);
     let yvar_neighbors: Option<Array2<f64>> = if let Some(ov) = data.yvar_neighbors_override {
         Some(ov.clone())
     } else if model.has_yvar() {
@@ -142,8 +143,7 @@ pub fn compute_weighted_posterior(
             for (j, &neighbor_idx) in data.idx[i].iter().enumerate() {
                 if neighbor_idx < n_train {
                     let yvar_row = model
-                        .rows()
-                        .row_yvar(neighbor_idx)
+                        .neighbor_yvar(neighbor_idx)
                         .expect("row_yvar")
                         .expect("yvar");
                     for m in 0..model.num_metrics() {
@@ -161,6 +161,7 @@ pub fn compute_weighted_posterior(
         data.dist2s,
         data.y_neighbors,
         yvar_neighbors.as_ref().map(|v| v.view()),
+        counts.as_deref(),
         data.params,
         data.observation_noise,
         &y_scale.view(),
@@ -175,6 +176,19 @@ pub fn compute_weighted_posterior(
         stats.se_epi,
         stats.se_ale,
     ))
+}
+
+fn neighbor_counts(model: &EpistemicNearestNeighbors, idx: &[Vec<usize>]) -> Option<Vec<f64>> {
+    if !model.aggregates_duplicates() {
+        return None;
+    }
+    let n_train = model.num_obs();
+    Some(
+        idx.iter()
+            .flatten()
+            .map(|&id| if id < n_train { model.neighbor_count(id) } else { 1.0 })
+            .collect(),
+    )
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -257,6 +271,7 @@ pub fn compute_weighted_stats_impl(
     dist2s: &ArrayView2<f64>,
     y_neighbors: &ArrayView2<f64>,
     yvar_neighbors: Option<ArrayView2<f64>>,
+    counts: Option<&[f64]>,
     params: &ENNParams,
     observation_noise: bool,
     y_scale: &ArrayView1<f64>,
@@ -286,12 +301,13 @@ pub fn compute_weighted_stats_impl(
             let var_epi_ij = var_epi_row[j];
             let idx = i * k + j;
             for m in 0..num_metrics {
+                let count = counts.map_or(1.0, |c| c[idx]);
                 let var_y = if let Some(yv) = yvar_ref {
-                    yv[[idx, m]] / y_scale_sq[m]
+                    yv[[idx, m]] / y_scale_sq[m] / count
                 } else {
                     0.0
                 };
-                let var_total = EPS_VAR + var_epi_ij + aleatoric_scale + var_y;
+                let var_total = EPS_VAR + var_epi_ij + aleatoric_scale / count + var_y;
                 w[[idx, m]] = 1.0 / var_total;
             }
         }
@@ -473,3 +489,7 @@ mod tests_conditional;
 #[cfg(test)]
 #[path = "posterior/tests_y_bounds.rs"]
 mod tests_y_bounds;
+
+#[cfg(test)]
+#[path = "posterior/tests_duplicates.rs"]
+mod tests_duplicates;

@@ -9,6 +9,7 @@ pub(crate) const ENN_OVERRIDE_KEYS: &[&str] = &[
     "num_fit_candidates",
     "infer_aleatoric_variance",
     "weighting",
+    "aggregate_duplicates",
     "y_bounds",
     "tied_dims",
     "affine_calibrate",
@@ -77,6 +78,7 @@ pub(crate) fn parse_enn_overrides(
     Ok(Some(ennbo::EnnOverrides {
         fit: parse_fit_samples(dict)?,
         weighting: optional_bool(dict, "weighting")?,
+        aggregate_duplicates: optional_bool(dict, "aggregate_duplicates")?,
         y_bounds,
         tied_dims,
     }))

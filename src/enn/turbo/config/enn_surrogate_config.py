@@ -20,6 +20,7 @@ class ENNSurrogateConfig:
     k: int | None = None
     fit: ENNFitConfig = field(default_factory=ENNFitConfig)
     weighting: bool = False
+    aggregate_duplicates: bool = False
     tied_dims: tuple = ()
     y_bounds: np.ndarray | None = None
 

@@ -54,6 +54,7 @@ pub enum FitOverride {
 pub struct EnnOverrides {
     pub fit: Option<FitOverride>,
     pub weighting: Option<bool>,
+    pub aggregate_duplicates: Option<bool>,
     #[serde(with = "crate::exact")]
     pub y_bounds: Option<ndarray::Array2<f64>>,
     pub tied_dims: Option<Vec<Vec<usize>>>,
@@ -71,6 +72,9 @@ impl EnnOverrides {
         }
         if let Some(weighting) = self.weighting {
             enn.layout = enn.layout.with_weighting(weighting);
+        }
+        if let Some(aggregate) = self.aggregate_duplicates {
+            enn.layout = enn.layout.with_aggregate_duplicates(aggregate);
         }
         if let Some(yb) = self.y_bounds.clone() {
             enn.y_bounds = Some(yb);

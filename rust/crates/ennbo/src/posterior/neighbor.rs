@@ -311,8 +311,7 @@ pub(crate) fn get_neighbor_data(
         let base_idx = i * k;
         for (j, &neighbor_idx) in idx_row.iter().enumerate() {
             let source_row = model
-                .rows()
-                .row_y(neighbor_idx)
+                .neighbor_y(neighbor_idx)
                 .map_err(|e| ENNError::InvalidParameter(format!("row_y: {e}")))?;
             y_neighbors.row_mut(base_idx + j).assign(&source_row.view());
         }
@@ -443,7 +442,7 @@ pub(crate) fn get_conditional_neighbor_data(
         let base_idx = i * k_out;
         for (j, &neighbor_idx) in ids_row.iter().enumerate() {
             let source_row = if neighbor_idx < n_train {
-                model.rows().row_y(neighbor_idx).expect("row_y")
+                model.neighbor_y(neighbor_idx).expect("row_y")
             } else {
                 y_whatif.row(neighbor_idx - n_train).to_owned()
             };

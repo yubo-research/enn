@@ -2,6 +2,7 @@ use ndarray::{Array1, Array2, ArrayView2};
 
 use super::EpistemicNearestNeighbors;
 use crate::backend::{EnnBackend, TrainRowsAtResult};
+use crate::dup_table::DupTable;
 use crate::error::ENNError;
 use crate::input_history::{InputHistory, ORIGINAL_OUTPUTS_FILE};
 use crate::layout::EnnLayout;
@@ -54,8 +55,10 @@ impl EpistemicNearestNeighbors {
             num_dim,
             num_metrics,
             pending_flush_threshold,
+            layout.aggregate_duplicates(),
         )?;
         let auto = layout.metric_learning() == MetricLearning::Auto;
+        let dups = DupTable::attach(&backend, num_metrics);
         let mut model = Self {
             original_y: None,
             layout,
@@ -71,6 +74,7 @@ impl EpistemicNearestNeighbors {
             y_sumsq: Array1::zeros(num_metrics),
             auto_metric: None,
             tied_groups: Vec::new(),
+            dups,
         };
         if auto {
             model.enable_auto_metric(

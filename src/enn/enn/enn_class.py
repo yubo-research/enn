@@ -36,6 +36,10 @@ class _EnnRustView:
         return bool(self._rust_model.weighting)
 
     @property
+    def aggregate_duplicates(self) -> bool:
+        return bool(self._rust_model.aggregate_duplicates)
+
+    @property
     def metric(self) -> MBPANNMetric | None:
         if self.metric_learning != ENNMetricLearning.AUTO:
             return None
@@ -84,6 +88,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         work_dir: str | os.PathLike[str],
         weighting: bool = False,
         y_bounds: np.ndarray | None = None,
+        aggregate_duplicates: bool = False,
     ) -> None:
         groups = [
             list(g)
@@ -100,6 +105,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
             "train_yvar": train_yvar,
             "weighting": weighting,
             "tied_dims": groups,
+            "aggregate_duplicates": aggregate_duplicates,
         }
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds

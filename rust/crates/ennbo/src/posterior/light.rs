@@ -48,15 +48,16 @@ fn neighbor_search_k(
 #[inline]
 fn fill_neighbor_weights(
     distances: ArrayView1<f64>,
+    counts: &[f64],
     params: &ENNParams,
     weights: &mut [f64],
 ) -> f64 {
     let mut norm = 0.0;
-    for (weight, &distance) in weights.iter_mut().zip(distances.iter()) {
+    for ((weight, &distance), &count) in weights.iter_mut().zip(distances.iter()).zip(counts) {
         *weight = 1.0
             / (EPS_VAR
                 + params.epistemic_variance_scale * distance
-                + params.aleatoric_variance_scale);
+                + params.aleatoric_variance_scale / count);
         norm += *weight;
     }
     1.0 / norm
@@ -79,24 +80,31 @@ pub(super) fn fuse_neighbors_to_mu_se(
     let mut se_ale = Array2::zeros((n_query, num_metrics));
     let mut idx_out = Array2::from_elem((n_query, k), -1i64);
     let mut w = vec![0.0f64; k];
+    let mut counts = vec![1.0f64; k];
 
     for i in 0..n_query {
         let dist_row = dist2s.row(i);
         let idx_row = idx.row(i);
 
-        let inv_norm = fill_neighbor_weights(dist_row, params, &mut w);
+        for (count, &id) in counts.iter_mut().zip(idx_row.iter()) {
+            *count = model.neighbor_count(id as usize);
+        }
+        let inv_norm = fill_neighbor_weights(dist_row, &counts, params, &mut w);
         let se_base = inv_norm.max(EPS_VAR).sqrt();
 
         for j in 0..k {
             idx_out[[i, j]] = idx_row[j];
         }
 
+        let rows: Vec<_> = idx_row
+            .iter()
+            .map(|&id| model.neighbor_y(id as usize).expect("row_y"))
+            .collect();
         for m in 0..num_metrics {
             let mut mean = 0.0;
             for j in 0..k {
                 let normalized = w[j] * inv_norm;
-                let row = model.rows().row_y(idx_row[j] as usize).expect("row_y");
-                mean += normalized * row[m];
+                mean += normalized * rows[j][m];
             }
             mu[[i, m]] = mean;
         }

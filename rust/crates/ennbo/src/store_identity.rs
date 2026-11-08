@@ -15,6 +15,8 @@ pub(crate) struct StoreIdentity {
     pub(crate) num_dim: usize,
     pub(crate) num_metrics: usize,
     weighting: bool,
+    #[serde(default)]
+    aggregate_duplicates: bool,
     pub(crate) tied_dims: Vec<Vec<usize>>,
     y_bounds: Vec<(Option<f64>, Option<f64>)>,
     #[serde(default = "committed_by_default")]
@@ -69,6 +71,7 @@ impl StoreIdentity {
             num_dim: shape.0,
             num_metrics: shape.1,
             weighting: layout.weighting(),
+            aggregate_duplicates: layout.aggregate_duplicates(),
             tied_dims: tied_dims.to_vec(),
             y_bounds: y_bounds
                 .rows()
@@ -98,7 +101,8 @@ impl StoreIdentity {
     }
 
     pub(crate) fn layout(&self, work_dir: PathBuf) -> Result<EnnLayout, ENNError> {
-        EnnLayout::new(work_dir, self.weighting)
+        Ok(EnnLayout::new(work_dir, self.weighting)?
+            .with_aggregate_duplicates(self.aggregate_duplicates))
     }
 
     pub(crate) fn y_bounds(&self) -> Array2<f64> {
@@ -130,7 +134,9 @@ mod tests {
     #[test]
     fn identity_round_trips_every_setting_including_open_bounds() {
         let dir = TempDir::new().unwrap();
-        let layout = EnnLayout::new(dir.path(), true).unwrap();
+        let layout = EnnLayout::new(dir.path(), true)
+            .unwrap()
+            .with_aggregate_duplicates(true);
         let bounds = array![[0.0, 1.0], [f64::NEG_INFINITY, f64::INFINITY]];
         let recorded = StoreIdentity::of(&layout, (3, 2), &[vec![0, 1]], &bounds);
         recorded.clone().commit(dir.path()).unwrap();
@@ -139,6 +145,22 @@ mod tests {
         assert_eq!(loaded.num_metrics, 2);
         assert_eq!(loaded.y_bounds(), bounds);
         assert_eq!(loaded.layout(dir.path().into()).unwrap(), layout);
+    }
+
+    #[test]
+    fn identity_written_before_aggregate_duplicates_existed_reopens_with_it_off() {
+        let dir = TempDir::new().unwrap();
+        let layout = EnnLayout::new(dir.path(), false).unwrap();
+        StoreIdentity::of(&layout, (1, 1), &[], &array![[0.0, 1.0]])
+            .commit(dir.path())
+            .unwrap();
+        let path = work_file(dir.path(), STORE_IDENTITY_FILE);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let older = text.replace("\"aggregate_duplicates\":false,", "");
+        assert_ne!(older, text);
+        std::fs::write(&path, older).unwrap();
+        let loaded = StoreIdentity::load(dir.path()).unwrap();
+        assert!(!loaded.layout(dir.path().into()).unwrap().aggregate_duplicates());
     }
 
     #[test]

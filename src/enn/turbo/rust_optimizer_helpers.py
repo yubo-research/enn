@@ -105,6 +105,7 @@ def _config_to_rust_overrides(config: OptimizerConfig) -> dict[str, Any] | None:
                 surrogate.fit.infer_aleatoric_variance_scale
             )
         overrides["weighting"] = surrogate.weighting
+        overrides["aggregate_duplicates"] = surrogate.aggregate_duplicates
         _metric_overrides(surrogate, overrides)
         if surrogate.y_bounds is not None:
             overrides["y_bounds"] = np.asarray(surrogate.y_bounds, dtype=float)

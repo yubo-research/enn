@@ -39,9 +39,17 @@ impl EnnBackend {
         train_y: Array2<f64>,
         train_yvar: Option<Array2<f64>>,
         x_scale: Array1<f64>,
+        aggregate_duplicates: bool,
     ) -> Result<Self, ENNError> {
-        let inner =
-            DiskBpannEnnBackend::new(work_dir, train_x, train_y, train_yvar, false, x_scale)?;
+        let inner = DiskBpannEnnBackend::new(
+            work_dir,
+            train_x,
+            train_y,
+            train_yvar,
+            false,
+            x_scale,
+            aggregate_duplicates,
+        )?;
         Ok(Self {
             handle: DiskBackendHandle::new(inner),
         })
@@ -52,6 +60,7 @@ impl EnnBackend {
         num_dim: usize,
         num_metrics: usize,
         pending_flush_threshold: Option<usize>,
+        aggregate_duplicates: bool,
     ) -> Result<Self, ENNError> {
         let inner = match pending_flush_threshold {
             Some(threshold) => DiskBpannEnnBackend::new_empty_with_flush_threshold(
@@ -59,8 +68,11 @@ impl EnnBackend {
                 num_dim,
                 num_metrics,
                 threshold,
+                aggregate_duplicates,
             )?,
-            None => DiskBpannEnnBackend::new_empty(work_dir, num_dim, num_metrics)?,
+            None => {
+                DiskBpannEnnBackend::new_empty(work_dir, num_dim, num_metrics, aggregate_duplicates)?
+            }
         };
         Ok(Self {
             handle: DiskBackendHandle::new(inner),
@@ -77,6 +89,10 @@ impl EnnBackend {
 
     pub fn len(&self) -> usize {
         disk_read(self.handle.data()).map(|g| g.len()).unwrap_or(0)
+    }
+
+    pub fn row_groups(&self) -> Option<Arc<ennbo_bpann::row_groups::RowGroups>> {
+        disk_read(self.handle.data()).ok()?.row_groups().cloned()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -198,6 +214,7 @@ mod backend_tests {
             array![[0.0], [1.0]],
             None,
             Array1::ones(2),
+            false,
         )
         .unwrap()
     }

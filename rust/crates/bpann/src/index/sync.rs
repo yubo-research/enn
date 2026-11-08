@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::distance::bpann_row_to_f32;
 use crate::error::BpannError;
@@ -11,12 +12,14 @@ use crate::index::tree_morph::Morph;
 use crate::index::tree_search::{leaf_budget, search_tree};
 use crate::mmap_store::MmapColumnStore;
 use crate::observation as obs;
+use crate::row_groups::RowGroups;
 
 pub struct IncrementalIndex {
     pub tree: Option<Tree>,
     pub indexed_rows: usize,
     pub index_dir: PathBuf,
     pub(crate) morph: Morph,
+    pub row_filter: Option<Arc<RowGroups>>,
 }
 
 impl Clone for IncrementalIndex {
@@ -29,6 +32,7 @@ impl Clone for IncrementalIndex {
             indexed_rows: self.indexed_rows,
             index_dir: self.index_dir.clone(),
             morph: self.morph.clone(),
+            row_filter: self.row_filter.clone(),
         }
     }
 }
@@ -40,7 +44,14 @@ impl IncrementalIndex {
             indexed_rows: 0,
             index_dir,
             morph: Morph::default(),
+            row_filter: None,
         }
+    }
+
+    pub fn indexable(&self, row: usize) -> bool {
+        self.row_filter
+            .as_ref()
+            .is_none_or(|groups| groups.is_representative(row as u32))
     }
 
     pub fn adopt_persisted(&mut self) -> Result<bool, BpannError> {
@@ -48,7 +59,7 @@ impl IncrementalIndex {
         let Some(tree) = Tree::open_persisted(&self.index_dir)? else {
             return Ok(false);
         };
-        self.indexed_rows = tree.header.indexed_rows;
+        self.indexed_rows = tree.header.rows_seen.max(tree.header.indexed_rows);
         self.tree = Some(tree);
         Ok(true)
     }
@@ -77,7 +88,14 @@ impl IncrementalIndex {
         end: usize,
     ) -> Result<(), BpannError> {
         let end = end.min(self.indexed_rows + bulk_build_max_rows(num_dim));
-        let rows: Vec<u32> = (self.indexed_rows as u32..end as u32).collect();
+        let rows: Vec<u32> = (self.indexed_rows..end)
+            .filter(|&row| self.indexable(row))
+            .map(|row| row as u32)
+            .collect();
+        if rows.is_empty() {
+            self.indexed_rows = end;
+            return Ok(());
+        }
         let (mut v, mut vs) = (
             Vec::with_capacity(num_dim),
             Vec::with_capacity(rows.len() * num_dim),
@@ -115,6 +133,10 @@ impl IncrementalIndex {
             self.bulk_build_from(train_x, num_dim, (scale_x, x_scale), end)?;
         }
         for row in self.indexed_rows..end {
+            if !self.indexable(row) {
+                self.indexed_rows = row + 1;
+                continue;
+            }
             bpann_row_to_f32(train_x.mmap_row_slice(row)?, scale_x, x_scale, &mut v);
             match self.tree.as_mut() {
                 Some(tree) => {
@@ -146,7 +168,8 @@ impl IncrementalIndex {
         num_metrics: usize,
     ) -> Result<(), BpannError> {
         self.ensure_sync_for_backend(train_x, num_dim, scale_x, x_scale, train_x.nrows)?;
-        if let Some(tree) = &self.tree {
+        if let Some(tree) = self.tree.as_mut() {
+            tree.header.rows_seen = self.indexed_rows;
             tree.persist()?;
         }
         obs::bpann_write_metadata(
@@ -169,7 +192,8 @@ impl IncrementalIndex {
             Ok(on_disk) => on_disk,
             Err(_) => return true,
         };
-        if on_disk != nrows {
+        let entries = self.tree.as_ref().map_or(0, |t| t.header.indexed_rows);
+        if self.indexed_rows != nrows || on_disk != entries {
             return true;
         }
         match &self.tree {

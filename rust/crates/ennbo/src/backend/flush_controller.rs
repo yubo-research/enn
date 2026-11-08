@@ -271,6 +271,7 @@ mod tests {
                 2,
                 1,
                 100,
+                false,
             )
             .expect("backend"),
         );
@@ -328,6 +329,7 @@ mod tests {
                 3,
                 1,
                 100,
+                false,
             )
             .expect("a"),
         );
@@ -337,6 +339,7 @@ mod tests {
                 3,
                 1,
                 100,
+                false,
             )
             .expect("b"),
         );
@@ -437,6 +440,7 @@ mod tests {
                 2,
                 1,
                 1,
+                false,
             )
             .expect("backend"),
         );
@@ -471,6 +475,7 @@ mod tests {
                 1,
                 2,
                 5,
+                false,
             )
             .expect("backend"),
         );
@@ -521,6 +526,7 @@ mod tests {
                 1,
                 2,
                 100,
+                false,
             )
             .expect("backend"),
         );
@@ -559,6 +565,7 @@ mod tests {
                 1,
                 2,
                 5,
+                false,
             )
             .expect("backend"),
         );
