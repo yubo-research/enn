@@ -13,7 +13,11 @@ def parse():
     rows = []
     with open(os.path.join(HERE, "memory_runs", "memory_12d.out")) as f:
         for line in f:
-            kv = dict(field.split("=", 1) for field in line.split() if "=" in field and not field.startswith("top"))
+            kv = dict(
+                field.split("=", 1)
+                for field in line.split()
+                if "=" in field and not field.startswith("top")
+            )
             rows.append({k: float(v) for k, v in kv.items()})
     return rows
 

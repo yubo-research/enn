@@ -31,6 +31,8 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_log_width, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_cat_encoder::cat_column_plan, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::standardize_y_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_util::set_prefix_reuse_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_util::prefix_reuse_py, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_util::pareto_front_2d_maximize_py,
         m

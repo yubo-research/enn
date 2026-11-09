@@ -13,11 +13,11 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 from enn._rust import set_config_path
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 N, D, B, K, Q = 40000, 10, 2000, 10, 500
 
@@ -29,7 +29,10 @@ search_beam_width = {beam}
 
 def build(x: np.ndarray, y: np.ndarray, sync_first: bool) -> EpistemicNearestNeighbors:
     m = EpistemicNearestNeighbors(
-        x[:B], y[:B], index_driver=ENNIndexDriver.BPANN_DISK, work_dir=tempfile.mkdtemp()
+        x[:B],
+        y[:B],
+        index_driver=ENNIndexDriver.BPANN_DISK,
+        work_dir=tempfile.mkdtemp(),
     )
     if sync_first:
         m.ensure_index_sync()
@@ -39,7 +42,9 @@ def build(x: np.ndarray, y: np.ndarray, sync_first: bool) -> EpistemicNearestNei
     return m
 
 
-def run(budget: int, beam: int, order: str, sync_first: bool = True) -> tuple[float, float]:
+def run(
+    budget: int, beam: int, order: str, sync_first: bool = True
+) -> tuple[float, float]:
     cfg = Path(tempfile.mkdtemp()) / "config.toml"
     cfg.write_text(CONFIG.format(budget=budget, beam=beam))
     set_config_path(str(cfg))
@@ -48,7 +53,9 @@ def run(budget: int, beam: int, order: str, sync_first: bool = True) -> tuple[fl
     if order == "sorted":
         x = x[np.argsort(x[:, 0])]
     m = build(x, y, sync_first)
-    p = ENNParams(k_num_neighbors=K, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1)
+    p = ENNParams(
+        k_num_neighbors=K, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
+    )
     idx = np.asarray(m.batch_posterior(q, [p], flags=PosteriorFlags()).idx)
     exact = [np.argpartition(((x - v) ** 2).sum(1), K)[:K] for v in q]
     rec = float(np.mean([len(set(a) & set(b)) / K for a, b in zip(idx, exact)]))
@@ -71,7 +78,9 @@ if __name__ == "__main__":
     rng = np.random.default_rng(0)
     x, q = rng.random((N, D)), rng.random((Q, D))
     ex = [np.argpartition(((x - v) ** 2).sum(1), K)[:K] for v in q]
-    print(f"exact neighbors: distinct batches {np.mean([len(set(e // B)) for e in ex]):.2f}")
+    print(
+        f"exact neighbors: distinct batches {np.mean([len(set(e // B)) for e in ex]):.2f}"
+    )
     for budget, beam, order, sync_first in VARIANTS:
         rec, nb = run(budget, beam, order, sync_first)
         print(

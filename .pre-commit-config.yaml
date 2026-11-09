@@ -38,8 +38,11 @@ repos:
 
   # Linting, formatting, and import sorting via Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.0
+    rev: v0.17.4
     hooks:
+      # Match `ruff check` on the command line, which skips gitignored `_reports/`.
       - id: ruff
         args: ["--fix"]
+        exclude: ^_reports/
       - id: ruff-format
+        exclude: ^_reports/

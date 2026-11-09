@@ -12,8 +12,8 @@ import tempfile
 import time
 
 import numpy as np
-
 from enn.enn.enn_fit import enn_fit
+
 from evals import metric_12d
 from ops.stress import DRAW_FLAGS
 
@@ -32,7 +32,13 @@ def main() -> None:
             model.train_rows_at(list(range(len(model))))
             t_copy = time.perf_counter() - t0
             t0 = time.perf_counter()
-            params = enn_fit(model, k=10, num_fit_candidates=100, num_fit_samples=100, rng=np.random.default_rng(1))
+            params = enn_fit(
+                model,
+                k=10,
+                num_fit_candidates=100,
+                num_fit_samples=100,
+                rng=np.random.default_rng(1),
+            )
             t_fit = time.perf_counter() - t0
             qs = []
             for _ in range(5):

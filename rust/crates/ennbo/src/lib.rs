@@ -235,6 +235,14 @@ pub fn set_exact_fallback(value: bool) {
     ennbo_bpann::index::tree_search::set_exact_fallback(value);
 }
 
+pub fn prefix_reuse() -> bool {
+    ennbo_bpann::prefix_reuse()
+}
+
+pub fn set_prefix_reuse(value: bool) {
+    ennbo_bpann::set_prefix_reuse(value);
+}
+
 pub use ennbo_bpann::index::tree_search::WalkTotals;
 
 pub fn take_walk_totals() -> WalkTotals {

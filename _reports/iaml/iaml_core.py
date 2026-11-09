@@ -43,8 +43,9 @@ class BpannPool:
     """Raw-coordinate (or fixed-metric) BPANN index used as a candidate generator."""
 
     def __init__(self, x, y, scale=None):
-        from enn.enn.enn_class import EpistemicNearestNeighbors
         from enn.turbo.config.enn_index_driver import ENNIndexDriver
+
+        from enn.enn.enn_class import EpistemicNearestNeighbors
 
         self.scale = np.ones(x.shape[1]) if scale is None else np.sqrt(scale)
         self.model = EpistemicNearestNeighbors(
@@ -63,9 +64,16 @@ class BpannPool:
         from enn.enn.enn_params import ENNParams, PosteriorFlags
 
         k = min(k, len(self.model) - (1 if exclude_self else 0))
-        p = ENNParams(k_num_neighbors=k, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1)
+        p = ENNParams(
+            k_num_neighbors=k,
+            epistemic_variance_scale=1.0,
+            aleatoric_variance_scale=0.1,
+        )
         flags = PosteriorFlags(exclude_nearest=exclude_self)
-        return np.asarray(self.model.batch_posterior(xq * self.scale, [p], flags=flags).idx, dtype=np.int64)
+        return np.asarray(
+            self.model.batch_posterior(xq * self.scale, [p], flags=flags).idx,
+            dtype=np.int64,
+        )
 
 
 def rerank(xq, xc, pool, k, a):
@@ -204,9 +212,13 @@ def _fit_safeguarded(metric, x, y, select, outer, restart):
 
 def fit_exact(metric, x, y, k, outer=4, restart=True):
     """Full-batch LOOCV fit; neighbors re-selected exactly under the current metric each round."""
-    return _fit_safeguarded(metric, x, y, lambda a: knn(x, x, k, a, self_offset=0), outer, restart)
+    return _fit_safeguarded(
+        metric, x, y, lambda a: knn(x, x, k, a, self_offset=0), outer, restart
+    )
 
 
 def fit_on_pools(metric, x, y, pool, k, outer=4, restart=True):
     """Full-batch LOOCV fit where each point's neighbors must come from a fixed candidate pool."""
-    return _fit_safeguarded(metric, x, y, lambda a: rerank(x, x, pool, k, a), outer, restart)
+    return _fit_safeguarded(
+        metric, x, y, lambda a: rerank(x, x, pool, k, a), outer, restart
+    )

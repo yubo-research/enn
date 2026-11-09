@@ -129,7 +129,7 @@ pub fn score_queries_flat(
         .collect()
 }
 
-fn scaled_row(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f64>) {
+pub(crate) fn scaled_row(row: &[f64], scale_x: bool, x_scale: &[f64], out: &mut Vec<f64>) {
     out.clear();
     out.extend(
         row.iter()

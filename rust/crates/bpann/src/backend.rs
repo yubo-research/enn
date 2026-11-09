@@ -372,6 +372,14 @@ impl BpannBackend {
             return Ok((Array2::zeros((n_query, 0)), Array2::zeros((n_query, 0))));
         }
 
+        if !exclude_nearest {
+            if let Some(p) = crate::prefix_search::use_prefix_search(self, queries) {
+                let (dist2s, indices) =
+                    crate::prefix_search::search_shared_prefix(self, queries, k_eff, p)?;
+                return Ok(trim_trailing_invalid_neighbor_cols(dist2s, indices));
+            }
+        }
+
         let mut dist2s = Array2::from_elem((n_query, k_eff), f64::INFINITY);
         let mut indices = Array2::from_elem((n_query, k_eff), -1i64);
         let scale_x = self.scale_x;

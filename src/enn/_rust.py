@@ -18,6 +18,8 @@ except ImportError as exc:
 hypervolume_2d_max = _ext.hypervolume.hypervolume_2d_max
 normal_hash_batch_multi_seed_fast = _ext.hash.normal_hash_batch_multi_seed_fast
 standardize_y = _ext.util.standardize_y
+set_prefix_reuse = _ext.util.set_prefix_reuse
+prefix_reuse = _ext.util.prefix_reuse
 pareto_front_2d_maximize = _ext.util.pareto_front_2d_maximize
 calculate_sobol_indices = _ext.util.calculate_sobol_indices
 sobol_sequence = _ext.util.sobol_sequence

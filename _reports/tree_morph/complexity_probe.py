@@ -20,8 +20,8 @@ import tempfile
 import time
 
 import numpy as np
-
 from enn.enn.enn_fit import enn_fit
+
 from evals import metric_12d, metric_ranges
 from ops.stress import DRAW_FLAGS
 

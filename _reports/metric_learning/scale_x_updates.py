@@ -55,8 +55,13 @@ def replay(x: np.ndarray, stops: list[int]) -> tuple[list[int], list[int]]:
 def main() -> None:
     config = metric_12d.Metric12dConfig()
     stops = batch_bounds(config)
-    print(f"adds per stream: {len(stops) - 1} (after the model is built at n={stops[0]})")
-    for tag, data in (("12d", metric_12d.make_data), ("ranges", metric_ranges.make_data)):
+    print(
+        f"adds per stream: {len(stops) - 1} (after the model is built at n={stops[0]})"
+    )
+    for tag, data in (
+        ("12d", metric_12d.make_data),
+        ("ranges", metric_ranges.make_data),
+    ):
         for seed in SEEDS:
             x, _ = data(max(config.n_grid), np.random.default_rng(seed))
             rescales, rebuilds = replay(x, stops)

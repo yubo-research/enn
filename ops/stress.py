@@ -1706,6 +1706,188 @@ def proposal_scale(
         raise click.ClickException(str(exc)) from exc
 
 
+PREFIX_DEFAULT_NUM_DIM = 32
+PREFIX_DEFAULT_BATCH_ROWS = 256
+PREFIX_DEFAULT_RUN_LENGTH = 64
+PREFIX_DEFAULT_NS = (300, 1000, 3000, 10000)
+PREFIX_DEFAULT_TAILS = (1, 3, 10, 30)
+PREFIX_DEFAULT_REPEATS = 5
+PREFIX_QUERY_SEED = 7
+
+
+@dataclass(frozen=True)
+class PrefixStressRow:
+    num_obs: int
+    tail: int
+    baseline_s: float
+    prefix_s: float
+    identical: bool
+
+    @property
+    def speedup(self) -> float:
+        return self.baseline_s / self.prefix_s if self.prefix_s > 0 else float("inf")
+
+
+def make_prefix_queries(
+    batch_rows: int, *, num_dim: int, tail: int, run_length: int, seed: int
+) -> np.ndarray:
+    """Return a batch whose rows share their first num_dim - tail features in runs."""
+    if not 1 <= tail <= num_dim:
+        raise ValueError("tail must be in [1, num_dim]")
+    if run_length < 1:
+        raise ValueError("run_length must be >= 1")
+    x = make_query_points(batch_rows, num_dim=num_dim, seed=seed)
+    head = num_dim - tail
+    leaders = (np.arange(batch_rows) // run_length) * run_length
+    x[:, :head] = x[leaders, :head]
+    return x
+
+
+def _median_posterior_s(
+    model: EpistemicNearestNeighbors, x: np.ndarray, repeats: int
+) -> tuple[float, object]:
+    times = []
+    out = None
+    for _ in range(repeats):
+        t0 = time.perf_counter()
+        out = model.posterior(x, params=STRESS_PARAMS)
+        times.append(time.perf_counter() - t0)
+    return float(np.median(times)), out
+
+
+def _same_posterior(a, b) -> bool:
+    fields = (a.mu, a.se, a.se_epi, a.se_ale, a.idx)
+    others = (b.mu, b.se, b.se_epi, b.se_ale, b.idx)
+    return all(np.array_equal(u, v) for u, v in zip(fields, others, strict=True))
+
+
+def run_prefix_stress(
+    *,
+    ns: Sequence[int],
+    tails: Sequence[int],
+    num_dim: int,
+    batch_rows: int,
+    run_length: int,
+    repeats: int,
+) -> Iterator[PrefixStressRow]:
+    """Time posterior() with shared-prefix reuse off (baseline) and on."""
+    from enn._rust import set_prefix_reuse
+
+    try:
+        for n in ns:
+            x_train, y_train = make_synthetic_observations(n, num_dim=num_dim, seed=0)
+            with tempfile.TemporaryDirectory() as work_dir:
+                model = EpistemicNearestNeighbors(x_train, y_train, work_dir=work_dir)
+                for tail in tails:
+                    x = make_prefix_queries(
+                        batch_rows,
+                        num_dim=num_dim,
+                        tail=tail,
+                        run_length=run_length,
+                        seed=PREFIX_QUERY_SEED,
+                    )
+                    set_prefix_reuse(False)
+                    base_s, base = _median_posterior_s(model, x, repeats)
+                    set_prefix_reuse(True)
+                    fast_s, fast = _median_posterior_s(model, x, repeats)
+                    yield PrefixStressRow(
+                        n, tail, base_s, fast_s, _same_posterior(base, fast)
+                    )
+    finally:
+        set_prefix_reuse(True)
+
+
+def format_prefix_row(row: PrefixStressRow) -> str:
+    return (
+        f"N = {row.num_obs}  D-P = {row.tail}  "
+        f"baseline_s = {row.baseline_s:{DURATION_S_FMT}}  "
+        f"prefix_s = {row.prefix_s:{DURATION_S_FMT}}  "
+        f"speedup = {row.speedup:.2f}  identical = {row.identical}"
+    )
+
+
+def _parse_int_list(_ctx, _param, value: str) -> tuple[int, ...]:
+    try:
+        out = tuple(int(v) for v in value.split(",") if v.strip())
+    except ValueError as exc:
+        raise click.BadParameter("expected comma-separated integers") from exc
+    if not out or min(out) < 1:
+        raise click.BadParameter("values must be >= 1")
+    return out
+
+
+@cli.command(
+    "prefix",
+    params=[
+        click.Option(
+            ["--ns"],
+            default=",".join(str(n) for n in PREFIX_DEFAULT_NS),
+            show_default=True,
+            callback=_parse_int_list,
+            help="Training-set sizes N (comma-separated).",
+        ),
+        click.Option(
+            ["--tails"],
+            default=",".join(str(t) for t in PREFIX_DEFAULT_TAILS),
+            show_default=True,
+            callback=_parse_int_list,
+            help="Non-shared trailing feature counts D-P (comma-separated).",
+        ),
+        click.Option(
+            ["--num-dim"], type=int, default=PREFIX_DEFAULT_NUM_DIM, show_default=True
+        ),
+        click.Option(
+            ["--batch-rows"],
+            type=int,
+            default=PREFIX_DEFAULT_BATCH_ROWS,
+            show_default=True,
+            help="Query rows per posterior() call.",
+        ),
+        click.Option(
+            ["--run-length"],
+            type=int,
+            default=PREFIX_DEFAULT_RUN_LENGTH,
+            show_default=True,
+            help="Adjacent query rows sharing one prefix.",
+        ),
+        click.Option(
+            ["--repeats"],
+            type=int,
+            default=PREFIX_DEFAULT_REPEATS,
+            show_default=True,
+            help="Timed posterior() calls per setting (median reported).",
+        ),
+    ],
+)
+def prefix(
+    ns: tuple[int, ...],
+    tails: tuple[int, ...],
+    num_dim: int,
+    batch_rows: int,
+    run_length: int,
+    repeats: int,
+) -> None:
+    """Time posterior() on batches whose adjacent rows share leading features."""
+    if num_dim < 2 or batch_rows < 2 or repeats < 1:
+        raise click.ClickException("need num_dim >= 2, batch_rows >= 2, repeats >= 1")
+    if max(tails) > num_dim:
+        raise click.ClickException("every tail must be <= num_dim")
+    click.echo(
+        format_kv(
+            "config", f"D={num_dim} R={batch_rows} run={run_length} reps={repeats}"
+        )
+    )
+    for row in run_prefix_stress(
+        ns=ns,
+        tails=tails,
+        num_dim=num_dim,
+        batch_rows=batch_rows,
+        run_length=run_length,
+        repeats=repeats,
+    ):
+        click.echo(format_prefix_row(row))
+
+
 def main() -> None:
     cli()
 

@@ -31,7 +31,11 @@ def group(rows, n):
 
 def cell(vals, fmt):
     v = np.asarray(vals, dtype=float)
-    return f"{fmt.format(v.mean())} ± {fmt.format(v.std())}" if len(v) > 1 else fmt.format(v.mean())
+    return (
+        f"{fmt.format(v.mean())} ± {fmt.format(v.std())}"
+        if len(v) > 1
+        else fmt.format(v.mean())
+    )
 
 
 def table_rows(rows, n):
@@ -48,11 +52,17 @@ def main(path, prefix):
     n = max(r["n"] for r in rows)
     head = ["problem", "method"] + [h for _, h, _ in COLS] + ["exact-nbr LOO / test"]
     body = table_rows(rows, n)
-    md = [f"n = {n}, seeds = {len({r['seed'] for r in rows})}", "", "| " + " | ".join(head) + " |"]
+    md = [
+        f"n = {n}, seeds = {len({r['seed'] for r in rows})}",
+        "",
+        "| " + " | ".join(head) + " |",
+    ]
     md.append("|" + "---|" * len(head))
     md += ["| " + " | ".join(r) + " |" for r in body]
     open(prefix + ".md", "w").write("\n".join(md) + "\n")
-    tex = [" & ".join(r).replace("±", r"$\pm$").replace("_", r"\_") + r" \\" for r in body]
+    tex = [
+        " & ".join(r).replace("±", r"$\pm$").replace("_", r"\_") + r" \\" for r in body
+    ]
     open(prefix + ".tex", "w").write("\n".join(tex) + "\n")
     print("\n".join(md))
 

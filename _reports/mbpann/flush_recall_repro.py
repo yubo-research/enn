@@ -11,11 +11,11 @@ Usage: PYTHONPATH=src python reports/mbpann/flush_recall_repro.py
 import tempfile
 
 import numpy as np
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.enn.mbpann import MBPANNMetric
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 N, D, B, K = 15000, 6, 500, 10

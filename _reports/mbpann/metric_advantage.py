@@ -29,12 +29,12 @@ import sys
 import tempfile
 
 import numpy as np
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from iaml_core import Metric, fit_exact, knn
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.enn.mbpann import MBPANNMetric
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 D, K = 12, 10

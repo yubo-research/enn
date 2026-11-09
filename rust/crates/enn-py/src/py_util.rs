@@ -13,6 +13,16 @@ pub fn standardize_y_py<'py>(py: Python<'py>, y: PyReadonlyArray1<f64>) -> PyRes
     Ok((center, scale))
 }
 
+#[pyfunction(name = "set_prefix_reuse")]
+pub fn set_prefix_reuse_py(value: bool) {
+    ennbo::set_prefix_reuse(value);
+}
+
+#[pyfunction(name = "prefix_reuse")]
+pub fn prefix_reuse_py() -> bool {
+    ennbo::prefix_reuse()
+}
+
 #[pyfunction(name = "pareto_front_2d_maximize")]
 #[pyo3(signature = (a, b, idx=None))]
 pub fn pareto_front_2d_maximize_py<'py>(

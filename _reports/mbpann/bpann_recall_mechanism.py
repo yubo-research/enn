@@ -15,10 +15,10 @@ import tempfile
 from pathlib import Path
 
 from bpann_recall_repro import recall as repro_recall
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from flush_recall_repro import recall as flush_recall
 
 from enn._rust import set_config_path
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 
 
 def with_config(text: str) -> None:
@@ -29,11 +29,17 @@ def with_config(text: str) -> None:
 
 CASES = [
     ("flush, default", "", lambda: flush_recall(ENNIndexDriver.BPANN_DISK)),
-    ("flush, structured_build_row_limit=4096", "structured_build_row_limit = 4096\n",
-     lambda: flush_recall(ENNIndexDriver.BPANN_DISK)),
+    (
+        "flush, structured_build_row_limit=4096",
+        "structured_build_row_limit = 4096\n",
+        lambda: flush_recall(ENNIndexDriver.BPANN_DISK),
+    ),
     ("no first sync, default", "", lambda: repro_recall(False)),
-    ("no first sync, exhaustive_search_row_limit=1",
-     "exhaustive_search_row_limit = 1\nskip_refinement_row_limit = 150000\n", lambda: repro_recall(False)),
+    (
+        "no first sync, exhaustive_search_row_limit=1",
+        "exhaustive_search_row_limit = 1\nskip_refinement_row_limit = 150000\n",
+        lambda: repro_recall(False),
+    ),
     ("first sync, default", "", lambda: repro_recall(True)),
 ]
 

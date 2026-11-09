@@ -24,7 +24,10 @@ def replay(tag, seed):
         lo = 0
         for hi in cfg.n_grid:
             for start in range(lo, hi, cfg.batch):
-                streamed._add_rows(x[start : min(hi, start + cfg.batch)], y[start : min(hi, start + cfg.batch)])
+                streamed._add_rows(
+                    x[start : min(hi, start + cfg.batch)],
+                    y[start : min(hi, start + cfg.batch)],
+                )
             m = streamed.model.metric
             rel = m.weights / m.weights.max()
             gain = "na" if m.heldout_gain is None else f"{m.heldout_gain:+.3f}"

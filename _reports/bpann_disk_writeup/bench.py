@@ -15,9 +15,9 @@ import tempfile
 import time
 
 import numpy as np
+from enn.enn.enn_fit import enn_fit
 from evals.flat_sphere import gaussian_loglik, rmse
 
-from enn.enn.enn_fit import enn_fit
 from evals import metric_12d, metric_ranges
 from ops.stress import DRAW_FLAGS
 

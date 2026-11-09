@@ -1,10 +1,10 @@
 """Sanity checks: analytic gradient vs finite differences, and agreement with Rust ENN LOOCV."""
 
 import numpy as np
+from enn.enn.enn_fit import subsample_loglik
 from iaml_core import BpannPool, knn, loglik_grad, mean_ll
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
-from enn.enn.enn_fit import subsample_loglik
 from enn.enn.enn_params import ENNParams
 
 rng = np.random.default_rng(0)

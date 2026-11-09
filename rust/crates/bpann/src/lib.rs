@@ -7,6 +7,7 @@ pub mod merge;
 pub mod metric;
 pub mod mmap_store;
 pub mod observation;
+pub mod prefix_search;
 pub mod row_groups;
 pub mod small_n_search;
 pub mod store_file;
@@ -24,6 +25,7 @@ pub use merge::{
     merge_topk_precomputed_dist_with_self,
 };
 pub use observation::{bpann_remove_store, MAX_NUM_DIM, MAX_RECORD_STRIDE};
+pub use prefix_search::{prefix_reuse, set_prefix_reuse, shared_prefix_len};
 pub use small_n_search::{
     load_or_build_small_n_cache, score_queries_flat, topk_flat_sq_l2, OrderedF32, ScoreQueriesFlat,
     SMALL_N_INCORE_SEARCH_LIMIT,

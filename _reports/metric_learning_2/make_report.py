@@ -34,7 +34,9 @@ PAIRS = [("bpann_disk_auto", m) for m, _ in MODELS[:3]]
 
 def mean_se(values):
     v = np.asarray(values, dtype=float)
-    return float(v.mean()), float(v.std(ddof=1) / np.sqrt(v.size)) if v.size > 1 else float("nan")
+    return float(v.mean()), float(
+        v.std(ddof=1) / np.sqrt(v.size)
+    ) if v.size > 1 else float("nan")
 
 
 def load_seeds(paths):
@@ -46,7 +48,9 @@ def load_seeds(paths):
         rows.setdefault((model, int(n)), {})[int(seed)] = [float(v) for v in vals]
     seeds = sorted(next(iter(rows.values())))
     if any(sorted(r) != seeds for r in rows.values()) or len(rows) != 11 * len(MODELS):
-        raise ValueError(f"{paths}: every (model, n) must have the same seeds; is the run complete?")
+        raise ValueError(
+            f"{paths}: every (model, n) must have the same seeds; is the run complete?"
+        )
     return {k: np.array([r[s] for s in seeds]) for k, r in rows.items()}, seeds
 
 
@@ -58,13 +62,24 @@ def write_data_files(tag, data):
     """d_TAG_MODEL.dat: one row per checkpoint, columns n and (mean, se) of each metric, for pgfplots."""
     header = "n " + " ".join(f"{c} {c}_se" for c in METRICS)
     for model, _ in MODELS:
-        table = [[n, *np.ravel([mean_se(col) for col in data[(model, n)].T])] for n in ns_of(data, model)]
-        np.savetxt(os.path.join(HERE, f"d_{tag}_{model}.dat"), table, fmt=["%d"] + ["%.5g"] * 2 * len(METRICS), header=header, comments="")
+        table = [
+            [n, *np.ravel([mean_se(col) for col in data[(model, n)].T])]
+            for n in ns_of(data, model)
+        ]
+        np.savetxt(
+            os.path.join(HERE, f"d_{tag}_{model}.dat"),
+            table,
+            fmt=["%d"] + ["%.5g"] * 2 * len(METRICS),
+            header=header,
+            comments="",
+        )
 
 
 def cost(timing, model):
     ns = ns_of(timing, model)
-    return float(sum(timing[(model, n)][0, 2] for n in ns)), float(timing[(model, ns[-1])][0, 3])
+    return float(sum(timing[(model, n)][0, 2] for n in ns)), float(
+        timing[(model, ns[-1])][0, 3]
+    )
 
 
 def pm(stat, fmt):
@@ -79,7 +94,12 @@ def write_table(data_by_tag, timing_by_tag):
         for tag in TAGS:
             d = data_by_tag[tag][(model, 1000000)]
             fit, query = cost(timing_by_tag[tag], model)
-            cells += [pm(mean_se(d[:, 0]), "+.2f"), pm(mean_se(d[:, 1]), ".3f"), f"${fit:.0f}$", f"${query:.2f}$"]
+            cells += [
+                pm(mean_se(d[:, 0]), "+.2f"),
+                pm(mean_se(d[:, 1]), ".3f"),
+                f"${fit:.0f}$",
+                f"${query:.2f}$",
+            ]
         lines.append(f"{label} & " + " & ".join(cells) + "\\\\")
     with open(os.path.join(HERE, "t_main.tex"), "w") as f:
         f.write("\n".join(lines) + "\n")
@@ -88,10 +108,18 @@ def write_table(data_by_tag, timing_by_tag):
 def print_summary(tag, data, timing):
     """Numbers quoted in the text: per-checkpoint means, paired (same-seed) AUTO differences, costs."""
     for n in ns_of(data, "flat"):
-        parts = ["{}={:+.3f}±{:.3f}/{:.3f}".format(m, *mean_se(data[(m, n)][:, 0]), mean_se(data[(m, n)][:, 1])[0]) for m, _ in MODELS]
+        parts = [
+            "{}={:+.3f}±{:.3f}/{:.3f}".format(
+                m, *mean_se(data[(m, n)][:, 0]), mean_se(data[(m, n)][:, 1])[0]
+            )
+            for m, _ in MODELS
+        ]
         diffs = [
             "{}-{}={:+.3f}±{:.3f}#{}".format(
-                a, b, *mean_se(data[(a, n)][:, 0] - data[(b, n)][:, 0]), int(np.sum(data[(a, n)][:, 0] > data[(b, n)][:, 0]))
+                a,
+                b,
+                *mean_se(data[(a, n)][:, 0] - data[(b, n)][:, 0]),
+                int(np.sum(data[(a, n)][:, 0] > data[(b, n)][:, 0])),
             )
             for a, b in PAIRS
         ]
@@ -99,20 +127,26 @@ def print_summary(tag, data, timing):
     for model, _ in MODELS:
         fit, query = cost(timing, model)
         adds = " ".join(f"{timing[(model, n)][0, 2]:.2f}" for n in ns_of(timing, model))
-        print(f"[{tag}] seed-0 {model}: fit total {fit:.2f} s, query at 1e6 {query:.3f} s; add_s per checkpoint {adds}")
+        print(
+            f"[{tag}] seed-0 {model}: fit total {fit:.2f} s, query at 1e6 {query:.3f} s; add_s per checkpoint {adds}"
+        )
 
 
 def check_timing_run(tag, data, seeds, timing):
     """Seed 0 of the timing run must reproduce seed 0 of the 10-seed run (loglik and nrmse)."""
     i = seeds.index(0)
     diff = max(float(np.abs(timing[k][0, :2] - data[k][i, :2]).max()) for k in timing)
-    print(f"[{tag}] timing run vs 10-seed run, seed 0: max |diff| of loglik and nrmse = {diff:.2g}")
+    print(
+        f"[{tag}] timing run vs 10-seed run, seed 0: max |diff| of loglik and nrmse = {diff:.2g}"
+    )
 
 
 def main():
     data_by_tag, timing_by_tag = {}, {}
     for tag in TAGS:
-        data, seeds = load_seeds(sorted(glob.glob(os.path.join(HERE, "runs", f"{tag}_s*.out"))))
+        data, seeds = load_seeds(
+            sorted(glob.glob(os.path.join(HERE, "runs", f"{tag}_s*.out")))
+        )
         timing, _ = load_seeds([os.path.join(HERE, f"timing_{tag}.out")])
         print(f"[{tag}] seeds={seeds}")
         check_timing_run(tag, data, seeds, timing)

@@ -13,13 +13,13 @@ import tempfile
 import time
 
 import numpy as np
+from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from iaml_core import Metric, fit_exact, knn, mean_ll
 from stream import f_friedman, f_sparse
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 from enn.enn.mbpann import MBPANNMetric
-from enn.turbo.config.enn_index_driver import ENNIndexDriver
 from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 K = 10

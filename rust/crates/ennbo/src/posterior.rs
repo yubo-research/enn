@@ -493,3 +493,7 @@ mod tests_y_bounds;
 #[cfg(test)]
 #[path = "posterior/tests_duplicates.rs"]
 mod tests_duplicates;
+
+#[cfg(test)]
+#[path = "posterior/tests_prefix.rs"]
+mod tests_prefix;
