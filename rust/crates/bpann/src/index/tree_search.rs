@@ -30,6 +30,18 @@ pub fn set_leaf_coefficient(value: f64) {
     LEAF_COEFFICIENT_BITS.store(bits, Ordering::Relaxed);
 }
 
+pub const TREE_SEARCH_PREFETCH_PAGES: u64 = 10;
+
+static PREFETCH_PAGES: AtomicU64 = AtomicU64::new(TREE_SEARCH_PREFETCH_PAGES);
+
+pub fn prefetch_pages() -> usize {
+    PREFETCH_PAGES.load(Ordering::Relaxed) as usize
+}
+
+pub fn set_prefetch_pages(value: usize) {
+    PREFETCH_PAGES.store(value as u64, Ordering::Relaxed);
+}
+
 pub const TREE_SEARCH_STOP_EPSILON: f64 = 1.0;
 
 static STOP_EPSILON_BITS: AtomicU64 = AtomicU64::new(TREE_SEARCH_STOP_EPSILON.to_bits());
@@ -482,6 +494,7 @@ fn search_tree_scored(
             expanded += 1;
             XP_INTERNAL_PAGES.fetch_add(1, Ordering::Relaxed);
             XP_INTERNAL_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
+            let mut fresh: Vec<(f32, u32)> = Vec::new();
             for (&child, c) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
                 let d2 = l2_sq_f32(query, c);
                 let radius = s.radius(child);
@@ -493,6 +506,7 @@ fn search_tree_scored(
                     } else {
                         0
                     };
+                    fresh.push((key, child));
                     frontier.push(Reverse((
                         phase,
                         OrderedF32(key),
@@ -500,6 +514,13 @@ fn search_tree_scored(
                         child,
                         depth + 1,
                     )));
+                }
+            }
+            let m = prefetch_pages().min(fresh.len());
+            if m > 0 {
+                fresh.select_nth_unstable_by(m - 1, |a, b| a.0.total_cmp(&b.0));
+                for &(_, child) in &fresh[..m] {
+                    s.prefetch_page(child);
                 }
             }
             continue;
@@ -561,6 +582,14 @@ mod tests {
         assert_eq!(priority(1.0, 100.0), 0.0);
         assert_eq!(lower_bound(4.0, 1.0), 1.0);
         assert_eq!(lower_bound(4.0, 3.0), 0.0);
+    }
+
+    #[test]
+    fn prefetch_pages_default_and_setter() {
+        assert_eq!(prefetch_pages(), TREE_SEARCH_PREFETCH_PAGES as usize);
+        set_prefetch_pages(0);
+        assert_eq!(prefetch_pages(), 0);
+        set_prefetch_pages(TREE_SEARCH_PREFETCH_PAGES as usize);
     }
 
     #[test]

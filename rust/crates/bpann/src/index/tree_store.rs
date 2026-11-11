@@ -153,6 +153,14 @@ impl TreeStore {
         }
     }
 
+    pub fn prefetch_page(&self, id: u32) {
+        let i = id as usize;
+        if self.residency.tracking() && i < self.num_pages {
+            let bytes = self.slot_words * 4;
+            let _ = self.slots.advise_range(memmap2::Advice::WillNeed, i * bytes, bytes);
+        }
+    }
+
     pub fn is_leaf(&self, id: u32) -> bool {
         self.meta_words(id)[0] & !LEN_MASK == kind_tag(Kind::Leaf)
     }

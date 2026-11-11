@@ -10,3 +10,5 @@ DCC: Don't Change Code. Just discuss.
 Use two-column, academic style for reports.
 Put reports in `reports/`.
   - Keep both the .tex and .pdf file in reports/. Remove the other, intermediate files (i.e., clean up when the report is complete).
+
+NB: The operator likes plots and other visualizations of data. He's curious but impatient and wants to ingest the data and your main points as quickly as possible.

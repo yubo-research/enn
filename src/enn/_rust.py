@@ -23,6 +23,7 @@ prefix_reuse = _ext.util.prefix_reuse
 set_leaf_coefficient = _ext.util.set_leaf_coefficient
 leaf_coefficient = _ext.util.leaf_coefficient
 set_internal_coefficient = _ext.util.set_internal_coefficient
+set_prefetch_pages = _ext.util.set_prefetch_pages
 set_stop_epsilon = _ext.util.set_stop_epsilon
 stop_epsilon = _ext.util.stop_epsilon
 take_walk_totals = _ext.util.take_walk_totals

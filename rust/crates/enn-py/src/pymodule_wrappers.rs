@@ -46,6 +46,7 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::py_util::set_internal_coefficient_py,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(crate::py_util::set_prefetch_pages_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_stop_epsilon_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::stop_epsilon_py, m)?)?;
     m.add_function(wrap_pyfunction!(

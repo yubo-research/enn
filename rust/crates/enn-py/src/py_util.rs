@@ -28,6 +28,11 @@ pub fn set_internal_coefficient_py(value: f64) {
     ennbo::set_internal_coefficient(value);
 }
 
+#[pyfunction(name = "set_prefetch_pages")]
+pub fn set_prefetch_pages_py(value: usize) {
+    ennbo::set_prefetch_pages(value);
+}
+
 #[pyfunction(name = "set_stop_epsilon")]
 pub fn set_stop_epsilon_py(value: f64) {
     ennbo::set_stop_epsilon(value);
