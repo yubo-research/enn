@@ -8,7 +8,21 @@ use crate::index::build::IndexHeader;
 use crate::index::page::Page;
 use crate::index::persist_atomic::{persist_index_files_with, skip_edges_bytes};
 use crate::index::tree::Tree;
-use crate::index::tree_store::{Kind, SLOT_ENTRIES};
+use crate::index::tree_store::{Kind, TreeStore, SLOT_ENTRIES, STAMP_FILE};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, PartialEq)]
+struct Stamp {
+    num_pages: usize,
+    root_page_id: u32,
+    indexed_rows: usize,
+    meta_bytes: usize,
+    slots_bytes: usize,
+    relative_error: f64,
+    absolute_error: f64,
+    scale_x: bool,
+    x_scale: Vec<f64>,
+}
 
 fn invalid(e: impl ToString) -> BpannError {
     BpannError::InvalidParameter(e.to_string())
@@ -96,6 +110,72 @@ impl Tree {
         )
     }
 
+    pub fn persist_stamped(&mut self, scale_x: bool, x_scale: &[f64]) -> Result<(), BpannError> {
+        let path = self.index_dir.join(STAMP_FILE);
+        let _ = fs::remove_file(&path);
+        self.persist()?;
+        if !self.rows_cached || !self.store.is_named_in(&self.index_dir) {
+            return Ok(());
+        }
+        self.store.flush()?;
+        let (meta_bytes, slots_bytes) = self.store.file_lens();
+        let stamp = Stamp {
+            num_pages: self.num_pages(),
+            root_page_id: self.header.root_page_id,
+            indexed_rows: self.header.indexed_rows,
+            meta_bytes,
+            slots_bytes,
+            relative_error: self.coordinate_relative_error,
+            absolute_error: self.coordinate_absolute_error,
+            scale_x,
+            x_scale: x_scale.to_vec(),
+        };
+        let tmp = path.with_extension("tmp");
+        fs::write(&tmp, serde_json::to_vec(&stamp).map_err(invalid)?).map_err(invalid)?;
+        File::open(&tmp)
+            .and_then(|f| f.sync_all())
+            .map_err(invalid)?;
+        fs::rename(&tmp, &path).map_err(invalid)?;
+        self.store.mark_stamped();
+        Ok(())
+    }
+
+    pub fn open_stamped(
+        index_dir: &Path,
+        scale_x: bool,
+        x_scale: &[f64],
+    ) -> Result<Option<Self>, BpannError> {
+        let Ok(text) = fs::read_to_string(index_dir.join(STAMP_FILE)) else {
+            return Ok(None);
+        };
+        let Ok(stamp) = serde_json::from_str::<Stamp>(&text) else {
+            return Ok(None);
+        };
+        let header_text = fs::read_to_string(index_dir.join("header.json")).map_err(invalid)?;
+        let header: IndexHeader = serde_json::from_str(&header_text).map_err(invalid)?;
+        let scale_ok = stamp.scale_x == scale_x && (!scale_x || stamp.x_scale == x_scale);
+        if !scale_ok
+            || stamp.root_page_id != header.root_page_id
+            || stamp.indexed_rows != header.indexed_rows
+        {
+            return Ok(None);
+        }
+        let Some(store) = TreeStore::open_named(index_dir, header.num_dim, stamp.num_pages) else {
+            return Ok(None);
+        };
+        if store.file_lens() != (stamp.meta_bytes, stamp.slots_bytes) {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            header,
+            store,
+            index_dir: index_dir.to_path_buf(),
+            rows_cached: true,
+            coordinate_relative_error: stamp.relative_error,
+            coordinate_absolute_error: stamp.absolute_error,
+        }))
+    }
+
     pub fn on_disk_index_matches(&self) -> Result<bool, BpannError> {
         let file = File::open(self.index_dir.join("pages.bin")).map_err(invalid)?;
         let mut cmp = Compare {
@@ -165,12 +245,11 @@ impl Tree {
             return false;
         }
         self.store.set_kind(id, kind);
-        let block = if kind == Kind::Leaf {
-            vec![0.0; ids.len() * d]
+        if kind == Kind::Leaf {
+            self.store.set_ids_only(id, &ids);
         } else {
-            block
-        };
-        self.store.set_entries(id, &ids, &block);
+            self.store.set_entries(id, &ids, &block);
+        }
         self.store.set_count(id, u32::MAX as usize);
         true
     }

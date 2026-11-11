@@ -18,9 +18,44 @@ pub fn set_prefix_reuse_py(value: bool) {
     ennbo::set_prefix_reuse(value);
 }
 
+#[pyfunction(name = "set_leaf_coefficient")]
+pub fn set_leaf_coefficient_py(value: f64) {
+    ennbo::set_leaf_coefficient(value);
+}
+
+#[pyfunction(name = "set_stop_epsilon")]
+pub fn set_stop_epsilon_py(value: f64) {
+    ennbo::set_stop_epsilon(value);
+}
+
+#[pyfunction(name = "stop_epsilon")]
+pub fn stop_epsilon_py() -> f64 {
+    ennbo::stop_epsilon()
+}
+
+#[pyfunction(name = "leaf_coefficient")]
+pub fn leaf_coefficient_py() -> f64 {
+    ennbo::leaf_coefficient()
+}
+
 #[pyfunction(name = "prefix_reuse")]
 pub fn prefix_reuse_py() -> bool {
     ennbo::prefix_reuse()
+}
+
+#[pyfunction(name = "take_walk_totals")]
+pub fn take_walk_totals_py() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
+    let t = ennbo::take_walk_totals();
+    (
+        t.f32_leaves,
+        t.f32_walks,
+        t.f32_budget_stops,
+        t.f64_leaves,
+        t.f64_walks,
+        t.f64_budget_stops,
+        t.certified,
+        t.fallbacks,
+    )
 }
 
 #[pyfunction(name = "pareto_front_2d_maximize")]

@@ -9,11 +9,15 @@ use crate::index::tree_store::{Kind, TreeStore};
 
 pub const TREE_LEAF_CAPACITY: usize = 64;
 pub const TREE_FANOUT: usize = 16;
+pub const TREE_CENTROID_STRIDE: u32 = 16;
 
-fn mean_update(centroid: &mut [f32], v: &[f32], n: usize) {
-    let inv = 1.0 / n as f32;
+fn updates_centroid(row: u32) -> bool {
+    (row.wrapping_mul(2_654_435_761) >> 12).is_multiple_of(TREE_CENTROID_STRIDE)
+}
+
+fn mean_update(centroid: &mut [f32], v: &[f32], step: f32) {
     for (c, &x) in centroid.iter_mut().zip(v) {
-        *c += (x - *c) * inv;
+        *c += (x - *c) * step;
     }
 }
 
@@ -52,7 +56,7 @@ impl Tree {
                 skip_neighbors: DEFAULT_SKIP_NEIGHBORS,
                 rows_seen: 0,
             },
-            store: TreeStore::create(&index_dir, num_dim)?,
+            store: TreeStore::create_named(&index_dir, num_dim)?,
             index_dir,
             rows_cached: true,
             coordinate_relative_error: f32::EPSILON as f64,
@@ -121,10 +125,14 @@ impl Tree {
             let slot = nearest(s.block(cur), v);
             let child = s.ids(cur)[slot];
             let n_child = s.count(child) + 1;
-            let c = s.entry_mut(cur, slot);
-            let moved = dist(v, c) / n_child as f32;
-            mean_update(c, v, n_child);
-            let r = (s.radius(child) + moved).max(moved * (n_child - 1) as f32);
+            let d = dist(v, &s.block(cur)[slot * v.len()..(slot + 1) * v.len()]);
+            let r = if updates_centroid(row) {
+                let step = (TREE_CENTROID_STRIDE as f32 / n_child as f32).min(1.0);
+                mean_update(s.entry_mut(cur, slot), v, step);
+                (s.radius(child) + d * step).max(d * (1.0 - step))
+            } else {
+                s.radius(child).max(d)
+            };
             s.set_radius(child, r);
             path.push((cur, slot));
             cur = child;

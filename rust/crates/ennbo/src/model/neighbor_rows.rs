@@ -1,4 +1,3 @@
-
 use ndarray::{Array1, ArrayView2};
 
 use super::{EpistemicNearestNeighbors, STATS_CHUNK_ROWS};
@@ -53,7 +52,7 @@ impl EpistemicNearestNeighbors {
         let n = self.backend.len();
         for start in (0..n).step_by(STATS_CHUNK_ROWS) {
             let indices: Vec<usize> = (start..(start + STATS_CHUNK_ROWS).min(n)).collect();
-            let (_, y, yvar) = self.backend.train_rows_at(&indices)?;
+            let (y, yvar) = self.backend.train_y_rows_at(&indices)?;
             self.observe_dups(start, &y.view(), yvar.as_ref().map(|v| v.view()).as_ref());
         }
         Ok(())

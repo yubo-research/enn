@@ -4,8 +4,7 @@ use rayon::prelude::*;
 use crate::backend::BpannBackend;
 use crate::error::BpannError;
 use crate::index::MmapSearchStore;
-use crate::merge::{find_query_train_id, merge_topk_precomputed_dist_with_self};
-use crate::mmap_store::MmapColumnStore;
+use crate::merge::merge_topk_precomputed_dist_with_self;
 
 pub struct SearchPendingArgs<'a> {
     pub total: usize,
@@ -20,19 +19,16 @@ pub struct SearchPendingArgs<'a> {
 fn merge_pending(
     leg_a: &[(u32, f64)],
     leg_b: &[(u32, f64)],
-    train_x: &MmapColumnStore,
-    query_buf: &[f64],
     k_eff: usize,
     pool_k: usize,
     exclude_nearest: bool,
 ) -> Vec<(u32, f64)> {
     let self_id = if exclude_nearest {
-        let zero = leg_a
+        leg_a
             .iter()
             .chain(leg_b.iter())
             .find(|(_, d)| *d <= 1e-15)
-            .map(|(id, _)| *id);
-        zero.or_else(|| find_query_train_id(train_x, query_buf))
+            .map(|(id, _)| *id)
     } else {
         None
     };
@@ -133,8 +129,6 @@ pub fn search_indexed_and_pending(
             let merged = merge_pending(
                 &leg_a,
                 &leg_b,
-                train_x,
-                query_buf,
                 k_eff,
                 pool_k,
                 exclude_nearest,

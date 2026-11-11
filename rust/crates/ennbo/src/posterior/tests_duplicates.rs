@@ -49,7 +49,10 @@ fn all_outputs(m: &EpistemicNearestNeighbors) -> Vec<ndarray::ArrayD<f64>> {
                 .posterior_function_draw(&q.view(), &params, &[3, 4], &flags)
                 .unwrap();
             out.push(draws.into_dyn());
-            out.push(Array2::from_shape_fn((idx.len(), idx[0].len()), |(i, j)| idx[i][j] as f64).into_dyn());
+            out.push(
+                Array2::from_shape_fn((idx.len(), idx[0].len()), |(i, j)| idx[i][j] as f64)
+                    .into_dyn(),
+            );
         }
     }
     let nb = m.neighbors(&q.view(), 4, false).unwrap();
@@ -73,8 +76,18 @@ fn without_duplicates_aggregation_changes_nothing() {
 #[test]
 fn without_duplicates_adding_rows_keeps_the_two_settings_identical() {
     let (x, y, _) = distinct_points(30);
-    let mut off = build(false, x.slice(s![..20, ..]).to_owned(), y.slice(s![..20, ..]).to_owned(), None);
-    let mut on = build(true, x.slice(s![..20, ..]).to_owned(), y.slice(s![..20, ..]).to_owned(), None);
+    let mut off = build(
+        false,
+        x.slice(s![..20, ..]).to_owned(),
+        y.slice(s![..20, ..]).to_owned(),
+        None,
+    );
+    let mut on = build(
+        true,
+        x.slice(s![..20, ..]).to_owned(),
+        y.slice(s![..20, ..]).to_owned(),
+        None,
+    );
     for i in 20..30 {
         let (xi, yi) = (x.slice(s![i..i + 1, ..]), y.slice(s![i..i + 1, ..]));
         off.model.add(&xi, &yi, None).unwrap();
@@ -89,7 +102,10 @@ fn site_model(aggregate: bool, copies: usize) -> Built {
     for i in 0..copies {
         y[[i, 0]] = 1.0 + if i % 2 == 0 { 0.5 } else { -0.5 };
     }
-    for (j, (xv, yv)) in [(1.0, 0.0), (2.0, 3.0), (3.0, -1.0), (4.0, 2.0)].iter().enumerate() {
+    for (j, (xv, yv)) in [(1.0, 0.0), (2.0, 3.0), (3.0, -1.0), (4.0, 2.0)]
+        .iter()
+        .enumerate()
+    {
         x[[copies + j, 0]] = *xv;
         y[[copies + j, 0]] = *yv;
     }
@@ -108,8 +124,12 @@ fn se_keeps_shrinking_with_repeats_and_matches_the_row_formula() {
         let ys = on.model.y_scale()[0];
         let w = |d: f64, n: f64| 1.0 / (EPS_VAR + d + 0.5 / n);
         let norm = w(0.0, copies as f64) + w(1.0, 1.0) + w(4.0, 1.0);
-        let expected_mu = (w(0.0, copies as f64) * 1.0 + w(1.0, 1.0) * 0.0 + w(4.0, 1.0) * 3.0) / norm;
-        assert!((p.mu[[0, 0]] - expected_mu).abs() < 1e-12, "copies={copies}");
+        let expected_mu =
+            (w(0.0, copies as f64) * 1.0 + w(1.0, 1.0) * 0.0 + w(4.0, 1.0) * 3.0) / norm;
+        assert!(
+            (p.mu[[0, 0]] - expected_mu).abs() < 1e-12,
+            "copies={copies}"
+        );
         assert!((p.se_epi[[0, 0]] - (1.0 / norm).sqrt() * ys).abs() < 1e-12);
         on_se.push(p.se_epi[[0, 0]] / ys);
         let off = site_model(false, copies);
@@ -117,7 +137,10 @@ fn se_keeps_shrinking_with_repeats_and_matches_the_row_formula() {
         off_se.push(p.se_epi[[0, 0]] / off.model.y_scale()[0]);
     }
     assert!(on_se.windows(2).all(|w| w[1] < w[0]), "{on_se:?}");
-    assert_eq!(off_se[2], off_se[3], "k copies fill the neighbors: {off_se:?}");
+    assert_eq!(
+        off_se[2], off_se[3],
+        "k copies fill the neighbors: {off_se:?}"
+    );
 }
 
 #[test]
@@ -129,7 +152,10 @@ fn neighbors_are_distinct_x_values_even_with_many_copies() {
         x[[copies + j, 1]] = 0.5;
     }
     let built = build(true, x, Array2::zeros((copies + 12, 1)), None);
-    let nb = built.model.neighbors(&array![[0.0, 0.0]].view(), 10, false).unwrap();
+    let nb = built
+        .model
+        .neighbors(&array![[0.0, 0.0]].view(), 10, false)
+        .unwrap();
     assert_eq!(nb.ncols(), 10);
     let mut xs: Vec<Vec<f64>> = nb
         .row(0)
@@ -139,20 +165,35 @@ fn neighbors_are_distinct_x_values_even_with_many_copies() {
     xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
     xs.dedup();
     assert_eq!(xs.len(), 10);
-    assert_eq!(nb[[0, 0]], 0, "the representative is the first observation at x");
+    assert_eq!(
+        nb[[0, 0]],
+        0,
+        "the representative is the first observation at x"
+    );
     assert_eq!(built.model.len(), copies + 12);
     assert_eq!(built.model.num_rows(), 13);
 }
 
 #[test]
 fn mean_does_not_depend_on_the_order_of_interleaved_adds() {
-    let sites = [(0.0, 1.0), (1.0, 4.0), (0.0, 3.0), (2.0, -1.0), (1.0, 2.0), (0.0, 5.0)];
+    let sites = [
+        (0.0, 1.0),
+        (1.0, 4.0),
+        (0.0, 3.0),
+        (2.0, -1.0),
+        (1.0, 2.0),
+        (0.0, 5.0),
+    ];
     let grouped = [0usize, 2, 5, 1, 4, 3];
     let make = |order: &[usize]| {
         let mut b = build(true, array![[9.0]], array![[0.0]], None);
         for &i in order {
             b.model
-                .add(&array![[sites[i].0]].view(), &array![[sites[i].1]].view(), None)
+                .add(
+                    &array![[sites[i].0]].view(),
+                    &array![[sites[i].1]].view(),
+                    None,
+                )
                 .unwrap();
         }
         b
@@ -161,8 +202,14 @@ fn mean_does_not_depend_on_the_order_of_interleaved_adds() {
     let b = make(&grouped);
     let q = array![[0.2], [1.1], [1.9]];
     let params = ENNParams::new(3, 1.0, 0.3).unwrap();
-    let pa = a.model.posterior(&q.view(), &params, &PosteriorFlags::new()).unwrap();
-    let pb = b.model.posterior(&q.view(), &params, &PosteriorFlags::new()).unwrap();
+    let pa = a
+        .model
+        .posterior(&q.view(), &params, &PosteriorFlags::new())
+        .unwrap();
+    let pb = b
+        .model
+        .posterior(&q.view(), &params, &PosteriorFlags::new())
+        .unwrap();
     for (u, v) in pa.mu.iter().zip(pb.mu.iter()) {
         assert!((u - v).abs() < 1e-12);
     }
@@ -182,22 +229,37 @@ fn exclude_nearest_prediction_equals_the_model_built_without_that_x() {
     }
     let on = build(true, cx, cy, None);
     let kept: Vec<usize> = (0..25).filter(|&i| i != 3).collect();
-    let without = build(true, x.select(Axis(0), &kept), y.select(Axis(0), &kept), None);
+    let without = build(
+        true,
+        x.select(Axis(0), &kept),
+        y.select(Axis(0), &kept),
+        None,
+    );
     let q = x.slice(s![3..4, ..]).to_owned();
     let params = ENNParams::new(6, 1.5, 0.2).unwrap();
     let got = on
         .model
-        .posterior(&q.view(), &params, &PosteriorFlags::new().with_exclude_nearest(true))
+        .posterior(
+            &q.view(),
+            &params,
+            &PosteriorFlags::new().with_exclude_nearest(true),
+        )
         .unwrap();
     let want = without
         .model
         .posterior(&q.view(), &params, &PosteriorFlags::new())
         .unwrap();
-    let (ys_on, ys_without) = (on.model.y_scale().to_owned(), without.model.y_scale().to_owned());
+    let (ys_on, ys_without) = (
+        on.model.y_scale().to_owned(),
+        without.model.y_scale().to_owned(),
+    );
     for m in 0..2 {
         assert!((got.mu[[0, m]] - want.mu[[0, m]]).abs() < 1e-12);
         let epi = |s: f64, ys: f64| s / ys;
-        assert!((epi(got.se_epi[[0, m]], ys_on[m]) - epi(want.se_epi[[0, m]], ys_without[m])).abs() < 1e-12);
+        assert!(
+            (epi(got.se_epi[[0, m]], ys_on[m]) - epi(want.se_epi[[0, m]], ys_without[m])).abs()
+                < 1e-12
+        );
     }
 }
 
@@ -234,7 +296,10 @@ fn unequal_yvar_reports_the_exact_variance_of_the_plain_mean() {
     );
     let params = ENNParams::new(1, 1.0, 0.2).unwrap();
     let flags = PosteriorFlags::new().with_observation_noise(true);
-    let p = on.model.posterior(&array![[1.0]].view(), &params, &flags).unwrap();
+    let p = on
+        .model
+        .posterior(&array![[1.0]].view(), &params, &flags)
+        .unwrap();
     let ys = on.model.y_scale()[0];
     let var_mean = 0.2 / 3.0 + (yv.iter().sum::<f64>() / (ys * ys)) / 9.0;
     assert!((p.se_epi[[0, 0]] / ys - (EPS_VAR + var_mean).sqrt()).abs() < 1e-12);
@@ -245,10 +310,18 @@ fn unequal_yvar_reports_the_exact_variance_of_the_plain_mean() {
 
 #[test]
 fn predictive_noise_is_not_divided_by_the_count() {
-    let on = build(true, Array2::from_elem((5, 1), 0.5), array![[1.0], [2.0], [3.0], [4.0], [5.0]], None);
+    let on = build(
+        true,
+        Array2::from_elem((5, 1), 0.5),
+        array![[1.0], [2.0], [3.0], [4.0], [5.0]],
+        None,
+    );
     let params = ENNParams::new(1, 1.0, 0.4).unwrap();
     let flags = PosteriorFlags::new().with_observation_noise(true);
-    let p = on.model.posterior(&array![[0.5]].view(), &params, &flags).unwrap();
+    let p = on
+        .model
+        .posterior(&array![[0.5]].view(), &params, &flags)
+        .unwrap();
     let ys = on.model.y_scale()[0];
     assert!((p.se_ale[[0, 0]] / ys - 0.4f64.sqrt()).abs() < 1e-12);
 }
@@ -257,8 +330,20 @@ fn predictive_noise_is_not_divided_by_the_count() {
 fn reopening_rebuilds_the_rows_and_the_posterior() {
     let (x, y, _) = distinct_points(30);
     let mut b = build(true, x.clone(), y.clone(), None);
-    b.model.add(&x.slice(s![..12, ..]), &y.slice(s![..12, ..]).mapv(|v| v + 1.0).view(), None).unwrap();
-    b.model.add(&x.slice(s![..4, ..]), &y.slice(s![..4, ..]).mapv(|v| v - 2.0).view(), None).unwrap();
+    b.model
+        .add(
+            &x.slice(s![..12, ..]),
+            &y.slice(s![..12, ..]).mapv(|v| v + 1.0).view(),
+            None,
+        )
+        .unwrap();
+    b.model
+        .add(
+            &x.slice(s![..4, ..]),
+            &y.slice(s![..4, ..]).mapv(|v| v - 2.0).view(),
+            None,
+        )
+        .unwrap();
     let before = all_outputs(&b.model);
     let rows = b.model.num_rows();
     let Built { model, dir } = b;
@@ -275,12 +360,19 @@ fn a_store_made_without_aggregation_reopens_without_it() {
     let (x, y, _) = distinct_points(10);
     let Built { model, dir } = build(false, x, y, None);
     drop(model);
-    assert!(!EpistemicNearestNeighbors::open(dir.path()).unwrap().aggregates_duplicates());
+    assert!(!EpistemicNearestNeighbors::open(dir.path())
+        .unwrap()
+        .aggregates_duplicates());
 }
 
 #[test]
 fn zero_and_negative_zero_are_the_same_x() {
-    let b = build(true, array![[0.0, 1.0], [-0.0, 1.0], [2.0, 2.0]], array![[1.0], [3.0], [5.0]], None);
+    let b = build(
+        true,
+        array![[0.0, 1.0], [-0.0, 1.0], [2.0, 2.0]],
+        array![[1.0], [3.0], [5.0]],
+        None,
+    );
     assert_eq!(b.model.num_rows(), 2);
     assert_eq!(b.model.neighbor_count(0), 2.0);
     assert_eq!(b.model.neighbor_y(0).unwrap()[0], 2.0);
@@ -289,7 +381,9 @@ fn zero_and_negative_zero_are_the_same_x() {
 #[test]
 fn means_are_taken_in_warped_space_per_metric() {
     let dir = TempDir::new().unwrap();
-    let layout = EnnLayout::new(dir.path(), false).unwrap().with_aggregate_duplicates(true);
+    let layout = EnnLayout::new(dir.path(), false)
+        .unwrap()
+        .with_aggregate_duplicates(true);
     let bounds = array![[0.0, 10.0], [f64::NEG_INFINITY, f64::INFINITY]];
     let model = EpistemicNearestNeighbors::new_with_storage(
         array![[1.0], [1.0], [1.0]],

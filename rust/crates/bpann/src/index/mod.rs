@@ -13,6 +13,8 @@ pub mod tree_persist;
 pub mod tree_residency;
 pub mod tree_search;
 pub mod tree_store;
+mod tree_store_files;
+mod tree_store_open;
 
 pub use build::{BpannIndex, IndexHeader, DEFAULT_LEAF_CAPACITY};
 pub use search::{

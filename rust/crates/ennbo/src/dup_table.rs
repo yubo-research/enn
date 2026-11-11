@@ -1,4 +1,3 @@
-
 use std::sync::Arc;
 
 use ennbo_bpann::row_groups::RowGroups;
@@ -58,7 +57,9 @@ impl DupTable {
     }
 
     fn row(&self, rep: usize) -> usize {
-        self.groups.row_of(rep).expect("representative is registered")
+        self.groups
+            .row_of(rep)
+            .expect("representative is registered")
     }
 
     pub(crate) fn count_at(&self, rep: usize) -> f64 {

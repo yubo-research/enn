@@ -350,7 +350,7 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
     );
     for start in (0..n).step_by(STATS_CHUNK_ROWS) {
         let indices: Vec<usize> = (start..(start + STATS_CHUNK_ROWS).min(n)).collect();
-        let (_, y, _) = model.backend.train_rows_at(&indices)?;
+        let (y, _) = model.backend.train_y_rows_at(&indices)?;
         accumulate_columns(&mut y_sum, &mut y_sumsq, y.view());
     }
     model.y_sum = y_sum;

@@ -160,7 +160,10 @@ mod tests {
         assert_ne!(older, text);
         std::fs::write(&path, older).unwrap();
         let loaded = StoreIdentity::load(dir.path()).unwrap();
-        assert!(!loaded.layout(dir.path().into()).unwrap().aggregate_duplicates());
+        assert!(!loaded
+            .layout(dir.path().into())
+            .unwrap()
+            .aggregate_duplicates());
     }
 
     #[test]

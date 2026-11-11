@@ -219,6 +219,14 @@ pub use y_bounds::is_identity_bounds;
 pub use y_bounds::unbounded_bounds;
 pub use y_bounds::validate_bounds;
 
+pub fn stop_epsilon() -> f64 {
+    ennbo_bpann::index::tree_search::stop_epsilon()
+}
+
+pub fn set_stop_epsilon(value: f64) {
+    ennbo_bpann::index::tree_search::set_stop_epsilon(value);
+}
+
 pub fn leaf_coefficient() -> f64 {
     ennbo_bpann::index::tree_search::leaf_coefficient()
 }
@@ -229,6 +237,10 @@ pub fn set_leaf_coefficient(value: f64) {
 
 pub fn exact_fallback() -> bool {
     ennbo_bpann::index::tree_search::exact_fallback()
+}
+
+pub fn set_skip_budget_fallback(value: bool) {
+    ennbo_bpann::index::tree_search::set_skip_budget_fallback(value);
 }
 
 pub fn set_exact_fallback(value: bool) {

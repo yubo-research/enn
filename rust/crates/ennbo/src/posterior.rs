@@ -186,7 +186,13 @@ fn neighbor_counts(model: &EpistemicNearestNeighbors, idx: &[Vec<usize>]) -> Opt
     Some(
         idx.iter()
             .flatten()
-            .map(|&id| if id < n_train { model.neighbor_count(id) } else { 1.0 })
+            .map(|&id| {
+                if id < n_train {
+                    model.neighbor_count(id)
+                } else {
+                    1.0
+                }
+            })
             .collect(),
     )
 }

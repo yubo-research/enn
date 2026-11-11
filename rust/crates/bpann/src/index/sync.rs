@@ -64,6 +64,20 @@ impl IncrementalIndex {
         Ok(true)
     }
 
+    pub fn adopt_persisted_scaled(
+        &mut self,
+        scale_x: bool,
+        x_scale: &[f64],
+    ) -> Result<bool, BpannError> {
+        self.reset();
+        let Some(tree) = Tree::open_stamped(&self.index_dir, scale_x, x_scale)? else {
+            return self.adopt_persisted();
+        };
+        self.indexed_rows = tree.header.rows_seen.max(tree.header.indexed_rows);
+        self.tree = Some(tree);
+        Ok(true)
+    }
+
     pub fn reset(&mut self) {
         self.tree = None;
         self.indexed_rows = 0;
@@ -170,7 +184,7 @@ impl IncrementalIndex {
         self.ensure_sync_for_backend(train_x, num_dim, scale_x, x_scale, train_x.nrows)?;
         if let Some(tree) = self.tree.as_mut() {
             tree.header.rows_seen = self.indexed_rows;
-            tree.persist()?;
+            tree.persist_stamped(scale_x, x_scale)?;
         }
         obs::bpann_write_metadata(
             work_dir,
@@ -473,6 +487,52 @@ mod tests {
         let mut legacy = IncrementalIndex::new(legacy_dir);
         assert!(!legacy.adopt_persisted().unwrap());
         assert!(legacy.tree.is_none() && legacy.indexed_rows == 0);
+    }
+
+    #[test]
+    fn stamped_open_maps_files_without_refill_and_stamp_guards_staleness() {
+        use crate::index::tree_store::STAMP_FILE;
+        let dir = TempDir::new().unwrap();
+        let store = store_with_rows(&dir, 900, 2, 3);
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        idx.persist_to_disk_for_backend(&store, 2, false, &[1.0; 2], dir.path(), 1)
+            .unwrap();
+        let stamp = idx.index_dir.join(STAMP_FILE);
+        assert!(stamp.exists());
+        let s = MmapSearchStore {
+            train_x: &store,
+            scale_x: false,
+            x_scale: &[1.0, 1.0],
+        };
+        let mut fast = IncrementalIndex::new(idx.index_dir.clone());
+        assert!(fast.adopt_persisted_scaled(false, &[1.0; 2]).unwrap());
+        assert!(tree(&fast).rows_cached());
+        tree(&fast).assert_counts_consistent();
+        for q in [[0.1f32, 0.9], [0.5, 0.5]] {
+            assert_eq!(
+                fast.search_candidates(&q, 5, Some(&s)).unwrap(),
+                idx.search_candidates(&q, 5, Some(&s)).unwrap()
+            );
+        }
+        assert!(stamp.exists(), "reads must not invalidate the stamp");
+        fast.tree
+            .as_mut()
+            .unwrap()
+            .insert_row(900, &[0.2, 0.2])
+            .unwrap();
+        assert!(!stamp.exists(), "a write must invalidate the stamp");
+        let mut slow = IncrementalIndex::new(idx.index_dir.clone());
+        assert!(slow.adopt_persisted_scaled(false, &[1.0; 2]).unwrap());
+        assert!(!tree(&slow).rows_cached());
+        slow.persist_to_disk_for_backend(&store, 2, false, &[1.0; 2], dir.path(), 1)
+            .unwrap();
+        assert!(stamp.exists(), "a filled tree is stamped when persisted");
+        let mut mismatch = IncrementalIndex::new(idx.index_dir.clone());
+        assert!(mismatch.adopt_persisted_scaled(true, &[2.0; 2]).unwrap());
+        assert!(
+            !tree(&mismatch).rows_cached(),
+            "scale mismatch uses the slow path"
+        );
     }
 
     #[test]

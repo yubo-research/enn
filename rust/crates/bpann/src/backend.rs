@@ -51,7 +51,9 @@ impl BpannBackend {
         scale_x: bool,
         x_scale: Array1<f64>,
     ) -> Result<Self, BpannError> {
-        Self::new_aggregating(work_dir, train_x, train_y, train_yvar, scale_x, x_scale, false)
+        Self::new_aggregating(
+            work_dir, train_x, train_y, train_yvar, scale_x, x_scale, false,
+        )
     }
 
     pub fn new_aggregating(
@@ -108,11 +110,12 @@ impl BpannBackend {
         let mut index = IncrementalIndex::new(index_dir.clone());
         let row_groups = aggregate_duplicates.then(|| Arc::new(RowGroups::default()));
         if let Some(groups) = &row_groups {
+            groups.load(&work_dir, &train_x_store);
             groups.register(&train_x_store, n)?;
         }
         index.row_filter = row_groups.clone();
         if index_dir.join("header.json").exists() && indexed_rows > 0 {
-            let adopted = index.adopt_persisted()?;
+            let adopted = index.adopt_persisted_scaled(scale_x, x_scale.as_slice().unwrap())?;
             if !adopted || index.indexed_rows > indexed_rows {
                 index.reset();
             }
@@ -316,6 +319,9 @@ impl BpannBackend {
     }
 
     pub fn persist_index_to_disk(&mut self) -> Result<(), BpannError> {
+        if let Some(groups) = &self.row_groups {
+            groups.save(&self.work_dir)?;
+        }
         let index_dirty = *self.index_dirty.lock().expect("index_dirty");
         if !self
             .index
@@ -337,6 +343,13 @@ impl BpannBackend {
         self.pending_unindexed.store(0, Ordering::Relaxed);
         *self.index_dirty.lock().expect("index_dirty") = false;
         Ok(())
+    }
+
+    pub fn train_y_rows_at(
+        &self,
+        indices: &[usize],
+    ) -> Result<(Array2<f64>, Option<Array2<f64>>), BpannError> {
+        obs::bpann_train_y_rows_at(self.len(), &self.train_y, self.train_yvar.as_ref(), indices)
     }
 
     pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAt, BpannError> {

@@ -55,40 +55,35 @@ fn growing_past_the_first_mapping_keeps_every_page() {
 }
 
 #[test]
-fn a_small_budget_moves_pages_to_files_releases_them_and_keeps_the_data() {
+fn a_small_budget_releases_pages_and_keeps_the_data() {
     let dir = TempDir::new().unwrap();
     let mut s = store(&dir, 8);
-    s.set_resident_budget(256 << 10).unwrap();
-    assert!(s.files.is_none() && !s.residency.tracking());
+    s.set_resident_budget(256 << 10);
     for i in 0..4000u32 {
         let id = s.alloc(Kind::Leaf).unwrap();
         s.push_entry(id, i, &[i as f32; 8]);
         assert!(s.residency.estimate() <= 256 << 10);
     }
-    assert!(s.files.is_some() && s.residency.tracking());
+    assert!(s.residency.tracking());
     s.release_resident();
     assert_eq!(s.residency.estimate(), 0);
     assert!((0..4000u32).all(|i| s.ids(i) == [i] && s.block(i) == [i as f32; 8]));
-    s.set_resident_budget(usize::MAX).unwrap();
+    s.set_resident_budget(usize::MAX);
     assert!(!s.residency.tracking());
     let copy = s.try_clone().unwrap();
-    assert!(
-        copy.files.is_some(),
-        "a copy of a file-backed store is file-backed"
-    );
     assert!((0..4000u32).all(|i| copy.ids(i) == [i] && copy.block(i) == [i as f32; 8]));
 }
 
 #[test]
-fn lowering_the_budget_moves_a_store_to_files() {
+fn lowering_the_budget_turns_on_residency_tracking() {
     let dir = TempDir::new().unwrap();
     let mut s = store(&dir, 2);
     let id = s.alloc(Kind::Leaf).unwrap();
     s.push_entry(id, 5, &[1.0, 2.0]);
     s.release_resident();
-    assert_eq!(s.ids(id), &[5], "releasing anonymous pages keeps them");
-    s.set_resident_budget(1024).unwrap();
-    assert!(s.files.is_some() && s.residency.tracking());
+    assert_eq!(s.ids(id), &[5], "releasing pages keeps the data");
+    s.set_resident_budget(1024);
+    assert!(s.residency.tracking());
     assert_eq!((s.ids(id), s.block(id)), (&[5u32][..], &[1.0f32, 2.0][..]));
 }
 

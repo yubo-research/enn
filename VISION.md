@@ -2,5 +2,20 @@
 
 
 - Python exposes the public API to Python users, but all the work is in Rust.
-- The running time of ENN adds and queries grows as k*D*lnN (or better). A good teat case is k=10, D=1000, N grows from 1 to 1e5.  (k is number of neighbors, D is number of dimensions, N is number of observations).
-- Memory is O(kD) (or better), constant in N.
+- The running time of ENN adds and queries grows as k*D*lnN (or better). A good test case is k=10, D=1000, N grows from 1 to 1e5.  (k is number of neighbors, D is number of dimensions, N is number of observations). Measuring the scaling is crucial. Lower wall time is nice, but it doesn't equate to good scaling. O(lnN) must hold from N=1 to N so large that the dataset cannot fit in RAM.  IOW, we are designing a disk-backed-storage ANN algorithm.
+- Maximum resident, anonymous memory is 1GB, independent of N (and of everything else). Our disk use should scale with N and may grow to any size, in principle.
+  - It may be tempting to design an algorithm that just puts all data in memory until 1gb is hit snd then "switches gears" to a different algorithm that uses disk and it much slower. Resist temptation. Use the disk right from the start, and use the memory to speed help make the algorithm more efficient so that there is no performance "cliff" when the user adds enough data s.t. the 1GB limit is reached. Query time (also add time) vs N should be smooth right through the 1GB limit. You should construct a single algorithm that works one way from N=1 to N->infinity.
+- Prediction quality (loglik, rmse) is never worse than it is today. See ./ops/evaluate.py for quality metrics. Use standard errors and good statistical tests to determine whether prediction quality changes are significant. We might accept big speed improvements in exchange for statistically insignificant prediction defredayion. Use your own judgement.
+- Adds and queries can't be too fast (constrained by good prediction quality).
+  - Approximations are acceptable, as long as prediction quality is not sacrificed.
+- We should always do calculations in one thread. Housekeeping may be backgrounded to a second thread, but our target system has a single core.
+- Since BPANN_DISK is as on-disk data store, maybe we can learn about efficiency and speed from database or filesystem literature or code.
+- Consider using or adding to the set of evals (see evaluate.py) so that we have clear, repeatable measures of time complexity, memory complexiry, and prediction quality.
+
+
+
+Possibly-helpful refs
+- B+ANN: https://arxiv.org/pdf/2511.15557
+- e-means clustering: https://arxiv.org/pdf/2611.09501
+- TurboQuant: https://arxiv.org/pdf/2504.19874
+- ENN: https://arxiv.org/pdf/2506.12818

@@ -354,6 +354,22 @@ pub fn bpann_train_rows_at(
     Ok((x, y, yvar))
 }
 
+pub fn bpann_train_y_rows_at(
+    n: usize,
+    train_y: &MmapColumnStore,
+    train_yvar: Option<&MmapColumnStore>,
+    indices: &[usize],
+) -> Result<(Array2<f64>, Option<Array2<f64>>), BpannError> {
+    if let Some(&i) = indices.iter().find(|&&i| i >= n) {
+        return Err(BpannError::InvalidParameter(format!(
+            "bpann_train_y_rows_at index {i} out of range [0, {n})"
+        )));
+    }
+    let y = train_y.mmap_gather(indices)?;
+    let yvar = train_yvar.map(|s| s.mmap_gather(indices)).transpose()?;
+    Ok((y, yvar))
+}
+
 pub fn bpann_mark_index_dirty(index_dirty: &Mutex<bool>) {
     *index_dirty.lock().expect("index_dirty mutex poisoned") = true;
 }
@@ -381,6 +397,24 @@ mod kiss_coverage_tests {
     use ndarray::array;
     use std::sync::Mutex;
     use tempfile::TempDir;
+
+    #[test]
+    fn y_rows_match_full_gather_and_reject_out_of_range() {
+        let dir = TempDir::new().unwrap();
+        let mut x =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+        let mut y =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("y.bin"), 1, None).unwrap();
+        x.mmap_append(&array![[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]].view())
+            .unwrap();
+        y.mmap_append(&array![[10.0], [20.0], [30.0]].view())
+            .unwrap();
+        let idx = [2usize, 0];
+        let (_, y_full, v_full) = bpann_train_rows_at(3, &x, &y, None, &idx).unwrap();
+        let (y_only, v_only) = bpann_train_y_rows_at(3, &y, None, &idx).unwrap();
+        assert_eq!((y_only, v_only), (y_full, v_full));
+        assert!(bpann_train_y_rows_at(3, &y, None, &[3]).is_err());
+    }
 
     #[test]
     fn observation_units_are_linked() {

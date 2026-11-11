@@ -1,19 +1,19 @@
-use std::fs::{self, File, OpenOptions};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::fs::File;
+use std::path::PathBuf;
 
 use memmap2::MmapMut;
 
 use crate::error::BpannError;
 use crate::index::tree::TREE_LEAF_CAPACITY;
 use crate::index::tree_residency::Residency;
+use crate::index::tree_store_files::map;
 
 pub const TREE_RESIDENT_BUDGET_BYTES: usize = 1 << 30;
 
 pub const SLOT_ENTRIES: usize = TREE_LEAF_CAPACITY + 1;
 
-const META_WORDS: usize = 4;
-const GROW_MIN_SLOTS: usize = 64;
+pub(super) const META_WORDS: usize = 4;
+pub(super) const GROW_MIN_SLOTS: usize = 64;
 const NO_PARENT: u32 = u32::MAX;
 const LEN_MASK: u32 = 0x00FF_FFFF;
 
@@ -23,85 +23,27 @@ pub enum Kind {
     Internal,
 }
 
-static SCRATCH_SEQ: AtomicUsize = AtomicUsize::new(0);
-
-fn io_err(e: std::io::Error) -> BpannError {
-    BpannError::InvalidParameter(e.to_string())
-}
-
-fn scratch_file(dir: &Path, tag: &str) -> Result<File, BpannError> {
-    fs::create_dir_all(dir).map_err(io_err)?;
-    let seq = SCRATCH_SEQ.fetch_add(1, Ordering::Relaxed);
-    let path = dir.join(format!("{tag}.{}.{seq}.scratch", std::process::id()));
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .map_err(io_err)?;
-    let _ = fs::remove_file(&path);
-    Ok(file)
-}
-
 fn kind_tag(kind: Kind) -> u32 {
     match kind {
         Kind::Leaf => 1 << 24,
         Kind::Internal => 2 << 24,
     }
 }
-
-fn map(file: Option<&File>, bytes: usize) -> Result<MmapMut, BpannError> {
-    match file {
-        Some(f) => {
-            f.set_len(bytes as u64).map_err(io_err)?;
-            unsafe { MmapMut::map_mut(f) }.map_err(io_err)
-        }
-        None => MmapMut::map_anon(bytes).map_err(io_err),
-    }
-}
-
-fn grow_anon(region: &mut MmapMut, bytes: usize) -> Result<(), BpannError> {
-    #[cfg(target_os = "linux")]
-    {
-        unsafe { region.remap(bytes, memmap2::RemapOptions::new().may_move(true)) }.map_err(io_err)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let mut out = map(None, bytes)?;
-        out[..region.len()].copy_from_slice(region);
-        *region = out;
-        Ok(())
-    }
-}
-
 pub struct TreeStore {
-    num_dim: usize,
-    slot_words: usize,
-    num_pages: usize,
-    capacity: usize,
-    dir: PathBuf,
-    files: Option<(File, File)>,
-    meta: MmapMut,
-    slots: MmapMut,
-    residency: Residency,
+    pub(super) named: bool,
+    pub(super) stamped: bool,
+    pub(super) num_dim: usize,
+    pub(super) slot_words: usize,
+    pub(super) num_pages: usize,
+    pub(super) capacity: usize,
+    pub(super) dir: PathBuf,
+    pub(super) files: (File, File),
+    pub(super) meta: MmapMut,
+    pub(super) slots: MmapMut,
+    pub(super) residency: Residency,
 }
 
 impl TreeStore {
-    pub fn create(dir: &Path, num_dim: usize) -> Result<Self, BpannError> {
-        let slot_words = SLOT_ENTRIES * (1 + num_dim.max(1));
-        Ok(Self {
-            num_dim: num_dim.max(1),
-            slot_words,
-            num_pages: 0,
-            capacity: GROW_MIN_SLOTS,
-            dir: dir.to_path_buf(),
-            files: None,
-            meta: map(None, GROW_MIN_SLOTS * META_WORDS * 4)?,
-            slots: map(None, GROW_MIN_SLOTS * slot_words * 4)?,
-            residency: Residency::new(TREE_RESIDENT_BUDGET_BYTES),
-        })
-    }
-
     pub fn num_dim(&self) -> usize {
         self.num_dim
     }
@@ -114,37 +56,18 @@ impl TreeStore {
         self.meta.len() + self.slots.len()
     }
 
-    pub fn set_resident_budget(&mut self, bytes: usize) -> Result<(), BpannError> {
+    pub fn set_resident_budget(&mut self, bytes: usize) {
         self.residency.set_budget(bytes);
-        self.update_tracking()
+        self.update_tracking();
     }
 
-    fn update_tracking(&mut self) -> Result<(), BpannError> {
-        if self.files.is_none() && self.file_bytes() > self.residency.budget() {
-            self.spill()?;
-        }
+    pub(super) fn update_tracking(&mut self) {
         self.residency
             .update_tracking(self.file_bytes(), self.meta.len());
-        Ok(())
-    }
-
-    fn spill(&mut self) -> Result<(), BpannError> {
-        let files = (
-            scratch_file(&self.dir, "tree_meta")?,
-            scratch_file(&self.dir, "tree_slots")?,
-        );
-        let mut meta = map(Some(&files.0), self.meta.len())?;
-        let mut slots = map(Some(&files.1), self.slots.len())?;
-        Residency::copy_released(&self.meta, &mut meta, self.meta.len());
-        Residency::copy_released(&self.slots, &mut slots, self.slots.len());
-        (self.meta, self.slots, self.files) = (meta, slots, Some(files));
-        Ok(())
     }
 
     pub fn release_resident(&self) {
-        if self.files.is_some() {
-            self.residency.release(&[&self.meta, &self.slots]);
-        }
+        self.residency.release(&[&self.meta, &self.slots]);
     }
 
     pub fn alloc(&mut self, kind: Kind) -> Result<u32, BpannError> {
@@ -168,22 +91,12 @@ impl TreeStore {
     }
 
     fn grow(&mut self, capacity: usize) -> Result<(), BpannError> {
-        let (meta_bytes, slot_bytes) = (capacity * META_WORDS * 4, capacity * self.slot_words * 4);
-        if self.files.is_none() && meta_bytes + slot_bytes > self.residency.budget() {
-            self.spill()?;
-        }
-        match &self.files {
-            Some((meta_file, slot_file)) => {
-                self.meta = map(Some(meta_file), meta_bytes)?;
-                self.slots = map(Some(slot_file), slot_bytes)?;
-            }
-            None => {
-                grow_anon(&mut self.meta, meta_bytes)?;
-                grow_anon(&mut self.slots, slot_bytes)?;
-            }
-        }
+        self.unstamp();
+        self.meta = map(&self.files.0, capacity * META_WORDS * 4)?;
+        self.slots = map(&self.files.1, capacity * self.slot_words * 4)?;
         self.capacity = capacity;
-        self.update_tracking()
+        self.update_tracking();
+        Ok(())
     }
 
     #[inline]
@@ -200,6 +113,7 @@ impl TreeStore {
 
     #[inline]
     fn meta_words_mut(&mut self, id: u32) -> &mut [u32] {
+        self.unstamp();
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
         unsafe {
@@ -225,6 +139,7 @@ impl TreeStore {
 
     #[inline]
     fn slot_words_mut(&mut self, id: u32) -> &mut [u32] {
+        self.unstamp();
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
         self.residency.touch(
@@ -283,6 +198,14 @@ impl TreeStore {
         m[0] = (m[0] & !LEN_MASK) | n as u32;
     }
 
+    pub fn set_ids_only(&mut self, id: u32, ids: &[u32]) {
+        let n = ids.len();
+        assert!(n <= SLOT_ENTRIES, "bad entries for page {id}");
+        self.slot_words_mut(id)[..n].copy_from_slice(ids);
+        let m = self.meta_words_mut(id);
+        m[0] = (m[0] & !LEN_MASK) | n as u32;
+    }
+
     pub fn push_entry(&mut self, id: u32, entry_id: u32, v: &[f32]) {
         let (n, d) = (self.len(id), self.num_dim);
         assert!(n < SLOT_ENTRIES && v.len() == d, "page {id} is full");
@@ -327,14 +250,6 @@ impl TreeStore {
             self.num_pages * META_WORDS * 4,
             self.num_pages * self.slot_words * 4,
         );
-        if self.files.is_none() {
-            out.meta[..meta_len].copy_from_slice(&self.meta[..meta_len]);
-            out.slots[..slot_len].copy_from_slice(&self.slots[..slot_len]);
-            return Ok(out);
-        }
-        if out.files.is_none() {
-            out.spill()?;
-        }
         Residency::copy_released(&self.meta, &mut out.meta, meta_len);
         Residency::copy_released(&self.slots, &mut out.slots, slot_len);
         Ok(out)
@@ -344,3 +259,5 @@ impl TreeStore {
 #[cfg(test)]
 #[path = "tree_store_tests.rs"]
 mod tests;
+
+pub use crate::index::tree_store_files::{META_FILE, SLOTS_FILE, STAMP_FILE};

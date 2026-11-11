@@ -1,5 +1,8 @@
-
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::os::unix::fs::FileExt;
+use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 
 use crate::error::BpannError;
@@ -11,7 +14,11 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 pub fn hash_x_bits(x: &[f64]) -> u64 {
     x.iter().fold(FNV_OFFSET, |h, &v| {
-        let bits = if v == 0.0 { 0.0f64.to_bits() } else { v.to_bits() };
+        let bits = if v == 0.0 {
+            0.0f64.to_bits()
+        } else {
+            v.to_bits()
+        };
         (h ^ bits).wrapping_mul(FNV_PRIME)
     })
 }
@@ -23,10 +30,16 @@ struct Groups {
     row_of: Vec<u32>,
     rep: Vec<u32>,
     count: Vec<u32>,
+    hash_of: Vec<u64>,
 }
 
 impl Groups {
-    fn find(&self, store: &MmapColumnStore, hash: u64, x: &[f64]) -> Result<Option<u32>, BpannError> {
+    fn find(
+        &self,
+        store: &MmapColumnStore,
+        hash: u64,
+        x: &[f64],
+    ) -> Result<Option<u32>, BpannError> {
         let mut row = self.head.get(&hash).copied().unwrap_or(NO_ROW);
         while row != NO_ROW {
             if store.mmap_row_slice(self.rep[row as usize] as usize)? == x {
@@ -42,6 +55,7 @@ impl Groups {
             let row = self.rep.len() as u32;
             self.rep.push(obs as u32);
             self.count.push(0);
+            self.hash_of.push(hash);
             self.next_with_hash
                 .push(self.head.insert(hash, row).unwrap_or(NO_ROW));
             row
@@ -54,6 +68,19 @@ impl Groups {
 pub struct RowGroups {
     groups: RwLock<Groups>,
     hash: fn(&[f64]) -> u64,
+    saved_obs: AtomicUsize,
+    saved_groups: AtomicUsize,
+}
+
+const ROW_OF_FILE: &str = "row_groups_row_of.bin";
+const HASH_FILE: &str = "row_groups_hash.bin";
+
+fn io_err(e: std::io::Error) -> BpannError {
+    BpannError::InvalidParameter(e.to_string())
+}
+
+fn read_all(path: &Path) -> Option<Vec<u8>> {
+    std::fs::read(path).ok()
 }
 
 impl Default for RowGroups {
@@ -67,7 +94,101 @@ impl RowGroups {
         Self {
             groups: RwLock::default(),
             hash,
+            saved_obs: AtomicUsize::new(0),
+            saved_groups: AtomicUsize::new(0),
         }
+    }
+
+    pub fn save(&self, dir: &Path) -> Result<(), BpannError> {
+        let g = self.groups.read().expect("row groups");
+        let (so, sg) = (
+            self.saved_obs.load(Ordering::Relaxed),
+            self.saved_groups.load(Ordering::Relaxed),
+        );
+        if so == g.row_of.len() && sg == g.rep.len() {
+            return Ok(());
+        }
+        let mut a = Vec::with_capacity(4 * (g.row_of.len() - so));
+        for r in &g.row_of[so..] {
+            a.extend_from_slice(&r.to_le_bytes());
+        }
+        let mut b = Vec::with_capacity(8 * (g.hash_of.len() - sg));
+        for h in &g.hash_of[sg..] {
+            b.extend_from_slice(&h.to_le_bytes());
+        }
+        for (name, bytes, off) in [(HASH_FILE, &b, 8 * sg), (ROW_OF_FILE, &a, 4 * so)] {
+            let f = OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(dir.join(name))
+                .map_err(io_err)?;
+            f.write_all_at(bytes, off as u64).map_err(io_err)?;
+            f.set_len((off + bytes.len()) as u64).map_err(io_err)?;
+        }
+        self.saved_obs.store(g.row_of.len(), Ordering::Relaxed);
+        self.saved_groups.store(g.rep.len(), Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn load(&self, dir: &Path, store: &MmapColumnStore) -> bool {
+        let (Some(ro), Some(hs)) = (
+            read_all(&dir.join(ROW_OF_FILE)),
+            read_all(&dir.join(HASH_FILE)),
+        ) else {
+            return false;
+        };
+        let n = (ro.len() / 4).min(store.nrows);
+        let row_of: Vec<u32> = ro[..4 * n]
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        let mut num_groups = 0usize;
+        for &r in &row_of {
+            if r as usize > num_groups {
+                return false;
+            }
+            num_groups = num_groups.max(r as usize + 1);
+        }
+        if hs.len() / 8 < num_groups {
+            return false;
+        }
+        let hash_of: Vec<u64> = hs[..8 * num_groups]
+            .chunks_exact(8)
+            .map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes")))
+            .collect();
+        let mut g = Groups {
+            row_of,
+            hash_of,
+            ..Groups::default()
+        };
+        g.count = vec![0; num_groups];
+        g.rep = vec![NO_ROW; num_groups];
+        for (obs, &r) in g.row_of.iter().enumerate() {
+            g.count[r as usize] += 1;
+            if g.rep[r as usize] == NO_ROW {
+                g.rep[r as usize] = obs as u32;
+            }
+        }
+        g.next_with_hash = Vec::with_capacity(num_groups);
+        for (r, &h) in g.hash_of.iter().enumerate() {
+            g.next_with_hash
+                .push(g.head.insert(h, r as u32).unwrap_or(NO_ROW));
+        }
+        for r in [0, num_groups.saturating_sub(1)] {
+            if r < num_groups {
+                let ok = store
+                    .mmap_row_slice(g.rep[r] as usize)
+                    .is_ok_and(|x| (self.hash)(x) == g.hash_of[r]);
+                if !ok {
+                    return false;
+                }
+            }
+        }
+        self.saved_obs.store(n, Ordering::Relaxed);
+        self.saved_groups.store(num_groups, Ordering::Relaxed);
+        *self.groups.write().expect("row groups") = g;
+        true
     }
 
     pub fn register(&self, store: &MmapColumnStore, upto: usize) -> Result<(), BpannError> {
@@ -140,14 +261,59 @@ mod tests {
     }
 
     #[test]
+    fn save_load_round_trip_skips_rescan_and_extends() {
+        let dir = TempDir::new().unwrap();
+        let store = store_of(
+            &dir,
+            &array![[0.5, 1.0], [0.5, 1.0], [0.5, 2.0], [0.5, 1.0], [0.1, 0.1]],
+        );
+        let a = RowGroups::default();
+        a.register(&store, 3).unwrap();
+        a.save(dir.path()).unwrap();
+        a.register(&store, 5).unwrap();
+        a.save(dir.path()).unwrap();
+        let b = RowGroups::default();
+        assert!(b.load(dir.path(), &store));
+        assert_eq!(b.num_registered(), 5);
+        for i in 0..5 {
+            assert_eq!(b.row_of(i), a.row_of(i));
+            assert_eq!(b.is_representative(i as u32), a.is_representative(i as u32));
+        }
+        assert_eq!((b.num_rows(), b.count(0), b.count(1)), (3, 3, 1));
+    }
+
+    #[test]
+    fn load_rejects_missing_truncated_or_mismatched_files() {
+        let dir = TempDir::new().unwrap();
+        let store = store_of(&dir, &array![[1.0, 2.0], [3.0, 4.0]]);
+        assert!(!RowGroups::default().load(dir.path(), &store));
+        let a = RowGroups::default();
+        a.register(&store, 2).unwrap();
+        a.save(dir.path()).unwrap();
+        let other = TempDir::new().unwrap();
+        let store2 = store_of(&other, &array![[9.0, 9.0], [8.0, 8.0]]);
+        std::fs::copy(dir.path().join(ROW_OF_FILE), other.path().join(ROW_OF_FILE)).unwrap();
+        std::fs::copy(dir.path().join(HASH_FILE), other.path().join(HASH_FILE)).unwrap();
+        assert!(!RowGroups::default().load(other.path(), &store2));
+        std::fs::write(dir.path().join(HASH_FILE), [0u8; 3]).unwrap();
+        assert!(!RowGroups::default().load(dir.path(), &store));
+    }
+
+    #[test]
     fn registering_in_steps_matches_registering_at_once() {
         let dir = TempDir::new().unwrap();
-        let store = store_of(&dir, &array![[0.5, 1.0], [0.5, 1.0], [0.5, 2.0], [0.5, 1.0]]);
+        let store = store_of(
+            &dir,
+            &array![[0.5, 1.0], [0.5, 1.0], [0.5, 2.0], [0.5, 1.0]],
+        );
         let groups = RowGroups::default();
         groups.register(&store, 2).unwrap();
         groups.register(&store, 4).unwrap();
         groups.register(&store, 4).unwrap();
-        assert_eq!((groups.num_rows(), groups.count(0), groups.count(1)), (2, 3, 1));
+        assert_eq!(
+            (groups.num_rows(), groups.count(0), groups.count(1)),
+            (2, 3, 1)
+        );
     }
 
     #[test]
@@ -217,20 +383,29 @@ mod tests {
         let mut b = aggregating(&dir, 1000);
         for lo in (0..x.nrows()).step_by(50) {
             let hi = (lo + 50).min(x.nrows());
-            let (xs, ys) = (x.slice(ndarray::s![lo..hi, ..]), y.slice(ndarray::s![lo..hi, ..]));
+            let (xs, ys) = (
+                x.slice(ndarray::s![lo..hi, ..]),
+                y.slice(ndarray::s![lo..hi, ..]),
+            );
             b.append_rows(&xs, &ys, None).unwrap();
         }
         b.ensure_index_sync().unwrap();
         let groups = b.row_groups().unwrap();
         assert_eq!((b.len(), groups.num_rows()), (300, 60));
-        let reps: Vec<u32> = (0..300u32).filter(|&i| groups.is_representative(i)).collect();
+        let reps: Vec<u32> = (0..300u32)
+            .filter(|&i| groups.is_representative(i))
+            .collect();
         assert_eq!(entries(&b), reps);
 
         let unique = unique_first_rows(&x);
         let dir2 = TempDir::new().unwrap();
         let mut plain = BpannBackend::new_empty(dir2.path().to_path_buf(), 2, 1).unwrap();
         plain
-            .append_rows(&unique.view(), &Array2::zeros((unique.nrows(), 1)).view(), None)
+            .append_rows(
+                &unique.view(),
+                &Array2::zeros((unique.nrows(), 1)).view(),
+                None,
+            )
             .unwrap();
         let q = Array2::from_shape_fn((6, 2), |(i, j)| (i * 3 + j) as f64 * 0.11 - 0.4);
         let (d_agg, i_agg) = b.search(&q.view(), 8, false).unwrap();
@@ -276,7 +451,11 @@ mod tests {
         assert_eq!(entries(&again), before);
         assert_eq!(again.search(&q.view(), 6, false).unwrap(), expected);
         again
-            .append_rows(&x.slice(ndarray::s![..8, ..]), &y.slice(ndarray::s![..8, ..]), None)
+            .append_rows(
+                &x.slice(ndarray::s![..8, ..]),
+                &y.slice(ndarray::s![..8, ..]),
+                None,
+            )
             .unwrap();
         again.ensure_index_sync().unwrap();
         assert_eq!(entries(&again), before);
@@ -296,7 +475,8 @@ mod tests {
             (0..300u32).filter(|&i| g.is_representative(i)).collect()
         };
         assert_eq!(entries(&b), reps);
-        b.rebuild_metric(&ndarray::Array1::from(vec![2.0, 0.5])).unwrap();
+        b.rebuild_metric(&ndarray::Array1::from(vec![2.0, 0.5]))
+            .unwrap();
         b.mark_index_stale();
         b.ensure_index_sync().unwrap();
         assert_eq!(entries(&b), reps);

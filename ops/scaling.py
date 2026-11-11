@@ -10,12 +10,20 @@ Grows one disk-backed ENN through N = 1, 3, 10, 30, ... and, at each N, records
 - ``add1_s``          median seconds for ONE single-row ``add`` into an index of N;
 - ``query_batch_s``   median seconds for one ``posterior`` call on ``--batch-q``
                        query points;
-- ``query1_s``        median seconds for one ``posterior`` call on a single point.
+- ``query1_s``        median seconds for one ``posterior`` call on a single point;
+- ``per_query_io``    minor/major page faults and bytes read from storage per query
+                       (one extra batch of fresh queries; process-wide counters);
+- ``wall_s``/``cpu_s`` elapsed and user+system CPU seconds since the start of the
+                       run (``cpu_s`` > ``wall_s`` means more than one thread ran).
+
+``RAYON_NUM_THREADS`` defaults to 1 here (single-thread rule of VISION.md); set it
+explicitly to measure a parallel build.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import resource
 import shutil
 import sys
@@ -24,6 +32,10 @@ from pathlib import Path
 
 import click
 import numpy as np
+
+# VISION.md: calculations run in one thread. Rayon sizes its pool when the first
+# parallel call runs, so this must be set before the extension is used.
+os.environ.setdefault("RAYON_NUM_THREADS", "1")
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams
@@ -61,6 +73,18 @@ def _rss_split_mib() -> dict[str, float]:
     return out
 
 
+def _io_counters() -> dict[str, int]:
+    """Cumulative page faults and storage reads of this process (cheap, no root)."""
+    ru = resource.getrusage(resource.RUSAGE_SELF)
+    out = {"minflt": ru.ru_minflt, "majflt": ru.ru_majflt}
+    with open("/proc/self/io") as f:
+        for line in f:
+            k, _, v = line.partition(":")
+            if k in ("read_bytes", "syscr"):
+                out[k] = int(v)
+    return out
+
+
 def _med_time(fn, reps: int) -> float:
     ts = []
     for _ in range(reps):
@@ -85,6 +109,7 @@ def run(
     row_bytes = 8 * (num_dim + num_metrics)
     extra_n = [int(g * 2**30 / row_bytes) for g in extra_gb]
     targets = sorted({*grid(max_n), *(t for t in extra_n if t <= max_n)})
+    t_start, cpu_start = time.perf_counter(), sum(os.times()[:2])
     rng = np.random.default_rng(seed)
     qrng = np.random.default_rng(seed + 10_000)
     ex, ey = np.empty((0, num_dim)), np.empty((0, num_metrics))
@@ -118,6 +143,11 @@ def run(
         query_batch_s = _med_time(
             lambda qb=qb: model.posterior(qb, params=PARAMS), reps
         )
+        qf = qrng.standard_normal((batch_q, num_dim))
+        c0 = _io_counters()
+        model.posterior(qf, params=PARAMS)
+        c1 = _io_counters()
+        faults_per_query = {k: (c1[k] - c0[k]) / batch_q for k in c0}
         q1 = qrng.standard_normal((reps, 1, num_dim))
         it = iter(q1)
         query1_s = _med_time(
@@ -149,6 +179,9 @@ def run(
             "query1_s": query1_s,
             "data_gib": n * row_bytes / 2**30,
             "disk_gib": _dir_bytes(work_dir) / 2**30,
+            "wall_s": time.perf_counter() - t_start,
+            "cpu_s": sum(os.times()[:2]) - cpu_start,
+            "per_query_io": faults_per_query,
             "rss_mib": _rss_split_mib(),
             "max_rss_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024,
         }

@@ -1,9 +1,12 @@
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::OnceLock;
 
 use memmap2::{MmapMut, UncheckedAdvice};
 
 pub const DEFAULT_RESIDENT_BUDGET_BYTES: usize = 256 << 20;
-pub const UNIT_BYTES: usize = 64 << 10;
+pub const TREE_FILE_BUDGET_PER_MILLE: usize = 400;
+pub const DATA_FILE_BUDGET_PER_MILLE: usize = 100;
+pub const UNIT_BYTES: usize = 4 << 10;
 const TOUCH_BITS_LOG2: u32 = 23;
 const COPY_CHUNK_BYTES: usize = 8 << 20;
 
@@ -13,6 +16,42 @@ pub struct Residency {
     budget: usize,
     reserved: usize,
     tracking: bool,
+}
+
+fn read_bytes(path: &str) -> Option<usize> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+fn meminfo_total() -> Option<usize> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let kib: usize = text
+        .lines()
+        .find_map(|l| l.strip_prefix("MemTotal:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    Some(kib << 10)
+}
+
+pub fn memory_limit_bytes() -> usize {
+    static LIMIT: OnceLock<usize> = OnceLock::new();
+    *LIMIT.get_or_init(|| {
+        let cgroup = read_bytes("/sys/fs/cgroup/memory.max")
+            .or_else(|| read_bytes("/sys/fs/cgroup/memory/memory.limit_in_bytes"));
+        [meminfo_total(), cgroup]
+            .into_iter()
+            .flatten()
+            .min()
+            .unwrap_or(usize::MAX)
+    })
+}
+
+pub fn file_budget(floor: usize, per_mille: usize) -> usize {
+    match memory_limit_bytes() {
+        usize::MAX => floor,
+        m => floor.max(m / 1000 * per_mille),
+    }
 }
 
 fn release_map(map: &MmapMut) {

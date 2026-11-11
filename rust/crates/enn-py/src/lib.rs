@@ -40,9 +40,18 @@ pub use pymodule_wrappers::{
     pymodule_util_kiss_hook,
 };
 
+fn limit_rayon_to_one_thread() {
+    if std::env::var_os("RAYON_NUM_THREADS").is_none() {
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build_global();
+    }
+}
+
 #[pymodule]
 #[pyo3(name = "enn_rust")]
 pub(crate) fn pymodule_enn_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    limit_rayon_to_one_thread();
     m.add_wrapped(wrap_pymodule!(pymodule_hypervolume))?;
     m.add_wrapped(wrap_pymodule!(pymodule_hash))?;
     m.add_wrapped(wrap_pymodule!(pymodule_util))?;

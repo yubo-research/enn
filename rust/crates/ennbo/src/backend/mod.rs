@@ -70,9 +70,12 @@ impl EnnBackend {
                 threshold,
                 aggregate_duplicates,
             )?,
-            None => {
-                DiskBpannEnnBackend::new_empty(work_dir, num_dim, num_metrics, aggregate_duplicates)?
-            }
+            None => DiskBpannEnnBackend::new_empty(
+                work_dir,
+                num_dim,
+                num_metrics,
+                aggregate_duplicates,
+            )?,
         };
         Ok(Self {
             handle: DiskBackendHandle::new(inner),
@@ -138,6 +141,13 @@ impl EnnBackend {
     pub fn set_metric_scale(&self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
         self.wait_for_flush()?;
         disk_write(self.handle.data())?.set_metric_scale(x_scale, rebuild)
+    }
+
+    pub fn train_y_rows_at(
+        &self,
+        indices: &[usize],
+    ) -> Result<(Array2<f64>, Option<Array2<f64>>), ENNError> {
+        disk_read(self.handle.data())?.train_y_rows_at(indices)
     }
 
     pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAtResult, ENNError> {

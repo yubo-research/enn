@@ -162,6 +162,13 @@ impl DiskBpannEnnBackend {
         self.inner.release_observation_pages().map_err(bpann_err)
     }
 
+    pub fn train_y_rows_at(
+        &self,
+        indices: &[usize],
+    ) -> Result<(Array2<f64>, Option<Array2<f64>>), ENNError> {
+        self.inner.train_y_rows_at(indices).map_err(bpann_err)
+    }
+
     pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAtResult, ENNError> {
         self.inner.train_rows_at(indices).map_err(bpann_err)
     }
@@ -296,9 +303,14 @@ mod tests {
     #[test]
     fn new_empty_with_flush_threshold_sets_defer_sync() {
         let dir = TempDir::new().expect("tempdir");
-        let backend =
-            DiskBpannEnnBackend::new_empty_with_flush_threshold(dir.path().to_path_buf(), 2, 1, 5, false)
-                .expect("backend");
+        let backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
+            dir.path().to_path_buf(),
+            2,
+            1,
+            5,
+            false,
+        )
+        .expect("backend");
         assert_eq!(backend.pending_flush_threshold(), 5);
         assert!(!backend.append_syncs_at_threshold());
         assert_eq!(backend.pending_unindexed_count(), 0);
@@ -393,9 +405,14 @@ mod tests {
     #[test]
     fn soft_sync_inner_drains_pending_without_pages() {
         let dir = TempDir::new().expect("tempdir");
-        let mut backend =
-            DiskBpannEnnBackend::new_empty_with_flush_threshold(dir.path().to_path_buf(), 2, 1, 5, false)
-                .expect("backend");
+        let mut backend = DiskBpannEnnBackend::new_empty_with_flush_threshold(
+            dir.path().to_path_buf(),
+            2,
+            1,
+            5,
+            false,
+        )
+        .expect("backend");
         assert!(backend.defer_append_indexing_for_flush());
         backend
             .append_rows(
