@@ -8,10 +8,14 @@ pub const TREE_FILE_BUDGET_PER_MILLE: usize = 400;
 pub const DATA_FILE_BUDGET_PER_MILLE: usize = 100;
 pub const UNIT_BYTES: usize = 4 << 10;
 const TOUCH_BITS_LOG2: u32 = 23;
+const ADVISED_BITS_LOG2: u32 = 20;
+const ADVISED_WINDOW: usize = 4096;
 const COPY_CHUNK_BYTES: usize = 8 << 20;
 
 pub struct Residency {
     bits: Vec<AtomicU64>,
+    advised: Vec<AtomicU64>,
+    advised_count: AtomicUsize,
     bytes: AtomicUsize,
     budget: usize,
     reserved: usize,
@@ -64,6 +68,10 @@ impl Residency {
     pub fn new(budget: usize) -> Self {
         Self {
             bits: Vec::new(),
+            advised: (0..(1usize << ADVISED_BITS_LOG2) / 64)
+                .map(|_| AtomicU64::new(0))
+                .collect(),
+            advised_count: AtomicUsize::new(0),
             bytes: AtomicUsize::new(0),
             budget,
             reserved: 0,
@@ -129,7 +137,30 @@ impl Residency {
         self.forget();
     }
 
+    pub fn first_advice(&self, id: u32) -> bool {
+        let bit = (u64::from(id).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> (64 - ADVISED_BITS_LOG2))
+            as usize;
+        let mask = 1u64 << (bit % 64);
+        let word = &self.advised[bit / 64];
+        if word.load(Ordering::Relaxed) & mask != 0
+            || word.fetch_or(mask, Ordering::Relaxed) & mask != 0
+        {
+            return false;
+        }
+        if self.advised_count.fetch_add(1, Ordering::Relaxed) + 1 >= ADVISED_WINDOW {
+            self.advised
+                .iter()
+                .for_each(|w| w.store(0, Ordering::Relaxed));
+            self.advised_count.store(0, Ordering::Relaxed);
+        }
+        true
+    }
+
     pub fn forget(&self) {
+        self.advised
+            .iter()
+            .for_each(|w| w.store(0, Ordering::Relaxed));
+        self.advised_count.store(0, Ordering::Relaxed);
         self.bits.iter().for_each(|w| w.store(0, Ordering::Relaxed));
         self.bytes.store(0, Ordering::Relaxed);
     }
@@ -199,5 +230,18 @@ mod tests {
             dst[COPY_CHUNK_BYTES + 5],
             ((COPY_CHUNK_BYTES + 5) % 251) as u8
         );
+    }
+
+    #[test]
+    fn first_advice_is_true_once_per_window() {
+        let r = Residency::new(1 << 30);
+        assert!(r.first_advice(7));
+        assert!(!r.first_advice(7));
+        r.forget();
+        assert!(r.first_advice(7));
+        let fresh = (0..ADVISED_WINDOW as u32 * 2)
+            .filter(|&id| r.first_advice(id + 100))
+            .count();
+        assert!(fresh >= ADVISED_WINDOW);
     }
 }

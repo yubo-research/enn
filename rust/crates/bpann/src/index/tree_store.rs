@@ -155,9 +155,11 @@ impl TreeStore {
 
     pub fn prefetch_page(&self, id: u32) {
         let i = id as usize;
-        if self.residency.tracking() && i < self.num_pages {
+        if i < self.num_pages && self.residency.first_advice(id) {
             let bytes = self.slot_words * 4;
-            let _ = self.slots.advise_range(memmap2::Advice::WillNeed, i * bytes, bytes);
+            let _ = self
+                .slots
+                .advise_range(memmap2::Advice::WillNeed, i * bytes, bytes);
         }
     }
 
@@ -175,6 +177,7 @@ impl TreeStore {
     }
 
     pub fn block(&self, id: u32) -> &[f32] {
+        self.prefetch_page(id);
         let n = self.len(id) * self.num_dim;
         let words = &self.slot_words(id)[SLOT_ENTRIES..SLOT_ENTRIES + n];
         unsafe { std::slice::from_raw_parts(words.as_ptr() as *const f32, n) }
