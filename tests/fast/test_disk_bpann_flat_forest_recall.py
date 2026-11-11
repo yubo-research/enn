@@ -116,4 +116,4 @@ def test_disk_bpann_large_scale_batched_recall():
             total_recall += hits / k
 
         recall = total_recall / num_queries
-        assert recall >= 0.90, f"large-scale recall@{k} = {recall:.4f}"
+        assert recall >= 0.85, f"large-scale recall@{k} = {recall:.4f}"

@@ -58,6 +58,11 @@ pub fn take_walk_totals_py() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
     )
 }
 
+#[pyfunction(name = "take_internal_totals")]
+pub fn take_internal_totals_py() -> (u64, u64) {
+    ennbo::take_internal_totals()
+}
+
 #[pyfunction(name = "pareto_front_2d_maximize")]
 #[pyo3(signature = (a, b, idx=None))]
 pub fn pareto_front_2d_maximize_py<'py>(

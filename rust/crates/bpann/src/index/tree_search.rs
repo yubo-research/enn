@@ -124,6 +124,13 @@ pub fn take_walk_totals() -> WalkTotals {
     }
 }
 
+pub fn take_internal_totals() -> (u64, u64) {
+    (
+        XP_INTERNAL_PAGES.swap(0, Ordering::Relaxed),
+        XP_INTERNAL_ROWS.swap(0, Ordering::Relaxed),
+    )
+}
+
 pub fn leaf_budget(indexed_rows: usize) -> usize {
     let ln_n = (indexed_rows.max(1) as f64).ln();
     ((leaf_coefficient() * ln_n).ceil() as usize).max(1)
