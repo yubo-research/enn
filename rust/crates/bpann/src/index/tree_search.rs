@@ -8,7 +8,7 @@ use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
 use crate::small_n_search::{OrderedF32, OrderedFloat};
 
-pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 30.0;
+pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 10.0;
 
 static LEAF_COEFFICIENT_BITS: AtomicU64 = AtomicU64::new(0);
 
@@ -490,9 +490,9 @@ mod tests {
     #[test]
     fn leaf_budget_grows_like_ln_n() {
         assert_eq!(leaf_budget(0), 1);
-        assert_eq!(leaf_budget(1_000_000), 415);
+        assert_eq!(leaf_budget(1_000_000), 139);
         let ratio = leaf_budget(10_000_000) as f64 / leaf_budget(1_000_000) as f64;
-        assert!((ratio - 10_000_000f64.ln() / 1_000_000f64.ln()).abs() < 1e-3);
+        assert!((ratio - 10_000_000f64.ln() / 1_000_000f64.ln()).abs() < 1e-2);
     }
 
     #[test]
