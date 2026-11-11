@@ -173,6 +173,16 @@ impl MmapColumnStore {
         Ok(slice)
     }
 
+    pub fn prefetch_rows(&self, ids: &[u32]) {
+        let rb = self.row_bytes();
+        for &id in ids {
+            let i = id as usize;
+            if i < self.nrows {
+                let _ = self.mmap.advise_range(memmap2::Advice::WillNeed, i * rb, rb);
+            }
+        }
+    }
+
     pub fn mmap_gather(&self, indices: &[usize]) -> Result<Array2<f64>, BpannError> {
         let mut out = Array2::zeros((indices.len(), self.ncols));
         for (new_i, &old_i) in indices.iter().enumerate() {
@@ -233,6 +243,18 @@ mod tests {
         store.mmap_append(&array![[7.0, 8.0]].view()).unwrap();
         store.release_resident_pages().unwrap();
         assert_eq!(store.mmap_row_slice(3).unwrap(), &[7.0, 8.0]);
+    }
+
+    #[test]
+    fn prefetch_rows_ignores_bad_ids_and_keeps_rows() {
+        let dir = TempDir::new().unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        store
+            .mmap_append(&array![[1.0, 2.0], [3.0, 4.0]].view())
+            .unwrap();
+        store.prefetch_rows(&[1, 0, 99]);
+        assert_eq!(store.mmap_row_slice(1).unwrap(), &[3.0, 4.0]);
     }
 
     #[test]

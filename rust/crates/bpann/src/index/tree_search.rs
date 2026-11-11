@@ -254,6 +254,8 @@ pub fn search_tree_refined_with_extra(
     let candidates = search_tree(tree, &scaled, pool, budget, store)?;
     let stopped = F32_WALKS.budget_stops.load(Ordering::Relaxed) > stops_before;
     let boundary = candidates.last().map_or(0.0, |p| f64::from(p.1));
+    let ids: Vec<u32> = candidates.iter().map(|p| p.0).collect();
+    store.train_x.prefetch_rows(&ids);
     let mut refined: Vec<(u32, f64)> = candidates
         .iter()
         .map(|&(row, _)| {
