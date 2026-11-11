@@ -7,4 +7,6 @@ results/
 *~
 _*
 _reports/
-reports/*/
+reports/*
+!reports/*.tex
+!reports/*.pdf
