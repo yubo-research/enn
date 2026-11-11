@@ -371,6 +371,7 @@ pub fn compute_posterior_internals(
     }
 }
 
+#[cfg(test)]
 fn compute_scale_for_conditional(
     train_y: &ArrayView2<f64>,
     y_whatif: &ArrayView2<f64>,
@@ -397,6 +398,23 @@ fn compute_scale_for_conditional(
         };
     }
     scale
+}
+
+fn compute_scale_for_conditional_moments(
+    model: &EpistemicNearestNeighbors,
+    y_whatif: &ArrayView2<f64>,
+) -> Array1<f64> {
+    let (y_sum, y_sumsq) = model.y_moments();
+    let n = model.num_obs() + y_whatif.nrows();
+    let mut sum = y_sum.clone();
+    let mut sumsq = y_sumsq.clone();
+    for row in y_whatif.rows() {
+        for (j, &v) in row.iter().enumerate() {
+            sum[j] += v;
+            sumsq[j] += v * v;
+        }
+    }
+    crate::model::scale_from_moments(n, model.num_metrics(), &sum, &sumsq, 0.0)
 }
 
 pub fn compute_conditional_posterior_internals(
@@ -448,9 +466,7 @@ pub fn compute_conditional_posterior_internals(
     let neighbor_data = get_conditional_neighbor_data(model, x, x_whatif, y_whatif, params, flags)?;
 
     if let Some(data) = neighbor_data {
-        let all_y_indices: Vec<usize> = (0..model.num_obs()).collect();
-        let (_, train_y_all, _) = model.rows().train_rows_at(&all_y_indices)?;
-        let y_scale_cond = compute_scale_for_conditional(&train_y_all.view(), y_whatif);
+        let y_scale_cond = compute_scale_for_conditional_moments(model, y_whatif);
         let wp_data = WeightedPosteriorData {
             dist2s: &data.dist2s.view(),
             idx: &data.idx,

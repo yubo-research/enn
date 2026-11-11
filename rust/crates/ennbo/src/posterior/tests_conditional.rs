@@ -424,3 +424,18 @@ fn test_posterior_and_neighbors_reject_non_finite_query() {
         assert!(model.neighbors(&query.view(), 1, false).is_err());
     }
 }
+
+#[test]
+fn test_conditional_scale_from_moments_matches_full_pass() {
+    let train_x = array![[0.0], [1.0], [2.0], [3.0]];
+    let train_y = array![[1.0, 5.0], [2.0, 5.0], [4.0, 5.0], [8.0, 5.0]];
+    let model = crate::test_helpers::test_model(train_x, train_y.clone(), None, false);
+    let whatif = array![[3.0, 5.0], [-1.0, 5.0]];
+    let stored = model.rows().train_rows_at(&[0, 1, 2, 3]).unwrap().1;
+    let want = compute_scale_for_conditional(&stored.view(), &whatif.view());
+    let got = compute_scale_for_conditional_moments(&model, &whatif.view());
+    for j in 0..2 {
+        assert!((want[j] - got[j]).abs() < 1e-12, "col {j}: {} vs {}", want[j], got[j]);
+    }
+    assert_eq!(got[1], 1.0, "constant column uses scale=1");
+}

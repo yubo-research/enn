@@ -298,6 +298,10 @@ impl EpistemicNearestNeighbors {
         Ok(result)
     }
 
+    pub(crate) fn y_moments(&self) -> (&Array1<f64>, &Array1<f64>) {
+        (&self.y_sum, &self.y_sumsq)
+    }
+
     pub(crate) fn y_scale(&self) -> &Array1<f64> {
         &self.y_scale
     }
