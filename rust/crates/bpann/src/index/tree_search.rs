@@ -92,6 +92,7 @@ impl WalkMeter {
 
 pub static XP_INTERNAL_PAGES: AtomicU64 = AtomicU64::new(0);
 pub static XP_INTERNAL_ROWS: AtomicU64 = AtomicU64::new(0);
+pub static XP_LEAF_ROWS: AtomicU64 = AtomicU64::new(0);
 static F32_WALKS: WalkMeter = WalkMeter::new();
 static F64_WALKS: WalkMeter = WalkMeter::new();
 static CERTIFIED_RETURNS: AtomicU64 = AtomicU64::new(0);
@@ -122,6 +123,10 @@ pub fn take_walk_totals() -> WalkTotals {
         certified: CERTIFIED_RETURNS.swap(0, Ordering::Relaxed),
         fallbacks: FALLBACK_RETURNS.swap(0, Ordering::Relaxed),
     }
+}
+
+pub fn take_leaf_rows() -> u64 {
+    XP_LEAF_ROWS.swap(0, Ordering::Relaxed)
 }
 
 pub fn take_internal_totals() -> (u64, u64) {
@@ -486,6 +491,7 @@ fn search_tree_scored(
             }
             continue;
         }
+        XP_LEAF_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
         if tree.rows_cached() {
             for (&row, x) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
                 if let Some(distance) = score(row, Some(x), top.limit())? {

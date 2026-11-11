@@ -265,6 +265,10 @@ pub fn take_walk_totals() -> WalkTotals {
     ennbo_bpann::index::tree_search::take_walk_totals()
 }
 
+pub fn take_leaf_rows() -> u64 {
+    ennbo_bpann::index::tree_search::take_leaf_rows()
+}
+
 pub fn take_internal_totals() -> (u64, u64) {
     ennbo_bpann::index::tree_search::take_internal_totals()
 }

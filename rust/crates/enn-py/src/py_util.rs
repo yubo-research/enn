@@ -63,6 +63,11 @@ pub fn take_walk_totals_py() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
     )
 }
 
+#[pyfunction(name = "take_leaf_rows")]
+pub fn take_leaf_rows_py() -> u64 {
+    ennbo::take_leaf_rows()
+}
+
 #[pyfunction(name = "take_internal_totals")]
 pub fn take_internal_totals_py() -> (u64, u64) {
     ennbo::take_internal_totals()
