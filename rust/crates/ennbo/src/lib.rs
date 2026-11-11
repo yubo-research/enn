@@ -235,6 +235,10 @@ pub fn set_leaf_coefficient(value: f64) {
     ennbo_bpann::index::tree_search::set_leaf_coefficient(value);
 }
 
+pub fn set_internal_coefficient(value: f64) {
+    ennbo_bpann::index::tree_search::set_internal_coefficient(value);
+}
+
 pub fn exact_fallback() -> bool {
     ennbo_bpann::index::tree_search::exact_fallback()
 }

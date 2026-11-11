@@ -136,9 +136,29 @@ pub fn leaf_budget(indexed_rows: usize) -> usize {
     ((leaf_coefficient() * ln_n).ceil() as usize).max(1)
 }
 
+static INTERNAL_COEFFICIENT_BITS: AtomicU64 = AtomicU64::new(0);
+
+pub fn internal_coefficient() -> f64 {
+    let bits = INTERNAL_COEFFICIENT_BITS.load(Ordering::Relaxed);
+    if bits == 0 {
+        TREE_SEARCH_INTERNAL_PAGES_PER_LN_N
+    } else {
+        f64::from_bits(bits)
+    }
+}
+
+pub fn set_internal_coefficient(value: f64) {
+    let bits = if value == TREE_SEARCH_INTERNAL_PAGES_PER_LN_N {
+        0
+    } else {
+        value.to_bits()
+    };
+    INTERNAL_COEFFICIENT_BITS.store(bits, Ordering::Relaxed);
+}
+
 pub fn internal_page_cap(indexed_rows: usize) -> usize {
     let ln_n = (indexed_rows.max(1) as f64).ln();
-    ((TREE_SEARCH_INTERNAL_PAGES_PER_LN_N * ln_n).ceil() as usize).max(1)
+    ((internal_coefficient() * ln_n).ceil() as usize).max(1)
 }
 
 pub const TREE_SEARCH_RADIUS_WEIGHT: f32 = 0.1;
@@ -156,7 +176,7 @@ fn lower_bound(d2: f32, radius: f32) -> f32 {
     discounted(d2, radius, 1.0)
 }
 
-pub const TREE_SEARCH_INTERNAL_PAGES_PER_LN_N: f64 = 30.0;
+pub const TREE_SEARCH_INTERNAL_PAGES_PER_LN_N: f64 = 10.0;
 
 type FrontierItem = (u16, OrderedF32, OrderedF32, u32, u16);
 
@@ -507,6 +527,12 @@ mod tests {
         assert_eq!(internal_page_cap(0), 1);
         let ratio = internal_page_cap(10_000_000) as f64 / internal_page_cap(1_000_000) as f64;
         assert!((ratio - 10_000_000f64.ln() / 1_000_000f64.ln()).abs() < 1e-2);
+    }
+
+    #[test]
+    fn internal_page_cap_default_coefficient() {
+        assert_eq!(internal_coefficient(), TREE_SEARCH_INTERNAL_PAGES_PER_LN_N);
+        assert_eq!(internal_page_cap(1_000_000), 139);
     }
 
     #[test]
