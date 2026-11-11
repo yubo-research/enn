@@ -8,67 +8,8 @@ use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
 use crate::small_n_search::{OrderedF32, OrderedFloat};
 
-pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 10.0;
-
-static LEAF_COEFFICIENT_BITS: AtomicU64 = AtomicU64::new(0);
-
-pub fn leaf_coefficient() -> f64 {
-    let bits = LEAF_COEFFICIENT_BITS.load(Ordering::Relaxed);
-    if bits == 0 {
-        TREE_SEARCH_LEAVES_PER_LN_N
-    } else {
-        f64::from_bits(bits)
-    }
-}
-
-pub fn set_leaf_coefficient(value: f64) {
-    let bits = if value == TREE_SEARCH_LEAVES_PER_LN_N {
-        0
-    } else {
-        value.to_bits()
-    };
-    LEAF_COEFFICIENT_BITS.store(bits, Ordering::Relaxed);
-}
-
-pub const TREE_SEARCH_PREFETCH_PAGES: u64 = 10;
-
-static PREFETCH_PAGES: AtomicU64 = AtomicU64::new(TREE_SEARCH_PREFETCH_PAGES);
-
-pub fn prefetch_pages() -> usize {
-    PREFETCH_PAGES.load(Ordering::Relaxed) as usize
-}
-
-pub fn set_prefetch_pages(value: usize) {
-    PREFETCH_PAGES.store(value as u64, Ordering::Relaxed);
-}
-
-pub const TREE_SEARCH_STOP_EPSILON: f64 = 1.0;
-
-static STOP_EPSILON_BITS: AtomicU64 = AtomicU64::new(TREE_SEARCH_STOP_EPSILON.to_bits());
-
-pub fn stop_epsilon() -> f64 {
-    f64::from_bits(STOP_EPSILON_BITS.load(Ordering::Relaxed))
-}
-
-pub fn set_stop_epsilon(value: f64) {
-    STOP_EPSILON_BITS.store(value.max(0.0).to_bits(), Ordering::Relaxed);
-}
-
-static EXACT_FALLBACK: AtomicU64 = AtomicU64::new(0);
-
-pub fn exact_fallback() -> bool {
-    EXACT_FALLBACK.load(Ordering::Relaxed) != 0
-}
-
-pub fn set_exact_fallback(value: bool) {
-    EXACT_FALLBACK.store(u64::from(value), Ordering::Relaxed);
-}
-
-static SKIP_BUDGET_FALLBACK: AtomicU64 = AtomicU64::new(1);
-
-pub fn set_skip_budget_fallback(value: bool) {
-    SKIP_BUDGET_FALLBACK.store(u64::from(value), Ordering::Relaxed);
-}
+pub use super::tree_search_knobs::*;
+use super::tree_search_knobs::{F32_RERANK_SKIP, SKIP_BUDGET_FALLBACK};
 
 struct WalkMeter {
     leaves: AtomicU64,
@@ -310,6 +251,20 @@ pub fn search_tree_refined_with_extra(
     let t_refine = std::time::Instant::now();
     let stopped = F32_WALKS.budget_stops.load(Ordering::Relaxed) > stops_before;
     let boundary = candidates.last().map_or(0.0, |p| f64::from(p.1));
+    if stopped
+        && SKIP_BUDGET_FALLBACK.load(Ordering::Relaxed) != 0
+        && tree.rows_cached()
+        && candidates.len() >= k
+        && F32_RERANK_SKIP.load(Ordering::Relaxed) != 0
+    {
+        PHASE_REFINE_NS.fetch_add(t_refine.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        CERTIFIED_RETURNS.fetch_add(1, Ordering::Relaxed);
+        return Ok(candidates
+            .iter()
+            .take(k)
+            .map(|&(row, d)| (row, f64::from(d)))
+            .collect());
+    }
     let ids: Vec<u32> = candidates.iter().map(|p| p.0).collect();
     store.train_x.prefetch_rows(&ids);
     let mut refined: Vec<(u32, f64)> = candidates
@@ -546,65 +501,5 @@ fn search_tree_scored(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn exact_fallback_defaults_off() {
-        assert!(!exact_fallback());
-    }
-
-    #[test]
-    fn leaf_budget_grows_like_ln_n() {
-        assert_eq!(leaf_budget(0), 1);
-        assert_eq!(leaf_budget(1_000_000), 139);
-        let ratio = leaf_budget(10_000_000) as f64 / leaf_budget(1_000_000) as f64;
-        assert!((ratio - 10_000_000f64.ln() / 1_000_000f64.ln()).abs() < 1e-2);
-    }
-
-    #[test]
-    fn internal_page_cap_grows_like_ln_n() {
-        assert_eq!(internal_page_cap(0), 1);
-        let ratio = internal_page_cap(10_000_000) as f64 / internal_page_cap(1_000_000) as f64;
-        assert!((ratio - 10_000_000f64.ln() / 1_000_000f64.ln()).abs() < 1e-2);
-    }
-
-    #[test]
-    fn internal_page_cap_default_coefficient() {
-        assert_eq!(internal_coefficient(), TREE_SEARCH_INTERNAL_PAGES_PER_LN_N);
-        assert_eq!(internal_page_cap(1_000_000), 139);
-    }
-
-    #[test]
-    fn priority_discounts_radius_and_never_goes_negative() {
-        assert_eq!(priority(4.0, 0.0), 4.0);
-        assert!((priority(4.0, 10.0) - 1.0).abs() < 1e-6);
-        assert_eq!(priority(1.0, 100.0), 0.0);
-        assert_eq!(lower_bound(4.0, 1.0), 1.0);
-        assert_eq!(lower_bound(4.0, 3.0), 0.0);
-    }
-
-    #[test]
-    fn prefetch_pages_default_and_setter() {
-        assert_eq!(prefetch_pages(), TREE_SEARCH_PREFETCH_PAGES as usize);
-        set_prefetch_pages(0);
-        assert_eq!(prefetch_pages(), 0);
-        set_prefetch_pages(TREE_SEARCH_PREFETCH_PAGES as usize);
-    }
-
-    #[test]
-    fn epsilon_prunes_more_and_zero_is_exact() {
-        let mut top = TopK {
-            k: 1,
-            heap: BinaryHeap::new(),
-        };
-        top.offer(0, 4.0);
-        set_stop_epsilon(1.0);
-        assert!(top.cannot_improve(1.1));
-        assert!(!top.cannot_improve(0.9));
-        set_stop_epsilon(0.0);
-        assert!(!top.cannot_improve(3.9));
-        assert!(top.cannot_improve(4.1));
-        set_stop_epsilon(TREE_SEARCH_STOP_EPSILON);
-    }
-}
+#[path = "tree_search_tests.rs"]
+mod tests;

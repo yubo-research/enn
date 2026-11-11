@@ -178,7 +178,9 @@ impl MmapColumnStore {
         for &id in ids {
             let i = id as usize;
             if i < self.nrows {
-                let _ = self.mmap.advise_range(memmap2::Advice::WillNeed, i * rb, rb);
+                let _ = self
+                    .mmap
+                    .advise_range(memmap2::Advice::WillNeed, i * rb, rb);
             }
         }
     }

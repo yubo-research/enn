@@ -110,8 +110,18 @@ pub(crate) fn index_search(
         ));
     }
     let fetch_k = search_k.min(n_obs as i32);
-    let (_, mut idx) = model.backend_search(x, fetch_k, exclude_nearest)?;
-    let mut dist2s = dist2s_for_neighbor_indices(model, x, &idx);
+    let (backend_dist2s, mut idx) = model.backend_search(x, fetch_k, exclude_nearest)?;
+    let reuse = ennbo_bpann::index::tree_search::f32_rerank_skip()
+        && backend_dist2s.dim() == idx.dim()
+        && backend_dist2s
+            .iter()
+            .zip(idx.iter())
+            .all(|(d, &i)| i < 0 || d.is_finite());
+    let mut dist2s = if reuse {
+        backend_dist2s
+    } else {
+        dist2s_for_neighbor_indices(model, x, &idx)
+    };
     sort_neighbors_by_dist2(&mut dist2s, &mut idx);
     if dist2s.ncols() > k_out {
         dist2s = dist2s

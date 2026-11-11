@@ -30,6 +30,7 @@ take_walk_totals = _ext.util.take_walk_totals
 take_internal_totals = _ext.util.take_internal_totals
 take_leaf_rows = _ext.util.take_leaf_rows
 take_phase_ns = _ext.util.take_phase_ns
+set_f32_rerank_skip = _ext.util.set_f32_rerank_skip
 pareto_front_2d_maximize = _ext.util.pareto_front_2d_maximize
 calculate_sobol_indices = _ext.util.calculate_sobol_indices
 sobol_sequence = _ext.util.sobol_sequence

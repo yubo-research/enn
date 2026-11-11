@@ -68,6 +68,11 @@ pub fn take_walk_totals_py() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
     )
 }
 
+#[pyfunction(name = "set_f32_rerank_skip")]
+pub fn set_f32_rerank_skip_py(value: bool) {
+    ennbo::set_f32_rerank_skip(value);
+}
+
 #[pyfunction(name = "take_phase_ns")]
 pub fn take_phase_ns_py() -> (u64, u64) {
     ennbo::take_phase_ns()

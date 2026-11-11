@@ -126,13 +126,7 @@ pub fn search_indexed_and_pending(
                 Vec::new()
             };
 
-            let merged = merge_pending(
-                &leg_a,
-                &leg_b,
-                k_eff,
-                pool_k,
-                exclude_nearest,
-            );
+            let merged = merge_pending(&leg_a, &leg_b, k_eff, pool_k, exclude_nearest);
             let mut dist_row = vec![f64::INFINITY; k_eff];
             let mut idx_row = vec![-1i64; k_eff];
             for (j, (id, dist)) in merged.into_iter().enumerate() {

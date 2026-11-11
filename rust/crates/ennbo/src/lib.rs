@@ -251,6 +251,10 @@ pub fn set_skip_budget_fallback(value: bool) {
     ennbo_bpann::index::tree_search::set_skip_budget_fallback(value);
 }
 
+pub fn set_f32_rerank_skip(value: bool) {
+    ennbo_bpann::index::tree_search::set_f32_rerank_skip(value);
+}
+
 pub fn set_exact_fallback(value: bool) {
     ennbo_bpann::index::tree_search::set_exact_fallback(value);
 }

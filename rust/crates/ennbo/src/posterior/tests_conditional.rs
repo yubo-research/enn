@@ -435,7 +435,12 @@ fn test_conditional_scale_from_moments_matches_full_pass() {
     let want = compute_scale_for_conditional(&stored.view(), &whatif.view());
     let got = compute_scale_for_conditional_moments(&model, &whatif.view());
     for j in 0..2 {
-        assert!((want[j] - got[j]).abs() < 1e-12, "col {j}: {} vs {}", want[j], got[j]);
+        assert!(
+            (want[j] - got[j]).abs() < 1e-12,
+            "col {j}: {} vs {}",
+            want[j],
+            got[j]
+        );
     }
     assert_eq!(got[1], 1.0, "constant column uses scale=1");
 }
