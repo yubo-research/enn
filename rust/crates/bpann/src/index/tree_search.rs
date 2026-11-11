@@ -93,6 +93,8 @@ impl WalkMeter {
 pub static XP_INTERNAL_PAGES: AtomicU64 = AtomicU64::new(0);
 pub static XP_INTERNAL_ROWS: AtomicU64 = AtomicU64::new(0);
 pub static XP_LEAF_ROWS: AtomicU64 = AtomicU64::new(0);
+static PHASE_WALK_NS: AtomicU64 = AtomicU64::new(0);
+static PHASE_REFINE_NS: AtomicU64 = AtomicU64::new(0);
 static F32_WALKS: WalkMeter = WalkMeter::new();
 static F64_WALKS: WalkMeter = WalkMeter::new();
 static CERTIFIED_RETURNS: AtomicU64 = AtomicU64::new(0);
@@ -123,6 +125,13 @@ pub fn take_walk_totals() -> WalkTotals {
         certified: CERTIFIED_RETURNS.swap(0, Ordering::Relaxed),
         fallbacks: FALLBACK_RETURNS.swap(0, Ordering::Relaxed),
     }
+}
+
+pub fn take_phase_ns() -> (u64, u64) {
+    (
+        PHASE_WALK_NS.swap(0, Ordering::Relaxed),
+        PHASE_REFINE_NS.swap(0, Ordering::Relaxed),
+    )
 }
 
 pub fn take_leaf_rows() -> u64 {
@@ -283,7 +292,10 @@ pub fn search_tree_refined_with_extra(
         leaf_budget(tree.header.indexed_rows)
     };
     let stops_before = F32_WALKS.budget_stops.load(Ordering::Relaxed);
+    let t_walk = std::time::Instant::now();
     let candidates = search_tree(tree, &scaled, pool, budget, store)?;
+    PHASE_WALK_NS.fetch_add(t_walk.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    let t_refine = std::time::Instant::now();
     let stopped = F32_WALKS.budget_stops.load(Ordering::Relaxed) > stops_before;
     let boundary = candidates.last().map_or(0.0, |p| f64::from(p.1));
     let ids: Vec<u32> = candidates.iter().map(|p| p.0).collect();
@@ -303,6 +315,7 @@ pub fn search_tree_refined_with_extra(
         })
         .collect::<Result<_, BpannError>>()?;
     refined.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+    PHASE_REFINE_NS.fetch_add(t_refine.elapsed().as_nanos() as u64, Ordering::Relaxed);
     let all_rows = refined.len() == tree.header.indexed_rows;
     let certified = refined
         .get(k.saturating_sub(1))
