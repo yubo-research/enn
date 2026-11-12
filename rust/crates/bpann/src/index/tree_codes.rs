@@ -13,9 +13,19 @@ const VALID: u32 = 0xC0DE_0001;
 
 pub const TREE_LEAF_CODES: bool = true;
 pub const TREE_CODE_EXTRA: usize = 30;
+pub const TREE_CODE_PREFETCH: usize = 10;
 
 static LEAF_CODES: AtomicU64 = AtomicU64::new(TREE_LEAF_CODES as u64);
 static CODE_EXTRA: AtomicU64 = AtomicU64::new(TREE_CODE_EXTRA as u64);
+static CODE_PREFETCH: AtomicU64 = AtomicU64::new(TREE_CODE_PREFETCH as u64);
+
+pub fn code_prefetch() -> usize {
+    CODE_PREFETCH.load(Ordering::Relaxed) as usize
+}
+
+pub fn set_code_prefetch(value: usize) {
+    CODE_PREFETCH.store(value as u64, Ordering::Relaxed);
+}
 
 pub fn leaf_codes() -> bool {
     LEAF_CODES.load(Ordering::Relaxed) != 0

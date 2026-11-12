@@ -9,6 +9,7 @@ pub mod tree;
 pub mod tree_bulk;
 pub mod tree_codes;
 pub mod tree_codes_search;
+mod tree_walk;
 pub mod tree_counts;
 pub mod tree_morph;
 pub mod tree_persist;

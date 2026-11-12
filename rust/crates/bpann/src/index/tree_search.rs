@@ -6,7 +6,8 @@ use crate::distance::{bpann_row_to_f32, l2_sq_f32, sq_l2_f64_abandon};
 use crate::error::BpannError;
 use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
-use crate::index::tree_codes::leaf_codes;
+use crate::index::tree_codes::{code_prefetch, leaf_codes};
+use crate::index::tree_walk::{pad_query, Lookahead};
 pub use crate::index::tree_codes_search::take_coded_retries;
 use crate::index::tree_codes_search::{candidate_walk, note_coded_retry, refine_rows, CodedScan};
 use crate::small_n_search::{OrderedF32, OrderedFloat};
@@ -148,7 +149,7 @@ fn lower_bound(d2: f32, radius: f32) -> f32 {
 
 pub const TREE_SEARCH_INTERNAL_PAGES_PER_LN_N: f64 = 10.0;
 
-type FrontierItem = (u16, OrderedF32, OrderedF32, u32, u16);
+pub(super) type FrontierItem = (u16, OrderedF32, OrderedF32, u32, u16);
 
 struct TopK {
     k: usize,
@@ -408,15 +409,6 @@ pub fn search_tree_f64(
     )
 }
 
-fn pad_query(query: &[f32], dim: usize) -> std::borrow::Cow<'_, [f32]> {
-    if dim <= query.len() {
-        return std::borrow::Cow::Borrowed(query);
-    }
-    let mut padded = query.to_vec();
-    padded.resize(dim, 0.0);
-    std::borrow::Cow::Owned(padded)
-}
-
 pub(super) fn search_tree_scored(
     tree: &Tree,
     query: &[f32],
@@ -451,7 +443,8 @@ pub(super) fn search_tree_scored(
     let mut expanded = 0usize;
     let internal_cap = internal_page_cap(tree.header.indexed_rows);
     let mut stopped_on_budget = false;
-    while let Some(Reverse((phase, key, bound, page_id, depth))) = frontier.pop() {
+    let mut ahead = Lookahead::new(if coded.is_some() { code_prefetch() } else { 0 });
+    while let Some(Reverse((phase, key, bound, page_id, depth))) = ahead.pop(&mut frontier) {
         if !deepest_first && expanded >= internal_cap {
             deepest_first = true;
             let mut all = std::mem::take(&mut frontier).into_vec();
@@ -504,6 +497,7 @@ pub(super) fn search_tree_scored(
             }
             continue;
         }
+        ahead.before_leaf(s, &mut frontier, coded.as_deref_mut());
         XP_LEAF_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
         score_leaf(
             tree,

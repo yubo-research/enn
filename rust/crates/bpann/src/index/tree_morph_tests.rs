@@ -333,3 +333,35 @@ fn coded_leaf_scan_returns_the_same_neighbors_as_the_f32_scan() {
         assert_eq!(on, off);
     }
 }
+
+#[test]
+fn code_lookahead_does_not_change_the_neighbors() {
+    use crate::index::tree_codes::{set_code_prefetch, set_leaf_codes, TREE_CODE_PREFETCH};
+    use crate::index::tree_search::search_tree_refined;
+    let (n, d) = (3_000, 24);
+    let dir = TempDir::new().unwrap();
+    let store = store_with_rows(&dir, n, d, 7);
+    let scale = vec![1.0; d];
+    let mut idx = IncrementalIndex::new(dir.path().join("index"));
+    sync(&mut idx, &store, &scale, n);
+    let t = tree(&idx);
+    let s = MmapSearchStore {
+        train_x: &store,
+        scale_x: false,
+        x_scale: &scale,
+    };
+    set_leaf_codes(true);
+    let mut rng = ChaCha8Rng::seed_from_u64(13);
+    for _ in 0..40 {
+        let q: Vec<f64> = (0..d).map(|_| rng.gen::<f64>()).collect();
+        let runs: Vec<_> = [0, 1, 3, 30]
+            .iter()
+            .map(|&m| {
+                set_code_prefetch(m);
+                search_tree_refined(t, &q, 10, &s).unwrap()
+            })
+            .collect();
+        assert!(runs.iter().all(|r| *r == runs[0]));
+    }
+    set_code_prefetch(TREE_CODE_PREFETCH);
+}

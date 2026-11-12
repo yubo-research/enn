@@ -75,6 +75,7 @@ pub fn take_exact_rows() -> u64 {
 pub struct CodedScan {
     locs: Vec<(u32, u32, u32, f32)>,
     err_max: f32,
+    pub(super) advised: bool,
 }
 
 impl CodedScan {
@@ -87,7 +88,7 @@ impl CodedScan {
         offer: &mut impl FnMut(u32, f64),
     ) {
         let valid = s.codes_valid(page);
-        if valid {
+        if valid && !std::mem::take(&mut self.advised) {
             s.advise_codes(page);
         }
         let d = s.num_dim();

@@ -48,6 +48,11 @@ pub fn take_exact_rows_py() -> u64 {
     ennbo::take_exact_rows()
 }
 
+#[pyfunction(name = "set_code_prefetch")]
+pub fn set_code_prefetch_py(value: usize) {
+    ennbo::set_code_prefetch(value);
+}
+
 #[pyfunction(name = "set_code_extra")]
 pub fn set_code_extra_py(value: usize) {
     ennbo::set_code_extra(value);

@@ -255,6 +255,10 @@ pub fn take_exact_rows() -> u64 {
     ennbo_bpann::index::tree_codes_search::take_exact_rows()
 }
 
+pub fn set_code_prefetch(value: usize) {
+    ennbo_bpann::index::tree_codes::set_code_prefetch(value);
+}
+
 pub fn set_code_extra(value: usize) {
     ennbo_bpann::index::tree_codes::set_code_extra(value);
 }

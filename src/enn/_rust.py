@@ -26,6 +26,7 @@ set_internal_coefficient = _ext.util.set_internal_coefficient
 set_prefetch_pages = _ext.util.set_prefetch_pages
 set_leaf_codes = _ext.util.set_leaf_codes
 set_code_extra = _ext.util.set_code_extra
+set_code_prefetch = _ext.util.set_code_prefetch
 take_exact_rows = _ext.util.take_exact_rows
 take_coded_retries = _ext.util.take_coded_retries
 set_stop_epsilon = _ext.util.set_stop_epsilon
