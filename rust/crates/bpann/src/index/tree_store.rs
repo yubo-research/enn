@@ -186,10 +186,10 @@ impl TreeStore {
     pub fn prefetch_page(&self, id: u32) {
         let i = id as usize;
         if i < self.num_pages && self.residency.first_advice(id) {
-            let bytes = self.slot_words * 4;
+            let bytes = self.len(id) * self.num_dim * 4;
             let _ = self
                 .slots
-                .advise_range(memmap2::Advice::WillNeed, i * bytes, bytes);
+                .advise_range(memmap2::Advice::WillNeed, i * self.slot_words * 4, bytes);
         }
     }
 
