@@ -153,8 +153,18 @@ impl Tree {
         };
         let s = &mut self.store;
         s.set_radius(leaf, max_dist(&vectors, &left, &ca));
-        s.set_entries(leaf, &pick_ids(&left), &gather(&left));
-        s.set_count(leaf, left.len());
+        let keep = left.len();
+        let mut is_left = vec![false; vectors.len()];
+        left.iter().for_each(|&i| is_left[i] = true);
+        let holes = (0..keep).filter(|&j| !is_left[j]);
+        let movers = (keep..vectors.len()).filter(|&i| is_left[i]);
+        let mut kept_ids = row_ids[..keep].to_vec();
+        for (h, m) in holes.zip(movers) {
+            s.entry_mut(leaf, h).copy_from_slice(vectors[m]);
+            kept_ids[h] = row_ids[m];
+        }
+        s.set_ids_only(leaf, &kept_ids);
+        s.set_count(leaf, keep);
         let new_id = s.alloc(Kind::Leaf)?;
         s.set_count(new_id, right.len());
         s.set_radius(new_id, max_dist(&vectors, &right, &cb));
