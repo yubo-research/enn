@@ -22,6 +22,17 @@ struct Stamp {
     absolute_error: f64,
     scale_x: bool,
     x_scale: Vec<f64>,
+    #[serde(default)]
+    routes: bool,
+}
+
+fn write_stamp(path: &Path, stamp: &Stamp) -> Result<(), BpannError> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, serde_json::to_vec(stamp).map_err(invalid)?).map_err(invalid)?;
+    File::open(&tmp)
+        .and_then(|f| f.sync_all())
+        .map_err(invalid)?;
+    fs::rename(&tmp, path).map_err(invalid)
 }
 
 fn invalid(e: impl ToString) -> BpannError {
@@ -129,13 +140,9 @@ impl Tree {
             absolute_error: self.coordinate_absolute_error,
             scale_x,
             x_scale: x_scale.to_vec(),
+            routes: true,
         };
-        let tmp = path.with_extension("tmp");
-        fs::write(&tmp, serde_json::to_vec(&stamp).map_err(invalid)?).map_err(invalid)?;
-        File::open(&tmp)
-            .and_then(|f| f.sync_all())
-            .map_err(invalid)?;
-        fs::rename(&tmp, &path).map_err(invalid)?;
+        write_stamp(&path, &stamp)?;
         self.store.mark_stamped();
         Ok(())
     }
@@ -148,7 +155,7 @@ impl Tree {
         let Ok(text) = fs::read_to_string(index_dir.join(STAMP_FILE)) else {
             return Ok(None);
         };
-        let Ok(stamp) = serde_json::from_str::<Stamp>(&text) else {
+        let Ok(mut stamp) = serde_json::from_str::<Stamp>(&text) else {
             return Ok(None);
         };
         let header_text = fs::read_to_string(index_dir.join("header.json")).map_err(invalid)?;
@@ -160,11 +167,20 @@ impl Tree {
         {
             return Ok(None);
         }
-        let Some(store) = TreeStore::open_named(index_dir, header.num_dim, stamp.num_pages) else {
+        let Some(mut store) = TreeStore::open_named(index_dir, header.num_dim, stamp.num_pages)
+        else {
             return Ok(None);
         };
         if store.file_lens() != (stamp.meta_bytes, stamp.slots_bytes) {
             return Ok(None);
+        }
+        if !stamp.routes {
+            store.rebuild_routes();
+            store.flush()?;
+            stamp.routes = true;
+            write_stamp(&index_dir.join(STAMP_FILE), &stamp)?;
+            store.mark_stamped();
+            store.release_resident();
         }
         Ok(Some(Self {
             header,
@@ -254,3 +270,7 @@ impl Tree {
         true
     }
 }
+
+#[cfg(test)]
+#[path = "tree_persist_tests.rs"]
+mod tests;

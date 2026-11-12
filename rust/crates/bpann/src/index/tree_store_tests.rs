@@ -126,3 +126,25 @@ fn codes_follow_every_row_write() {
     let copy = s.try_clone().unwrap();
     assert!((0..copy.num_pages() as u32).all(|p| copy.codes_valid(p) && codes_match_rows(&copy, p)));
 }
+
+#[test]
+fn parents_keep_their_children_radii_and_rebuild_restores_them() {
+    let dir = TempDir::new().unwrap();
+    let mut s = store(&dir, 2);
+    let node = s.alloc(Kind::Internal).unwrap();
+    let (a, b) = (s.alloc(Kind::Leaf).unwrap(), s.alloc(Kind::Leaf).unwrap());
+    s.set_radius(a, 0.5);
+    s.set_entries(node, &[a], &[0.0, 0.0]);
+    s.set_parent(a, Some(node));
+    assert_eq!(s.child_radii(node), &[0.5]);
+    s.set_radius(b, 1.5);
+    s.push_entry(node, b, &[1.0, 1.0]);
+    s.set_parent(b, Some(node));
+    s.set_radius(a, 2.5);
+    assert_eq!(s.child_radii(node), &[2.5, 1.5]);
+    s.set_route(node, 0, 0.0);
+    s.set_route(node, 1, 0.0);
+    s.rebuild_routes();
+    assert_eq!(s.child_radii(node), &[2.5, 1.5]);
+    assert_eq!(s.ids(node), &[a, b]);
+}

@@ -274,6 +274,8 @@ mod tests {
                 continue;
             }
             assert!((2..=TREE_FANOUT).contains(&s.len(page)));
+            let routed: Vec<f32> = s.ids(page).iter().map(|&c| s.radius(c)).collect();
+            assert_eq!(s.child_radii(page), &routed[..]);
             for (c, &child) in s.block(page).chunks_exact(dim).zip(s.ids(page)) {
                 for &row in s.ids(child).iter().filter(|_| s.is_leaf(child)) {
                     let x = &vs[row as usize * dim..(row as usize + 1) * dim];

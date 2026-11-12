@@ -185,7 +185,8 @@ impl TreeStore {
         }
         let d = query.len().max(1);
         let block = self.block(id);
-        let routes: Vec<(u32, f32)> = kids.iter().map(|&c| (c, self.radius(c))).collect();
+        let radii = self.child_radii(id);
+        let routes: Vec<(u32, f32)> = kids.iter().copied().zip(radii.iter().copied()).collect();
         for (c, &(child, radius)) in block.chunks_exact(d).zip(&routes) {
             f(child, l2_sq_f32(query, c), 0.0, radius);
         }
@@ -240,6 +241,8 @@ mod tests {
         let node = s.alloc(Kind::Internal).unwrap();
         let (a, b) = (s.alloc(Kind::Leaf).unwrap(), s.alloc(Kind::Leaf).unwrap());
         s.set_entries(node, &[a, b], &[0.0, 1.0, 2.0, 3.0]);
+        s.set_parent(a, Some(node));
+        s.set_parent(b, Some(node));
         s.set_radius(a, 0.5);
         s.set_radius(b, 1.5);
         let routes = |s: &TreeStore| {

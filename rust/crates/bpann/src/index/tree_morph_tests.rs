@@ -47,6 +47,8 @@ fn assert_valid(idx: &IncrementalIndex, store: &MmapColumnStore, scale: &[f64]) 
             "{} children",
             s.len(id)
         );
+        let routed: Vec<f32> = s.ids(id).iter().map(|&c| s.radius(c)).collect();
+        assert_eq!(s.child_radii(id), &routed[..], "stale routes in page {id}");
         for (c, &child) in s.block(id).chunks_exact(scale.len()).zip(s.ids(id)) {
             let mut rows = Vec::new();
             rows_below(t, child, &mut rows);

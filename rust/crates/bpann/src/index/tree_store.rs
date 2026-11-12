@@ -137,7 +137,7 @@ impl TreeStore {
     }
 
     #[inline]
-    fn meta_words(&self, id: u32) -> &[u32] {
+    pub(super) fn meta_words(&self, id: u32) -> &[u32] {
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
         unsafe {
@@ -149,7 +149,7 @@ impl TreeStore {
     }
 
     #[inline]
-    fn meta_words_mut(&mut self, id: u32) -> &mut [u32] {
+    pub(super) fn meta_words_mut(&mut self, id: u32) -> &mut [u32] {
         self.unstamp();
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
@@ -255,6 +255,7 @@ impl TreeStore {
         let m = self.meta_words_mut(id);
         m[META_HDR_WORDS..META_HDR_WORDS + n].copy_from_slice(ids);
         m[0] = (m[0] & !LEN_MASK) | n as u32;
+        self.refresh_routes(id);
         if !self.codes_valid(id) {
             self.encode_page(id);
         }
@@ -275,6 +276,10 @@ impl TreeStore {
         let m = self.meta_words_mut(id);
         m[META_HDR_WORDS + n] = entry_id;
         m[0] += 1;
+        if !self.is_leaf(id) {
+            let r = self.radius(entry_id);
+            self.set_route(id, n, r);
+        }
         if self.codes_valid(id) {
             self.encode_code_row(id, n, v);
         }
@@ -295,6 +300,7 @@ impl TreeStore {
         if self.meta_words(id)[2] != r.to_bits() {
             self.icache.child_changed(id);
             self.meta_words_mut(id)[2] = r.to_bits();
+            self.route_child_changed(id, r);
         }
     }
 
@@ -304,6 +310,8 @@ impl TreeStore {
 
     pub fn set_parent(&mut self, id: u32, parent: Option<u32>) {
         self.meta_words_mut(id)[3] = parent.unwrap_or(NO_PARENT);
+        let r = self.radius(id);
+        self.route_child_changed(id, r);
     }
 
     pub fn try_clone(&self) -> Result<Self, BpannError> {
