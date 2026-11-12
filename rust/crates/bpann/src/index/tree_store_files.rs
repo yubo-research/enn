@@ -28,7 +28,9 @@ pub(super) fn scratch_file(dir: &Path, tag: &str) -> Result<File, BpannError> {
 
 pub(super) fn map(file: &File, bytes: usize) -> Result<MmapMut, BpannError> {
     file.set_len(bytes as u64).map_err(io_err)?;
-    unsafe { MmapMut::map_mut(file) }.map_err(io_err)
+    let m = unsafe { MmapMut::map_mut(file) }.map_err(io_err)?;
+    let _ = m.advise(memmap2::Advice::Random);
+    Ok(m)
 }
 
 pub const META_FILE: &str = "tree_meta.bin";
