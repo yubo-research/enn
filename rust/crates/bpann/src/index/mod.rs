@@ -11,6 +11,7 @@ pub mod tree_codes;
 pub mod tree_codes_search;
 mod tree_walk;
 pub mod tree_counts;
+pub mod tree_icache;
 pub mod tree_morph;
 pub mod tree_persist;
 pub mod tree_residency;

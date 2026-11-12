@@ -56,6 +56,7 @@ impl TreeStore {
                 TREE_RESIDENT_BUDGET_BYTES,
                 TREE_FILE_BUDGET_PER_MILLE,
             )),
+            icache: Default::default(),
         })
     }
 
@@ -96,6 +97,7 @@ impl TreeStore {
                 TREE_RESIDENT_BUDGET_BYTES,
                 TREE_FILE_BUDGET_PER_MILLE,
             )),
+            icache: Default::default(),
         };
         store.update_tracking();
         if fresh {

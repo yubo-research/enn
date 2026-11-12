@@ -7,9 +7,10 @@ use crate::error::BpannError;
 use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
 use crate::index::tree_codes::{code_prefetch, leaf_codes};
-use crate::index::tree_walk::{pad_query, Lookahead};
 pub use crate::index::tree_codes_search::take_coded_retries;
 use crate::index::tree_codes_search::{candidate_walk, note_coded_retry, refine_rows, CodedScan};
+use crate::index::tree_icache::internal_cache_bytes;
+use crate::index::tree_walk::{pad_query, Lookahead};
 use crate::small_n_search::{OrderedF32, OrderedFloat};
 
 pub use super::tree_search_knobs::*;
@@ -428,7 +429,6 @@ pub(super) fn search_tree_scored(
     let s = &tree.store;
     let orig = query.len();
     let query = &*pad_query(query, s.num_dim());
-    let d = query.len().max(1);
     let qn2: f32 = query.iter().map(|x| x * x).sum();
     let mut frontier: BinaryHeap<Reverse<FrontierItem>> = BinaryHeap::new();
     frontier.push(Reverse((
@@ -467,10 +467,17 @@ pub(super) fn search_tree_scored(
             XP_INTERNAL_PAGES.fetch_add(1, Ordering::Relaxed);
             XP_INTERNAL_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
             let mut fresh: Vec<(f32, u32)> = Vec::new();
-            for (&child, c) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
-                let d2 = l2_sq_f32(query, c);
+            let ids = s.ids(page_id);
+            let cached = coded.is_some() && internal_cache_bytes() > 0;
+            s.internal_scores((page_id, depth), (query, qn2), cached, |slot, d2, e| {
+                let child = ids[slot];
                 let radius = s.radius(child);
-                let bound = lower_bound(d2, radius);
+                let low = if e > 0.0 {
+                    (d2.sqrt() - e).max(0.0).powi(2)
+                } else {
+                    d2
+                };
+                let bound = lower_bound(low, radius);
                 if !top.cannot_improve(bound) {
                     let key = priority(d2, radius);
                     let phase = if deepest_first {
@@ -487,7 +494,7 @@ pub(super) fn search_tree_scored(
                         depth + 1,
                     )));
                 }
-            }
+            });
             let m = prefetch_pages().min(fresh.len());
             if m > 0 {
                 fresh.select_nth_unstable_by(m - 1, |a, b| a.0.total_cmp(&b.0));

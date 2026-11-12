@@ -48,6 +48,16 @@ pub fn take_exact_rows_py() -> u64 {
     ennbo::take_exact_rows()
 }
 
+#[pyfunction(name = "set_internal_cache_bytes")]
+pub fn set_internal_cache_bytes_py(value: usize) {
+    ennbo::set_internal_cache_bytes(value);
+}
+
+#[pyfunction(name = "take_internal_cache_stats")]
+pub fn take_internal_cache_stats_py() -> (u64, u64, usize) {
+    ennbo::take_internal_cache_stats()
+}
+
 #[pyfunction(name = "set_code_prefetch")]
 pub fn set_code_prefetch_py(value: usize) {
     ennbo::set_code_prefetch(value);

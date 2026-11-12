@@ -255,6 +255,15 @@ pub fn take_exact_rows() -> u64 {
     ennbo_bpann::index::tree_codes_search::take_exact_rows()
 }
 
+pub fn set_internal_cache_bytes(value: usize) {
+    ennbo_bpann::index::tree_icache::set_internal_cache_bytes(value);
+}
+
+pub fn take_internal_cache_stats() -> (u64, u64, usize) {
+    let (hits, misses) = ennbo_bpann::index::tree_icache::take_internal_cache_stats();
+    (hits, misses, ennbo_bpann::index::tree_icache::internal_cache_used())
+}
+
 pub fn set_code_prefetch(value: usize) {
     ennbo_bpann::index::tree_codes::set_code_prefetch(value);
 }

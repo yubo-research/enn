@@ -6,6 +6,7 @@ use memmap2::MmapMut;
 use crate::error::BpannError;
 use crate::index::tree::TREE_LEAF_CAPACITY;
 use crate::index::tree_codes::code_page_bytes;
+use crate::index::tree_icache::InternalCache;
 use crate::index::tree_residency::Residency;
 use crate::index::tree_store_files::map;
 
@@ -74,6 +75,7 @@ pub struct TreeStore {
     pub(super) codes_file: File,
     pub(super) codes: MmapMut,
     pub(super) residency: Residency,
+    pub(super) icache: InternalCache,
 }
 
 impl TreeStore {
@@ -175,6 +177,7 @@ impl TreeStore {
     #[inline]
     fn slot_words_mut(&mut self, id: u32) -> &mut [u32] {
         self.unstamp();
+        self.icache.invalidate(id);
         let i = id as usize;
         assert!(i < self.num_pages, "tree page {id} out of range");
         self.residency.touch(
@@ -262,6 +265,7 @@ impl TreeStore {
         assert!(n < SLOT_ENTRIES && v.len() == d, "page {id} is full");
         let off = id as usize * self.slot_words * 4 + n * d * 4;
         self.residency.touch(off, d * 4, &[&self.meta, &self.slots]);
+        self.icache.invalidate(id);
         if !append_whole_pages(&self.files.1, off, v) {
             let words = self.slot_words_mut(id);
             for (w, &x) in words[n * d..].iter_mut().zip(v) {
