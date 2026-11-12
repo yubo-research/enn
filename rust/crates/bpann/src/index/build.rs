@@ -282,16 +282,6 @@ impl BpannIndex {
         self.page_slot(page_id).map(|i| &self.pages[i])
     }
 
-    pub fn page_by_id_mut(&mut self, page_id: u32) -> Option<&mut Page> {
-        let i = self.page_slot(page_id)?;
-        Some(&mut self.pages[i])
-    }
-
-    pub fn push_page(&mut self, page: Page) {
-        self.page_map.insert(page.page_id(), self.pages.len());
-        self.pages.push(page);
-    }
-
     pub fn root_centroid(&self) -> Vec<f32> {
         self.page_by_id(self.header.root_page_id)
             .map(Page::centroid)

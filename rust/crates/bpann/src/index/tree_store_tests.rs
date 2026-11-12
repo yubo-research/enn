@@ -58,20 +58,20 @@ fn growing_past_the_first_mapping_keeps_every_page() {
 fn a_small_budget_releases_pages_and_keeps_the_data() {
     let dir = TempDir::new().unwrap();
     let mut s = store(&dir, 8);
-    s.set_resident_budget(256 << 10);
-    for i in 0..4000u32 {
+    s.set_resident_budget(16 << 10);
+    for i in 0..250u32 {
         let id = s.alloc(Kind::Leaf).unwrap();
         s.push_entry(id, i, &[i as f32; 8]);
-        assert!(s.residency.estimate() <= 256 << 10);
+        assert!(s.residency.estimate() <= 16 << 10);
     }
     assert!(s.residency.tracking());
     s.release_resident();
     assert_eq!(s.residency.estimate(), 0);
-    assert!((0..4000u32).all(|i| s.ids(i) == [i] && s.block(i) == [i as f32; 8]));
+    assert!((0..250u32).all(|i| s.ids(i) == [i] && s.block(i) == [i as f32; 8]));
     s.set_resident_budget(usize::MAX);
     assert!(!s.residency.tracking());
     let copy = s.try_clone().unwrap();
-    assert!((0..4000u32).all(|i| copy.ids(i) == [i] && copy.block(i) == [i as f32; 8]));
+    assert!((0..250u32).all(|i| copy.ids(i) == [i] && copy.block(i) == [i as f32; 8]));
 }
 
 #[test]

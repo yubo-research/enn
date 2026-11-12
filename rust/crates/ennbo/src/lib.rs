@@ -2,11 +2,8 @@
 #![allow(missing_docs)]
 
 #[allow(missing_docs)]
-pub mod ennbo_build {
-    include!("ennbo_build_api.inc.rs");
-    use super::link_search;
-    define_ennbo_build_api!(link_search);
-}
+pub mod ennbo_build_api;
+pub use ennbo_build_api as ennbo_build;
 #[allow(missing_docs)]
 pub mod acquisition;
 #[allow(missing_docs)]

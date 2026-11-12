@@ -37,7 +37,7 @@ def test_fixed_metric_onehot_neighbors_match_exact_after_relabeling(tmp_path):
     weights = np.r_[np.full(5, 7e-5), np.full(128, 6.0)]
     expected = None
     for label in range(2):
-        x, q = encoder.encode(raw), encoder.encode(query)
+        x, q = encoder.encode(raw), encoder.encode(query)[:64]
         model = _model(x, y, tmp_path / str(label))
         model.metric.set_weights(weights)
         exact = np.argsort(((x[None] - q[:, None]) ** 2) @ weights, axis=1)

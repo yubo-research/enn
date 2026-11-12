@@ -27,3 +27,13 @@ impl PyNumpyNormal {
         ndarray::Array1::from(out).to_pyarray_bound(py)
     }
 }
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn py_numpy_normal_draws_are_linked() {
+        let _ = (PyNumpyNormal::standard_normals,);
+    }
+}

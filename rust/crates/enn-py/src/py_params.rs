@@ -104,3 +104,13 @@ impl PyENNParams {
         )
     }
 }
+
+#[cfg(test)]
+mod kiss_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn py_params_repr_is_linked() {
+        let _ = (PyENNParams::__repr__,);
+    }
+}

@@ -3,8 +3,24 @@ use ennbo_bpann::BpannBackend;
 use ndarray::{array, Array1, Array2};
 use tempfile::TempDir;
 
+/// These tests assert exact f64 ranking, so they select the exact-search settings.
+/// The defaults trade exactness for a bounded (O(ln N)) leaf budget and quantized
+/// leaf codes; see `index::tree_search_knobs`.
+fn use_exact_search() {
+    use ennbo_bpann::index::tree_codes::set_leaf_codes;
+    use ennbo_bpann::index::tree_search_knobs::{
+        set_exact_fallback, set_f32_rerank_skip, set_skip_budget_fallback, set_stop_epsilon,
+    };
+    set_stop_epsilon(0.0);
+    set_exact_fallback(true);
+    set_skip_budget_fallback(false);
+    set_f32_rerank_skip(false);
+    set_leaf_codes(false);
+}
+
 #[test]
 fn continuous_differences_survive_tied_categorical_distances_at_every_size() {
+    use_exact_search();
     for n in [100, 8192, 8193, 10000] {
         let dir = TempDir::new().unwrap();
         // Every f32 coordinate rounds to the same value. Only f64 distinguishes rows.
@@ -61,6 +77,7 @@ fn self_exclusion_and_duplicate_ties_use_original_precision() {
 
 #[test]
 fn bounded_leaf_scoring_matches_complete_f64_distances_on_novel_queries() {
+    use_exact_search();
     let dir = TempDir::new().unwrap();
     let x = Array2::from_shape_fn((10000, 16), |(i, j)| ((i * 7 + j * 13) as f64 * 0.3).sin());
     let query = x.slice(ndarray::s![..3, ..]).mapv(|v| v + 0.03);

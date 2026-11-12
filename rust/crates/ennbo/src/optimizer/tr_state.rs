@@ -265,6 +265,13 @@ mod tests {
     use crate::trust_region_config::TrustRegionConfig;
 
     #[test]
+    fn rescalarizing_the_incumbent_is_a_no_op_outside_morbo() {
+        assert!(TrustRegionState::Global
+            .morbo_rescalarize_incumbent(3)
+            .is_ok());
+    }
+
+    #[test]
     fn a_global_region_spans_the_box_and_never_restarts() {
         let mut rng = StdRng::seed_from_u64(1);
         let mut tr =

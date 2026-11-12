@@ -357,3 +357,23 @@ fn project_scalar(col: f64, lo: f64, hi: f64, se: Option<f64>) -> f64 {
         col
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    fn apply_se_scales_both_components_and_combines_them() {
+        let cal = AffineCalibrator::from_coefficients(
+            array![0.0].view(),
+            array![1.0].view(),
+            array![2.0].view(),
+        )
+        .unwrap();
+        let (se, epi, ale) = cal.apply_se(&array![[3.0]], &array![[2.0]]).unwrap();
+        assert_eq!(epi, array![[6.0]]);
+        assert_eq!(ale, array![[4.0]]);
+        assert_eq!(se, array![[52.0f64.sqrt()]]);
+    }
+}

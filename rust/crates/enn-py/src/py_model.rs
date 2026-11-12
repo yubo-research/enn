@@ -479,6 +479,7 @@ mod kiss_coverage_tests {
             PyENNParams::epistemic_variance_scale,
             PyENNParams::aleatoric_variance_scale,
             PyENNParams::calibrator,
+            PyEpistemicNearestNeighbors::__len__,
             params_list,
             std::mem::size_of::<PyEpistemicNearestNeighbors>,
             std::mem::size_of::<PyENNParams>,

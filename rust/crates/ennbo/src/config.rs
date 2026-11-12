@@ -324,6 +324,14 @@ mod tests {
     }
 
     #[test]
+    fn the_turbo_enn_builder_can_select_lhd_only_initialization() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let layout = crate::layout::EnnLayout::new(dir.path(), false).unwrap();
+        let builder = OptimizerConfig::turbo_enn(layout).lhd_only();
+        assert!(matches!(builder.config.surrogate, SurrogateConfig::None));
+    }
+
+    #[test]
     fn test_candidate_config_num_candidates() {
         let config = CandidateConfig::default();
         assert_eq!(config.num_candidates(2, 1), 200);

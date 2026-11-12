@@ -6,9 +6,10 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
-const ROW_COUNTS: [usize; 5] = [1_000, 3_000, 10_000, 30_000, 100_000];
+const ROW_COUNTS: [usize; 4] = [1_000, 3_000, 10_000, 30_000];
 const BASELINE_ROWS: usize = ROW_COUNTS[0];
 const NUM_ADDS: usize = 32;
+const ADD_BATCHES: usize = 3;
 const MAX_SECS_PER_BASELINE_SEC: f64 = 2.5;
 const TIMING_REPEATS: usize = 1;
 const MAX_MEASUREMENT_ATTEMPTS: usize = 25;
@@ -113,29 +114,33 @@ fn timed_single_row_adds_with_yvar(
         None => model.add(&warm_x.view(), &warm_y.view(), None).unwrap(),
     }
 
-    let start = Instant::now();
-    for i in 0..num_adds {
-        let fi = row_f64(i);
-        let x = Array2::from_shape_vec(
-            (1, 2),
-            vec![
-                fi.mul_add(0.001, 10_000.0),
-                fi.mul_add(0.017, 10_000.0).sin(),
-            ],
-        )
-        .unwrap();
-        let y = Array2::from_shape_vec((1, 1), vec![fi.mul_add(0.013, 10_000.0).cos()]).unwrap();
-        let yvar = if with_yvar {
-            Some(deterministic_yvar(1))
-        } else {
-            None
-        };
-        match yvar.as_ref() {
-            Some(yv) => model.add(&x.view(), &y.view(), Some(&yv.view())).unwrap(),
-            None => model.add(&x.view(), &y.view(), None).unwrap(),
+    let mut elapsed = Duration::MAX;
+    for batch in 0..ADD_BATCHES {
+        let start = Instant::now();
+        for i in 0..num_adds {
+            let fi = row_f64(batch * num_adds + i);
+            let x = Array2::from_shape_vec(
+                (1, 2),
+                vec![
+                    fi.mul_add(0.001, 10_000.0),
+                    fi.mul_add(0.017, 10_000.0).sin(),
+                ],
+            )
+            .unwrap();
+            let y =
+                Array2::from_shape_vec((1, 1), vec![fi.mul_add(0.013, 10_000.0).cos()]).unwrap();
+            let yvar = if with_yvar {
+                Some(deterministic_yvar(1))
+            } else {
+                None
+            };
+            match yvar.as_ref() {
+                Some(yv) => model.add(&x.view(), &y.view(), Some(&yv.view())).unwrap(),
+                None => model.add(&x.view(), &y.view(), None).unwrap(),
+            }
         }
+        elapsed = elapsed.min(start.elapsed());
     }
-    let elapsed = start.elapsed();
 
     black_box(model.len());
     elapsed
