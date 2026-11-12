@@ -26,4 +26,4 @@ Possibly-helpful refs
 
 
 # Primary concern right now
-- Time and memory complexity up to very large N. Like N = 1e9 X D = 10000.  This is a huge dataset, though, snd wouldn't fit on the disk we have. Also, it would take a very long time to run. Still, do your best to analyze and evaluste. Maybe in the future we'll procure resources to test larger problems.
+Time and memory complexity up to very large N. Like N = 1e9 X D = 10000.  (This is a huge dataset, though, snd wouldn't fit on the disk we have. Also, it would take a very long time to run. Still, do your best to analyze and evaluste. Maybe in the future we'll procure resources to test larger problems.)  The key point is to focus first on designing a scalable, generalizable, principled algorithm and to avoid overfitting to the machine or to a specific problem size; and second on good engineering for speed.
