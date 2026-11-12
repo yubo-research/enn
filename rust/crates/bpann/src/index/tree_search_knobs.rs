@@ -22,7 +22,7 @@ pub fn set_leaf_coefficient(value: f64) {
     LEAF_COEFFICIENT_BITS.store(bits, Ordering::Relaxed);
 }
 
-pub const TREE_SEARCH_PREFETCH_PAGES: u64 = 10;
+pub const TREE_SEARCH_PREFETCH_PAGES: u64 = 0;
 
 static PREFETCH_PAGES: AtomicU64 = AtomicU64::new(TREE_SEARCH_PREFETCH_PAGES);
 
