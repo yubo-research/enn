@@ -1,6 +1,6 @@
 
 
-
+# Vision
 - Python exposes the public API to Python users, but all the work is in Rust.
 - The running time of ENN adds and queries grows as k*D*lnN (or better). A good test case is k=10, D=1000, N grows from 1 to 1e5.  (k is number of neighbors, D is number of dimensions, N is number of observations). Measuring the scaling is crucial. Lower wall time is nice, but it doesn't equate to good scaling. O(lnN) must hold from N=1 to N so large that the dataset cannot fit in RAM.  IOW, we are designing a disk-backed-storage ANN algorithm.
 - Maximum resident, anonymous memory is 1GB, independent of N (and of everything else). Our disk use should scale with N and may grow to any size, in principle.
@@ -12,6 +12,9 @@
 - Since BPANN_DISK is as on-disk data store, maybe we can learn about efficiency and speed from database or filesystem literature or code.
 - Consider using or adding to the set of evals (see evaluate.py) so that we have clear, repeatable measures of time complexity, memory complexiry, and prediction quality.
 
+# Misc
+- It is important that metric learning continues to function efficiently (lnN, constant memory whether metric learning is on or off).
+- It would be interesting to set k, the number of neighbors, automatically based on summary statistics, fitting, or heuristics. It seems intuitive that k should be larger for noisier data and larger when data is more densely packed about the wuery point, but (i) we don't know the noise level a priori, and increasing k with N could ruin the O(k lnN) time complexity. Leaving k as a constant specified by the user isn't terrible. It is an open question whether we could find k automatically.
 
 
 Possibly-helpful refs
@@ -19,3 +22,8 @@ Possibly-helpful refs
 - e-means clustering: https://arxiv.org/pdf/2611.09501
 - TurboQuant: https://arxiv.org/pdf/2504.19874
 - ENN: https://arxiv.org/pdf/2506.12818
+
+
+
+# Primary concern right now
+- Time and memory complexity up to very large N. Like N = 1e9 X D = 10000.  This is a huge dataset, though, snd wouldn't fit on the disk we have. Also, it would take a very long time to run. Still, do your best to analyze and evaluste. Maybe in the future we'll procure resources to test larger problems.
