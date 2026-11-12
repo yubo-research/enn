@@ -261,7 +261,7 @@ fn morphed_tree_persists_and_is_adopted_on_reopen() {
     idx.persist_to_disk_for_backend(&store, 2, true, &[1.0, 20.0], dir.path(), 1)
         .unwrap();
     let mut reopened = IncrementalIndex::new(idx.index_dir.clone());
-    assert!(reopened.adopt_persisted().unwrap());
+    assert!(reopened.adopt_persisted_scaled(true, &[1.0, 20.0]).unwrap());
     sync(&mut reopened, &store, &scale, 2_500);
     assert_valid(&reopened, &store, &scale);
 }

@@ -428,7 +428,9 @@ mod tests {
             .handle
             .persist_index_to_disk()
             .expect("hard persist");
-        assert!(dir.path().join("index/pages.bin").exists());
+        // A stamped persist writes the tree files and the stamp, not pages.bin.
+        assert!(!dir.path().join("index/pages.bin").exists());
+        assert!(dir.path().join("index/tree_state.json").is_file());
     }
 
     #[test]

@@ -303,12 +303,12 @@ fn multi_fragment_persist_to_disk_reopen_matches_row_count() {
     );
     let b2 = BpannBackend::reopen(path.clone()).unwrap();
     assert_eq!(b2.indexed_rows(), rows);
-    let pages_first = fs::read(path.join("index/pages.bin")).unwrap();
+    let stamp_first = fs::read(path.join("index/tree_state.json")).unwrap();
     drop(b2);
     let b3 = BpannBackend::reopen(path.clone()).unwrap();
     assert_eq!(b3.indexed_rows(), rows);
-    let pages_second = fs::read(path.join("index/pages.bin")).unwrap();
-    assert_eq!(pages_first, pages_second);
+    let stamp_second = fs::read(path.join("index/tree_state.json")).unwrap();
+    assert_eq!(stamp_first, stamp_second);
 }
 
 #[test]

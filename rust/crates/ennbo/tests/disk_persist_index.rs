@@ -47,9 +47,10 @@ fn build_multi_batch_disk_model(
     model
 }
 
+/// Checksum of the stamp, the file a stamped persist leaves in place of pages.bin.
 fn pages_checksum(work_dir: &std::path::Path) -> u64 {
     use std::hash::{Hash, Hasher};
-    let bytes = fs::read(work_dir.join("index/pages.bin")).expect("pages.bin");
+    let bytes = fs::read(work_dir.join("index/tree_state.json")).expect("tree_state.json");
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut hasher);
     hasher.finish()
@@ -126,7 +127,7 @@ fn disk_tell_does_not_rewrite_index() {
     assert_eq!(
         checksum_after_persist,
         pages_checksum(&work_dir),
-        "ensure_sync must not rewrite pages.bin"
+        "ensure_sync must not rewrite the stamped index"
     );
     let neighbors_after_sync = model.neighbors(&query.view(), 5, false).expect("neighbors");
     assert_eq!(neighbors_after_persist, neighbors_after_sync);
@@ -168,5 +169,6 @@ fn schedule_soft_sync_leaves_pages_unchanged_until_persist() {
     assert!(idx[[0, 0]] < 180);
 
     model.persist_index_to_disk().expect("hard persist");
-    assert!(pages.exists());
+    assert!(!pages.exists(), "a stamped persist writes no pages.bin");
+    assert!(work_dir.join("index/tree_state.json").is_file());
 }

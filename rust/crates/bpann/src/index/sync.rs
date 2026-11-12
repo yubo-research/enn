@@ -464,6 +464,8 @@ mod tests {
         assert!(idx.needs_disk_rewrite(true, 900));
         assert!(idx.index_memory_bytes() > 0);
         assert_eq!(on_disk_indexed_rows(&idx.index_dir).unwrap(), 900);
+        // A stamped persist removes pages.bin. Write the full format for the fallback open.
+        tree(&idx).persist().unwrap();
         let mut reopened = IncrementalIndex::new(idx.index_dir.clone());
         assert!(reopened.adopt_persisted().unwrap());
         assert_eq!(reopened.indexed_rows, 900);
@@ -512,6 +514,9 @@ mod tests {
             .unwrap();
         let stamp = idx.index_dir.join(STAMP_FILE);
         assert!(stamp.exists());
+        // The unstamped slow path reads pages.bin. Write it now, before any mutation: the tree
+        // files are shared mappings, so a later insert would change this tree too.
+        tree(&idx).persist().unwrap();
         let s = MmapSearchStore {
             train_x: &store,
             scale_x: false,
@@ -540,12 +545,10 @@ mod tests {
         slow.persist_to_disk_for_backend(&store, 2, false, &[1.0; 2], dir.path(), 1)
             .unwrap();
         assert!(stamp.exists(), "a filled tree is stamped when persisted");
+        // A stamped persist removed pages.bin, so a scale mismatch has no slow path to fall back on.
         let mut mismatch = IncrementalIndex::new(idx.index_dir.clone());
-        assert!(mismatch.adopt_persisted_scaled(true, &[2.0; 2]).unwrap());
-        assert!(
-            !tree(&mismatch).rows_cached(),
-            "scale mismatch uses the slow path"
-        );
+        assert!(!mismatch.adopt_persisted_scaled(true, &[2.0; 2]).unwrap());
+        assert!(mismatch.tree.is_none(), "scale mismatch must rebuild");
     }
 
     #[test]
@@ -558,14 +561,14 @@ mod tests {
         let mut fast = IncrementalIndex::new(idx.index_dir.clone());
         assert!(fast.adopt_persisted_scaled(false, &[1.0; 2]).unwrap());
         assert!(tree(&fast).stamp_is_current());
-        let pages = idx.index_dir.join("pages.bin");
-        let saved = std::fs::read(&pages).unwrap();
-        std::fs::write(&pages, b"").unwrap();
+        assert!(
+            !idx.index_dir.join("pages.bin").exists(),
+            "a stamped persist must not leave pages.bin"
+        );
         assert!(
             !fast.needs_disk_rewrite(false, 900),
             "a current stamp must decide without reading pages.bin"
         );
-        std::fs::write(&pages, saved).unwrap();
         fast.tree
             .as_mut()
             .unwrap()

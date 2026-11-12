@@ -568,7 +568,7 @@ mod acceptance_tests {
         b.ensure_index_sync().unwrap();
         b.append_rows(&array![[2.0, 2.0]].view(), &array![[2.0]].view(), None)
             .unwrap();
-        let pages_path = dir.path().join("index/pages.bin");
+        let pages_path = dir.path().join("index/tree_state.json");
         let size_before = fs::metadata(&pages_path).map(|m| m.len()).unwrap_or(0);
         let indexed_before = b.indexed_rows();
         b.search(&array![[0.5, 0.5]].view(), 1, false).unwrap();
@@ -850,11 +850,11 @@ mod acceptance_tests {
             b.append_rows(&x.view(), &y.view(), None).unwrap();
             b.ensure_index_sync().unwrap();
             b.persist_index_to_disk().unwrap();
-            fs::read(path.join("index/pages.bin")).unwrap()
+            fs::read(path.join("index/tree_state.json")).unwrap()
         };
         let b2 = BpannBackend::reopen(path.clone()).unwrap();
         assert_eq!(b2.indexed_rows(), 24);
-        let checksum_after = fs::read(path.join("index/pages.bin")).unwrap();
+        let checksum_after = fs::read(path.join("index/tree_state.json")).unwrap();
         assert_eq!(checksum_before, checksum_after);
     }
 

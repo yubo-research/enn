@@ -35,8 +35,7 @@ fn multi_fragment_persist_preserves_in_session_neighbors() {
 }
 
 #[test]
-fn persist_rewrites_corrupt_pages_with_matching_header() {
-    use std::fs;
+fn persist_drops_pages_and_reopens_from_stamp() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
     let mut b = BpannBackend::new_empty(path.clone(), 4, 1)
@@ -48,24 +47,53 @@ fn persist_rewrites_corrupt_pages_with_matching_header() {
     b.append_rows(&x.view(), &y.view(), None).unwrap();
     b.ensure_index_sync().unwrap();
     b.persist_index_to_disk().unwrap();
-    let pages_valid = fs::read(path.join("index/pages.bin")).unwrap();
+    assert!(!path.join("index/pages.bin").exists());
 
-    let pages_path = path.join("index/pages.bin");
-    let mut pages_corrupt = pages_valid.clone();
-    for byte in pages_corrupt.iter_mut().skip(100).take(100) {
-        *byte ^= 0xFF;
-    }
-    fs::write(&pages_path, &pages_corrupt).unwrap();
-    assert_ne!(pages_valid, pages_corrupt);
-
-    b.persist_index_to_disk().unwrap();
-    let pages_healed = fs::read(&pages_path).unwrap();
-    assert_eq!(pages_healed, pages_valid);
-
+    let query = ndarray::Array2::from_shape_fn((3, 4), |(i, j)| (i * 7 + j) as f64 * 0.37);
+    let before = b.search(&query.view(), 5, false).unwrap();
     drop(b);
     let b2 = BpannBackend::reopen(path).unwrap();
-    let query = ndarray::Array2::from_shape_fn((1, 4), |(_, j)| j as f64 * 0.01);
-    b2.search(&query.view(), 5, false).unwrap();
+    assert_eq!(b2.indexed_rows(), 500);
+    assert_eq!(b2.search(&query.view(), 5, false).unwrap(), before);
+}
+
+/// The stamp is the commit record of a persist. A crash after the tree files are
+/// written but before the stamp lands leaves no stamp and no pages.bin. Reopening must
+/// then rebuild from the stored rows, never adopt a stale index, and give the same
+/// neighbors as before the crash.
+#[test]
+fn reopen_without_stamp_rebuilds_from_rows() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().to_path_buf();
+    let mut b = BpannBackend::new_empty(path.clone(), 4, 1)
+        .unwrap()
+        .with_pending_flush_threshold(1000)
+        .with_defer_append_indexing(true);
+    let x = ndarray::Array2::from_shape_fn((600, 4), |(i, j)| ((i * 31 + j * 17) % 97) as f64);
+    let y = ndarray::Array2::from_shape_fn((600, 1), |(i, _)| i as f64);
+    b.append_rows(&x.view(), &y.view(), None).unwrap();
+    b.ensure_index_sync().unwrap();
+    b.persist_index_to_disk().unwrap();
+    let query = ndarray::Array2::from_shape_fn((4, 4), |(i, j)| (i * 13 + j * 5) as f64);
+    let (_, before_idx) = b.search(&query.view(), 5, false).unwrap();
+    drop(b);
+    std::fs::remove_file(path.join("index/tree_state.json")).unwrap();
+    assert!(!path.join("index/pages.bin").exists());
+
+    let b2 = BpannBackend::reopen(path.clone()).unwrap();
+    assert_eq!(b2.indexed_rows(), 600);
+    let (_, after_idx) = b2.search(&query.view(), 5, false).unwrap();
+    let as_sets = |m: &ndarray::Array2<i64>| -> Vec<Vec<i64>> {
+        m.rows()
+            .into_iter()
+            .map(|r| {
+                let mut v = r.to_vec();
+                v.sort_unstable();
+                v
+            })
+            .collect()
+    };
+    assert_eq!(as_sets(&before_idx), as_sets(&after_idx));
 }
 
 #[test]
@@ -129,14 +157,13 @@ fn soft_sync_fuzz_pending_drain_all_seeds() {
         assert_eq!(b.indexed_rows(), total, "trial={trial}");
         assert!(!dir.path().join("index/pages.bin").exists());
         b.persist_index_to_disk().unwrap();
-        assert!(dir.path().join("index/pages.bin").exists());
+        assert!(!dir.path().join("index/pages.bin").exists());
+        assert!(dir.path().join("index/tree_state.json").is_file());
     }
 }
 
 #[test]
 fn soft_sync_advances_index_without_rewriting_pages() {
-    use std::fs;
-    use std::hash::{Hash, Hasher};
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
     let mut b = BpannBackend::new_empty(path.clone(), 4, 1)
@@ -160,21 +187,10 @@ fn soft_sync_advances_index_without_rewriting_pages() {
     assert!(pre_idx[[0, 0]] >= 0);
 
     b.persist_index_to_disk().unwrap();
-    assert!(pages_path.exists());
-    let pages_first = fs::read(&pages_path).unwrap();
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    pages_first.hash(&mut hasher);
-    let checksum = hasher.finish();
+    assert!(!pages_path.exists(), "a stamped persist writes no pages.bin");
 
     b.ensure_index_sync().unwrap();
-    let pages_after_soft = fs::read(&pages_path).unwrap();
-    let mut hasher2 = std::collections::hash_map::DefaultHasher::new();
-    pages_after_soft.hash(&mut hasher2);
-    assert_eq!(
-        checksum,
-        hasher2.finish(),
-        "soft_sync must not rewrite pages.bin after hard persist"
-    );
+    assert!(!pages_path.exists(), "soft_sync must not write pages.bin");
     let (post_dist, post_idx) = b.search(&query.view(), 5, false).unwrap();
     assert_eq!(pre_idx, post_idx);
     assert_eq!(pre_dist, post_dist);
@@ -195,11 +211,11 @@ fn soft_sync_keeps_disk_dirty_until_hard_persist() {
     assert_eq!(b.indexed_rows(), 20);
 
     b.persist_index_to_disk().unwrap();
-    assert!(path.join("index/pages.bin").exists());
+    assert!(!path.join("index/pages.bin").exists());
 
-    let pages = std::fs::read(path.join("index/pages.bin")).unwrap();
+    let stamp = std::fs::read(path.join("index/tree_state.json")).unwrap();
     b.persist_index_to_disk().unwrap();
-    assert_eq!(pages, std::fs::read(path.join("index/pages.bin")).unwrap());
+    assert_eq!(stamp, std::fs::read(path.join("index/tree_state.json")).unwrap());
 }
 
 #[test]
@@ -216,8 +232,13 @@ fn persist_idempotent_skips_pages_rewrite() {
     b.append_rows(&x.view(), &y.view(), None).unwrap();
     b.ensure_index_sync().unwrap();
     b.persist_index_to_disk().unwrap();
-    let pages_first = fs::read(path.join("index/pages.bin")).unwrap();
+    let snapshot = || -> Vec<Vec<u8>> {
+        ["header.json", "tree_state.json", "tree_meta.bin", "tree_slots.bin", "tree_codes.bin"]
+            .iter()
+            .map(|f| fs::read(path.join("index").join(f)).unwrap())
+            .collect()
+    };
+    let first = snapshot();
     b.persist_index_to_disk().unwrap();
-    let pages_second = fs::read(path.join("index/pages.bin")).unwrap();
-    assert_eq!(pages_first, pages_second);
+    assert_eq!(first, snapshot(), "a second persist must not change any index file");
 }

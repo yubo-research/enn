@@ -66,6 +66,26 @@ pub(crate) fn persist_index_files(
     )
 }
 
+pub(crate) fn persist_header_without_pages(
+    index_dir: &Path,
+    header: &IndexHeader,
+) -> Result<(), BpannError> {
+    let io_err = |e: std::io::Error| BpannError::InvalidParameter(e.to_string());
+    fs::create_dir_all(index_dir).map_err(io_err)?;
+    match fs::remove_file(index_dir.join("pages.bin")) {
+        Ok(()) => File::open(index_dir).and_then(|d| d.sync_all()).map_err(io_err)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io_err(e)),
+    }
+    let skip_path = index_dir.join("skip_edges.bin");
+    let skip_tmp = index_dir.join("skip_edges.bin.tmp");
+    write_skip_edges_file(&skip_tmp, &HashMap::new())?;
+    fs::rename(&skip_tmp, &skip_path).map_err(io_err)?;
+    let header_json = serde_json::to_string_pretty(header)
+        .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+    crate::store_file::bpann_replace_json_text(&index_dir.join("header.json"), &header_json)
+}
+
 fn keep_backup(path: &Path, backup: &Path) -> Result<bool, BpannError> {
     if !path.exists() {
         return Ok(false);

@@ -64,3 +64,38 @@ fn an_index_without_routes_rebuilds_them_once_on_open() {
         .unwrap();
     assert!(routes_match(&again));
 }
+
+#[test]
+fn persist_after_add_skips_pages_bin_and_reopens_identically() {
+    let dir = TempDir::new().unwrap();
+    let mut rng = ChaCha8Rng::seed_from_u64(9);
+    let x = ndarray::Array2::from_shape_fn((900, 2), |_| rng.gen::<f64>());
+    let mut store =
+        MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), 2, None).unwrap();
+    store.mmap_append(&x.view()).unwrap();
+    let index_dir = dir.path().join("index");
+    let mut idx = IncrementalIndex::new(index_dir.clone());
+    idx.persist_to_disk_for_backend(&store, 2, false, &[1.0; 2], dir.path(), 1)
+        .unwrap();
+    assert!(!index_dir.join("pages.bin").exists());
+
+    // Add one row through the adopt-then-persist path, as a session does.
+    let row = ndarray::Array2::from_shape_fn((1, 2), |_| rng.gen::<f64>());
+    store.mmap_append(&row.view()).unwrap();
+    let mut fast = IncrementalIndex::new(index_dir.clone());
+    assert!(fast.adopt_persisted_scaled(false, &[1.0; 2]).unwrap());
+    fast.persist_to_disk_for_backend(&store, 2, false, &[1.0; 2], dir.path(), 1)
+        .unwrap();
+    assert!(
+        !index_dir.join("pages.bin").exists(),
+        "persist after an add must not write pages.bin"
+    );
+
+    // Reopening through the stamp must reproduce the same tree, hence the same predictions.
+    let live = fast.tree.as_ref().unwrap().page_bytes();
+    let reopened = Tree::open_stamped(&index_dir, false, &[1.0; 2])
+        .unwrap()
+        .expect("stamp current after persist");
+    assert_eq!(reopened.header.indexed_rows, 901);
+    assert_eq!(reopened.page_bytes(), live);
+}

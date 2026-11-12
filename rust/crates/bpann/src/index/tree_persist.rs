@@ -6,7 +6,9 @@ use std::path::Path;
 use crate::error::BpannError;
 use crate::index::build::IndexHeader;
 use crate::index::page::Page;
-use crate::index::persist_atomic::{persist_index_files_with, skip_edges_bytes};
+use crate::index::persist_atomic::{
+    persist_header_without_pages, persist_index_files_with, skip_edges_bytes,
+};
 use crate::index::tree::Tree;
 use crate::index::tree_store::{Kind, TreeStore, SLOT_ENTRIES, STAMP_FILE};
 use serde::{Deserialize, Serialize};
@@ -124,10 +126,10 @@ impl Tree {
     pub fn persist_stamped(&mut self, scale_x: bool, x_scale: &[f64]) -> Result<(), BpannError> {
         let path = self.index_dir.join(STAMP_FILE);
         let _ = fs::remove_file(&path);
-        self.persist()?;
         if !self.rows_cached || !self.store.is_named_in(&self.index_dir) {
-            return Ok(());
+            return self.persist();
         }
+        persist_header_without_pages(&self.index_dir, &self.header)?;
         self.store.flush()?;
         let (meta_bytes, slots_bytes) = self.store.file_lens();
         let stamp = Stamp {
@@ -222,7 +224,11 @@ impl Tree {
     pub fn open_persisted(index_dir: &Path) -> Result<Option<Self>, BpannError> {
         let text = fs::read_to_string(index_dir.join("header.json")).map_err(invalid)?;
         let header: IndexHeader = serde_json::from_str(&text).map_err(invalid)?;
-        let file = File::open(index_dir.join("pages.bin")).map_err(invalid)?;
+        let file = match File::open(index_dir.join("pages.bin")) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(invalid(e)),
+        };
         let mut r = BufReader::new(file);
         let num_pages = read_u32(&mut r).map_err(invalid)? as usize;
         let mut tree = Self::empty(header.num_dim, index_dir.to_path_buf())?;
