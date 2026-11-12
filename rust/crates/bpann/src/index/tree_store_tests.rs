@@ -93,3 +93,36 @@ fn a_page_past_the_end_panics() {
     let dir = TempDir::new().unwrap();
     store(&dir, 1).count(0);
 }
+
+fn codes_match_rows(s: &TreeStore, id: u32) -> bool {
+    let d = s.num_dim();
+    let rows = s.block(id).to_vec();
+    rows.chunks_exact(d).enumerate().all(|(slot, v)| {
+        let (scale, _, c) = crate::index::tree_codes::decode_header(s.code_row(id, slot));
+        v.iter()
+            .zip(c)
+            .all(|(&x, &q)| (x - scale * f32::from(q)).abs() <= 0.5 * scale + 1e-6)
+    })
+}
+
+#[test]
+fn codes_follow_every_row_write() {
+    let dir = TempDir::new().unwrap();
+    let mut s = store(&dir, 3);
+    let leaf = s.alloc(Kind::Leaf).unwrap();
+    s.push_entry(leaf, 1, &[1.0, -2.0, 3.0]);
+    s.push_entry(leaf, 2, &[0.5, 0.25, -8.0]);
+    assert!(s.codes_valid(leaf) && codes_match_rows(&s, leaf));
+    s.entry_mut(leaf, 0).copy_from_slice(&[9.0, 9.0, 9.0]);
+    assert!(!s.codes_valid(leaf));
+    s.set_ids_only(leaf, &[1, 2]);
+    assert!(s.codes_valid(leaf) && codes_match_rows(&s, leaf));
+    s.set_entries(leaf, &[4], &[-1.0, 0.0, 1.0]);
+    assert!(s.codes_valid(leaf) && codes_match_rows(&s, leaf));
+    for i in 0..200 {
+        let p = s.alloc(Kind::Leaf).unwrap();
+        s.push_entry(p, i, &[i as f32, 1.0, -1.0]);
+    }
+    let copy = s.try_clone().unwrap();
+    assert!((0..copy.num_pages() as u32).all(|p| copy.codes_valid(p) && codes_match_rows(&copy, p)));
+}

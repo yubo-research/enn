@@ -297,3 +297,39 @@ fn morph_leaves_a_tree_that_fits_the_metric_no_looser() {
     let after = leaf_spread(&idx, d);
     assert!(after <= before * (1.0 + 1e-9), "spread {before} -> {after}");
 }
+
+#[test]
+fn coded_leaf_scan_returns_the_same_neighbors_as_the_f32_scan() {
+    use crate::index::tree_codes::set_leaf_codes;
+    use crate::index::tree_search::search_tree_refined;
+    let (n, d) = (3_000, 24);
+    let dir = TempDir::new().unwrap();
+    let store = store_with_rows(&dir, n, d, 5);
+    let scale = vec![1.0; d];
+    let mut idx = IncrementalIndex::new(dir.path().join("index"));
+    sync(&mut idx, &store, &scale, n / 2);
+    idx.rescale_coords(&scale.iter().map(|_| 2.0).collect::<Vec<_>>());
+    run_morph(&mut idx);
+    let scale2 = vec![2.0; d];
+    sync(&mut idx, &store, &scale2, n);
+    let t = tree(&idx);
+    let leaves: Vec<u32> = (0..t.num_pages() as u32)
+        .filter(|&p| t.store.is_leaf(p))
+        .collect();
+    assert!(leaves.iter().all(|&p| t.store.codes_valid(p)));
+    let x_scale = vec![0.5; d];
+    let s = MmapSearchStore {
+        train_x: &store,
+        scale_x: true,
+        x_scale: &x_scale,
+    };
+    let mut rng = ChaCha8Rng::seed_from_u64(11);
+    for _ in 0..40 {
+        let q: Vec<f64> = (0..d).map(|_| rng.gen::<f64>()).collect();
+        set_leaf_codes(false);
+        let off = search_tree_refined(t, &q, 10, &s).unwrap();
+        set_leaf_codes(true);
+        let on = search_tree_refined(t, &q, 10, &s).unwrap();
+        assert_eq!(on, off);
+    }
+}

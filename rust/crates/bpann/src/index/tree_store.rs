@@ -5,6 +5,7 @@ use memmap2::MmapMut;
 
 use crate::error::BpannError;
 use crate::index::tree::TREE_LEAF_CAPACITY;
+use crate::index::tree_codes::code_page_bytes;
 use crate::index::tree_residency::Residency;
 use crate::index::tree_store_files::map;
 
@@ -70,6 +71,8 @@ pub struct TreeStore {
     pub(super) files: (File, File),
     pub(super) meta: MmapMut,
     pub(super) slots: MmapMut,
+    pub(super) codes_file: File,
+    pub(super) codes: MmapMut,
     pub(super) residency: Residency,
 }
 
@@ -112,6 +115,7 @@ impl TreeStore {
             f32::INFINITY.to_bits(),
             NO_PARENT,
         ]);
+        self.set_codes_valid(id, true);
         Ok(id)
     }
 
@@ -124,6 +128,7 @@ impl TreeStore {
         self.unstamp();
         self.meta = map(&self.files.0, capacity * META_WORDS * 4)?;
         self.slots = map(&self.files.1, capacity * self.slot_words * 4)?;
+        self.codes = map(&self.codes_file, capacity * code_page_bytes(self.num_dim))?;
         self.capacity = capacity;
         self.update_tracking();
         Ok(())
@@ -187,12 +192,11 @@ impl TreeStore {
         let i = id as usize;
         if i < self.num_pages && self.residency.first_advice(id) {
             let bytes = self.len(id) * self.num_dim * 4;
-            let _ = self
-                .slots
-                .advise_range(memmap2::Advice::WillNeed, i * self.slot_words * 4, bytes);
+            let _ =
+                self.slots
+                    .advise_range(memmap2::Advice::WillNeed, i * self.slot_words * 4, bytes);
         }
     }
-
     pub fn is_leaf(&self, id: u32) -> bool {
         self.meta_words(id)[0] & !LEN_MASK == kind_tag(Kind::Leaf)
     }
@@ -214,6 +218,7 @@ impl TreeStore {
     }
 
     pub fn block_mut(&mut self, id: u32) -> &mut [f32] {
+        self.set_codes_valid(id, false);
         let n = self.len(id) * self.num_dim;
         let words = &mut self.slot_words_mut(id)[..n];
         unsafe { std::slice::from_raw_parts_mut(words.as_mut_ptr() as *mut f32, n) }
@@ -234,6 +239,10 @@ impl TreeStore {
         for (w, &v) in words.iter_mut().zip(block) {
             *w = v.to_bits();
         }
+        for (slot, v) in block.chunks_exact(self.num_dim).enumerate() {
+            self.encode_code_row(id, slot, v);
+        }
+        self.set_codes_valid(id, true);
         self.set_ids_only(id, ids);
     }
 
@@ -243,6 +252,9 @@ impl TreeStore {
         let m = self.meta_words_mut(id);
         m[META_HDR_WORDS..META_HDR_WORDS + n].copy_from_slice(ids);
         m[0] = (m[0] & !LEN_MASK) | n as u32;
+        if !self.codes_valid(id) {
+            self.encode_page(id);
+        }
     }
 
     pub fn push_entry(&mut self, id: u32, entry_id: u32, v: &[f32]) {
@@ -259,6 +271,9 @@ impl TreeStore {
         let m = self.meta_words_mut(id);
         m[META_HDR_WORDS + n] = entry_id;
         m[0] += 1;
+        if self.codes_valid(id) {
+            self.encode_code_row(id, n, v);
+        }
     }
     pub fn count(&self, id: u32) -> usize {
         self.meta_words(id)[1] as usize
@@ -295,6 +310,8 @@ impl TreeStore {
         );
         Residency::copy_released(&self.meta, &mut out.meta, meta_len);
         Residency::copy_released(&self.slots, &mut out.slots, slot_len);
+        let code_len = self.num_pages * code_page_bytes(self.num_dim);
+        out.codes[..code_len].copy_from_slice(&self.codes[..code_len]);
         Ok(out)
     }
 }
@@ -303,4 +320,4 @@ impl TreeStore {
 #[path = "tree_store_tests.rs"]
 mod tests;
 
-pub use crate::index::tree_store_files::{META_FILE, SLOTS_FILE, STAMP_FILE};
+pub use crate::index::tree_store_files::{CODES_FILE, META_FILE, SLOTS_FILE, STAMP_FILE};

@@ -6,12 +6,15 @@ use crate::distance::{bpann_row_to_f32, l2_sq_f32, sq_l2_f64_abandon};
 use crate::error::BpannError;
 use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
+use crate::index::tree_codes::leaf_codes;
+pub use crate::index::tree_codes_search::take_coded_retries;
+use crate::index::tree_codes_search::{candidate_walk, note_coded_retry, refine_rows, CodedScan};
 use crate::small_n_search::{OrderedF32, OrderedFloat};
 
 pub use super::tree_search_knobs::*;
 use super::tree_search_knobs::{F32_RERANK_SKIP, SKIP_BUDGET_FALLBACK};
 
-struct WalkMeter {
+pub(super) struct WalkMeter {
     leaves: AtomicU64,
     walks: AtomicU64,
     budget_stops: AtomicU64,
@@ -48,7 +51,7 @@ pub static XP_INTERNAL_ROWS: AtomicU64 = AtomicU64::new(0);
 pub static XP_LEAF_ROWS: AtomicU64 = AtomicU64::new(0);
 static PHASE_WALK_NS: AtomicU64 = AtomicU64::new(0);
 static PHASE_REFINE_NS: AtomicU64 = AtomicU64::new(0);
-static F32_WALKS: WalkMeter = WalkMeter::new();
+pub(super) static F32_WALKS: WalkMeter = WalkMeter::new();
 static F64_WALKS: WalkMeter = WalkMeter::new();
 static CERTIFIED_RETURNS: AtomicU64 = AtomicU64::new(0);
 static FALLBACK_RETURNS: AtomicU64 = AtomicU64::new(0);
@@ -197,19 +200,28 @@ pub fn search_tree(
     leaf_budget: usize,
     store: &MmapSearchStore<'_>,
 ) -> Result<Vec<(u32, f32)>, BpannError> {
-    let rows = search_tree_scored(tree, query, k, leaf_budget, &F32_WALKS, |row, cached, _| {
-        if let Some(x) = cached {
-            return Ok(Some(f64::from(l2_sq_f32(query, x))));
-        }
-        let mut buf = Vec::with_capacity(query.len());
-        bpann_row_to_f32(
-            store.train_x.mmap_row_slice(row as usize)?,
-            store.scale_x,
-            store.x_scale,
-            &mut buf,
-        );
-        Ok(Some(f64::from(l2_sq_f32(query, &buf))))
-    })?;
+    let walk = search_tree_scored(
+        tree,
+        query,
+        k,
+        leaf_budget,
+        &F32_WALKS,
+        None,
+        |row, cached, _| {
+            if let Some(x) = cached {
+                return Ok(Some(f64::from(l2_sq_f32(query, x))));
+            }
+            let mut buf = Vec::with_capacity(query.len());
+            bpann_row_to_f32(
+                store.train_x.mmap_row_slice(row as usize)?,
+                store.scale_x,
+                store.x_scale,
+                &mut buf,
+            );
+            Ok(Some(f64::from(l2_sq_f32(query, &buf))))
+        },
+    );
+    let rows = walk?;
     Ok(rows
         .into_iter()
         .map(|(row, dist)| (row, dist as f32))
@@ -232,11 +244,22 @@ pub fn search_tree_refined_with_extra(
     store: &MmapSearchStore<'_>,
     extra: usize,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
+    refined_walk(tree, query, k, store, extra, leaf_codes())
+}
+
+fn refined_walk(
+    tree: &Tree,
+    query: &[f64],
+    k: usize,
+    store: &MmapSearchStore<'_>,
+    extra: usize,
+    codes: bool,
+) -> Result<Vec<(u32, f64)>, BpannError> {
     if exact_fallback() && !tree.rows_cached() {
         FALLBACK_RETURNS.fetch_add(1, Ordering::Relaxed);
         return search_tree_f64(tree, query, k, store);
     }
-    let pool = k.saturating_add(extra).min(tree.header.indexed_rows);
+    let coded = codes && tree.rows_cached();
     let mut scaled = Vec::with_capacity(query.len());
     bpann_row_to_f32(query, store.scale_x, store.x_scale, &mut scaled);
     let budget = if exact_fallback() {
@@ -246,11 +269,10 @@ pub fn search_tree_refined_with_extra(
     };
     let stops_before = F32_WALKS.budget_stops.load(Ordering::Relaxed);
     let t_walk = std::time::Instant::now();
-    let candidates = search_tree(tree, &scaled, pool, budget, store)?;
+    let (candidates, boundary) = candidate_walk(tree, &scaled, (k, extra, budget), coded, store)?;
     PHASE_WALK_NS.fetch_add(t_walk.elapsed().as_nanos() as u64, Ordering::Relaxed);
     let t_refine = std::time::Instant::now();
     let stopped = F32_WALKS.budget_stops.load(Ordering::Relaxed) > stops_before;
-    let boundary = candidates.last().map_or(0.0, |p| f64::from(p.1));
     if stopped
         && SKIP_BUDGET_FALLBACK.load(Ordering::Relaxed) != 0
         && tree.rows_cached()
@@ -265,23 +287,7 @@ pub fn search_tree_refined_with_extra(
             .map(|&(row, d)| (row, f64::from(d)))
             .collect());
     }
-    let ids: Vec<u32> = candidates.iter().map(|p| p.0).collect();
-    store.train_x.prefetch_rows(&ids);
-    let mut refined: Vec<(u32, f64)> = candidates
-        .iter()
-        .map(|&(row, _)| {
-            Ok((
-                row,
-                crate::distance::row_sq_l2(
-                    ndarray::ArrayView1::from(query),
-                    ndarray::ArrayView1::from(store.train_x.mmap_row_slice(row as usize)?),
-                    store.scale_x,
-                    ndarray::ArrayView1::from(store.x_scale),
-                ),
-            ))
-        })
-        .collect::<Result<_, BpannError>>()?;
-    refined.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+    let mut refined = refine_rows(query, &candidates, store)?;
     PHASE_REFINE_NS.fetch_add(t_refine.elapsed().as_nanos() as u64, Ordering::Relaxed);
     let all_rows = refined.len() == tree.header.indexed_rows;
     let certified = refined
@@ -289,6 +295,10 @@ pub fn search_tree_refined_with_extra(
         .is_some_and(|p| refinement_lower_bound(tree, query, store, boundary) > p.1);
     let skip = stopped && SKIP_BUDGET_FALLBACK.load(Ordering::Relaxed) != 0 && refined.len() >= k;
     if !all_rows && !skip && (!tree.rows_cached() || !certified) {
+        if coded {
+            note_coded_retry();
+            return refined_walk(tree, query, k, store, extra, false);
+        }
         FALLBACK_RETURNS.fetch_add(1, Ordering::Relaxed);
         return search_tree_f64(tree, query, k, store);
     }
@@ -379,6 +389,7 @@ pub fn search_tree_f64(
         k,
         budget,
         &F64_WALKS,
+        None,
         |row, cached, limit| {
             if let Some(x) = cached {
                 if limit.is_finite() && slack.lower(f64::from(l2_sq_f32(&scaled, x))) > limit {
@@ -406,12 +417,13 @@ fn pad_query(query: &[f32], dim: usize) -> std::borrow::Cow<'_, [f32]> {
     std::borrow::Cow::Owned(padded)
 }
 
-fn search_tree_scored(
+pub(super) fn search_tree_scored(
     tree: &Tree,
     query: &[f32],
     k: usize,
     leaf_budget: usize,
     meter: &WalkMeter,
+    mut coded: Option<&mut CodedScan>,
     mut score: impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
     let mut top = TopK {
@@ -425,6 +437,7 @@ fn search_tree_scored(
     let orig = query.len();
     let query = &*pad_query(query, s.num_dim());
     let d = query.len().max(1);
+    let qn2: f32 = query.iter().map(|x| x * x).sum();
     let mut frontier: BinaryHeap<Reverse<FrontierItem>> = BinaryHeap::new();
     frontier.push(Reverse((
         0,
@@ -492,23 +505,48 @@ fn search_tree_scored(
             continue;
         }
         XP_LEAF_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
-        if tree.rows_cached() {
-            for (&row, x) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
-                if let Some(distance) = score(row, Some(&x[..orig]), top.limit())? {
-                    top.offer(row, distance);
-                }
-            }
-        } else {
-            for &row in s.ids(page_id) {
-                if let Some(distance) = score(row, None, top.limit())? {
-                    top.offer(row, distance);
-                }
-            }
-        }
+        score_leaf(
+            tree,
+            page_id,
+            (query, qn2, orig),
+            coded.as_deref_mut(),
+            &mut top,
+            &mut score,
+        )?;
         leaves += 1;
     }
     meter.record(leaves, stopped_on_budget);
     Ok(top.into_sorted())
+}
+
+fn score_leaf(
+    tree: &Tree,
+    page_id: u32,
+    (query, qn2, orig): (&[f32], f32, usize),
+    coded: Option<&mut CodedScan>,
+    top: &mut TopK,
+    score: &mut impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
+) -> Result<(), BpannError> {
+    let s = &tree.store;
+    if let Some(scan) = coded {
+        scan.scan_leaf(s, page_id, query, qn2, &mut |i, d2| top.offer(i, d2));
+        return Ok(());
+    }
+    let d = query.len().max(1);
+    let rows: Vec<Option<&[f32]>> = if tree.rows_cached() {
+        s.block(page_id)
+            .chunks_exact(d)
+            .map(|x| Some(&x[..orig]))
+            .collect()
+    } else {
+        vec![None; s.ids(page_id).len()]
+    };
+    for (&row, x) in s.ids(page_id).iter().zip(rows) {
+        if let Some(distance) = score(row, x, top.limit())? {
+            top.offer(row, distance);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

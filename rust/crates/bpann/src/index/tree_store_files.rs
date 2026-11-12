@@ -35,6 +35,7 @@ pub(super) fn map(file: &File, bytes: usize) -> Result<MmapMut, BpannError> {
 
 pub const META_FILE: &str = "tree_meta.bin";
 pub const SLOTS_FILE: &str = "tree_slots.bin";
+pub const CODES_FILE: &str = "tree_codes.bin";
 pub const STAMP_FILE: &str = "tree_state.json";
 
 pub(super) fn named_file(dir: &Path, name: &str) -> Result<File, BpannError> {

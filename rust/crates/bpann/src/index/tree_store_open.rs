@@ -4,6 +4,7 @@ use std::path::Path;
 use memmap2::MmapMut;
 
 use crate::error::BpannError;
+use crate::index::tree_codes as codes;
 use crate::index::tree_residency::{file_budget, Residency, TREE_FILE_BUDGET_PER_MILLE};
 use crate::index::tree_store::{
     TreeStore, GROW_MIN_SLOTS, META_WORDS, SLOT_ENTRIES, TREE_RESIDENT_BUDGET_BYTES,
@@ -31,8 +32,13 @@ impl TreeStore {
                 scratch_file(dir, "tree_slots")?,
             )
         };
+        let codes_file = codes::create_codes_file(dir, named)?;
         let meta = map(&files.0, GROW_MIN_SLOTS * META_WORDS * 4)?;
         let slots = map(&files.1, GROW_MIN_SLOTS * slot_words * 4)?;
+        let codes = map(
+            &codes_file,
+            GROW_MIN_SLOTS * codes::code_page_bytes(num_dim.max(1)),
+        )?;
         Ok(Self {
             named,
             stamped: false,
@@ -44,6 +50,8 @@ impl TreeStore {
             files,
             meta,
             slots,
+            codes_file,
+            codes,
             residency: Residency::new(file_budget(
                 TREE_RESIDENT_BUDGET_BYTES,
                 TREE_FILE_BUDGET_PER_MILLE,
@@ -68,6 +76,9 @@ impl TreeStore {
         }
         let meta = unsafe { MmapMut::map_mut(&files.0) }.ok()?;
         let slots = unsafe { MmapMut::map_mut(&files.1) }.ok()?;
+        let code_bytes = capacity * codes::code_page_bytes(num_dim.max(1));
+        let (codes_file, fresh) = codes::open_codes(dir, code_bytes)?;
+        let codes = map(&codes_file, code_bytes).ok()?;
         let mut store = Self {
             named: true,
             stamped: true,
@@ -79,12 +90,19 @@ impl TreeStore {
             files,
             meta,
             slots,
+            codes_file,
+            codes,
             residency: Residency::new(file_budget(
                 TREE_RESIDENT_BUDGET_BYTES,
                 TREE_FILE_BUDGET_PER_MILLE,
             )),
         };
         store.update_tracking();
+        if fresh {
+            store.encode_invalid_pages();
+            let _ = store.codes_file.sync_all();
+            store.release_resident();
+        }
         Some(store)
     }
 
@@ -101,7 +119,8 @@ impl TreeStore {
 
     pub fn flush(&self) -> Result<(), BpannError> {
         self.files.0.sync_all().map_err(io_err)?;
-        self.files.1.sync_all().map_err(io_err)
+        self.files.1.sync_all().map_err(io_err)?;
+        self.codes_file.sync_all().map_err(io_err)
     }
 
     pub fn mark_stamped(&mut self) {

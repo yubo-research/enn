@@ -91,6 +91,7 @@ impl Tree {
             let r = self.store.radius(page);
             self.store.set_radius(page, r * grow);
         }
+        self.store.encode_invalid_pages();
         self.refresh_radii();
     }
 

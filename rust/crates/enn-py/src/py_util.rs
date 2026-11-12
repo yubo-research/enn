@@ -33,6 +33,26 @@ pub fn set_prefetch_pages_py(value: usize) {
     ennbo::set_prefetch_pages(value);
 }
 
+#[pyfunction(name = "set_leaf_codes")]
+pub fn set_leaf_codes_py(value: bool) {
+    ennbo::set_leaf_codes(value);
+}
+
+#[pyfunction(name = "take_coded_retries")]
+pub fn take_coded_retries_py() -> u64 {
+    ennbo::take_coded_retries()
+}
+
+#[pyfunction(name = "take_exact_rows")]
+pub fn take_exact_rows_py() -> u64 {
+    ennbo::take_exact_rows()
+}
+
+#[pyfunction(name = "set_code_extra")]
+pub fn set_code_extra_py(value: usize) {
+    ennbo::set_code_extra(value);
+}
+
 #[pyfunction(name = "set_stop_epsilon")]
 pub fn set_stop_epsilon_py(value: f64) {
     ennbo::set_stop_epsilon(value);

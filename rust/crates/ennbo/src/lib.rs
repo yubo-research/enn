@@ -243,6 +243,22 @@ pub fn set_prefetch_pages(value: usize) {
     ennbo_bpann::index::tree_search::set_prefetch_pages(value);
 }
 
+pub fn set_leaf_codes(value: bool) {
+    ennbo_bpann::index::tree_codes::set_leaf_codes(value);
+}
+
+pub fn take_coded_retries() -> u64 {
+    ennbo_bpann::index::tree_search::take_coded_retries()
+}
+
+pub fn take_exact_rows() -> u64 {
+    ennbo_bpann::index::tree_codes_search::take_exact_rows()
+}
+
+pub fn set_code_extra(value: usize) {
+    ennbo_bpann::index::tree_codes::set_code_extra(value);
+}
+
 pub fn exact_fallback() -> bool {
     ennbo_bpann::index::tree_search::exact_fallback()
 }
