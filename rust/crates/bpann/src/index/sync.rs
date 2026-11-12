@@ -222,7 +222,9 @@ impl IncrementalIndex {
             return true;
         }
         match &self.tree {
-            Some(tree) => !tree.on_disk_index_matches().unwrap_or(false),
+            Some(tree) => {
+                !(tree.stamp_is_current() || tree.on_disk_index_matches().unwrap_or(false))
+            }
             None => on_disk != 0 || nrows != 0,
         }
     }
@@ -544,6 +546,33 @@ mod tests {
             !tree(&mismatch).rows_cached(),
             "scale mismatch uses the slow path"
         );
+    }
+
+    #[test]
+    fn unchanged_stamped_tree_needs_no_rewrite_without_reading_pages() {
+        let dir = TempDir::new().unwrap();
+        let store = store_with_rows(&dir, 900, 2, 3);
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        idx.persist_to_disk_for_backend(&store, 2, false, &[1.0; 2], dir.path(), 1)
+            .unwrap();
+        let mut fast = IncrementalIndex::new(idx.index_dir.clone());
+        assert!(fast.adopt_persisted_scaled(false, &[1.0; 2]).unwrap());
+        assert!(tree(&fast).stamp_is_current());
+        let pages = idx.index_dir.join("pages.bin");
+        let saved = std::fs::read(&pages).unwrap();
+        std::fs::write(&pages, b"").unwrap();
+        assert!(
+            !fast.needs_disk_rewrite(false, 900),
+            "a current stamp must decide without reading pages.bin"
+        );
+        std::fs::write(&pages, saved).unwrap();
+        fast.tree
+            .as_mut()
+            .unwrap()
+            .insert_row(900, &[0.2, 0.2])
+            .unwrap();
+        assert!(!tree(&fast).stamp_is_current());
+        assert!(fast.needs_disk_rewrite(false, 901));
     }
 
     #[test]

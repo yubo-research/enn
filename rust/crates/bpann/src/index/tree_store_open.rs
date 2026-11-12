@@ -129,6 +129,10 @@ impl TreeStore {
         self.stamped = true;
     }
 
+    pub fn is_stamped(&self) -> bool {
+        self.stamped
+    }
+
     pub(super) fn unstamp(&mut self) {
         if self.stamped {
             self.stamped = false;

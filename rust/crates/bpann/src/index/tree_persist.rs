@@ -192,6 +192,12 @@ impl Tree {
         }))
     }
 
+    pub fn stamp_is_current(&self) -> bool {
+        self.store.is_stamped()
+            && self.store.is_named_in(&self.index_dir)
+            && self.index_dir.join(STAMP_FILE).is_file()
+    }
+
     pub fn on_disk_index_matches(&self) -> Result<bool, BpannError> {
         let file = File::open(self.index_dir.join("pages.bin")).map_err(invalid)?;
         let mut cmp = Compare {
