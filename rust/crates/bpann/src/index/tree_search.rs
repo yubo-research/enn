@@ -397,6 +397,15 @@ pub fn search_tree_f64(
     )
 }
 
+fn pad_query(query: &[f32], dim: usize) -> std::borrow::Cow<'_, [f32]> {
+    if dim <= query.len() {
+        return std::borrow::Cow::Borrowed(query);
+    }
+    let mut padded = query.to_vec();
+    padded.resize(dim, 0.0);
+    std::borrow::Cow::Owned(padded)
+}
+
 fn search_tree_scored(
     tree: &Tree,
     query: &[f32],
@@ -413,6 +422,8 @@ fn search_tree_scored(
         return Ok(Vec::new());
     }
     let s = &tree.store;
+    let orig = query.len();
+    let query = &*pad_query(query, s.num_dim());
     let d = query.len().max(1);
     let mut frontier: BinaryHeap<Reverse<FrontierItem>> = BinaryHeap::new();
     frontier.push(Reverse((
@@ -483,7 +494,7 @@ fn search_tree_scored(
         XP_LEAF_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
         if tree.rows_cached() {
             for (&row, x) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
-                if let Some(distance) = score(row, Some(x), top.limit())? {
+                if let Some(distance) = score(row, Some(&x[..orig]), top.limit())? {
                     top.offer(row, distance);
                 }
             }

@@ -10,6 +10,7 @@ use crate::index::tree::Tree;
 use crate::index::tree_bulk::{bulk_build, bulk_build_max_rows, BULK_BUILD_MIN_ROWS};
 use crate::index::tree_morph::Morph;
 use crate::index::tree_search::{leaf_budget, search_tree};
+use crate::index::tree_store::pad_dim;
 use crate::mmap_store::MmapColumnStore;
 use crate::observation as obs;
 use crate::row_groups::RowGroups;
@@ -101,7 +102,8 @@ impl IncrementalIndex {
         scale: (bool, &[f64]),
         end: usize,
     ) -> Result<(), BpannError> {
-        let end = end.min(self.indexed_rows + bulk_build_max_rows(num_dim));
+        let tree_dim = pad_dim(num_dim);
+        let end = end.min(self.indexed_rows + bulk_build_max_rows(tree_dim));
         let rows: Vec<u32> = (self.indexed_rows..end)
             .filter(|&row| self.indexable(row))
             .map(|row| row as u32)
@@ -111,8 +113,8 @@ impl IncrementalIndex {
             return Ok(());
         }
         let (mut v, mut vs) = (
-            Vec::with_capacity(num_dim),
-            Vec::with_capacity(rows.len() * num_dim),
+            Vec::with_capacity(tree_dim),
+            Vec::with_capacity(rows.len() * tree_dim),
         );
         for &row in &rows {
             bpann_row_to_f32(
@@ -121,9 +123,15 @@ impl IncrementalIndex {
                 scale.1,
                 &mut v,
             );
+            v.resize(tree_dim, 0.0);
             vs.extend_from_slice(&v);
         }
-        self.tree = Some(bulk_build(&rows, &mut vs, num_dim, self.index_dir.clone())?);
+        self.tree = Some(bulk_build(
+            &rows,
+            &mut vs,
+            tree_dim,
+            self.index_dir.clone(),
+        )?);
         self.indexed_rows = end;
         Ok(())
     }
@@ -136,10 +144,12 @@ impl IncrementalIndex {
         x_scale: &[f64],
         end: usize,
     ) -> Result<(), BpannError> {
-        let mut v = Vec::with_capacity(num_dim);
+        let tree_dim = pad_dim(num_dim);
+        let mut v = Vec::with_capacity(tree_dim);
         if let Some(tree) = self.tree.as_mut().filter(|t| !t.rows_cached()) {
             tree.fill_blocks(|row, buf| {
                 bpann_row_to_f32(train_x.mmap_row_slice(row as usize)?, scale_x, x_scale, buf);
+                buf.resize(tree_dim, 0.0);
                 Ok(())
             })?;
         }
@@ -152,6 +162,7 @@ impl IncrementalIndex {
                 continue;
             }
             bpann_row_to_f32(train_x.mmap_row_slice(row)?, scale_x, x_scale, &mut v);
+            v.resize(tree_dim, 0.0);
             match self.tree.as_mut() {
                 Some(tree) => {
                     tree.insert_row(row as u32, &v)?;
@@ -161,7 +172,7 @@ impl IncrementalIndex {
                     self.tree = Some(Tree::new_tree(
                         row as u32,
                         &v,
-                        num_dim,
+                        tree_dim,
                         self.index_dir.clone(),
                     )?)
                 }
@@ -555,5 +566,48 @@ mod tests {
             (0..69_000).collect::<Vec<u32>>()
         );
         tree(&copy).assert_counts_consistent();
+    }
+
+    #[test]
+    fn wide_rows_are_stored_zero_padded_and_found_exactly() {
+        let (d, n) = (1000usize, 500usize);
+        assert_eq!(pad_dim(d), 1024);
+        assert_eq!((pad_dim(10), pad_dim(600), pad_dim(1024)), (10, 600, 1024));
+        let dir = TempDir::new().unwrap();
+        let store = store_with_rows(&dir, n, d, 5);
+        let mut idx = IncrementalIndex::new(dir.path().join("index"));
+        for end in [1, 2, 100, n] {
+            idx.ensure_sync_for_backend(&store, d, false, &vec![1.0; d], end)
+                .unwrap();
+        }
+        let t = tree(&idx);
+        assert_eq!(t.store.num_dim(), 1024);
+        assert_eq!(t.leaf_row_ids(), (0..n as u32).collect::<Vec<u32>>());
+        let s = MmapSearchStore {
+            train_x: &store,
+            scale_x: false,
+            x_scale: &vec![1.0; d],
+        };
+        let row_f32 = |r: usize| -> Vec<f32> {
+            store
+                .mmap_row_slice(r)
+                .unwrap()
+                .iter()
+                .map(|&v| v as f32)
+                .collect()
+        };
+        for r in [0usize, 77, 499] {
+            let q = row_f32(r);
+            let got = idx.search_candidates(&q, 5, Some(&s)).unwrap();
+            let mut all: Vec<(u32, f32)> = (0..n)
+                .map(|j| (j as u32, crate::distance::l2_sq_f32(&q, &row_f32(j))))
+                .collect();
+            all.sort_by(|a, b| a.1.total_cmp(&b.1));
+            assert_eq!(got[0].0, r as u32);
+            assert_eq!(
+                got.iter().map(|g| g.0).collect::<Vec<_>>(),
+                all[..5].iter().map(|g| g.0).collect::<Vec<_>>()
+            );
+        }
     }
 }

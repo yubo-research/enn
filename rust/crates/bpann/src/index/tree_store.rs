@@ -11,8 +11,18 @@ use crate::index::tree_store_files::map;
 pub const TREE_RESIDENT_BUDGET_BYTES: usize = 1 << 30;
 
 pub const SLOT_ENTRIES: usize = TREE_LEAF_CAPACITY + 1;
-
-pub(super) const META_WORDS: usize = 4;
+pub(super) const META_HDR_WORDS: usize = 4;
+pub(super) const META_WORDS: usize = META_HDR_WORDS + SLOT_ENTRIES;
+const PAGE_BYTES: usize = 4096;
+const PAD_QUANTUM: usize = PAGE_BYTES / 4;
+pub fn pad_dim(dim: usize) -> usize {
+    let padded = dim.div_ceil(PAD_QUANTUM) * PAD_QUANTUM;
+    if dim >= PAD_QUANTUM / 2 && padded * 4 <= dim * 5 {
+        padded
+    } else {
+        dim
+    }
+}
 pub(super) const GROW_MIN_SLOTS: usize = 64;
 const NO_PARENT: u32 = u32::MAX;
 const LEN_MASK: u32 = 0x00FF_FFFF;
@@ -29,6 +39,26 @@ fn kind_tag(kind: Kind) -> u32 {
         Kind::Internal => 2 << 24,
     }
 }
+fn mmap_append_forced() -> bool {
+    static FORCED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FORCED.get_or_init(|| std::env::var_os("ENN_MMAP_APPEND").is_some())
+}
+
+#[cfg(unix)]
+fn append_whole_pages(file: &File, off: usize, v: &[f32]) -> bool {
+    use std::os::unix::fs::FileExt;
+    if !(v.len() * 4).is_multiple_of(PAGE_BYTES) || mmap_append_forced() {
+        return false;
+    }
+    let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+    file.write_all_at(&bytes, off as u64).is_ok()
+}
+
+#[cfg(not(unix))]
+fn append_whole_pages(_file: &File, _off: usize, _v: &[f32]) -> bool {
+    false
+}
+
 pub struct TreeStore {
     pub(super) named: bool,
     pub(super) stamped: bool,
@@ -76,7 +106,7 @@ impl TreeStore {
         }
         let id = self.num_pages as u32;
         self.num_pages += 1;
-        self.meta_words_mut(id).copy_from_slice(&[
+        self.meta_words_mut(id)[..META_HDR_WORDS].copy_from_slice(&[
             kind_tag(kind),
             0,
             f32::INFINITY.to_bits(),
@@ -173,19 +203,19 @@ impl TreeStore {
 
     pub fn ids(&self, id: u32) -> &[u32] {
         let n = self.len(id);
-        &self.slot_words(id)[..n]
+        &self.meta_words(id)[META_HDR_WORDS..META_HDR_WORDS + n]
     }
 
     pub fn block(&self, id: u32) -> &[f32] {
         self.prefetch_page(id);
         let n = self.len(id) * self.num_dim;
-        let words = &self.slot_words(id)[SLOT_ENTRIES..SLOT_ENTRIES + n];
+        let words = &self.slot_words(id)[..n];
         unsafe { std::slice::from_raw_parts(words.as_ptr() as *const f32, n) }
     }
 
     pub fn block_mut(&mut self, id: u32) -> &mut [f32] {
         let n = self.len(id) * self.num_dim;
-        let words = &mut self.slot_words_mut(id)[SLOT_ENTRIES..SLOT_ENTRIES + n];
+        let words = &mut self.slot_words_mut(id)[..n];
         unsafe { std::slice::from_raw_parts_mut(words.as_mut_ptr() as *mut f32, n) }
     }
 
@@ -201,33 +231,35 @@ impl TreeStore {
             "bad entries for page {id}"
         );
         let words = self.slot_words_mut(id);
-        words[..n].copy_from_slice(ids);
-        for (w, &v) in words[SLOT_ENTRIES..].iter_mut().zip(block) {
+        for (w, &v) in words.iter_mut().zip(block) {
             *w = v.to_bits();
         }
-        let m = self.meta_words_mut(id);
-        m[0] = (m[0] & !LEN_MASK) | n as u32;
+        self.set_ids_only(id, ids);
     }
 
     pub fn set_ids_only(&mut self, id: u32, ids: &[u32]) {
         let n = ids.len();
         assert!(n <= SLOT_ENTRIES, "bad entries for page {id}");
-        self.slot_words_mut(id)[..n].copy_from_slice(ids);
         let m = self.meta_words_mut(id);
+        m[META_HDR_WORDS..META_HDR_WORDS + n].copy_from_slice(ids);
         m[0] = (m[0] & !LEN_MASK) | n as u32;
     }
 
     pub fn push_entry(&mut self, id: u32, entry_id: u32, v: &[f32]) {
         let (n, d) = (self.len(id), self.num_dim);
         assert!(n < SLOT_ENTRIES && v.len() == d, "page {id} is full");
-        let words = self.slot_words_mut(id);
-        words[n] = entry_id;
-        for (w, &x) in words[SLOT_ENTRIES + n * d..].iter_mut().zip(v) {
-            *w = x.to_bits();
+        let off = id as usize * self.slot_words * 4 + n * d * 4;
+        self.residency.touch(off, d * 4, &[&self.meta, &self.slots]);
+        if !append_whole_pages(&self.files.1, off, v) {
+            let words = self.slot_words_mut(id);
+            for (w, &x) in words[n * d..].iter_mut().zip(v) {
+                *w = x.to_bits();
+            }
         }
-        self.meta_words_mut(id)[0] += 1;
+        let m = self.meta_words_mut(id);
+        m[META_HDR_WORDS + n] = entry_id;
+        m[0] += 1;
     }
-
     pub fn count(&self, id: u32) -> usize {
         self.meta_words(id)[1] as usize
     }

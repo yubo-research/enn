@@ -22,7 +22,7 @@ impl TreeStore {
     }
 
     fn create_with(dir: &Path, num_dim: usize, named: bool) -> Result<Self, BpannError> {
-        let slot_words = SLOT_ENTRIES * (1 + num_dim.max(1));
+        let slot_words = SLOT_ENTRIES * num_dim.max(1);
         let files = if named {
             (named_file(dir, META_FILE)?, named_file(dir, SLOTS_FILE)?)
         } else {
@@ -52,7 +52,7 @@ impl TreeStore {
     }
 
     pub fn open_named(dir: &Path, num_dim: usize, num_pages: usize) -> Option<Self> {
-        let slot_words = SLOT_ENTRIES * (1 + num_dim.max(1));
+        let slot_words = SLOT_ENTRIES * num_dim.max(1);
         let open = |name: &str| {
             OpenOptions::new()
                 .read(true)
