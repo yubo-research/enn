@@ -26,7 +26,30 @@ pub fn row_sq_l2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn l2_sq_f32_avx2(a: &[f32], b: &[f32]) -> f32 {
-    l2_sq_f32_body(a, b)
+    use std::arch::x86_64::*;
+    let n = a.len().min(b.len());
+    let (pa, pb) = (a.as_ptr(), b.as_ptr());
+    let mut acc = [_mm256_setzero_ps(); 4];
+    let mut i = 0;
+    while i + 32 <= n {
+        for (u, slot) in acc.iter_mut().enumerate() {
+            let d = _mm256_sub_ps(
+                _mm256_loadu_ps(pa.add(i + 8 * u)),
+                _mm256_loadu_ps(pb.add(i + 8 * u)),
+            );
+            *slot = _mm256_add_ps(*slot, _mm256_mul_ps(d, d));
+        }
+        i += 32;
+    }
+    let v = _mm256_add_ps(_mm256_add_ps(acc[0], acc[1]), _mm256_add_ps(acc[2], acc[3]));
+    let mut lanes = [0.0f32; 8];
+    _mm256_storeu_ps(lanes.as_mut_ptr(), v);
+    let mut sum: f32 = lanes.iter().sum();
+    for j in i..n {
+        let d = a[j] - b[j];
+        sum += d * d;
+    }
+    sum
 }
 
 pub fn l2_sq_f32(a: &[f32], b: &[f32]) -> f32 {
@@ -39,19 +62,24 @@ pub fn l2_sq_f32(a: &[f32], b: &[f32]) -> f32 {
 
 #[inline(always)]
 fn l2_sq_f32_body(a: &[f32], b: &[f32]) -> f32 {
-    const LANES: usize = 8;
-    let mut acc = [0.0f32; LANES];
-    let (a_chunks, a_rem) = a.as_chunks::<LANES>();
-    let (b_chunks, b_rem) = b.as_chunks::<LANES>();
-    for (ca, cb) in a_chunks.iter().zip(b_chunks.iter()) {
-        for ((lane, &x), &y) in acc.iter_mut().zip(ca).zip(cb) {
-            let d = x - y;
-            *lane += d * d;
+    let n = a.len().min(b.len());
+    let mut acc = [[0.0f32; 8]; 4];
+    let mut i = 0;
+    while i + 32 <= n {
+        for (u, slot) in acc.iter_mut().enumerate() {
+            for (l, s) in slot.iter_mut().enumerate() {
+                let d = a[i + 8 * u + l] - b[i + 8 * u + l];
+                *s += d * d;
+            }
         }
+        i += 32;
     }
-    let mut sum: f32 = acc.iter().sum();
-    for (&x, &y) in a_rem.iter().zip(b_rem.iter()) {
-        let d = x - y;
+    let mut sum = 0.0f32;
+    for (((&p0, &p1), &p2), &p3) in acc[0].iter().zip(&acc[1]).zip(&acc[2]).zip(&acc[3]) {
+        sum += (p0 + p1) + (p2 + p3);
+    }
+    for j in i..n {
+        let d = a[j] - b[j];
         sum += d * d;
     }
     sum
