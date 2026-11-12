@@ -467,34 +467,39 @@ pub(super) fn search_tree_scored(
             XP_INTERNAL_PAGES.fetch_add(1, Ordering::Relaxed);
             XP_INTERNAL_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
             let mut fresh: Vec<(f32, u32)> = Vec::new();
-            let ids = s.ids(page_id);
+            let collect_fresh = prefetch_pages() > 0;
             let cached = coded.is_some() && internal_cache_bytes() > 0;
-            s.internal_scores((page_id, depth), (query, qn2), cached, |slot, d2, e| {
-                let child = ids[slot];
-                let radius = s.radius(child);
-                let low = if e > 0.0 {
-                    (d2.sqrt() - e).max(0.0).powi(2)
-                } else {
-                    d2
-                };
-                let bound = lower_bound(low, radius);
-                if !top.cannot_improve(bound) {
-                    let key = priority(d2, radius);
-                    let phase = if deepest_first {
-                        u16::MAX - (depth + 1)
+            s.internal_scores(
+                (page_id, depth),
+                (query, qn2),
+                cached,
+                |child, d2, e, radius| {
+                    let low = if e > 0.0 {
+                        (d2.sqrt() - e).max(0.0).powi(2)
                     } else {
-                        0
+                        d2
                     };
-                    fresh.push((key, child));
-                    frontier.push(Reverse((
-                        phase,
-                        OrderedF32(key),
-                        OrderedF32(bound),
-                        child,
-                        depth + 1,
-                    )));
-                }
-            });
+                    let bound = lower_bound(low, radius);
+                    if !top.cannot_improve(bound) {
+                        let key = priority(d2, radius);
+                        let phase = if deepest_first {
+                            u16::MAX - (depth + 1)
+                        } else {
+                            0
+                        };
+                        if collect_fresh {
+                            fresh.push((key, child));
+                        }
+                        frontier.push(Reverse((
+                            phase,
+                            OrderedF32(key),
+                            OrderedF32(bound),
+                            child,
+                            depth + 1,
+                        )));
+                    }
+                },
+            );
             let m = prefetch_pages().min(fresh.len());
             if m > 0 {
                 fresh.select_nth_unstable_by(m - 1, |a, b| a.0.total_cmp(&b.0));

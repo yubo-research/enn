@@ -292,7 +292,10 @@ impl TreeStore {
     }
 
     pub fn set_radius(&mut self, id: u32, r: f32) {
-        self.meta_words_mut(id)[2] = r.to_bits();
+        if self.meta_words(id)[2] != r.to_bits() {
+            self.icache.child_changed(id);
+            self.meta_words_mut(id)[2] = r.to_bits();
+        }
     }
 
     pub fn parent(&self, id: u32) -> Option<u32> {
