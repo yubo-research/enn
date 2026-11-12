@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -162,13 +163,22 @@ impl Drop for InternalCache {
 }
 
 impl TreeStore {
+    pub fn prefetch_child(&self, id: u32, codes: bool) {
+        if !codes || self.is_leaf(id) {
+            self.prefetch_page(id);
+        } else if self.residency.first_advice(id) {
+            self.advise_codes(id);
+        }
+    }
+
     pub fn internal_scores(
         &self,
         (id, depth): (u32, u16),
         (query, qn2): (&[f32], f32),
-        cached: bool,
+        codes: bool,
         mut f: impl FnMut(u32, f32, f32, f32),
     ) {
+        let cached = codes && internal_cache_bytes() > 0;
         let kids = self.ids(id);
         let n = kids.len();
         let rb = code_row_bytes(self.num_dim);
@@ -183,20 +193,33 @@ impl TreeStore {
             HITS.fetch_add(1, Ordering::Relaxed);
             return;
         }
-        let d = query.len().max(1);
-        let block = self.block(id);
         let radii = self.child_radii(id);
         let routes: Vec<(u32, f32)> = kids.iter().copied().zip(radii.iter().copied()).collect();
-        for (c, &(child, radius)) in block.chunks_exact(d).zip(&routes) {
-            f(child, l2_sq_f32(query, c), 0.0, radius);
+        if !codes {
+            let block = self.block(id);
+            for (c, &(child, radius)) in block.chunks_exact(query.len().max(1)).zip(&routes) {
+                f(child, l2_sq_f32(query, c), 0.0, radius);
+            }
+            return;
+        }
+        let rows: Cow<[u8]> = if self.codes_valid(id) {
+            self.advise_codes(id);
+            Cow::Borrowed(self.code_rows(id, n))
+        } else {
+            let mut out = vec![0u8; n * rb];
+            for (o, c) in out.chunks_exact_mut(rb).zip(self.block(id).chunks_exact(self.num_dim)) {
+                encode_row(c, o);
+            }
+            Cow::Owned(out)
+        };
+        for (row, &(child, radius)) in rows.chunks_exact(rb).zip(&routes) {
+            let (d2, e) = coded_sq_l2(query, qn2, row);
+            f(child, d2, e, radius);
         }
         if cached {
             MISSES.fetch_add(1, Ordering::Relaxed);
-            self.icache.insert_with((id, depth), routes, n * rb, |out| {
-                for (o, c) in out.chunks_exact_mut(rb).zip(block.chunks_exact(d)) {
-                    encode_row(c, o);
-                }
-            });
+            self.icache
+                .insert_with((id, depth), routes, n * rb, |out| out.copy_from_slice(&rows));
         }
     }
 }
@@ -222,14 +245,17 @@ mod tests {
         s.set_entries(node, &kids[..2], &[0.5, -1.0, 2.0, 3.0, 0.25, -0.75]);
         let q = [1.0, 1.0, -1.0];
         let miss = scores(&s, node, &q);
-        assert!(miss.iter().all(|&(_, e)| e == 0.0));
         let hit = scores(&s, node, &q);
-        for (&(exact, _), &(d2, e)) in miss.iter().zip(&hit) {
-            assert!(e > 0.0 && (d2.sqrt() - exact.sqrt()).abs() <= e * 1.001 + 1e-4);
+        assert_eq!(miss, hit);
+        let exact = [13.25, 4.625];
+        for (&x, &(d2, e)) in exact.iter().zip(&hit) {
+            assert!(e > 0.0 && (d2.sqrt() - f32::sqrt(x)).abs() <= e * 1.001 + 1e-4);
         }
         s.entry_mut(node, 0).copy_from_slice(&[9.0, 9.0, 9.0]);
+        assert!(!s.codes_valid(node));
         let fresh = scores(&s, node, &q);
-        assert_eq!(fresh[0], (228.0, 0.0));
+        assert!((fresh[0].0.sqrt() - 228f32.sqrt()).abs() <= fresh[0].1 * 1.001 + 1e-4);
+        assert_eq!(scores(&s, node, &q), fresh);
         s.push_entry(node, kids[2], &[0.0, 0.0, 0.0]);
         assert_eq!(scores(&s, node, &q).len(), 3);
     }
@@ -246,9 +272,10 @@ mod tests {
         s.set_radius(a, 0.5);
         s.set_radius(b, 1.5);
         let routes = |s: &TreeStore| {
+            let held = s.icache.with_rows(node, &[a, b], |_, _| {});
             let mut out = Vec::new();
-            s.internal_scores((node, 0), (&[0.0, 0.0], 0.0), true, |c, _, e, r| {
-                out.push((c, r, e > 0.0))
+            s.internal_scores((node, 0), (&[0.0, 0.0], 0.0), true, |c, _, _, r| {
+                out.push((c, r, held))
             });
             out
         };

@@ -9,7 +9,6 @@ use crate::index::tree::Tree;
 use crate::index::tree_codes::{code_prefetch, leaf_codes};
 pub use crate::index::tree_codes_search::take_coded_retries;
 use crate::index::tree_codes_search::{candidate_walk, note_coded_retry, refine_rows, CodedScan};
-use crate::index::tree_icache::internal_cache_bytes;
 use crate::index::tree_walk::{pad_query, Lookahead};
 use crate::small_n_search::{OrderedF32, OrderedFloat};
 
@@ -468,11 +467,10 @@ pub(super) fn search_tree_scored(
             XP_INTERNAL_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
             let mut fresh: Vec<(f32, u32)> = Vec::new();
             let collect_fresh = prefetch_pages() > 0;
-            let cached = coded.is_some() && internal_cache_bytes() > 0;
             s.internal_scores(
                 (page_id, depth),
                 (query, qn2),
-                cached,
+                coded.is_some(),
                 |child, d2, e, radius| {
                     let low = if e > 0.0 {
                         (d2.sqrt() - e).max(0.0).powi(2)
@@ -504,7 +502,7 @@ pub(super) fn search_tree_scored(
             if m > 0 {
                 fresh.select_nth_unstable_by(m - 1, |a, b| a.0.total_cmp(&b.0));
                 for &(_, child) in &fresh[..m] {
-                    s.prefetch_page(child);
+                    s.prefetch_child(child, coded.is_some());
                 }
             }
             continue;

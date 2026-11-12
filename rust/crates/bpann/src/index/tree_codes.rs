@@ -169,6 +169,11 @@ impl TreeStore {
         &self.codes[start..start + rb]
     }
 
+    pub fn code_rows(&self, id: u32, n: usize) -> &[u8] {
+        let start = self.code_page_range(id).start + CODE_PAGE_HEADER;
+        &self.codes[start..start + n * code_row_bytes(self.num_dim)]
+    }
+
     pub(super) fn set_codes_valid(&mut self, id: u32, valid: bool) {
         let word = if valid { VALID } else { 0 };
         self.code_page_mut(id)[..4].copy_from_slice(&word.to_le_bytes());
