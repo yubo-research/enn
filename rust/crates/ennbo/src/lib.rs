@@ -258,7 +258,11 @@ pub fn set_internal_cache_bytes(value: usize) {
 
 pub fn take_internal_cache_stats() -> (u64, u64, usize) {
     let (hits, misses) = ennbo_bpann::index::tree_icache::take_internal_cache_stats();
-    (hits, misses, ennbo_bpann::index::tree_icache::internal_cache_used())
+    (
+        hits,
+        misses,
+        ennbo_bpann::index::tree_icache::internal_cache_used(),
+    )
 }
 
 pub fn set_code_prefetch(value: usize) {

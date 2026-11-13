@@ -20,6 +20,7 @@ pub mod tree_search_knobs;
 pub mod tree_store;
 mod tree_store_files;
 mod tree_store_open;
+mod tree_topk;
 mod tree_walk;
 
 pub use build::{BpannIndex, IndexHeader, DEFAULT_LEAF_CAPACITY};

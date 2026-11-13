@@ -207,7 +207,10 @@ impl TreeStore {
             Cow::Borrowed(self.code_rows(id, n))
         } else {
             let mut out = vec![0u8; n * rb];
-            for (o, c) in out.chunks_exact_mut(rb).zip(self.block(id).chunks_exact(self.num_dim)) {
+            for (o, c) in out
+                .chunks_exact_mut(rb)
+                .zip(self.block(id).chunks_exact(self.num_dim))
+            {
                 encode_row(c, o);
             }
             Cow::Owned(out)
@@ -218,8 +221,9 @@ impl TreeStore {
         }
         if cached {
             MISSES.fetch_add(1, Ordering::Relaxed);
-            self.icache
-                .insert_with((id, depth), routes, n * rb, |out| out.copy_from_slice(&rows));
+            self.icache.insert_with((id, depth), routes, n * rb, |out| {
+                out.copy_from_slice(&rows)
+            });
         }
     }
 }

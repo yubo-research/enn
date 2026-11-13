@@ -11,6 +11,16 @@ thread_local! {
 
 pub const MORPH_LAPS: usize = 16;
 
+fn morph_laps() -> usize {
+    static LAPS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *LAPS.get_or_init(|| {
+        std::env::var("ENN_MORPH_LAPS")
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(MORPH_LAPS)
+    })
+}
+
 pub const MORPH_WORK_PER_ADD: usize = 6 * TREE_LEAF_CAPACITY;
 pub const MORPH_POOL_LEAVES: usize = 2 * TREE_FANOUT;
 
@@ -24,8 +34,12 @@ pub struct Morph {
 
 impl Morph {
     pub fn schedule(&mut self, tree: &Tree) {
-        self.laps_left = MORPH_LAPS;
-        self.slots_left = tree.num_pages();
+        self.laps_left = morph_laps();
+        self.slots_left = if self.laps_left > 0 {
+            tree.num_pages()
+        } else {
+            0
+        };
     }
 
     pub fn active(&self) -> bool {

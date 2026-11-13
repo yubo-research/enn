@@ -58,3 +58,25 @@ fn epsilon_prunes_more_and_zero_is_exact() {
     assert!(top.cannot_improve(4.1));
     set_stop_epsilon(TREE_SEARCH_STOP_EPSILON);
 }
+
+#[test]
+fn cascade_shares_one_leaf_budget_and_refuses_a_walk_that_cannot_fit() {
+    let n = 3000;
+    let budget = leaf_budget(n);
+    cascade_reset();
+    assert_eq!(cascade_remaining(n), budget);
+    assert!(!cascade_spent(n), "a first walk always fits");
+    let walk = budget * 6 / 10;
+    CASCADE_LEAVES.with(|c| c.set(walk));
+    LAST_WALK_LEAVES.with(|c| c.set(walk));
+    assert_eq!(cascade_remaining(n), budget - walk);
+    assert!(
+        cascade_spent(n),
+        "40% of the budget cannot hold a second 60% walk"
+    );
+    let small = budget / 4;
+    CASCADE_LEAVES.with(|c| c.set(small));
+    LAST_WALK_LEAVES.with(|c| c.set(small));
+    assert!(!cascade_spent(n), "a quarter-budget walk can be repeated");
+    cascade_reset();
+}

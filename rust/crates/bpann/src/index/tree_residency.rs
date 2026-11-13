@@ -64,8 +64,18 @@ fn release_map(map: &MmapMut) {
     }
 }
 
+fn env_budget_cap() -> Option<usize> {
+    static CAP: OnceLock<Option<usize>> = OnceLock::new();
+    *CAP.get_or_init(|| {
+        std::env::var("ENN_RESIDENT_BUDGET_BYTES")
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+    })
+}
+
 impl Residency {
     pub fn new(budget: usize) -> Self {
+        let budget = env_budget_cap().map_or(budget, |cap| budget.min(cap));
         Self {
             bits: Vec::new(),
             advised: (0..(1usize << ADVISED_BITS_LOG2) / 64)
@@ -102,6 +112,10 @@ impl Residency {
         self.tracking = on;
     }
 
+    fn limit(&self) -> usize {
+        self.budget.max(self.reserved + self.budget / 2)
+    }
+
     pub fn estimate(&self) -> usize {
         self.bytes.load(Ordering::Relaxed)
     }
@@ -125,7 +139,7 @@ impl Residency {
                 continue;
             }
             if self.bytes.fetch_add(UNIT_BYTES, Ordering::Relaxed) + UNIT_BYTES + self.reserved
-                > self.budget
+                > self.limit()
             {
                 self.release(maps);
             }
@@ -214,6 +228,29 @@ mod tests {
         assert_eq!(r.estimate(), UNIT_BYTES);
         r.forget();
         assert_eq!(r.estimate(), 0);
+    }
+
+    #[test]
+    fn reserved_bytes_past_the_budget_still_leave_room_between_releases() {
+        let (_a, m) = maps(1 << 20);
+        let mut r = Residency::new(1 << 30);
+        r.set_budget(8 * UNIT_BYTES);
+        r.update_tracking(1 << 20, 100 * UNIT_BYTES);
+        assert!(r.tracking());
+        for unit in 0..4 {
+            r.touch(unit * UNIT_BYTES, 1, &[&m]);
+        }
+        assert_eq!(
+            r.estimate(),
+            4 * UNIT_BYTES,
+            "budget/2 of room above the reserved bytes"
+        );
+        r.touch(4 * UNIT_BYTES, 1, &[&m]);
+        assert_eq!(
+            r.estimate(),
+            0,
+            "the fifth window passes the limit and releases"
+        );
     }
 
     #[test]

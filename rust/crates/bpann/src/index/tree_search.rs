@@ -9,8 +9,9 @@ use crate::index::tree::Tree;
 use crate::index::tree_codes::{code_prefetch, leaf_codes};
 pub use crate::index::tree_codes_search::take_coded_retries;
 use crate::index::tree_codes_search::{candidate_walk, note_coded_retry, refine_rows, CodedScan};
+use crate::index::tree_topk::TopK;
 use crate::index::tree_walk::{pad_query, Lookahead};
-use crate::small_n_search::{OrderedF32, OrderedFloat};
+use crate::small_n_search::OrderedF32;
 
 pub use super::tree_search_knobs::*;
 use super::tree_search_knobs::{F32_RERANK_SKIP, SKIP_BUDGET_FALLBACK};
@@ -102,6 +103,28 @@ pub fn take_internal_totals() -> (u64, u64) {
     )
 }
 
+thread_local! {
+    static CASCADE_LEAVES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static LAST_WALK_LEAVES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn cascade_spent(indexed_rows: usize) -> bool {
+    cascade_remaining(indexed_rows) < LAST_WALK_LEAVES.with(std::cell::Cell::get).max(1)
+}
+
+fn cascade_reset() {
+    CASCADE_LEAVES.with(|c| c.set(0));
+    LAST_WALK_LEAVES.with(|c| c.set(0));
+}
+
+fn cascade_remaining(indexed_rows: usize) -> usize {
+    if exact_fallback() {
+        usize::MAX
+    } else {
+        leaf_budget(indexed_rows).saturating_sub(CASCADE_LEAVES.with(std::cell::Cell::get))
+    }
+}
+
 pub fn leaf_budget(indexed_rows: usize) -> usize {
     let ln_n = (indexed_rows.max(1) as f64).ln();
     ((leaf_coefficient() * ln_n).ceil() as usize).max(1)
@@ -150,49 +173,6 @@ fn lower_bound(d2: f32, radius: f32) -> f32 {
 pub const TREE_SEARCH_INTERNAL_PAGES_PER_LN_N: f64 = 10.0;
 
 pub(super) type FrontierItem = (u16, OrderedF32, OrderedF32, u32, u16);
-
-struct TopK {
-    k: usize,
-    heap: BinaryHeap<(OrderedFloat<f64>, u32)>,
-}
-
-impl TopK {
-    fn offer(&mut self, row: u32, dist: f64) {
-        if self.heap.len() < self.k {
-            self.heap.push((OrderedFloat(dist), row));
-        } else if let Some(&(worst, worst_row)) = self.heap.peek() {
-            if (OrderedFloat(dist), row) < (worst, worst_row) {
-                self.heap.pop();
-                self.heap.push((OrderedFloat(dist), row));
-            }
-        }
-    }
-
-    fn cannot_improve(&self, bound: f32) -> bool {
-        let scale = (1.0 + stop_epsilon()).powi(2);
-        let lower =
-            (f64::from(bound) * (1.0 - 1e-4) - 64.0 * f32::MIN_POSITIVE as f64).max(0.0) * scale;
-        self.heap.len() >= self.k && self.heap.peek().is_some_and(|&(worst, _)| lower > worst.0)
-    }
-
-    fn limit(&self) -> f64 {
-        if self.heap.len() < self.k {
-            f64::INFINITY
-        } else {
-            self.heap.peek().map_or(f64::INFINITY, |p| p.0 .0)
-        }
-    }
-
-    fn into_sorted(self) -> Vec<(u32, f64)> {
-        let mut out: Vec<(u32, f64)> = self.heap.into_iter().map(|(d, r)| (r, d.0)).collect();
-        out.sort_by(|a, b| {
-            OrderedFloat(a.1)
-                .cmp(&OrderedFloat(b.1))
-                .then(a.0.cmp(&b.0))
-        });
-        out
-    }
-}
 
 pub fn search_tree(
     tree: &Tree,
@@ -245,6 +225,7 @@ pub fn search_tree_refined_with_extra(
     store: &MmapSearchStore<'_>,
     extra: usize,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
+    cascade_reset();
     refined_walk(tree, query, k, store, extra, leaf_codes())
 }
 
@@ -263,11 +244,7 @@ fn refined_walk(
     let coded = codes && tree.rows_cached();
     let mut scaled = Vec::with_capacity(query.len());
     bpann_row_to_f32(query, store.scale_x, store.x_scale, &mut scaled);
-    let budget = if exact_fallback() {
-        usize::MAX
-    } else {
-        leaf_budget(tree.header.indexed_rows)
-    };
+    let budget = cascade_remaining(tree.header.indexed_rows).max(1);
     let stops_before = F32_WALKS.budget_stops.load(Ordering::Relaxed);
     let t_walk = std::time::Instant::now();
     let (candidates, boundary) = candidate_walk(tree, &scaled, (k, extra, budget), coded, store)?;
@@ -294,14 +271,17 @@ fn refined_walk(
     let certified = refined
         .get(k.saturating_sub(1))
         .is_some_and(|p| refinement_lower_bound(tree, query, store, boundary) > p.1);
-    let skip = stopped && SKIP_BUDGET_FALLBACK.load(Ordering::Relaxed) != 0 && refined.len() >= k;
+    let spent = cascade_spent(tree.header.indexed_rows);
+    let skip = (stopped || spent)
+        && SKIP_BUDGET_FALLBACK.load(Ordering::Relaxed) != 0
+        && refined.len() >= k;
     if !all_rows && !skip && (!tree.rows_cached() || !certified) {
         if coded {
             note_coded_retry();
             return refined_walk(tree, query, k, store, extra, false);
         }
         FALLBACK_RETURNS.fetch_add(1, Ordering::Relaxed);
-        return search_tree_f64(tree, query, k, store);
+        return f64_walk(tree, query, k, store);
     }
     CERTIFIED_RETURNS.fetch_add(1, Ordering::Relaxed);
     refined.truncate(k);
@@ -365,6 +345,16 @@ pub fn search_tree_f64(
     k: usize,
     store: &MmapSearchStore<'_>,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
+    cascade_reset();
+    f64_walk(tree, query, k, store)
+}
+
+fn f64_walk(
+    tree: &Tree,
+    query: &[f64],
+    k: usize,
+    store: &MmapSearchStore<'_>,
+) -> Result<Vec<(u32, f64)>, BpannError> {
     let mut scaled = Vec::with_capacity(query.len());
     bpann_row_to_f32(query, store.scale_x, store.x_scale, &mut scaled);
     let query_scaled: Vec<f64> = query
@@ -378,11 +368,7 @@ pub fn search_tree_f64(
             }
         })
         .collect();
-    let budget = if exact_fallback() {
-        usize::MAX
-    } else {
-        leaf_budget(tree.header.indexed_rows)
-    };
+    let budget = cascade_remaining(tree.header.indexed_rows).max(1);
     let slack = F32Slack::new(tree, query, store);
     search_tree_scored(
         tree,
@@ -520,6 +506,8 @@ pub(super) fn search_tree_scored(
         leaves += 1;
     }
     meter.record(leaves, stopped_on_budget);
+    CASCADE_LEAVES.with(|c| c.set(c.get() + leaves));
+    LAST_WALK_LEAVES.with(|c| c.set(leaves));
     Ok(top.into_sorted())
 }
 

@@ -187,7 +187,10 @@ fn soft_sync_advances_index_without_rewriting_pages() {
     assert!(pre_idx[[0, 0]] >= 0);
 
     b.persist_index_to_disk().unwrap();
-    assert!(!pages_path.exists(), "a stamped persist writes no pages.bin");
+    assert!(
+        !pages_path.exists(),
+        "a stamped persist writes no pages.bin"
+    );
 
     b.ensure_index_sync().unwrap();
     assert!(!pages_path.exists(), "soft_sync must not write pages.bin");
@@ -215,7 +218,10 @@ fn soft_sync_keeps_disk_dirty_until_hard_persist() {
 
     let stamp = std::fs::read(path.join("index/tree_state.json")).unwrap();
     b.persist_index_to_disk().unwrap();
-    assert_eq!(stamp, std::fs::read(path.join("index/tree_state.json")).unwrap());
+    assert_eq!(
+        stamp,
+        std::fs::read(path.join("index/tree_state.json")).unwrap()
+    );
 }
 
 #[test]
@@ -233,12 +239,22 @@ fn persist_idempotent_skips_pages_rewrite() {
     b.ensure_index_sync().unwrap();
     b.persist_index_to_disk().unwrap();
     let snapshot = || -> Vec<Vec<u8>> {
-        ["header.json", "tree_state.json", "tree_meta.bin", "tree_slots.bin", "tree_codes.bin"]
-            .iter()
-            .map(|f| fs::read(path.join("index").join(f)).unwrap())
-            .collect()
+        [
+            "header.json",
+            "tree_state.json",
+            "tree_meta.bin",
+            "tree_slots.bin",
+            "tree_codes.bin",
+        ]
+        .iter()
+        .map(|f| fs::read(path.join("index").join(f)).unwrap())
+        .collect()
     };
     let first = snapshot();
     b.persist_index_to_disk().unwrap();
-    assert_eq!(first, snapshot(), "a second persist must not change any index file");
+    assert_eq!(
+        first,
+        snapshot(),
+        "a second persist must not change any index file"
+    );
 }
