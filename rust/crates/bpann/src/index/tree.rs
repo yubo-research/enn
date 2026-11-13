@@ -135,10 +135,14 @@ impl Tree {
     pub fn insert_row(&mut self, row: u32, v: &[f32]) -> Result<(), BpannError> {
         let mut path: Vec<(u32, usize)> = Vec::new();
         let mut cur = self.header.root_page_id;
+        let sampled = updates_centroid(row);
         loop {
             let s = &mut self.store;
-            s.set_count(cur, s.count(cur) + 1);
+            if !s.is_leaf(cur) && sampled {
+                s.set_count(cur, s.count(cur) + TREE_CENTROID_STRIDE as usize);
+            }
             if s.is_leaf(cur) {
+                s.set_count(cur, s.count(cur) + 1);
                 s.push_entry(cur, row, v);
                 self.header.indexed_rows += 1;
                 if self.store.len(cur) > TREE_LEAF_CAPACITY {
@@ -148,9 +152,14 @@ impl Tree {
             }
             let slot = nearest(s.block(cur), v);
             let child = s.ids(cur)[slot];
-            let n_child = s.count(child) + 1;
+            let n_child = s.count(child)
+                + if s.is_leaf(child) {
+                    1
+                } else {
+                    TREE_CENTROID_STRIDE as usize
+                };
             let d = dist(v, &s.block(cur)[slot * v.len()..(slot + 1) * v.len()]);
-            let r = if updates_centroid(row) {
+            let r = if sampled {
                 let step = (TREE_CENTROID_STRIDE as f32 / n_child as f32).min(1.0);
                 mean_update(s.entry_mut(cur, slot), v, step);
                 (s.radius(child) + d * step).max(d * (1.0 - step))

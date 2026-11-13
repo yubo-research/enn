@@ -144,11 +144,18 @@ impl Tree {
         (0..copy.num_pages() as u32).for_each(|p| copy.store.set_count(p, u32::MAX as usize));
         assert!(copy.recount(), "tree does not recount");
         for p in 0..self.num_pages() as u32 {
-            assert_eq!(
-                self.store.count(p),
-                copy.store.count(p),
-                "count of page {p}"
-            );
+            let (got, exact) = (self.store.count(p) as f64, copy.store.count(p) as f64);
+            if self.store.is_leaf(p) {
+                assert_eq!(got, exact, "count of leaf {p}");
+            } else {
+                // Internal counts are sampled estimates (see `insert_row`): six standard
+                // deviations of a stride-sampled count, plus slack for small pages.
+                let tol = 6.0 * (16.0 * exact).sqrt() + 64.0;
+                assert!(
+                    (got - exact).abs() <= tol,
+                    "count of page {p}: {got} vs {exact}"
+                );
+            }
             assert_eq!(
                 self.store.parent(p),
                 copy.store.parent(p),
