@@ -204,6 +204,23 @@ impl TreeStore {
         }
     }
 
+    pub(super) fn advise_node(&self, id: u32) {
+        let i = id as usize;
+        if i >= self.num_pages {
+            return;
+        }
+        let n = self.len(id).min(SLOT_ENTRIES - 1);
+        let wn = (META_HDR_WORDS + n + 1).min(META_WORDS) * 4;
+        let _ = self
+            .meta
+            .advise_range(memmap2::Advice::WillNeed, i * META_WORDS * 4, wn);
+        let _ = self.slots.advise_range(
+            memmap2::Advice::WillNeed,
+            i * self.slot_words * 4,
+            (n + 1) * self.num_dim * 4,
+        );
+    }
+
     pub(super) fn advise_append(&self, id: u32) {
         let i = id as usize;
         if i >= self.num_pages {

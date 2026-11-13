@@ -108,13 +108,28 @@ impl Tree {
         ids
     }
 
-    pub fn advise_insert(&self, v: &[f32]) {
+    pub fn advise_insert_group(&self, rows: &[Vec<f32>]) {
         let s = &self.store;
-        let mut cur = self.header.root_page_id;
-        while !s.is_leaf(cur) {
-            cur = s.ids(cur)[nearest(s.block(cur), v)];
+        let mut cur = vec![self.header.root_page_id; rows.len()];
+        loop {
+            let mut seen = std::collections::HashSet::new();
+            for &c in cur.iter().filter(|&&c| seen.insert(c)) {
+                s.advise_node(c);
+            }
+            let mut any = false;
+            for (c, v) in cur.iter_mut().zip(rows) {
+                if !s.is_leaf(*c) {
+                    *c = s.ids(*c)[nearest(s.block(*c), v)];
+                    any = true;
+                }
+            }
+            if !any {
+                break;
+            }
         }
-        s.advise_append(cur);
+        for &c in &cur {
+            s.advise_append(c);
+        }
     }
 
     pub fn insert_row(&mut self, row: u32, v: &[f32]) -> Result<(), BpannError> {
