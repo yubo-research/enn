@@ -166,7 +166,7 @@ impl TreeStore {
     pub fn prefetch_child(&self, id: u32, codes: bool) {
         if !codes || self.is_leaf(id) {
             self.prefetch_page(id);
-        } else if self.residency.first_advice(id) {
+        } else {
             self.advise_codes(id);
         }
     }

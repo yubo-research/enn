@@ -10,6 +10,7 @@ use crate::index::tree_store_files::{named_file, scratch_file};
 const CODE_PAGE_HEADER: usize = 64;
 const ROW_HEADER: usize = 8;
 const VALID: u32 = 0xC0DE_0001;
+const CODE_ADVICE_KEY: u32 = 1 << 31;
 
 pub const TREE_LEAF_CODES: bool = true;
 pub const TREE_CODE_EXTRA: usize = 30;
@@ -204,6 +205,9 @@ impl TreeStore {
     }
 
     pub fn advise_codes(&self, id: u32) {
+        if !self.residency.first_advice(id | CODE_ADVICE_KEY) {
+            return;
+        }
         let r = self.code_page_range(id);
         let used = CODE_PAGE_HEADER + self.len(id) * code_row_bytes(self.num_dim);
         let _ = self
