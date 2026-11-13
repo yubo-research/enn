@@ -38,6 +38,8 @@ impl Clone for IncrementalIndex {
     }
 }
 
+const ADD_ADVISE_BATCH: usize = 32;
+
 impl IncrementalIndex {
     pub fn new(index_dir: PathBuf) -> Self {
         Self {
@@ -156,7 +158,17 @@ impl IncrementalIndex {
         if self.tree.is_none() && end.saturating_sub(self.indexed_rows) >= BULK_BUILD_MIN_ROWS {
             self.bulk_build_from(train_x, num_dim, (scale_x, x_scale), end)?;
         }
-        for row in self.indexed_rows..end {
+        let start = self.indexed_rows;
+        for row in start..end {
+            if (row - start).is_multiple_of(ADD_ADVISE_BATCH) {
+                if let Some(tree) = self.tree.as_ref() {
+                    for r in (row..end.min(row + ADD_ADVISE_BATCH)).filter(|&r| self.indexable(r)) {
+                        bpann_row_to_f32(train_x.mmap_row_slice(r)?, scale_x, x_scale, &mut v);
+                        v.resize(tree_dim, 0.0);
+                        tree.advise_insert(&v);
+                    }
+                }
+            }
             if !self.indexable(row) {
                 self.indexed_rows = row + 1;
                 continue;

@@ -108,6 +108,15 @@ impl Tree {
         ids
     }
 
+    pub fn advise_insert(&self, v: &[f32]) {
+        let s = &self.store;
+        let mut cur = self.header.root_page_id;
+        while !s.is_leaf(cur) {
+            cur = s.ids(cur)[nearest(s.block(cur), v)];
+        }
+        s.advise_append(cur);
+    }
+
     pub fn insert_row(&mut self, row: u32, v: &[f32]) -> Result<(), BpannError> {
         let mut path: Vec<(u32, usize)> = Vec::new();
         let mut cur = self.header.root_page_id;

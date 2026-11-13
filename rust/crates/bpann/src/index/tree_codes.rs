@@ -4,7 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 use crate::error::BpannError;
-use crate::index::tree_store::{TreeStore, CODES_FILE, SLOT_ENTRIES};
+use crate::index::tree_store::{TreeStore, CODES_FILE, META_HDR_WORDS, META_WORDS, SLOT_ENTRIES};
 use crate::index::tree_store_files::{named_file, scratch_file};
 
 const CODE_PAGE_HEADER: usize = 64;
@@ -202,6 +202,38 @@ impl TreeStore {
                 self.encode_page(id);
             }
         }
+    }
+
+    pub(super) fn advise_append(&self, id: u32) {
+        let i = id as usize;
+        if i >= self.num_pages {
+            return;
+        }
+        let n = self.len(id).min(SLOT_ENTRIES - 1);
+        let wn = (META_HDR_WORDS + n + 1).min(META_WORDS) * 4;
+        let _ = self
+            .meta
+            .advise_range(memmap2::Advice::WillNeed, i * META_WORDS * 4, wn);
+        let row = self.num_dim * 4;
+        let _ = self.slots.advise_range(
+            memmap2::Advice::WillNeed,
+            i * self.slot_words * 4 + n * row,
+            row,
+        );
+        self.advise_code_tail(id, n);
+    }
+
+    pub(super) fn advise_code_tail(&self, id: u32, slot: usize) {
+        let start = self.code_page_range(id).start;
+        let rb = code_row_bytes(self.num_dim);
+        let _ = self
+            .codes
+            .advise_range(memmap2::Advice::WillNeed, start, CODE_PAGE_HEADER);
+        let _ = self.codes.advise_range(
+            memmap2::Advice::WillNeed,
+            start + CODE_PAGE_HEADER + slot * rb,
+            rb,
+        );
     }
 
     pub fn advise_codes(&self, id: u32) {
