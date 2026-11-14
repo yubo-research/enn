@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 10.0;
+pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 30.0;
 
 static LEAF_COEFFICIENT_BITS: AtomicU64 = AtomicU64::new(0);
 

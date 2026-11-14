@@ -32,6 +32,15 @@ def rss():
     return d
 
 
+def io():
+    d = {}
+    for l in Path("/proc/self/io").read_text().splitlines():
+        k, _, v = l.partition(":")
+        if k in ("read_bytes", "write_bytes"):
+            d[k] = int(v)
+    return d
+
+
 def dsize(p):
     return sum(f.stat().st_size for f in Path(p).rglob("*") if f.is_file()) / 2**30
 
@@ -70,6 +79,7 @@ n = 1
 for cp in grid:
     rows = cp - n
     t_add = t_sync = 0.0
+    io0 = io()
     while n < cp:
         b = min(BATCH, cp - n)
         x, y = make(rng, b)
@@ -83,6 +93,7 @@ for cp in grid:
     t = time.perf_counter()
     model.ensure_index_sync()
     t_sync = time.perf_counter() - t
+    io1 = io()
     nan = (None, None, None)
     post = med(lambda: model.posterior(xq, params=P, flags=F)) if cp <= QMAX_N else nan
     draw = (
@@ -111,6 +122,8 @@ for cp in grid:
             "draw_max": draw[2],
             "nq": NQ,
             "disk_gib": dsize(WORK),
+            "rd_b_row": (io1["read_bytes"] - io0["read_bytes"]) / max(rows, 1),
+            "wr_b_row": (io1["write_bytes"] - io0["write_bytes"]) / max(rows, 1),
             **rss(),
             "wall_s": time.perf_counter() - t0all,
         }

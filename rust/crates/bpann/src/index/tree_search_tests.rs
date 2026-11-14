@@ -8,7 +8,7 @@ fn exact_fallback_defaults_off() {
 #[test]
 fn leaf_budget_grows_like_ln_n() {
     assert_eq!(leaf_budget(0), 1);
-    assert_eq!(leaf_budget(1_000_000), 139);
+    assert_eq!(leaf_budget(1_000_000), 415);
     let ratio = leaf_budget(10_000_000) as f64 / leaf_budget(1_000_000) as f64;
     assert!((ratio - 10_000_000f64.ln() / 1_000_000f64.ln()).abs() < 1e-2);
 }

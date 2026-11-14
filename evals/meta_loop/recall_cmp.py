@@ -1,0 +1,97 @@
+import json
+import os
+import resource
+import sys
+import time
+
+os.environ.setdefault("RAYON_NUM_THREADS", "1")
+import numpy as np
+from scipy.stats import norm
+
+from enn._rust import leaf_coefficient, set_leaf_coefficient
+from enn.enn.enn_class import EpistemicNearestNeighbors
+from enn.enn.enn_params import ENNParams, PosteriorFlags
+
+D, N, SEED = int(sys.argv[1]), int(float(sys.argv[2])), int(sys.argv[3])
+LEAF = float(sys.argv[4])
+WORK, OUT = sys.argv[5], sys.argv[6]
+NOISE, NTEST, BATCH, K = 0.1, 1000, 1000, 10
+rng = np.random.default_rng(SEED)
+
+
+def f(x):
+    return np.sin(3 * x[:, : min(5, D)]).sum(1, keepdims=True)
+
+
+set_leaf_coefficient(LEAF)
+x0 = rng.random((1, D))
+y0 = f(x0) + NOISE * rng.standard_normal((1, 1))
+m = EpistemicNearestNeighbors(x0, y0, work_dir=WORK)
+X = [x0]
+Y = [y0]
+t_add, n = 0.0, 1
+while n < N:
+    b = min(BATCH, N - n)
+    x = rng.random((b, D))
+    y = f(x) + NOISE * rng.standard_normal((b, 1))
+    t = time.perf_counter()
+    m.add(x, y)
+    t_add += time.perf_counter() - t
+    X.append(x)
+    Y.append(y)
+    n += b
+t = time.perf_counter()
+m.ensure_index_sync()
+t_sync = time.perf_counter() - t
+X = np.concatenate(X, axis=0)
+Y = np.concatenate(Y, axis=0).ravel()
+
+xt = np.random.default_rng(10_000 + SEED).random((NTEST, D))
+ft = f(xt)
+yt = ft + NOISE * np.random.default_rng(20_000 + SEED).standard_normal((NTEST, 1))
+
+exact = np.empty((NTEST, K), dtype=np.int64)
+xx = (X * X).sum(1)
+for s in range(0, NTEST, 100):
+    q = xt[s : s + 100]
+    d2 = (q * q).sum(1)[:, None] + xx[None, :] - 2.0 * q @ X.T
+    exact[s : s + 100] = np.argpartition(d2, K, axis=1)[:, :K]
+
+t = time.perf_counter()
+approx = m.neighbors(xt, K)
+t_nb = time.perf_counter() - t
+recall = np.mean(
+    [len(set(a.tolist()) & set(e.tolist())) / K for a, e in zip(approx, exact)]
+)
+
+rmse_exact = float(np.sqrt(np.mean((Y[exact].mean(1) - ft.ravel()) ** 2)) / ft.std())
+rmse_approx = float(np.sqrt(np.mean((Y[approx].mean(1) - ft.ravel()) ** 2)) / ft.std())
+
+rec = {
+    "D": D,
+    "n": N,
+    "seed": SEED,
+    "leaf_coef": LEAF,
+    "leaf_coef_read": float(leaf_coefficient()),
+    "add_us_row": 1e6 * (t_add + t_sync) / N,
+    "recall_at_10": float(recall),
+    "neighbors_ms_per_query": 1e3 * t_nb / NTEST,
+    "knn_nrmse_exact": rmse_exact,
+    "knn_nrmse_approx": rmse_approx,
+}
+P = ENNParams(
+    k_num_neighbors=K,
+    epistemic_variance_scale=1.0,
+    aleatoric_variance_scale=NOISE**2,
+)
+t = time.perf_counter()
+post = m.posterior(xt, params=P, flags=PosteriorFlags(observation_noise=True))
+rec["query_s"] = time.perf_counter() - t
+mu = np.asarray(post.mu).ravel()
+se = np.asarray(post.se).ravel()
+rec["nrmse"] = float(np.sqrt(np.mean((mu - ft.ravel()) ** 2)) / ft.std())
+rec["loglik"] = float(norm.logpdf(yt.ravel(), mu, se).mean())
+rec["maxrss_mb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+with open(OUT, "a") as fh:
+    fh.write(json.dumps(rec) + "\n")
+print(rec)
