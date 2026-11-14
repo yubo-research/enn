@@ -273,9 +273,14 @@ impl Tree {
         let new_id = s.alloc_near(Kind::Internal, &near)?;
         s.set_count(new_id, n_b);
         s.set_radius(new_id, r_b);
-        kids_b
-            .iter()
-            .for_each(|&kid| s.set_parent(kid, Some(new_id)));
+        let kids_b = if TreeStore::sib_split_fits(kids_b.len()) {
+            s.relocate_block(&kids_b, new_id)?
+        } else {
+            kids_b
+                .iter()
+                .for_each(|&kid| s.set_parent(kid, Some(new_id)));
+            kids_b
+        };
         s.set_entries(page_id, &kids_a, &cents_a);
         s.set_entries(new_id, &kids_b, &cents_b);
         self.attach_sibling(path, (page_id, ca), (new_id, cb))
