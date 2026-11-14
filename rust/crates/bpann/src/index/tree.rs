@@ -198,7 +198,8 @@ impl Tree {
         }
         s.set_ids_only(leaf, &kept_ids);
         s.set_count(leaf, keep);
-        let new_id = s.alloc(Kind::Leaf)?;
+        let near = sibling_ids(s, leaf, path.last().map(|&(p, _)| p));
+        let new_id = s.alloc_near(Kind::Leaf, &near)?;
         s.set_count(new_id, right.len());
         s.set_radius(new_id, max_dist(&vectors, &right, &cb));
         s.set_entries(new_id, &pick_ids(&right), &gather(&right));
@@ -213,7 +214,7 @@ impl Tree {
     ) -> Result<(), BpannError> {
         let s = &mut self.store;
         let Some((parent, slot)) = path.pop() else {
-            let root = s.alloc(Kind::Internal)?;
+            let root = s.alloc_near(Kind::Internal, &[old.0])?;
             s.set_count(root, s.count(old.0) + s.count(new.0));
             s.set_entries(
                 root,
@@ -268,7 +269,8 @@ impl Tree {
         let s = &mut self.store;
         s.set_radius(page_id, r_a);
         s.set_count(page_id, n_a);
-        let new_id = s.alloc(Kind::Internal)?;
+        let near = sibling_ids(s, page_id, path.last().map(|&(p, _)| p));
+        let new_id = s.alloc_near(Kind::Internal, &near)?;
         s.set_count(new_id, n_b);
         s.set_radius(new_id, r_b);
         kids_b
@@ -278,4 +280,10 @@ impl Tree {
         s.set_entries(new_id, &kids_b, &cents_b);
         self.attach_sibling(path, (page_id, ca), (new_id, cb))
     }
+}
+
+fn sibling_ids(s: &TreeStore, node: u32, parent: Option<u32>) -> Vec<u32> {
+    let mut near = vec![node];
+    near.extend(parent.map(|p| s.ids(p).to_vec()).unwrap_or_default());
+    near
 }

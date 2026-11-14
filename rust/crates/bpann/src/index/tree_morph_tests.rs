@@ -37,7 +37,7 @@ fn assert_valid(idx: &IncrementalIndex, store: &MmapColumnStore, scale: &[f64]) 
     t.assert_counts_consistent();
     assert_eq!(t.store.parent(t.header.root_page_id), None);
     let s = &t.store;
-    for id in 0..t.num_pages() as u32 {
+    for id in (0..t.num_pages() as u32).filter(|&p| !s.is_free(p)) {
         if s.is_leaf(id) {
             assert!(s.len(id) <= TREE_LEAF_CAPACITY);
             continue;

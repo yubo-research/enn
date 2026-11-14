@@ -112,8 +112,8 @@ impl Tree {
         }
         self.store.set_parent(root, None);
         let total = self.count_subtree(root, 0);
-        let all_seen =
-            (0..self.num_pages() as u32).all(|p| self.store.count(p) != u32::MAX as usize);
+        let all_seen = (0..self.num_pages() as u32)
+            .all(|p| self.store.is_free(p) || self.store.count(p) != u32::MAX as usize);
         total == Some(self.header.indexed_rows) && all_seen
     }
 
@@ -143,7 +143,7 @@ impl Tree {
         let mut copy = self.try_clone().expect("clone tree");
         (0..copy.num_pages() as u32).for_each(|p| copy.store.set_count(p, u32::MAX as usize));
         assert!(copy.recount(), "tree does not recount");
-        for p in 0..self.num_pages() as u32 {
+        for p in (0..self.num_pages() as u32).filter(|&p| !self.store.is_free(p)) {
             let (got, exact) = (self.store.count(p) as f64, copy.store.count(p) as f64);
             if self.store.is_leaf(p) {
                 assert_eq!(got, exact, "count of leaf {p}");

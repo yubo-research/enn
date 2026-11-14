@@ -18,6 +18,7 @@ pub mod tree_residency;
 pub(crate) mod tree_routes;
 pub mod tree_search;
 pub mod tree_search_knobs;
+mod tree_sib;
 pub mod tree_store;
 mod tree_store_files;
 mod tree_store_open;

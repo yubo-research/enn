@@ -264,6 +264,14 @@ impl Tree {
             } if !child_page_ids.is_empty() => {
                 (page_id, Kind::Internal, child_page_ids, centroids.concat())
             }
+            Page::Internal {
+                page_id,
+                child_page_ids,
+                ..
+            } if child_page_ids.is_empty() && (page_id as usize) < self.num_pages() => {
+                self.store.mark_free(page_id);
+                return true;
+            }
             _ => return false,
         };
         let d = self.store.num_dim();

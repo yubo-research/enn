@@ -26,8 +26,8 @@ pub fn pad_dim(dim: usize) -> usize {
     }
 }
 pub(super) const GROW_MIN_SLOTS: usize = 64;
-const NO_PARENT: u32 = u32::MAX;
-const LEN_MASK: u32 = 0x00FF_FFFF;
+pub(super) const NO_PARENT: u32 = u32::MAX;
+pub(super) const LEN_MASK: u32 = 0x00FF_FFFF;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -35,7 +35,7 @@ pub enum Kind {
     Internal,
 }
 
-fn kind_tag(kind: Kind) -> u32 {
+pub(super) fn kind_tag(kind: Kind) -> u32 {
     match kind {
         Kind::Leaf => 1 << 24,
         Kind::Internal => 2 << 24,
@@ -106,19 +106,7 @@ impl TreeStore {
     }
 
     pub fn alloc(&mut self, kind: Kind) -> Result<u32, BpannError> {
-        if self.num_pages == self.capacity {
-            self.grow(self.capacity * 2)?;
-        }
-        let id = self.num_pages as u32;
-        self.num_pages += 1;
-        self.meta_words_mut(id)[..META_HDR_WORDS].copy_from_slice(&[
-            kind_tag(kind),
-            0,
-            f32::INFINITY.to_bits(),
-            NO_PARENT,
-        ]);
-        self.set_codes_valid(id, true);
-        Ok(id)
+        self.alloc_tagged(kind_tag(kind))
     }
 
     pub fn set_kind(&mut self, id: u32, kind: Kind) {
@@ -126,7 +114,7 @@ impl TreeStore {
         m[0] = kind_tag(kind) | (m[0] & LEN_MASK);
     }
 
-    fn grow(&mut self, capacity: usize) -> Result<(), BpannError> {
+    pub(super) fn grow(&mut self, capacity: usize) -> Result<(), BpannError> {
         self.unstamp();
         self.meta = map(&self.files.0, capacity * META_WORDS * 4)?;
         self.slots = map(&self.files.1, capacity * self.slot_words * 4)?;

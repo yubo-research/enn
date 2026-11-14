@@ -84,7 +84,7 @@ impl Morph {
                 self.laps_left -= 1;
                 self.slots_left = if self.laps_left > 0 { num_pages } else { 0 };
             }
-            if !tree.store.is_leaf(page_id) {
+            if !tree.store.is_leaf(page_id) && !tree.store.is_free(page_id) {
                 return Some(page_id);
             }
         }

@@ -134,7 +134,12 @@ struct Emitted {
     count: usize,
 }
 
-fn push_internal(tree: &mut Tree, kids: &[Emitted], count: usize) -> Result<Emitted, BpannError> {
+fn push_internal(
+    tree: &mut Tree,
+    kids: &[Emitted],
+    count: usize,
+    near: &[u32],
+) -> Result<Emitted, BpannError> {
     let centroids: Vec<&[f32]> = kids.iter().map(|k| k.centroid.as_slice()).collect();
     let weights: Vec<f64> = kids.iter().map(|k| k.count as f64).collect();
     let all: Vec<usize> = (0..kids.len()).collect();
@@ -144,7 +149,7 @@ fn push_internal(tree: &mut Tree, kids: &[Emitted], count: usize) -> Result<Emit
         .map(|k| dist(&k.centroid, &centroid) + k.radius)
         .fold(0.0, f32::max);
     let s = &mut tree.store;
-    let page_id = s.alloc(Kind::Internal)?;
+    let page_id = s.alloc_near(Kind::Internal, near)?;
     let ids: Vec<u32> = kids.iter().map(|k| k.page_id).collect();
     s.set_entries(page_id, &ids, &centroids.concat());
     s.set_count(page_id, count);
@@ -168,13 +173,14 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
-    fn emit(&mut self, node: &Node) -> Result<Emitted, BpannError> {
+    fn emit(&mut self, node: &Node, near: &[u32]) -> Result<Emitted, BpannError> {
         let Node::Leaf { start, len } = node else {
-            let kids = children(node)
-                .into_iter()
-                .map(|k| self.emit(k))
-                .collect::<Result<Vec<_>, _>>()?;
-            return push_internal(&mut self.tree, &kids, node.count());
+            let mut kids: Vec<Emitted> = Vec::new();
+            for k in children(node) {
+                let ids: Vec<u32> = kids.iter().map(|e| e.page_id).collect();
+                kids.push(self.emit(k, &ids)?);
+            }
+            return push_internal(&mut self.tree, &kids, node.count(), near);
         };
         let block = &self.vs[start * self.dim..(start + len) * self.dim];
         let points: Vec<&[f32]> = block.chunks_exact(self.dim).collect();
@@ -189,7 +195,7 @@ impl Builder<'_> {
             .map(|&i| self.rows[i])
             .collect();
         let s = &mut self.tree.store;
-        let page_id = s.alloc(Kind::Leaf)?;
+        let page_id = s.alloc_near(Kind::Leaf, near)?;
         s.set_entries(page_id, &row_ids, block);
         s.set_count(page_id, *len);
         s.set_radius(page_id, radius);
@@ -218,7 +224,7 @@ pub fn bulk_build(
         order: &order,
         tree: Tree::empty(num_dim, index_dir)?,
     };
-    let root_id = builder.emit(&root)?.page_id;
+    let root_id = builder.emit(&root, &[])?.page_id;
     let mut tree = builder.tree;
     tree.header.root_page_id = root_id;
     tree.header.indexed_rows = rows.len();
@@ -268,7 +274,7 @@ mod tests {
         assert_eq!(tree.leaf_row_ids(), rows);
         tree.assert_counts_consistent();
         let s = &tree.store;
-        for page in 0..tree.num_pages() as u32 {
+        for page in (0..tree.num_pages() as u32).filter(|&p| !s.is_free(p)) {
             if s.is_leaf(page) {
                 assert!((32..=TREE_LEAF_CAPACITY).contains(&s.len(page)));
                 continue;
@@ -283,5 +289,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn children_of_a_node_share_few_id_blocks() {
+        use crate::index::tree_sib::SIB_BLOCK;
+        if std::env::var("ENN_SIB_BLOCKS").is_ok_and(|v| v == "0") {
+            return;
+        }
+        let (n, dim) = (30_000usize, 3usize);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(11);
+        let vs: Vec<f32> = (0..n * dim).map(|_| rng.gen::<f32>()).collect();
+        let rows: Vec<u32> = (0..n as u32).collect();
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut tree = bulk_build(
+            &rows[..10_000],
+            &mut vs[..10_000 * dim].to_vec(),
+            dim,
+            dir.path().join("i"),
+        )
+        .unwrap();
+        for &row in &rows[10_000..] {
+            let r = row as usize;
+            tree.insert_row(row, &vs[r * dim..(r + 1) * dim]).unwrap();
+        }
+        tree.assert_counts_consistent();
+        let s = &tree.store;
+        let (mut groups, mut blocks) = (0usize, 0usize);
+        for p in (0..tree.num_pages() as u32).filter(|&p| !s.is_leaf(p) && !s.is_free(p)) {
+            let mut b: Vec<usize> = s.ids(p).iter().map(|&c| c as usize / SIB_BLOCK).collect();
+            b.sort_unstable();
+            b.dedup();
+            groups += 1;
+            blocks += b.len();
+        }
+        let mean = blocks as f64 / groups as f64;
+        assert!(mean < 3.0, "children span {mean} id blocks on average");
     }
 }
