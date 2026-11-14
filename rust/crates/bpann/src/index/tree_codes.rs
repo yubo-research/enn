@@ -187,6 +187,22 @@ impl TreeStore {
         encode_row(v, &mut self.code_page_mut(id)[start..start + rb]);
     }
 
+    pub fn leaf_rows(&self, id: u32) -> Vec<f32> {
+        let mut out = Vec::with_capacity(self.len(id) * self.num_dim);
+        for slot in 0..self.len(id) {
+            let (scale, _, codes) = decode_header(self.code_row(id, slot));
+            out.extend(codes.iter().map(|&c| scale * f32::from(c)));
+        }
+        out
+    }
+
+    pub fn leaf_err(&self, id: u32) -> f32 {
+        let half = 0.5 * (self.num_dim as f32).sqrt();
+        (0..self.len(id)).fold(0.0, |m, slot| {
+            m.max(half * decode_header(self.code_row(id, slot)).0)
+        })
+    }
+
     pub fn encode_page(&mut self, id: u32) {
         let d = self.num_dim;
         let n = self.len(id);
@@ -215,11 +231,13 @@ impl TreeStore {
         let _ = self
             .meta
             .advise_range(memmap2::Advice::WillNeed, i * META_WORDS * 4, wn);
-        let _ = self.slots.advise_range(
-            memmap2::Advice::WillNeed,
-            i * self.slot_words * 4,
-            (n + 1) * self.num_dim * 4,
-        );
+        if !self.is_leaf(id) {
+            let _ = self.slots.advise_range(
+                memmap2::Advice::WillNeed,
+                i * self.slot_words * 4,
+                (n + 1) * self.num_dim * 4,
+            );
+        }
     }
 
     pub(super) fn advise_meta(&self, id: u32) {
@@ -244,11 +262,13 @@ impl TreeStore {
             .meta
             .advise_range(memmap2::Advice::WillNeed, i * META_WORDS * 4, wn);
         let row = self.num_dim * 4;
-        let _ = self.slots.advise_range(
-            memmap2::Advice::WillNeed,
-            i * self.slot_words * 4 + n * row,
-            row,
-        );
+        if !self.is_leaf(id) {
+            let _ = self.slots.advise_range(
+                memmap2::Advice::WillNeed,
+                i * self.slot_words * 4 + n * row,
+                row,
+            );
+        }
         self.advise_code_tail(id, n);
     }
 

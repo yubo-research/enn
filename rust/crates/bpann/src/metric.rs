@@ -8,10 +8,39 @@ use crate::store_file::{bpann_read_json, bpann_write_json};
 pub const METRIC_MARKER_FILE: &str = "metric_x_scale.json";
 
 impl IncrementalIndex {
-    pub fn rescale_coords(&mut self, ratio: &[f64]) {
-        if let Some(tree) = self.tree.as_mut() {
-            tree.scale_rows(ratio);
+    pub fn rescale_coords(
+        &mut self,
+        ratio: &[f64],
+        coords: impl FnMut(u32, &mut Vec<f32>) -> Result<(), BpannError>,
+    ) -> Result<(), BpannError> {
+        match self.tree.as_mut() {
+            Some(tree) => tree.scale_rows(ratio, coords),
+            None => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+impl IncrementalIndex {
+    /// Test helper: rescale from unit scale, re-reading rows from `store`.
+    pub(crate) fn rescale_unit(
+        &mut self,
+        ratio: &[f64],
+        store: &crate::mmap_store::MmapColumnStore,
+    ) {
+        let tree_dim = crate::index::tree_store::pad_dim(ratio.len());
+        let x_scale: Vec<f64> = ratio.iter().map(|r| 1.0 / r).collect();
+        self.rescale_coords(ratio, |row, buf| {
+            crate::distance::bpann_row_to_f32(
+                store.mmap_row_slice(row as usize)?,
+                true,
+                &x_scale,
+                buf,
+            );
+            buf.resize(tree_dim, 0.0);
+            Ok(())
+        })
+        .unwrap();
     }
 }
 
@@ -51,7 +80,18 @@ impl BpannBackend {
         let ratio: Vec<f64> = (0..self.num_dim)
             .map(|j| self.current_scale(j) / x_scale[j])
             .collect();
-        self.index.rescale_coords(&ratio);
+        let tree_dim = crate::index::tree_store::pad_dim(self.num_dim);
+        let (train_x, new_scale) = (&self.train_x, x_scale.to_vec());
+        self.index.rescale_coords(&ratio, |row, buf| {
+            crate::distance::bpann_row_to_f32(
+                train_x.mmap_row_slice(row as usize)?,
+                true,
+                &new_scale,
+                buf,
+            );
+            buf.resize(tree_dim, 0.0);
+            Ok(())
+        })?;
         *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.scale_x = true;
         self.x_scale = x_scale.to_owned();
@@ -135,7 +175,7 @@ mod tests {
             if tree.store.is_leaf(id) {
                 out.extend(
                     tree.store
-                        .block(id)
+                        .leaf_rows(id)
                         .chunks_exact(tree.store.num_dim())
                         .map(<[f32]>::to_vec),
                 );
@@ -159,7 +199,8 @@ mod tests {
         for (u, v) in ca.iter().zip(cb.iter()) {
             for j in 0..3 {
                 let expect = v[j] / scale[j] as f32;
-                assert!((u[j] - expect).abs() <= 1e-5 * (1.0 + expect.abs()));
+                // Leaf rows are int8-decoded: allow a code step.
+                assert!((u[j] - expect).abs() <= 0.03 * (1.0 + expect.abs()));
             }
         }
         assert!(dir_a.path().join(METRIC_MARKER_FILE).exists());
@@ -301,10 +342,10 @@ mod tests {
             };
             let centroid = &tree.store.block(parent)[slot * dim..(slot + 1) * dim];
             let radius = tree.store.radius(page);
-            let outside =
-                tree.store.block(page).chunks_exact(dim).any(|row| {
-                    crate::index::tree_counts::dist(row, centroid) > radius * 1.0001 + 1e-4
-                });
+            let slack = tree.store.leaf_err(page);
+            let outside = tree.store.leaf_rows(page).chunks_exact(dim).any(|row| {
+                crate::index::tree_counts::dist(row, centroid) > radius * 1.0001 + 1e-4 + slack
+            });
             if outside {
                 return false;
             }

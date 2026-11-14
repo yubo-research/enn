@@ -41,7 +41,12 @@ impl Tree {
 
     pub fn page_centroid(&self, page: u32) -> Vec<f32> {
         let s = &self.store;
-        let points: Vec<&[f32]> = s.block(page).chunks_exact(s.num_dim()).collect();
+        let rows: std::borrow::Cow<[f32]> = if s.is_leaf(page) {
+            s.leaf_rows(page).into()
+        } else {
+            s.block(page).into()
+        };
+        let points: Vec<&[f32]> = rows.chunks_exact(s.num_dim()).collect();
         let weights: Vec<f64> = if s.is_leaf(page) {
             vec![1.0; points.len()]
         } else {
@@ -53,11 +58,12 @@ impl Tree {
     fn subtree_radius(&mut self, page: u32, centroid: &[f32], depth: usize) -> f32 {
         if self.store.is_leaf(page) {
             let d = self.store.num_dim();
+            let slack = self.store.leaf_err(page);
             return self
                 .store
-                .block(page)
+                .leaf_rows(page)
                 .chunks_exact(d)
-                .map(|row| dist(row, centroid))
+                .map(|row| dist(row, centroid) + slack)
                 .fold(0.0, f32::max);
         }
         if depth >= MAX_DEPTH {
@@ -74,7 +80,11 @@ impl Tree {
         r
     }
 
-    pub fn scale_rows(&mut self, ratio: &[f64]) {
+    pub fn scale_rows(
+        &mut self,
+        ratio: &[f64],
+        coords: impl FnMut(u32, &mut Vec<f32>) -> Result<(), BpannError>,
+    ) -> Result<(), BpannError> {
         let dim = ratio.len().max(1);
         let maximum = ratio.iter().copied().fold(0.0f64, f64::max);
         let grow = maximum as f32;
@@ -83,26 +93,18 @@ impl Tree {
         self.coordinate_absolute_error =
             self.coordinate_absolute_error * maximum + f32::MIN_POSITIVE as f64;
         for page in 0..self.num_pages() as u32 {
-            for row in self.store.block_mut(page).chunks_mut(dim) {
-                for (v, &r) in row.iter_mut().zip(ratio) {
-                    *v = (f64::from(*v) * r) as f32;
+            if !self.store.is_leaf(page) {
+                for row in self.store.block_mut(page).chunks_mut(dim) {
+                    for (v, &r) in row.iter_mut().zip(ratio) {
+                        *v = (f64::from(*v) * r) as f32;
+                    }
                 }
             }
             let r = self.store.radius(page);
             self.store.set_radius(page, r * grow);
         }
         self.store.encode_invalid_pages();
-        self.refresh_radii();
-    }
-
-    fn refresh_radii(&mut self) {
-        if !self.rows_cached || self.num_pages() == 0 {
-            return;
-        }
-        let root = self.header.root_page_id;
-        let centroid = self.page_centroid(root);
-        let radius = self.subtree_radius(root, &centroid, 0);
-        self.store.set_radius(root, radius);
+        self.fill_blocks(coords)
     }
 
     pub(crate) fn recount(&mut self) -> bool {

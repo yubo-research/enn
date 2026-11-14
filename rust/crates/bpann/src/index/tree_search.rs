@@ -519,17 +519,9 @@ fn score_leaf(
         scan.scan_leaf(s, page_id, query, qn2, &mut |i, d2| top.offer(i, d2));
         return Ok(());
     }
-    let d = query.len().max(1);
-    let rows: Vec<Option<&[f32]>> = if tree.rows_cached() {
-        s.block(page_id)
-            .chunks_exact(d)
-            .map(|x| Some(&x[..orig]))
-            .collect()
-    } else {
-        vec![None; s.ids(page_id).len()]
-    };
-    for (&row, x) in s.ids(page_id).iter().zip(rows) {
-        if let Some(distance) = score(row, x, top.limit())? {
+    let _ = (orig, query);
+    for &row in s.ids(page_id) {
+        if let Some(distance) = score(row, None, top.limit())? {
             top.offer(row, distance);
         }
     }

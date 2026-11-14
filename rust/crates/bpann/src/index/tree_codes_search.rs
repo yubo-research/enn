@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::distance::l2_sq_f32;
+use crate::distance::{bpann_row_to_f32, l2_sq_f32};
 use crate::error::BpannError;
 use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
@@ -35,7 +35,7 @@ pub(super) fn candidate_walk(
     };
     let pool = k.saturating_add(extra).min(tree.header.indexed_rows);
     if coded {
-        return Ok(search_tree_coded(tree, scaled, k, pool, budget));
+        return search_tree_coded(tree, scaled, k, pool, budget, store);
     }
     let c = search_tree(tree, scaled, pool, budget, store)?;
     let boundary = c.last().map_or(0.0, |p| f64::from(p.1));
@@ -91,16 +91,9 @@ impl CodedScan {
         if valid && !std::mem::take(&mut self.advised) {
             s.advise_codes(page);
         }
-        let d = s.num_dim();
+        debug_assert!(valid, "leaf {page} has no valid codes");
         for (slot, &row) in s.ids(page).iter().enumerate() {
-            let (d2, e) = if valid {
-                coded_sq_l2(query, qn2, s.code_row(page, slot))
-            } else {
-                (
-                    l2_sq_f32(query, &s.block(page)[slot * d..(slot + 1) * d]),
-                    0.0,
-                )
-            };
+            let (d2, e) = coded_sq_l2(query, qn2, s.code_row(page, slot));
             self.err_max = self.err_max.max(e);
             let i = self.locs.len() as u32;
             self.locs.push((row, page, slot as u32, e));
@@ -115,7 +108,8 @@ pub fn search_tree_coded(
     k: usize,
     pool: usize,
     budget: usize,
-) -> Candidates {
+    store: &MmapSearchStore<'_>,
+) -> Result<Candidates, BpannError> {
     let mut scan = CodedScan::default();
     let top = search_tree_scored(
         tree,
@@ -127,7 +121,6 @@ pub fn search_tree_coded(
         |_, _, _| Ok(None),
     )
     .unwrap_or_default();
-    let s = &tree.store;
     let bounds: Vec<(f32, f32)> = top
         .iter()
         .map(|&(i, d2)| {
@@ -155,39 +148,24 @@ pub fn search_tree_coded(
             boundary = boundary.min(lo);
         }
     }
-    for &(_, page, slot, _) in &need {
-        s.prefetch_row(page, slot as usize);
+    store
+        .train_x
+        .prefetch_rows(&need.iter().map(|n| n.0).collect::<Vec<_>>());
+    let orig = query.len();
+    let mut buf = Vec::with_capacity(orig);
+    let mut out: Vec<(u32, f32)> = Vec::with_capacity(need.len());
+    for &(row, _, _, _) in &need {
+        bpann_row_to_f32(
+            store.train_x.mmap_row_slice(row as usize)?,
+            store.scale_x,
+            store.x_scale,
+            &mut buf,
+        );
+        let n = orig.min(buf.len());
+        out.push((row, l2_sq_f32(&query[..n], &buf[..n])));
     }
-    let d = s.num_dim();
-    let orig = query.len().min(d);
-    let mut out: Vec<(u32, f32)> = need
-        .iter()
-        .map(|&(row, page, slot, _)| {
-            let x = s.row(page, slot as usize);
-            (row, l2_sq_f32(&query[..orig], &x[..orig]))
-        })
-        .collect();
     EXACT_ROWS.fetch_add(out.len() as u64, Ordering::Relaxed);
     out.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
     let lower = f64::from(boundary);
-    (out, lower * lower)
-}
-
-impl TreeStore {
-    pub fn prefetch_row(&self, id: u32, slot: usize) {
-        let off = id as usize * self.slot_words * 4 + slot * self.num_dim * 4;
-        let _ = self
-            .slots
-            .advise_range(memmap2::Advice::WillNeed, off, self.num_dim * 4);
-    }
-
-    pub fn row(&self, id: u32, slot: usize) -> &[f32] {
-        let d = self.num_dim;
-        assert!(
-            (id as usize) < self.num_pages && slot < self.len(id),
-            "bad row"
-        );
-        let off = id as usize * self.slot_words + slot * d;
-        unsafe { std::slice::from_raw_parts((self.slots.as_ptr() as *const f32).add(off), d) }
-    }
+    Ok((out, lower * lower))
 }

@@ -56,7 +56,14 @@ fn assert_valid(idx: &IncrementalIndex, store: &MmapColumnStore, scale: &[f64]) 
                 let d = dist(&scaled_row(store, row, scale), c);
                 assert!(
                     d <= s.radius(child) * 1.0001 + 1e-5,
-                    "row {row} outside page {child}"
+                    "row {row} outside page {child}: d={d} r={} leaf={} err={}",
+                    s.radius(child),
+                    s.is_leaf(child),
+                    if s.is_leaf(child) {
+                        s.leaf_err(child)
+                    } else {
+                        0.0
+                    }
                 );
             }
         }
@@ -79,7 +86,8 @@ fn leaf_spread(idx: &IncrementalIndex, d: usize) -> f64 {
     let (mut total, mut n) = (0.0f64, 0usize);
     let t = tree(idx);
     for page_id in (0..t.num_pages() as u32).filter(|&p| t.store.is_leaf(p)) {
-        let rows: Vec<&[f32]> = t.store.block(page_id).chunks_exact(d).collect();
+        let flat = t.store.leaf_rows(page_id);
+        let rows: Vec<&[f32]> = flat.chunks_exact(d).collect();
         let mean: Vec<f64> = (0..d)
             .map(|j| rows.iter().map(|r| f64::from(r[j])).sum::<f64>() / rows.len() as f64)
             .collect();
@@ -123,7 +131,7 @@ fn morph_lap_keeps_the_tree_valid_and_reaches_a_fresh_partition() {
     let store = store_with_rows(&dir, 2 * n0, d, 1);
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     sync(&mut idx, &store, &[1.0; 4], n0);
-    idx.rescale_coords(&scale);
+    idx.rescale_unit(&scale, &store);
     let before = leaf_spread(&idx, d);
     idx.start_morph();
     let mut end = n0;
@@ -153,7 +161,7 @@ fn morph_moves_references_only_and_keeps_every_page() {
     let store = store_with_rows(&dir, n0, d, 5);
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     sync(&mut idx, &store, &[1.0; 3], n0);
-    idx.rescale_coords(&scale);
+    idx.rescale_unit(&scale, &store);
     let (pages, leaves) = (tree(&idx).num_pages(), tree(&idx).leaf_row_ids().len());
     let before = leaf_spread(&idx, d);
     run_morph(&mut idx);
@@ -182,7 +190,7 @@ fn pages_with_two_leaves_are_pooled_with_their_neighbors() {
     assert_eq!(pairs.count(), 16);
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     (idx.tree, idx.indexed_rows) = (Some(built), n0);
-    idx.rescale_coords(&scale);
+    idx.rescale_unit(&scale, &store);
     let before = leaf_spread(&idx, d);
     run_morph(&mut idx);
     assert_valid(&idx, &store, &scale);
@@ -217,7 +225,7 @@ fn unbounded_search_stays_exact_during_a_morph() {
     let store = store_with_rows(&dir, n0 + 400, d, 2);
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     sync(&mut idx, &store, &[1.0; 3], n0);
-    idx.rescale_coords(&scale);
+    idx.rescale_unit(&scale, &store);
     idx.start_morph();
     let x_scale = scale.map(|v| 1.0 / v);
     let s = MmapSearchStore {
@@ -254,10 +262,11 @@ fn morphed_tree_persists_and_is_adopted_on_reopen() {
     let scale = [1.0, 0.05];
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     sync(&mut idx, &store, &[1.0; 2], 2_000);
-    idx.rescale_coords(&scale);
+    idx.rescale_unit(&scale, &store);
     idx.start_morph();
     sync(&mut idx, &store, &scale, 2_500);
     assert!(!idx.morphing());
+    assert_valid(&idx, &store, &scale);
     idx.persist_to_disk_for_backend(&store, 2, true, &[1.0, 20.0], dir.path(), 1)
         .unwrap();
     let mut reopened = IncrementalIndex::new(idx.index_dir.clone());
@@ -310,7 +319,7 @@ fn coded_leaf_scan_returns_the_same_neighbors_as_the_f32_scan() {
     let scale = vec![1.0; d];
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     sync(&mut idx, &store, &scale, n / 2);
-    idx.rescale_coords(&scale.iter().map(|_| 2.0).collect::<Vec<_>>());
+    idx.rescale_unit(&scale.iter().map(|_| 2.0).collect::<Vec<_>>(), &store);
     run_morph(&mut idx);
     let scale2 = vec![2.0; d];
     sync(&mut idx, &store, &scale2, n);

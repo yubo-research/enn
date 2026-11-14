@@ -249,9 +249,11 @@ fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
     }
     let mut rows = Vec::new();
     let mut vs = Vec::new();
+    let mut slack = 0.0f32;
     for &leaf in &leaves {
         rows.extend_from_slice(tree.store.ids(leaf));
-        vs.extend_from_slice(tree.store.block(leaf));
+        vs.extend_from_slice(&tree.store.leaf_rows(leaf));
+        slack = slack.max(tree.store.leaf_err(leaf));
     }
     if rows.len() < leaves.len() {
         return 0;
@@ -273,7 +275,10 @@ fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
         let s = &mut tree.store;
         s.entry_mut(parent, slot).copy_from_slice(&c);
         s.set_count(id, mine.len());
-        s.set_radius(id, mine.iter().map(|p| dist(p, &c)).fold(0.0, f32::max));
+        s.set_radius(
+            id,
+            mine.iter().map(|p| dist(p, &c)).fold(0.0, f32::max) + slack,
+        );
         s.set_entries(
             id,
             &group.iter().map(|&i| rows[i]).collect::<Vec<_>>(),

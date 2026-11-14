@@ -174,7 +174,8 @@ impl Tree {
 
     fn split_leaf(&mut self, leaf: u32, path: &mut Vec<(u32, usize)>) -> Result<(), BpannError> {
         let row_ids = self.store.ids(leaf).to_vec();
-        let block = self.store.block(leaf).to_vec();
+        let block = self.store.leaf_rows(leaf);
+        let slack = self.store.leaf_err(leaf);
         let vectors: Vec<&[f32]> = block.chunks(self.store.num_dim()).collect();
         let weights = vec![1.0; vectors.len()];
         let (left, right) = median_split(&vectors);
@@ -185,23 +186,13 @@ impl Tree {
             g.iter().flat_map(|&i| vectors[i].iter().copied()).collect()
         };
         let s = &mut self.store;
-        s.set_radius(leaf, max_dist(&vectors, &left, &ca));
-        let keep = left.len();
-        let mut is_left = vec![false; vectors.len()];
-        left.iter().for_each(|&i| is_left[i] = true);
-        let holes = (0..keep).filter(|&j| !is_left[j]);
-        let movers = (keep..vectors.len()).filter(|&i| is_left[i]);
-        let mut kept_ids = row_ids[..keep].to_vec();
-        for (h, m) in holes.zip(movers) {
-            s.entry_mut(leaf, h).copy_from_slice(vectors[m]);
-            kept_ids[h] = row_ids[m];
-        }
-        s.set_ids_only(leaf, &kept_ids);
-        s.set_count(leaf, keep);
+        s.set_radius(leaf, max_dist(&vectors, &left, &ca) + slack);
+        s.set_entries(leaf, &pick_ids(&left), &gather(&left));
+        s.set_count(leaf, left.len());
         let near = sibling_ids(s, leaf, path.last().map(|&(p, _)| p));
         let new_id = s.alloc_near(Kind::Leaf, &near)?;
         s.set_count(new_id, right.len());
-        s.set_radius(new_id, max_dist(&vectors, &right, &cb));
+        s.set_radius(new_id, max_dist(&vectors, &right, &cb) + slack);
         s.set_entries(new_id, &pick_ids(&right), &gather(&right));
         self.attach_sibling(path, (leaf, ca), (new_id, cb))
     }

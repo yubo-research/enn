@@ -202,6 +202,7 @@ impl TreeStore {
     }
 
     pub fn block(&self, id: u32) -> &[f32] {
+        debug_assert!(!self.is_leaf(id), "leaf {id} has no float32 slots");
         self.prefetch_page(id);
         let n = self.len(id) * self.num_dim;
         let words = &self.slot_words(id)[..n];
@@ -209,6 +210,7 @@ impl TreeStore {
     }
 
     pub fn block_mut(&mut self, id: u32) -> &mut [f32] {
+        debug_assert!(!self.is_leaf(id), "leaf {id} has no float32 slots");
         self.set_codes_valid(id, false);
         let n = self.len(id) * self.num_dim;
         let words = &mut self.slot_words_mut(id)[..n];
@@ -226,9 +228,11 @@ impl TreeStore {
             n <= SLOT_ENTRIES && block.len() == n * self.num_dim,
             "bad entries for page {id}"
         );
-        let words = self.slot_words_mut(id);
-        for (w, &v) in words.iter_mut().zip(block) {
-            *w = v.to_bits();
+        if !self.is_leaf(id) {
+            let words = self.slot_words_mut(id);
+            for (w, &v) in words.iter_mut().zip(block) {
+                *w = v.to_bits();
+            }
         }
         for (slot, v) in block.chunks_exact(self.num_dim).enumerate() {
             self.encode_code_row(id, slot, v);
@@ -244,7 +248,7 @@ impl TreeStore {
         m[META_HDR_WORDS..META_HDR_WORDS + n].copy_from_slice(ids);
         m[0] = (m[0] & !LEN_MASK) | n as u32;
         self.refresh_routes(id);
-        if !self.codes_valid(id) {
+        if !self.codes_valid(id) && !self.is_leaf(id) {
             self.encode_page(id);
         }
     }
@@ -252,13 +256,15 @@ impl TreeStore {
     pub fn push_entry(&mut self, id: u32, entry_id: u32, v: &[f32]) {
         let (n, d) = (self.len(id), self.num_dim);
         assert!(n < SLOT_ENTRIES && v.len() == d, "page {id} is full");
-        let off = id as usize * self.slot_words * 4 + n * d * 4;
-        self.residency.touch(off, d * 4, &[&self.meta, &self.slots]);
-        self.icache.invalidate(id);
-        if !append_whole_pages(&self.files.1, off, v) {
-            let words = self.slot_words_mut(id);
-            for (w, &x) in words[n * d..].iter_mut().zip(v) {
-                *w = x.to_bits();
+        if !self.is_leaf(id) {
+            let off = id as usize * self.slot_words * 4 + n * d * 4;
+            self.residency.touch(off, d * 4, &[&self.meta, &self.slots]);
+            self.icache.invalidate(id);
+            if !append_whole_pages(&self.files.1, off, v) {
+                let words = self.slot_words_mut(id);
+                for (w, &x) in words[n * d..].iter_mut().zip(v) {
+                    *w = x.to_bits();
+                }
             }
         }
         let m = self.meta_words_mut(id);
