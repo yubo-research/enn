@@ -13,6 +13,8 @@ const ROW_HEADER: usize = 8;
 const VALID: u32 = 0xC0DE_0001;
 const CODE_ADVICE_KEY: u32 = 1 << 31;
 const META_ADVICE_KEY: u32 = 1 << 30;
+const NODE_ADVICE_KEY: u32 = 1 << 29;
+const APPEND_ADVICE_KEY: u32 = 1 << 28;
 
 pub const TREE_LEAF_CODES: bool = true;
 pub const TREE_CODE_EXTRA: usize = 30;
@@ -224,7 +226,7 @@ impl TreeStore {
 
     pub(super) fn advise_node(&self, id: u32) {
         let i = id as usize;
-        if i >= self.num_pages {
+        if i >= self.num_pages || !self.residency.first_advice(id | NODE_ADVICE_KEY) {
             return;
         }
         let n = self.len(id).min(SLOT_ENTRIES - 1);
@@ -258,6 +260,12 @@ impl TreeStore {
             return;
         }
         let n = self.len(id).min(SLOT_ENTRIES - 1);
+        let tail = (n * self.num_dim * 4 / 4096) as u32
+            ^ ((n * code_row_bytes(self.num_dim) / 4096) as u32) << 8;
+        let key = (id.wrapping_mul(0x9E37_79B1) ^ tail) & 0x0FFF_FFFF | APPEND_ADVICE_KEY;
+        if !self.residency.first_advice(key) {
+            return;
+        }
         let wn = (META_HDR_WORDS + n + 1).min(META_WORDS) * 4;
         let _ = self
             .meta
