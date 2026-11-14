@@ -7,6 +7,7 @@ results/
 *~
 _*
 _reports/
-reports/*
+reports/**.py
+reports/**.rs
 !reports/*.tex
 !reports/*.pdf
