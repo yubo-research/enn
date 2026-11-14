@@ -16,10 +16,12 @@ pub struct MmapColumnStore {
     mmap: MmapMut,
     residency: Residency,
     dropped_rows: usize,
+    drop_lag_bytes: usize,
+    drop_step_bytes: usize,
 }
 
-pub(crate) const LOG_DROP_LAG_ROWS: usize = 20_000;
-pub(crate) const LOG_DROP_STEP_ROWS: usize = 4_096;
+pub(crate) const LOG_DROP_LAG_BYTES: usize = 16 << 20;
+pub(crate) const LOG_DROP_STEP_BYTES: usize = 4 << 20;
 
 impl MmapColumnStore {
     pub(crate) fn row_bytes(&self) -> usize {
@@ -101,6 +103,8 @@ impl MmapColumnStore {
             mmap,
             residency,
             dropped_rows: 0,
+            drop_lag_bytes: LOG_DROP_LAG_BYTES,
+            drop_step_bytes: LOG_DROP_STEP_BYTES,
         })
     }
 
@@ -157,18 +161,38 @@ impl MmapColumnStore {
 
     fn drop_old_log_pages(&mut self) {
         use std::os::unix::io::AsRawFd;
-        let upto = self.nrows.saturating_sub(LOG_DROP_LAG_ROWS);
-        if upto < self.dropped_rows + LOG_DROP_STEP_ROWS
+        let rb = self.row_bytes();
+        let upto = self.nrows.saturating_sub(self.drop_lag_bytes / rb);
+        if upto < self.dropped_rows + self.drop_step_bytes / rb
             || std::env::var_os("BPANN_KEEP_LOG_CACHE").is_some()
         {
             return;
         }
-        let rb = self.row_bytes();
         let off = self.dropped_rows * rb;
         let len = (upto - self.dropped_rows) * rb;
+        let fd = self.file.as_raw_fd();
+        #[cfg(target_os = "linux")]
+        unsafe {
+            libc::sync_file_range(
+                fd,
+                off as libc::off64_t,
+                len as libc::off64_t,
+                libc::SYNC_FILE_RANGE_WAIT_BEFORE
+                    | libc::SYNC_FILE_RANGE_WRITE
+                    | libc::SYNC_FILE_RANGE_WAIT_AFTER,
+            );
+        }
+        let page = 4096;
+        let (a, b) = (off / page * page, (off + len) / page * page);
+        if b > a {
+            let _ = unsafe {
+                self.mmap
+                    .unchecked_advise_range(memmap2::UncheckedAdvice::DontNeed, a, b - a)
+            };
+        }
         unsafe {
             libc::posix_fadvise(
-                self.file.as_raw_fd(),
+                fd,
                 off as libc::off_t,
                 len as libc::off_t,
                 libc::POSIX_FADV_DONTNEED,
@@ -236,12 +260,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut store =
             MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
-        let n = (LOG_DROP_LAG_ROWS + 3 * LOG_DROP_STEP_ROWS) / 1000 * 1000;
+        store.drop_lag_bytes = 20_000 * 16;
+        store.drop_step_bytes = 4_096 * 16;
+        let n = (20_000 + 3 * 4_096) / 1000 * 1000;
         for chunk in 0..(n / 1000) {
             let x = Array2::from_shape_fn((1000, 2), |(i, j)| (chunk * 1000 + i) as f64 + j as f64);
             store.mmap_append(&x.view()).unwrap();
         }
-        assert!(store.dropped_rows >= LOG_DROP_STEP_ROWS);
+        assert!(store.dropped_rows >= 4_096);
         for i in [0, 1, store.dropped_rows - 1, n - 1] {
             assert_eq!(
                 store.mmap_row_slice(i).unwrap(),
