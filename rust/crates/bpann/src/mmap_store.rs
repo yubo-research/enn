@@ -15,7 +15,11 @@ pub struct MmapColumnStore {
     file: File,
     mmap: MmapMut,
     residency: Residency,
+    dropped_rows: usize,
 }
+
+pub(crate) const LOG_DROP_LAG_ROWS: usize = 20_000;
+pub(crate) const LOG_DROP_STEP_ROWS: usize = 4_096;
 
 impl MmapColumnStore {
     pub(crate) fn row_bytes(&self) -> usize {
@@ -96,6 +100,7 @@ impl MmapColumnStore {
             file,
             mmap,
             residency,
+            dropped_rows: 0,
         })
     }
 
@@ -146,7 +151,30 @@ impl MmapColumnStore {
             }
         }
         self.nrows = new_nrows;
+        self.drop_old_log_pages();
         Ok(())
+    }
+
+    fn drop_old_log_pages(&mut self) {
+        use std::os::unix::io::AsRawFd;
+        let upto = self.nrows.saturating_sub(LOG_DROP_LAG_ROWS);
+        if upto < self.dropped_rows + LOG_DROP_STEP_ROWS
+            || std::env::var_os("BPANN_KEEP_LOG_CACHE").is_some()
+        {
+            return;
+        }
+        let rb = self.row_bytes();
+        let off = self.dropped_rows * rb;
+        let len = (upto - self.dropped_rows) * rb;
+        unsafe {
+            libc::posix_fadvise(
+                self.file.as_raw_fd(),
+                off as libc::off_t,
+                len as libc::off_t,
+                libc::POSIX_FADV_DONTNEED,
+            );
+        }
+        self.dropped_rows = upto;
     }
 
     pub fn release_resident_pages(&mut self) -> Result<(), BpannError> {
@@ -202,6 +230,25 @@ mod tests {
     use super::*;
     use ndarray::array;
     use tempfile::TempDir;
+
+    #[test]
+    fn dropping_old_log_pages_keeps_every_row_readable() {
+        let dir = TempDir::new().unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        let n = (LOG_DROP_LAG_ROWS + 3 * LOG_DROP_STEP_ROWS) / 1000 * 1000;
+        for chunk in 0..(n / 1000) {
+            let x = Array2::from_shape_fn((1000, 2), |(i, j)| (chunk * 1000 + i) as f64 + j as f64);
+            store.mmap_append(&x.view()).unwrap();
+        }
+        assert!(store.dropped_rows >= LOG_DROP_STEP_ROWS);
+        for i in [0, 1, store.dropped_rows - 1, n - 1] {
+            assert_eq!(
+                store.mmap_row_slice(i).unwrap(),
+                &[i as f64, i as f64 + 1.0]
+            );
+        }
+    }
 
     #[test]
     fn row_bytes() {
