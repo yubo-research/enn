@@ -21,7 +21,9 @@ impl TreeStore {
             f32::INFINITY.to_bits(),
             NO_PARENT,
         ]);
-        self.set_codes_valid(id, true);
+        if tag != 0 {
+            self.set_codes_valid(id, true);
+        }
         Ok(id)
     }
 

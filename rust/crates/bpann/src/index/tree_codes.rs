@@ -8,6 +8,7 @@ use crate::index::tree_store::{TreeStore, CODES_FILE, META_HDR_WORDS, META_WORDS
 use crate::index::tree_store_files::{named_file, scratch_file};
 
 const CODE_PAGE_HEADER: usize = 64;
+const CODE_ALIGN: usize = 4096;
 const ROW_HEADER: usize = 8;
 const VALID: u32 = 0xC0DE_0001;
 const CODE_ADVICE_KEY: u32 = 1 << 31;
@@ -50,7 +51,7 @@ pub fn code_row_bytes(num_dim: usize) -> usize {
 }
 
 pub fn code_page_bytes(num_dim: usize) -> usize {
-    (CODE_PAGE_HEADER + SLOT_ENTRIES * code_row_bytes(num_dim)).div_ceil(64) * 64
+    (CODE_PAGE_HEADER + SLOT_ENTRIES * code_row_bytes(num_dim)).div_ceil(CODE_ALIGN) * CODE_ALIGN
 }
 
 pub fn encode_row(v: &[f32], out: &mut [u8]) {
@@ -215,7 +216,7 @@ impl TreeStore {
 
     pub fn encode_invalid_pages(&mut self) {
         for id in 0..self.num_pages as u32 {
-            if !self.codes_valid(id) {
+            if !self.is_free(id) && !self.codes_valid(id) {
                 self.encode_page(id);
             }
         }
