@@ -8,8 +8,8 @@ use tempfile::TempDir;
 
 const ROW_COUNTS: [usize; 4] = [1_000, 3_000, 10_000, 30_000];
 const BASELINE_ROWS: usize = ROW_COUNTS[0];
-const NUM_ADDS: usize = 32;
-const ADD_BATCHES: usize = 3;
+const NUM_ADDS: usize = 8;
+const ADD_BATCHES: usize = 12;
 const MAX_SECS_PER_BASELINE_SEC: f64 = 2.5;
 const TIMING_REPEATS: usize = 1;
 const MAX_MEASUREMENT_ATTEMPTS: usize = 25;
