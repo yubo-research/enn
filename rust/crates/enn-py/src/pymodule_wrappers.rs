@@ -51,6 +51,7 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_prefetch_pages_py, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_util::set_meta_prefetch_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_leaf_codes_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_code_extra_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_code_prefetch_py, m)?)?;

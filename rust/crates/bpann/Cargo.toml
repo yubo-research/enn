@@ -10,6 +10,7 @@ categories = ["science"]
 description = "B+ANN disk-based approximate nearest-neighbor index"
 
 [dependencies]
+libc = "0.2"
 memmap2 = "0.9"
 ndarray = { workspace = true }
 rand = "0.8"

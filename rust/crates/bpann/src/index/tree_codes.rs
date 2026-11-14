@@ -11,6 +11,7 @@ const CODE_PAGE_HEADER: usize = 64;
 const ROW_HEADER: usize = 8;
 const VALID: u32 = 0xC0DE_0001;
 const CODE_ADVICE_KEY: u32 = 1 << 31;
+const META_ADVICE_KEY: u32 = 1 << 30;
 
 pub const TREE_LEAF_CODES: bool = true;
 pub const TREE_CODE_EXTRA: usize = 30;
@@ -219,6 +220,17 @@ impl TreeStore {
             i * self.slot_words * 4,
             (n + 1) * self.num_dim * 4,
         );
+    }
+
+    pub(super) fn advise_meta(&self, id: u32) {
+        let i = id as usize;
+        if i < self.num_pages && self.residency.first_advice(id | META_ADVICE_KEY) {
+            let _ = self.meta.advise_range(
+                memmap2::Advice::WillNeed,
+                i * META_WORDS * 4,
+                META_WORDS * 4,
+            );
+        }
     }
 
     pub(super) fn advise_append(&self, id: u32) {

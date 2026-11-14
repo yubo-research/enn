@@ -139,6 +139,7 @@ name = "ennbo-bpann"
 version = "0.4.1"
 dependencies = [
  "approx",
+ "libc",
  "memmap2",
  "ndarray",
  "rand",

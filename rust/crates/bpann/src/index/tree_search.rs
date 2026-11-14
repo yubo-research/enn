@@ -10,7 +10,7 @@ use crate::index::tree_codes::{code_prefetch, leaf_codes};
 pub use crate::index::tree_codes_search::take_coded_retries;
 use crate::index::tree_codes_search::{candidate_walk, note_coded_retry, refine_rows, CodedScan};
 use crate::index::tree_topk::TopK;
-use crate::index::tree_walk::{pad_query, Lookahead};
+use crate::index::tree_walk::{pad_query, ColdProbe, Lookahead};
 use crate::small_n_search::OrderedF32;
 
 pub use super::tree_search_knobs::*;
@@ -428,6 +428,7 @@ pub(super) fn search_tree_scored(
     let mut expanded = 0usize;
     let internal_cap = internal_page_cap(tree.header.indexed_rows);
     let mut stopped_on_budget = false;
+    let probe = ColdProbe::start();
     let mut ahead = Lookahead::new(if coded.is_some() { code_prefetch() } else { 0 });
     while let Some(Reverse((phase, key, bound, page_id, depth))) = ahead.pop(&mut frontier) {
         if !deepest_first && expanded >= internal_cap {
@@ -452,7 +453,7 @@ pub(super) fn search_tree_scored(
             XP_INTERNAL_PAGES.fetch_add(1, Ordering::Relaxed);
             XP_INTERNAL_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
             let mut fresh: Vec<(f32, u32)> = Vec::new();
-            let collect_fresh = prefetch_pages() > 0;
+            let collect_fresh = prefetch_pages() > 0 || probe.ahead() > 0;
             s.internal_scores(
                 (page_id, depth),
                 (query, qn2),
@@ -484,13 +485,7 @@ pub(super) fn search_tree_scored(
                     }
                 },
             );
-            let m = prefetch_pages().min(fresh.len());
-            if m > 0 {
-                fresh.select_nth_unstable_by(m - 1, |a, b| a.0.total_cmp(&b.0));
-                for &(_, child) in &fresh[..m] {
-                    s.prefetch_child(child, coded.is_some());
-                }
-            }
+            probe.advise(s, &mut fresh, coded.is_some());
             continue;
         }
         ahead.before_leaf(s, &mut frontier, coded.as_deref_mut());

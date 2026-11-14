@@ -70,3 +70,15 @@ pub fn set_f32_rerank_skip(value: bool) {
 pub fn set_skip_budget_fallback(value: bool) {
     SKIP_BUDGET_FALLBACK.store(u64::from(value), Ordering::Relaxed);
 }
+
+pub const TREE_SEARCH_META_PREFETCH: u64 = 4;
+
+static META_PREFETCH: AtomicU64 = AtomicU64::new(TREE_SEARCH_META_PREFETCH);
+
+pub fn meta_prefetch() -> usize {
+    META_PREFETCH.load(Ordering::Relaxed) as usize
+}
+
+pub fn set_meta_prefetch(value: usize) {
+    META_PREFETCH.store(value as u64, Ordering::Relaxed);
+}

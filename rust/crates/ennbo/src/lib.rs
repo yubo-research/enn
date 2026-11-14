@@ -240,6 +240,10 @@ pub fn set_prefetch_pages(value: usize) {
     ennbo_bpann::index::tree_search::set_prefetch_pages(value);
 }
 
+pub fn set_meta_prefetch(value: usize) {
+    ennbo_bpann::index::tree_search::set_meta_prefetch(value);
+}
+
 pub fn set_leaf_codes(value: bool) {
     ennbo_bpann::index::tree_codes::set_leaf_codes(value);
 }

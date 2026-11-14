@@ -33,6 +33,11 @@ pub fn set_prefetch_pages_py(value: usize) {
     ennbo::set_prefetch_pages(value);
 }
 
+#[pyfunction(name = "set_meta_prefetch")]
+pub fn set_meta_prefetch_py(value: usize) {
+    ennbo::set_meta_prefetch(value);
+}
+
 #[pyfunction(name = "set_leaf_codes")]
 pub fn set_leaf_codes_py(value: bool) {
     ennbo::set_leaf_codes(value);

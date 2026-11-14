@@ -24,6 +24,7 @@ set_leaf_coefficient = _ext.util.set_leaf_coefficient
 leaf_coefficient = _ext.util.leaf_coefficient
 set_internal_coefficient = _ext.util.set_internal_coefficient
 set_prefetch_pages = _ext.util.set_prefetch_pages
+set_meta_prefetch = _ext.util.set_meta_prefetch
 set_leaf_codes = _ext.util.set_leaf_codes
 set_code_extra = _ext.util.set_code_extra
 set_code_prefetch = _ext.util.set_code_prefetch

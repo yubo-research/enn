@@ -5,6 +5,8 @@ use crate::index::tree_codes_search::CodedScan;
 use crate::index::tree_search::FrontierItem;
 use crate::index::tree_store::TreeStore;
 
+pub(super) use crate::index::tree_cold::ColdProbe;
+
 pub(super) struct Lookahead {
     pending: VecDeque<Reverse<FrontierItem>>,
     depth: usize,
