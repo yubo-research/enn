@@ -17,6 +17,7 @@ pub struct ScaleSearch {
     pub num_fit_samples: NonZeroUsize,
     pub num_fit_candidates: NonZeroUsize,
     pub infer_aleatoric_variance: bool,
+    pub infer_prior_precision: bool,
     pub affine_calibrate: bool,
 }
 
@@ -26,6 +27,7 @@ impl ScaleSearch {
             num_fit_samples,
             num_fit_candidates: DEFAULT_FIT_CANDIDATES,
             infer_aleatoric_variance: true,
+            infer_prior_precision: false,
             affine_calibrate: false,
         }
     }

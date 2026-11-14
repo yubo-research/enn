@@ -93,7 +93,7 @@ pub(super) fn compute_batch_with_shared_neighbors(
 
         for (i, params) in paramss.iter().enumerate() {
             let data_with_params = WeightedPosteriorData { params, ..wp_data };
-            let internals = compute_weighted_posterior(model, data_with_params, None)?;
+            let internals = compute_weighted_posterior(model, data_with_params, None, None)?;
             assign_posterior_results(&internals, mu_all, se_all, se_epi_all, se_ale_all, i);
         }
         Ok(Some(idx))

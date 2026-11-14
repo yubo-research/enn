@@ -17,6 +17,7 @@ def rust_params(params: Any | None) -> RustENNParams | None:
         params.epistemic_variance_scale,
         params.aleatoric_variance_scale,
         calibrator_coefficients(params.calibrator),
+        float(getattr(params, "tau", 0.0)),
     )
 
 

@@ -18,6 +18,7 @@ fn batch_posterior_on_train_matches_posterior_when_no_neighbors() {
         k_num_neighbors: 0,
         epistemic_variance_scale: 1.0,
         aleatoric_variance_scale: 0.1,
+        tau: 0.0,
         calibrator: None,
     };
     let flags = PosteriorFlags::new();
@@ -52,6 +53,7 @@ fn batch_posterior_on_train_row_matches_single_query_posterior() {
         k_num_neighbors: 10,
         epistemic_variance_scale: 80.0,
         aleatoric_variance_scale: 0.0,
+        tau: 0.0,
         calibrator: None,
     };
     let flags = PosteriorFlags {

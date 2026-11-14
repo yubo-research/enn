@@ -121,10 +121,19 @@ pub fn compute_weighted_posterior(
     model: &EpistemicNearestNeighbors,
     data: WeightedPosteriorData<'_>,
     y_scale_override: Option<&ArrayView1<'_, f64>>,
+    y_mean_override: Option<&ArrayView1<'_, f64>>,
 ) -> Result<DrawInternals, ENNError> {
     let y_scale: Array1<f64> = y_scale_override
         .map(|v| v.to_owned())
         .unwrap_or_else(|| model.y_scale().clone());
+    let y_mean: Array1<f64> = if data.params.tau == 0.0 {
+        Array1::zeros(y_scale.len())
+    } else {
+        y_mean_override
+            .map(|v| v.to_owned())
+            .unwrap_or_else(|| model.y_mean())
+    };
+    let y_centered = data.y_neighbors - &y_mean;
 
     let counts = neighbor_counts(model, data.idx);
     let yvar_neighbors: Option<Array2<f64>> = if let Some(ov) = data.yvar_neighbors_override {
@@ -157,15 +166,16 @@ pub fn compute_weighted_posterior(
         None
     };
 
-    let stats = compute_weighted_stats_impl(
+    let mut stats = compute_weighted_stats_impl(
         data.dist2s,
-        data.y_neighbors,
+        &y_centered.view(),
         yvar_neighbors.as_ref().map(|v| v.view()),
         counts.as_deref(),
         data.params,
         data.observation_noise,
         &y_scale.view(),
     )?;
+    stats.mu += &y_mean;
 
     Ok(DrawInternals::new(
         data.idx.to_vec(),
@@ -206,7 +216,7 @@ fn stats_from_neighbor_weights(
     k: usize,
     num_metrics: usize,
     observation_noise: bool,
-    aleatoric_scale: f64,
+    params: &ENNParams,
     y_scale: &ArrayView1<f64>,
     y_scale_sq: &[f64],
 ) -> (
@@ -217,6 +227,8 @@ fn stats_from_neighbor_weights(
     Array2<f64>,
     Array2<f64>,
 ) {
+    let aleatoric_scale = params.aleatoric_variance_scale;
+    let tau = params.tau;
     let yvar_ref = yvar_neighbors.as_ref();
     let mut w_normalized = Array3::zeros((n_query, k, num_metrics));
     let mut l2 = Array2::zeros((n_query, num_metrics));
@@ -228,7 +240,7 @@ fn stats_from_neighbor_weights(
     for i in 0..n_query {
         for m in 0..num_metrics {
             let base_idx = i * k;
-            let norm: f64 = (0..k).map(|j| w[[base_idx + j, m]]).sum();
+            let norm: f64 = tau + (0..k).map(|j| w[[base_idx + j, m]]).sum::<f64>();
             let inv_norm = 1.0 / norm;
 
             let mut l2_sq = 0.0;
@@ -327,7 +339,7 @@ pub fn compute_weighted_stats_impl(
         k,
         num_metrics,
         observation_noise,
-        aleatoric_scale,
+        params,
         y_scale,
         &y_scale_sq,
     );
@@ -365,7 +377,7 @@ pub fn compute_posterior_internals(
             observation_noise: flags.observation_noise,
             yvar_neighbors_override: None,
         };
-        compute_weighted_posterior(model, wp_data, None)
+        compute_weighted_posterior(model, wp_data, None, None)
     } else {
         Ok(empty_posterior_internals(model, x.nrows()))
     }
@@ -404,8 +416,24 @@ fn compute_scale_for_conditional_moments(
     model: &EpistemicNearestNeighbors,
     y_whatif: &ArrayView2<f64>,
 ) -> Array1<f64> {
-    let (y_sum, y_sumsq) = model.y_moments();
+    let (sum, sumsq) = conditional_moments(model, y_whatif);
     let n = model.num_obs() + y_whatif.nrows();
+    crate::model::scale_from_moments(n, model.num_metrics(), &sum, &sumsq, 0.0)
+}
+
+fn compute_mean_for_conditional_moments(
+    model: &EpistemicNearestNeighbors,
+    y_whatif: &ArrayView2<f64>,
+) -> Array1<f64> {
+    let (sum, _) = conditional_moments(model, y_whatif);
+    crate::model::mean_from_moments(model.num_obs() + y_whatif.nrows(), &sum)
+}
+
+fn conditional_moments(
+    model: &EpistemicNearestNeighbors,
+    y_whatif: &ArrayView2<f64>,
+) -> (Array1<f64>, Array1<f64>) {
+    let (y_sum, y_sumsq) = model.y_moments();
     let mut sum = y_sum.clone();
     let mut sumsq = y_sumsq.clone();
     for row in y_whatif.rows() {
@@ -414,7 +442,7 @@ fn compute_scale_for_conditional_moments(
             sumsq[j] += v * v;
         }
     }
-    crate::model::scale_from_moments(n, model.num_metrics(), &sum, &sumsq, 0.0)
+    (sum, sumsq)
 }
 
 pub fn compute_conditional_posterior_internals(
@@ -475,7 +503,13 @@ pub fn compute_conditional_posterior_internals(
             observation_noise: flags.observation_noise,
             yvar_neighbors_override: None,
         };
-        compute_weighted_posterior(model, wp_data, Some(&y_scale_cond.view()))
+        let y_mean_cond = compute_mean_for_conditional_moments(model, y_whatif);
+        compute_weighted_posterior(
+            model,
+            wp_data,
+            Some(&y_scale_cond.view()),
+            Some(&y_mean_cond.view()),
+        )
     } else {
         Ok(empty_posterior_internals(model, batch_size))
     }
@@ -519,3 +553,7 @@ mod tests_duplicates;
 #[cfg(test)]
 #[path = "posterior/tests_prefix.rs"]
 mod tests_prefix;
+
+#[cfg(test)]
+#[path = "posterior/tests_tau.rs"]
+mod tests_tau;

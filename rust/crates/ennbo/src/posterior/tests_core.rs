@@ -239,7 +239,7 @@ fn test_compute_weighted_posterior() {
         yvar_neighbors_override: None,
     };
 
-    let result = compute_weighted_posterior(&model, data, None);
+    let result = compute_weighted_posterior(&model, data, None, None);
     assert!(result.is_ok());
 }
 

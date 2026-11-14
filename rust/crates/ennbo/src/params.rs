@@ -12,6 +12,8 @@ pub enum ParamsError {
     InvalidEpistemicVariance(f64),
     #[error("aleatoric_variance_scale must be >= 0 and finite, got {0}")]
     InvalidAleatoricVariance(f64),
+    #[error("tau (prior precision) must be >= 0 and finite, got {0}")]
+    InvalidTau(f64),
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -21,6 +23,8 @@ pub struct ENNParams {
     pub epistemic_variance_scale: f64,
     #[serde(with = "crate::exact")]
     pub aleatoric_variance_scale: f64,
+    #[serde(with = "crate::exact", default)]
+    pub tau: f64,
     #[serde(with = "crate::exact")]
     pub calibrator: Option<Arc<AffineCalibrator>>,
 }
@@ -51,8 +55,17 @@ impl ENNParams {
             k_num_neighbors,
             epistemic_variance_scale,
             aleatoric_variance_scale,
+            tau: 0.0,
             calibrator: None,
         })
+    }
+
+    pub fn with_tau(mut self, tau: f64) -> Result<Self, ParamsError> {
+        if !tau.is_finite() || tau < 0.0 {
+            return Err(ParamsError::InvalidTau(tau));
+        }
+        self.tau = tau;
+        Ok(self)
     }
 
     pub fn with_calibrator(mut self, calibrator: Option<Arc<AffineCalibrator>>) -> Self {
@@ -182,6 +195,46 @@ mod tests {
         assert_eq!(params.k_num_neighbors, 5);
         assert_eq!(params.epistemic_variance_scale, 1.0);
         assert_eq!(params.aleatoric_variance_scale, 0.1);
+    }
+
+    #[test]
+    fn test_enn_params_tau_default_and_validation() {
+        let params = ENNParams::new(5, 1.0, 0.1).unwrap();
+        assert_eq!(params.tau, 0.0);
+        assert_eq!(params.clone().with_tau(2.5).unwrap().tau, 2.5);
+        assert_eq!(params.clone().with_tau(0.0).unwrap().tau, 0.0);
+        for bad in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(matches!(
+                params.clone().with_tau(bad),
+                Err(ParamsError::InvalidTau(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn test_enn_params_tau_serde_round_trip_and_legacy_default() {
+        let cal = AffineCalibrator::from_coefficients(
+            array![1.0].view(),
+            array![0.0].view(),
+            array![0.0].view(),
+        )
+        .unwrap();
+        let params = ENNParams::new(5, 1.0, 0.1)
+            .unwrap()
+            .with_tau(0.3)
+            .unwrap()
+            .with_calibrator(Some(Arc::new(cal)));
+        let text = toml::to_string(&params).unwrap();
+        let back: ENNParams = toml::from_str(&text).unwrap();
+        assert_eq!(back, params);
+        let stripped: String = text
+            .lines()
+            .filter(|l| !l.starts_with("tau"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_ne!(stripped, text);
+        let legacy: ENNParams = toml::from_str(&stripped).unwrap();
+        assert_eq!(legacy.tau, 0.0);
     }
 
     #[test]

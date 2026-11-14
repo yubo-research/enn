@@ -52,7 +52,7 @@ fn fill_neighbor_weights(
     params: &ENNParams,
     weights: &mut [f64],
 ) -> f64 {
-    let mut norm = 0.0;
+    let mut norm = params.tau;
     for ((weight, &distance), &count) in weights.iter_mut().zip(distances.iter()).zip(counts) {
         *weight = 1.0
             / (EPS_VAR
@@ -73,6 +73,11 @@ pub(super) fn fuse_neighbors_to_mu_se(
     let k = dist2s.ncols();
     let num_metrics = model.num_metrics();
     let y_scale = model.y_scale();
+    let y_mean = if params.tau == 0.0 {
+        ndarray::Array1::zeros(num_metrics)
+    } else {
+        model.y_mean()
+    };
 
     let mut mu = Array2::zeros((n_query, num_metrics));
     let mut se = Array2::zeros((n_query, num_metrics));
@@ -104,9 +109,9 @@ pub(super) fn fuse_neighbors_to_mu_se(
             let mut mean = 0.0;
             for j in 0..k {
                 let normalized = w[j] * inv_norm;
-                mean += normalized * rows[j][m];
+                mean += normalized * (rows[j][m] - y_mean[m]);
             }
-            mu[[i, m]] = mean;
+            mu[[i, m]] = mean + y_mean[m];
         }
         for m in 0..num_metrics {
             let y_scale_m = y_scale[m];

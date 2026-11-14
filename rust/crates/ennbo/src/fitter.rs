@@ -29,6 +29,7 @@ impl ENNFitter {
         &self,
         num_random: usize,
         infer_aleatoric_variance: bool,
+        infer_prior_precision: bool,
         rng: &mut R,
     ) -> Result<Vec<ENNParams>, ENNError> {
         let log_min = -3.0;
@@ -43,10 +44,18 @@ impl ENNFitter {
         } else {
             vec![0.0; num_random]
         };
+        let tau: Vec<f64> = if infer_prior_precision {
+            (0..num_random)
+                .map(|_| 10f64.powf(rng.gen_range(log_min..=log_max)))
+                .collect()
+        } else {
+            vec![0.0; num_random]
+        };
         let paramss: Vec<ENNParams> = epi
             .iter()
             .zip(ale.iter())
-            .filter_map(|(&e, &a)| ENNParams::new(self.k, e, a).ok())
+            .zip(tau.iter())
+            .filter_map(|((&e, &a), &t)| ENNParams::new(self.k, e, a).ok()?.with_tau(t).ok())
             .collect();
         if paramss.is_empty() {
             return ENNParams::new(self.k, 1.0, 0.0)
@@ -101,6 +110,7 @@ impl ENNFitter {
         let mut paramss = self.build_random_param_candidates(
             search.num_fit_candidates.get(),
             search.infer_aleatoric_variance,
+            search.infer_prior_precision,
             rng,
         )?;
         if let Some(warm) = warm {
@@ -113,6 +123,13 @@ impl ENNFitter {
                     0.0
                 },
             )
+            .and_then(|p| {
+                p.with_tau(if search.infer_prior_precision {
+                    warm.tau
+                } else {
+                    0.0
+                })
+            })
             .map_err(|e| ENNError::InvalidParameter(format!("Invalid warm-start params: {e}")))?;
             paramss.push(warm_params);
         }
@@ -223,11 +240,89 @@ mod tests {
     }
 
     #[test]
+    fn candidates_have_zero_tau_unless_inferred_and_rng_stream_is_unchanged() {
+        let fitter = ENNFitter::new(2);
+        let mut a = StdRng::seed_from_u64(5);
+        let mut b = StdRng::seed_from_u64(5);
+        let off = fitter
+            .build_random_param_candidates(20, true, false, &mut a)
+            .unwrap();
+        let on = fitter
+            .build_random_param_candidates(20, true, true, &mut b)
+            .unwrap();
+        assert!(off.iter().all(|p| p.tau == 0.0));
+        assert!(on.iter().all(|p| (1e-3..=1e3).contains(&p.tau)));
+        for (p, q) in off.iter().zip(&on) {
+            assert_eq!(p.epistemic_variance_scale, q.epistemic_variance_scale);
+            assert_eq!(p.aleatoric_variance_scale, q.aleatoric_variance_scale);
+        }
+    }
+
+    fn tau_model() -> crate::test_helpers::TestModel {
+        let train_x = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.5, 0.5]];
+        let train_y = array![[0.1], [-0.2], [0.3], [-0.1], [0.0]];
+        crate::test_helpers::test_model(train_x, train_y, None, false)
+    }
+
+    #[test]
+    fn ask_tau_is_fixed_at_zero_unless_inferred() {
+        let model = tau_model();
+        let warm = ENNParams::new(2, 2.5, 0.1).unwrap().with_tau(4.0).unwrap();
+        for seed in 0..5 {
+            let mut fitter = ENNFitter::new(2);
+            let mut rng = StdRng::seed_from_u64(seed);
+            let p = fitter
+                .ask(
+                    &model,
+                    &crate::fit_samples::test_search(5, 4, true),
+                    Some(&warm),
+                    &mut rng,
+                )
+                .unwrap();
+            assert_eq!(p.tau, 0.0);
+        }
+    }
+
+    #[test]
+    fn ask_infers_valid_tau_and_keeps_warm_tau() {
+        let model = tau_model();
+        let search = crate::fit_samples::ScaleSearch {
+            infer_prior_precision: true,
+            ..crate::fit_samples::test_search(5, 6, true)
+        };
+        let warm = ENNParams::new(2, 2.5, 0.1).unwrap().with_tau(4.0).unwrap();
+        let mut warm_won = false;
+        for seed in 0..30 {
+            let mut fitter = ENNFitter::new(2);
+            let mut rng = StdRng::seed_from_u64(seed);
+            let p = fitter.ask(&model, &search, Some(&warm), &mut rng).unwrap();
+            assert!(p.tau.is_finite() && p.tau > 0.0);
+            warm_won |= p.tau == 4.0;
+        }
+        assert!(warm_won, "warm-start tau was never selected or carried");
+    }
+
+    #[test]
+    fn ask_default_for_tiny_model_has_no_prior() {
+        let model = crate::test_helpers::test_model(array![[0.0, 0.0]], array![[0.0]], None, false);
+        let search = crate::fit_samples::ScaleSearch {
+            infer_prior_precision: true,
+            ..crate::fit_samples::test_search(3, 5, true)
+        };
+        let mut fitter = ENNFitter::new(3);
+        let mut rng = StdRng::seed_from_u64(1);
+        assert_eq!(
+            fitter.ask(&model, &search, None, &mut rng).unwrap().tau,
+            0.0
+        );
+    }
+
+    #[test]
     fn kiss_fitter_random_params() {
         let fitter = ENNFitter::new(2);
         let mut rng = StdRng::seed_from_u64(0);
         let cands = fitter
-            .build_random_param_candidates(3, true, &mut rng)
+            .build_random_param_candidates(3, true, false, &mut rng)
             .unwrap();
         assert_eq!(cands.len(), 3);
     }

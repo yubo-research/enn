@@ -31,6 +31,7 @@ def py_params(rust_result: Any) -> Any:
         epistemic_variance_scale=rust_result.epistemic_variance_scale,
         aleatoric_variance_scale=rust_result.aleatoric_variance_scale,
         calibrator=_py_calibrator(rust_result.calibrator),
+        tau=rust_result.tau,
     )
 
 
@@ -55,6 +56,7 @@ def subsample_loglik(
     k_values = [p.k_num_neighbors for p in paramss]
     epi_scales = [p.epistemic_variance_scale for p in paramss]
     ale_scales = [p.aleatoric_variance_scale for p in paramss]
+    taus = [float(getattr(p, "tau", 0.0)) for p in paramss]
 
     y_std_arr = None
     if y_std is not None:
@@ -70,6 +72,7 @@ def subsample_loglik(
         P,
         int(seed),
         y_std_arr,
+        taus,
     )
 
 
@@ -80,6 +83,7 @@ class ENNStatefulFitter:
         *,
         seed: int,
         infer_aleatoric_variance_scale: bool = True,
+        infer_prior_precision: bool = False,
     ) -> None:
         self._k = int(k)
         self._seed = int(seed)
@@ -87,6 +91,7 @@ class ENNStatefulFitter:
             self._k,
             self._seed,
             infer_aleatoric_variance_scale,
+            infer_prior_precision,
         )
 
     @property

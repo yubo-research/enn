@@ -11,17 +11,24 @@ pub struct PyENNStatefulFitter {
     inner: ennbo::ENNFitter,
     rng: StdRng,
     infer_aleatoric_variance: bool,
+    infer_prior_precision: bool,
 }
 
 #[pymethods]
 impl PyENNStatefulFitter {
     #[new]
-    #[pyo3(signature = (k, seed, infer_aleatoric_variance_scale=true))]
-    fn new(k: i32, seed: u64, infer_aleatoric_variance_scale: bool) -> Self {
+    #[pyo3(signature = (k, seed, infer_aleatoric_variance_scale=true, infer_prior_precision=false))]
+    fn new(
+        k: i32,
+        seed: u64,
+        infer_aleatoric_variance_scale: bool,
+        infer_prior_precision: bool,
+    ) -> Self {
         Self {
             inner: ennbo::ENNFitter::new(k),
             rng: StdRng::seed_from_u64(seed),
             infer_aleatoric_variance: infer_aleatoric_variance_scale,
+            infer_prior_precision,
         }
     }
 
@@ -36,6 +43,7 @@ impl PyENNStatefulFitter {
     ) -> PyResult<PyENNParams> {
         let search = ennbo::ScaleSearch {
             infer_aleatoric_variance: self.infer_aleatoric_variance,
+            infer_prior_precision: self.infer_prior_precision,
             affine_calibrate,
             ..ennbo::ScaleSearch::from_counts(num_fit_samples, num_fit_candidates)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?
@@ -54,7 +62,7 @@ impl PyENNStatefulFitter {
 }
 
 #[pyfunction]
-#[pyo3(signature = (model, k, epistemic, aleatoric, num_fit_samples, seed, observation_noise=false))]
+#[pyo3(signature = (model, k, epistemic, aleatoric, num_fit_samples, seed, observation_noise=false, tau=0.0))]
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn fit_model_affine<'py>(
     py: Python<'py>,
@@ -65,13 +73,14 @@ pub fn fit_model_affine<'py>(
     num_fit_samples: i64,
     seed: u64,
     observation_noise: bool,
+    tau: f64,
 ) -> PyResult<(
     Bound<'py, PyArray1<f64>>,
     Bound<'py, PyArray1<f64>>,
     Bound<'py, PyArray1<f64>>,
 )> {
     let num_fit_samples = usize::try_from(num_fit_samples).unwrap_or(0);
-    let params = crate::py_params::make_params(k, epistemic, aleatoric)?;
+    let params = crate::py_params::make_params(k, epistemic, aleatoric, tau)?;
     let mut rng = StdRng::seed_from_u64(seed);
     let cal = ennbo::surrogate_affine::fit_calibrator(
         &model.inner,

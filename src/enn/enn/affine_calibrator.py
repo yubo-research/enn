@@ -133,6 +133,7 @@ def fit_affine_calibrator(
         int(num_samples),
         int(seed),
         bool(observation_noise),
+        float(getattr(params, "tau", 0.0)),
     )
     return AffineCalibrator(
         a=np.asarray(a, dtype=float),

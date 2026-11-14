@@ -26,18 +26,24 @@ pub(crate) fn params_list(
     k_values: Vec<i32>,
     epistemic_scales: Vec<f64>,
     aleatoric_scales: Vec<f64>,
+    taus: Option<Vec<f64>>,
 ) -> PyResult<Vec<ennbo::ENNParams>> {
     let n_params = k_values.len();
-    if epistemic_scales.len() != n_params || aleatoric_scales.len() != n_params {
+    let taus = taus.unwrap_or_else(|| vec![0.0; n_params]);
+    if epistemic_scales.len() != n_params
+        || aleatoric_scales.len() != n_params
+        || taus.len() != n_params
+    {
         return Err(PyValueError::new_err(
-            "k_values, epistemic_scales, and aleatoric_scales must have same length",
+            "k_values, epistemic_scales, aleatoric_scales, and taus must have same length",
         ));
     }
     k_values
         .into_iter()
         .zip(epistemic_scales)
         .zip(aleatoric_scales)
-        .map(|((k, epi), ale)| make_params(k, epi, ale))
+        .zip(taus)
+        .map(|(((k, epi), ale), tau)| make_params(k, epi, ale, tau))
         .collect()
 }
 

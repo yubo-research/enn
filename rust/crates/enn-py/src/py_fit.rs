@@ -9,7 +9,7 @@ use crate::py_model::{params_list, PyEpistemicNearestNeighbors};
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(name = "subsample_loglik")]
-#[pyo3(signature = (model, x, y, k_values, epistemic_scales, aleatoric_scales, p=None, seed=0, y_std=None))]
+#[pyo3(signature = (model, x, y, k_values, epistemic_scales, aleatoric_scales, p=None, seed=0, y_std=None, taus=None))]
 pub fn subsample_loglik_py(
     model: &PyEpistemicNearestNeighbors,
     x: PyReadonlyArrayDyn<f64>,
@@ -20,10 +20,11 @@ pub fn subsample_loglik_py(
     p: Option<usize>,
     seed: u64,
     y_std: Option<PyReadonlyArray1<f64>>,
+    taus: Option<Vec<f64>>,
 ) -> PyResult<Vec<f64>> {
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let paramss = params_list(k_values, epistemic_scales, aleatoric_scales)?;
+    let paramss = params_list(k_values, epistemic_scales, aleatoric_scales, taus)?;
 
     let y_std_arr = y_std.as_ref().map(|v| v.as_array());
 

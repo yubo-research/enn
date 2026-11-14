@@ -306,6 +306,10 @@ impl EpistemicNearestNeighbors {
         &self.y_scale
     }
 
+    pub(crate) fn y_mean(&self) -> Array1<f64> {
+        mean_from_moments(self.num_obs(), &self.y_sum)
+    }
+
     pub fn x_scale_row(&self) -> Array2<f64> {
         self.x_scale.clone().insert_axis(ndarray::Axis(0))
     }
@@ -393,6 +397,13 @@ pub(crate) fn accumulate_columns(
             sumsq[j] += v * v;
         }
     }
+}
+
+pub(crate) fn mean_from_moments(n: usize, sum: &Array1<f64>) -> Array1<f64> {
+    if n < 2 {
+        return Array1::zeros(sum.len());
+    }
+    sum / n as f64
 }
 
 pub(crate) fn scale_from_moments(

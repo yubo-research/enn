@@ -35,12 +35,14 @@ pub(crate) fn make_params(
     k_num_neighbors: i32,
     epistemic_variance_scale: f64,
     aleatoric_variance_scale: f64,
+    tau: f64,
 ) -> PyResult<ennbo::ENNParams> {
     ennbo::ENNParams::new(
         k_num_neighbors,
         epistemic_variance_scale,
         aleatoric_variance_scale,
     )
+    .and_then(|p| p.with_tau(tau))
     .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
@@ -53,17 +55,19 @@ pub struct PyENNParams {
 #[pymethods]
 impl PyENNParams {
     #[new]
-    #[pyo3(signature = (k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, calibrator=None))]
+    #[pyo3(signature = (k_num_neighbors, epistemic_variance_scale, aleatoric_variance_scale, calibrator=None, tau=0.0))]
     pub(crate) fn new(
         k_num_neighbors: i32,
         epistemic_variance_scale: f64,
         aleatoric_variance_scale: f64,
         calibrator: Option<PyCalibratorArgument<'_>>,
+        tau: f64,
     ) -> PyResult<Self> {
         let inner = make_params(
             k_num_neighbors,
             epistemic_variance_scale,
             aleatoric_variance_scale,
+            tau,
         )?
         .with_calibrator(calibrator_from_argument(calibrator)?);
         Ok(Self { inner })
@@ -85,6 +89,11 @@ impl PyENNParams {
     }
 
     #[getter]
+    pub(crate) fn tau(&self) -> f64 {
+        self.inner.tau
+    }
+
+    #[getter]
     pub(crate) fn calibrator<'py>(&self, py: Python<'py>) -> Option<PyCalibratorCoefficients<'py>> {
         self.inner.calibrator.as_ref().map(|cal| {
             (
@@ -97,10 +106,11 @@ impl PyENNParams {
 
     fn __repr__(&self) -> String {
         format!(
-            "ENNParams(k={}, epi={:.4}, ale={:.4})",
+            "ENNParams(k={}, epi={:.4}, ale={:.4}, tau={:.4})",
             self.inner.k_num_neighbors,
             self.inner.epistemic_variance_scale,
-            self.inner.aleatoric_variance_scale
+            self.inner.aleatoric_variance_scale,
+            self.inner.tau
         )
     }
 }

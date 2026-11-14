@@ -354,7 +354,7 @@ fn test_compute_weighted_posterior_empty_idx() {
         yvar_neighbors_override: None,
     };
 
-    let result = compute_weighted_posterior(&model, data, None);
+    let result = compute_weighted_posterior(&model, data, None, None);
     assert!(
         result.is_ok(),
         "compute_weighted_posterior with empty idx should not panic"

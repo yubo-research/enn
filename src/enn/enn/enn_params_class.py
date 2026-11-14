@@ -21,6 +21,7 @@ class ENNParams:
     epistemic_variance_scale: float
     aleatoric_variance_scale: float
     calibrator: AffineCalibrator | None = field(default=None, hash=False, compare=False)
+    tau: float = 0.0
 
     def __post_init__(self) -> None:
         _validated_params(
@@ -28,4 +29,5 @@ class ENNParams:
             float(self.epistemic_variance_scale),
             float(self.aleatoric_variance_scale),
             calibrator_coefficients(self.calibrator),
+            float(self.tau),
         )
