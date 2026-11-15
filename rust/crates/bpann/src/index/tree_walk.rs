@@ -2,6 +2,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
 
 use crate::index::tree_codes_search::CodedScan;
+use crate::index::tree_leaf_ids::LeafTest;
 use crate::index::tree_search::FrontierItem;
 use crate::index::tree_store::TreeStore;
 
@@ -35,13 +36,14 @@ impl Lookahead {
         s: &TreeStore,
         frontier: &mut BinaryHeap<Reverse<FrontierItem>>,
         coded: Option<&mut CodedScan>,
+        kinds: LeafTest,
     ) {
         if self.depth == 0 {
             return;
         }
         while self.pending.len() < self.depth {
             match frontier.peek() {
-                Some(Reverse(item)) if s.is_leaf(item.3) => {}
+                Some(Reverse(item)) if kinds.is_leaf(s, item.3, item.4) => {}
                 _ => break,
             }
             if let Some(item) = frontier.pop() {

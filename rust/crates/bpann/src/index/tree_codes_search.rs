@@ -86,19 +86,46 @@ impl CodedScan {
         query: &[f32],
         qn2: f32,
         offer: &mut impl FnMut(u32, f64),
-    ) {
+    ) -> usize {
         let valid = s.codes_valid(page);
         if valid && !std::mem::take(&mut self.advised) {
             s.advise_codes(page);
         }
         debug_assert!(valid, "leaf {page} has no valid codes");
-        for (slot, &row) in s.ids(page).iter().enumerate() {
+        let n = match s.leaf_id_tail(page) {
+            Some(tail) => self.scan_rows(
+                s,
+                (page, query, qn2),
+                offer,
+                tail.chunks_exact(4)
+                    .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .take_while(|&w| w != 0)
+                    .map(|w| w - 1),
+            ),
+            None => self.scan_rows(s, (page, query, qn2), offer, s.ids(page).iter().copied()),
+        };
+        debug_assert_eq!(n, s.len(page), "leaf {page} id mirror is stale");
+        n
+    }
+
+    #[inline(always)]
+    fn scan_rows(
+        &mut self,
+        s: &TreeStore,
+        (page, query, qn2): (u32, &[f32], f32),
+        offer: &mut impl FnMut(u32, f64),
+        ids: impl Iterator<Item = u32>,
+    ) -> usize {
+        let mut n = 0usize;
+        for (slot, row) in ids.enumerate() {
             let (d2, e) = coded_sq_l2(query, qn2, s.code_row(page, slot));
             self.err_max = self.err_max.max(e);
             let i = self.locs.len() as u32;
             self.locs.push((row, page, slot as u32, e));
             offer(i, f64::from(d2));
+            n += 1;
         }
+        n
     }
 }
 

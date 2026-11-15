@@ -429,15 +429,19 @@ pub(super) fn search_tree_scored(
     let internal_cap = internal_page_cap(tree.header.indexed_rows);
     let mut stopped_on_budget = false;
     let probe = ColdProbe::start();
+    let kinds = Kinds::new(s, coded.is_some());
     let mut ahead = Lookahead::new(if coded.is_some() { code_prefetch() } else { 0 });
-    while let Some(Reverse((phase, key, bound, page_id, depth))) = ahead.pop(&mut frontier) {
+    while let Some(Reverse((phase, key, bound, page_id, raw))) = ahead.pop(&mut frontier) {
+        let depth = Kinds::depth(raw);
         if !deepest_first && expanded >= internal_cap {
             deepest_first = true;
             let mut all = std::mem::take(&mut frontier).into_vec();
-            all.push(Reverse((phase, key, bound, page_id, depth)));
+            all.push(Reverse((phase, key, bound, page_id, raw)));
             frontier = all
                 .into_iter()
-                .map(|Reverse((_, k2, b2, p2, d2))| Reverse((u16::MAX - d2, k2, b2, p2, d2)))
+                .map(|Reverse((_, k2, b2, p2, d2))| {
+                    Reverse((u16::MAX - Kinds::depth(d2), k2, b2, p2, d2))
+                })
                 .collect();
             continue;
         }
@@ -448,48 +452,19 @@ pub(super) fn search_tree_scored(
         if top.cannot_improve(bound.0) {
             continue;
         }
-        if !s.is_leaf(page_id) {
+        if !kinds.is_leaf(s, page_id, raw) {
             expanded += 1;
-            XP_INTERNAL_PAGES.fetch_add(1, Ordering::Relaxed);
-            XP_INTERNAL_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
-            let mut fresh: Vec<(f32, u32)> = Vec::new();
-            let collect_fresh = prefetch_pages() > 0 || probe.ahead() > 0;
-            s.internal_scores(
-                (page_id, depth),
-                (query, qn2),
-                coded.is_some(),
-                |child, d2, e, radius| {
-                    let low = if e > 0.0 {
-                        (d2.sqrt() - e).max(0.0).powi(2)
-                    } else {
-                        d2
-                    };
-                    let bound = lower_bound(low, radius);
-                    if !top.cannot_improve(bound) {
-                        let key = priority(d2, radius);
-                        let phase = if deepest_first {
-                            u16::MAX - (depth + 1)
-                        } else {
-                            0
-                        };
-                        if collect_fresh {
-                            fresh.push((key, child));
-                        }
-                        frontier.push(Reverse((
-                            phase,
-                            OrderedF32(key),
-                            OrderedF32(bound),
-                            child,
-                            depth + 1,
-                        )));
-                    }
-                },
-            );
-            probe.advise(s, &mut fresh, coded.is_some());
+            let walk = Expand {
+                query: (query, qn2),
+                coded: coded.is_some(),
+                deepest_first,
+                probe: &probe,
+                kinds,
+            };
+            walk.run(s, (page_id, depth), &top, &mut frontier);
             continue;
         }
-        ahead.before_leaf(s, &mut frontier, coded.as_deref_mut());
-        XP_LEAF_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
+        ahead.before_leaf(s, &mut frontier, coded.as_deref_mut(), kinds);
         score_leaf(
             tree,
             page_id,
@@ -506,6 +481,57 @@ pub(super) fn search_tree_scored(
     Ok(top.into_sorted())
 }
 
+type Kinds = crate::index::tree_leaf_ids::LeafTest;
+
+struct Expand<'a> {
+    query: (&'a [f32], f32),
+    coded: bool,
+    deepest_first: bool,
+    probe: &'a ColdProbe,
+    kinds: Kinds,
+}
+
+impl Expand<'_> {
+    fn run(
+        &self,
+        s: &crate::index::tree_store::TreeStore,
+        (page_id, depth): (u32, u16),
+        top: &TopK,
+        frontier: &mut BinaryHeap<Reverse<FrontierItem>>,
+    ) {
+        XP_INTERNAL_PAGES.fetch_add(1, Ordering::Relaxed);
+        XP_INTERNAL_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
+        let mut fresh: Vec<(f32, u32)> = Vec::new();
+        let collect_fresh = prefetch_pages() > 0 || self.probe.ahead() > 0;
+        let mask = self.kinds.children(s, page_id);
+        let phase = if self.deepest_first {
+            u16::MAX - (depth + 1)
+        } else {
+            0
+        };
+        let mut slot = 0usize;
+        s.internal_scores((page_id, depth), self.query, self.coded, |child, d2, e, radius| {
+            let hint = Kinds::pack(depth + 1, mask, slot);
+            slot += 1;
+            let low = if e > 0.0 {
+                (d2.sqrt() - e).max(0.0).powi(2)
+            } else {
+                d2
+            };
+            let bound = lower_bound(low, radius);
+            if !top.cannot_improve(bound) {
+                let key = priority(d2, radius);
+                if collect_fresh {
+                    fresh.push((key, child));
+                }
+                frontier.push(Reverse((phase, OrderedF32(key), OrderedF32(bound), child, hint)));
+            }
+        });
+        let leaf_kids = slot > 0 && mask.is_some_and(|m| m.count_ones() as usize == slot);
+        self.probe.advise(s, &mut fresh, self.coded, leaf_kids);
+    }
+}
+
 fn score_leaf(
     tree: &Tree,
     page_id: u32,
@@ -516,10 +542,12 @@ fn score_leaf(
 ) -> Result<(), BpannError> {
     let s = &tree.store;
     if let Some(scan) = coded {
-        scan.scan_leaf(s, page_id, query, qn2, &mut |i, d2| top.offer(i, d2));
+        let n = scan.scan_leaf(s, page_id, query, qn2, &mut |i, d2| top.offer(i, d2));
+        XP_LEAF_ROWS.fetch_add(n as u64, Ordering::Relaxed);
         return Ok(());
     }
     let _ = (orig, query);
+    XP_LEAF_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
     for &row in s.ids(page_id) {
         if let Some(distance) = score(row, None, top.limit())? {
             top.offer(row, distance);

@@ -112,6 +112,12 @@ impl TreeStore {
     pub fn set_kind(&mut self, id: u32, kind: Kind) {
         let m = self.meta_words_mut(id);
         m[0] = kind_tag(kind) | (m[0] & LEN_MASK);
+        if kind == Kind::Leaf {
+            let ids = self.ids(id).to_vec();
+            self.mirror_ids(id, &ids);
+        } else {
+            self.mirror_clear(id);
+        }
     }
 
     pub(super) fn grow(&mut self, capacity: usize) -> Result<(), BpannError> {
@@ -248,6 +254,9 @@ impl TreeStore {
         m[META_HDR_WORDS..META_HDR_WORDS + n].copy_from_slice(ids);
         m[0] = (m[0] & !LEN_MASK) | n as u32;
         self.refresh_routes(id);
+        if self.is_leaf(id) {
+            self.mirror_ids(id, ids);
+        }
         if !self.codes_valid(id) && !self.is_leaf(id) {
             self.encode_page(id);
         }
@@ -272,10 +281,13 @@ impl TreeStore {
         m[0] += 1;
         if !self.is_leaf(id) {
             let r = self.radius(entry_id);
-            self.set_route(id, n, r);
+            self.set_route(id, n, entry_id, r);
         }
         if self.codes_valid(id) {
             self.encode_code_row(id, n, v);
+        }
+        if self.is_leaf(id) {
+            self.mirror_push(id, n, entry_id);
         }
     }
     pub fn count(&self, id: u32) -> usize {

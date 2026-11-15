@@ -35,7 +35,7 @@ fn routes_match(t: &Tree) -> bool {
         .filter(|&p| !s.is_leaf(p))
         .all(|p| {
             let want: Vec<f32> = s.ids(p).iter().map(|&c| s.radius(c)).collect();
-            s.child_radii(p) == &want[..]
+            s.child_radii(p) == want[..]
         })
 }
 

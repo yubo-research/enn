@@ -1,0 +1,13 @@
+{"dir": "/home/dsweet/bench_work", "run": 1, "qd": 1, "us_per_read": 485.61247950419784, "iops": 2059.255151393521}
+{"dir": "/home/dsweet/bench_work", "run": 1, "qd": 4, "us_per_read": 148.74169626273215, "iops": 6723.064380236963}
+{"dir": "/home/dsweet/bench_work", "run": 1, "qd": 16, "us_per_read": 271.5718465624377, "iops": 3682.266820578133}
+{"dir": "/home/dsweet/bench_work", "run": 1, "qd": 32, "us_per_read": 333.8093892671168, "iops": 2995.721606859274}
+{"dir": "/mnt/scratch/dsweet_qd", "run": 1, "qd": 1, "us_per_read": 99.18982803355902, "iops": 10081.678936490027}
+{"dir": "/mnt/scratch/dsweet_qd", "run": 1, "qd": 4, "us_per_read": 26.04883094318211, "iops": 38389.438749908084}
+{"dir": "/mnt/scratch/dsweet_qd", "run": 1, "qd": 16, "us_per_read": 14.614572050049901, "iops": 68424.85681929944}
+{"dir": "/mnt/scratch/dsweet_qd", "run": 1, "qd": 32, "us_per_read": 18.174507771618664, "iops": 55022.12288585892}
+{"dir": "/home/dsweet/bench_work", "run": 2, "qd": 32, "us_per_read": 83.51451554335654, "iops": 11973.966363737694}
+{"dir": "/home/dsweet/bench_work", "run": 2, "qd": 16, "us_per_read": 334.04900901950896, "iops": 2993.5727183719873}
+{"dir": "/home/dsweet/bench_work", "run": 2, "qd": 4, "us_per_read": 333.3654560847208, "iops": 2999.7109230953497}
+{"dir": "/home/dsweet/bench_work", "run": 2, "qd": 1, "us_per_read": 486.52596154715866, "iops": 2055.388774773678}
+{"dir": "/home/dsweet/bench_work", "run": 2, "qd": 4, "us_per_read": 180.09335082024336, "iops": 5552.6758508598705}

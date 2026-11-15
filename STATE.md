@@ -21,6 +21,10 @@
 - Prefetch depth (0235, D=10, N=1e5, cold): default 202 ms, off 290, prefetch_pages=30 157, meta_prefetch=16 159, code_prefetch=30 291 (unexplained). Warm cost of deeper prefetch unmeasured.
 - Where in-RAM add time goes (0233, timer build, 1 run, sandbox, N=1e5): insert_row 2.6 us/row (D=10), 5.7 (D=100). Splits 34%/45% (writes to old/new leaf dominate, alloc_near 0.23 us/row, median_split 0.1-0.2), descent 22%/16%, leaf push 10%/23%, morph 0.04. Shares only; timers inflate totals.
 
+- Store disk = Amazon EBS (not local NVMe; 0235 mislabeled it), sustained ~3000 random 4K reads/s at any depth; QD1 486 us; local NVMe /mnt/scratch 99 us QD1, 68k/s at QD16 (0236, disk_qd.py). 0235's 0.33 ms/page is the EBS IOPS cap: cold query cost ~ pages x 0.33 ms; parallel reads can give <=1.46x here.
+- Cold query time by file at N=1e6 (0236, keep_warm.sh; file kept resident): codes 67% (D=10) / 76% (D=100), meta 42% / 14%, x+y 0-8%.
+- Leaf ids in code-page tail + child-is-leaf bit in parent route radii (0236; flag ENN_LEAF_IDS / set_leaf_ids, default on, only D<=50 = one-page code region): cold query -7..-17% at D=10 for 1e4<=N<=1e6 (sig at 4/5 sizes; 310->271 ms at 1e6), -11..-12% at D=30 N<=3e4 (n.s. above); pages -5..-13%; posteriors bit-identical. In RAM (N=1e5, 5 seeds): D=10 add 1.53->1.54 n.s., query 532->520 us (p=0.004); D=100 n.s. Uncommitted at 8b7809e, staged.
+
 ## Tried and rejected
 - File fragmentation (0230), writeback contention (0229), 8K alignment (0229 data) as causes of slow buffer-file reads.
 - Smaller fence granularity (16 vs 64 rows): only -10% query (0228).
@@ -30,19 +34,22 @@
 - Leaf coefficient c=3: recall 0.79 at D=10 (0217).
 - Wider AVX2 loop in l2_sq_f32 for D<32 (0233): no gain (1.87 vs 1.66 us/row insert).
 - Morph work as the cause of the in-RAM add gap (0232).
+- Leaf-id tail on the 2nd page of a 2-page code region (D=100): adds +8% in RAM (p=0.002), +25% cold at N<=30 (0236). Leaf test by depth (assumes balanced tree): 6635 vs 2708 pages at D=10 N=3e5, cause unproven; replaced by explicit parent bits (0236).
 - MADV_RANDOM on train_x/train_y mmaps (0235): cuts cold train_y reads 604 -> 40 KiB (k=10) but no cold time gain, and in-RAM adds +24% (D=100) / +52% (D=10), 5 paired seeds. Reverted; patch in reports/report-0235-data/patches/.
 
 ## Plan (priority: O(ln N) add and query with no cliff; quality never worse than main)
-Per the 2026-11-15 ruling, judge every change first by cold cost (evals/meta_loop/cold_cost.sh), then by in-RAM cost and the 0226 scorecard.
-1. Lower the cold query curve: (a) frontier-batched parallel leaf reads (DiskANN-style beam, io_uring or WILLNEED on the frontier) behind a flag; (b) one page per visited leaf (co-locate leaf meta + codes; re-judge 0219 by cold cost). Acceptance: cold query at N=1e6 well below 413 ms (D=100), in-RAM no worse.
-2. Lower the cold add curve: buffered adds per level (B-epsilon / buffer tree, ideas.md P1); supersedes the leaf-overflow layout (old plan 1, 0228).
+Per the 2026-11-15 ruling, judge every change first by cold cost (cold_cost.sh, leaf_ids_ab.sh), then by in-RAM cost (build_ab.sh) and the 0226 scorecard.
+1. Lower the cold query curve. Done: 1b for D<=50 (0236). Next, since cold cost ~ leaves x code pages per leaf and codes are 67-76% of it: (a) smaller codes (4-bit / RaBitQ-style 1-bit with rotation) so a D=100 leaf is one page; (b) fewer leaves per query (recall vs leaves visited; certified stop); (c) ids-first code-page format for D>50. Parallel leaf reads (old 1a) only pay on NVMe; test on /mnt/scratch if the operator says it is a valid target disk.
+2. Lower the cold add curve: buffered adds per level (B-epsilon / buffer tree, ideas.md P1).
 3. Designed cache: pin top tree levels, plot cold cost vs pinned bytes; then repeat 0234-style capped runs (3 reps) to check the cliff is gone.
-4. Open: deeper prefetch default (check warm cost first); leaf coefficient 30 quality at 1e6; learnable D=100 test function (0217); AdviseGate committed in a9e61af.
-Harnesses: evals/meta_loop/ (cold_cost.py/.sh, prefetch_cold.py, advise_data_ab.*, fig_0235.py, rep_cap_0234.sh, fit_0234.py, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, leaf_sweep.sh, recall_cmp.py, add_phase_prof.*), scripts/bench_cmp/bench.py.
+4. Open: in-RAM add gap vs main (2-6x, 0226) is the largest scorecard gap; deeper prefetch default; leaf coefficient 30 quality at 1e6; learnable D=100 test function (0217).
+Harnesses: evals/meta_loop/ (leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
 
 ## Questions for the operator
+- Which disk is the target? The store has been on EBS (3000 IOPS cap, 0236), where cold cost is IOPS-bound; the local NVMe (/mnt/scratch) is ~20x faster and rewards parallel reads. Should cold-cost judgments use one, the other, or both?
+- May the code-page format change (ids before rows; smaller codes)? Old stores would need a rebuild or a version check (0236).
 - Is "cold cost" as measured in 0235 (page-out of all store pages before each op, model kept open, heap state counts as cache) the yardstick you mean by "true on-disk cost"?
-- Plan 1(a) needs async/parallel reads (io_uring or madvise WILLNEED batches) on the one calculation thread; acceptable under the one-thread rule?
+- Parallel reads (io_uring or WILLNEED batches) on the one calculation thread: acceptable under the one-thread rule? (matters only on NVMe, 0236)
 - Must add-time parity with main hold in RAM, or only past the cliff? (0226) Rerun 1e6 quality with 10 seeds?
 - Keep leaf coefficient 30 (closes D=10 gap, queries 1.8x slower than main at N=1e4)? (0218)
 - Is a learnable-structure test function at D=100 acceptable for quality? (0217)

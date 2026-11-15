@@ -145,8 +145,9 @@ fn parents_keep_their_children_radii_and_rebuild_restores_them() {
     s.set_parent(b, Some(node));
     s.set_radius(a, 2.5);
     assert_eq!(s.child_radii(node), &[2.5, 1.5]);
-    s.set_route(node, 0, 0.0);
-    s.set_route(node, 1, 0.0);
+    s.set_route(node, 0, a, 0.0);
+    s.set_route(node, 1, b, 0.0);
+    assert_eq!(s.leaf_children(node), Some(0b11));
     s.rebuild_routes();
     assert_eq!(s.child_radii(node), &[2.5, 1.5]);
     assert_eq!(s.ids(node), &[a, b]);

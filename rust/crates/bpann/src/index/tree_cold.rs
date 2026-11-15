@@ -45,8 +45,14 @@ impl ColdProbe {
         self.ahead
     }
 
-    pub(super) fn advise(&self, s: &TreeStore, fresh: &mut [(f32, u32)], codes: bool) {
-        let mm = self.ahead.min(fresh.len());
+    pub(super) fn advise(
+        &self,
+        s: &TreeStore,
+        fresh: &mut [(f32, u32)],
+        codes: bool,
+        leaf_kids: bool,
+    ) {
+        let mm = if leaf_kids { 0 } else { self.ahead.min(fresh.len()) };
         if mm > 0 {
             fresh.select_nth_unstable_by(mm - 1, |a, b| a.0.total_cmp(&b.0));
             fresh[..mm]

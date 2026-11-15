@@ -24,6 +24,11 @@ impl TreeStore {
         if tag != 0 {
             self.set_codes_valid(id, true);
         }
+        if tag == crate::index::tree_store::kind_tag(Kind::Leaf) {
+            self.mirror_ids(id, &[]);
+        } else if tag != 0 {
+            self.mirror_clear(id);
+        }
         Ok(id)
     }
 
@@ -33,6 +38,7 @@ impl TreeStore {
 
     pub fn mark_free(&mut self, id: u32) {
         self.meta_words_mut(id)[0] = 0;
+        self.mirror_clear(id);
     }
 
     pub fn alloc_near(&mut self, kind: Kind, near: &[u32]) -> Result<u32, BpannError> {

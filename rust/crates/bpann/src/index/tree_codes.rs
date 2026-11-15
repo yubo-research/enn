@@ -7,7 +7,7 @@ use crate::error::BpannError;
 use crate::index::tree_store::{TreeStore, CODES_FILE, META_HDR_WORDS, META_WORDS, SLOT_ENTRIES};
 use crate::index::tree_store_files::{named_file, scratch_file};
 
-const CODE_PAGE_HEADER: usize = 64;
+pub(super) const CODE_PAGE_HEADER: usize = 64;
 const CODE_ALIGN: usize = 4096;
 const ROW_HEADER: usize = 8;
 const VALID: u32 = 0xC0DE_0001;
@@ -151,7 +151,7 @@ pub(super) fn create_codes_file(dir: &Path, named: bool) -> Result<File, BpannEr
 }
 
 impl TreeStore {
-    fn code_page_range(&self, id: u32) -> std::ops::Range<usize> {
+    pub(super) fn code_page_range(&self, id: u32) -> std::ops::Range<usize> {
         let bytes = code_page_bytes(self.num_dim);
         let start = id as usize * bytes;
         start..start + bytes
@@ -214,6 +214,10 @@ impl TreeStore {
             self.encode_code_row(id, slot, v);
         }
         self.set_codes_valid(id, true);
+        if self.is_leaf(id) {
+            let ids = self.ids(id).to_vec();
+            self.mirror_ids(id, &ids);
+        }
     }
 
     pub fn encode_invalid_pages(&mut self) {
@@ -299,7 +303,7 @@ impl TreeStore {
             return;
         }
         let r = self.code_page_range(id);
-        let used = CODE_PAGE_HEADER + self.len(id) * code_row_bytes(self.num_dim);
+        let used = self.coded_extent(id, CODE_PAGE_HEADER + self.len(id) * code_row_bytes(self.num_dim));
         let _ = self
             .codes
             .advise_range(memmap2::Advice::WillNeed, r.start, used.min(r.len()));

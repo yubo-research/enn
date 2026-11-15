@@ -193,8 +193,7 @@ impl TreeStore {
             HITS.fetch_add(1, Ordering::Relaxed);
             return;
         }
-        let radii = self.child_radii(id);
-        let routes: Vec<(u32, f32)> = kids.iter().copied().zip(radii.iter().copied()).collect();
+        let routes: Vec<(u32, f32)> = kids.iter().copied().zip(self.radii_iter(id)).collect();
         if !codes {
             let block = self.block(id);
             for (c, &(child, radius)) in block.chunks_exact(query.len().max(1)).zip(&routes) {
