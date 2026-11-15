@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use crate::distance::l2_sq_f32;
-use crate::index::tree_codes::{code_row_bytes, coded_sq_l2, encode_row};
+use crate::index::tree_codes::{encode_page_row, page_sq_l2};
 use crate::index::tree_store::TreeStore;
 
 pub const TREE_INTERNAL_CACHE_BYTES: usize = 64 << 20;
@@ -181,11 +181,12 @@ impl TreeStore {
         let cached = codes && internal_cache_bytes() > 0;
         let kids = self.ids(id);
         let n = kids.len();
-        let rb = code_row_bytes(self.num_dim);
+        let nib = self.nib;
+        let rb = self.code_rb();
         let hit = cached
             && self.icache.with_rows(id, kids, |b, routes| {
                 for (row, &(child, radius)) in b.chunks_exact(rb).zip(routes) {
-                    let (d2, e) = coded_sq_l2(query, qn2, row);
+                    let (d2, e) = page_sq_l2(query, qn2, row, nib);
                     f(child, d2, e, radius);
                 }
             });
@@ -210,12 +211,12 @@ impl TreeStore {
                 .chunks_exact_mut(rb)
                 .zip(self.block(id).chunks_exact(self.num_dim))
             {
-                encode_row(c, o);
+                encode_page_row(c, o, nib);
             }
             Cow::Owned(out)
         };
         for (row, &(child, radius)) in rows.chunks_exact(rb).zip(&routes) {
-            let (d2, e) = coded_sq_l2(query, qn2, row);
+            let (d2, e) = page_sq_l2(query, qn2, row, nib);
             f(child, d2, e, radius);
         }
         if cached {

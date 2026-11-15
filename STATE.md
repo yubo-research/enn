@@ -1,6 +1,6 @@
 # STATE (edit in place; reports are the log)
 
-## Established (1 GB cgroup cap unless noted; "branch" = dsweet/agg_obs, HEAD a9e61af; "main" = 3246c4e)
+## Established (1 GB cgroup cap unless noted; "branch" = dsweet/agg_obs, HEAD b2d87fa + uncommitted 0237 changes; "main" = 3246c4e)
 - Queries: branch faster than main at N>=1e5 (D=10: 0.22 vs 0.89 s; D=100: 2.2 vs 3.2 s); main faster at N<=1e3. (0216)
 - Memory: branch RssAnon 21 MB vs main 558 MB at D=100, N=1e6. (0216)
 - Quality vs main, 10 paired seeds (0217): identical at N<=1e4. At N=1e5 branch is significantly worse: loglik -0.022 (SE 0.005, p=0.002) at D=10; -0.008 (SE 0.003, p=0.017) at D=100. NRMSE +0.002 (D=10), +0.008 (D=100). (0216's "not significant" was 3 seeds.)
@@ -25,6 +25,12 @@
 - Cold query time by file at N=1e6 (0236, keep_warm.sh; file kept resident): codes 67% (D=10) / 76% (D=100), meta 42% / 14%, x+y 0-8%.
 - Leaf ids in code-page tail + child-is-leaf bit in parent route radii (0236; flag ENN_LEAF_IDS / set_leaf_ids, default on, only D<=50 = one-page code region): cold query -7..-17% at D=10 for 1e4<=N<=1e6 (sig at 4/5 sizes; 310->271 ms at 1e6), -11..-12% at D=30 N<=3e4 (n.s. above); pages -5..-13%; posteriors bit-identical. In RAM (N=1e5, 5 seeds): D=10 add 1.53->1.54 n.s., query 532->520 us (p=0.004); D=100 n.s. Uncommitted at 8b7809e, staged.
 
+- 4-bit page codes (0237; flag ENN_CODE4=1, default OFF; tree_nib.rs; used only where they save code pages, D=100: 2->1 page): cold query 0.49-0.67x for 1e4<=N<=1e6 on uniform D=100 (465->273 ms at 1e6), but on D=100 data near a 5-dim subspace 1.2-1.7x SLOWER for 1e3<=N<=3e4, 0.63-0.68x only at N>=3e5; 1.05-1.1x at N<=3e3 (f32 re-walk retries). In RAM: query 2.1x (D=100). Quality parity after the bound fix (10 seeds; dloglik -0.004, p=0.23). Cause of mid-N loss (hypothesis, not proven): leaf slack = max row error ~10x the 8-bit bound, weak pruning (2.6x leaf rows at 1e4); not routing (exact f32 routing changed nothing).
+- Default path after 0237 (8-bit, uncommitted): splits/morph move encoded code rows (set_leaf_coded) instead of decode+re-encode; leaf scan monomorphized per format. vs b2d87fa, 8 seeds N=1e5: D=100 add 0.85x (p=1e-4), query 0.96x (p=0.05); D=10 add 0.93x (p=0.09), query 0.99x n.s.; cold to 1e6 0.97-1.04, equal pages, identical posteriors.
+- Leaves keep no f32 rows; codes are the only in-tree copy. Re-encoding decoded rows loses a stored error bound (0237); any future code format must move code bytes on split.
+- Learnable D=100 test exists: INTRINSIC=5 in recall_cmp.py / code4_ab.py (x = z B + 0.01 noise, z in U[0,1]^5); exact-kNN NRMSE 0.16 at 1e5 vs 1.02 for the uniform test.
+- Build hygiene: compare builds made the same way (maturin build wheels); develop vs wheel link different OpenBLAS (0237).
+
 ## Tried and rejected
 - File fragmentation (0230), writeback contention (0229), 8K alignment (0229 data) as causes of slow buffer-file reads.
 - Smaller fence granularity (16 vs 64 rows): only -10% query (0228).
@@ -35,15 +41,17 @@
 - Wider AVX2 loop in l2_sq_f32 for D<32 (0233): no gain (1.87 vs 1.66 us/row insert).
 - Morph work as the cause of the in-RAM add gap (0232).
 - Leaf-id tail on the 2nd page of a 2-page code region (D=100): adds +8% in RAM (p=0.002), +25% cold at N<=30 (0236). Leaf test by depth (assumes balanced tree): 6635 vs 2708 pages at D=10 N=3e5, cause unproven; replaced by explicit parent bits (0236).
+- 4-bit raw-coordinate codes as default (0237): mid-N cold loss on structured data, slower in RAM. Kept behind ENN_CODE4 (off).
+- Tight certification boundary min(last, min_excluded(r_i - e_i)) (0237): no fewer retries; removed. Larger coded pool (CODE_EXTRA 100/300) does not raise 4-bit recall (0237).
 - MADV_RANDOM on train_x/train_y mmaps (0235): cuts cold train_y reads 604 -> 40 KiB (k=10) but no cold time gain, and in-RAM adds +24% (D=100) / +52% (D=10), 5 paired seeds. Reverted; patch in reports/report-0235-data/patches/.
 
 ## Plan (priority: O(ln N) add and query with no cliff; quality never worse than main)
 Per the 2026-11-15 ruling, judge every change first by cold cost (cold_cost.sh, leaf_ids_ab.sh), then by in-RAM cost (build_ab.sh) and the 0226 scorecard.
-1. Lower the cold query curve. Done: 1b for D<=50 (0236). Next, since cold cost ~ leaves x code pages per leaf and codes are 67-76% of it: (a) smaller codes (4-bit / RaBitQ-style 1-bit with rotation) so a D=100 leaf is one page; (b) fewer leaves per query (recall vs leaves visited; certified stop); (c) ids-first code-page format for D>50. Parallel leaf reads (old 1a) only pay on NVMe; test on /mnt/scratch if the operator says it is a valid target disk.
+1. Lower the cold query curve. Done: 1b for D<=50 (0236); 1a tried as raw 4-bit codes (0237, off by default). Next: (a) residual 4-bit codes vs a per-leaf 8-bit anchor (IVF-PQ style) so leaf slack scales with leaf spread; judge with code4_ab.sh at INTRINSIC=5 and 0, D=100; (b) cheaper certification fallback than an f32 re-walk (refine more from train_x) so coarse codes do not lose at N<=3e3; (c) fewer leaves per query (recall vs leaves visited); (d) ids-first page for D>50. Parallel leaf reads only pay on NVMe.
 2. Lower the cold add curve: buffered adds per level (B-epsilon / buffer tree, ideas.md P1).
 3. Designed cache: pin top tree levels, plot cold cost vs pinned bytes; then repeat 0234-style capped runs (3 reps) to check the cliff is gone.
 4. Open: in-RAM add gap vs main (2-6x, 0226) is the largest scorecard gap; deeper prefetch default; leaf coefficient 30 quality at 1e6; learnable D=100 test function (0217).
-Harnesses: evals/meta_loop/ (leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
+Harnesses: evals/meta_loop/ (code4_* see code4_README.sh, fig_0237.py, leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
 
 ## Questions for the operator
 - Which disk is the target? The store has been on EBS (3000 IOPS cap, 0236), where cold cost is IOPS-bound; the local NVMe (/mnt/scratch) is ~20x faster and rewards parallel reads. Should cold-cost judgments use one, the other, or both?
@@ -57,6 +65,9 @@ Harnesses: evals/meta_loop/ (leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py
 - AdviseGate (0232) was committed in a9e61af; thresholds (8 faults/32 adds, 32 groups) are untuned. Keep?
 - Sandbox lacks perf (paranoid=4), gdb, valgrind; is a profiling-capable environment available? (0233)
 - VISION-b.md does not exist; is another file intended?
+
+- Commit the 0237 default-path changes (D=100 adds -15% in RAM, cold unchanged) together with the off-by-default ENN_CODE4 code, or commit only the default-path part? (0237)
+- Should the D=100 quality yardstick switch to a learnable test (e.g., INTRINSIC=5 in recall_cmp.py)? The uniform one cannot detect neighbor-quality loss (0217, 0237).
 
 ## Operator ruling on design method (2026-11-15)
 - The cliff at the cap is not a property of the problem. It comes from treating memory as the store: letting the page cache hold everything until it is full is not an algorithm, and shows no understanding of how the data is used. Stop treating "a step of cold-read size is paid by any disk design" (0224, 0225, 0231) as settled; that conclusion rests on a RAM-until-full design.

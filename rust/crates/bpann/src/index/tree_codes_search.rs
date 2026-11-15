@@ -4,9 +4,9 @@ use crate::distance::{bpann_row_to_f32, l2_sq_f32};
 use crate::error::BpannError;
 use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
-use crate::index::tree_codes::{code_extra, coded_sq_l2};
+use crate::index::tree_codes::{code_extra, coded_sq_l2, nib_sq_l2};
 use crate::index::tree_search::{search_tree, search_tree_scored, F32_WALKS};
-use crate::index::tree_store::TreeStore;
+use crate::index::tree_store::{TreeStore, SLOT_ENTRIES};
 
 static EXACT_ROWS: AtomicU64 = AtomicU64::new(0);
 static CODED_RETRIES: AtomicU64 = AtomicU64::new(0);
@@ -112,13 +112,31 @@ impl CodedScan {
     fn scan_rows(
         &mut self,
         s: &TreeStore,
-        (page, query, qn2): (u32, &[f32], f32),
+        at: (u32, &[f32], f32),
         offer: &mut impl FnMut(u32, f64),
         ids: impl Iterator<Item = u32>,
     ) -> usize {
+        if s.nib() {
+            self.scan_with(s, at, offer, ids, nib_sq_l2)
+        } else {
+            self.scan_with(s, at, offer, ids, coded_sq_l2)
+        }
+    }
+
+    #[inline(always)]
+    fn scan_with(
+        &mut self,
+        s: &TreeStore,
+        (page, query, qn2): (u32, &[f32], f32),
+        offer: &mut impl FnMut(u32, f64),
+        ids: impl Iterator<Item = u32>,
+        dist: impl Fn(&[f32], f32, &[u8]) -> (f32, f32),
+    ) -> usize {
+        let rb = s.code_rb();
+        let rows = s.code_rows(page, SLOT_ENTRIES);
         let mut n = 0usize;
-        for (slot, row) in ids.enumerate() {
-            let (d2, e) = coded_sq_l2(query, qn2, s.code_row(page, slot));
+        for ((slot, row), code) in ids.enumerate().zip(rows.chunks_exact(rb)) {
+            let (d2, e) = dist(query, qn2, code);
             self.err_max = self.err_max.max(e);
             let i = self.locs.len() as u32;
             self.locs.push((row, page, slot as u32, e));

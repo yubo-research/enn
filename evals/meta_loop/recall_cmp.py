@@ -19,12 +19,35 @@ NOISE, NTEST, BATCH, K = 0.1, 1000, 1000, 10
 rng = np.random.default_rng(SEED)
 
 
+INTRINSIC = int(os.environ.get("INTRINSIC", "0"))
+BASIS = (
+    np.linalg.qr(np.random.default_rng(12345).standard_normal((D, INTRINSIC)))[0].T
+    if INTRINSIC
+    else None
+)
+
+
+def latent(x):
+    return x @ BASIS.T if INTRINSIC else x
+
+
 def f(x):
-    return np.sin(3 * x[:, : min(5, D)]).sum(1, keepdims=True)
+    z = latent(x)
+    return np.sin(3 * z[:, : min(5, z.shape[1])]).sum(1, keepdims=True)
+
+
+def draw(g, n):
+    if not INTRINSIC:
+        return g.random((n, D))
+    return g.random((n, INTRINSIC)) @ BASIS + 0.01 * g.standard_normal((n, D))
 
 
 set_leaf_coefficient(LEAF)
-x0 = rng.random((1, D))
+if os.environ.get("CODE_EXTRA"):
+    from enn._rust import set_code_extra
+
+    set_code_extra(int(os.environ["CODE_EXTRA"]))
+x0 = draw(rng, 1)
 y0 = f(x0) + NOISE * rng.standard_normal((1, 1))
 m = EpistemicNearestNeighbors(x0, y0, work_dir=WORK)
 X = [x0]
@@ -32,7 +55,7 @@ Y = [y0]
 t_add, n = 0.0, 1
 while n < N:
     b = min(BATCH, N - n)
-    x = rng.random((b, D))
+    x = draw(rng, b)
     y = f(x) + NOISE * rng.standard_normal((b, 1))
     t = time.perf_counter()
     m.add(x, y)
@@ -46,7 +69,7 @@ t_sync = time.perf_counter() - t
 X = np.concatenate(X, axis=0)
 Y = np.concatenate(Y, axis=0).ravel()
 
-xt = np.random.default_rng(10_000 + SEED).random((NTEST, D))
+xt = draw(np.random.default_rng(10_000 + SEED), NTEST)
 ft = f(xt)
 yt = ft + NOISE * np.random.default_rng(20_000 + SEED).standard_normal((NTEST, 1))
 
@@ -72,6 +95,9 @@ rec = {
     "n": N,
     "seed": SEED,
     "leaf_coef": LEAF,
+    "intrinsic": INTRINSIC,
+    "code_extra": os.environ.get("CODE_EXTRA", "default"),
+    "code4": os.environ.get("ENN_CODE4", "0"),
     "leaf_coef_read": float(leaf_coefficient()),
     "add_us_row": 1e6 * (t_add + t_sync) / N,
     "recall_at_10": float(recall),

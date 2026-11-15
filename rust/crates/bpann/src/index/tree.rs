@@ -175,6 +175,8 @@ impl Tree {
     fn split_leaf(&mut self, leaf: u32, path: &mut Vec<(u32, usize)>) -> Result<(), BpannError> {
         let row_ids = self.store.ids(leaf).to_vec();
         let block = self.store.leaf_rows(leaf);
+        let coded = self.store.leaf_code_bytes(leaf);
+        let rb = self.store.code_rb();
         let slack = self.store.leaf_err(leaf);
         let vectors: Vec<&[f32]> = block.chunks(self.store.num_dim()).collect();
         let weights = vec![1.0; vectors.len()];
@@ -182,18 +184,20 @@ impl Tree {
         let ca = weighted_mean(&vectors, &weights, &left);
         let cb = weighted_mean(&vectors, &weights, &right);
         let pick_ids = |g: &[usize]| -> Vec<u32> { g.iter().map(|&i| row_ids[i]).collect() };
-        let gather = |g: &[usize]| -> Vec<f32> {
-            g.iter().flat_map(|&i| vectors[i].iter().copied()).collect()
+        let gather = |g: &[usize]| -> Vec<u8> {
+            g.iter()
+                .flat_map(|&i| coded[i * rb..(i + 1) * rb].iter().copied())
+                .collect()
         };
         let s = &mut self.store;
         s.set_radius(leaf, max_dist(&vectors, &left, &ca) + slack);
-        s.set_entries(leaf, &pick_ids(&left), &gather(&left));
+        s.set_leaf_coded(leaf, &pick_ids(&left), &gather(&left));
         s.set_count(leaf, left.len());
         let near = sibling_ids(s, leaf, path.last().map(|&(p, _)| p));
         let new_id = s.alloc_near(Kind::Leaf, &near)?;
         s.set_count(new_id, right.len());
         s.set_radius(new_id, max_dist(&vectors, &right, &cb) + slack);
-        s.set_entries(new_id, &pick_ids(&right), &gather(&right));
+        s.set_leaf_coded(new_id, &pick_ids(&right), &gather(&right));
         self.attach_sibling(path, (leaf, ca), (new_id, cb))
     }
 

@@ -5,7 +5,6 @@ use memmap2::MmapMut;
 
 use crate::error::BpannError;
 use crate::index::tree::TREE_LEAF_CAPACITY;
-use crate::index::tree_codes::code_page_bytes;
 use crate::index::tree_icache::InternalCache;
 use crate::index::tree_residency::Residency;
 use crate::index::tree_store_files::map;
@@ -74,6 +73,7 @@ pub struct TreeStore {
     pub(super) slots: MmapMut,
     pub(super) codes_file: File,
     pub(super) codes: MmapMut,
+    pub(super) nib: bool,
     pub(super) residency: Residency,
     pub(super) icache: InternalCache,
 }
@@ -124,7 +124,7 @@ impl TreeStore {
         self.unstamp();
         self.meta = map(&self.files.0, capacity * META_WORDS * 4)?;
         self.slots = map(&self.files.1, capacity * self.slot_words * 4)?;
-        self.codes = map(&self.codes_file, capacity * code_page_bytes(self.num_dim))?;
+        self.codes = map(&self.codes_file, capacity * self.code_page_len())?;
         self.capacity = capacity;
         self.update_tracking();
         Ok(())
@@ -331,7 +331,7 @@ impl TreeStore {
         );
         Residency::copy_released(&self.meta, &mut out.meta, meta_len);
         Residency::copy_released(&self.slots, &mut out.slots, slot_len);
-        let code_len = self.num_pages * code_page_bytes(self.num_dim);
+        let code_len = self.num_pages * self.code_page_len();
         out.codes[..code_len].copy_from_slice(&self.codes[..code_len]);
         Ok(out)
     }
