@@ -510,23 +510,34 @@ impl Expand<'_> {
             0
         };
         let mut slot = 0usize;
-        s.internal_scores((page_id, depth), self.query, self.coded, |child, d2, e, radius| {
-            let hint = Kinds::pack(depth + 1, mask, slot);
-            slot += 1;
-            let low = if e > 0.0 {
-                (d2.sqrt() - e).max(0.0).powi(2)
-            } else {
-                d2
-            };
-            let bound = lower_bound(low, radius);
-            if !top.cannot_improve(bound) {
-                let key = priority(d2, radius);
-                if collect_fresh {
-                    fresh.push((key, child));
+        s.internal_scores(
+            (page_id, depth),
+            self.query,
+            self.coded,
+            |child, d2, e, radius| {
+                let hint = Kinds::pack(depth + 1, mask, slot);
+                slot += 1;
+                let low = if e > 0.0 {
+                    (d2.sqrt() - e).max(0.0).powi(2)
+                } else {
+                    d2
+                };
+                let bound = lower_bound(low, radius);
+                if !top.cannot_improve(bound) {
+                    let key = priority(d2, radius);
+                    if collect_fresh {
+                        fresh.push((key, child));
+                    }
+                    frontier.push(Reverse((
+                        phase,
+                        OrderedF32(key),
+                        OrderedF32(bound),
+                        child,
+                        hint,
+                    )));
                 }
-                frontier.push(Reverse((phase, OrderedF32(key), OrderedF32(bound), child, hint)));
-            }
-        });
+            },
+        );
         let leaf_kids = slot > 0 && mask.is_some_and(|m| m.count_ones() as usize == slot);
         self.probe.advise(s, &mut fresh, self.coded, leaf_kids);
     }

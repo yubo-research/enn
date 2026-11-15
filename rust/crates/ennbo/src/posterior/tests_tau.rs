@@ -210,8 +210,14 @@ fn tau_posterior_is_equivariant_to_shift_and_scale_of_y() {
         let p = ENNParams::new(4, 1.0, 0.1).unwrap().with_tau(tau).unwrap();
         let a = compute_posterior_internals(&m1, &q.view(), &p, &flags).unwrap();
         let b = compute_posterior_internals(&m2, &q.view(), &p, &flags).unwrap();
-        assert!((a.mu.mapv(|v| s * v + c) - &b.mu).mapv(f64::abs).iter().all(|&d| d < 1e-9));
-        assert!((a.se.mapv(|v| s * v) - &b.se).mapv(f64::abs).iter().all(|&d| d < 1e-9));
+        assert!((a.mu.mapv(|v| s * v + c) - &b.mu)
+            .mapv(f64::abs)
+            .iter()
+            .all(|&d| d < 1e-9));
+        assert!((a.se.mapv(|v| s * v) - &b.se)
+            .mapv(f64::abs)
+            .iter()
+            .all(|&d| d < 1e-9));
         let (lm, _, _, _, _) = compute_posterior_light(&m2, &q.view(), &p, &flags).unwrap();
         assert!((lm - &b.mu).mapv(f64::abs).iter().all(|&d| d < 1e-9));
     }

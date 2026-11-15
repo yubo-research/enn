@@ -1,22 +1,65 @@
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::index::tree_codes::{code_row_bytes, encode_row, CODE_PAGE_HEADER, ROW_HEADER};
 use crate::index::tree_nib::{bf16_up, decode_nib_row, encode_nib_row, nib_resid};
 use crate::index::tree_store::{TreeStore, SLOT_ENTRIES};
 
+static TAU_BITS: AtomicU32 = AtomicU32::new(u32::MAX);
+
+pub fn resid_tau() -> f32 {
+    match TAU_BITS.load(Ordering::Relaxed) {
+        u32::MAX => {
+            let t = std::env::var("ENN_RESID_TAU")
+                .ok()
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|t| *t >= 0.0)
+                .unwrap_or(0.0);
+            TAU_BITS.store(t.to_bits(), Ordering::Relaxed);
+            t
+        }
+        b => f32::from_bits(b),
+    }
+}
+
+thread_local! {
+    static INHERIT: std::cell::RefCell<Option<Vec<f32>>> = const { std::cell::RefCell::new(None) };
+}
+
+pub fn resid_inherit() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ENN_RESID_INHERIT").is_ok_and(|v| v == "1"))
+}
+
+pub(super) fn set_inherited_anchor(a: Option<Vec<f32>>) {
+    INHERIT.with(|c| *c.borrow_mut() = a);
+}
+
 pub type RowSrc<'a> = Option<&'a dyn Fn(u32, &mut Vec<f32>) -> bool>;
 
 impl TreeStore {
-    pub(super) fn exact_moved(&self, ids: &[u32], src: RowSrc) -> Option<Vec<u8>> {
+    pub(super) fn exact_moved(&self, leaf: u32, ids: &[u32], src: RowSrc) -> Option<Vec<u8>> {
         let f = src.filter(|_| self.resid)?;
-        let mut out = Vec::with_capacity(ids.len() * self.moved_rb());
+        let mrb = self.moved_rb();
+        let tau = resid_tau();
+        let (mut out, lim) = if tau > 0.0 {
+            (self.leaf_moved_resid(leaf), tau * self.radius(leaf))
+        } else {
+            (vec![0u8; ids.len() * mrb], -1.0)
+        };
         let mut v = Vec::with_capacity(self.num_dim);
-        for &r in ids {
+        for (i, &r) in ids.iter().enumerate() {
+            let m = &mut out[i * mrb..(i + 1) * mrb];
+            if f32::from_le_bytes([m[0], m[1], m[2], m[3]]) <= lim {
+                continue;
+            }
             v.clear();
             if !f(r, &mut v) || v.len() != self.num_dim {
                 return None;
             }
-            out.extend_from_slice(&0.0f32.to_le_bytes());
-            v.iter().for_each(|x| out.extend_from_slice(&x.to_le_bytes()));
+            m[..4].copy_from_slice(&0.0f32.to_le_bytes());
+            for (c, x) in m[4..].chunks_exact_mut(4).zip(&v) {
+                c.copy_from_slice(&x.to_le_bytes());
+            }
         }
         Some(out)
     }
@@ -51,14 +94,21 @@ impl TreeStore {
         let row = &self.codes[start..start + code_row_bytes(self.num_dim)];
         let scale = f32::from_le_bytes([row[0], row[1], row[2], row[3]]);
         out.clear();
-        out.extend(row[ROW_HEADER..].iter().map(|&c| scale * f32::from(c as i8)));
+        out.extend(
+            row[ROW_HEADER..]
+                .iter()
+                .map(|&c| scale * f32::from(c as i8)),
+        );
     }
 
     pub(super) fn encode_resid_row(&mut self, id: u32, slot: usize, v: &[f32]) {
         let mut a = Vec::with_capacity(self.num_dim);
         self.anchor(id, &mut a);
         let r: Vec<f32> = v.iter().zip(&a).map(|(x, y)| x - y).collect();
-        let (rb, start) = (self.code_rb(), self.code_page_range(id).start + self.code_hdr());
+        let (rb, start) = (
+            self.code_rb(),
+            self.code_page_range(id).start + self.code_hdr(),
+        );
         let at = start + slot * rb;
         encode_nib_row(&r, &mut self.codes[at..at + rb]);
     }
@@ -89,7 +139,8 @@ impl TreeStore {
         let mut out = Vec::with_capacity(self.len(id) * self.moved_rb());
         for (slot, v) in rows.chunks_exact(d).enumerate() {
             out.extend_from_slice(&nib_resid(self.code_row(id, slot)).to_le_bytes());
-            v.iter().for_each(|x| out.extend_from_slice(&x.to_le_bytes()));
+            v.iter()
+                .for_each(|x| out.extend_from_slice(&x.to_le_bytes()));
         }
         out
     }
@@ -111,6 +162,9 @@ impl TreeStore {
         }
         let inv = 1.0 / rows.len().max(1) as f32;
         mean.iter_mut().for_each(|m| *m *= inv);
+        if let Some(a) = INHERIT.with(|c| c.borrow().clone()) {
+            mean = a;
+        }
         self.set_anchor(id, &mean);
         let rb = self.code_rb();
         for (slot, (old, v)) in rows.iter().enumerate() {
@@ -169,7 +223,11 @@ mod tests {
             let qn2 = s.shift_query(page, &q, &mut shifted);
             for (slot, &row) in s.ids(page).iter().enumerate() {
                 let (d2, e) = nib_sq_l2(&shifted, qn2, s.code_row(page, slot));
-                let exact: f32 = q.iter().zip(v(row as usize)).map(|(a, b)| (a - b) * (a - b)).sum();
+                let exact: f32 = q
+                    .iter()
+                    .zip(v(row as usize))
+                    .map(|(a, b)| (a - b) * (a - b))
+                    .sum();
                 let gap = (d2.sqrt() - exact.sqrt()).abs();
                 assert!(gap <= e * 1.001 + 1e-3, "row={row} gap={gap} err={e}");
                 checked += 1;
@@ -219,15 +277,19 @@ mod profile {
         let mut vs: Vec<f32> = xs[0].clone();
         let mut t =
             crate::index::tree_bulk::bulk_build(&[0], &mut vs, d, dir.path().join("i")).unwrap();
+        let reads = std::cell::Cell::new(0usize);
         let exact = |r: u32, out: &mut Vec<f32>| {
+            reads.set(reads.get() + 1);
             out.extend_from_slice(&xs[r as usize]);
             true
         };
         let use_src = std::env::var("PROFILE_EXACT").is_ok_and(|v| v == "1");
+        let t0 = std::time::Instant::now();
         for (r, x) in xs.iter().enumerate().skip(1) {
             let src: super::RowSrc = if use_src { Some(&exact) } else { None };
             t.insert_row_src(r as u32, x, src).unwrap();
         }
+        let el = 1e6 * t0.elapsed().as_secs_f64() / n as f64;
         let s = &t.store;
         let (mut ratio, mut accum) = (Vec::new(), Vec::new());
         let mut a = Vec::new();
@@ -239,7 +301,11 @@ mod profile {
             if s.resid() {
                 s.anchor(page, &mut a);
                 for (slot, &row) in s.ids(page).iter().enumerate() {
-                    let r: Vec<f32> = xs[row as usize].iter().zip(&a).map(|(x, y)| x - y).collect();
+                    let r: Vec<f32> = xs[row as usize]
+                        .iter()
+                        .zip(&a)
+                        .map(|(x, y)| x - y)
+                        .collect();
                     let mut buf = vec![0u8; nib_row_bytes(d)];
                     encode_nib_row(&r, &mut buf);
                     accum.push(nib_resid(s.code_row(page, slot)) / nib_resid(&buf).max(1e-9));
@@ -248,11 +314,13 @@ mod profile {
         }
         let med = |v: &mut Vec<f32>, q: f64| {
             v.sort_by(f32::total_cmp);
-            v.get(((v.len() as f64 - 1.0) * q) as usize).copied().unwrap_or(f32::NAN)
+            v.get(((v.len() as f64 - 1.0) * q) as usize)
+                .copied()
+                .unwrap_or(f32::NAN)
         };
         println!(
-            "PROFILE exact_src={use_src} mode_resid={} nib={} leaves={} slack/radius p50={:.3} p90={:.3}; stored/fresh bound p50={:.2} p90={:.2} p99={:.2}",
-            s.resid(), s.nib(), ratio.len(), med(&mut ratio, 0.5), med(&mut ratio, 0.9),
+            "PROFILE us/row={:.2} exact_src={use_src} tau={} reads/row={:.3} mode_resid={} nib={} leaves={} slack/radius p50={:.3} p90={:.3}; stored/fresh bound p50={:.2} p90={:.2} p99={:.2}",
+            el, super::resid_tau(), reads.get() as f64 / n as f64, s.resid(), s.nib(), ratio.len(), med(&mut ratio, 0.5), med(&mut ratio, 0.9),
             med(&mut accum, 0.5), med(&mut accum, 0.9), med(&mut accum, 0.99)
         );
     }
@@ -294,7 +362,10 @@ mod refine_more_tests {
         let mut s: Vec<(i64, f64)> = (0..b.len())
             .map(|i| {
                 let r = b.mmap_row_slice(i).unwrap();
-                (i as i64, q.iter().zip(r).map(|(a, c)| (a - c) * (a - c)).sum())
+                (
+                    i as i64,
+                    q.iter().zip(r).map(|(a, c)| (a - c) * (a - c)).sum(),
+                )
             })
             .collect();
         s.sort_by(|a, c| a.1.total_cmp(&c.1).then(a.0.cmp(&c.0)));
@@ -305,7 +376,9 @@ mod refine_more_tests {
         set_refine_more(on);
         take_coded_retries();
         for q in qs.rows() {
-            let (_, idx) = b.search(&q.insert_axis(ndarray::Axis(0)), 10, false).unwrap();
+            let (_, idx) = b
+                .search(&q.insert_axis(ndarray::Axis(0)), 10, false)
+                .unwrap();
             let got: Vec<i64> = idx.row(0).to_vec();
             assert_eq!(got, brute(b, q.as_slice().unwrap(), 10), "refine_more={on}");
         }
@@ -320,7 +393,8 @@ mod refine_more_tests {
         let all = near_subspace(n + 20, d, 3);
         let x = all.slice(ndarray::s![..n, ..]).to_owned();
         let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), d, 1).unwrap();
-        b.append_rows(&x.view(), &Array2::zeros((n, 1)).view(), None).unwrap();
+        b.append_rows(&x.view(), &Array2::zeros((n, 1)).view(), None)
+            .unwrap();
         b.ensure_index_sync().unwrap();
         let qs = all.slice(ndarray::s![n.., ..]).to_owned();
         let off = retries_and_check(&b, &qs, false);

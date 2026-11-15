@@ -1,11 +1,9 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::index::tree_codes::{
-    code_row_bytes, coded_sq_l2, encode_row, page_bytes_hdr, CODE_PAGE_HEADER,
-    ROW_HEADER,
+    code_row_bytes, coded_sq_l2, encode_row, page_bytes_hdr, CODE_PAGE_HEADER, ROW_HEADER,
 };
 use crate::index::tree_store::{TreeStore, SLOT_ENTRIES};
-
 
 pub(super) fn page_bytes_for(row_bytes: usize) -> usize {
     page_bytes_hdr(CODE_PAGE_HEADER, row_bytes)
@@ -234,7 +232,6 @@ impl TreeStore {
 mod tests {
     use super::*;
 
-
     fn wave(d: usize, a: usize, m: usize, div: f32, off: f32) -> Vec<f32> {
         (0..d).map(|i| ((i * a) % m) as f32 / div - off).collect()
     }
@@ -249,12 +246,21 @@ mod tests {
             let qn2: f32 = q.iter().map(|x| x * x).sum();
             let (d2, err) = nib_sq_l2(&q, qn2, &row);
             let exact: f32 = q.iter().zip(&v).map(|(a, b)| (a - b) * (a - b)).sum();
-            assert!((d2.sqrt() - exact.sqrt()).abs() <= err * 1.001 + 1e-3, "d={d}");
+            assert!(
+                (d2.sqrt() - exact.sqrt()).abs() <= err * 1.001 + 1e-3,
+                "d={d}"
+            );
             let mut back = Vec::new();
             decode_nib_row(&row, d, &mut back);
             let resid: f32 = v.iter().zip(&back).map(|(a, b)| (a - b) * (a - b)).sum();
-            assert!(resid.sqrt() <= err && err <= resid.sqrt() * 1.01 + 1e-4, "d={d}");
-            let sq: f32 = back.iter().map(|x| (x / f32::from_le_bytes([row[0], row[1], row[2], row[3]])).powi(2)).sum();
+            assert!(
+                resid.sqrt() <= err && err <= resid.sqrt() * 1.01 + 1e-4,
+                "d={d}"
+            );
+            let sq: f32 = back
+                .iter()
+                .map(|x| (x / f32::from_le_bytes([row[0], row[1], row[2], row[3]])).powi(2))
+                .sum();
             assert!((sq - nib_sumsq(&row)).abs() < 1e-2, "d={d}");
         }
     }
@@ -276,7 +282,10 @@ mod tests {
     #[test]
     fn nib_page_only_when_it_saves_pages() {
         assert!(page_bytes_for(nib_row_bytes(100)) < page_bytes_for(code_row_bytes(100)));
-        assert_eq!(page_bytes_for(nib_row_bytes(10)), page_bytes_for(code_row_bytes(10)));
+        assert_eq!(
+            page_bytes_for(nib_row_bytes(10)),
+            page_bytes_for(code_row_bytes(10))
+        );
         let mut row = vec![1u8; nib_row_bytes(4)];
         encode_nib_row(&[0.0; 4], &mut row);
         assert_eq!(nib_sq_l2(&[1.0, 0.0, 0.0, 0.0], 1.0, &row), (1.0, 0.0));
@@ -294,8 +303,9 @@ mod tests {
             let n0 = 200;
             let rows: Vec<u32> = (0..n0 as u32).collect();
             let mut vs: Vec<f32> = (0..n0).flat_map(v).collect();
-            let mut t = crate::index::tree_bulk::bulk_build(&rows, &mut vs, d, dir.path().join("i"))
-                .unwrap();
+            let mut t =
+                crate::index::tree_bulk::bulk_build(&rows, &mut vs, d, dir.path().join("i"))
+                    .unwrap();
             for r in n0..6 * n0 {
                 t.insert_row(r as u32, &v(r)).unwrap();
             }
@@ -312,8 +322,11 @@ mod tests {
                 }
                 for (slot, &row) in s.ids(page).iter().enumerate() {
                     let (d2, e) = page_sq_l2(&q, qn2, s.code_row(page, slot), s.nib());
-                    let exact: f32 =
-                        q.iter().zip(v(row as usize)).map(|(a, b)| (a - b) * (a - b)).sum();
+                    let exact: f32 = q
+                        .iter()
+                        .zip(v(row as usize))
+                        .map(|(a, b)| (a - b) * (a - b))
+                        .sum();
                     let gap = (d2.sqrt() - exact.sqrt()).abs();
                     assert!(gap <= e * 1.001 + 1e-3, "d={d} row={row} gap={gap} err={e}");
                     checked += 1;

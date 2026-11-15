@@ -254,18 +254,10 @@ fn repartition_leaves(tree: &mut Tree, page: u32, src: RowSrc) -> usize {
     }
     let mut rows = Vec::new();
     let mut vs = Vec::new();
-    let mut coded = Vec::new();
     let mut slack = 0.0f32;
     for &leaf in &leaves {
         rows.extend_from_slice(tree.store.ids(leaf));
         vs.extend_from_slice(&tree.store.leaf_rows(leaf));
-        let ids = tree.store.ids(leaf).to_vec();
-        coded.extend_from_slice(
-            &tree
-                .store
-                .exact_moved(&ids, src)
-                .unwrap_or_else(|| tree.store.leaf_code_bytes(leaf)),
-        );
         slack = slack.max(tree.store.leaf_err(leaf));
     }
     if rows.len() < leaves.len() {
@@ -279,6 +271,16 @@ fn repartition_leaves(tree: &mut Tree, page: u32, src: RowSrc) -> usize {
     let current = scatter_value(&points, &ones, &now);
     if proposed >= current {
         return rows.len();
+    }
+    let mut coded = Vec::new();
+    for &leaf in &leaves {
+        let ids = tree.store.ids(leaf).to_vec();
+        coded.extend_from_slice(
+            &tree
+                .store
+                .exact_moved(leaf, &ids, src)
+                .unwrap_or_else(|| tree.store.leaf_code_bytes(leaf)),
+        );
     }
     for ((&id, group), c) in leaves.iter().zip(groups).zip(centers) {
         let Some((parent, slot)) = slot_in_parent(tree, id) else {
@@ -297,7 +299,11 @@ fn repartition_leaves(tree: &mut Tree, page: u32, src: RowSrc) -> usize {
             .iter()
             .flat_map(|&i| coded[i * rb..(i + 1) * rb].iter().copied())
             .collect();
-        s.set_leaf_coded(id, &group.iter().map(|&i| rows[i]).collect::<Vec<_>>(), &bytes);
+        s.set_leaf_coded(
+            id,
+            &group.iter().map(|&i| rows[i]).collect::<Vec<_>>(),
+            &bytes,
+        );
     }
     if deep.is_some() {
         for (s, k) in children_of_kind(tree, page, false) {

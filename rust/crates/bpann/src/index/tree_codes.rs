@@ -5,9 +5,8 @@ use std::path::Path;
 
 use crate::error::BpannError;
 pub use crate::index::tree_nib::{
-    code4_enabled, code_hdr, decode_nib_row, encode_nib_row, encode_page_row, nib_codes,
-    nib_resid, nib_row_bytes, nib_sq_l2, page_row_bytes, page_sq_l2, resid_codes, set_code4,
-    set_code4_resid,
+    code4_enabled, code_hdr, decode_nib_row, encode_nib_row, encode_page_row, nib_codes, nib_resid,
+    nib_row_bytes, nib_sq_l2, page_row_bytes, page_sq_l2, resid_codes, set_code4, set_code4_resid,
 };
 use crate::index::tree_store::{TreeStore, CODES_FILE, META_HDR_WORDS, META_WORDS, SLOT_ENTRIES};
 use crate::index::tree_store_files::{named_file, scratch_file};
@@ -249,7 +248,8 @@ impl TreeStore {
 
     pub fn leaf_err(&self, id: u32) -> f32 {
         if self.nib {
-            return (0..self.len(id)).fold(0.0, |m, slot| m.max(nib_resid(self.code_row(id, slot))));
+            return (0..self.len(id))
+                .fold(0.0, |m, slot| m.max(nib_resid(self.code_row(id, slot))));
         }
         let half = 0.5 * (self.num_dim as f32).sqrt();
         (0..self.len(id)).fold(0.0, |m, slot| {
@@ -315,8 +315,7 @@ impl TreeStore {
             return;
         }
         let n = self.len(id).min(SLOT_ENTRIES - 1);
-        let tail = (n * self.num_dim * 4 / 4096) as u32
-            ^ ((n * self.code_rb() / 4096) as u32) << 8;
+        let tail = (n * self.num_dim * 4 / 4096) as u32 ^ ((n * self.code_rb() / 4096) as u32) << 8;
         let key = (id.wrapping_mul(0x9E37_79B1) ^ tail) & 0x0FFF_FFFF | APPEND_ADVICE_KEY;
         if !self.residency.first_advice(key) {
             return;
@@ -398,5 +397,4 @@ mod tests {
         let s: f32 = a.iter().zip(&b).map(|(&x, &c)| x * f32::from(c)).sum();
         assert!((dot_f32_i8(&a, &b) - s).abs() < 1e-2);
     }
-
 }

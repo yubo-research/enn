@@ -52,7 +52,11 @@ impl ColdProbe {
         codes: bool,
         leaf_kids: bool,
     ) {
-        let mm = if leaf_kids { 0 } else { self.ahead.min(fresh.len()) };
+        let mm = if leaf_kids {
+            0
+        } else {
+            self.ahead.min(fresh.len())
+        };
         if mm > 0 {
             fresh.select_nth_unstable_by(mm - 1, |a, b| a.0.total_cmp(&b.0));
             fresh[..mm]

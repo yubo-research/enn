@@ -185,9 +185,16 @@ impl Tree {
     ) -> Result<(), BpannError> {
         let row_ids = self.store.ids(leaf).to_vec();
         let block = self.store.leaf_rows(leaf);
+        let inherit = self.store.resid() && crate::index::tree_resid::resid_inherit();
+        let src = src.filter(|_| !inherit);
+        if inherit {
+            let mut a = Vec::new();
+            self.store.anchor(leaf, &mut a);
+            crate::index::tree_resid::set_inherited_anchor(Some(a));
+        }
         let coded = self
             .store
-            .exact_moved(&row_ids, src)
+            .exact_moved(leaf, &row_ids, src)
             .unwrap_or_else(|| self.store.leaf_code_bytes(leaf));
         let rb = self.store.moved_rb();
         let slack = self.store.leaf_err(leaf);
@@ -211,6 +218,7 @@ impl Tree {
         s.set_count(new_id, right.len());
         s.set_radius(new_id, max_dist(&vectors, &right, &cb) + slack);
         s.set_leaf_coded(new_id, &pick_ids(&right), &gather(&right));
+        crate::index::tree_resid::set_inherited_anchor(None);
         self.attach_sibling(path, (leaf, ca), (new_id, cb))
     }
 

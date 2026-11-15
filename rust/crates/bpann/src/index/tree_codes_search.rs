@@ -279,7 +279,8 @@ fn refine_more(
     let kth = |o: &Vec<(u32, f32)>| {
         let mut d: Vec<f32> = o.iter().map(|p| p.1).collect();
         d.sort_by(f32::total_cmp);
-        d.get(k.saturating_sub(1)).map_or(f32::INFINITY, |v| v.sqrt())
+        d.get(k.saturating_sub(1))
+            .map_or(f32::INFINITY, |v| v.sqrt())
     };
     let mut at = 0usize;
     while at < rest.len() && at < REFINE_MORE_CAP {
