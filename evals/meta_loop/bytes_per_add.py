@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 os.environ.setdefault("RAYON_NUM_THREADS", "1")
+import cold_io
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
@@ -22,11 +23,7 @@ pa, pn = 0.0, 0
 
 
 def disk():
-    for l in Path("/proc/diskstats").read_text().splitlines():
-        f = l.split()
-        if f[2] == DEV:
-            return int(f[5]) * 512, int(f[9]) * 512
-    raise SystemExit("device not found")
+    return cold_io.disk(DEV)
 
 
 def fincore_mib(f):

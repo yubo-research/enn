@@ -1,6 +1,6 @@
 # STATE (edit in place; reports are the log)
 
-## Established (1 GB cgroup cap unless noted; "branch" = dsweet/agg_obs, HEAD 61ed15c (prefetch gate committed 4bdadb2); "main" = 3246c4e)
+## Established (1 GB cgroup cap unless noted; "branch" = dsweet/agg_obs, HEAD a9e61af; "main" = 3246c4e)
 - Queries: branch faster than main at N>=1e5 (D=10: 0.22 vs 0.89 s; D=100: 2.2 vs 3.2 s); main faster at N<=1e3. (0216)
 - Memory: branch RssAnon 21 MB vs main 558 MB at D=100, N=1e6. (0216)
 - Quality vs main, 10 paired seeds (0217): identical at N<=1e4. At N=1e5 branch is significantly worse: loglik -0.022 (SE 0.005, p=0.002) at D=10; -0.008 (SE 0.003, p=0.017) at D=100. NRMSE +0.002 (D=10), +0.008 (D=100). (0216's "not significant" was 3 seeds.)
@@ -16,6 +16,9 @@
 
 - In-RAM add gap vs main (0232; 1 GB scope, 5 seeds, uncommitted AdviseGate on 61ed15c): the add-time prefetch (second routing descent + madvise per 32 adds) cost 0.5-3 us/row in RAM; morph is 0.03 us/row. Prefetch is useful past the cap (D=100, N=1.5e6, 256M, 1 run each: always 193, never 257, gated 187 us/row). Gating on major faults (>=8 per 32 adds, 32 groups hysteresis; ENN_ADVISE=off|always|gated) removes 65-83% of the overhead at N=1e5. Branch add is still 1.9-3.1x main (D=10 N=1e5: 1.99 vs 1.05; D=100: 7.51 vs 3.18); the rest is insert_row, unprofiled. Inside the malvin sandbox uncapped timings are ~3x slower than under systemd-run (hypothesis: syscall cost); use scope runs only.
 
+- True on-disk cost (0235; store evicted before every op via MADV_PAGEOUT+fadvise, model kept open, 1G scope, 1 run, 20 queries/10 add groups per N): cold query 118/202/265 ms (D=10) and 246/355/413 ms (D=100) at N=1e4/1e5/1e6; cold add 1.1-2.7 ms/row (32-row groups, 9-40 KB read/row). Smooth from N=1, no step, consistent with a+b lnN for N>=1e4 (query slope 23+-11 / 28+-11 ms per lnN). In RAM it is 240-400x lower. A cold query reads ~2 pages per visited leaf (tree_codes + tree_meta; ~1250 pages at D=100 N=1e6), serially at ~0.33 ms/page. RssAnon flat 19-28 MB.
+- Add cliff replicated (0234 data in 0235, D=100, 256M, 3 runs): fit N<=1e6 predicts 24 us/row at 3e6; measured 644+-5. The cliff is the jump from the RAM curve to the cold curve.
+- Prefetch depth (0235, D=10, N=1e5, cold): default 202 ms, off 290, prefetch_pages=30 157, meta_prefetch=16 159, code_prefetch=30 291 (unexplained). Warm cost of deeper prefetch unmeasured.
 - Where in-RAM add time goes (0233, timer build, 1 run, sandbox, N=1e5): insert_row 2.6 us/row (D=10), 5.7 (D=100). Splits 34%/45% (writes to old/new leaf dominate, alloc_near 0.23 us/row, median_split 0.1-0.2), descent 22%/16%, leaf push 10%/23%, morph 0.04. Shares only; timers inflate totals.
 
 ## Tried and rejected
@@ -27,22 +30,29 @@
 - Leaf coefficient c=3: recall 0.79 at D=10 (0217).
 - Wider AVX2 loop in l2_sq_f32 for D<32 (0233): no gain (1.87 vs 1.66 us/row insert).
 - Morph work as the cause of the in-RAM add gap (0232).
+- MADV_RANDOM on train_x/train_y mmaps (0235): cuts cold train_y reads 604 -> 40 KiB (k=10) but no cold time gain, and in-RAM adds +24% (D=100) / +52% (D=10), 5 paired seeds. Reverted; patch in reports/report-0235-data/patches/.
 
 ## Plan (priority: O(ln N) add and query with no cliff; quality never worse than main)
-0. MODEL STOPPED at 0231 (decision without operator: further model runs cannot change the choice).
-1. Rust, behind a flag: level-1 buffer inside the leaf page (0228), so one pread serves both. Acceptance: query and add fit a+b lnN across the cap (3 runs per cap), then scorecard_0226 with 10 seeds.
-2. Leaf coefficient 30 (uncommitted in working tree; 0218): replicate N=1e6 quality, query cost vs N.
-3. Learnable D=100 test function (low-dimensional projection) to judge recall.
-4. Gate done (0232, uncommitted: commit if operator agrees). Profiled in 0233 (splits dominate). Next: chunked fallocate of slot file / minor-fault count per row to test whether fresh-page writes drive split cost; repeat capped runs 3x with SE. Rust leaf-overflow layout (plan 1) NOT started; still the priority for O(ln N). Harness: add_phase_prof.sh/.patch.
-Harnesses: evals/meta_loop/ (add_gate_cmp.sh, advise_ab.sh, fig_0232.py, scorecard_0226.*, paired_quality.py, buffer_sim.*, long_02xx.sh, fig_02xx.py, bytes_per_add.py, cap_sweep.sh, leaf_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
+Per the 2026-11-15 ruling, judge every change first by cold cost (evals/meta_loop/cold_cost.sh), then by in-RAM cost and the 0226 scorecard.
+1. Lower the cold query curve: (a) frontier-batched parallel leaf reads (DiskANN-style beam, io_uring or WILLNEED on the frontier) behind a flag; (b) one page per visited leaf (co-locate leaf meta + codes; re-judge 0219 by cold cost). Acceptance: cold query at N=1e6 well below 413 ms (D=100), in-RAM no worse.
+2. Lower the cold add curve: buffered adds per level (B-epsilon / buffer tree, ideas.md P1); supersedes the leaf-overflow layout (old plan 1, 0228).
+3. Designed cache: pin top tree levels, plot cold cost vs pinned bytes; then repeat 0234-style capped runs (3 reps) to check the cliff is gone.
+4. Open: deeper prefetch default (check warm cost first); leaf coefficient 30 quality at 1e6; learnable D=100 test function (0217); AdviseGate committed in a9e61af.
+Harnesses: evals/meta_loop/ (cold_cost.py/.sh, prefetch_cold.py, advise_data_ab.*, fig_0235.py, rep_cap_0234.sh, fit_0234.py, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, leaf_sweep.sh, recall_cmp.py, add_phase_prof.*), scripts/bench_cmp/bench.py.
 
 ## Questions for the operator
-- Approve the leaf-overflow layout change in Rust (0228-0231)? Asked repeatedly with no answer; I will implement it behind a flag unless told otherwise.
-- Is "bounded one-time step of cold-read size, then a+b lnN" acceptable as meeting VISION's no-step goal for queries? (0224, 0225)
+- Is "cold cost" as measured in 0235 (page-out of all store pages before each op, model kept open, heap state counts as cache) the yardstick you mean by "true on-disk cost"?
+- Plan 1(a) needs async/parallel reads (io_uring or madvise WILLNEED batches) on the one calculation thread; acceptable under the one-thread rule?
 - Must add-time parity with main hold in RAM, or only past the cliff? (0226) Rerun 1e6 quality with 10 seeds?
 - Keep leaf coefficient 30 (closes D=10 gap, queries 1.8x slower than main at N=1e4)? (0218)
 - Is a learnable-structure test function at D=100 acceptable for quality? (0217)
 - Is a log-structured code store, or queries that skip buffers (relaxed read-your-writes), acceptable? (0219, 0223)
-- Commit the AdviseGate change (sync.rs, 0232)? Thresholds (8 faults/32 adds, 32 groups) are untuned.
+- AdviseGate (0232) was committed in a9e61af; thresholds (8 faults/32 adds, 32 groups) are untuned. Keep?
 - Sandbox lacks perf (paranoid=4), gdb, valgrind; is a profiling-capable environment available? (0233)
 - VISION-b.md does not exist; is another file intended?
+
+## Operator ruling on design method (2026-11-15)
+- The cliff at the cap is not a property of the problem. It comes from treating memory as the store: letting the page cache hold everything until it is full is not an algorithm, and shows no understanding of how the data is used. Stop treating "a step of cold-read size is paid by any disk design" (0224, 0225, 0231) as settled; that conclusion rests on a RAM-until-full design.
+- Design order: (1) the best on-disk algorithm you can build, O(lnN) and fast, judged by its true on-disk cost from N=1 (below the cap, today's "disk reads" are really cache hits; 0225: 1.7 vs ~200 us). (2) Then use memory as a cache, choosing what to keep from measured access patterns: what every operation touches, and what the workload touches often. A cache chosen this way degrades gradually as N grows (contributing to the lnN slope), not all at once at the cap.
+- Quality target is statistical parity with main (error bars, tests), not exactness; approximations are allowed.
+- Beating main at small N is an engineering goal, not a conflict with the above.

@@ -1,0 +1,93 @@
+diff --git a/rust/crates/bpann/src/mmap_store.rs b/rust/crates/bpann/src/mmap_store.rs
+index bcf4c8e..8eda2ba 100644
+--- a/rust/crates/bpann/src/mmap_store.rs
++++ b/rust/crates/bpann/src/mmap_store.rs
+@@ -8,6 +8,18 @@ use crate::index::tree_residency::{Residency, DEFAULT_RESIDENT_BUDGET_BYTES};
+
+ pub(crate) const MMAP_GROW_ROWS: usize = 64;
+
++/// Map a row store for random access. Rows are fetched by neighbor index, so without
++/// the hint every cold row fault pulls a full readahead window (128 KiB on the test
++/// disk; report 0235). `ENN_DATA_ADVISE=normal` keeps kernel readahead, for A/B runs.
++pub fn map_random(file: &File) -> std::io::Result<MmapMut> {
++    let m = unsafe { MmapMut::map_mut(file) }?;
++    static RANDOM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    if *RANDOM.get_or_init(|| std::env::var("ENN_DATA_ADVISE").map_or(true, |v| v != "normal")) {
++        let _ = m.advise(memmap2::Advice::Random);
++    }
++    Ok(m)
++}
++
+ pub struct MmapColumnStore {
+     pub path: PathBuf,
+     pub ncols: usize,
+@@ -43,9 +55,7 @@ impl MmapColumnStore {
+         self.file
+             .set_len(new_len as u64)
+             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+-        self.mmap = unsafe {
+-            MmapMut::map_mut(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
+-        };
++        self.mmap = map_random(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+         self.residency.update_tracking(new_len, 0);
+         Ok(())
+     }
+@@ -90,9 +100,7 @@ impl MmapColumnStore {
+                 "known_nrows {nrows} exceeds train file bytes {len}"
+             )));
+         }
+-        let mmap = unsafe {
+-            MmapMut::map_mut(&file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
+-        };
++        let mmap = map_random(&file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+         let mut residency = Residency::new(DEFAULT_RESIDENT_BUDGET_BYTES);
+         residency.update_tracking(mmap.len(), 0);
+         Ok(Self {
+@@ -202,9 +210,7 @@ impl MmapColumnStore {
+     }
+
+     pub fn release_resident_pages(&mut self) -> Result<(), BpannError> {
+-        self.mmap = unsafe {
+-            MmapMut::map_mut(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
+-        };
++        self.mmap = map_random(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+         self.residency.forget();
+         Ok(())
+     }
+diff --git a/rust/crates/ennbo/src/backend/mmap_column_store.rs b/rust/crates/ennbo/src/backend/mmap_column_store.rs
+index 2f707ea..3f8b3b6 100644
+--- a/rust/crates/ennbo/src/backend/mmap_column_store.rs
++++ b/rust/crates/ennbo/src/backend/mmap_column_store.rs
+@@ -7,6 +7,10 @@ use crate::error::ENNError;
+
+ const MMAP_GROW_ROWS: usize = 64;
+
++fn map_random(file: &File) -> Result<MmapMut, ENNError> {
++    ennbo_bpann::mmap_store::map_random(file).map_err(|e| ENNError::InvalidParameter(e.to_string()))
++}
++
+ pub struct MmapColumnStore {
+     #[allow(dead_code)]
+     pub(crate) path: PathBuf,
+@@ -40,9 +44,7 @@ impl MmapColumnStore {
+         self.file
+             .set_len(new_len as u64)
+             .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
+-        self.mmap = unsafe {
+-            MmapMut::map_mut(&self.file).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
+-        };
++        self.mmap = map_random(&self.file)?;
+         Ok(())
+     }
+
+@@ -77,9 +79,7 @@ impl MmapColumnStore {
+                 "known_nrows {nrows} exceeds train file bytes {len}"
+             )));
+         }
+-        let mmap = unsafe {
+-            MmapMut::map_mut(&file).map_err(|e| ENNError::InvalidParameter(e.to_string()))?
+-        };
++        let mmap = map_random(&file)?;
+         Ok(Self {
+             path,
+             ncols,
