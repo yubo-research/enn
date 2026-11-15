@@ -44,6 +44,8 @@ o = {
     "D": D,
     "n": N,
     "advise": os.environ.get("ENN_DATA_ADVISE", "random"),
+    "node_buf": int(os.environ.get("ENN_NODE_BUF", "0")),
+    "node_buf_leaf": os.environ.get("ENN_NODE_BUF_LEAF", "0") == "1",
     "seed": int(os.environ.get("SEED", "0")),
     "add_us_row": 1e6 * ta / N,
     "q_us_med": 1e6 * float(np.median(tq)),

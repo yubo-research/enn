@@ -35,6 +35,8 @@
 - Leaves keep no f32 rows; codes are the only in-tree copy. Re-encoding decoded rows loses a stored error bound (0237); any future code format must move code bytes on split.
 - Learnable D=100 test exists: INTRINSIC=5 in recall_cmp.py / code4_ab.py (x = z B + 0.01 noise, z in U[0,1]^5); exact-kNN NRMSE 0.16 at 1e5 vs 1.02 for the uniform test.
 - Build hygiene: compare builds made the same way (maturin build wheels); develop vs wheel link different OpenBLAS (0237).
+- Per-node add buffers, one leaf-format page (64 rows) per internal node (0240; patch reports/report-0240-data/patches/node_buf.patch, reverted): D=100, 256M cap, single runs, add us/row none/every-level/leaf-parents-only: 13/82/70 at 1e6, 304/502/554 at 1.3e6, 490/772/704 at 1.6e6. Cliff onset unchanged or earlier, plateau higher, reads 1.5-2.6x. In RAM (N=1e5, 5 seeds): every-level adds 1.48-1.60x, queries 1.13-1.15x (p<=0.005). Quality: D=10 parity; D=100 loglik +0.008 (p=0.02, buffer scans add rows). Unbuffered build reproduces 0234 (304 vs 295-315 at 1.3e6).
+- Cliff onset is set by which pages must stay cached (all leaf tails, 176 B/row, 0219), not by how often each is touched; batching divides touch rate by R (~4-6 here) but buffers add their own pages to the hot set (hypothesis with arithmetic, 0240). Removing the step needs R >= ~60 rows per leaf touch on EBS, i.e. ~1000-row buffers per leaf parent (0240).
 
 ## Tried and rejected
 - File fragmentation (0230), writeback contention (0229), 8K alignment (0229 data) as causes of slow buffer-file reads.
@@ -51,15 +53,16 @@
 - Residual codes as default (0238): adds 2.9x slower in RAM; kept behind ENN_CODE4=2 (off).
 - Lazy re-anchoring and anchor inheritance for residual codes (0239): every setting trades add cost against slack/query cost; none beats 8-bit on both at every N. Deferring morph's exact re-reads until a move is chosen: no add change (kept; no effect on results).
 - Tight certification boundary min(last, min_excluded(r_i - e_i)) (0237): no fewer retries; removed. Larger coded pool (CODE_EXTRA 100/300) does not raise 4-bit recall (0237).
+- One-page (64-row) per-node add buffers, at every level or at leaf parents only (0240): cliff no later, post-cliff adds 1.4-1.6x slower, in-RAM adds up to 1.6x slower. Reverted; patch kept.
 - MADV_RANDOM on train_x/train_y mmaps (0235): cuts cold train_y reads 604 -> 40 KiB (k=10) but no cold time gain, and in-RAM adds +24% (D=100) / +52% (D=10), 5 paired seeds. Reverted; patch in reports/report-0235-data/patches/.
 
 ## Plan (priority: O(ln N) add and query with no cliff; quality never worse than main)
 Per the 2026-11-15 ruling, judge every change first by cold cost (cold_cost.sh, leaf_ids_ab.sh), then by in-RAM cost (build_ab.sh) and the 0226 scorecard.
 1. Lower the cold query curve. Done: leaf ids for D<=50 (0236); raw 4-bit (0237, off); residual 4-bit (0238, off) + refine-more certification (0238, on). (a) residual codes without the add penalty: resolved negatively in 0239 (one anchor per leaf cannot avoid it); revisit only as re-anchoring at buffer-flush time inside item 2. Next: (b) find the 3e4 loss (anchor displacing the leaf-id tail -> extra tree_meta read?); (c) on refine-more failure, continue the coded walk with a larger pool instead of an f32 re-walk; (d) fewer leaves per query; (e) ids-first page for D>50. Parallel leaf reads only pay on NVMe.
-2. Lower the cold add curve: buffered adds per level (B-epsilon / buffer tree, ideas.md P1). NEXT TASK. A flush holds exact rows in memory, so it can also re-anchor residual leaves for free (0239 future work).
+2. Lower the cold add curve. One-page per-node buffers failed (0240). NEXT TASK: (a) test the onset hypothesis directly: capped add sweep (cap_sweep.sh, D=100, 256M) with ENN_CODE4=2 (residual 4-bit, half the leaf code bytes) vs 8-bit; prediction: onset moves to ~2x N. (b) Before any large-buffer code, measure the cold-query cost of scanning a ~1000-row codes-only run per visited leaf parent (cold_cost.sh with a synthetic layout). (c) Log-structured leaves (LSM) need the read-your-writes ruling.
 3. Designed cache: pin top tree levels, plot cold cost vs pinned bytes; then repeat 0234-style capped runs (3 reps) to check the cliff is gone.
 4. Open: in-RAM add gap vs main (2-6x, 0226) is the largest scorecard gap; deeper prefetch default; leaf coefficient 30 quality at 1e6; learnable D=100 test function (0217).
-Harnesses: evals/meta_loop/ (0239: fig_0239.py, resid_faults.py, posterior_identity.py, resid_ab.sh / resid_ram_ab.sh arms like 2t0.1, 2i; resid_* see resid_README.sh, fig_0238.py, code4_* see code4_README.sh, fig_0237.py, leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
+Harnesses: evals/meta_loop/ (0240: nodebuf_cap.sh, nodebuf_ram_ab.sh, fig_0240.py - need the 0240 patch; 0239: fig_0239.py, resid_faults.py, posterior_identity.py, resid_ab.sh / resid_ram_ab.sh arms like 2t0.1, 2i; resid_* see resid_README.sh, fig_0238.py, code4_* see code4_README.sh, fig_0237.py, leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
 
 ## Questions for the operator
 - Which disk is the target? The store has been on EBS (3000 IOPS cap, 0236), where cold cost is IOPS-bound; the local NVMe (/mnt/scratch) is ~20x faster and rewards parallel reads. Should cold-cost judgments use one, the other, or both?
@@ -77,6 +80,7 @@ Harnesses: evals/meta_loop/ (0239: fig_0239.py, resid_faults.py, posterior_ident
 - Residual 4-bit codes give the best cold-query curve so far (0.58-0.82x of 8-bit over most N) but adds are 2.9x slower in RAM. Is a slower add acceptable for a faster query, or must adds match first? (0238)
 - Refine-more is on by default (no measured cost, identical 8-bit results). Keep it on? (0238)
 - train_x is treated as a cold log (rows >16 MiB behind the head are evicted; 0239). Should the design keep that as a rule, i.e. no algorithm may re-read train_x on the add path? It decides whether residual codes can ever be on by default without a buffer tree. (0239)
+- Removing the add cliff by batching needs ~1000-row buffers per leaf parent (0240); queries would scan roughly one such buffer (~25 code pages at D=100) per visited leaf parent. Is a cold-query cost increase of that order acceptable in exchange for a flat add curve, and if so how large?
 - Should the D=100 quality yardstick switch to a learnable test (e.g., INTRINSIC=5 in recall_cmp.py)? The uniform one cannot detect neighbor-quality loss (0217, 0237).
 
 ## Operator ruling on design method (2026-11-15)

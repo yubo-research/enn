@@ -1,0 +1,662 @@
+diff --git a/rust/crates/bpann/src/index/mod.rs b/rust/crates/bpann/src/index/mod.rs
+index 2208f3d..563cb1e 100644
+--- a/rust/crates/bpann/src/index/mod.rs
++++ b/rust/crates/bpann/src/index/mod.rs
+@@ -6,6 +6,7 @@ pub mod search;
+ pub mod split;
+ pub mod sync;
+ pub mod tree;
++pub mod tree_buf;
+ pub mod tree_bulk;
+ pub mod tree_codes;
+ pub mod tree_codes_search;
+diff --git a/rust/crates/bpann/src/index/tree.rs b/rust/crates/bpann/src/index/tree.rs
+index f8802b0..17df138 100644
+--- a/rust/crates/bpann/src/index/tree.rs
++++ b/rust/crates/bpann/src/index/tree.rs
+@@ -4,6 +4,7 @@ use crate::distance::l2_sq_f32;
+ use crate::error::BpannError;
+ use crate::index::build::{IndexHeader, DEFAULT_SKIP_NEIGHBORS};
+ use crate::index::split::{median_split, two_means_split, weighted_mean};
++use crate::index::tree_buf::{node_buf, note_split};
+ use crate::index::tree_counts::dist;
+ use crate::index::tree_resid::RowSrc;
+ use crate::index::tree_store::{Kind, TreeStore};
+@@ -138,15 +139,16 @@ impl Tree {
+     }
+
+     pub fn insert_row_src(&mut self, row: u32, v: &[f32], src: RowSrc) -> Result<(), BpannError> {
++        let root = self.header.root_page_id;
++        if node_buf() > 0 && !self.store.is_leaf(root) {
++            self.header.indexed_rows += 1;
++            return self.node_enter(root, row, v, src);
++        }
+         let mut path: Vec<(u32, usize)> = Vec::new();
+-        let mut cur = self.header.root_page_id;
+-        let sampled = updates_centroid(row);
++        let mut cur = root;
+         loop {
+-            let s = &mut self.store;
+-            if !s.is_leaf(cur) && sampled {
+-                s.set_count(cur, s.count(cur) + TREE_CENTROID_STRIDE as usize);
+-            }
+-            if s.is_leaf(cur) {
++            if self.store.is_leaf(cur) {
++                let s = &mut self.store;
+                 s.set_count(cur, s.count(cur) + 1);
+                 s.push_entry(cur, row, v);
+                 self.header.indexed_rows += 1;
+@@ -155,34 +157,50 @@ impl Tree {
+                 }
+                 return Ok(());
+             }
+-            let slot = nearest(s.block(cur), v);
+-            let child = s.ids(cur)[slot];
+-            let n_child = s.count(child)
+-                + if s.is_leaf(child) {
+-                    1
+-                } else {
+-                    TREE_CENTROID_STRIDE as usize
+-                };
+-            let d = dist(v, &s.block(cur)[slot * v.len()..(slot + 1) * v.len()]);
+-            let r = if sampled {
+-                let step = (TREE_CENTROID_STRIDE as f32 / n_child as f32).min(1.0);
+-                mean_update(s.entry_mut(cur, slot), v, step);
+-                (s.radius(child) + d * step).max(d * (1.0 - step))
+-            } else {
+-                s.radius(child).max(d)
+-            };
+-            s.set_radius(child, r);
++            self.count_entry(cur, row);
++            let (child, slot) = self.route_step(cur, row, v);
+             path.push((cur, slot));
+             cur = child;
+         }
+     }
+
+-    fn split_leaf(
++    pub(super) fn count_entry(&mut self, cur: u32, row: u32) {
++        if updates_centroid(row) {
++            let s = &mut self.store;
++            s.set_count(cur, s.count(cur) + TREE_CENTROID_STRIDE as usize);
++        }
++    }
++
++    pub(super) fn route_step(&mut self, cur: u32, row: u32, v: &[f32]) -> (u32, usize) {
++        let sampled = updates_centroid(row);
++        let s = &mut self.store;
++        let slot = nearest(s.block(cur), v);
++        let child = s.ids(cur)[slot];
++        let n_child = s.count(child)
++            + if s.is_leaf(child) {
++                1
++            } else {
++                TREE_CENTROID_STRIDE as usize
++            };
++        let d = dist(v, &s.block(cur)[slot * v.len()..(slot + 1) * v.len()]);
++        let r = if sampled {
++            let step = (TREE_CENTROID_STRIDE as f32 / n_child as f32).min(1.0);
++            mean_update(s.entry_mut(cur, slot), v, step);
++            (s.radius(child) + d * step).max(d * (1.0 - step))
++        } else {
++            s.radius(child).max(d)
++        };
++        s.set_radius(child, r);
++        (child, slot)
++    }
++
++    pub(super) fn split_leaf(
+         &mut self,
+         leaf: u32,
+         path: &mut Vec<(u32, usize)>,
+         src: RowSrc,
+     ) -> Result<(), BpannError> {
++        note_split();
+         let row_ids = self.store.ids(leaf).to_vec();
+         let block = self.store.leaf_rows(leaf);
+         let inherit = self.store.resid() && crate::index::tree_resid::resid_inherit();
+@@ -257,6 +275,7 @@ impl Tree {
+         path: &mut Vec<(u32, usize)>,
+         page_id: u32,
+     ) -> Result<(), BpannError> {
++        note_split();
+         let s = &self.store;
+         let all_children = s.ids(page_id).to_vec();
+         let flat = s.block(page_id).to_vec();
+@@ -270,7 +289,8 @@ impl Tree {
+                 .map(|&i| dist(all_centroids[i], c) + s.radius(all_children[i]))
+                 .fold(0.0, f32::max)
+         };
+-        let (r_a, r_b) = (radius(&left, &ca), radius(&right, &cb));
++        let r_a = radius(&left, &ca).max(s.buf_cover(page_id, &ca));
++        let r_b = radius(&right, &cb);
+         let pick = |g: &[usize]| -> (Vec<f32>, Vec<u32>) {
+             (
+                 g.iter()
+diff --git a/rust/crates/bpann/src/index/tree_buf.rs b/rust/crates/bpann/src/index/tree_buf.rs
+new file mode 100644
+index 0000000..85f096a
+--- /dev/null
++++ b/rust/crates/bpann/src/index/tree_buf.rs
+@@ -0,0 +1,248 @@
++use std::cell::Cell;
++use std::sync::atomic::{AtomicU64, Ordering};
++
++use crate::error::BpannError;
++use crate::index::tree::{Tree, TREE_LEAF_CAPACITY};
++use crate::index::tree_counts::dist;
++use crate::index::tree_resid::RowSrc;
++use crate::index::tree_store::{Kind, TreeStore, META_WORDS, NO_PARENT};
++
++pub(super) const BUF_WORD: usize = META_WORDS - 32 - 2;
++pub(super) const BUF_BIT: u32 = 1 << 31;
++
++static SPLITS: AtomicU64 = AtomicU64::new(0);
++
++thread_local! {
++    static OVERRIDE: Cell<Option<usize>> = const { Cell::new(None) };
++    static LEAF_OVERRIDE: Cell<Option<bool>> = const { Cell::new(None) };
++}
++
++pub fn node_buf() -> usize {
++    static ENV: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
++    let env = *ENV.get_or_init(|| {
++        std::env::var("ENN_NODE_BUF")
++            .ok()
++            .and_then(|v| v.parse().ok())
++            .unwrap_or(0)
++    });
++    OVERRIDE
++        .with(Cell::get)
++        .unwrap_or(env)
++        .min(TREE_LEAF_CAPACITY)
++}
++
++pub fn leaf_parents_only() -> bool {
++    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    LEAF_OVERRIDE.with(Cell::get).unwrap_or_else(|| {
++        *ENV.get_or_init(|| std::env::var("ENN_NODE_BUF_LEAF").is_ok_and(|v| v == "1"))
++    })
++}
++
++pub fn set_leaf_parents_only(on: Option<bool>) {
++    LEAF_OVERRIDE.with(|c| c.set(on));
++}
++
++pub fn set_node_buf(rows: Option<usize>) {
++    OVERRIDE.with(|c| c.set(rows));
++}
++
++pub(super) fn note_split() {
++    SPLITS.fetch_add(1, Ordering::Relaxed);
++}
++
++fn splits() -> u64 {
++    SPLITS.load(Ordering::Relaxed)
++}
++
++impl TreeStore {
++    pub fn buffer_of(&self, id: u32) -> Option<u32> {
++        if self.is_leaf(id) {
++            return None;
++        }
++        let w = self.meta_words(id)[BUF_WORD];
++        (w != 0).then(|| w - 1)
++    }
++
++    pub fn is_buffer(&self, id: u32) -> bool {
++        let p = self.meta_words(id)[3];
++        p != NO_PARENT && p & BUF_BIT != 0
++    }
++
++    pub fn buffered_rows(&self, id: u32) -> usize {
++        self.buffer_of(id).map_or(0, |b| self.len(b))
++    }
++
++    pub(super) fn clear_buffer_link(&mut self, id: u32) {
++        self.meta_words_mut(id)[BUF_WORD] = 0;
++    }
++
++    fn ensure_buffer(&mut self, owner: u32) -> Result<u32, BpannError> {
++        if let Some(b) = self.buffer_of(owner) {
++            return Ok(b);
++        }
++        let b = self.alloc_near(Kind::Leaf, &[owner])?;
++        self.set_codes_valid(b, true);
++        self.set_ids_only(b, &[]);
++        self.meta_words_mut(b)[3] = owner | BUF_BIT;
++        self.set_count(b, 0);
++        self.set_radius(b, 0.0);
++        self.meta_words_mut(owner)[BUF_WORD] = b + 1;
++        Ok(b)
++    }
++
++    fn buf_push(&mut self, b: u32, row: u32, v: &[f32]) {
++        let (n, d) = (self.len(b), self.num_dim);
++        let words = self.slot_words_mut(b);
++        for (w, &x) in words[n * d..(n + 1) * d].iter_mut().zip(v) {
++            *w = x.to_bits();
++        }
++        self.push_entry(b, row, v);
++        self.set_count(b, n + 1);
++    }
++
++    pub fn buf_rows(&self, b: u32) -> (Vec<u32>, Vec<f32>) {
++        let (n, d) = (self.len(b), self.num_dim);
++        let rows = self.slot_words(b)[..n * d]
++            .iter()
++            .map(|&w| f32::from_bits(w))
++            .collect();
++        (self.ids(b).to_vec(), rows)
++    }
++
++    fn buf_take(&mut self, b: u32) -> (Vec<u32>, Vec<f32>) {
++        let out = self.buf_rows(b);
++        self.set_ids_only(b, &[]);
++        self.set_count(b, 0);
++        out
++    }
++
++    pub fn buf_cover(&self, owner: u32, c: &[f32]) -> f32 {
++        let Some(b) = self.buffer_of(owner).filter(|&b| self.len(b) > 0) else {
++            return 0.0;
++        };
++        let (_, rows) = self.buf_rows(b);
++        rows.chunks_exact(self.num_dim)
++            .map(|v| dist(v, c))
++            .fold(0.0, f32::max)
++    }
++}
++
++impl Tree {
++    pub(super) fn node_enter(
++        &mut self,
++        node: u32,
++        row: u32,
++        v: &[f32],
++        src: RowSrc,
++    ) -> Result<(), BpannError> {
++        let mut cur = node;
++        loop {
++            if self.store.is_leaf(cur) {
++                return self.leaf_enter(cur, row, v, src);
++            }
++            if self.buffers_at(cur) {
++                return self.buffer_enter(cur, row, v, src);
++            }
++            self.count_entry(cur, row);
++            cur = self.route_step(cur, row, v).0;
++        }
++    }
++
++    fn buffers_at(&self, node: u32) -> bool {
++        let s = &self.store;
++        !leaf_parents_only() || s.ids(node).first().is_some_and(|&c| s.is_leaf(c))
++    }
++
++    pub(super) fn buffer_enter(
++        &mut self,
++        node: u32,
++        row: u32,
++        v: &[f32],
++        src: RowSrc,
++    ) -> Result<(), BpannError> {
++        self.count_entry(node, row);
++        let b = self.store.ensure_buffer(node)?;
++        self.store.buf_push(b, row, v);
++        if self.store.len(b) >= node_buf().max(1) {
++            self.flush_node(node, src)?;
++        }
++        Ok(())
++    }
++
++    pub fn flush_node(&mut self, node: u32, src: RowSrc) -> Result<(), BpannError> {
++        let Some(b) = self.store.buffer_of(node) else {
++            return Ok(());
++        };
++        if self.store.len(b) == 0 {
++            return Ok(());
++        }
++        let (ids, rows) = self.store.buf_take(b);
++        let d = self.store.num_dim();
++        let start = splits();
++        for (i, &row) in ids.iter().enumerate() {
++            let v = &rows[i * d..(i + 1) * d];
++            if splits() != start {
++                self.cover_up(node, v);
++            }
++            let (child, _) = self.route_step(node, row, v);
++            self.node_enter(child, row, v, src)?;
++        }
++        Ok(())
++    }
++
++    fn leaf_enter(&mut self, leaf: u32, row: u32, v: &[f32], src: RowSrc) -> Result<(), BpannError> {
++        let s = &mut self.store;
++        s.set_count(leaf, s.count(leaf) + 1);
++        s.push_entry(leaf, row, v);
++        if s.len(leaf) > TREE_LEAF_CAPACITY {
++            let mut path = self.path_to(leaf);
++            self.split_leaf(leaf, &mut path, src)?;
++        }
++        Ok(())
++    }
++
++    pub(super) fn path_to(&self, page: u32) -> Vec<(u32, usize)> {
++        let s = &self.store;
++        let mut path = Vec::new();
++        let mut cur = page;
++        while let Some(p) = s.parent(cur) {
++            let slot = s.ids(p).iter().position(|&c| c == cur);
++            path.push((p, slot.expect("parent lists its child")));
++            cur = p;
++        }
++        path.reverse();
++        path
++    }
++
++    fn cover_up(&mut self, node: u32, v: &[f32]) {
++        let mut cur = node;
++        while let Some(p) = self.store.parent(cur) {
++            let slot = self.store.ids(p).iter().position(|&c| c == cur);
++            let Some(slot) = slot else { return };
++            let d = self.store.num_dim();
++            let r = dist(v, &self.store.block(p)[slot * d..(slot + 1) * d]);
++            if r > self.store.radius(cur) {
++                self.store.set_radius(cur, r);
++            }
++            cur = p;
++        }
++    }
++
++    pub fn flush_all(&mut self) -> Result<(), BpannError> {
++        loop {
++            let owners: Vec<u32> = (0..self.num_pages() as u32)
++                .filter(|&p| !self.store.is_free(p) && self.store.buffered_rows(p) > 0)
++                .collect();
++            if owners.is_empty() {
++                return Ok(());
++            }
++            for p in owners {
++                self.flush_node(p, None)?;
++            }
++        }
++    }
++}
++
++#[cfg(test)]
++#[path = "tree_buf_tests.rs"]
++mod tests;
+diff --git a/rust/crates/bpann/src/index/tree_buf_tests.rs b/rust/crates/bpann/src/index/tree_buf_tests.rs
+new file mode 100644
+index 0000000..cb4319c
+--- /dev/null
++++ b/rust/crates/bpann/src/index/tree_buf_tests.rs
+@@ -0,0 +1,115 @@
++use super::*;
++use crate::index::tree_search::{search_tree_scored, F32_WALKS};
++use rand::{Rng, SeedableRng};
++
++fn build(n: usize, dim: usize, buf: usize, seed: u64) -> (Tree, Vec<f32>, tempfile::TempDir) {
++    set_node_buf(Some(buf));
++    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
++    let vs: Vec<f32> = (0..n * dim).map(|_| rng.gen::<f32>()).collect();
++    let dir = tempfile::TempDir::new().unwrap();
++    let mut tree = Tree::new_tree(0, &vs[..dim], dim, dir.path().join("i")).unwrap();
++    for r in 1..n {
++        tree.insert_row(r as u32, &vs[r * dim..(r + 1) * dim]).unwrap();
++    }
++    (tree, vs, dir)
++}
++
++/// Every row (in a leaf or a buffer) lies within its ancestors' radii.
++fn assert_covered(tree: &Tree, vs: &[f32], dim: usize) {
++    let s = &tree.store;
++    let rows_under = |page: u32| -> Vec<u32> {
++        let mut out = Vec::new();
++        let mut stack = vec![page];
++        while let Some(p) = stack.pop() {
++            if s.is_leaf(p) {
++                out.extend_from_slice(s.ids(p));
++                continue;
++            }
++            if let Some(b) = s.buffer_of(p) {
++                out.extend_from_slice(s.ids(b));
++            }
++            stack.extend_from_slice(s.ids(p));
++        }
++        out
++    };
++    for p in (0..tree.num_pages() as u32).filter(|&p| !s.is_free(p) && !s.is_leaf(p)) {
++        for (c, &child) in s.block(p).chunks_exact(dim).zip(s.ids(p)) {
++            for row in rows_under(child) {
++                let x = &vs[row as usize * dim..(row as usize + 1) * dim];
++                assert!(dist(x, c) <= s.radius(child) * 1.0001 + 1e-6, "row {row}");
++            }
++        }
++    }
++}
++
++#[test]
++fn buffered_tree_holds_every_row_once_and_covers_it() {
++    let (n, dim) = (20_000, 3);
++    let (mut tree, vs, _dir) = build(n, dim, 30, 1);
++    let buffered: usize = (0..tree.num_pages() as u32)
++        .map(|p| tree.store.buffered_rows(p))
++        .sum();
++    assert!(buffered > 0, "some rows wait in buffers");
++    assert_eq!(tree.leaf_row_ids(), (0..n as u32).collect::<Vec<_>>());
++    assert_eq!(tree.header.indexed_rows, n);
++    tree.assert_counts_consistent();
++    assert_covered(&tree, &vs, dim);
++    tree.flush_all().unwrap();
++    assert_eq!(tree.leaf_row_ids(), (0..n as u32).collect::<Vec<_>>());
++    assert_covered(&tree, &vs, dim);
++    set_node_buf(None);
++}
++
++#[test]
++fn buffered_search_is_exact_without_a_budget() {
++    let (n, dim, k) = (5_000, 4, 10);
++    let (tree, vs, _dir) = build(n, dim, 64, 2);
++    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(9);
++    for _ in 0..20 {
++        let q: Vec<f32> = (0..dim).map(|_| rng.gen::<f32>()).collect();
++        let d2 = |r: u32| -> f64 {
++            let x = &vs[r as usize * dim..(r as usize + 1) * dim];
++            x.iter()
++                .zip(&q)
++                .map(|(a, b)| f64::from(a - b).powi(2))
++                .sum()
++        };
++        let got = search_tree_scored(&tree, &q, k, usize::MAX, &F32_WALKS, None, |r, _, _| {
++            Ok(Some(d2(r)))
++        })
++        .unwrap();
++        let mut all: Vec<(u32, f64)> = (0..n as u32).map(|r| (r, d2(r))).collect();
++        all.sort_by(|a, b| a.1.total_cmp(&b.1));
++        let want: Vec<u32> = all[..k].iter().map(|p| p.0).collect();
++        let got: Vec<u32> = got.iter().map(|p| p.0).collect();
++        assert_eq!(got, want);
++    }
++    set_node_buf(None);
++}
++
++#[test]
++fn buffers_off_by_default_and_capped_at_a_leaf() {
++    set_node_buf(None);
++    if std::env::var_os("ENN_NODE_BUF").is_none() {
++        assert_eq!(node_buf(), 0);
++    }
++    set_node_buf(Some(1000));
++    assert_eq!(node_buf(), TREE_LEAF_CAPACITY);
++    set_node_buf(None);
++}
++
++#[test]
++fn leaf_parent_buffers_hold_every_row_once_and_cover_it() {
++    set_leaf_parents_only(Some(true));
++    let (n, dim) = (20_000, 3);
++    let (tree, vs, _dir) = build(n, dim, 64, 4);
++    let s = &tree.store;
++    for p in (0..tree.num_pages() as u32).filter(|&p| s.buffered_rows(p) > 0) {
++        assert!(s.is_leaf(s.ids(p)[0]), "only leaf parents buffer");
++    }
++    assert_eq!(tree.leaf_row_ids(), (0..n as u32).collect::<Vec<_>>());
++    tree.assert_counts_consistent();
++    assert_covered(&tree, &vs, dim);
++    set_leaf_parents_only(None);
++    set_node_buf(None);
++}
+diff --git a/rust/crates/bpann/src/index/tree_counts.rs b/rust/crates/bpann/src/index/tree_counts.rs
+index 7bc8aed..e079875 100644
+--- a/rust/crates/bpann/src/index/tree_counts.rs
++++ b/rust/crates/bpann/src/index/tree_counts.rs
+@@ -77,7 +77,7 @@ impl Tree {
+             self.store.set_radius(child, rc);
+             r = r.max(dist(c, centroid) + rc);
+         }
+-        r
++        r.max(self.store.buf_cover(page, centroid))
+     }
+
+     pub fn scale_rows(
+@@ -134,6 +134,11 @@ impl Tree {
+                 sum += self.count_subtree(child, depth + 1)?;
+                 self.store.set_parent(child, Some(page));
+             }
++            if let Some(b) = self.store.buffer_of(page) {
++                let n = self.store.len(b);
++                self.store.set_count(b, n);
++                sum += n;
++            }
+             sum
+         };
+         self.store.set_count(page, n);
+diff --git a/rust/crates/bpann/src/index/tree_morph.rs b/rust/crates/bpann/src/index/tree_morph.rs
+index 19e4f6a..09bc76f 100644
+--- a/rust/crates/bpann/src/index/tree_morph.rs
++++ b/rust/crates/bpann/src/index/tree_morph.rs
+@@ -134,8 +134,9 @@ fn refresh(tree: &mut Tree, page: u32, (parent, slot): (u32, usize)) {
+         .iter()
+         .zip(kids)
+         .map(|(x, &k)| dist(x, &c) + st.radius(k))
+-        .fold(0.0, f32::max);
+-    let n = kids.iter().map(|&k| st.count(k)).sum();
++        .fold(st.buf_cover(page, &c), f32::max);
++    let n_buf = st.buffered_rows(page);
++    let n = kids.iter().map(|&k| st.count(k)).sum::<usize>() + n_buf;
+     let st = &mut tree.store;
+     st.set_count(page, n);
+     st.set_radius(page, r);
+@@ -314,6 +315,10 @@ fn repartition_leaves(tree: &mut Tree, page: u32, src: RowSrc) -> usize {
+ }
+
+ fn repartition_internal(tree: &mut Tree, parent: u32) -> usize {
++    regroup_internal(tree, parent, true)
++}
++
++fn regroup_internal(tree: &mut Tree, parent: u32, first: bool) -> usize {
+     let d = tree.store.num_dim();
+     let members = children_of_kind(tree, parent, false);
+     if members.len() < 2 {
+@@ -335,6 +340,19 @@ fn repartition_internal(tree: &mut Tree, parent: u32) -> usize {
+     if proposed >= scatter(&cents, &weights, &now).0 {
+         return kids.len();
+     }
++    let buffered: Vec<u32> = members
++        .iter()
++        .map(|m| m.1)
++        .filter(|&m| tree.store.buffered_rows(m) > 0)
++        .collect();
++    if !buffered.is_empty() {
++        let flushed = buffered.iter().all(|&m| tree.flush_node(m, None).is_ok());
++        return if first && flushed {
++            kids.len() + regroup_internal(tree, parent, false)
++        } else {
++            kids.len()
++        };
++    }
+     for ((&(slot, id), group), c) in members.iter().zip(groups).zip(centers) {
+         let s = &mut tree.store;
+         let r = group
+diff --git a/rust/crates/bpann/src/index/tree_search.rs b/rust/crates/bpann/src/index/tree_search.rs
+index cc70e36..0be12dc 100644
+--- a/rust/crates/bpann/src/index/tree_search.rs
++++ b/rust/crates/bpann/src/index/tree_search.rs
+@@ -462,8 +462,12 @@ pub(super) fn search_tree_scored(
+                 kinds,
+             };
+             walk.run(s, (page_id, depth), &top, &mut frontier);
++            if let Some(b) = s.buffer_of(page_id).filter(|&b| s.len(b) > 0) {
++                frontier.push(Reverse((phase, key, bound, b, depth + 1)));
++            }
+             continue;
+         }
++        let buffer = s.is_buffer(page_id);
+         ahead.before_leaf(s, &mut frontier, coded.as_deref_mut(), kinds);
+         score_leaf(
+             tree,
+@@ -473,7 +477,7 @@ pub(super) fn search_tree_scored(
+             &mut top,
+             &mut score,
+         )?;
+-        leaves += 1;
++        leaves += usize::from(!buffer);
+     }
+     meter.record(leaves, stopped_on_budget);
+     CASCADE_LEAVES.with(|c| c.set(c.get() + leaves));
+diff --git a/rust/crates/bpann/src/index/tree_sib.rs b/rust/crates/bpann/src/index/tree_sib.rs
+index 6e1529e..ca3885c 100644
+--- a/rust/crates/bpann/src/index/tree_sib.rs
++++ b/rust/crates/bpann/src/index/tree_sib.rs
+@@ -55,6 +55,8 @@ impl TreeStore {
+             let end = ((b + 1) * SIB_BLOCK).min(self.num_pages);
+             if let Some(id) = (b * SIB_BLOCK..end).find(|&i| self.is_free(i as u32)) {
+                 self.set_kind(id as u32, kind);
++                self.meta_words_mut(id as u32)[3] = NO_PARENT;
++                self.clear_buffer_link(id as u32);
+                 return Ok(id as u32);
+             }
+             if end < (b + 1) * SIB_BLOCK {
+diff --git a/rust/crates/bpann/src/index/tree_store.rs b/rust/crates/bpann/src/index/tree_store.rs
+index 392557d..359d8d1 100644
+--- a/rust/crates/bpann/src/index/tree_store.rs
++++ b/rust/crates/bpann/src/index/tree_store.rs
+@@ -157,7 +157,7 @@ impl TreeStore {
+     }
+
+     #[inline]
+-    fn slot_words(&self, id: u32) -> &[u32] {
++    pub(super) fn slot_words(&self, id: u32) -> &[u32] {
+         let i = id as usize;
+         assert!(i < self.num_pages, "tree page {id} out of range");
+         self.residency.touch(
+@@ -170,7 +170,7 @@ impl TreeStore {
+     }
+
+     #[inline]
+-    fn slot_words_mut(&mut self, id: u32) -> &mut [u32] {
++    pub(super) fn slot_words_mut(&mut self, id: u32) -> &mut [u32] {
+         self.unstamp();
+         self.icache.invalidate(id);
+         let i = id as usize;
+@@ -235,7 +235,7 @@ impl TreeStore {
+             n <= SLOT_ENTRIES && block.len() == n * self.num_dim,
+             "bad entries for page {id}"
+         );
+-        if !self.is_leaf(id) {
++        if !self.is_leaf(id) || self.is_buffer(id) {
+             let words = self.slot_words_mut(id);
+             for (w, &v) in words.iter_mut().zip(block) {
+                 *w = v.to_bits();
+@@ -323,7 +323,8 @@ impl TreeStore {
+     }
+
+     pub fn parent(&self, id: u32) -> Option<u32> {
+-        Some(self.meta_words(id)[3]).filter(|&p| p != NO_PARENT)
++        Some(self.meta_words(id)[3])
++            .filter(|&p| p != NO_PARENT && p & crate::index::tree_buf::BUF_BIT == 0)
+     }
+
+     pub fn set_parent(&mut self, id: u32, parent: Option<u32>) {
