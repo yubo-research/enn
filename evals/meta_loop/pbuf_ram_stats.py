@@ -8,6 +8,8 @@ from scipy import stats
 
 def main():
     rows = [json.loads(l) for l in Path(sys.argv[1]).read_text().splitlines()]
+    if len(sys.argv) > 3:
+        rows = [r for r in rows if r["D"] == int(sys.argv[3])]
     base_label = sys.argv[2]
     by = {(r["advise"], r["seed"]): r for r in rows}
     seeds = sorted({r["seed"] for r in rows if (base_label, r["seed"]) in by})

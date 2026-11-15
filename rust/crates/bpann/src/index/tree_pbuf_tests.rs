@@ -28,7 +28,7 @@ fn eight_bit_codes_reencode_losslessly_from_their_decoding() {
     }
 }
 
-fn assert_buffers_covered(t: &Tree) {
+pub(crate) fn assert_buffers_covered(t: &Tree) {
     let s = &t.store;
     let half = 0.5 * (s.num_dim() as f32).sqrt();
     for p in 0..t.num_pages() as u32 {
@@ -75,6 +75,11 @@ fn buffered_tree_holds_every_row_and_radii_cover_buffers() {
 
 #[test]
 fn buffered_search_finds_true_neighbours() {
+    let missed = missed_neighbours(200);
+    assert!(missed <= 2, "{missed} of 140 true neighbours missed");
+}
+
+pub(crate) fn missed_neighbours(rows: usize) -> usize {
     let (n, d) = (4000usize, 3usize);
     let dir = tempfile::TempDir::new().unwrap();
     let mut rng = ChaCha8Rng::seed_from_u64(5);
@@ -82,7 +87,7 @@ fn buffered_search_finds_true_neighbours() {
     let mut store =
         MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), d, None).unwrap();
     store.mmap_append(&x.view()).unwrap();
-    set_pbuf_rows(200);
+    set_pbuf_rows(rows);
     let mut idx = IncrementalIndex::new(dir.path().join("index"));
     for end in [1, 700, n] {
         idx.ensure_sync_for_backend(&store, d, false, &[1.0; 3], end)
@@ -112,5 +117,5 @@ fn buffered_search_finds_true_neighbours() {
             .filter(|w| !got.iter().any(|g| g.0 == w.0))
             .count();
     }
-    assert!(missed <= 2, "{missed} of 140 true neighbours missed");
+    missed
 }

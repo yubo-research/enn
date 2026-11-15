@@ -5,6 +5,7 @@ use crate::error::BpannError;
 use crate::index::build::{IndexHeader, DEFAULT_SKIP_NEIGHBORS};
 use crate::index::split::{median_split, two_means_split, weighted_mean};
 use crate::index::tree_counts::dist;
+use crate::index::tree_pbuf_all::pbuf_all;
 use crate::index::tree_resid::RowSrc;
 use crate::index::tree_store::{Kind, TreeStore};
 
@@ -12,17 +13,17 @@ pub const TREE_LEAF_CAPACITY: usize = 64;
 pub const TREE_FANOUT: usize = 16;
 pub const TREE_CENTROID_STRIDE: u32 = 16;
 
-fn updates_centroid(row: u32) -> bool {
+pub(super) fn updates_centroid(row: u32) -> bool {
     (row.wrapping_mul(2_654_435_761) >> 12).is_multiple_of(TREE_CENTROID_STRIDE)
 }
 
-fn mean_update(centroid: &mut [f32], v: &[f32], step: f32) {
+pub(super) fn mean_update(centroid: &mut [f32], v: &[f32], step: f32) {
     for (c, &x) in centroid.iter_mut().zip(v) {
         *c += (x - *c) * step;
     }
 }
 
-fn nearest(block: &[f32], v: &[f32]) -> usize {
+pub(super) fn nearest(block: &[f32], v: &[f32]) -> usize {
     let mut best = (0usize, f32::INFINITY);
     for (i, c) in block.chunks_exact(v.len()).enumerate() {
         let d = l2_sq_f32(v, c);
@@ -112,6 +113,9 @@ impl Tree {
 
     pub fn advise_insert_group(&self, rows: &[Vec<f32>]) {
         let s = &self.store;
+        if s.pbuf_on() && pbuf_all() {
+            return;
+        }
         let mut cur = vec![self.header.root_page_id; rows.len()];
         loop {
             let mut seen = std::collections::HashSet::new();
@@ -145,6 +149,9 @@ impl Tree {
     }
 
     pub fn insert_row_src(&mut self, row: u32, v: &[f32], src: RowSrc) -> Result<(), BpannError> {
+        if self.store.pbuf_on() && pbuf_all() && !self.store.is_leaf(self.header.root_page_id) {
+            return self.pbuf_add_root(row, v);
+        }
         self.insert_inner(row, v, src, None)
     }
 
@@ -190,7 +197,7 @@ impl Tree {
                 debug_assert!(s.is_leaf(child), "route leaf bit stale at {cur}");
                 let n = s.pbuf_push(cur, row, v);
                 self.header.indexed_rows += 1;
-                if n >= s.pbuf.rows {
+                if n >= s.pbuf_cap(cur) {
                     self.pbuf_flush(cur)?;
                 }
                 return Ok(());

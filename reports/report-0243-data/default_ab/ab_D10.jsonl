@@ -1,0 +1,10 @@
+{"D": 10, "n": 100000, "advise": "base", "node_buf": 0, "node_buf_leaf": false, "seed": 1, "add_us_row": 1.4290564879775047, "q_us_med": 751.0131690651178, "q_us_mean": 708.6138427257538}
+{"D": 10, "n": 100000, "advise": "head", "node_buf": 0, "node_buf_leaf": false, "seed": 1, "add_us_row": 1.4693150063976645, "q_us_med": 803.2890036702156, "q_us_mean": 792.2327145934105}
+{"D": 10, "n": 100000, "advise": "base", "node_buf": 0, "node_buf_leaf": false, "seed": 2, "add_us_row": 1.650100746192038, "q_us_med": 771.6328836977482, "q_us_mean": 743.245636112988}
+{"D": 10, "n": 100000, "advise": "head", "node_buf": 0, "node_buf_leaf": false, "seed": 2, "add_us_row": 2.117496868595481, "q_us_med": 784.1885089874268, "q_us_mean": 770.6170808523893}
+{"D": 10, "n": 100000, "advise": "base", "node_buf": 0, "node_buf_leaf": false, "seed": 3, "add_us_row": 1.9559102039784193, "q_us_med": 793.3035958558321, "q_us_mean": 795.4188715666533}
+{"D": 10, "n": 100000, "advise": "head", "node_buf": 0, "node_buf_leaf": false, "seed": 3, "add_us_row": 2.111750366166234, "q_us_med": 796.1438968777657, "q_us_mean": 771.9055004417896}
+{"D": 10, "n": 100000, "advise": "base", "node_buf": 0, "node_buf_leaf": false, "seed": 4, "add_us_row": 2.1754982182756066, "q_us_med": 863.8601284474134, "q_us_mean": 873.0382635258138}
+{"D": 10, "n": 100000, "advise": "head", "node_buf": 0, "node_buf_leaf": false, "seed": 4, "add_us_row": 2.2438374906778336, "q_us_med": 883.3352476358414, "q_us_mean": 888.0437910556793}
+{"D": 10, "n": 100000, "advise": "base", "node_buf": 0, "node_buf_leaf": false, "seed": 5, "add_us_row": 1.957575287669897, "q_us_med": 555.5588286370039, "q_us_mean": 629.0558958426118}
+{"D": 10, "n": 100000, "advise": "head", "node_buf": 0, "node_buf_leaf": false, "seed": 5, "add_us_row": 1.9272211007773876, "q_us_med": 568.7198136001825, "q_us_mean": 640.6208779662848}

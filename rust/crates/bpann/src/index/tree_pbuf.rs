@@ -24,6 +24,7 @@ static FLUSH_LEAVES: AtomicU64 = AtomicU64::new(0);
 static FLUSH_SPLITS: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
+    static FLUSH_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     static REPLAY_LEAVES: std::cell::RefCell<Vec<u32>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -278,7 +279,7 @@ impl TreeStore {
         })
     }
 
-    fn pbuf_take(&mut self, id: u32) -> Vec<(u32, Vec<f32>, f32)> {
+    pub(super) fn pbuf_take(&mut self, id: u32) -> Vec<(u32, Vec<f32>, f32)> {
         let half = 0.5 * (self.num_dim as f32).sqrt();
         let mut out = Vec::with_capacity(self.pbuf_len(id));
         for (row, code) in self.pbuf_records(id) {
@@ -314,27 +315,38 @@ impl TreeStore {
 
 impl Tree {
     pub(super) fn pbuf_flush(&mut self, id: u32) -> Result<(), BpannError> {
+        let outer = FLUSH_DEPTH.with(|d| d.replace(d.get() + 1)) == 0;
         let (t, f0) = (std::time::Instant::now(), thread_majflt());
         if pbuf_advise() {
             self.store.advise_children(id);
         }
-        let rows = self.store.pbuf_take(id);
-        TAKE_FAULTS.fetch_add(thread_majflt() - f0, Ordering::Relaxed);
-        FLUSH_ROWS.fetch_add(rows.len() as u64, Ordering::Relaxed);
-        let start = if pbuf_from_root() { u32::MAX } else { id };
-        for (row, v, slack) in rows {
-            self.insert_inner(row, &v, None, Some((slack, start)))?;
-        }
+        let n = if crate::index::tree_pbuf_all::pbuf_all() {
+            self.pbuf_flush_levels(id)
+        } else {
+            let rows = self.store.pbuf_take(id);
+            TAKE_FAULTS.fetch_add(thread_majflt() - f0, Ordering::Relaxed);
+            let n = rows.len() as u64;
+            let start = if pbuf_from_root() { u32::MAX } else { id };
+            rows.into_iter()
+                .try_for_each(|(row, v, slack)| {
+                    self.insert_inner(row, &v, None, Some((slack, start)))
+                })
+                .map(|()| n)
+        };
+        FLUSH_DEPTH.with(|d| d.set(d.get() - 1));
+        FLUSH_ROWS.fetch_add(n?, Ordering::Relaxed);
         FLUSHES.fetch_add(1, Ordering::Relaxed);
-        REPLAY_LEAVES.with(|v| {
-            let mut v = v.borrow_mut();
-            v.sort_unstable();
-            v.dedup();
-            FLUSH_LEAVES.fetch_add(v.len() as u64, Ordering::Relaxed);
-            v.clear();
-        });
-        FLUSH_FAULTS.fetch_add(thread_majflt() - f0, Ordering::Relaxed);
-        FLUSH_NS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        if outer {
+            REPLAY_LEAVES.with(|v| {
+                let mut v = v.borrow_mut();
+                v.sort_unstable();
+                v.dedup();
+                FLUSH_LEAVES.fetch_add(v.len() as u64, Ordering::Relaxed);
+                v.clear();
+            });
+            FLUSH_FAULTS.fetch_add(thread_majflt() - f0, Ordering::Relaxed);
+            FLUSH_NS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
         Ok(())
     }
 
@@ -342,20 +354,26 @@ impl Tree {
         if !self.store.pbuf_on() {
             return Ok(());
         }
-        let mut stack = vec![root];
-        let mut internal = Vec::new();
-        while let Some(p) = stack.pop() {
-            if !self.store.is_leaf(p) && !self.store.is_free(p) {
-                internal.push(p);
-                stack.extend(self.store.ids(p).iter().copied());
+        loop {
+            let mut stack = vec![root];
+            let mut full = Vec::new();
+            while let Some(p) = stack.pop() {
+                if !self.store.is_leaf(p) && !self.store.is_free(p) {
+                    if self.store.pbuf_len(p) > 0 {
+                        full.push(p);
+                    }
+                    stack.extend(self.store.ids(p).iter().copied());
+                }
+            }
+            if full.is_empty() {
+                return Ok(());
+            }
+            for p in full {
+                if !self.store.is_free(p) && !self.store.is_leaf(p) {
+                    self.pbuf_flush(p)?;
+                }
             }
         }
-        for p in internal {
-            if !self.store.is_free(p) && !self.store.is_leaf(p) {
-                self.pbuf_flush(p)?;
-            }
-        }
-        Ok(())
     }
 
     pub fn pbuf_flush_all(&mut self) -> Result<(), BpannError> {
@@ -403,4 +421,4 @@ pub(super) fn score_pbuf(
 
 #[cfg(test)]
 #[path = "tree_pbuf_tests.rs"]
-mod tests;
+pub(crate) mod tests;
