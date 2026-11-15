@@ -14,6 +14,9 @@ DEV = sys.argv[7] if len(sys.argv) > 7 else "nvme0n1p1"
 MODE2 = sys.argv[8] if len(sys.argv) > 8 else ""
 BOUND = MODE2 in ("sub", "seg")
 SEG = MODE2 == "seg"
+IDX = MODE2 == "idx"
+BOUND = BOUND or IDX
+PG = 4096
 RB, LEAF_ROWS, LEAF_BYTES, HDR = 112, 48, 8192, 64
 BATCH = 4096
 LMAX = MAXN // LEAF_ROWS + 1
@@ -59,7 +62,10 @@ if MODE == "buffered":
     for j in range(1, top):
         base[j] = off
         off += nnodes[j] * (F * slot(j) if SEG else 2 * capj(j)) * RB
+        off += nnodes[j] * F * PG if IDX else 0
     cnt = {j: np.zeros(nnodes[j], np.int32) for j in range(1, top)}
+    boff = {j: np.zeros(nnodes[j], np.int64) for j in range(1, top)}
+    runs = {j: {} for j in range(1, top)}
     segcnt = (
         {j: np.zeros((nnodes[j], F), np.int32) for j in range(1, top)} if SEG else {}
     )
@@ -104,14 +110,35 @@ def flush(j, rows):
         if SEG:
             append_seg(k, i, rows[g])
             continue
-        o = base[k] + (i * 2 * capj(k) + int(cnt[k][i])) * RB
-        os.pwrite(buf_fd, rows[g].tobytes(), o)
+        write_run(k, i, rows[g])
         cnt[k][i] += len(g)
         if cnt[k][i] >= capj(k):
             n = int(cnt[k][i])
-            raw = os.pread(buf_fd, n * RB, base[k] + i * 2 * capj(k) * RB)
+            raw = read_back(k, i, n)
             cnt[k][i] = 0
             flush(k, np.frombuffer(raw, np.uint8).reshape(n, RB))
+
+
+def write_run(k, i, part):
+    if not IDX:
+        o = base[k] + (i * 2 * capj(k) + int(cnt[k][i])) * RB
+        os.pwrite(buf_fd, part.tobytes(), o)
+        return
+    o = base[k] + i * (2 * capj(k) * RB + F * PG) + int(boff[k][i])
+    os.pwrite(buf_fd, bytes(PG) + part.tobytes(), o)
+    runs[k].setdefault(i, []).append((o, len(part)))
+    boff[k][i] += PG + len(part) * RB
+
+
+def read_back(k, i, n):
+    if not IDX:
+        return os.pread(buf_fd, n * RB, base[k] + i * 2 * capj(k) * RB)
+    parts = [
+        np.frombuffer(os.pread(buf_fd, m * RB, o0 + PG), np.uint8).reshape(m, RB)
+        for o0, m in runs[k].pop(i)
+    ]
+    boff[k][i] = 0
+    return np.concatenate(parts).tobytes()
 
 
 def flush_node(k, i):
@@ -149,6 +176,11 @@ def append_seg(k, i, rows):
 
 def scan_node(l, k):
     i = l // F**k
+    if IDX:
+        for o0, m in runs[k].get(i, ()):
+            os.pread(buf_fd, PG, o0)
+            os.pread(buf_fd, PG, o0 + PG + int(rng_q.integers(0, m)) * RB)
+        return 0
     c = int(cnt[k][i])
     if not c or SEG:
         return 0
@@ -168,6 +200,7 @@ def query(l):
 
 
 NQ = 300
+rng_q = np.random.default_rng(3)
 rng = np.random.default_rng(0)
 qrng = np.random.default_rng(7)
 N, t0, last = 0, time.time(), (time.time(), 0, disk())
