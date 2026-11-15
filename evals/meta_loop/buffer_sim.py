@@ -15,7 +15,9 @@ MODE2 = sys.argv[8] if len(sys.argv) > 8 else ""
 BOUND = MODE2 in ("sub", "seg")
 SEG = MODE2 == "seg"
 IDX = MODE2 == "idx"
-MRG = MODE2 == "mrg"
+MRG = MODE2 in ("mrg", "hyb")
+DISKLV = int(os.environ.get("DISKLV", "99"))
+ram = {}
 FS = 64
 BOUND = BOUND or IDX or MRG
 PG = 4096
@@ -128,6 +130,16 @@ fences = {}
 
 
 def merge_into(k, i, part):
+    if k > DISKLV:
+        old = ram.get((k, i))
+        allr = part if old is None else np.concatenate([old, part])
+        allr = allr[np.argsort(keys_of(allr), kind="stable")]
+        if len(allr) >= capj(k):
+            ram.pop((k, i), None)
+            flush(k, allr)
+        else:
+            ram[(k, i)] = allr
+        return
     o = base[k] + i * 2 * capj(k) * RB
     c = int(cnt[k][i])
     old = (
@@ -206,6 +218,11 @@ def append_seg(k, i, rows):
 def scan_node(l, k):
     i = l // F**k
     if MRG:
+        if k > DISKLV:
+            a = ram.get((k, i))
+            if a is not None:
+                np.searchsorted(keys_of(a), l)
+            return 0
         fe = fences.get((k, i))
         if fe is None:
             return 0

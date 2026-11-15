@@ -1,0 +1,13 @@
+run | metric | <1e6 | 1e6-1e7 | 1e7-3e7 | slope(us/lnN, N>=1e7)
+all disk (0225) | query_us | 32.0 | 604.7 | 1138.6 | 277.3
+all disk (0225) | us_per_row | 2.6 | 13.0 | 20.8 | 3.1
+all disk (0225) | preads_per_query | 3.4 | 4.0 | 4.3 | 0.3
+disk levels<=1 (killed at 1.1e7) | query_us | 66.6 | 516.7 | 646.4 | -199.4
+disk levels<=1 (killed at 1.1e7) | us_per_row | 4.0 | 4.5 | 4.9 | -19.6
+disk levels<=1 (killed at 1.1e7) | preads_per_query | 1.5 | 1.6 | 1.5 | -0.2
+disk levels<=2 | query_us | 46.4 | 679.3 | 1117.3 | 217.4
+disk levels<=2 | us_per_row | 2.4 | 8.4 | 12.3 | 2.1
+disk levels<=2 | preads_per_query | 2.5 | 2.5 | 2.5 | 0.0
+disk levels<=3 | query_us | 27.5 | 773.9 | 1246.0 | 274.8
+disk levels<=3 | us_per_row | 2.4 | 12.5 | 19.4 | 4.7
+disk levels<=3 | preads_per_query | 3.4 | 3.4 | 3.4 | 0.0
