@@ -1,0 +1,9 @@
+{"path": "buf.bin", "alloc_MB": 663.643936, "n_ranges": 8032, "us": 595.7467273498575}
+{"path": "buf_copy.bin", "alloc_MB": 2378.356512, "n_ranges": 1, "us": 679.7716682776809}
+{"path": "leaf.bin", "alloc_MB": 462.422016, "n_ranges": 134, "us": 663.2784656248987}
+{"path": "buf.bin", "alloc_MB": 663.643936, "n_ranges": 8032, "us": 673.8086423526207}
+{"path": "buf_copy.bin", "alloc_MB": 2378.356512, "n_ranges": 1, "us": 675.3452516471345}
+{"path": "leaf.bin", "alloc_MB": 462.422016, "n_ranges": 134, "us": 661.4336540612082}
+{"path": "buf.bin", "alloc_MB": 663.643936, "n_ranges": 8032, "us": 677.7798143836359}
+{"path": "buf_copy.bin", "alloc_MB": 2378.356512, "n_ranges": 1, "us": 677.8214088020225}
+{"path": "leaf.bin", "alloc_MB": 462.422016, "n_ranges": 134, "us": 656.6829235913852}

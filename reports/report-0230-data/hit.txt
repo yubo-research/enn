@@ -1,0 +1,9 @@
+== /home/dsweet/bench_work/frag/leaf.bin
+{"path": "leaf.bin", "alloc_MB": 462.422016, "us": 326.2584914918989, "implied_miss": 0.4906142729201487}
+== /home/dsweet/bench_work/frag/buf.bin
+== /home/dsweet/bench_work/frag/leaf.bin /home/dsweet/bench_work/frag/buf.bin
+== /home/dsweet/bench_work/frag/buf.bin
+{"path": "buf.bin", "alloc_MB": 663.643936, "us": 331.6485384711996, "implied_miss": 0.4987196067236084}
+== /home/dsweet/bench_work/frag/leaf.bin /home/dsweet/bench_work/frag/buf.bin
+{"path": "leaf.bin", "alloc_MB": 462.422016, "us": 507.1659045061096, "implied_miss": 0.7626554954979091}
+{"path": "buf.bin", "alloc_MB": 663.643936, "us": 547.8532542474568, "implied_miss": 0.8238394800713635}
