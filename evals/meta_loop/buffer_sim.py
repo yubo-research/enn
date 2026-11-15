@@ -147,7 +147,29 @@ def append_seg(k, i, rows):
         flush_node(k, i)
 
 
+def scan_node(l, k):
+    i = l // F**k
+    c = int(cnt[k][i])
+    if not c or SEG:
+        return 0
+    raw = os.pread(buf_fd, c * RB, base[k] + i * 2 * capj(k) * RB)
+    ks = np.frombuffer(raw, np.uint8).reshape(c, RB)[:, :4].copy().view("<u4")
+    return int((ks == l).sum())
+
+
+def query(l):
+    n = 0
+    if MODE == "buffered":
+        n += len(root)
+        for k in range(1, top):
+            n += scan_node(l, k)
+    os.pread(leaf_fd, LEAF_BYTES, l * LEAF_BYTES)
+    return n
+
+
+NQ = 300
 rng = np.random.default_rng(0)
+qrng = np.random.default_rng(7)
 N, t0, last = 0, time.time(), (time.time(), 0, disk())
 pathlib.Path(OUT).write_text("")
 while N < MAXN:
@@ -171,9 +193,16 @@ while N < MAXN:
     if N - last[1] >= 250000 or N >= MAXN:
         r, w = disk()
         dn = N - last[1]
+        add_us = (now - last[0]) / dn * 1e6
+        tq = time.time()
+        for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
+            query(l)
+        q_us = (time.time() - tq) / NQ * 1e6
+        now = time.time()
         rec = {
             "N": N,
-            "us_per_row": (now - last[0]) / dn * 1e6,
+            "us_per_row": add_us,
+            "query_us": q_us,
             "read_B_row": (r - last[2][0]) / dn,
             "write_B_row": (w - last[2][1]) / dn,
             "t": now - t0,

@@ -1,0 +1,33 @@
+long_c1024_f16 final N=7.87e+07
+  us_per_row N>=1e+06: a=-53.0 b=4.75+/-0.31 per lnN R2=0.44
+  us_per_row N>=1e+07: a=2.2 b=1.61+/-0.48 per lnN R2=0.04
+    (0e+00,1e+06] mean 4.1
+    (1e+06,1e+07] mean 17.8
+    (1e+07,1e+08] mean 30.4
+  query_us N>=1e+06: a=-2783.6 b=249.85+/-7.47 per lnN R2=0.79
+  query_us N>=1e+07: a=-1761.4 b=191.37+/-5.18 per lnN R2=0.84
+    (0e+00,1e+06] mean 36.0
+    (1e+06,1e+07] mean 1056.7
+    (1e+07,1e+08] mean 1584.4
+long_c16384_f16 final N=1.00e+08
+  us_per_row N>=1e+06: a=-8.0 b=0.74+/-0.13 per lnN R2=0.08
+  us_per_row N>=1e+07: a=-9.8 b=0.84+/-0.21 per lnN R2=0.04
+    (0e+00,1e+06] mean 1.6
+    (1e+06,1e+07] mean 3.5
+    (1e+07,1e+08] mean 5.1
+  query_us N>=1e+06: a=-46510.1 b=3155.54+/-42.39 per lnN R2=0.93
+  query_us N>=1e+07: a=-57209.8 b=3756.98+/-54.51 per lnN R2=0.93
+    (0e+00,1e+06] mean 241.1
+    (1e+06,1e+07] mean 2611.8
+    (1e+07,1e+08] mean 9200.9
+long_c4096_f16 final N=1.00e+08
+  us_per_row N>=1e+06: a=-17.9 b=1.54+/-0.12 per lnN R2=0.30
+  us_per_row N>=1e+07: a=-10.8 b=1.14+/-0.19 per lnN R2=0.09
+    (0e+00,1e+06] mean 1.6
+    (1e+06,1e+07] mean 5.2
+    (1e+07,1e+08] mean 9.4
+  query_us N>=1e+06: a=-8171.3 b=616.25+/-7.20 per lnN R2=0.95
+  query_us N>=1e+07: a=-6607.6 b=528.33+/-9.33 per lnN R2=0.90
+    (0e+00,1e+06] mean 111.7
+    (1e+06,1e+07] mean 1198.5
+    (1e+07,1e+08] mean 2731.0

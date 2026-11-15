@@ -14,6 +14,8 @@
 
 - Buffer-size sweep, storage model, 256M cap (0221; single runs): add time at N=1-2e7 is 27 us (1024-row buffers), 7 (4096), 3.8 (16384); 256 rows 72. Fanout 16 beat 8, 64. Bounded runs to N=1e8: 4096 rows 3.9->11.8 us (slope 2.1 us/lnN), 16384 rows 4.0->5.9 (0.56), no step at the cap. Cost: a query must scan the buffers on its path (~5k/17k/62k rows for 1k/4k/16k); NOT measured. evals/meta_loop/sweep_0221*.sh, long_0221.sh, fit_0221.py, fig_0221.py.
 
+- Buffer-aware query in the model (0222; 256M cap, one run each, to N=1e8; 1024-row run stopped at 7.9e7): query reads every buffer on its path. Mean query over 1e7<N<=1e8: 1.6 ms (1024 rows), 2.7 ms (4096), 9.2 ms (16384), vs 36/112/241 us below 1e6: a 24-44x rise, not a+b lnN (slopes 191/528/3757 us per lnN). Adds repeat 0221 (30.4/9.4/5.1 us). No buffer size is good on both. evals/meta_loop/long_0222.sh, fit_0222.py, fig_0222.py (buffer_sim.py now times queries; UNCOMMITTED edit).
+
 ## Tried and rejected
 - Per-child buffer segments to cut query scan 16x (0221): adds 5-10x slower in the model (44-58 us at N<=6e6 for 4096 rows).
 - Moving leaf metadata into the code page: would not help; metadata is not the hot set (0219). Repacking to one page per leaf moves the cliff <2x only.
@@ -25,7 +27,7 @@
 1. Leaf coefficient: default raised to 30 in the working tree (UNCOMMITTED, one constant + one test value; 0218). 10-seed replication done for N<=1e5; still needed: N=1e6 quality and query cost vs N.
 2. Replace the D=100 test function with one that has learnable structure (low-dimensional projection), so recall effects show up there. Re-check the D=100 gap, which c=30 did not close.
 3. Decide whether to commit the prefetch gate (tree_codes.rs, committed in 4bdadb2; needs operator OK or a 3-run replication of the cliff).
-4. (0220/0221: buffering removes the cliff; with 4k-16k-row buffers the model is ~a+b lnN to 1e8. NEXT: add a buffer-aware query to the model and plot add vs query time per buffer size; then implement in the tree.) Be-tree buffered adds (ideas.md P1) + smaller touch set (P2). Bytes per add are now measured (0218, evals/meta_loop/bytes_per_add.py). The metadata-move test is WITHDRAWN (0219: meta is only 11-26 MiB). Next: log-structured code store (append code rows in arrival order to one sequential file; per-leaf id lists; gather at query or compact at split), or one buffered level. Check recall and query time afterwards. Re-measure recall afterwards. Repeat the cap sweep 3x per cap first.
+4. (0220-0222: buffering removes the add cliff, but full-scan queries of buffers grow 24-44x (0222). NEXT: model an indexed buffer (leaf-keyed sorted runs on disk, LSM style) and a buffer on only the lowest 2-3 levels; require query AND add ~a+b lnN across the cap before any Rust work.) Be-tree buffered adds (ideas.md P1) + smaller touch set (P2). Bytes per add are now measured (0218, evals/meta_loop/bytes_per_add.py). The metadata-move test is WITHDRAWN (0219: meta is only 11-26 MiB). Next: log-structured code store (append code rows in arrival order to one sequential file; per-leaf id lists; gather at query or compact at split), or one buffered level. Check recall and query time afterwards. Re-measure recall afterwards. Repeat the cap sweep 3x per cap first.
 5. Find the remaining 2-6 us/row in-RAM add cost (perf is blocked; use in-code timers).
 Harnesses: evals/meta_loop/ (fig_0219.py; bytes_per_add.py now has FINCORE=1; bytes_per_add.py + cap_sweep.sh + fig_0218.py; leaf_sweep.sh; paired_quality.py; leaf_table.py; recall_cmp.py + recall_grid.sh; main_quality_grid.sh; quality_cmp.py; fig_0217.py; fig_0216.py; scaling_capped.sh), scripts/bench_cmp/bench.py.
 
@@ -38,3 +40,4 @@ Harnesses: evals/meta_loop/ (fig_0219.py; bytes_per_add.py now has FINCORE=1; by
 - Is a log-structured code store (rows gathered by id at query time) acceptable if it costs some query time at small N? (0219)
 - Is a 2-5 us/row-per-decade smooth rise at 4k-16k buffers acceptable if queries must scan 17k-62k buffered rows? What query-time budget per buffered row is allowed? (0221)
 - Is a ~20x smooth rise (1024-row buffers, 0220) over one decade of N (0220 model) acceptable evidence of progress, or must the target a+b lnN fit hold across the cap crossing before any Rust work? (0220)
+- Is the model query (full read of path buffers) a fair stand-in, or should the model use an optimised reader first? Decision made without you: I judged it fair as an upper bound and moved on. (0222)
