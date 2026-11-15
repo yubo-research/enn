@@ -1,0 +1,116 @@
+--- a/b/rust/crates/bpann/src/index/sync.rs	2026-11-15 05:35:46.183864520 -0500
++++ b/rust/crates/bpann/src/index/sync.rs	2026-11-15 05:44:55.016819622 -0500
+@@ -15,6 +15,9 @@
+ use crate::observation as obs;
+ use crate::row_groups::RowGroups;
+
++const Z: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++pub static PROF: [std::sync::atomic::AtomicU64; 16] = [Z; 16];
++
+ pub struct IncrementalIndex {
+     pub tree: Option<Tree>,
+     pub indexed_rows: usize,
+@@ -221,8 +224,21 @@
+             v.resize(tree_dim, 0.0);
+             match self.tree.as_mut() {
+                 Some(tree) => {
++                    let t0 = std::time::Instant::now();
+                     tree.insert_row(row as u32, &v)?;
++                    let t1 = std::time::Instant::now();
+                     self.morph.advance(tree);
++                    PROF[0].fetch_add((t1 - t0).as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
++                    PROF[1].fetch_add(t1.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
++                    PROF[2].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++                    if PROF[2].load(std::sync::atomic::Ordering::Relaxed) % 20000 == 0 {
++                        eprintln!("PROF sub: msplit={} means={} alloc={} setent={} attach={} copy={}", [8,9,10,11,12,13].map(|i| PROF[i].load(std::sync::atomic::Ordering::Relaxed)/PROF[2].load(std::sync::atomic::Ordering::Relaxed)).iter().map(|x|x.to_string()).collect::<Vec<_>>().join(","),"","","","","");
++ eprintln!("PROF nearest={} dist+mean+radius={} setradius={} push={} split={}", PROF[3].load(std::sync::atomic::Ordering::Relaxed)/PROF[2].load(std::sync::atomic::Ordering::Relaxed),PROF[4].load(std::sync::atomic::Ordering::Relaxed)/PROF[2].load(std::sync::atomic::Ordering::Relaxed),PROF[5].load(std::sync::atomic::Ordering::Relaxed)/PROF[2].load(std::sync::atomic::Ordering::Relaxed),PROF[6].load(std::sync::atomic::Ordering::Relaxed)/PROF[2].load(std::sync::atomic::Ordering::Relaxed),PROF[7].load(std::sync::atomic::Ordering::Relaxed)/PROF[2].load(std::sync::atomic::Ordering::Relaxed));
++ eprintln!("PROF rows={} insert_ns/row={} morph_ns/row={}",
++                          PROF[2].load(std::sync::atomic::Ordering::Relaxed),
++                          PROF[0].load(std::sync::atomic::Ordering::Relaxed)/PROF[2].load(std::sync::atomic::Ordering::Relaxed),
++                          PROF[1].load(std::sync::atomic::Ordering::Relaxed)/PROF[2].load(std::sync::atomic::Ordering::Relaxed));
++                    }
+                 }
+                 None => {
+                     self.tree = Some(Tree::new_tree(
+--- /tmp/tree.rs.orig	2026-11-15 05:40:15.178987817 -0500
++++ rust/crates/bpann/src/index/tree.rs	2026-11-15 05:44:55.017019695 -0500
+@@ -143,14 +143,20 @@
+             }
+             if s.is_leaf(cur) {
+                 s.set_count(cur, s.count(cur) + 1);
++                let td = std::time::Instant::now();
+                 s.push_entry(cur, row, v);
++                crate::index::sync::PROF[6].fetch_add(td.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+                 self.header.indexed_rows += 1;
+                 if self.store.len(cur) > TREE_LEAF_CAPACITY {
++                    let te = std::time::Instant::now();
+                     self.split_leaf(cur, &mut path)?;
++                    crate::index::sync::PROF[7].fetch_add(te.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+                 }
+                 return Ok(());
+             }
++            let ta = std::time::Instant::now();
+             let slot = nearest(s.block(cur), v);
++            crate::index::sync::PROF[3].fetch_add(ta.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+             let child = s.ids(cur)[slot];
+             let n_child = s.count(child)
+                 + if s.is_leaf(child) {
+@@ -158,6 +164,7 @@
+                 } else {
+                     TREE_CENTROID_STRIDE as usize
+                 };
++            let tb = std::time::Instant::now();
+             let d = dist(v, &s.block(cur)[slot * v.len()..(slot + 1) * v.len()]);
+             let r = if sampled {
+                 let step = (TREE_CENTROID_STRIDE as f32 / n_child as f32).min(1.0);
+@@ -166,21 +173,30 @@
+             } else {
+                 s.radius(child).max(d)
+             };
++            let tc = std::time::Instant::now();
+             s.set_radius(child, r);
++            crate::index::sync::PROF[5].fetch_add(tc.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
++            crate::index::sync::PROF[4].fetch_add(tb.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+             path.push((cur, slot));
+             cur = child;
+         }
+     }
+
+     fn split_leaf(&mut self, leaf: u32, path: &mut Vec<(u32, usize)>) -> Result<(), BpannError> {
++        let tcopy=std::time::Instant::now();
+         let row_ids = self.store.ids(leaf).to_vec();
+         let block = self.store.leaf_rows(leaf);
+         let slack = self.store.leaf_err(leaf);
+         let vectors: Vec<&[f32]> = block.chunks(self.store.num_dim()).collect();
+         let weights = vec![1.0; vectors.len()];
++        crate::index::sync::PROF[13].fetch_add(tcopy.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
++        let tm=std::time::Instant::now();
+         let (left, right) = median_split(&vectors);
++        crate::index::sync::PROF[8].fetch_add(tm.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
++        let tw=std::time::Instant::now();
+         let ca = weighted_mean(&vectors, &weights, &left);
+         let cb = weighted_mean(&vectors, &weights, &right);
++        crate::index::sync::PROF[9].fetch_add(tw.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+         let pick_ids = |g: &[usize]| -> Vec<u32> { g.iter().map(|&i| row_ids[i]).collect() };
+         let gather = |g: &[usize]| -> Vec<f32> {
+             g.iter().flat_map(|&i| vectors[i].iter().copied()).collect()
+@@ -190,11 +206,18 @@
+         s.set_entries(leaf, &pick_ids(&left), &gather(&left));
+         s.set_count(leaf, left.len());
+         let near = sibling_ids(s, leaf, path.last().map(|&(p, _)| p));
++        let ta=std::time::Instant::now();
+         let new_id = s.alloc_near(Kind::Leaf, &near)?;
++        crate::index::sync::PROF[10].fetch_add(ta.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
++        let ts=std::time::Instant::now();
+         s.set_count(new_id, right.len());
+         s.set_radius(new_id, max_dist(&vectors, &right, &cb) + slack);
+         s.set_entries(new_id, &pick_ids(&right), &gather(&right));
+-        self.attach_sibling(path, (leaf, ca), (new_id, cb))
++        crate::index::sync::PROF[11].fetch_add(ts.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
++        let tt=std::time::Instant::now();
++        let r = self.attach_sibling(path, (leaf, ca), (new_id, cb));
++        crate::index::sync::PROF[12].fetch_add(tt.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
++        r
+     }
+
+     fn attach_sibling(

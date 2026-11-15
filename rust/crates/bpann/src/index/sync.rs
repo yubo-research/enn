@@ -20,6 +20,7 @@ pub struct IncrementalIndex {
     pub indexed_rows: usize,
     pub index_dir: PathBuf,
     pub(crate) morph: Morph,
+    advise: AdviseGate,
     pub row_filter: Option<Arc<RowGroups>>,
 }
 
@@ -33,12 +34,52 @@ impl Clone for IncrementalIndex {
             indexed_rows: self.indexed_rows,
             index_dir: self.index_dir.clone(),
             morph: self.morph.clone(),
+            advise: AdviseGate::default(),
             row_filter: self.row_filter.clone(),
         }
     }
 }
 
 const ADD_ADVISE_BATCH: usize = 32;
+const ADVISE_HOT_GROUPS: u32 = 32;
+const ADVISE_FAULTS_PER_GROUP: u64 = ADD_ADVISE_BATCH as u64 / 4;
+fn advise_mode() -> &'static str {
+    static F: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    F.get_or_init(|| std::env::var("ENN_ADVISE").unwrap_or_default())
+}
+
+fn major_faults() -> u64 {
+    let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
+    if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) } == 0 {
+        ru.ru_majflt as u64
+    } else {
+        u64::MAX
+    }
+}
+#[derive(Clone, Debug, Default)]
+struct AdviseGate {
+    last_majflt: u64,
+    hot: u32,
+}
+
+impl AdviseGate {
+    fn wanted(&mut self) -> bool {
+        match advise_mode() {
+            "off" => false,
+            "always" => true,
+            _ => self.observe(major_faults()),
+        }
+    }
+
+    fn observe(&mut self, f: u64) -> bool {
+        if f.saturating_sub(self.last_majflt) >= ADVISE_FAULTS_PER_GROUP {
+            self.hot = ADVISE_HOT_GROUPS;
+        }
+        self.last_majflt = f;
+        self.hot = self.hot.saturating_sub(1);
+        self.hot > 0
+    }
+}
 
 impl IncrementalIndex {
     pub fn new(index_dir: PathBuf) -> Self {
@@ -47,6 +88,7 @@ impl IncrementalIndex {
             indexed_rows: 0,
             index_dir,
             morph: Morph::default(),
+            advise: AdviseGate::default(),
             row_filter: None,
         }
     }
@@ -160,7 +202,7 @@ impl IncrementalIndex {
         }
         let start = self.indexed_rows;
         for row in start..end {
-            if (row - start).is_multiple_of(ADD_ADVISE_BATCH) {
+            if (row - start).is_multiple_of(ADD_ADVISE_BATCH) && self.advise.wanted() {
                 if let Some(tree) = self.tree.as_ref() {
                     let mut group = Vec::new();
                     for r in (row..end.min(row + ADD_ADVISE_BATCH)).filter(|&r| self.indexable(r)) {
@@ -309,6 +351,20 @@ mod tests {
 
     fn tree(idx: &IncrementalIndex) -> &Tree {
         idx.tree.as_ref().expect("tree")
+    }
+
+    #[test]
+    fn advise_gate_opens_on_major_faults_and_closes_after_quiet_groups() {
+        let mut g = AdviseGate::default();
+        assert!(g.observe(100));
+        let mut f = 100;
+        for _ in 0..ADVISE_HOT_GROUPS - 2 {
+            f += 1;
+            assert!(g.observe(f));
+        }
+        f += 1;
+        assert!(!g.observe(f));
+        assert!(g.observe(f + ADVISE_FAULTS_PER_GROUP));
     }
 
     #[test]
