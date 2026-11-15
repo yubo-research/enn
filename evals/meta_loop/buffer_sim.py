@@ -18,7 +18,8 @@ IDX = MODE2 == "idx"
 MRG = MODE2 in ("mrg", "hyb")
 DISKLV = int(os.environ.get("DISKLV", "99"))
 ram = {}
-FS = 64
+FS = int(os.environ.get("FS", "64"))
+LVS = {}
 BOUND = BOUND or IDX or MRG
 PG = 4096
 RB, LEAF_ROWS, LEAF_BYTES, HDR = 112, 48, 8192, 64
@@ -229,7 +230,12 @@ def scan_node(l, k):
         a = max(int(np.searchsorted(fe, l, "left")) - 1, 0) * FS
         b = min(int(np.searchsorted(fe, l, "right")) * FS, int(cnt[k][i]))
         if b > a:
+            t1 = time.perf_counter()
             os.pread(buf_fd, (b - a) * RB, base[k] + (i * 2 * capj(k) + a) * RB)
+            st = LVS.setdefault(k, [0, 0.0, 0])
+            st[0] += 1
+            st[1] += time.perf_counter() - t1
+            st[2] += (b - a) * RB
         return 0
     if IDX:
         for o0, m in runs[k].get(i, ()):
@@ -298,6 +304,34 @@ while N < MAXN:
             query(l)
         q_us = (time.time() - tq) / NQ * 1e6
         preads_q = NPR[0] / NQ
+        lvs = {
+            str(k): [v[0] / NQ, v[1] / max(v[0], 1) * 1e6, v[2] / max(v[0], 1)]
+            for k, v in LVS.items()
+        }
+        LVS.clear()
+        os.pread = _pread
+        k1 = 1
+        tq = time.time()
+        for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
+            o = base[k1] + (int(l // F**k1) * 2 * capj(k1)) * RB
+            os.pread(buf_fd, 7168, o)
+        bufrand_us = (time.time() - tq) / NQ * 1e6
+        al = {}
+        for nm, sz in (("al4k", 4096), ("al8k", 8192)):
+            tq = time.time()
+            for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
+                o = base[k1] + (int(l // F**k1) * 2 * capj(k1)) * RB
+                os.pread(buf_fd, sz, o // 4096 * 4096)
+            al[nm] = (time.time() - tq) / NQ * 1e6
+        tq = time.time()
+        for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
+            o = (
+                (int(l // F**k1) * 2 * capj(k1))
+                * RB
+                % (max(1, N // LEAF_ROWS) * LEAF_BYTES)
+            )
+            os.pread(leaf_fd, 8192, o // 8192 * 8192)
+        al["leaf_same_offsets"] = (time.time() - tq) / NQ * 1e6
         os.pread = _pread
         tq = time.time()
         for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
@@ -310,6 +344,9 @@ while N < MAXN:
             "query_us": q_us,
             "leaf_only_us": leaf_us,
             "preads_per_query": preads_q,
+            "per_level_calls_us_bytes": lvs,
+            "bufrand_us": bufrand_us,
+            "aligned_us": al,
             "read_B_row": (r - last[2][0]) / dn,
             "write_B_row": (w - last[2][1]) / dn,
             "t": now - t0,
