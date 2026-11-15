@@ -332,6 +332,23 @@ while N < MAXN:
             )
             os.pread(leaf_fd, 8192, o // 8192 * 8192)
         al["leaf_same_offsets"] = (time.time() - tq) / NQ * 1e6
+        paused = {}
+        if os.environ.get("PAUSE"):
+            ts = time.time()
+            os.fsync(buf_fd)
+            os.fsync(leaf_fd)
+            time.sleep(float(os.environ["PAUSE"]))
+            paused["sync_s"] = time.time() - ts
+            for nm, fd, sz in (("buf", buf_fd, 7168), ("leaf", leaf_fd, 8192)):
+                tq = time.time()
+                for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
+                    o = (
+                        (int(l // F**k1) * 2 * capj(k1))
+                        * RB
+                        % (max(1, N // LEAF_ROWS) * LEAF_BYTES)
+                    )
+                    os.pread(fd, sz, o // 8192 * 8192)
+                paused[nm + "_paused_us"] = (time.time() - tq) / NQ * 1e6
         os.pread = _pread
         tq = time.time()
         for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
@@ -346,6 +363,7 @@ while N < MAXN:
             "preads_per_query": preads_q,
             "per_level_calls_us_bytes": lvs,
             "bufrand_us": bufrand_us,
+            "paused": paused,
             "aligned_us": al,
             "read_B_row": (r - last[2][0]) / dn,
             "write_B_row": (w - last[2][1]) / dn,
