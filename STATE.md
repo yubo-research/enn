@@ -22,6 +22,8 @@
 
 - Leaf-only baseline in the model (0225; 256M cap, 4096-row sorted-run buffers, one run, to N=3e7, HEAD b2cbcdc + staged buffer_sim.py edit): one 8 KB leaf pread costs 1.7 us (N<1e6), 171 us (1e6-1e7), 207 us (1e7-3e7): a 100x step at N~2e6 where the leaf file exceeds the cap, then flat (9 us/lnN). Buffered query 32/605/1139 us = 4.7-5.6x the leaf-only read at 4.0-4.3 preads/query. So the post-cap step is cold-read latency any design pays; the controllable part is the 4-5x from buffer reads. evals/meta_loop/long_0225.sh, fig_0225.py.
 
+- Five-metric scorecard, branch 84fba2d vs main 3246c4e, 1 GB cap, paired seeds (0226; 10 seeds, 5 at 1e6): branch does NOT beat main on all metrics. Add time 2.0-6.1x slower at every N (D=10, N=1e6: 7.3 vs 1.2 us/row). Query 1.3-2.4x slower at N<=1e4, 0.58-0.69x at 1e5, 0.39x at D=100 N=1e6 (1.05x at D=10 N=1e6). RSS 0.47x at D=100 N=1e6, equal at D=10. Quality identical at N<=1e4; D=100 N=1e5 significantly worse (dloglik -0.0105, p=0.007); at 1e6 dloglik ~-0.015, p>=0.18 (underpowered). evals/meta_loop/scorecard_0226.sh/.py.
+
 ## Tried and rejected
 - Run-indexed buffers, header+data page per run (0223): queries 3.8x slower than full scan at 4096 rows.
 - Per-child buffer segments to cut query scan 16x (0221): adds 5-10x slower in the model (44-58 us at N<=6e6 for 4096 rows).
@@ -41,7 +43,7 @@ Harnesses: evals/meta_loop/ (fig_0219.py; bytes_per_add.py now has FINCORE=1; by
 ## Questions for the operator
 - (0225) The cold-read step is ~100x for even one leaf read (1.7 -> ~200 us). Will you accept "a one-time step of cold-read size, then a+b lnN with a close to the one-read floor" as meeting VISION's no-step goal? Also answers the 0224 question.
 - VISION asks for no step at the cap, but a random read costs ~250-420 us over the cap vs ~2 us under it on this disk (0224). Is 'bounded step, then a+b lnN' acceptable for queries? (0224)
-- Beating main on all five metrics is STILL not re-measured (deferred in 0224 to protect the O(lnN) work). Should it be the first task next session? (0224)
+- (0226) Beating main on all five metrics is now measured and unmet (add time worst). Is add-time parity with main in RAM required, or only past the cliff? Should 1e6 quality be rerun with 10 seeds?
 - VISION-b.md does not exist (only VISION.md, which I used). Is another file intended?
 - Default leaf coefficient 10 -> 30: I applied it in the working tree (uncommitted) because VISION.md says quality is never worse than today. It triples leaves searched per query, keeps O(ln N), closes the D=10 gap, but makes queries 1.8x slower than main at N=1e4, D=10. Keep it? (0218)
 - Is a test function with learnable structure at D=100 acceptable for judging quality? The current one gives no skill there at N<=1e5. (0217)
@@ -52,4 +54,3 @@ Harnesses: evals/meta_loop/ (fig_0219.py; bytes_per_add.py now has FINCORE=1; by
 - Is a ~20x smooth rise (1024-row buffers, 0220) over one decade of N (0220 model) acceptable evidence of progress, or must the target a+b lnN fit hold across the cap crossing before any Rust work? (0220)
 - Is the model query (full read of path buffers) a fair stand-in, or should the model use an optimised reader first? Decision made without you: I judged it fair as an upper bound and moved on. (0222)
 - Should I stop modelling buffers and instead try a design where queries never touch buffers (e.g. insert visible only after flush, with a small in-RAM recent-rows list)? It relaxes read-your-writes. (0223)
-- Beating main on all five metrics (incl. add time in RAM and quality at N=1e5) was not re-measured in 0223; should the next session do that before more modelling? (0223)
