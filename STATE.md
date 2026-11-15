@@ -1,6 +1,6 @@
 # STATE (edit in place; reports are the log)
 
-## Established (1 GB cgroup cap unless noted; "branch" = dsweet/agg_obs, HEAD b2d87fa + uncommitted 0237 changes; "main" = 3246c4e)
+## Established (1 GB cgroup cap unless noted; "branch" = dsweet/agg_obs, HEAD b4218de (includes 0236/0237 changes) + uncommitted 0238 changes; "main" = 3246c4e)
 - Queries: branch faster than main at N>=1e5 (D=10: 0.22 vs 0.89 s; D=100: 2.2 vs 3.2 s); main faster at N<=1e3. (0216)
 - Memory: branch RssAnon 21 MB vs main 558 MB at D=100, N=1e6. (0216)
 - Quality vs main, 10 paired seeds (0217): identical at N<=1e4. At N=1e5 branch is significantly worse: loglik -0.022 (SE 0.005, p=0.002) at D=10; -0.008 (SE 0.003, p=0.017) at D=100. NRMSE +0.002 (D=10), +0.008 (D=100). (0216's "not significant" was 3 seeds.)
@@ -23,10 +23,13 @@
 
 - Store disk = Amazon EBS (not local NVMe; 0235 mislabeled it), sustained ~3000 random 4K reads/s at any depth; QD1 486 us; local NVMe /mnt/scratch 99 us QD1, 68k/s at QD16 (0236, disk_qd.py). 0235's 0.33 ms/page is the EBS IOPS cap: cold query cost ~ pages x 0.33 ms; parallel reads can give <=1.46x here.
 - Cold query time by file at N=1e6 (0236, keep_warm.sh; file kept resident): codes 67% (D=10) / 76% (D=100), meta 42% / 14%, x+y 0-8%.
-- Leaf ids in code-page tail + child-is-leaf bit in parent route radii (0236; flag ENN_LEAF_IDS / set_leaf_ids, default on, only D<=50 = one-page code region): cold query -7..-17% at D=10 for 1e4<=N<=1e6 (sig at 4/5 sizes; 310->271 ms at 1e6), -11..-12% at D=30 N<=3e4 (n.s. above); pages -5..-13%; posteriors bit-identical. In RAM (N=1e5, 5 seeds): D=10 add 1.53->1.54 n.s., query 532->520 us (p=0.004); D=100 n.s. Uncommitted at 8b7809e, staged.
+- Leaf ids in code-page tail + child-is-leaf bit in parent route radii (0236; flag ENN_LEAF_IDS / set_leaf_ids, default on, only D<=50 = one-page code region): cold query -7..-17% at D=10 for 1e4<=N<=1e6 (sig at 4/5 sizes; 310->271 ms at 1e6), -11..-12% at D=30 N<=3e4 (n.s. above); pages -5..-13%; posteriors bit-identical. In RAM (N=1e5, 5 seeds): D=10 add 1.53->1.54 n.s., query 532->520 us (p=0.004); D=100 n.s. Committed in b4218de.
 
 - 4-bit page codes (0237; flag ENN_CODE4=1, default OFF; tree_nib.rs; used only where they save code pages, D=100: 2->1 page): cold query 0.49-0.67x for 1e4<=N<=1e6 on uniform D=100 (465->273 ms at 1e6), but on D=100 data near a 5-dim subspace 1.2-1.7x SLOWER for 1e3<=N<=3e4, 0.63-0.68x only at N>=3e5; 1.05-1.1x at N<=3e3 (f32 re-walk retries). In RAM: query 2.1x (D=100). Quality parity after the bound fix (10 seeds; dloglik -0.004, p=0.23). Cause of mid-N loss (hypothesis, not proven): leaf slack = max row error ~10x the 8-bit bound, weak pruning (2.6x leaf rows at 1e4); not routing (exact f32 routing changed nothing).
-- Default path after 0237 (8-bit, uncommitted): splits/morph move encoded code rows (set_leaf_coded) instead of decode+re-encode; leaf scan monomorphized per format. vs b2d87fa, 8 seeds N=1e5: D=100 add 0.85x (p=1e-4), query 0.96x (p=0.05); D=10 add 0.93x (p=0.09), query 0.99x n.s.; cold to 1e6 0.97-1.04, equal pages, identical posteriors.
+- Default path after 0237 (8-bit, committed in b4218de): splits/morph move encoded code rows (set_leaf_coded) instead of decode+re-encode; leaf scan monomorphized per format. vs b2d87fa, 8 seeds N=1e5: D=100 add 0.85x (p=1e-4), query 0.96x (p=0.05); D=10 add 0.93x (p=0.09), query 0.99x n.s.; cold to 1e6 0.97-1.04, equal pages, identical posteriors.
+- 4-bit mid-N cold loss (0237) is mostly f32 re-walks after failed certification (0238, resid_retry_diag.py): raw 4-bit re-walks 1.0/query at N=1e3-3e3 (5-dim D=100), each re-walk reads train_x for every visited row (4-12x the pages).
+- Refine-more certification (0238; ENN_REFINE_MORE, default ON; tree_codes_search.rs refine_more): before giving up on certification, read the exact values of already-scanned rows in ascending lower bound (cap 256) instead of re-walking; unvisited subtrees bounded by the pool's worst coded distance. 8-bit path: identical exact rows and posteriors; in RAM vs HEAD wheel n.s. (0.91-1.03x, 6 seeds, D=10/100). Benefit is data-dependent: a Rust test with wider, less noisy data removed only 2/20 re-walks.
+- Residual 4-bit codes (0238; ENN_CODE4=2, default OFF; tree_resid.rs; 8-bit anchor per leaf page, rows coded vs anchor, moved rows re-read exactly from train_x): with refine-more, cold query vs 8-bit on 5-dim D=100 (3 reps): 0.70-0.82x for 1e2<=N<=3e3, tie at 1e4/1e5, 1.15x at 3e4 (only loss, 396 vs 323 pages), 0.58-0.71x at >=3e5 (252 vs 397 ms at 1e6); uniform: 0.59-0.93x at all N>=1e2. Quality parity (10 seeds, dloglik -0.0003/+0.0002, p>=0.22); posteriors = 8-bit to 4e-10. Cost: adds 2.87x in RAM (p=1e-5), 1.5-3x in the cold harness at N>=3e4 (train_x re-reads on split/morph).
 - Leaves keep no f32 rows; codes are the only in-tree copy. Re-encoding decoded rows loses a stored error bound (0237); any future code format must move code bytes on split.
 - Learnable D=100 test exists: INTRINSIC=5 in recall_cmp.py / code4_ab.py (x = z B + 0.01 noise, z in U[0,1]^5); exact-kNN NRMSE 0.16 at 1e5 vs 1.02 for the uniform test.
 - Build hygiene: compare builds made the same way (maturin build wheels); develop vs wheel link different OpenBLAS (0237).
@@ -41,17 +44,19 @@
 - Wider AVX2 loop in l2_sq_f32 for D<32 (0233): no gain (1.87 vs 1.66 us/row insert).
 - Morph work as the cause of the in-RAM add gap (0232).
 - Leaf-id tail on the 2nd page of a 2-page code region (D=100): adds +8% in RAM (p=0.002), +25% cold at N<=30 (0236). Leaf test by depth (assumes balanced tree): 6635 vs 2708 pages at D=10 N=3e5, cause unproven; replaced by explicit parent bits (0236).
-- 4-bit raw-coordinate codes as default (0237): mid-N cold loss on structured data, slower in RAM. Kept behind ENN_CODE4 (off).
+- 4-bit raw-coordinate codes as default (0237): mid-N cold loss on structured data, slower in RAM. Kept behind ENN_CODE4=1 (off). Even with refine-more, raw 4-bit loses 1.23-1.46x at 3e3-3e4 (5-dim; 0238).
+- Residual codes re-encoded from decoded rows on split/morph (0238 v1): stored bounds accumulate (median 2.2x fresh, p90 5.5x); no cold gain over raw 4-bit.
+- Residual codes as default (0238): adds 2.9x slower in RAM; kept behind ENN_CODE4=2 (off).
 - Tight certification boundary min(last, min_excluded(r_i - e_i)) (0237): no fewer retries; removed. Larger coded pool (CODE_EXTRA 100/300) does not raise 4-bit recall (0237).
 - MADV_RANDOM on train_x/train_y mmaps (0235): cuts cold train_y reads 604 -> 40 KiB (k=10) but no cold time gain, and in-RAM adds +24% (D=100) / +52% (D=10), 5 paired seeds. Reverted; patch in reports/report-0235-data/patches/.
 
 ## Plan (priority: O(ln N) add and query with no cliff; quality never worse than main)
 Per the 2026-11-15 ruling, judge every change first by cold cost (cold_cost.sh, leaf_ids_ab.sh), then by in-RAM cost (build_ab.sh) and the 0226 scorecard.
-1. Lower the cold query curve. Done: 1b for D<=50 (0236); 1a tried as raw 4-bit codes (0237, off by default). Next: (a) residual 4-bit codes vs a per-leaf 8-bit anchor (IVF-PQ style) so leaf slack scales with leaf spread; judge with code4_ab.sh at INTRINSIC=5 and 0, D=100; (b) cheaper certification fallback than an f32 re-walk (refine more from train_x) so coarse codes do not lose at N<=3e3; (c) fewer leaves per query (recall vs leaves visited); (d) ids-first page for D>50. Parallel leaf reads only pay on NVMe.
+1. Lower the cold query curve. Done: leaf ids for D<=50 (0236); raw 4-bit (0237, off); residual 4-bit (0238, off) + refine-more certification (0238, on). Next: (a) residual codes without the add penalty: move code bytes on split, re-read a row from train_x only when its accumulated bound exceeds a fraction of leaf radius (lazy re-anchoring); judge with resid_ab.sh (cold adds+queries) and resid_ram_ab.sh; flip ENN_CODE4=2 on only if adds are within noise of 8-bit; (b) find the 3e4 loss (anchor displacing the leaf-id tail -> extra tree_meta read?); (c) on refine-more failure, continue the coded walk with a larger pool instead of an f32 re-walk; (d) fewer leaves per query; (e) ids-first page for D>50. Parallel leaf reads only pay on NVMe.
 2. Lower the cold add curve: buffered adds per level (B-epsilon / buffer tree, ideas.md P1).
 3. Designed cache: pin top tree levels, plot cold cost vs pinned bytes; then repeat 0234-style capped runs (3 reps) to check the cliff is gone.
 4. Open: in-RAM add gap vs main (2-6x, 0226) is the largest scorecard gap; deeper prefetch default; leaf coefficient 30 quality at 1e6; learnable D=100 test function (0217).
-Harnesses: evals/meta_loop/ (code4_* see code4_README.sh, fig_0237.py, leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
+Harnesses: evals/meta_loop/ (resid_* see resid_README.sh, fig_0238.py, code4_* see code4_README.sh, fig_0237.py, leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
 
 ## Questions for the operator
 - Which disk is the target? The store has been on EBS (3000 IOPS cap, 0236), where cold cost is IOPS-bound; the local NVMe (/mnt/scratch) is ~20x faster and rewards parallel reads. Should cold-cost judgments use one, the other, or both?
@@ -66,7 +71,8 @@ Harnesses: evals/meta_loop/ (code4_* see code4_README.sh, fig_0237.py, leaf_ids_
 - Sandbox lacks perf (paranoid=4), gdb, valgrind; is a profiling-capable environment available? (0233)
 - VISION-b.md does not exist; is another file intended?
 
-- Commit the 0237 default-path changes (D=100 adds -15% in RAM, cold unchanged) together with the off-by-default ENN_CODE4 code, or commit only the default-path part? (0237)
+- Residual 4-bit codes give the best cold-query curve so far (0.58-0.82x of 8-bit over most N) but adds are 2.9x slower in RAM. Is a slower add acceptable for a faster query, or must adds match first? (0238)
+- Refine-more is on by default (no measured cost, identical 8-bit results). Keep it on? (0238)
 - Should the D=100 quality yardstick switch to a learnable test (e.g., INTRINSIC=5 in recall_cmp.py)? The uniform one cannot detect neighbor-quality loss (0217, 0237).
 
 ## Operator ruling on design method (2026-11-15)

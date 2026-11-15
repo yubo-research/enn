@@ -1,0 +1,11 @@
+{"arm": "c4_0", "code4": "0", "n": 1, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 1.0, "warm_us": 23.850915022194386}
+{"arm": "c4_0", "code4": "0", "n": 3, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 3.0, "warm_us": 23.36690668016672}
+{"arm": "c4_0", "code4": "0", "n": 10, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 10.0, "warm_us": 43.548247776925564}
+{"arm": "c4_0", "code4": "0", "n": 30, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 11.0, "warm_us": 52.55939904600382}
+{"arm": "c4_0", "code4": "0", "n": 100, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 12.2, "warm_us": 62.60660011321306}
+{"arm": "c4_0", "code4": "0", "n": 300, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 12.95, "warm_us": 80.61339613050222}
+{"arm": "c4_0", "code4": "0", "n": 1000, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 13.9, "warm_us": 1022.1694828942418}
+{"arm": "c4_0", "code4": "0", "n": 3000, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 15.8, "warm_us": 183.56265500187874}
+{"arm": "c4_0", "code4": "0", "n": 10000, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 18.95, "warm_us": 252.79729161411524}
+{"arm": "c4_0", "code4": "0", "n": 30000, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 24.65, "warm_us": 1192.358392290771}
+{"arm": "c4_0", "code4": "0", "n": 100000, "intrinsic": 5, "retries_per_q": 0.0, "exact_rows_per_q": 35.3, "warm_us": 1340.6079495325685}

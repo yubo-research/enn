@@ -74,8 +74,10 @@ pub fn take_exact_rows() -> u64 {
 #[derive(Default)]
 pub struct CodedScan {
     locs: Vec<(u32, u32, u32, f32)>,
+    d2s: Vec<f32>,
     err_max: f32,
     pub(super) advised: bool,
+    shifted: Vec<f32>,
 }
 
 impl CodedScan {
@@ -116,7 +118,13 @@ impl CodedScan {
         offer: &mut impl FnMut(u32, f64),
         ids: impl Iterator<Item = u32>,
     ) -> usize {
-        if s.nib() {
+        if s.resid() {
+            let mut q = std::mem::take(&mut self.shifted);
+            let qn2 = s.shift_query(at.0, at.1, &mut q);
+            let n = self.scan_with(s, (at.0, &q, qn2), offer, ids, nib_sq_l2);
+            self.shifted = q;
+            n
+        } else if s.nib() {
             self.scan_with(s, at, offer, ids, nib_sq_l2)
         } else {
             self.scan_with(s, at, offer, ids, coded_sq_l2)
@@ -140,6 +148,7 @@ impl CodedScan {
             self.err_max = self.err_max.max(e);
             let i = self.locs.len() as u32;
             self.locs.push((row, page, slot as u32, e));
+            self.d2s.push(d2);
             offer(i, f64::from(d2));
             n += 1;
         }
@@ -156,6 +165,7 @@ pub fn search_tree_coded(
     store: &MmapSearchStore<'_>,
 ) -> Result<Candidates, BpannError> {
     let mut scan = CodedScan::default();
+    let stops_before = F32_WALKS.budget_stops.load(Ordering::Relaxed);
     let top = search_tree_scored(
         tree,
         query,
@@ -193,13 +203,35 @@ pub fn search_tree_coded(
             boundary = boundary.min(lo);
         }
     }
+    let mut out = exact_rows(&need, query, store)?;
+    let stopped = F32_WALKS.budget_stops.load(Ordering::Relaxed) > stops_before;
+    if !stopped && refine_more_enabled() {
+        let unvisited = if top.len() >= pool {
+            top.last().map_or(0.0, |p| (p.1 as f32).sqrt())
+        } else {
+            f32::INFINITY
+        };
+        let done: std::collections::HashSet<u32> = need.iter().map(|n| n.0).collect();
+        boundary = refine_more(&scan, &done, (k, unvisited), query, store, &mut out)?;
+    }
+    EXACT_ROWS.fetch_add(out.len() as u64, Ordering::Relaxed);
+    out.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+    let lower = f64::from(boundary);
+    Ok((out, lower * lower))
+}
+
+fn exact_rows(
+    need: &[(u32, u32, u32, f32)],
+    query: &[f32],
+    store: &MmapSearchStore<'_>,
+) -> Result<Vec<(u32, f32)>, BpannError> {
     store
         .train_x
         .prefetch_rows(&need.iter().map(|n| n.0).collect::<Vec<_>>());
     let orig = query.len();
     let mut buf = Vec::with_capacity(orig);
     let mut out: Vec<(u32, f32)> = Vec::with_capacity(need.len());
-    for &(row, _, _, _) in &need {
+    for &(row, _, _, _) in need {
         bpann_row_to_f32(
             store.train_x.mmap_row_slice(row as usize)?,
             store.scale_x,
@@ -209,8 +241,60 @@ pub fn search_tree_coded(
         let n = orig.min(buf.len());
         out.push((row, l2_sq_f32(&query[..n], &buf[..n])));
     }
-    EXACT_ROWS.fetch_add(out.len() as u64, Ordering::Relaxed);
-    out.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
-    let lower = f64::from(boundary);
-    Ok((out, lower * lower))
+    Ok(out)
+}
+
+static REFINE_MORE: AtomicU64 = AtomicU64::new(u64::MAX);
+
+pub fn refine_more_enabled() -> bool {
+    match REFINE_MORE.load(Ordering::Relaxed) {
+        u64::MAX => {
+            let on = std::env::var("ENN_REFINE_MORE").as_deref() != Ok("0");
+            REFINE_MORE.store(u64::from(on), Ordering::Relaxed);
+            on
+        }
+        v => v != 0,
+    }
+}
+
+pub fn set_refine_more(value: bool) {
+    REFINE_MORE.store(u64::from(value), Ordering::Relaxed);
+}
+
+fn refine_more(
+    scan: &CodedScan,
+    done: &std::collections::HashSet<u32>,
+    (k, unvisited): (usize, f32),
+    query: &[f32],
+    store: &MmapSearchStore<'_>,
+    out: &mut Vec<(u32, f32)>,
+) -> Result<f32, BpannError> {
+    const REFINE_MORE_CAP: usize = 256;
+    let mut rest: Vec<(f32, usize)> = (0..scan.locs.len())
+        .filter(|&i| !done.contains(&scan.locs[i].0))
+        .map(|i| ((scan.d2s[i].sqrt() - scan.locs[i].3).max(0.0), i))
+        .filter(|p| p.0 < unvisited)
+        .collect();
+    rest.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let kth = |o: &Vec<(u32, f32)>| {
+        let mut d: Vec<f32> = o.iter().map(|p| p.1).collect();
+        d.sort_by(f32::total_cmp);
+        d.get(k.saturating_sub(1)).map_or(f32::INFINITY, |v| v.sqrt())
+    };
+    let mut at = 0usize;
+    while at < rest.len() && at < REFINE_MORE_CAP {
+        let cut = kth(out);
+        let end = rest[at..]
+            .iter()
+            .take(REFINE_MORE_CAP - at)
+            .take_while(|p| p.0 <= cut)
+            .count();
+        if end == 0 {
+            break;
+        }
+        let batch: Vec<_> = rest[at..at + end].iter().map(|p| scan.locs[p.1]).collect();
+        out.extend(exact_rows(&batch, query, store)?);
+        at += end;
+    }
+    Ok(rest.get(at).map_or(unvisited, |p| p.0.min(unvisited)))
 }

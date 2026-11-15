@@ -4,6 +4,7 @@ use crate::distance::l2_sq_f32;
 use crate::index::split::weighted_mean;
 use crate::index::tree::{Tree, TREE_FANOUT, TREE_LEAF_CAPACITY};
 use crate::index::tree_counts::dist;
+use crate::index::tree_resid::RowSrc;
 
 thread_local! {
     static PROJ: RefCell<Vec<(f32, usize)>> = const { RefCell::new(Vec::new()) };
@@ -47,6 +48,10 @@ impl Morph {
     }
 
     pub fn advance(&mut self, tree: &mut Tree) {
+        self.advance_src(tree, None)
+    }
+
+    pub fn advance_src(&mut self, tree: &mut Tree, src: RowSrc) {
         if !self.active() {
             return;
         }
@@ -62,7 +67,7 @@ impl Morph {
             let work = if covered {
                 0
             } else {
-                repartition_leaves(tree, page) + repartition_internal(tree, page)
+                repartition_leaves(tree, page, src) + repartition_internal(tree, page)
             };
             self.credit -= work.max(1) as isize;
         }
@@ -235,7 +240,7 @@ fn runs(sizes: impl Iterator<Item = usize>) -> Vec<Vec<usize>> {
         .collect()
 }
 
-fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
+fn repartition_leaves(tree: &mut Tree, page: u32, src: RowSrc) -> usize {
     let d = tree.store.num_dim();
     let deep = small_subtree_leaves(tree, page);
     let leaves = deep.clone().unwrap_or_else(|| {
@@ -254,7 +259,13 @@ fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
     for &leaf in &leaves {
         rows.extend_from_slice(tree.store.ids(leaf));
         vs.extend_from_slice(&tree.store.leaf_rows(leaf));
-        coded.extend_from_slice(&tree.store.leaf_code_bytes(leaf));
+        let ids = tree.store.ids(leaf).to_vec();
+        coded.extend_from_slice(
+            &tree
+                .store
+                .exact_moved(&ids, src)
+                .unwrap_or_else(|| tree.store.leaf_code_bytes(leaf)),
+        );
         slack = slack.max(tree.store.leaf_err(leaf));
     }
     if rows.len() < leaves.len() {
@@ -281,7 +292,7 @@ fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
             id,
             mine.iter().map(|p| dist(p, &c)).fold(0.0, f32::max) + slack,
         );
-        let rb = s.code_rb();
+        let rb = s.moved_rb();
         let bytes: Vec<u8> = group
             .iter()
             .flat_map(|&i| coded[i * rb..(i + 1) * rb].iter().copied())

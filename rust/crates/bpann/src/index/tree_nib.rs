@@ -1,26 +1,58 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::index::tree_codes::{
-    code_row_bytes, coded_sq_l2, encode_row, page_bytes_for, CODE_PAGE_HEADER, ROW_HEADER,
+    code_row_bytes, coded_sq_l2, encode_row, page_bytes_hdr, CODE_PAGE_HEADER,
+    ROW_HEADER,
 };
 use crate::index::tree_store::{TreeStore, SLOT_ENTRIES};
 
 
-static CODE4: AtomicU8 = AtomicU8::new(2);
+pub(super) fn page_bytes_for(row_bytes: usize) -> usize {
+    page_bytes_hdr(CODE_PAGE_HEADER, row_bytes)
+}
+
+static CODE4: AtomicU8 = AtomicU8::new(255);
+
+const CODE4_UNSET: u8 = 255;
+
+fn code4_mode() -> u8 {
+    match CODE4.load(Ordering::Relaxed) {
+        CODE4_UNSET => {
+            let mode = match std::env::var("ENN_CODE4").as_deref() {
+                Ok("1") => 1,
+                Ok("2") => 2,
+                _ => 0,
+            };
+            CODE4.store(mode, Ordering::Relaxed);
+            mode
+        }
+        v => v,
+    }
+}
 
 pub fn code4_enabled() -> bool {
-    match CODE4.load(Ordering::Relaxed) {
-        2 => {
-            let on = std::env::var("ENN_CODE4").is_ok_and(|v| v == "1");
-            CODE4.store(u8::from(on), Ordering::Relaxed);
-            on
-        }
-        v => v != 0,
-    }
+    code4_mode() != 0
 }
 
 pub fn set_code4(value: bool) {
     CODE4.store(u8::from(value), Ordering::Relaxed);
+}
+
+pub fn set_code4_resid(value: bool) {
+    CODE4.store(if value { 2 } else { 0 }, Ordering::Relaxed);
+}
+
+pub fn resid_codes(num_dim: usize) -> bool {
+    code4_mode() == 2 && nib_codes(num_dim)
+}
+
+pub fn code_hdr(num_dim: usize) -> usize {
+    CODE_PAGE_HEADER
+        + if resid_codes(num_dim) {
+            code_row_bytes(num_dim)
+        } else {
+            0
+        }
 }
 
 pub fn nib_row_bytes(num_dim: usize) -> usize {
@@ -60,7 +92,7 @@ pub fn encode_nib_row(v: &[f32], out: &mut [u8]) {
     out[6..8].copy_from_slice(&(sumsq.min(u32::from(u16::MAX)) as u16).to_le_bytes());
 }
 
-fn bf16_up(x: f32) -> u16 {
+pub(super) fn bf16_up(x: f32) -> u16 {
     let b = x.max(0.0).to_bits();
     ((b >> 16) + u32::from(b & 0xFFFF != 0)) as u16
 }
@@ -133,8 +165,14 @@ pub fn nib_sq_l2(query: &[f32], qn2: f32, row: &[u8]) -> (f32, f32) {
 
 #[inline]
 pub fn nib_codes(num_dim: usize) -> bool {
+    let anchor = if code4_mode() == 2 {
+        code_row_bytes(num_dim)
+    } else {
+        0
+    };
     code4_enabled()
-        && page_bytes_for(nib_row_bytes(num_dim)) < page_bytes_for(code_row_bytes(num_dim))
+        && page_bytes_hdr(CODE_PAGE_HEADER + anchor, nib_row_bytes(num_dim))
+            < page_bytes_for(code_row_bytes(num_dim))
 }
 
 #[inline]
@@ -166,16 +204,22 @@ pub fn page_sq_l2(query: &[f32], qn2: f32, row: &[u8], nib: bool) -> (f32, f32) 
 
 impl TreeStore {
     pub fn leaf_code_bytes(&self, id: u32) -> Vec<u8> {
+        if self.resid {
+            return self.leaf_moved_resid(id);
+        }
         self.code_rows(id, self.len(id)).to_vec()
     }
 
     pub fn set_leaf_coded(&mut self, id: u32, ids: &[u32], rows: &[u8]) {
+        if self.resid {
+            return self.set_leaf_resid(id, ids, rows);
+        }
         let rb = self.code_rb();
         assert!(
             self.is_leaf(id) && ids.len() <= SLOT_ENTRIES && rows.len() == ids.len() * rb,
             "bad coded entries for leaf {id}"
         );
-        let start = self.code_page_range(id).start + CODE_PAGE_HEADER;
+        let start = self.code_page_range(id).start + self.code_hdr();
         self.codes[start..start + rows.len()].copy_from_slice(rows);
         self.set_codes_valid(id, true);
         self.set_ids_only(id, ids);
@@ -258,6 +302,9 @@ mod tests {
             let q: Vec<f32> = (0..d).map(|j| (j % 5) as f32 * 0.7).collect();
             let qn2: f32 = q.iter().map(|x| x * x).sum();
             let s = &t.store;
+            if s.resid() {
+                return;
+            }
             let mut checked = 0;
             for page in 0..s.num_pages() as u32 {
                 if s.is_free(page) || !s.is_leaf(page) {

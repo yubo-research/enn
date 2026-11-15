@@ -5,8 +5,9 @@ use std::path::Path;
 
 use crate::error::BpannError;
 pub use crate::index::tree_nib::{
-    code4_enabled, decode_nib_row, encode_nib_row, encode_page_row, nib_codes, nib_resid,
-    nib_row_bytes, nib_sq_l2, page_row_bytes, page_sq_l2, set_code4,
+    code4_enabled, code_hdr, decode_nib_row, encode_nib_row, encode_page_row, nib_codes,
+    nib_resid, nib_row_bytes, nib_sq_l2, page_row_bytes, page_sq_l2, resid_codes, set_code4,
+    set_code4_resid,
 };
 use crate::index::tree_store::{TreeStore, CODES_FILE, META_HDR_WORDS, META_WORDS, SLOT_ENTRIES};
 use crate::index::tree_store_files::{named_file, scratch_file};
@@ -16,6 +17,7 @@ const CODE_ALIGN: usize = 4096;
 pub(super) const ROW_HEADER: usize = 8;
 const VALID: u32 = 0xC0DE_0001;
 const VALID4: u32 = 0xC0DE_0004;
+const VALID5: u32 = 0xC0DE_0005;
 const CODE_ADVICE_KEY: u32 = 1 << 31;
 const META_ADVICE_KEY: u32 = 1 << 30;
 const NODE_ADVICE_KEY: u32 = 1 << 29;
@@ -57,12 +59,12 @@ pub fn code_row_bytes(num_dim: usize) -> usize {
     ROW_HEADER + num_dim
 }
 
-pub(super) fn page_bytes_for(row_bytes: usize) -> usize {
-    (CODE_PAGE_HEADER + SLOT_ENTRIES * row_bytes).div_ceil(CODE_ALIGN) * CODE_ALIGN
+pub(super) fn page_bytes_hdr(hdr: usize, row_bytes: usize) -> usize {
+    (hdr + SLOT_ENTRIES * row_bytes).div_ceil(CODE_ALIGN) * CODE_ALIGN
 }
 
 pub fn code_page_bytes(num_dim: usize) -> usize {
-    page_bytes_for(page_row_bytes(num_dim))
+    page_bytes_hdr(code_hdr(num_dim), page_row_bytes(num_dim))
 }
 
 pub fn encode_row(v: &[f32], out: &mut [u8]) {
@@ -171,7 +173,7 @@ impl TreeStore {
 
     #[inline]
     pub fn code_page_len(&self) -> usize {
-        page_bytes_for(self.code_rb())
+        page_bytes_hdr(self.code_hdr(), self.code_rb())
     }
 
     pub(super) fn code_page_range(&self, id: u32) -> std::ops::Range<usize> {
@@ -192,7 +194,9 @@ impl TreeStore {
     }
 
     fn valid_word(&self) -> u32 {
-        if self.nib {
+        if self.resid {
+            VALID5
+        } else if self.nib {
             VALID4
         } else {
             VALID
@@ -201,12 +205,12 @@ impl TreeStore {
 
     pub fn code_row(&self, id: u32, slot: usize) -> &[u8] {
         let rb = self.code_rb();
-        let start = self.code_page_range(id).start + CODE_PAGE_HEADER + slot * rb;
+        let start = self.code_page_range(id).start + self.code_hdr() + slot * rb;
         &self.codes[start..start + rb]
     }
 
     pub fn code_rows(&self, id: u32, n: usize) -> &[u8] {
-        let start = self.code_page_range(id).start + CODE_PAGE_HEADER;
+        let start = self.code_page_range(id).start + self.code_hdr();
         &self.codes[start..start + n * self.code_rb()]
     }
 
@@ -216,14 +220,21 @@ impl TreeStore {
     }
 
     pub(super) fn encode_code_row(&mut self, id: u32, slot: usize, v: &[f32]) {
+        if self.resid && self.is_leaf(id) {
+            return self.encode_resid_row(id, slot, v);
+        }
         let nib = self.nib;
         let rb = self.code_rb();
-        let start = CODE_PAGE_HEADER + slot * rb;
+        let start = self.code_hdr() + slot * rb;
         encode_page_row(v, &mut self.code_page_mut(id)[start..start + rb], nib);
     }
 
     pub fn leaf_rows(&self, id: u32) -> Vec<f32> {
         let mut out = Vec::with_capacity(self.len(id) * self.num_dim);
+        if self.resid {
+            self.decode_leaf_resid(id, &mut out);
+            return out;
+        }
         let nib = self.nib;
         for slot in 0..self.len(id) {
             if nib {
@@ -330,10 +341,10 @@ impl TreeStore {
         let rb = self.code_rb();
         let _ = self
             .codes
-            .advise_range(memmap2::Advice::WillNeed, start, CODE_PAGE_HEADER);
+            .advise_range(memmap2::Advice::WillNeed, start, self.code_hdr());
         let _ = self.codes.advise_range(
             memmap2::Advice::WillNeed,
-            start + CODE_PAGE_HEADER + slot * rb,
+            start + self.code_hdr() + slot * rb,
             rb,
         );
     }
@@ -343,7 +354,7 @@ impl TreeStore {
             return;
         }
         let r = self.code_page_range(id);
-        let used = self.coded_extent(id, CODE_PAGE_HEADER + self.len(id) * self.code_rb());
+        let used = self.coded_extent(id, self.code_hdr() + self.len(id) * self.code_rb());
         let _ = self
             .codes
             .advise_range(memmap2::Advice::WillNeed, r.start, used.min(r.len()));

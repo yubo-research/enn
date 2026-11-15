@@ -53,6 +53,7 @@ impl TreeStore {
             codes_file,
             codes,
             nib: codes::nib_codes(num_dim.max(1)),
+            resid: codes::resid_codes(num_dim.max(1)),
             residency: Residency::new(file_budget(
                 TREE_RESIDENT_BUDGET_BYTES,
                 TREE_FILE_BUDGET_PER_MILLE,
@@ -95,6 +96,7 @@ impl TreeStore {
             codes_file,
             codes,
             nib: codes::nib_codes(num_dim.max(1)),
+            resid: codes::resid_codes(num_dim.max(1)),
             residency: Residency::new(file_budget(
                 TREE_RESIDENT_BUDGET_BYTES,
                 TREE_FILE_BUDGET_PER_MILLE,

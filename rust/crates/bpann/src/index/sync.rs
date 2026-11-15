@@ -219,10 +219,18 @@ impl IncrementalIndex {
             }
             bpann_row_to_f32(train_x.mmap_row_slice(row)?, scale_x, x_scale, &mut v);
             v.resize(tree_dim, 0.0);
+            let exact = |r: u32, out: &mut Vec<f32>| {
+                let Ok(x) = train_x.mmap_row_slice(r as usize) else {
+                    return false;
+                };
+                bpann_row_to_f32(x, scale_x, x_scale, out);
+                out.resize(tree_dim, 0.0);
+                true
+            };
             match self.tree.as_mut() {
                 Some(tree) => {
-                    tree.insert_row(row as u32, &v)?;
-                    self.morph.advance(tree);
+                    tree.insert_row_src(row as u32, &v, Some(&exact))?;
+                    self.morph.advance_src(tree, Some(&exact));
                 }
                 None => {
                     self.tree = Some(Tree::new_tree(

@@ -5,6 +5,7 @@ use crate::error::BpannError;
 use crate::index::build::{IndexHeader, DEFAULT_SKIP_NEIGHBORS};
 use crate::index::split::{median_split, two_means_split, weighted_mean};
 use crate::index::tree_counts::dist;
+use crate::index::tree_resid::RowSrc;
 use crate::index::tree_store::{Kind, TreeStore};
 
 pub const TREE_LEAF_CAPACITY: usize = 64;
@@ -133,6 +134,10 @@ impl Tree {
     }
 
     pub fn insert_row(&mut self, row: u32, v: &[f32]) -> Result<(), BpannError> {
+        self.insert_row_src(row, v, None)
+    }
+
+    pub fn insert_row_src(&mut self, row: u32, v: &[f32], src: RowSrc) -> Result<(), BpannError> {
         let mut path: Vec<(u32, usize)> = Vec::new();
         let mut cur = self.header.root_page_id;
         let sampled = updates_centroid(row);
@@ -146,7 +151,7 @@ impl Tree {
                 s.push_entry(cur, row, v);
                 self.header.indexed_rows += 1;
                 if self.store.len(cur) > TREE_LEAF_CAPACITY {
-                    self.split_leaf(cur, &mut path)?;
+                    self.split_leaf(cur, &mut path, src)?;
                 }
                 return Ok(());
             }
@@ -172,11 +177,19 @@ impl Tree {
         }
     }
 
-    fn split_leaf(&mut self, leaf: u32, path: &mut Vec<(u32, usize)>) -> Result<(), BpannError> {
+    fn split_leaf(
+        &mut self,
+        leaf: u32,
+        path: &mut Vec<(u32, usize)>,
+        src: RowSrc,
+    ) -> Result<(), BpannError> {
         let row_ids = self.store.ids(leaf).to_vec();
         let block = self.store.leaf_rows(leaf);
-        let coded = self.store.leaf_code_bytes(leaf);
-        let rb = self.store.code_rb();
+        let coded = self
+            .store
+            .exact_moved(&row_ids, src)
+            .unwrap_or_else(|| self.store.leaf_code_bytes(leaf));
+        let rb = self.store.moved_rb();
         let slack = self.store.leaf_err(leaf);
         let vectors: Vec<&[f32]> = block.chunks(self.store.num_dim()).collect();
         let weights = vec![1.0; vectors.len()];

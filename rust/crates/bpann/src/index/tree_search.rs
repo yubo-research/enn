@@ -19,7 +19,7 @@ use super::tree_search_knobs::{F32_RERANK_SKIP, SKIP_BUDGET_FALLBACK};
 pub(super) struct WalkMeter {
     leaves: AtomicU64,
     walks: AtomicU64,
-    budget_stops: AtomicU64,
+    pub(super) budget_stops: AtomicU64,
 }
 
 impl WalkMeter {

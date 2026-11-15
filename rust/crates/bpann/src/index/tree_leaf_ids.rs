@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::index::tree_codes::{code_page_bytes, page_row_bytes, CODE_PAGE_HEADER};
+use crate::index::tree_codes::{code_hdr, code_page_bytes, page_row_bytes};
 use crate::index::tree_store::{TreeStore, SLOT_ENTRIES};
 
 const MIRROR: u32 = 0x1D5_0001;
@@ -25,7 +25,7 @@ pub fn set_leaf_ids(value: bool) {
 }
 
 fn tail_offset(num_dim: usize) -> usize {
-    CODE_PAGE_HEADER + SLOT_ENTRIES * page_row_bytes(num_dim)
+    code_hdr(num_dim) + SLOT_ENTRIES * page_row_bytes(num_dim)
 }
 
 const ONE_PAGE: usize = 4096;
