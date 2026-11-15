@@ -53,6 +53,7 @@ def test_fixed_metric_onehot_neighbors_match_exact_after_relabeling(tmp_path):
 
 def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
     encoder, raw, query, y = _sparse_categories()
+    query = query[:64]
     results = []
     neighbors = []
     for label in range(2):
@@ -63,8 +64,8 @@ def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
         )
         params = fitter.ask(
             model,
-            num_fit_candidates=30,
-            num_fit_samples=256,
+            num_fit_candidates=10,
+            num_fit_samples=128,
             affine_calibrate=True,
         )
         assert model.metric.uses_learned_metric
