@@ -15,7 +15,9 @@ MODE2 = sys.argv[8] if len(sys.argv) > 8 else ""
 BOUND = MODE2 in ("sub", "seg")
 SEG = MODE2 == "seg"
 IDX = MODE2 == "idx"
-BOUND = BOUND or IDX
+MRG = MODE2 == "mrg"
+FS = 64
+BOUND = BOUND or IDX or MRG
 PG = 4096
 RB, LEAF_ROWS, LEAF_BYTES, HDR = 112, 48, 8192, 64
 BATCH = 4096
@@ -110,6 +112,9 @@ def flush(j, rows):
         if SEG:
             append_seg(k, i, rows[g])
             continue
+        if MRG:
+            merge_into(k, i, rows[g])
+            continue
         write_run(k, i, rows[g])
         cnt[k][i] += len(g)
         if cnt[k][i] >= capj(k):
@@ -117,6 +122,30 @@ def flush(j, rows):
             raw = read_back(k, i, n)
             cnt[k][i] = 0
             flush(k, np.frombuffer(raw, np.uint8).reshape(n, RB))
+
+
+fences = {}
+
+
+def merge_into(k, i, part):
+    o = base[k] + i * 2 * capj(k) * RB
+    c = int(cnt[k][i])
+    old = (
+        np.frombuffer(os.pread(buf_fd, c * RB, o), np.uint8).reshape(c, RB)
+        if c
+        else part[:0]
+    )
+    allr = np.concatenate([old, part])
+    allr = allr[np.argsort(keys_of(allr), kind="stable")]
+    n = len(allr)
+    if n >= capj(k):
+        cnt[k][i] = 0
+        fences.pop((k, i), None)
+        flush(k, allr)
+        return
+    os.pwrite(buf_fd, allr.tobytes(), o)
+    cnt[k][i] = n
+    fences[(k, i)] = keys_of(allr)[::FS].copy()
 
 
 def write_run(k, i, part):
@@ -176,6 +205,15 @@ def append_seg(k, i, rows):
 
 def scan_node(l, k):
     i = l // F**k
+    if MRG:
+        fe = fences.get((k, i))
+        if fe is None:
+            return 0
+        a = max(int(np.searchsorted(fe, l, "left")) - 1, 0) * FS
+        b = min(int(np.searchsorted(fe, l, "right")) * FS, int(cnt[k][i]))
+        if b > a:
+            os.pread(buf_fd, (b - a) * RB, base[k] + (i * 2 * capj(k) + a) * RB)
+        return 0
     if IDX:
         for o0, m in runs[k].get(i, ()):
             os.pread(buf_fd, PG, o0)
@@ -187,6 +225,15 @@ def scan_node(l, k):
     raw = os.pread(buf_fd, c * RB, base[k] + i * 2 * capj(k) * RB)
     ks = np.frombuffer(raw, np.uint8).reshape(c, RB)[:, :4].copy().view("<u4")
     return int((ks == l).sum())
+
+
+NPR = [0]
+_pread = os.pread
+
+
+def cpread(fd, n, o):
+    NPR[0] += 1
+    return _pread(fd, n, o)
 
 
 def query(l):
@@ -227,15 +274,25 @@ while N < MAXN:
         r, w = disk()
         dn = N - last[1]
         add_us = (now - last[0]) / dn * 1e6
+        os.pread = cpread
+        NPR[0] = 0
         tq = time.time()
         for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
             query(l)
         q_us = (time.time() - tq) / NQ * 1e6
+        preads_q = NPR[0] / NQ
+        os.pread = _pread
+        tq = time.time()
+        for l in qrng.integers(0, max(1, N // LEAF_ROWS), NQ).tolist():
+            os.pread(leaf_fd, LEAF_BYTES, l * LEAF_BYTES)
+        leaf_us = (time.time() - tq) / NQ * 1e6
         now = time.time()
         rec = {
             "N": N,
             "us_per_row": add_us,
             "query_us": q_us,
+            "leaf_only_us": leaf_us,
+            "preads_per_query": preads_q,
             "read_B_row": (r - last[2][0]) / dn,
             "write_B_row": (w - last[2][1]) / dn,
             "t": now - t0,
