@@ -10,8 +10,12 @@
 - Add time is dominated by disk waits beyond cache. (0162, 0168, 0173, 0177, 0215)
 - Add-time cliff, D=100, caps 64M/256M/1G (single runs, 0218): 5-13 us/row plateau, then a 10-100x step at N ~ 1.5e5 / 1.1e6 / 2.2e6 (2-4k rows per MB of cap; store is 5-12x the cap at the step). Writes rise first (1.4 -> 5 KB/row at 1G), reads follow (0-11 KB/row). Hot set (0219, fincore, D=100, 256M): the cache fills with tree_codes.bin (165 MiB at N=1.02e6; meta 11, slots 23). Touched code pages grow ~176 B/row (1.4-1.5 pages per 8 KB leaf region), so N*~(C-60MiB)/176B~1.1e6 matches the 256M step. At 1G the formula gives 5.5e6 but the onset was 2.2e6 (untested: dirty-page limit). A fixed-size buffer only moves the cliff (flush gives each leaf 45M/N rows); per-level buffers are needed.
 - Leaf coefficient L=30, 10 paired seeds, N<=1e5 (0218): D=10 quality parity with main at every N (dloglik -0.003, SE 0.002 at 1e5, p=0.32); query 0.50x main at 1e5 but 1.8x slower at 1e4 and 2.9x at 1e3. D=100 gap remains (-0.010, p=0.007; no skill there).
+- Storage-layer model, 256M cap, D=100 rows (0220; 2 buffered runs, 1 in-place): in-place appends step 14.8 -> 349 us/row between N=2.1e6 and 2.7e6. 16-way buffered flush (1024-row buffers) has no step but rises ~1.5-4 us (N<1e6) -> ~30 us (N>=1e7), then plateaus to 2e7 at ~470 B written + ~250 B read per row. Not a clean a+b lnN yet; model only (no tree, no splits). evals/meta_loop/buffer_sim.sh, fit_0220.py, fig_0220.py.
+
+- Buffer-size sweep, storage model, 256M cap (0221; single runs): add time at N=1-2e7 is 27 us (1024-row buffers), 7 (4096), 3.8 (16384); 256 rows 72. Fanout 16 beat 8, 64. Bounded runs to N=1e8: 4096 rows 3.9->11.8 us (slope 2.1 us/lnN), 16384 rows 4.0->5.9 (0.56), no step at the cap. Cost: a query must scan the buffers on its path (~5k/17k/62k rows for 1k/4k/16k); NOT measured. evals/meta_loop/sweep_0221*.sh, long_0221.sh, fit_0221.py, fig_0221.py.
 
 ## Tried and rejected
+- Per-child buffer segments to cut query scan 16x (0221): adds 5-10x slower in the model (44-58 us at N<=6e6 for 4096 rows).
 - Moving leaf metadata into the code page: would not help; metadata is not the hot set (0219). Repacking to one page per leaf moves the cliff <2x only.
 - Keeping the upper tree in memory: no help (0173).
 - Dropping the prefetch entirely: slower after the cliff (0215).
@@ -21,7 +25,7 @@
 1. Leaf coefficient: default raised to 30 in the working tree (UNCOMMITTED, one constant + one test value; 0218). 10-seed replication done for N<=1e5; still needed: N=1e6 quality and query cost vs N.
 2. Replace the D=100 test function with one that has learnable structure (low-dimensional projection), so recall effects show up there. Re-check the D=100 gap, which c=30 did not close.
 3. Decide whether to commit the prefetch gate (tree_codes.rs, committed in 4bdadb2; needs operator OK or a 3-run replication of the cliff).
-4. Be-tree buffered adds (ideas.md P1) + smaller touch set (P2). Bytes per add are now measured (0218, evals/meta_loop/bytes_per_add.py). The metadata-move test is WITHDRAWN (0219: meta is only 11-26 MiB). Next: log-structured code store (append code rows in arrival order to one sequential file; per-leaf id lists; gather at query or compact at split), or one buffered level. Check recall and query time afterwards. Re-measure recall afterwards. Repeat the cap sweep 3x per cap first.
+4. (0220/0221: buffering removes the cliff; with 4k-16k-row buffers the model is ~a+b lnN to 1e8. NEXT: add a buffer-aware query to the model and plot add vs query time per buffer size; then implement in the tree.) Be-tree buffered adds (ideas.md P1) + smaller touch set (P2). Bytes per add are now measured (0218, evals/meta_loop/bytes_per_add.py). The metadata-move test is WITHDRAWN (0219: meta is only 11-26 MiB). Next: log-structured code store (append code rows in arrival order to one sequential file; per-leaf id lists; gather at query or compact at split), or one buffered level. Check recall and query time afterwards. Re-measure recall afterwards. Repeat the cap sweep 3x per cap first.
 5. Find the remaining 2-6 us/row in-RAM add cost (perf is blocked; use in-code timers).
 Harnesses: evals/meta_loop/ (fig_0219.py; bytes_per_add.py now has FINCORE=1; bytes_per_add.py + cap_sweep.sh + fig_0218.py; leaf_sweep.sh; paired_quality.py; leaf_table.py; recall_cmp.py + recall_grid.sh; main_quality_grid.sh; quality_cmp.py; fig_0217.py; fig_0216.py; scaling_capped.sh), scripts/bench_cmp/bench.py.
 
@@ -32,3 +36,5 @@ Harnesses: evals/meta_loop/ (fig_0219.py; bytes_per_add.py now has FINCORE=1; by
 - May the prefetch gate be committed?
 - Is "beat main on add time" required in RAM too, where main only appends and the branch inserts into a tree? Or only at scale / past the cliff?
 - Is a log-structured code store (rows gathered by id at query time) acceptable if it costs some query time at small N? (0219)
+- Is a 2-5 us/row-per-decade smooth rise at 4k-16k buffers acceptable if queries must scan 17k-62k buffered rows? What query-time budget per buffered row is allowed? (0221)
+- Is a ~20x smooth rise (1024-row buffers, 0220) over one decade of N (0220 model) acceptable evidence of progress, or must the target a+b lnN fit hold across the cap crossing before any Rust work? (0220)
