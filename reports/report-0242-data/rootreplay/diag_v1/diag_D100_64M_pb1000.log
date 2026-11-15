@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/home/dsweet/projects/enn/evals/meta_loop/pbuf_diag.py", line 76, in <module>
+    main()
+    ~~~~^^
+  File "/home/dsweet/projects/enn/evals/meta_loop/pbuf_diag.py", line 55, in main
+    fl, fr, fns, ff = take_pbuf_stats()
+    ^^^^^^^^^^^^^^^
+ValueError: not enough values to unpack (expected 4, got 3)

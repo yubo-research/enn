@@ -27,6 +27,7 @@ impl TreeStore {
         if tag == crate::index::tree_store::kind_tag(Kind::Leaf) {
             self.mirror_ids(id, &[]);
         } else if tag != 0 {
+            self.clear_pbuf_word(id);
             self.mirror_clear(id);
         }
         Ok(id)
@@ -38,6 +39,7 @@ impl TreeStore {
 
     pub fn mark_free(&mut self, id: u32) {
         self.meta_words_mut(id)[0] = 0;
+        self.clear_pbuf_word(id);
         self.mirror_clear(id);
     }
 

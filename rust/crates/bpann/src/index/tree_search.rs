@@ -454,6 +454,14 @@ pub(super) fn search_tree_scored(
         }
         if !kinds.is_leaf(s, page_id, raw) {
             expanded += 1;
+            crate::index::tree_pbuf::score_pbuf(
+                s,
+                page_id,
+                (query, qn2),
+                coded.as_deref_mut(),
+                &mut top,
+                &mut score,
+            )?;
             let walk = Expand {
                 query: (query, qn2),
                 coded: coded.is_some(),
@@ -476,6 +484,7 @@ pub(super) fn search_tree_scored(
         leaves += 1;
     }
     meter.record(leaves, stopped_on_budget);
+    crate::index::tree_parent_count::end_walk();
     CASCADE_LEAVES.with(|c| c.set(c.get() + leaves));
     LAST_WALK_LEAVES.with(|c| c.set(leaves));
     Ok(top.into_sorted())
@@ -500,6 +509,7 @@ impl Expand<'_> {
         frontier: &mut BinaryHeap<Reverse<FrontierItem>>,
     ) {
         XP_INTERNAL_PAGES.fetch_add(1, Ordering::Relaxed);
+        crate::index::tree_parent_count::note_expand(s, page_id);
         XP_INTERNAL_ROWS.fetch_add(s.ids(page_id).len() as u64, Ordering::Relaxed);
         let mut fresh: Vec<(f32, u32)> = Vec::new();
         let collect_fresh = prefetch_pages() > 0 || self.probe.ahead() > 0;
@@ -552,6 +562,7 @@ fn score_leaf(
     score: &mut impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
 ) -> Result<(), BpannError> {
     let s = &tree.store;
+    crate::index::tree_parent_count::note_leaf(s, page_id);
     if let Some(scan) = coded {
         let n = scan.scan_leaf(s, page_id, query, qn2, &mut |i, d2| top.offer(i, d2));
         XP_LEAF_ROWS.fetch_add(n as u64, Ordering::Relaxed);

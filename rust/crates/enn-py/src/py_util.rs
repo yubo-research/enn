@@ -128,6 +128,26 @@ pub fn take_leaf_rows_py() -> u64 {
     ennbo::take_leaf_rows()
 }
 
+#[pyfunction(name = "take_parent_counts")]
+pub fn take_parent_counts_py() -> (u64, u64, u64, u64) {
+    ennbo::take_parent_counts()
+}
+
+#[pyfunction(name = "take_pbuf_stats")]
+pub fn take_pbuf_stats_py() -> (u64, u64, u64, u64) {
+    ennbo::take_pbuf_stats()
+}
+
+#[pyfunction(name = "take_pbuf_detail")]
+pub fn take_pbuf_detail_py() -> (u64, u64, u64) {
+    ennbo::take_pbuf_detail()
+}
+
+#[pyfunction(name = "set_count_parents")]
+pub fn set_count_parents_py(value: bool) {
+    ennbo::set_count_parents(value);
+}
+
 #[pyfunction(name = "take_internal_totals")]
 pub fn take_internal_totals_py() -> (u64, u64) {
     ennbo::take_internal_totals()

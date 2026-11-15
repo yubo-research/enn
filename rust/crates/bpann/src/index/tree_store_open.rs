@@ -39,6 +39,13 @@ impl TreeStore {
             &codes_file,
             GROW_MIN_SLOTS * codes::code_page_bytes(num_dim.max(1)),
         )?;
+        let coded8 = !codes::nib_codes(num_dim.max(1)) && !codes::resid_codes(num_dim.max(1));
+        let pbuf = crate::index::tree_pbuf::PBuf::create(
+            dir,
+            named,
+            (num_dim.max(1), coded8),
+            GROW_MIN_SLOTS,
+        )?;
         Ok(Self {
             named,
             stamped: false,
@@ -59,6 +66,7 @@ impl TreeStore {
                 TREE_FILE_BUDGET_PER_MILLE,
             )),
             icache: Default::default(),
+            pbuf,
         })
     }
 
@@ -82,6 +90,8 @@ impl TreeStore {
         let code_bytes = capacity * codes::code_page_bytes(num_dim.max(1));
         let (codes_file, fresh) = codes::open_codes(dir, code_bytes)?;
         let codes = map(&codes_file, code_bytes).ok()?;
+        let coded8 = !codes::nib_codes(num_dim.max(1)) && !codes::resid_codes(num_dim.max(1));
+        let pbuf = crate::index::tree_pbuf::PBuf::open(dir, (num_dim.max(1), coded8), capacity)?;
         let mut store = Self {
             named: true,
             stamped: true,
@@ -102,6 +112,7 @@ impl TreeStore {
                 TREE_FILE_BUDGET_PER_MILLE,
             )),
             icache: Default::default(),
+            pbuf,
         };
         store.update_tracking();
         if fresh {
@@ -126,7 +137,8 @@ impl TreeStore {
     pub fn flush(&self) -> Result<(), BpannError> {
         self.files.0.sync_all().map_err(io_err)?;
         self.files.1.sync_all().map_err(io_err)?;
-        self.codes_file.sync_all().map_err(io_err)
+        self.codes_file.sync_all().map_err(io_err)?;
+        self.pbuf.sync()
     }
 
     pub fn mark_stamped(&mut self) {

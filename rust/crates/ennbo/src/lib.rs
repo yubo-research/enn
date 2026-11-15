@@ -319,6 +319,22 @@ pub fn take_leaf_rows() -> u64 {
     ennbo_bpann::index::tree_search::take_leaf_rows()
 }
 
+pub fn take_parent_counts() -> (u64, u64, u64, u64) {
+    ennbo_bpann::index::tree_parent_count::take_parent_counts()
+}
+
+pub fn take_pbuf_stats() -> (u64, u64, u64, u64) {
+    ennbo_bpann::index::tree_pbuf::take_pbuf_stats()
+}
+
+pub fn take_pbuf_detail() -> (u64, u64, u64) {
+    ennbo_bpann::index::tree_pbuf::take_pbuf_detail()
+}
+
+pub fn set_count_parents(value: bool) {
+    ennbo_bpann::index::tree_parent_count::set_count_parents(value);
+}
+
 pub fn take_internal_totals() -> (u64, u64) {
     ennbo_bpann::index::tree_search::take_internal_totals()
 }

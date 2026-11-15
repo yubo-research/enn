@@ -105,6 +105,7 @@ impl Tree {
             .filter(|&p| self.store.is_leaf(p))
             .flat_map(|p| self.store.ids(p).to_vec())
             .collect();
+        ids.extend(self.pbuf_row_ids());
         ids.sort_unstable();
         ids
     }
@@ -120,7 +121,11 @@ impl Tree {
             let mut any = false;
             for (c, v) in cur.iter_mut().zip(rows) {
                 if !s.is_leaf(*c) {
-                    *c = s.ids(*c)[nearest(s.block(*c), v)];
+                    let slot = nearest(s.block(*c), v);
+                    if s.pbuf_on() && s.route_child_is_leaf(*c, slot) {
+                        continue;
+                    }
+                    *c = s.ids(*c)[slot];
                     any = true;
                 }
             }
@@ -129,7 +134,9 @@ impl Tree {
             }
         }
         for &c in &cur {
-            s.advise_append(c);
+            if s.is_leaf(c) {
+                s.advise_append(c);
+            }
         }
     }
 
@@ -138,25 +145,57 @@ impl Tree {
     }
 
     pub fn insert_row_src(&mut self, row: u32, v: &[f32], src: RowSrc) -> Result<(), BpannError> {
-        let mut path: Vec<(u32, usize)> = Vec::new();
-        let mut cur = self.header.root_page_id;
-        let sampled = updates_centroid(row);
+        self.insert_inner(row, v, src, None)
+    }
+
+    pub(super) fn insert_inner(
+        &mut self,
+        row: u32,
+        v: &[f32],
+        src: RowSrc,
+        replay: Option<(f32, u32)>,
+    ) -> Result<(), BpannError> {
+        let slack = replay.map_or(0.0, |r| r.0);
+        let (mut path, mut cur) = match replay {
+            Some((_, start)) if start != u32::MAX && !self.store.is_leaf(start) => {
+                (self.path_to(start, v, slack), start)
+            }
+            _ => (Vec::new(), self.header.root_page_id),
+        };
+        let replay = replay.is_some();
+        let sampled_add = updates_centroid(row);
         loop {
             let s = &mut self.store;
-            if !s.is_leaf(cur) && sampled {
+            if !s.is_leaf(cur) && sampled_add && !replay {
                 s.set_count(cur, s.count(cur) + TREE_CENTROID_STRIDE as usize);
             }
             if s.is_leaf(cur) {
                 s.set_count(cur, s.count(cur) + 1);
                 s.push_entry(cur, row, v);
-                self.header.indexed_rows += 1;
-                if self.store.len(cur) > TREE_LEAF_CAPACITY {
+                if !replay {
+                    self.header.indexed_rows += 1;
+                }
+                let split = self.store.len(cur) > TREE_LEAF_CAPACITY;
+                if replay {
+                    crate::index::tree_pbuf::note_replay_leaf(cur, split);
+                }
+                if split {
                     self.split_leaf(cur, &mut path, src)?;
                 }
                 return Ok(());
             }
             let slot = nearest(s.block(cur), v);
             let child = s.ids(cur)[slot];
+            if !replay && s.pbuf_on() && s.route_child_is_leaf(cur, slot) {
+                debug_assert!(s.is_leaf(child), "route leaf bit stale at {cur}");
+                let n = s.pbuf_push(cur, row, v);
+                self.header.indexed_rows += 1;
+                if n >= s.pbuf.rows {
+                    self.pbuf_flush(cur)?;
+                }
+                return Ok(());
+            }
+            let sampled = sampled_add && (!replay || s.is_leaf(child));
             let n_child = s.count(child)
                 + if s.is_leaf(child) {
                     1
@@ -167,14 +206,35 @@ impl Tree {
             let r = if sampled {
                 let step = (TREE_CENTROID_STRIDE as f32 / n_child as f32).min(1.0);
                 mean_update(s.entry_mut(cur, slot), v, step);
-                (s.radius(child) + d * step).max(d * (1.0 - step))
+                (s.radius(child) + d * step).max(d * (1.0 - step) + slack)
             } else {
-                s.radius(child).max(d)
+                s.radius(child).max(d + slack)
             };
             s.set_radius(child, r);
             path.push((cur, slot));
             cur = child;
         }
+    }
+
+    fn path_to(&mut self, id: u32, v: &[f32], slack: f32) -> Vec<(u32, usize)> {
+        let s = &mut self.store;
+        let mut path = Vec::new();
+        let mut c = id;
+        while let Some(p) = s.parent(c) {
+            let slot = s
+                .ids(p)
+                .iter()
+                .position(|&k| k == c)
+                .expect("child in parent");
+            path.push((p, slot));
+            c = p;
+        }
+        path.reverse();
+        if let Some(&(g, slot)) = path.last() {
+            let d = dist(v, &s.block(g)[slot * v.len()..(slot + 1) * v.len()]);
+            s.set_radius(id, s.radius(id).max(d + slack));
+        }
+        path
     }
 
     fn split_leaf(
@@ -270,7 +330,10 @@ impl Tree {
                 .map(|&i| dist(all_centroids[i], c) + s.radius(all_children[i]))
                 .fold(0.0, f32::max)
         };
-        let (r_a, r_b) = (radius(&left, &ca), radius(&right, &cb));
+        let (r_a, r_b) = (
+            radius(&left, &ca).max(s.pbuf_max_dist(page_id, &ca)),
+            radius(&right, &cb),
+        );
         let pick = |g: &[usize]| -> (Vec<f32>, Vec<u32>) {
             (
                 g.iter()

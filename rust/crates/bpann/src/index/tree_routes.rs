@@ -56,6 +56,10 @@ impl TreeStore {
         m[KIND_WORD] = KIND_MAGIC;
     }
 
+    pub(super) fn route_child_is_leaf(&self, parent: u32, slot: usize) -> bool {
+        self.meta_words(parent)[ROUTE_WORD + slot] & LEAF_BIT != 0
+    }
+
     pub(super) fn set_route(&mut self, parent: u32, slot: usize, child: u32, r: f32) {
         assert!(slot < ROUTE_SLOTS, "internal page {parent} too wide");
         let w = self.route_bits(child, r);

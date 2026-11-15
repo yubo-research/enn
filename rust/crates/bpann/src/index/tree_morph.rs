@@ -64,6 +64,9 @@ impl Morph {
                 .store
                 .parent(page)
                 .is_some_and(|p| small_subtree_leaves(tree, p).is_some());
+            if tree.store.pbuf_on() && !covered && tree.pbuf_flush_subtree(page).is_err() {
+                break;
+            }
             let work = if covered {
                 0
             } else {

@@ -110,6 +110,25 @@ impl CodedScan {
         n
     }
 
+    pub(super) fn scan_pbuf(
+        &mut self,
+        s: &TreeStore,
+        page: u32,
+        query: &[f32],
+        qn2: f32,
+        offer: &mut impl FnMut(u32, f64),
+    ) -> usize {
+        let hits = s.pbuf_scan(page, query, qn2);
+        for &(row, d2, e) in &hits {
+            self.err_max = self.err_max.max(e);
+            let i = self.locs.len() as u32;
+            self.locs.push((row, page, u32::MAX, e));
+            self.d2s.push(d2);
+            offer(i, f64::from(d2));
+        }
+        hits.len()
+    }
+
     #[inline(always)]
     fn scan_rows(
         &mut self,

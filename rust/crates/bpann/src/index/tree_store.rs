@@ -77,6 +77,7 @@ pub struct TreeStore {
     pub(super) resid: bool,
     pub(super) residency: Residency,
     pub(super) icache: InternalCache,
+    pub(super) pbuf: crate::index::tree_pbuf::PBuf,
 }
 
 impl TreeStore {
@@ -117,6 +118,7 @@ impl TreeStore {
             let ids = self.ids(id).to_vec();
             self.mirror_ids(id, &ids);
         } else {
+            self.clear_pbuf_word(id);
             self.mirror_clear(id);
         }
     }
@@ -126,6 +128,7 @@ impl TreeStore {
         self.meta = map(&self.files.0, capacity * META_WORDS * 4)?;
         self.slots = map(&self.files.1, capacity * self.slot_words * 4)?;
         self.codes = map(&self.codes_file, capacity * self.code_page_len())?;
+        self.pbuf.grow(capacity)?;
         self.capacity = capacity;
         self.update_tracking();
         Ok(())
@@ -345,6 +348,9 @@ impl TreeStore {
         Residency::copy_released(&self.slots, &mut out.slots, slot_len);
         let code_len = self.num_pages * self.code_page_len();
         out.codes[..code_len].copy_from_slice(&self.codes[..code_len]);
+        out.pbuf = self
+            .pbuf
+            .clone_into(&self.dir, self.capacity, self.num_pages)?;
         Ok(out)
     }
 }

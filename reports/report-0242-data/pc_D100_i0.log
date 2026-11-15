@@ -1,0 +1,13 @@
+{"D": 100, "n": 1, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [1.0, 1.0], "leaves": [1.0, 1.0], "leaf_parent_expands": [0.0, 0.0], "internal_expands": [0.0, 0.0]}
+{"D": 100, "n": 3, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [1.0, 1.0], "leaves": [1.0, 1.0], "leaf_parent_expands": [0.0, 0.0], "internal_expands": [0.0, 0.0]}
+{"D": 100, "n": 10, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [1.0, 1.0], "leaves": [1.0, 1.0], "leaf_parent_expands": [0.0, 0.0], "internal_expands": [0.0, 0.0]}
+{"D": 100, "n": 30, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [1.0, 1.0], "leaves": [1.0, 1.0], "leaf_parent_expands": [0.0, 0.0], "internal_expands": [0.0, 0.0]}
+{"D": 100, "n": 100, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [1.0, 1.0], "leaves": [2.0, 2.0], "leaf_parent_expands": [1.0, 1.0], "internal_expands": [1.0, 1.0]}
+{"D": 100, "n": 300, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [1.0, 1.0], "leaves": [7.0, 7.0], "leaf_parent_expands": [1.0, 1.0], "internal_expands": [1.0, 1.0]}
+{"D": 100, "n": 1000, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [2.0, 2.0], "leaves": [22.0, 22.0], "leaf_parent_expands": [2.0, 2.0], "internal_expands": [3.0, 3.0]}
+{"D": 100, "n": 3000, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [7.0, 7.0], "leaves": [66.0, 66.0], "leaf_parent_expands": [7.0, 7.0], "internal_expands": [8.0, 8.0]}
+{"D": 100, "n": 10000, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [19.0, 19.0], "leaves": [220.0, 220.0], "leaf_parent_expands": [19.0, 19.0], "internal_expands": [22.0, 22.0]}
+{"D": 100, "n": 30000, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [60.76, 62.0], "leaves": [310.0, 310.0], "leaf_parent_expands": [62.0, 62.0], "internal_expands": [68.0, 68.0]}
+{"D": 100, "n": 100000, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [88.615, 91.0], "leaves": [346.0, 346.0], "leaf_parent_expands": [92.0, 92.0], "internal_expands": [116.0, 116.0]}
+{"D": 100, "n": 300000, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [65.295, 67.0], "leaves": [379.0, 379.0], "leaf_parent_expands": [65.75, 67.0], "internal_expands": [127.0, 127.0]}
+{"D": 100, "n": 1000000, "intrinsic": 0, "walks": [1.0, 1.0], "parents": [31.915, 33.0], "leaves": [415.0, 415.0], "leaf_parent_expands": [31.915, 33.0], "internal_expands": [156.73, 161.0]}
