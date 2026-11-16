@@ -1,0 +1,6 @@
+D=10 N=10000 I=0 tree   leaves 225 rows/leaf 44.4 rad/kth 1.65 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 27/55 ball 32/64 touch 212/224 graph8 28/57 graph16 27/55 graph32 27/55
+D=10 N=30000 I=0 tree   leaves 677 rows/leaf 44.3 rad/kth 1.73 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 37/104 ball 52/117 touch 482/607 graph8 41/105 graph16 37/104 graph32 37/104
+D=10 N=100000 I=0 tree   leaves 2273 rows/leaf 44.0 rad/kth 1.76 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 61/145 ball 72/196 touch 905/1386 graph8 68/183 graph16 62/144 graph32 61/145
+D=10 N=300000 I=0 tree   leaves 6814 rows/leaf 44.0 rad/kth 1.81 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 78/239 ball 107/275 touch 1374/2462 graph8 86/236 graph16 82/238 graph32 78/238
+D=10 N=1000000 I=0 tree   leaves 22692 rows/leaf 44.1 rad/kth 1.84 mis 0.664 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 104/314 ball 130/384 touch 1932/3776 graph8 127/345 graph16 104/317 graph32 104/314
+DONE

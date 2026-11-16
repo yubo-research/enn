@@ -1,0 +1,8 @@
+D=10 N=10000 I=0 tree   build 0.3s leaves 203 rows/leaf 49.3 p99 64 rad/kth 1.50 mis 0.220 | p50/p90 true_leaves 6/8 oracle 6/8 centroid 16/38 rows_centroid 758/1915 ball 20/45 touch 172/197 graph8 18/39 graph16 16/38 graph32 16/38
+D=10 N=30000 I=0 tree   build 0.7s leaves 619 rows/leaf 48.5 p99 64 rad/kth 1.57 mis 0.341 | p50/p90 true_leaves 7/8 oracle 7/8 centroid 22/49 rows_centroid 1029/2388 ball 28/72 touch 341/470 graph8 26/50 graph16 22/49 graph32 22/49
+D=10 N=100000 I=0 tree   build 2.9s leaves 2054 rows/leaf 48.7 p99 64 rad/kth 1.62 mis 0.406 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 33/79 rows_centroid 1610/3884 ball 45/128 touch 568/937 graph8 38/90 graph16 33/79 graph32 33/79
+D=10 N=300000 I=0 tree   build 10.0s leaves 6205 rows/leaf 48.3 p99 64 rad/kth 1.66 mis 0.466 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 42/130 rows_centroid 2047/6408 ball 55/169 touch 790/1503 graph8 52/181 graph16 46/137 graph32 44/130
+D=10 N=1000000 I=0 tree   build 42.4s leaves 20634 rows/leaf 48.5 p99 64 rad/kth 1.69 mis 0.507 | p50/p90 true_leaves 8/9 oracle 8/9 centroid 47/168 rows_centroid 2290/8192 ball 78/239 touch 1144/2267 graph8 65/208 graph16 53/174 graph32 48/168
+D=100 N=10000 I=5 tree   build 0.6s leaves 209 rows/leaf 47.8 p99 64 rad/kth 1.49 mis 0.118 | p50/p90 true_leaves 4/6 oracle 4/6 centroid 5/10 rows_centroid 238/492 ball 5/13 touch 28/50 graph8 5/11 graph16 5/10 graph32 5/10
+D=100 N=100000 I=5 tree   build 6.2s leaves 2059 rows/leaf 48.6 p99 64 rad/kth 1.43 mis 0.297 | p50/p90 true_leaves 5/7 oracle 5/7 centroid 8/21 rows_centroid 394/1015 ball 10/24 touch 86/141 graph8 9/25 graph16 8/21 graph32 8/21
+DONE

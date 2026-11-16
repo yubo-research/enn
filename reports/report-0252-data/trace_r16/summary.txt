@@ -1,0 +1,86 @@
+D=10 N=10000 I=0 leaves/q 100 recall_api 1.0000 last_true_rank p50/p90/p99/max [16.0, 36.0, 52.0] 61 miss 0.000
+  rows/leaf 49.3 walks/q 1.00 leaves with bound>kth 0.0
+  true_leaves            mean     6.0 p50      6 p90      8 p99      9
+  leaf_touch_kth         mean     6.0 p50      6 p90      8 p99      9
+  box_open               mean    99.0 p50     94 p90    145 p99    164
+  box_last_true_rank     mean    34.9 p50     30 p90     68 p99     97
+  oracle_last_true_rank  mean     5.0 p50      5 p90      7 p99      8
+  full  leaves   100.4 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.4088 (exact 0.4088) paired_dmse +0.00000 se 0.00000
+  m3    leaves    10.6 recall 0.8100 dist_ratio 1.0219 knn_rmse 0.4255 (exact 0.4088) paired_dmse +0.01400 se 0.00618
+  m10   leaves    24.1 recall 0.9550 dist_ratio 1.0044 knn_rmse 0.4186 (exact 0.4088) paired_dmse +0.00812 se 0.00382
+  m30   leaves    49.4 recall 0.9975 dist_ratio 1.0002 knn_rmse 0.4084 (exact 0.4088) paired_dmse -0.00028 se 0.00026
+  m100  leaves    95.2 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.4088 (exact 0.4088) paired_dmse +0.00000 se 0.00000
+  m300  leaves   100.4 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.4088 (exact 0.4088) paired_dmse +0.00000 se 0.00000
+  p1    leaves    22.4 recall 0.9470 dist_ratio 1.0052 knn_rmse 0.4185 (exact 0.4088) paired_dmse +0.00807 se 0.00381
+  p3    leaves    47.4 recall 0.9970 dist_ratio 1.0003 knn_rmse 0.4086 (exact 0.4088) paired_dmse -0.00015 se 0.00029
+  p10   leaves    92.8 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.4088 (exact 0.4088) paired_dmse +0.00000 se 0.00000
+  p30   leaves   100.4 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.4088 (exact 0.4088) paired_dmse +0.00000 se 0.00000
+D=10 N=100000 I=0 leaves/q 291 recall_api 1.0000 last_true_rank p50/p90/p99/max [57.0, 127.0, 232.0] 249 miss 0.000
+  rows/leaf 49.2 walks/q 1.00 leaves with bound>kth 0.0
+  true_leaves            mean     6.9 p50      7 p90      9 p99     10
+  leaf_touch_kth         mean     6.9 p50      7 p90      9 p99     10
+  box_open               mean   253.0 p50    223 p90    442 p99    563
+  box_last_true_rank     mean    73.9 p50     56 p90    164 p99    250
+  oracle_last_true_rank  mean     5.9 p50      6 p90      8 p99      9
+  full  leaves   291.2 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.2832 (exact 0.2832) paired_dmse +0.00000 se 0.00000
+  m3    leaves    11.4 recall 0.6360 dist_ratio 1.0549 knn_rmse 0.3148 (exact 0.2832) paired_dmse +0.01890 se 0.00643
+  m10   leaves    28.4 recall 0.8450 dist_ratio 1.0179 knn_rmse 0.2886 (exact 0.2832) paired_dmse +0.00306 se 0.00373
+  m30   leaves    61.4 recall 0.9395 dist_ratio 1.0059 knn_rmse 0.2828 (exact 0.2832) paired_dmse -0.00022 se 0.00297
+  m100  leaves   151.5 recall 0.9920 dist_ratio 1.0009 knn_rmse 0.2835 (exact 0.2832) paired_dmse +0.00015 se 0.00055
+  m300  leaves   264.8 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.2832 (exact 0.2832) paired_dmse +0.00000 se 0.00000
+  p1    leaves    32.4 recall 0.8675 dist_ratio 1.0148 knn_rmse 0.2882 (exact 0.2832) paired_dmse +0.00286 se 0.00371
+  p3    leaves    68.6 recall 0.9480 dist_ratio 1.0052 knn_rmse 0.2833 (exact 0.2832) paired_dmse +0.00003 se 0.00295
+  p10   leaves   166.2 recall 0.9945 dist_ratio 1.0007 knn_rmse 0.2831 (exact 0.2832) paired_dmse -0.00009 se 0.00036
+  p30   leaves   274.7 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.2832 (exact 0.2832) paired_dmse +0.00000 se 0.00000
+D=10 N=1000000 I=0 leaves/q 702 recall_api 1.0000 last_true_rank p50/p90/p99/max [118.0, 374.0, 559.0] 1175 miss 0.000
+  rows/leaf 49.6 walks/q 1.00 leaves with bound>kth 0.0
+  true_leaves            mean     7.8 p50      8 p90     10 p99     10
+  leaf_touch_kth         mean     7.8 p50      8 p90     10 p99     10
+  box_open               mean   535.4 p50    468 p90    991 p99   1206
+  box_last_true_rank     mean   157.9 p50    119 p90    321 p99    636
+  oracle_last_true_rank  mean     6.8 p50      7 p90      9 p99      9
+  full  leaves   701.6 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.2047 (exact 0.2047) paired_dmse +0.00000 se 0.00000
+  m3    leaves    11.7 recall 0.4695 dist_ratio 1.0988 knn_rmse 0.2385 (exact 0.2047) paired_dmse +0.01498 se 0.00568
+  m10   leaves    30.9 recall 0.6650 dist_ratio 1.0466 knn_rmse 0.2302 (exact 0.2047) paired_dmse +0.01110 se 0.00389
+  m30   leaves    76.3 recall 0.8425 dist_ratio 1.0197 knn_rmse 0.2184 (exact 0.2047) paired_dmse +0.00580 se 0.00270
+  m100  leaves   195.7 recall 0.9555 dist_ratio 1.0048 knn_rmse 0.2054 (exact 0.2047) paired_dmse +0.00031 se 0.00053
+  m300  leaves   420.0 recall 0.9945 dist_ratio 1.0006 knn_rmse 0.2053 (exact 0.2047) paired_dmse +0.00026 se 0.00020
+  p1    leaves    40.2 recall 0.7205 dist_ratio 1.0364 knn_rmse 0.2230 (exact 0.2047) paired_dmse +0.00784 se 0.00339
+  p3    leaves    97.6 recall 0.8790 dist_ratio 1.0153 knn_rmse 0.2117 (exact 0.2047) paired_dmse +0.00291 se 0.00154
+  p10   leaves   249.9 recall 0.9760 dist_ratio 1.0026 knn_rmse 0.2059 (exact 0.2047) paired_dmse +0.00052 se 0.00033
+  p30   leaves   507.5 recall 0.9995 dist_ratio 1.0000 knn_rmse 0.2047 (exact 0.2047) paired_dmse +0.00002 se 0.00002
+D=100 N=10000 I=5 leaves/q 26 recall_api 1.0000 last_true_rank p50/p90/p99/max [7.0, 18.0, 28.0] 34 miss 0.000
+  rows/leaf 50.0 walks/q 1.00 leaves with bound>kth 0.0
+  true_leaves            mean     3.7 p50      4 p90      6 p99      7
+  leaf_touch_kth         mean     3.7 p50      4 p90      6 p99      7
+  box_open               mean    22.6 p50     22 p90     35 p99     46
+  box_last_true_rank     mean     4.0 p50      3 p90      8 p99     12
+  oracle_last_true_rank  mean     2.7 p50      3 p90      5 p99      6
+  full  leaves    25.9 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.1701 (exact 0.1701) paired_dmse +0.00000 se 0.00000
+  m3    leaves     7.4 recall 0.8630 dist_ratio 1.0231 knn_rmse 0.1815 (exact 0.1701) paired_dmse +0.00400 se 0.00163
+  m10   leaves    17.1 recall 0.9780 dist_ratio 1.0027 knn_rmse 0.1693 (exact 0.1701) paired_dmse -0.00028 se 0.00027
+  m30   leaves    25.2 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.1701 (exact 0.1701) paired_dmse +0.00000 se 0.00000
+  m100  leaves    25.9 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.1701 (exact 0.1701) paired_dmse +0.00000 se 0.00000
+  m300  leaves    25.9 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.1701 (exact 0.1701) paired_dmse +0.00000 se 0.00000
+  p1    leaves    16.0 recall 0.9685 dist_ratio 1.0046 knn_rmse 0.1699 (exact 0.1701) paired_dmse -0.00005 se 0.00038
+  p3    leaves    24.9 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.1701 (exact 0.1701) paired_dmse +0.00000 se 0.00000
+  p10   leaves    25.9 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.1701 (exact 0.1701) paired_dmse +0.00000 se 0.00000
+  p30   leaves    25.9 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.1701 (exact 0.1701) paired_dmse +0.00000 se 0.00000
+D=100 N=100000 I=5 leaves/q 60 recall_api 1.0000 last_true_rank p50/p90/p99/max [18.0, 53.0, 87.0] 95 miss 0.000
+  rows/leaf 49.1 walks/q 1.00 leaves with bound>kth 0.0
+  true_leaves            mean     4.7 p50      5 p90      7 p99      9
+  leaf_touch_kth         mean     4.7 p50      5 p90      7 p99      9
+  box_open               mean    55.6 p50     54 p90     87 p99     99
+  box_last_true_rank     mean     8.0 p50      6 p90     15 p99     27
+  oracle_last_true_rank  mean     3.7 p50      4 p90      6 p99      8
+  full  leaves    60.1 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.0972 (exact 0.0972) paired_dmse +0.00000 se 0.00000
+  m3    leaves     7.9 recall 0.6925 dist_ratio 1.0381 knn_rmse 0.1054 (exact 0.0972) paired_dmse +0.00166 se 0.00110
+  m10   leaves    20.7 recall 0.8795 dist_ratio 1.0120 knn_rmse 0.1000 (exact 0.0972) paired_dmse +0.00056 se 0.00037
+  m30   leaves    45.5 recall 0.9840 dist_ratio 1.0010 knn_rmse 0.0981 (exact 0.0972) paired_dmse +0.00018 se 0.00009
+  m100  leaves    60.1 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.0972 (exact 0.0972) paired_dmse +0.00000 se 0.00000
+  m300  leaves    60.1 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.0972 (exact 0.0972) paired_dmse +0.00000 se 0.00000
+  p1    leaves    24.4 recall 0.9165 dist_ratio 1.0075 knn_rmse 0.0989 (exact 0.0972) paired_dmse +0.00035 se 0.00031
+  p3    leaves    48.9 recall 0.9865 dist_ratio 1.0009 knn_rmse 0.0976 (exact 0.0972) paired_dmse +0.00009 se 0.00006
+  p10   leaves    60.1 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.0972 (exact 0.0972) paired_dmse +0.00000 se 0.00000
+  p30   leaves    60.1 recall 1.0000 dist_ratio 1.0000 knn_rmse 0.0972 (exact 0.0972) paired_dmse +0.00000 se 0.00000
+DONE

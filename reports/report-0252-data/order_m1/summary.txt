@@ -1,0 +1,2 @@
+D=10 N=10000 I=0 tree   build 2.7s leaves 216 rows/leaf 46.3 rad/kth 1.71 mis 0.560 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 32/66 ball 37/74 touch 210/216 graph8 34/66 graph16 32/66 graph32 32/66
+D=10 N=30000 I=0 tree   build 8.7s leaves 647 rows/leaf 46.4 rad/kth 1.80 mis 0.594 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 48/111 ball 58/148 touch 513/607 graph8 48/110 graph16 48/111 graph32 48/111

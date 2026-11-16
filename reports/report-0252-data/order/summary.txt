@@ -1,0 +1,22 @@
+D=10 N=10000 I=0 tree   leaves 222 rows/leaf 45.0 rad/kth 1.71 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 29/66 ball 32/73 touch 216/222 graph8 33/65 graph16 29/65 graph32 29/66
+D=10 N=10000 I=0 pca    leaves 256 rows/leaf 39.1 rad/kth 1.56 | p50/p90 true_leaves 7/8 oracle 7/8 centroid 22/54 ball 28/66 touch 228/253 graph8 23/54 graph16 22/54 graph32 22/54
+D=10 N=10000 I=0 kmeans leaves 250 rows/leaf 40.0 rad/kth 1.53 | p50/p90 true_leaves 6/8 oracle 6/8 centroid 20/48 ball 24/59 touch 216/242 graph8 22/47 graph16 20/48 graph32 20/48
+D=10 N=30000 I=0 tree   leaves 651 rows/leaf 46.1 rad/kth 1.81 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 44/100 ball 54/128 touch 522/611 graph8 46/105 graph16 45/100 graph32 44/100
+D=10 N=30000 I=0 pca    leaves 512 rows/leaf 58.6 rad/kth 1.72 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 24/66 ball 28/87 touch 365/461 graph8 26/66 graph16 24/66 graph32 24/66
+D=10 N=30000 I=0 kmeans leaves 719 rows/leaf 41.7 rad/kth 1.56 | p50/p90 true_leaves 6/9 oracle 6/9 centroid 22/54 ball 27/84 touch 386/528 graph8 24/62 graph16 22/54 graph32 22/54
+D=10 N=100000 I=0 tree   leaves 2175 rows/leaf 46.0 rad/kth 1.85 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 52/163 ball 72/191 touch 1026/1515 graph8 56/169 graph16 52/165 graph32 52/163
+D=10 N=100000 I=0 pca    leaves 2048 rows/leaf 48.8 rad/kth 1.69 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 34/99 ball 41/134 touch 680/1086 graph8 38/102 graph16 37/99 graph32 34/99
+D=10 N=100000 I=0 kmeans leaves 2419 rows/leaf 41.3 rad/kth 1.57 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 29/86 ball 34/99 touch 597/994 graph8 32/109 graph16 29/85 graph32 29/86
+D=10 N=300000 I=0 tree   leaves 6586 rows/leaf 45.6 rad/kth 1.90 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 89/291 ball 114/381 touch 1604/2835 graph8 100/322 graph16 90/299 graph32 89/291
+D=10 N=300000 I=0 pca    leaves 8192 rows/leaf 36.6 rad/kth 1.63 | p50/p90 true_leaves 8/9 oracle 8/9 centroid 44/135 ball 59/190 touch 960/1790 graph8 54/156 graph16 44/146 graph32 44/135
+D=10 N=300000 I=0 kmeans leaves 7200 rows/leaf 41.7 rad/kth 1.54 | p50/p90 true_leaves 7/9 oracle 7/9 centroid 33/96 ball 40/115 touch 621/1221 graph8 46/130 graph16 33/100 graph32 33/96
+D=10 N=1000000 I=0 tree   leaves 21978 rows/leaf 45.5 rad/kth 1.93 | p50/p90 true_leaves 8/10 oracle 8/10 centroid 104/379 ball 145/548 touch 2432/4634 graph8 137/459 graph16 110/373 graph32 106/379
+D=10 N=1000000 I=0 pca    leaves 16960 rows/leaf 59.0 rad/kth 1.80 | p50/p90 true_leaves 8/9 oracle 8/9 centroid 49/175 ball 63/236 touch 1212/2327 graph8 60/200 graph16 50/181 graph32 49/175
+D=10 N=1000000 I=0 kmeans leaves 24031 rows/leaf 41.6 rad/kth 1.60 | p50/p90 true_leaves 8/9 oracle 8/9 centroid 45/157 ball 65/185 touch 1002/1929 graph8 62/191 graph16 47/158 graph32 45/157
+D=100 N=10000 I=5 tree   leaves 221 rows/leaf 45.2 rad/kth 1.90 mis 0.459 | p50/p90 true_leaves 5/7 oracle 5/7 centroid 9/19 ball 10/24 touch 56/93 graph8 9/20 graph16 9/20 graph32 9/19
+D=100 N=10000 I=5 pca    leaves 256 rows/leaf 39.1 rad/kth 1.63 mis 0.296 | p50/p90 true_leaves 4/6 oracle 4/6 centroid 6/14 ball 6/17 touch 43/73 graph8 6/14 graph16 6/14 graph32 6/14
+D=100 N=10000 I=5 kmeans leaves 255 rows/leaf 39.2 rad/kth 1.53 mis 0.229 | p50/p90 true_leaves 4/6 oracle 4/6 centroid 6/13 ball 6/14 touch 35/62 graph8 6/14 graph16 6/13 graph32 6/13
+D=100 N=100000 I=5 tree   leaves 2195 rows/leaf 45.6 rad/kth 1.74 mis 0.538 | p50/p90 true_leaves 6/8 oracle 6/8 centroid 17/46 ball 19/42 touch 162/267 graph8 18/46 graph16 17/46 graph32 17/46
+D=100 N=100000 I=5 pca    leaves 2048 rows/leaf 48.8 rad/kth 1.48 mis 0.309 | p50/p90 true_leaves 5/6 oracle 5/6 centroid 8/17 ball 8/20 touch 90/149 graph8 8/18 graph16 8/17 graph32 8/17
+D=100 N=100000 I=5 kmeans leaves 2351 rows/leaf 42.5 rad/kth 1.28 mis 0.208 | p50/p90 true_leaves 4/7 oracle 4/7 centroid 6/16 ball 6/18 touch 68/111 graph8 7/17 graph16 6/16 graph32 6/16
+DONE
