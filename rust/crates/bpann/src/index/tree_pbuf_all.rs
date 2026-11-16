@@ -9,7 +9,14 @@ use crate::index::tree_store::TreeStore;
 
 static ALL: AtomicU8 = AtomicU8::new(u8::MAX);
 static STAGGER: AtomicU8 = AtomicU8::new(u8::MAX);
-static FAULTS: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+static PUNCH: AtomicU8 = AtomicU8::new(u8::MAX);
+static FAULTS: [AtomicU64; 5] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
 
 fn fault_split() -> bool {
     static ENV: OnceLock<bool> = OnceLock::new();
@@ -26,9 +33,9 @@ fn counted<T>(i: usize, f: impl FnOnce() -> T) -> T {
     out
 }
 
-pub fn take_pbuf_fault_split() -> (u64, u64, u64) {
+pub fn take_pbuf_fault_split() -> (u64, u64, u64, u64, u64) {
     let t = |i: usize| FAULTS[i].swap(0, Ordering::Relaxed);
-    (t(0), t(1), t(2))
+    (t(0), t(1), t(2), t(3), t(4))
 }
 
 fn flag(over: &AtomicU8, env: &OnceLock<bool>, name: &str) -> bool {
@@ -51,6 +58,20 @@ pub fn pbuf_stagger() -> bool {
 pub fn pbuf_prefetch() -> bool {
     static ENV: OnceLock<bool> = OnceLock::new();
     *ENV.get_or_init(|| std::env::var("ENN_PBUF_PREFETCH").as_deref() != Ok("0"))
+}
+
+pub fn pbuf_punch() -> bool {
+    static ENV: OnceLock<Option<bool>> = OnceLock::new();
+    match PUNCH.load(Ordering::Relaxed) {
+        u8::MAX => ENV
+            .get_or_init(|| std::env::var("ENN_PBUF_PUNCH").ok().map(|v| v != "0"))
+            .unwrap_or_else(pbuf_all),
+        v => v == 1,
+    }
+}
+
+pub fn set_pbuf_punch(on: bool) {
+    PUNCH.store(u8::from(on), Ordering::Relaxed);
 }
 
 pub fn set_pbuf_all(on: bool) {
@@ -118,6 +139,15 @@ impl Tree {
     }
 
     pub(super) fn pbuf_flush_levels(&mut self, id: u32) -> Result<u64, BpannError> {
+        if fault_split() {
+            let s = &self.store;
+            for &c in s.ids(id) {
+                if let Some(cold) = s.pbuf_tail_cold(c) {
+                    FAULTS[3].fetch_add(1, Ordering::Relaxed);
+                    FAULTS[4].fetch_add(u64::from(cold), Ordering::Relaxed);
+                }
+            }
+        }
         if pbuf_prefetch() {
             let s = &self.store;
             for &c in s.ids(id) {

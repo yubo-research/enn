@@ -56,3 +56,26 @@ fn every_level_search_finds_true_neighbours() {
     let missed = missed_neighbours(200);
     assert!(missed <= 2, "{missed} of 140 true neighbours missed");
 }
+
+#[test]
+fn punched_buffers_keep_every_row_and_free_taken_pages() {
+    set_pbuf_rows(50);
+    set_pbuf_all(true);
+    set_pbuf_punch(true);
+    let (n, d) = (6000usize, 4usize);
+    let dir = tempfile::tempdir().unwrap();
+    let mut t = Tree::new_tree(0, &row(0, d), d, dir.path().join("i")).unwrap();
+    for r in 1..n {
+        t.insert_row(r as u32, &row(r, d)).unwrap();
+    }
+    assert_buffers_covered(&t);
+    t.pbuf_flush_all().unwrap();
+    assert!(t.pbuf_row_ids().is_empty());
+    assert_eq!(t.leaf_row_ids(), (0..n as u32).collect::<Vec<u32>>());
+    t.assert_counts_consistent();
+    let root = t.header.root_page_id;
+    let _ = t.store.pbuf_push(root, 7, &row(7, d));
+    let _ = t.store.pbuf_take(root);
+    let first = t.store.pbuf_region_bytes(root, 1);
+    assert!(first.iter().all(|&b| b == 0), "taken page not punched");
+}

@@ -1,0 +1,8 @@
+aaed3b8c2b42cde42435141084463e90de27ccda
+ evals/meta_loop/pbuf_cap.sh                        |  4 ++--
+ evals/meta_loop/pbuf_ram_ab.sh                     |  4 ++--
+ evals/meta_loop/stall_probe.sh                     |  4 ++--
+ rust/crates/bpann/src/index/tree_pbuf.rs           | 21 ++++++++++++++++++++
+ rust/crates/bpann/src/index/tree_pbuf_all.rs       | 12 +++++++++++
+ rust/crates/bpann/src/index/tree_pbuf_all_tests.rs | 23 ++++++++++++++++++++++
+ 6 files changed, 62 insertions(+), 6 deletions(-)

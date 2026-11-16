@@ -327,7 +327,7 @@ pub fn take_pbuf_stats() -> (u64, u64, u64, u64) {
     ennbo_bpann::index::tree_pbuf::take_pbuf_stats()
 }
 
-pub fn take_pbuf_fault_split() -> (u64, u64, u64) {
+pub fn take_pbuf_fault_split() -> (u64, u64, u64, u64, u64) {
     ennbo_bpann::index::tree_pbuf_all::take_pbuf_fault_split()
 }
 

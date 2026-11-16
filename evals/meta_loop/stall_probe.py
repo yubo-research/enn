@@ -96,7 +96,8 @@ def main():
         n += k
         d = s1 - s0
         dirty, wb, _ = memstat()
-        split = take_pbuf_fault_split() if take_pbuf_fault_split else (0, 0, 0)
+        split = take_pbuf_fault_split() if take_pbuf_fault_split else (0, 0, 0, 0, 0)
+        split = tuple(split) + (0,) * (5 - len(split))
         o = {
             "D": D,
             "n": n,
@@ -115,6 +116,8 @@ def main():
             "flt_take_row": split[0] / k,
             "flt_push_row": split[1] / k,
             "flt_leaf_row": split[2] / k,
+            "tail_seen_row": split[3] / k,
+            "tail_cold_row": split[4] / k,
         }
         print(json.dumps(o), flush=True)
         with Path(OUT).open("a") as fh:

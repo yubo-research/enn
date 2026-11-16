@@ -13,7 +13,7 @@ use crate::index::tree_store_files::{io_err, map, named_file, scratch_file};
 
 pub const PBUF_FILE: &str = "tree_pbuf.bin";
 pub(super) const BUF_WORD: usize = META_HDR_WORDS + crate::index::tree_routes::ROUTE_SLOTS - 1;
-const PAGE: usize = 4096;
+pub(super) const PAGE: usize = 4096;
 static OVERRIDE: AtomicUsize = AtomicUsize::new(usize::MAX);
 static FLUSHES: AtomicU64 = AtomicU64::new(0);
 static FLUSH_NS: AtomicU64 = AtomicU64::new(0);
@@ -90,13 +90,13 @@ pub fn set_pbuf_rows(rows: usize) {
 
 pub struct PBuf {
     pub(super) rows: usize,
-    rec: usize,
+    pub(super) rec: usize,
     file: Option<File>,
-    map: Option<MmapMut>,
+    pub(super) map: Option<MmapMut>,
 }
 
 impl PBuf {
-    fn page_len(&self) -> usize {
+    pub(super) fn page_len(&self) -> usize {
         (self.rows * self.rec).div_ceil(PAGE) * PAGE
     }
 
@@ -188,7 +188,7 @@ impl PBuf {
             .map_or(Ok(()), |f| f.sync_all().map_err(io_err))
     }
 
-    fn region(&self, id: u32, n: usize) -> &[u8] {
+    pub(super) fn region(&self, id: u32, n: usize) -> &[u8] {
         let start = id as usize * self.page_len();
         &self.map.as_ref().expect("pbuf mapped")[start..start + n * self.rec]
     }
@@ -288,6 +288,9 @@ impl TreeStore {
         }
         if !out.is_empty() {
             self.clear_pbuf_word(id);
+            if crate::index::tree_pbuf_all::pbuf_punch() {
+                self.pbuf.punch(id, out.len());
+            }
         }
         out
     }
