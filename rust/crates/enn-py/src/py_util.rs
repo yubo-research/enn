@@ -143,6 +143,11 @@ pub fn take_pbuf_fault_split_py() -> (u64, u64, u64, u64, u64) {
     ennbo::take_pbuf_fault_split()
 }
 
+#[pyfunction(name = "take_pbuf_cold")]
+pub fn take_pbuf_cold_py() -> Vec<u64> {
+    ennbo::take_pbuf_cold()
+}
+
 #[pyfunction(name = "take_pbuf_detail")]
 pub fn take_pbuf_detail_py() -> (u64, u64, u64) {
     ennbo::take_pbuf_detail()

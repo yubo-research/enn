@@ -18,6 +18,7 @@ pub mod tree_nib;
 pub mod tree_parent_count;
 pub mod tree_pbuf;
 pub mod tree_pbuf_all;
+pub mod tree_pbuf_cold;
 mod tree_pbuf_punch;
 pub mod tree_persist;
 pub mod tree_resid;

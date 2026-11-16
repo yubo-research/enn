@@ -8,6 +8,11 @@ use crate::index::tree_residency::{Residency, DEFAULT_RESIDENT_BUDGET_BYTES};
 
 pub(crate) const MMAP_GROW_ROWS: usize = 64;
 
+fn linear_grow() -> bool {
+    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENV.get_or_init(|| std::env::var("ENN_LOG_GROW_LINEAR").as_deref() == Ok("1"))
+}
+
 pub struct MmapColumnStore {
     pub path: PathBuf,
     pub ncols: usize,
@@ -37,7 +42,8 @@ impl MmapColumnStore {
         if need_bytes <= self.mmap.len() {
             return Ok(());
         }
-        let grow_rows = (need_rows - self.nrows).max(MMAP_GROW_ROWS);
+        let step = if linear_grow() { 0 } else { self.nrows / 8 };
+        let grow_rows = (need_rows - self.nrows).max(MMAP_GROW_ROWS).max(step);
         let new_len = self.bytes_for_rows(self.nrows + grow_rows);
 
         self.file
@@ -155,7 +161,7 @@ impl MmapColumnStore {
             }
         }
         self.nrows = new_nrows;
-        self.drop_old_log_pages();
+        crate::index::tree_pbuf_cold::timed(0, || self.drop_old_log_pages());
         Ok(())
     }
 
@@ -302,6 +308,20 @@ mod tests {
             .mmap_append(&array![[1.0, 2.0], [3.0, 4.0]].view())
             .unwrap();
         assert_eq!(store.nrows, 2);
+    }
+
+    #[test]
+    fn ensure_capacity_grows_geometrically() {
+        let dir = TempDir::new().unwrap();
+        let mut store =
+            MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
+        let rows = Array2::<f64>::zeros((8000, 2));
+        store.mmap_append(&rows.view()).unwrap();
+        store
+            .mmap_append(&rows.slice(ndarray::s![..1, ..]))
+            .unwrap();
+        assert!(store.mmap.len() >= store.bytes_for_rows(8000 + 1000));
+        assert_eq!(store.nrows, 8001);
     }
 
     #[test]

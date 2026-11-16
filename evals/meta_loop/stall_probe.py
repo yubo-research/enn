@@ -13,6 +13,16 @@ try:
     from enn._rust import take_pbuf_fault_split
 except ImportError:
     take_pbuf_fault_split = None
+try:
+    from enn._rust import take_pbuf_cold
+except ImportError:
+    take_pbuf_cold = None
+RECLAIM = (
+    "pgscan_direct",
+    "pgsteal_direct",
+    "workingset_refault_file",
+    "pgscan_kswapd",
+)
 
 D, MAXN, WORK, OUT, DEV = (
     int(sys.argv[1]),
@@ -36,6 +46,11 @@ def pressure(name):
         k, *f = l.split()
         out[k] = int(dict(x.split("=") for x in f)["total"])
     return out
+
+
+def reclaim():
+    s = dict(l.split() for l in (CG / "memory.stat").read_text().splitlines())
+    return [int(s.get(k, 0)) for k in RECLAIM]
 
 
 def memstat():
@@ -63,6 +78,8 @@ def snap():
         [
             time.perf_counter(),
             t.user + t.system,
+            t.system,
+            *reclaim(),
             io["some"],
             io["full"],
             mem["some"],
@@ -88,6 +105,8 @@ def main():
             n += b
         if take_pbuf_fault_split:
             take_pbuf_fault_split()
+        if take_pbuf_cold:
+            take_pbuf_cold()
         s0, k = snap(), 0
         while k < WINDOW:
             m.add(*make(rng, 1000))
@@ -98,6 +117,10 @@ def main():
         dirty, wb, _ = memstat()
         split = take_pbuf_fault_split() if take_pbuf_fault_split else (0, 0, 0, 0, 0)
         split = tuple(split) + (0,) * (5 - len(split))
+        cold = list(take_pbuf_cold()) if take_pbuf_cold else []
+        cold += [0] * (11 - len(cold))
+        sy, rc = d[2], d[3:7]
+        d = np.concatenate([d[:2], d[7:]])
         o = {
             "D": D,
             "n": n,
@@ -118,6 +141,18 @@ def main():
             "flt_leaf_row": split[2] / k,
             "tail_seen_row": split[3] / k,
             "tail_cold_row": split[4] / k,
+            "sys_us_row": 1e6 * sy / k,
+            **{k2 + "_row": rc[i] / k for i, k2 in enumerate(RECLAIM)},
+            "push_cold_row": cold[0] / k,
+            "push_data_row": cold[1] / k,
+            "take_cold_pg_row": cold[2] / k,
+            "take_pg_row": cold[3] / k,
+            "meta_cold_row": cold[4] / k,
+            "meta_seen_row": cold[5] / k,
+            **{
+                f"t_{name}_us_row": cold[6 + i] / 1e3 / k
+                for i, name in enumerate(("logdrop", "tree", "take", "leaf", "push"))
+            },
         }
         print(json.dumps(o), flush=True)
         with Path(OUT).open("a") as fh:

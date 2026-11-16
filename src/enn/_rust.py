@@ -43,6 +43,7 @@ set_count_parents = _ext.util.set_count_parents
 take_pbuf_stats = _ext.util.take_pbuf_stats
 take_pbuf_detail = _ext.util.take_pbuf_detail
 take_pbuf_fault_split = _ext.util.take_pbuf_fault_split
+take_pbuf_cold = _ext.util.take_pbuf_cold
 take_phase_ns = _ext.util.take_phase_ns
 set_f32_rerank_skip = _ext.util.set_f32_rerank_skip
 pareto_front_2d_maximize = _ext.util.pareto_front_2d_maximize

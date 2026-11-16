@@ -150,7 +150,7 @@ impl Tree {
 
     pub fn insert_row_src(&mut self, row: u32, v: &[f32], src: RowSrc) -> Result<(), BpannError> {
         if self.store.pbuf_on() && pbuf_all() && !self.store.is_leaf(self.header.root_page_id) {
-            return self.pbuf_add_root(row, v);
+            return crate::index::tree_pbuf_cold::timed(1, || self.pbuf_add_root(row, v));
         }
         self.insert_inner(row, v, src, None)
     }

@@ -5,6 +5,7 @@ use crate::error::BpannError;
 use crate::index::tree::{mean_update, nearest, updates_centroid, Tree, TREE_CENTROID_STRIDE};
 use crate::index::tree_counts::dist;
 use crate::index::tree_pbuf::thread_majflt;
+use crate::index::tree_pbuf_cold::{add_ns, timed};
 use crate::index::tree_store::TreeStore;
 
 static ALL: AtomicU8 = AtomicU8::new(u8::MAX);
@@ -105,7 +106,9 @@ impl Tree {
         let slot = nearest(s.block(x), v);
         let child = s.ids(x)[slot];
         if s.is_leaf(child) {
-            counted(2, || self.insert_inner(row, v, None, Some((slack, x))))?;
+            timed(3, || {
+                counted(2, || self.insert_inner(row, v, None, Some((slack, x))))
+            })?;
             return Ok(None);
         }
         let dd = v.len();
@@ -120,7 +123,10 @@ impl Tree {
             s.radius(child).max(d + slack)
         };
         s.set_radius(child, r);
-        let n = counted(1, || s.pbuf_push(child, row, v));
+        if fault_split() {
+            s.probe_push(child);
+        }
+        let n = timed(4, || counted(1, || s.pbuf_push(child, row, v)));
         Ok((n >= s.pbuf_cap(child)).then_some(child))
     }
 
@@ -141,6 +147,7 @@ impl Tree {
     pub(super) fn pbuf_flush_levels(&mut self, id: u32) -> Result<u64, BpannError> {
         if fault_split() {
             let s = &self.store;
+            s.probe_flush(id);
             for &c in s.ids(id) {
                 if let Some(cold) = s.pbuf_tail_cold(c) {
                     FAULTS[3].fetch_add(1, Ordering::Relaxed);
@@ -148,6 +155,7 @@ impl Tree {
                 }
             }
         }
+        let t2 = std::time::Instant::now();
         if pbuf_prefetch() {
             let s = &self.store;
             for &c in s.ids(id) {
@@ -159,6 +167,7 @@ impl Tree {
             s.advise_pbuf(id, 0, s.pbuf_len(id));
         }
         let rows = counted(0, || self.store.pbuf_take(id));
+        add_ns(2, t2);
         let n = rows.len() as u64;
         for (row, v, slack) in rows {
             if let Some(c) = self.pbuf_step(id, row, &v, slack)? {

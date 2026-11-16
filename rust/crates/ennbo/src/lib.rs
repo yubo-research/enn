@@ -331,6 +331,10 @@ pub fn take_pbuf_fault_split() -> (u64, u64, u64, u64, u64) {
     ennbo_bpann::index::tree_pbuf_all::take_pbuf_fault_split()
 }
 
+pub fn take_pbuf_cold() -> Vec<u64> {
+    ennbo_bpann::index::tree_pbuf_cold::take_pbuf_cold()
+}
+
 pub fn take_pbuf_detail() -> (u64, u64, u64) {
     ennbo_bpann::index::tree_pbuf::take_pbuf_detail()
 }
