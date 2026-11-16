@@ -21,6 +21,7 @@ pub mod tree_pbuf_all;
 pub mod tree_pbuf_cold;
 mod tree_pbuf_punch;
 pub mod tree_persist;
+pub mod tree_reassign;
 pub mod tree_resid;
 pub mod tree_residency;
 pub(crate) mod tree_routes;

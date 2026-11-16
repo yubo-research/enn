@@ -188,6 +188,11 @@ impl Tree {
                 }
                 if split {
                     self.split_leaf(cur, &mut path, src)?;
+                } else if !replay {
+                    let k = crate::index::tree_reassign::reassign_every();
+                    if k > 0 && row.is_multiple_of(k) {
+                        self.reassign_after_split(cur, cur)?;
+                    }
                 }
                 return Ok(());
             }
@@ -267,7 +272,11 @@ impl Tree {
         let slack = self.store.leaf_err(leaf);
         let vectors: Vec<&[f32]> = block.chunks(self.store.num_dim()).collect();
         let weights = vec![1.0; vectors.len()];
-        let (left, right) = median_split(&vectors);
+        let (left, right) = if crate::index::tree_reassign::leaf_two_means() {
+            two_means_split(&vectors, &weights)
+        } else {
+            median_split(&vectors)
+        };
         let ca = weighted_mean(&vectors, &weights, &left);
         let cb = weighted_mean(&vectors, &weights, &right);
         let pick_ids = |g: &[usize]| -> Vec<u32> { g.iter().map(|&i| row_ids[i]).collect() };
@@ -286,7 +295,8 @@ impl Tree {
         s.set_radius(new_id, max_dist(&vectors, &right, &cb) + slack);
         s.set_leaf_coded(new_id, &pick_ids(&right), &gather(&right));
         crate::index::tree_resid::set_inherited_anchor(None);
-        self.attach_sibling(path, (leaf, ca), (new_id, cb))
+        self.attach_sibling(path, (leaf, ca), (new_id, cb))?;
+        self.reassign_after_split(leaf, new_id)
     }
 
     fn attach_sibling(

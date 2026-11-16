@@ -23,6 +23,21 @@ fn morph_laps() -> usize {
 }
 
 pub const MORPH_WORK_PER_ADD: usize = 6 * TREE_LEAF_CAPACITY;
+
+fn morph_always() -> bool {
+    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENV.get_or_init(|| std::env::var("ENN_MORPH_ALWAYS").as_deref() == Ok("1"))
+}
+
+fn morph_work() -> isize {
+    static ENV: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+    *ENV.get_or_init(|| {
+        std::env::var("ENN_MORPH_WORK")
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(MORPH_WORK_PER_ADD as isize)
+    })
+}
 pub const MORPH_POOL_LEAVES: usize = 2 * TREE_FANOUT;
 
 #[derive(Clone, Debug, Default)]
@@ -52,10 +67,13 @@ impl Morph {
     }
 
     pub fn advance_src(&mut self, tree: &mut Tree, src: RowSrc) {
+        if !self.active() && morph_always() {
+            self.schedule(tree);
+        }
         if !self.active() {
             return;
         }
-        self.credit += MORPH_WORK_PER_ADD as isize;
+        self.credit += morph_work();
         while self.credit > 0 {
             let Some(page) = self.next_internal(tree) else {
                 break;
