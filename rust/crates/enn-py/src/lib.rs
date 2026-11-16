@@ -27,6 +27,7 @@ pub mod py_optimizer;
 pub mod py_params;
 pub mod py_ports;
 pub mod py_util;
+pub mod py_walk_knobs;
 
 mod pymodule_wrappers;
 

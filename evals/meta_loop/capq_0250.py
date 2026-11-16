@@ -26,6 +26,10 @@ P = ENNParams(
     k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
 )
 F = PosteriorFlags(observation_noise=False)
+if os.environ.get("PATIENCE"):
+    import enn._rust as _r
+
+    _r.set_patience_coefficient(float(os.environ["PATIENCE"]))
 
 
 def majflt():

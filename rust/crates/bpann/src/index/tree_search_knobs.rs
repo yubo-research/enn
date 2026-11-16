@@ -82,3 +82,36 @@ pub fn meta_prefetch() -> usize {
 pub fn set_meta_prefetch(value: usize) {
     META_PREFETCH.store(value as u64, Ordering::Relaxed);
 }
+
+pub const TREE_SEARCH_RADIUS_WEIGHT: f32 = 0.1;
+
+static RADIUS_WEIGHT_BITS: AtomicU64 = AtomicU64::new(TREE_SEARCH_RADIUS_WEIGHT.to_bits() as u64);
+
+pub fn radius_weight() -> f32 {
+    f32::from_bits(RADIUS_WEIGHT_BITS.load(Ordering::Relaxed) as u32)
+}
+
+pub fn set_radius_weight(value: f32) {
+    RADIUS_WEIGHT_BITS.store(u64::from(value.max(0.0).to_bits()), Ordering::Relaxed);
+}
+
+static PATIENCE_BITS: AtomicU64 = AtomicU64::new(0);
+
+pub fn patience_coefficient() -> f64 {
+    f64::from_bits(PATIENCE_BITS.load(Ordering::Relaxed))
+}
+
+pub fn set_patience_coefficient(value: f64) {
+    PATIENCE_BITS.store(value.max(0.0).to_bits(), Ordering::Relaxed);
+}
+
+pub fn patience_leaves(indexed_rows: usize) -> usize {
+    patience_for(patience_coefficient(), indexed_rows)
+}
+
+pub fn patience_for(p: f64, indexed_rows: usize) -> usize {
+    if p <= 0.0 {
+        return usize::MAX;
+    }
+    ((p * (indexed_rows.max(1) as f64).ln()).ceil() as usize).max(1)
+}

@@ -51,6 +51,7 @@ for _env, _fn in (
     ("STOP_EPS", "set_stop_epsilon"),
     ("INTERNAL_COEF", "set_internal_coefficient"),
     ("RERANK_SKIP", "set_f32_rerank_skip"),
+    ("PATIENCE", "set_patience_coefficient"),
 ):
     if os.environ.get(_env):
         import enn._rust as _r
@@ -130,6 +131,7 @@ rec = {
     "stop_eps": os.environ.get("STOP_EPS", "default"),
     "internal_coef": os.environ.get("INTERNAL_COEF", "default"),
     "rerank_skip": os.environ.get("RERANK_SKIP", "default"),
+    "patience": os.environ.get("PATIENCE", "default"),
     "walk_totals": walk,
 }
 P = ENNParams(

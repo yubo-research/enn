@@ -37,6 +37,22 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_leaf_rows_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_walk_knobs::set_walk_trace_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_walk_knobs::set_patience_coefficient_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_walk_knobs::set_radius_weight_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_walk_knobs::take_walk_trace_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_parent_counts_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_count_parents_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_pbuf_stats_py, m)?)?;

@@ -16,92 +16,7 @@ use crate::small_n_search::OrderedF32;
 pub use super::tree_search_knobs::*;
 use super::tree_search_knobs::{F32_RERANK_SKIP, SKIP_BUDGET_FALLBACK};
 
-pub(super) struct WalkMeter {
-    leaves: AtomicU64,
-    walks: AtomicU64,
-    pub(super) budget_stops: AtomicU64,
-}
-
-impl WalkMeter {
-    const fn new() -> Self {
-        Self {
-            leaves: AtomicU64::new(0),
-            walks: AtomicU64::new(0),
-            budget_stops: AtomicU64::new(0),
-        }
-    }
-
-    fn record(&self, leaves: usize, stopped_on_budget: bool) {
-        self.walks.fetch_add(1, Ordering::Relaxed);
-        self.leaves.fetch_add(leaves as u64, Ordering::Relaxed);
-        if stopped_on_budget {
-            self.budget_stops.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    fn take(&self) -> (u64, u64, u64) {
-        (
-            self.leaves.swap(0, Ordering::Relaxed),
-            self.walks.swap(0, Ordering::Relaxed),
-            self.budget_stops.swap(0, Ordering::Relaxed),
-        )
-    }
-}
-
-pub static XP_INTERNAL_PAGES: AtomicU64 = AtomicU64::new(0);
-pub static XP_INTERNAL_ROWS: AtomicU64 = AtomicU64::new(0);
-pub static XP_LEAF_ROWS: AtomicU64 = AtomicU64::new(0);
-static PHASE_WALK_NS: AtomicU64 = AtomicU64::new(0);
-static PHASE_REFINE_NS: AtomicU64 = AtomicU64::new(0);
-pub(super) static F32_WALKS: WalkMeter = WalkMeter::new();
-static F64_WALKS: WalkMeter = WalkMeter::new();
-static CERTIFIED_RETURNS: AtomicU64 = AtomicU64::new(0);
-static FALLBACK_RETURNS: AtomicU64 = AtomicU64::new(0);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct WalkTotals {
-    pub f32_leaves: u64,
-    pub f32_walks: u64,
-    pub f32_budget_stops: u64,
-    pub f64_leaves: u64,
-    pub f64_walks: u64,
-    pub f64_budget_stops: u64,
-    pub certified: u64,
-    pub fallbacks: u64,
-}
-
-pub fn take_walk_totals() -> WalkTotals {
-    let (f32_leaves, f32_walks, f32_budget_stops) = F32_WALKS.take();
-    let (f64_leaves, f64_walks, f64_budget_stops) = F64_WALKS.take();
-    WalkTotals {
-        f32_leaves,
-        f32_walks,
-        f32_budget_stops,
-        f64_leaves,
-        f64_walks,
-        f64_budget_stops,
-        certified: CERTIFIED_RETURNS.swap(0, Ordering::Relaxed),
-        fallbacks: FALLBACK_RETURNS.swap(0, Ordering::Relaxed),
-    }
-}
-
-pub fn take_phase_ns() -> (u64, u64) {
-    (
-        PHASE_WALK_NS.swap(0, Ordering::Relaxed),
-        PHASE_REFINE_NS.swap(0, Ordering::Relaxed),
-    )
-}
-
-pub fn take_leaf_rows() -> u64 {
-    XP_LEAF_ROWS.swap(0, Ordering::Relaxed)
-}
-
-pub fn take_internal_totals() -> (u64, u64) {
-    (
-        XP_INTERNAL_PAGES.swap(0, Ordering::Relaxed),
-        XP_INTERNAL_ROWS.swap(0, Ordering::Relaxed),
-    )
-}
+pub use super::tree_search_meters::*;
 
 thread_local! {
     static CASCADE_LEAVES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -155,15 +70,13 @@ pub fn internal_page_cap(indexed_rows: usize) -> usize {
     ((internal_coefficient() * ln_n).ceil() as usize).max(1)
 }
 
-pub const TREE_SEARCH_RADIUS_WEIGHT: f32 = 0.1;
-
 fn discounted(d2: f32, radius: f32, w: f32) -> f32 {
     let gap = (d2.sqrt() - w * radius).max(0.0);
     gap * gap
 }
 
 fn priority(d2: f32, radius: f32) -> f32 {
-    discounted(d2, radius, TREE_SEARCH_RADIUS_WEIGHT)
+    discounted(d2, radius, radius_weight())
 }
 
 fn lower_bound(d2: f32, radius: f32) -> f32 {
@@ -404,10 +317,7 @@ pub(super) fn search_tree_scored(
     mut coded: Option<&mut CodedScan>,
     mut score: impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
-    let mut top = TopK {
-        k,
-        heap: BinaryHeap::with_capacity(k + 1),
-    };
+    let mut top = TopK::new(k);
     if k == 0 || tree.num_pages() == 0 {
         return Ok(Vec::new());
     }
@@ -424,10 +334,13 @@ pub(super) fn search_tree_scored(
         0,
     )));
     let mut deepest_first = false;
+    crate::index::tree_walk_trace::begin_walk();
     let mut leaves = 0usize;
     let mut expanded = 0usize;
     let internal_cap = internal_page_cap(tree.header.indexed_rows);
     let mut stopped_on_budget = false;
+    let patience = patience_leaves(tree.header.indexed_rows);
+    let mut quiet = 0usize;
     let probe = ColdProbe::start();
     let kinds = Kinds::new(s, coded.is_some());
     let mut ahead = Lookahead::new(if coded.is_some() { code_prefetch() } else { 0 });
@@ -445,7 +358,7 @@ pub(super) fn search_tree_scored(
                 .collect();
             continue;
         }
-        if leaves >= leaf_budget && top.heap.len() >= k {
+        if (leaves >= leaf_budget || quiet >= patience) && top.heap.len() >= k {
             stopped_on_budget = true;
             break;
         }
@@ -474,6 +387,8 @@ pub(super) fn search_tree_scored(
             continue;
         }
         ahead.before_leaf(s, &mut frontier, coded.as_deref_mut(), kinds);
+        crate::index::tree_walk_trace::note_leaf(bound.0, s.ids(page_id));
+        let inserts = top.inserts;
         score_leaf(
             tree,
             page_id,
@@ -483,6 +398,7 @@ pub(super) fn search_tree_scored(
             &mut score,
         )?;
         leaves += 1;
+        quiet = if top.inserts == inserts { quiet + 1 } else { 0 };
     }
     meter.record(leaves, stopped_on_budget);
     crate::index::tree_parent_count::end_walk();

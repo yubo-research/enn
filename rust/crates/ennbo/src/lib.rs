@@ -319,6 +319,24 @@ pub fn take_leaf_rows() -> u64 {
     ennbo_bpann::index::tree_search::take_leaf_rows()
 }
 
+pub fn set_radius_weight(value: f32) {
+    ennbo_bpann::index::tree_search::set_radius_weight(value);
+}
+
+pub fn set_patience_coefficient(value: f64) {
+    ennbo_bpann::index::tree_search::set_patience_coefficient(value);
+}
+
+pub fn set_walk_trace(on: bool) {
+    ennbo_bpann::index::tree_walk_trace::set_walk_trace(on);
+}
+
+pub use ennbo_bpann::index::tree_walk_trace::WalkTrace;
+
+pub fn take_walk_trace() -> WalkTrace {
+    ennbo_bpann::index::tree_walk_trace::take_walk_trace()
+}
+
 pub fn take_parent_counts() -> (u64, u64, u64, u64) {
     ennbo_bpann::index::tree_parent_count::take_parent_counts()
 }

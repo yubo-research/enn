@@ -6,16 +6,27 @@ use crate::small_n_search::OrderedFloat;
 pub(super) struct TopK {
     pub(super) k: usize,
     pub(super) heap: BinaryHeap<(OrderedFloat<f64>, u32)>,
+    pub(super) inserts: u64,
 }
 
 impl TopK {
+    pub(super) fn new(k: usize) -> Self {
+        Self {
+            k,
+            heap: BinaryHeap::with_capacity(k + 1),
+            inserts: 0,
+        }
+    }
+
     pub(super) fn offer(&mut self, row: u32, dist: f64) {
         if self.heap.len() < self.k {
             self.heap.push((OrderedFloat(dist), row));
+            self.inserts += 1;
         } else if let Some(&(worst, worst_row)) = self.heap.peek() {
             if (OrderedFloat(dist), row) < (worst, worst_row) {
                 self.heap.pop();
                 self.heap.push((OrderedFloat(dist), row));
+                self.inserts += 1;
             }
         }
     }

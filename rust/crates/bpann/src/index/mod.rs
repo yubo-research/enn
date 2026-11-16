@@ -26,12 +26,14 @@ pub mod tree_residency;
 pub(crate) mod tree_routes;
 pub mod tree_search;
 pub mod tree_search_knobs;
+mod tree_search_meters;
 mod tree_sib;
 pub mod tree_store;
 mod tree_store_files;
 mod tree_store_open;
 mod tree_topk;
 mod tree_walk;
+pub mod tree_walk_trace;
 
 pub use build::{BpannIndex, IndexHeader, DEFAULT_LEAF_CAPACITY};
 pub use search::{

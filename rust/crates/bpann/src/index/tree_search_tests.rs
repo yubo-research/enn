@@ -45,10 +45,7 @@ fn prefetch_pages_default_and_setter() {
 
 #[test]
 fn epsilon_prunes_more_and_zero_is_exact() {
-    let mut top = TopK {
-        k: 1,
-        heap: BinaryHeap::new(),
-    };
+    let mut top = TopK::new(1);
     top.offer(0, 4.0);
     set_stop_epsilon(1.0);
     assert!(top.cannot_improve(1.1));
@@ -79,4 +76,13 @@ fn cascade_shares_one_leaf_budget_and_refuses_a_walk_that_cannot_fit() {
     LAST_WALK_LEAVES.with(|c| c.set(small));
     assert!(!cascade_spent(n), "a quarter-budget walk can be repeated");
     cascade_reset();
+}
+
+#[test]
+fn patience_is_off_by_default_and_scales_with_ln_n() {
+    assert_eq!(patience_coefficient(), 0.0);
+    assert_eq!(patience_for(0.0, 1000), usize::MAX);
+    assert_eq!(patience_for(3.0, 22026), 30);
+    assert_eq!(patience_for(3.0, 22027), 31);
+    assert_eq!(patience_for(3.0, 1), 1);
 }
