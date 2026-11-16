@@ -11,6 +11,7 @@ use crate::index::tree_store::TreeStore;
 static ALL: AtomicU8 = AtomicU8::new(u8::MAX);
 static STAGGER: AtomicU8 = AtomicU8::new(u8::MAX);
 static PUNCH: AtomicU8 = AtomicU8::new(u8::MAX);
+static CHARGE: AtomicU8 = AtomicU8::new(u8::MAX);
 static FAULTS: [AtomicU64; 5] = [
     AtomicU64::new(0),
     AtomicU64::new(0),
@@ -59,6 +60,25 @@ pub fn pbuf_stagger() -> bool {
 pub fn pbuf_prefetch() -> bool {
     static ENV: OnceLock<bool> = OnceLock::new();
     *ENV.get_or_init(|| std::env::var("ENN_PBUF_PREFETCH").as_deref() != Ok("0"))
+}
+
+pub const PBUF_CHARGE_ROWS: usize = crate::index::tree::TREE_LEAF_CAPACITY / 2;
+
+pub fn pbuf_charge() -> bool {
+    static ENV: OnceLock<bool> = OnceLock::new();
+    flag(&CHARGE, &ENV, "ENN_PBUF_CHARGE")
+}
+
+pub fn set_pbuf_charge(on: bool) {
+    CHARGE.store(u8::from(on), Ordering::Relaxed);
+}
+
+pub(super) fn charged_leaves(buffered_rows: usize) -> usize {
+    if pbuf_charge() {
+        buffered_rows.div_ceil(PBUF_CHARGE_ROWS)
+    } else {
+        0
+    }
 }
 
 pub fn pbuf_punch() -> bool {

@@ -400,25 +400,26 @@ pub(super) fn score_pbuf(
     coded: Option<&mut crate::index::tree_codes_search::CodedScan>,
     top: &mut crate::index::tree_topk::TopK,
     score: &mut impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
-) -> Result<(), BpannError> {
+) -> Result<usize, BpannError> {
     use crate::index::tree_search::XP_LEAF_ROWS;
     if s.pbuf_len(page_id) == 0 {
-        return Ok(());
+        return Ok(0);
     }
     s.advise_pbuf(page_id, 0, s.pbuf_len(page_id));
     if let Some(scan) = coded {
         let n = scan.scan_pbuf(s, page_id, query, qn2, &mut |i, d2| top.offer(i, d2));
         XP_LEAF_ROWS.fetch_add(n as u64, Ordering::Relaxed);
-        return Ok(());
+        return Ok(n);
     }
     let ids = s.pbuf_ids(page_id);
-    XP_LEAF_ROWS.fetch_add(ids.len() as u64, Ordering::Relaxed);
+    let n = ids.len();
+    XP_LEAF_ROWS.fetch_add(n as u64, Ordering::Relaxed);
     for row in ids {
         if let Some(distance) = score(row, None, top.limit())? {
             top.offer(row, distance);
         }
     }
-    Ok(())
+    Ok(n)
 }
 
 #[cfg(test)]

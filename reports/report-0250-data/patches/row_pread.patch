@@ -1,0 +1,103 @@
+diff --git a/rust/crates/bpann/src/lib.rs b/rust/crates/bpann/src/lib.rs
+index ac6433a..edbdb34 100644
+--- a/rust/crates/bpann/src/lib.rs
++++ b/rust/crates/bpann/src/lib.rs
+@@ -10,6 +10,7 @@ pub mod mmap_store;
+ pub mod observation;
+ pub mod prefix_search;
+ pub mod row_groups;
++mod row_pread;
+ pub mod small_n_search;
+ pub mod store_file;
+ pub mod tuning;
+diff --git a/rust/crates/bpann/src/mmap_store.rs b/rust/crates/bpann/src/mmap_store.rs
+index 94cda97..eec9b59 100644
+--- a/rust/crates/bpann/src/mmap_store.rs
++++ b/rust/crates/bpann/src/mmap_store.rs
+@@ -235,6 +235,9 @@ impl MmapColumnStore {
+     }
+
+     pub fn mmap_gather(&self, indices: &[usize]) -> Result<Array2<f64>, BpannError> {
++        if crate::row_pread::enabled() {
++            return self.pread_gather(indices);
++        }
+         let mut out = Array2::zeros((indices.len(), self.ncols));
+         for (new_i, &old_i) in indices.iter().enumerate() {
+             let row = self.mmap_row_slice(old_i)?;
+diff --git a/rust/crates/bpann/src/row_pread.rs b/rust/crates/bpann/src/row_pread.rs
+new file mode 100644
+index 0000000..d21f8d8
+--- /dev/null
++++ b/rust/crates/bpann/src/row_pread.rs
+@@ -0,0 +1,71 @@
++// Report 0250: gather rows with pread(2) through a read-only descriptor marked POSIX_FADV_RANDOM,
++// so a page-cache miss reads only the pages that hold the requested rows (no mmap read-around).
++// ENN_ROW_PREAD=1 enables; default off.
++use ndarray::Array2;
++use std::fs::File;
++use std::os::unix::fs::FileExt;
++
++use crate::error::BpannError;
++use crate::mmap_store::MmapColumnStore;
++
++pub(crate) fn enabled() -> bool {
++    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ENV.get_or_init(|| std::env::var("ENN_ROW_PREAD").as_deref() == Ok("1"))
++}
++
++fn io_err(e: std::io::Error) -> BpannError {
++    BpannError::InvalidParameter(e.to_string())
++}
++
++fn random_reader(store: &MmapColumnStore) -> Result<File, BpannError> {
++    let f = File::open(&store.path).map_err(io_err)?;
++    #[cfg(target_os = "linux")]
++    unsafe {
++        use std::os::fd::AsRawFd;
++        libc::posix_fadvise(f.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM);
++    }
++    Ok(f)
++}
++
++impl MmapColumnStore {
++    pub fn pread_gather(&self, indices: &[usize]) -> Result<Array2<f64>, BpannError> {
++        let mut out = Array2::zeros((indices.len(), self.ncols));
++        if indices.is_empty() {
++            return Ok(out);
++        }
++        let f = random_reader(self)?;
++        let rb = self.row_bytes();
++        let mut buf = vec![0u8; rb];
++        for (new_i, &i) in indices.iter().enumerate() {
++            if i >= self.nrows {
++                return Err(BpannError::InvalidParameter(format!(
++                    "row {i} out of range [0, {})",
++                    self.nrows
++                )));
++            }
++            f.read_exact_at(&mut buf, (i * rb) as u64).map_err(io_err)?;
++            for (j, b) in buf.chunks_exact(8).enumerate() {
++                out[[new_i, j]] = f64::from_le_bytes(b.try_into().expect("8 bytes"));
++            }
++        }
++        Ok(out)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use crate::mmap_store::MmapColumnStore;
++    use ndarray::array;
++
++    #[test]
++    fn pread_gather_matches_mmap_gather() {
++        let dir = tempfile::TempDir::new().unwrap();
++        let mut s = MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 3, None).unwrap();
++        let x = array![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.5, -9.0]];
++        s.mmap_append(&x.view()).unwrap();
++        let idx = [2, 0, 2];
++        assert_eq!(s.pread_gather(&idx).unwrap(), s.mmap_gather(&idx).unwrap());
++        assert!(s.pread_gather(&[3]).is_err());
++        assert_eq!(s.pread_gather(&[]).unwrap().nrows(), 0);
++    }
++}

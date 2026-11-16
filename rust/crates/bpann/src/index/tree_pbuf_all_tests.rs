@@ -79,3 +79,42 @@ fn punched_buffers_keep_every_row_and_free_taken_pages() {
     let first = t.store.pbuf_region_bytes(root, 1);
     assert!(first.iter().all(|&b| b == 0), "taken page not punched");
 }
+
+#[test]
+fn charged_buffer_scans_spend_the_leaf_budget() {
+    use crate::index::search::MmapSearchStore;
+    use crate::index::sync::IncrementalIndex;
+    use crate::index::tree_search::{search_tree, take_leaf_rows};
+    use crate::mmap_store::MmapColumnStore;
+    let (n, d) = (4000usize, 3usize);
+    let dir = tempfile::TempDir::new().unwrap();
+    let x = ndarray::Array2::from_shape_fn((n, d), |(r, j)| f64::from(row(r, d)[j]));
+    let mut store =
+        MmapColumnStore::mmap_open_or_create(dir.path().join("x.bin"), d, None).unwrap();
+    store.mmap_append(&x.view()).unwrap();
+    set_pbuf_rows(200);
+    set_pbuf_all(true);
+    let mut idx = IncrementalIndex::new(dir.path().join("index"));
+    for end in [1, 700, n] {
+        idx.ensure_sync_for_backend(&store, d, false, &[1.0; 3], end)
+            .unwrap();
+    }
+    set_pbuf_rows(0);
+    let t = idx.tree.as_ref().unwrap();
+    assert!(!t.pbuf_row_ids().is_empty());
+    let s = MmapSearchStore {
+        train_x: &store,
+        scale_x: false,
+        x_scale: &[1.0; 3],
+    };
+    let scanned = |charge: bool| {
+        set_pbuf_charge(charge);
+        take_leaf_rows();
+        let got = search_tree(t, &row(17, d), 5, 4, &s).unwrap();
+        assert_eq!(got.len(), 5);
+        take_leaf_rows()
+    };
+    let (free, charged) = (scanned(false), scanned(true));
+    set_pbuf_charge(false);
+    assert!(charged < free, "charged {charged} vs uncharged {free} rows");
+}

@@ -454,14 +454,15 @@ pub(super) fn search_tree_scored(
         }
         if !kinds.is_leaf(s, page_id, raw) {
             expanded += 1;
-            crate::index::tree_pbuf::score_pbuf(
-                s,
-                page_id,
-                (query, qn2),
-                coded.as_deref_mut(),
-                &mut top,
-                &mut score,
-            )?;
+            leaves +=
+                crate::index::tree_pbuf_all::charged_leaves(crate::index::tree_pbuf::score_pbuf(
+                    s,
+                    page_id,
+                    (query, qn2),
+                    coded.as_deref_mut(),
+                    &mut top,
+                    &mut score,
+                )?);
             let walk = Expand {
                 query: (query, qn2),
                 coded: coded.is_some(),
