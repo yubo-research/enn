@@ -1,0 +1,18 @@
+02:20:55
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 395.7 MiB, resident 25.7 MiB
+  last 16 MiB: 0.0 MiB resident
+  last 64 MiB: 18.0 MiB resident
+  last 256 MiB: 22.8 MiB resident
+  slices: [0.6, 1.0, 0.8, 1.0, 1.0, 0.8, 1.1, 1.0, 1.0, 17.4, 0.0]
+02:21:00
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 630.9 MiB, resident 32.2 MiB
+  last 16 MiB: 15.5 MiB resident
+  last 64 MiB: 18.2 MiB resident
+  last 256 MiB: 23.4 MiB resident
+  slices: [1.1, 1.4, 1.6, 1.5, 1.5, 1.8, 1.8, 1.6, 1.8, 18.1]
+02:21:05
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 1008.5 MiB, resident 39.8 MiB
+  last 16 MiB: 0.0 MiB resident
+  last 64 MiB: 0.0 MiB resident
+  last 256 MiB: 20.9 MiB resident
+  slices: [2.1, 2.4, 2.5, 2.6, 2.6, 2.8, 2.6, 2.8, 12.8, 6.6, 0.0]

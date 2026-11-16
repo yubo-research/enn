@@ -3,6 +3,7 @@ pub mod distance;
 pub mod error;
 pub mod index;
 pub mod large_n_search;
+mod log_pace;
 pub mod merge;
 pub mod metric;
 pub mod mmap_store;

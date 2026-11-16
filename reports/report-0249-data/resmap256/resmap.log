@@ -1,0 +1,42 @@
+02:17:47
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 561.3 MiB, resident 31.4 MiB
+  last 16 MiB: 0.0 MiB resident
+  last 64 MiB: 19.2 MiB resident
+  last 256 MiB: 24.4 MiB resident
+  slices: [0.4, 0.6, 0.8, 0.5, 0.6, 0.6, 0.8, 0.8, 0.6, 0.8, 0.6, 0.8, 0.8, 0.8, 0.8, 0.9, 0.8, 0.8, 11.9, 7.1, 0.0]
+588600000
+02:17:56
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 896.9 MiB, resident 41.3 MiB
+  last 16 MiB: 3.4 MiB resident
+  last 64 MiB: 20.1 MiB resident
+  last 256 MiB: 25.2 MiB resident
+  slices: [0.8, 1.1, 0.9, 1.1, 1.0, 1.1, 1.1, 1.2, 1.2, 1.1, 1.2, 1.2, 1.2, 1.2, 1.1, 1.2, 1.2, 1.2, 1.1, 19.5, 0.0]
+940500000
+02:18:04
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 1275.4 MiB, resident 48.6 MiB
+  last 16 MiB: 0.0 MiB resident
+  last 64 MiB: 17.1 MiB resident
+  last 256 MiB: 22.3 MiB resident
+  slices: [1.1, 1.4, 1.6, 1.5, 1.6, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.6, 1.8, 1.6, 1.8, 1.6, 1.8, 1.8, 17.1, 0.0]
+1337400000
+02:18:12
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 1612.8 MiB, resident 60.1 MiB
+  last 16 MiB: 0.0 MiB resident
+  last 64 MiB: 0.0 MiB resident
+  last 256 MiB: 24.6 MiB resident
+  slices: [1.6, 1.9, 1.8, 2.1, 2.2, 2.1, 2.2, 2.1, 2.2, 2.2, 2.0, 2.2, 2.0, 2.2, 2.2, 2.1, 2.2, 2.2, 22.0, 0.0, 0.0]
+1691100000
+02:20:52
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 175.1 MiB, resident 21.5 MiB
+  last 16 MiB: 1.4 MiB resident
+  last 64 MiB: 19.3 MiB resident
+  last 256 MiB: 21.5 MiB resident
+  slices: [0.0, 0.1, 0.1, 0.2, 0.2, 0.2, 0.1, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.2, 0.1, 0.2, 6.9, 8.8, 2.9, 0.0, 0.0]
+183600000
+02:21:00
+/home/dsweet/bench_work/stall_3000aph/train_x.bin: 630.9 MiB, resident 32.2 MiB
+  last 16 MiB: 15.5 MiB resident
+  last 64 MiB: 18.2 MiB resident
+  last 256 MiB: 23.4 MiB resident
+  slices: [0.4, 0.8, 0.8, 0.6, 0.9, 0.8, 0.8, 0.8, 0.9, 0.6, 0.9, 0.9, 0.9, 0.9, 0.9, 0.8, 0.9, 0.9, 0.8, 17.4]
+661500000

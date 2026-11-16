@@ -21,6 +21,8 @@ pub struct MmapColumnStore {
     mmap: MmapMut,
     residency: Residency,
     dropped_rows: usize,
+    dropped_bytes: usize,
+    kicked_bytes: usize,
     drop_lag_bytes: usize,
     drop_step_bytes: usize,
 }
@@ -109,6 +111,9 @@ impl MmapColumnStore {
             mmap,
             residency,
             dropped_rows: 0,
+            dropped_bytes: 0,
+            kicked_bytes: nrows * row_bytes / crate::log_pace::KICK_BYTES
+                * crate::log_pace::KICK_BYTES,
             drop_lag_bytes: LOG_DROP_LAG_BYTES,
             drop_step_bytes: LOG_DROP_STEP_BYTES,
         })
@@ -167,44 +172,30 @@ impl MmapColumnStore {
 
     fn drop_old_log_pages(&mut self) {
         use std::os::unix::io::AsRawFd;
-        let rb = self.row_bytes();
-        let upto = self.nrows.saturating_sub(self.drop_lag_bytes / rb);
-        if upto < self.dropped_rows + self.drop_step_bytes / rb
-            || std::env::var_os("BPANN_KEEP_LOG_CACHE").is_some()
-        {
+        if std::env::var_os("BPANN_KEEP_LOG_CACHE").is_some() {
             return;
         }
-        let off = self.dropped_rows * rb;
-        let len = (upto - self.dropped_rows) * rb;
+        let rb = self.row_bytes();
         let fd = self.file.as_raw_fd();
-        #[cfg(target_os = "linux")]
-        unsafe {
-            libc::sync_file_range(
-                fd,
-                off as libc::off64_t,
-                len as libc::off64_t,
-                libc::SYNC_FILE_RANGE_WAIT_BEFORE
-                    | libc::SYNC_FILE_RANGE_WRITE
-                    | libc::SYNC_FILE_RANGE_WAIT_AFTER,
-            );
-        }
-        let page = 4096;
-        let (a, b) = (off / page * page, (off + len) / page * page);
-        if b > a {
-            let _ = unsafe {
-                self.mmap
-                    .unchecked_advise_range(memmap2::UncheckedAdvice::DontNeed, a, b - a)
-            };
-        }
-        unsafe {
-            libc::posix_fadvise(
-                fd,
-                off as libc::off_t,
-                len as libc::off_t,
-                libc::POSIX_FADV_DONTNEED,
-            );
-        }
-        self.dropped_rows = upto;
+        let range = if crate::log_pace::enabled() {
+            crate::log_pace::kick(fd, &mut self.kicked_bytes, self.nrows * rb);
+            crate::log_pace::drop_range(
+                self.dropped_bytes,
+                self.nrows * rb,
+                self.drop_lag_bytes,
+                self.drop_step_bytes,
+            )
+        } else {
+            let upto = self.nrows.saturating_sub(self.drop_lag_bytes / rb);
+            (upto >= self.dropped_rows + self.drop_step_bytes / rb)
+                .then_some((self.dropped_rows * rb, upto * rb))
+        };
+        let Some((off, end)) = range else {
+            return;
+        };
+        drop_file_range(fd, &self.mmap, off, end - off);
+        self.dropped_bytes = end;
+        self.dropped_rows = end / rb;
     }
 
     pub fn release_resident_pages(&mut self) -> Result<(), BpannError> {
@@ -255,6 +246,34 @@ impl MmapColumnStore {
     }
 }
 
+fn drop_file_range(fd: i32, mmap: &MmapMut, off: usize, len: usize) {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::sync_file_range(
+            fd,
+            off as libc::off64_t,
+            len as libc::off64_t,
+            libc::SYNC_FILE_RANGE_WAIT_BEFORE
+                | libc::SYNC_FILE_RANGE_WRITE
+                | libc::SYNC_FILE_RANGE_WAIT_AFTER,
+        );
+    }
+    let page = 4096;
+    let (a, b) = (off / page * page, (off + len) / page * page);
+    if b > a {
+        let _ =
+            unsafe { mmap.unchecked_advise_range(memmap2::UncheckedAdvice::DontNeed, a, b - a) };
+    }
+    unsafe {
+        libc::posix_fadvise(
+            fd,
+            off as libc::off_t,
+            len as libc::off_t,
+            libc::POSIX_FADV_DONTNEED,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,7 +287,7 @@ mod tests {
             MmapColumnStore::mmap_open_or_create(dir.path().join("c.bin"), 2, None).unwrap();
         store.drop_lag_bytes = 20_000 * 16;
         store.drop_step_bytes = 4_096 * 16;
-        let n = (20_000 + 3 * 4_096) / 1000 * 1000;
+        let n = 200_000;
         for chunk in 0..(n / 1000) {
             let x = Array2::from_shape_fn((1000, 2), |(i, j)| (chunk * 1000 + i) as f64 + j as f64);
             store.mmap_append(&x.view()).unwrap();
