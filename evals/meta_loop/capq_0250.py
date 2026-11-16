@@ -36,19 +36,28 @@ def majflt():
     return resource.getrusage(resource.RUSAGE_SELF).ru_majflt
 
 
+def rd_ops():
+    for line in Path("/proc/diskstats").read_text().splitlines():
+        f = line.split()
+        if f[2] == DEV:
+            return int(f[3])
+    return 0
+
+
 def time_ops(fn, xs):
-    us, rb, mf = [], [], []
+    us, rb, mf, ro = [], [], [], []
     for i in range(len(xs)):
-        r0, m0 = disk(DEV)[0], majflt()
+        r0, m0, o0 = disk(DEV)[0], majflt(), rd_ops()
         t = time.perf_counter()
         fn(xs[i : i + 1])
         us.append(1e6 * (time.perf_counter() - t))
         rb.append(disk(DEV)[0] - r0)
         mf.append(majflt() - m0)
-    return us, rb, mf
+        ro.append(rd_ops() - o0)
+    return us, rb, mf, ro
 
 
-def summ(prefix, us, rb, mf):
+def summ(prefix, us, rb, mf, ro):
     a = np.asarray(us)
     return {
         f"{prefix}_us_mean": float(a.mean()),
@@ -59,6 +68,7 @@ def summ(prefix, us, rb, mf):
         f"{prefix}_us_p90": float(np.percentile(a, 90)),
         f"{prefix}_rd_b": float(np.mean(rb)),
         f"{prefix}_majflt": float(np.mean(mf)),
+        f"{prefix}_rd_ops": float(np.mean(ro)),
     }
 
 

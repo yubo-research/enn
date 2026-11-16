@@ -5,13 +5,14 @@
 # 0 = no buffers (default build); 3000aph = ENN_PBUF=3000 + every level (a) + prefetch (p) + punch (h); u = unpaced log.
 # NQ/NF default 100/10 (30/5 when CAP=1G). PP = PYTHONPATH (default src). REP = suffix for the output file name (default empty).
 # PATIENCE = walk patience coefficient (report 0251; empty = not set, e.g. on main).
+# EXTENT / BLOCKREAD = ENN_LEAF_EXTENT / ENN_BLOCK_READ (report 0253; need reports/report-0253-data/patches/block_read.patch, reverted; default 0).
 # REASSIGN = ENN_REASSIGN split-time leaf reassignment size M (report 0252; default 0 = off).
 O=$1; D=$2; MAXN=$3; C=$4; S=$5; shift 5; mkdir -p $O; O=$(realpath $O)
 H=$(cd "$(dirname "$0")" && pwd)/capq_0250.py
 for a in "$@"; do
   W=/home/dsweet/bench_work/capq_$a; rm -rf $W; F=$O/capq_D${D}_${C}_pb$a${REP}.jsonl; rm -f $F
   timeout $S systemd-run --user --scope -q -p MemoryMax=$C -p MemoryHigh=$C -p CPUQuota=100% \
-    -E ENN_PBUF=${a%%[asxphu]*} -E ENN_LOG_PACE=$([[ $a == *u* ]] && echo 0 || echo 1) -E ENN_PBUF_ALL=$([[ $a == *a* ]] && echo 1 || echo 0) -E ENN_PBUF_PREFETCH=$([[ $a == *p* ]] && echo 1 || echo 0) -E ENN_PBUF_PUNCH=$([[ $a == *h* ]] && echo 1 || echo 0) -E FINCORE=1 -E ENN_REASSIGN=${REASSIGN:-0} -E PATIENCE=${PATIENCE:-} -E NQ=${NQ:-$([[ $C == 1G ]] && echo 30 || echo 100)} -E NF=${NF:-$([[ $C == 1G ]] && echo 5 || echo 10)} -E PYTHONPATH=${PP:-src} \
+    -E ENN_PBUF=${a%%[asxphu]*} -E ENN_LOG_PACE=$([[ $a == *u* ]] && echo 0 || echo 1) -E ENN_PBUF_ALL=$([[ $a == *a* ]] && echo 1 || echo 0) -E ENN_PBUF_PREFETCH=$([[ $a == *p* ]] && echo 1 || echo 0) -E ENN_PBUF_PUNCH=$([[ $a == *h* ]] && echo 1 || echo 0) -E FINCORE=1 -E ENN_REASSIGN=${REASSIGN:-0} -E ENN_LEAF_EXTENT=${EXTENT:-0} -E ENN_BLOCK_READ=${BLOCKREAD:-0} -E PATIENCE=${PATIENCE:-} -E NQ=${NQ:-$([[ $C == 1G ]] && echo 30 || echo 100)} -E NF=${NF:-$([[ $C == 1G ]] && echo 5 || echo 10)} -E PYTHONPATH=${PP:-src} \
     python $H $D $MAXN $W $F nvme0n1p1 > ${F%.jsonl}.log 2>&1
   rm -rf $W
   echo DONE $a$REP $(date +%T) >> $O/sweep.log
