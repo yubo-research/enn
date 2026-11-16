@@ -1,0 +1,48 @@
+D=10 N=1e+03 pairs=10
+  add_us_row  head=    0.6283 main=    0.6895 diff=-0.0613 (SE 0.062, p=0.348) ratio=0.91
+  query_s     head=    0.1241 main=   0.03422 diff=+0.0899 (SE 0.0063, p=0.000) ratio=3.63
+  maxrss_mb   head=     102.3 main=     101.9 diff=+0.381 (SE 0.062, p=0.000) ratio=1.00
+  nrmse       head=    0.8146 main=    0.8146 diff=+0 (SE 0, p=1.000) ratio=1.00
+  loglik      head=    -5.161 main=    -5.161 diff=+0 (SE 0, p=1.000) ratio=1.00
+D=10 N=1e+04 pairs=10
+  add_us_row  head=     1.676 main=    0.8993 diff=+0.777 (SE 0.049, p=0.000) ratio=1.86
+  query_s     head=    0.7338 main=    0.2694 diff=+0.464 (SE 0.038, p=0.000) ratio=2.72
+  maxrss_mb   head=     104.3 main=     104.4 diff=-0.0172 (SE 0.065, p=0.798) ratio=1.00
+  nrmse       head=    0.6137 main=    0.6137 diff=-2.04e-05 (SE 2e-05, p=0.343) ratio=1.00
+  loglik      head=    -4.182 main=    -4.183 diff=+0.000267 (SE 0.00027, p=0.343) ratio=1.00
+D=10 N=1e+05 pairs=10
+  add_us_row  head=     2.228 main=     1.117 diff=+1.11 (SE 0.036, p=0.000) ratio=1.99
+  query_s     head=     2.248 main=     1.391 diff=+0.857 (SE 0.055, p=0.000) ratio=1.62
+  maxrss_mb   head=     120.4 main=     118.9 diff=+1.49 (SE 0.056, p=0.000) ratio=1.01
+  nrmse       head=    0.4532 main=    0.4532 diff=-1.32e-06 (SE 0.0001, p=0.990) ratio=1.00
+  loglik      head=    -2.961 main=    -2.963 diff=+0.00237 (SE 0.0022, p=0.299) ratio=1.00
+D=10 N=1e+06 pairs=10
+  add_us_row  head=     2.728 main=     1.442 diff=+1.29 (SE 0.028, p=0.000) ratio=1.89
+  query_s     head=      4.58 main=     2.321 diff=+2.26 (SE 0.1, p=0.000) ratio=1.97
+  maxrss_mb   head=     240.7 main=     254.7 diff=-14 (SE 0.27, p=0.000) ratio=0.94
+  nrmse       head=    0.3267 main=    0.3246 diff=+0.00212 (SE 0.00051, p=0.003) ratio=1.01
+  loglik      head=    -1.711 main=    -1.683 diff=-0.0277 (SE 0.0078, p=0.006) ratio=1.02
+D=100 N=1e+03 pairs=10
+  add_us_row  head=     2.213 main=     2.272 diff=-0.0586 (SE 0.16, p=0.731) ratio=0.97
+  query_s     head=    0.1731 main=   0.05732 diff=+0.116 (SE 0.0096, p=0.000) ratio=3.02
+  maxrss_mb   head=       105 main=     105.6 diff=-0.654 (SE 0.031, p=0.000) ratio=0.99
+  nrmse       head=     1.049 main=     1.049 diff=+0 (SE 0, p=1.000) ratio=1.00
+  loglik      head=    -1.037 main=    -1.037 diff=+0 (SE 0, p=1.000) ratio=1.00
+D=100 N=1e+04 pairs=10
+  add_us_row  head=     5.472 main=     3.023 diff=+2.45 (SE 0.19, p=0.000) ratio=1.81
+  query_s     head=    0.8847 main=    0.6323 diff=+0.252 (SE 0.049, p=0.001) ratio=1.40
+  maxrss_mb   head=       114 main=     123.5 diff=-9.44 (SE 0.11, p=0.000) ratio=0.92
+  nrmse       head=     1.036 main=     1.036 diff=+0 (SE 0, p=1.000) ratio=1.00
+  loglik      head=    -1.022 main=    -1.022 diff=+0 (SE 0, p=1.000) ratio=1.00
+D=100 N=1e+05 pairs=10
+  add_us_row  head=     7.962 main=     3.295 diff=+4.67 (SE 0.039, p=0.000) ratio=2.42
+  query_s     head=     4.303 main=     3.732 diff=+0.571 (SE 0.044, p=0.000) ratio=1.15
+  maxrss_mb   head=     184.2 main=     247.5 diff=-63.3 (SE 0.11, p=0.000) ratio=0.74
+  nrmse       head=      1.02 main=     1.019 diff=+0.000517 (SE 0.0017, p=0.771) ratio=1.00
+  loglik      head=    -1.007 main=    -1.006 diff=-0.000735 (SE 0.0019, p=0.711) ratio=1.00
+D=100 N=1e+06 pairs=5
+  add_us_row  head=     9.868 main=     8.259 diff=+1.61 (SE 0.38, p=0.013) ratio=1.19
+  query_s     head=     7.295 main=     23.48 diff=-16.2 (SE 0.4, p=0.000) ratio=0.31
+  maxrss_mb   head=     366.3 main=     913.6 diff=-547 (SE 2.4, p=0.000) ratio=0.40
+  nrmse       head=     1.012 main=     1.006 diff=+0.00601 (SE 0.0051, p=0.307) ratio=1.01
+  loglik      head=   -0.9869 main=   -0.9813 diff=-0.00559 (SE 0.005, p=0.328) ratio=1.01

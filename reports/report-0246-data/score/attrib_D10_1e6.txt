@@ -1,0 +1,16 @@
+D=10 N=1e6, 10 paired seeds (0-9)
+pbuf - head0  loglik     diff -0.01339 SE 0.0098 p 0.206
+pbuf - head0  nrmse      diff +0.001052 SE 0.00061 p 0.119
+pbuf - head0  add_us_row diff -0.3549 SE 0.086 p 0.003
+pbuf - head0  query_s    diff +2.33 SE 0.12 p 0.000
+pbuf - head0  maxrss_mb  diff -35.61 SE 0.23 p 0.000
+head0 - main  loglik     diff -0.01431 SE 0.006 p 0.040
+head0 - main  nrmse      diff +0.001068 SE 0.00036 p 0.015
+head0 - main  add_us_row diff +1.641 SE 0.091 p 0.000
+head0 - main  query_s    diff -0.07026 SE 0.026 p 0.026
+head0 - main  maxrss_mb  diff +21.6 SE 0.12 p 0.000
+pbuf - main   loglik     diff -0.0277 SE 0.0078 p 0.006
+pbuf - main   nrmse      diff +0.00212 SE 0.00051 p 0.003
+pbuf - main   add_us_row diff +1.286 SE 0.028 p 0.000
+pbuf - main   query_s    diff +2.26 SE 0.1 p 0.000
+pbuf - main   maxrss_mb  diff -14.01 SE 0.27 p 0.000
