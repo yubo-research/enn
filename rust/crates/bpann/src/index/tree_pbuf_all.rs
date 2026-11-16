@@ -1,13 +1,35 @@
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::OnceLock;
 
 use crate::error::BpannError;
 use crate::index::tree::{mean_update, nearest, updates_centroid, Tree, TREE_CENTROID_STRIDE};
 use crate::index::tree_counts::dist;
+use crate::index::tree_pbuf::thread_majflt;
 use crate::index::tree_store::TreeStore;
 
 static ALL: AtomicU8 = AtomicU8::new(u8::MAX);
 static STAGGER: AtomicU8 = AtomicU8::new(u8::MAX);
+static FAULTS: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+
+fn fault_split() -> bool {
+    static ENV: OnceLock<bool> = OnceLock::new();
+    *ENV.get_or_init(|| std::env::var("ENN_PBUF_FAULTS").as_deref() == Ok("1"))
+}
+
+fn counted<T>(i: usize, f: impl FnOnce() -> T) -> T {
+    if !fault_split() {
+        return f();
+    }
+    let f0 = thread_majflt();
+    let out = f();
+    FAULTS[i].fetch_add(thread_majflt() - f0, Ordering::Relaxed);
+    out
+}
+
+pub fn take_pbuf_fault_split() -> (u64, u64, u64) {
+    let t = |i: usize| FAULTS[i].swap(0, Ordering::Relaxed);
+    (t(0), t(1), t(2))
+}
 
 fn flag(over: &AtomicU8, env: &OnceLock<bool>, name: &str) -> bool {
     match over.load(Ordering::Relaxed) {
@@ -24,6 +46,11 @@ pub fn pbuf_all() -> bool {
 pub fn pbuf_stagger() -> bool {
     static ENV: OnceLock<bool> = OnceLock::new();
     flag(&STAGGER, &ENV, "ENN_PBUF_STAGGER")
+}
+
+pub fn pbuf_prefetch() -> bool {
+    static ENV: OnceLock<bool> = OnceLock::new();
+    *ENV.get_or_init(|| std::env::var("ENN_PBUF_PREFETCH").as_deref() != Ok("0"))
 }
 
 pub fn set_pbuf_all(on: bool) {
@@ -57,7 +84,7 @@ impl Tree {
         let slot = nearest(s.block(x), v);
         let child = s.ids(x)[slot];
         if s.is_leaf(child) {
-            self.insert_inner(row, v, None, Some((slack, x)))?;
+            counted(2, || self.insert_inner(row, v, None, Some((slack, x))))?;
             return Ok(None);
         }
         let dd = v.len();
@@ -72,7 +99,7 @@ impl Tree {
             s.radius(child).max(d + slack)
         };
         s.set_radius(child, r);
-        let n = s.pbuf_push(child, row, v);
+        let n = counted(1, || s.pbuf_push(child, row, v));
         Ok((n >= s.pbuf_cap(child)).then_some(child))
     }
 
@@ -91,7 +118,17 @@ impl Tree {
     }
 
     pub(super) fn pbuf_flush_levels(&mut self, id: u32) -> Result<u64, BpannError> {
-        let rows = self.store.pbuf_take(id);
+        if pbuf_prefetch() {
+            let s = &self.store;
+            for &c in s.ids(id) {
+                let n = s.pbuf_len(c);
+                if n > 0 && !s.is_leaf(c) {
+                    s.advise_pbuf(c, n, 1);
+                }
+            }
+            s.advise_pbuf(id, 0, s.pbuf_len(id));
+        }
+        let rows = counted(0, || self.store.pbuf_take(id));
         let n = rows.len() as u64;
         for (row, v, slack) in rows {
             if let Some(c) = self.pbuf_step(id, row, &v, slack)? {

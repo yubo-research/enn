@@ -43,7 +43,7 @@ pub fn take_pbuf_detail() -> (u64, u64, u64) {
     )
 }
 
-fn thread_majflt() -> u64 {
+pub(super) fn thread_majflt() -> u64 {
     let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
     if unsafe { libc::getrusage(libc::RUSAGE_THREAD, &mut ru) } == 0 {
         ru.ru_majflt as u64
@@ -235,10 +235,9 @@ impl TreeStore {
         self.pbuf_records(id).map(|r| r.0).collect()
     }
 
-    pub(super) fn advise_pbuf(&self, id: u32) {
-        let n = self.pbuf_len(id);
+    pub(super) fn advise_pbuf(&self, id: u32, from: usize, n: usize) {
         if let (true, Some(m)) = (n > 0, self.pbuf.map.as_ref()) {
-            let start = id as usize * self.pbuf.page_len();
+            let start = id as usize * self.pbuf.page_len() + from * self.pbuf.rec;
             let _ = m.advise_range(memmap2::Advice::WillNeed, start, n * self.pbuf.rec);
         }
     }
@@ -403,7 +402,7 @@ pub(super) fn score_pbuf(
     if s.pbuf_len(page_id) == 0 {
         return Ok(());
     }
-    s.advise_pbuf(page_id);
+    s.advise_pbuf(page_id, 0, s.pbuf_len(page_id));
     if let Some(scan) = coded {
         let n = scan.scan_pbuf(s, page_id, query, qn2, &mut |i, d2| top.offer(i, d2));
         XP_LEAF_ROWS.fetch_add(n as u64, Ordering::Relaxed);

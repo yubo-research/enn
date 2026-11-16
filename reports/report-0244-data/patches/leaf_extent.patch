@@ -1,0 +1,234 @@
+diff --git a/rust/crates/bpann/src/index/mod.rs b/rust/crates/bpann/src/index/mod.rs
+index b8ee9bd..78def9d 100644
+--- a/rust/crates/bpann/src/index/mod.rs
++++ b/rust/crates/bpann/src/index/mod.rs
+@@ -24,6 +24,7 @@ pub mod tree_residency;
+ pub(crate) mod tree_routes;
+ pub mod tree_search;
+ pub mod tree_search_knobs;
++pub mod tree_extent;
+ mod tree_sib;
+ pub mod tree_store;
+ mod tree_store_files;
+diff --git a/rust/crates/bpann/src/index/tree.rs b/rust/crates/bpann/src/index/tree.rs
+index b71db31..29804e5 100644
+--- a/rust/crates/bpann/src/index/tree.rs
++++ b/rust/crates/bpann/src/index/tree.rs
+@@ -5,6 +5,7 @@ use crate::error::BpannError;
+ use crate::index::build::{IndexHeader, DEFAULT_SKIP_NEIGHBORS};
+ use crate::index::split::{median_split, two_means_split, weighted_mean};
+ use crate::index::tree_counts::dist;
++use crate::index::tree_extent::leaf_extents;
+ use crate::index::tree_pbuf_all::pbuf_all;
+ use crate::index::tree_resid::RowSrc;
+ use crate::index::tree_store::{Kind, TreeStore};
+@@ -297,7 +298,8 @@ impl Tree {
+     ) -> Result<(), BpannError> {
+         let s = &mut self.store;
+         let Some((parent, slot)) = path.pop() else {
+-            let root = s.alloc_near(Kind::Internal, &[old.0])?;
++            let near: &[u32] = if leaf_extents() { &[] } else { &[old.0] };
++            let root = s.alloc_near(Kind::Internal, near)?;
+             s.set_count(root, s.count(old.0) + s.count(new.0));
+             s.set_entries(
+                 root,
+@@ -349,7 +351,11 @@ impl Tree {
+                 g.iter().map(|&i| all_children[i]).collect(),
+             )
+         };
+-        let ((cents_a, kids_a), (cents_b, kids_b)) = (pick(&left), pick(&right));
++        let ((cents_a, mut kids_a), (cents_b, mut kids_b)) = (pick(&left), pick(&right));
++        if leaf_extents() && s.is_leaf(all_children[0]) {
++            self.store.place_leaf_halves(&mut kids_a, &mut kids_b)?;
++        }
++        let s = &self.store;
+         let n_a: usize = kids_a.iter().map(|&c| s.count(c)).sum();
+         let n_b: usize = kids_b.iter().map(|&c| s.count(c)).sum();
+         let s = &mut self.store;
+diff --git a/rust/crates/bpann/src/index/tree_extent.rs b/rust/crates/bpann/src/index/tree_extent.rs
+new file mode 100644
+index 0000000..d7e9419
+--- /dev/null
++++ b/rust/crates/bpann/src/index/tree_extent.rs
+@@ -0,0 +1,122 @@
++use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
++use std::sync::OnceLock;
++
++use crate::error::BpannError;
++use crate::index::tree_sib::SIB_BLOCK;
++use crate::index::tree_store::{TreeStore, META_WORDS};
++
++static FLAG: AtomicU8 = AtomicU8::new(u8::MAX);
++static MOVED: AtomicU64 = AtomicU64::new(0);
++
++pub fn leaf_extents() -> bool {
++    static ENV: OnceLock<bool> = OnceLock::new();
++    match FLAG.load(Ordering::Relaxed) {
++        u8::MAX => *ENV.get_or_init(|| std::env::var("ENN_LEAF_EXTENT").as_deref() == Ok("1")),
++        v => v == 1,
++    }
++}
++
++pub fn set_leaf_extents(on: bool) {
++    FLAG.store(u8::from(on), Ordering::Relaxed);
++}
++
++pub fn take_extent_moves() -> u64 {
++    MOVED.swap(0, Ordering::Relaxed)
++}
++
++fn block_of(id: u32) -> usize {
++    id as usize / SIB_BLOCK
++}
++
++impl TreeStore {
++    fn block_pages(&self, b: usize) -> std::ops::Range<u32> {
++        (b * SIB_BLOCK) as u32..((b + 1) * SIB_BLOCK).min(self.num_pages) as u32
++    }
++
++    fn alloc_block(&mut self) -> Result<usize, BpannError> {
++        while !self.num_pages.is_multiple_of(SIB_BLOCK) {
++            self.alloc_tagged(0)?;
++        }
++        let b = self.num_pages / SIB_BLOCK;
++        for _ in 0..SIB_BLOCK {
++            self.alloc_tagged(0)?;
++        }
++        Ok(b)
++    }
++
++    fn move_leaf(&mut self, from: u32, to: u32) {
++        let words = self.meta_words(from).to_vec();
++        self.meta_words_mut(to).copy_from_slice(&words[..META_WORDS]);
++        let (src, dst) = (self.code_page_range(from), self.code_page_range(to));
++        self.codes.copy_within(src, dst.start);
++        self.mark_free(from);
++        MOVED.fetch_add(1, Ordering::Relaxed);
++    }
++
++    fn fits_in(&self, b: usize, group: &[u32]) -> bool {
++        let pages = self.block_pages(b);
++        pages.len() == SIB_BLOCK
++            && pages
++                .clone()
++                .all(|p| self.is_free(p) || group.contains(&p))
++    }
++
++    fn pack_into(&mut self, b: usize, group: &mut [u32]) {
++        for g in group.iter_mut() {
++            if block_of(*g) == b {
++                continue;
++            }
++            if let Some(p) = self.block_pages(b).find(|&p| self.is_free(p)) {
++                self.move_leaf(*g, p);
++                *g = p;
++            }
++        }
++    }
++
++    /// Splitting a leaf parent: give each half one aligned block of leaves (report 0244).
++    /// A half with a leaf in a block that holds only that half's leaves (the overflow
++    /// leaf's block) moves there; otherwise the half with fewer leaves in the home block
++    /// moves to a fresh block. Stragglers of the staying half fill the freed home slots.
++    pub(super) fn place_leaf_halves(
++        &mut self,
++        a: &mut Vec<u32>,
++        b: &mut Vec<u32>,
++    ) -> Result<(), BpannError> {
++        let mut hist: Vec<(usize, usize)> = Vec::new();
++        for &k in a.iter().chain(b.iter()) {
++            match hist.iter_mut().find(|e| e.0 == block_of(k)) {
++                Some(e) => e.1 += 1,
++                None => hist.push((block_of(k), 1)),
++            }
++        }
++        let home = hist.iter().max_by_key(|e| e.1).map_or(0, |e| e.0);
++        let spill = |g: &[u32]| {
++            g.iter()
++                .map(|&k| block_of(k))
++                .find(|&blk| blk != home && self.fits_in(blk, g))
++        };
++        let (stay, mover, target) = match (spill(a), spill(b)) {
++            (_, Some(t)) => (a, b, Some(t)),
++            (Some(t), None) => (b, a, Some(t)),
++            (None, None) => {
++                let n_home = |g: &[u32]| g.iter().filter(|&&k| block_of(k) == home).count();
++                if n_home(a) >= n_home(b) {
++                    (a, b, None)
++                } else {
++                    (b, a, None)
++                }
++            }
++        };
++        let target = match target {
++            Some(t) => t,
++            None => self.alloc_block()?,
++        };
++        self.pack_into(target, mover);
++        self.pack_into(home, stay);
++        Ok(())
++    }
++}
++
++#[cfg(test)]
++#[path = "tree_extent_tests.rs"]
++mod tests;
+diff --git a/rust/crates/bpann/src/index/tree_extent_tests.rs b/rust/crates/bpann/src/index/tree_extent_tests.rs
+new file mode 100644
+index 0000000..f916f89
+--- /dev/null
++++ b/rust/crates/bpann/src/index/tree_extent_tests.rs
+@@ -0,0 +1,53 @@
++use super::*;
++use crate::index::tree::Tree;
++use crate::index::tree_pbuf::tests::missed_neighbours;
++
++fn row(r: usize, d: usize) -> Vec<f32> {
++    (0..d)
++        .map(|j| ((r * 7919 + j * 104_729) % 1000) as f32 / 1000.0 + (r % 7) as f32)
++        .collect()
++}
++
++fn blocks_per_leaf_parent(t: &Tree) -> Vec<usize> {
++    let s = &t.store;
++    (0..t.num_pages() as u32)
++        .filter(|&p| !s.is_free(p) && !s.is_leaf(p))
++        .filter(|&p| s.ids(p).iter().all(|&c| s.is_leaf(c)))
++        .map(|p| {
++            let mut b: Vec<usize> = s.ids(p).iter().map(|&c| block_of(c)).collect();
++            b.sort_unstable();
++            b.dedup();
++            b.len()
++        })
++        .collect()
++}
++
++#[test]
++fn leaf_parents_keep_their_leaves_in_one_block() {
++    set_leaf_extents(true);
++    let (n, d) = (20_000usize, 6usize);
++    let dir = tempfile::tempdir().unwrap();
++    let mut t = Tree::new_tree(0, &row(0, d), d, dir.path().join("i")).unwrap();
++    for r in 1..n {
++        t.insert_row(r as u32, &row(r, d)).unwrap();
++    }
++    t.pbuf_flush_all().unwrap();
++    assert_eq!(t.leaf_row_ids(), (0..n as u32).collect::<Vec<u32>>());
++    t.assert_counts_consistent();
++    let blocks = blocks_per_leaf_parent(&t);
++    assert!(blocks.len() > 20, "only {} leaf parents", blocks.len());
++    let one = blocks.iter().filter(|&&b| b == 1).count();
++    assert!(
++        one * 10 >= blocks.len() * 9,
++        "{one} of {} leaf parents in one block",
++        blocks.len()
++    );
++    assert!(take_extent_moves() > 0);
++}
++
++#[test]
++fn extent_search_finds_true_neighbours() {
++    set_leaf_extents(true);
++    let missed = missed_neighbours(200);
++    assert!(missed <= 2, "{missed} of 140 true neighbours missed");
++}

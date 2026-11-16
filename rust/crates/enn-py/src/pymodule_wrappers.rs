@@ -41,6 +41,10 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_util::set_count_parents_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_pbuf_stats_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_pbuf_detail_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_util::take_pbuf_fault_split_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_phase_ns_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_f32_rerank_skip_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_prefix_reuse_py, m)?)?;
