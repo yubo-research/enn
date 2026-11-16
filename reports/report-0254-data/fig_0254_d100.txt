@@ -1,0 +1,8 @@
+c256_r1 n=1e+05 add=3.8us q=2.96ms q_rd_ops=21.5 codes_res=17MiB
+c256_r1 n=3e+05 add=7.6us q=14.93ms q_rd_ops=27.7 codes_res=51MiB
+c256_r1 n=1e+06 add=14.3us q=42.06ms q_rd_ops=70.7 codes_res=156MiB
+c256_r1 n=3e+06 add=526.6us q=527.28ms q_rd_ops=1127.4 codes_res=119MiB
+c64_r1 n=1e+05 add=4.1us q=3.46ms q_rd_ops=20.6 codes_res=17MiB
+c64_r1 n=3e+05 add=5.3us q=5.03ms q_rd_ops=27.1 codes_res=51MiB
+c64_r1 n=1e+06 add=24.7us q=59.47ms q_rd_ops=132.1 codes_res=151MiB
+c64_r1 n=3e+06 add=968.4us q=666.86ms q_rd_ops=988.8 codes_res=137MiB

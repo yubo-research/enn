@@ -1,0 +1,80 @@
+diff --git a/rust/crates/bpann/src/index/tree.rs b/rust/crates/bpann/src/index/tree.rs
+index a1541b6..ca08c7e 100644
+--- a/rust/crates/bpann/src/index/tree.rs
++++ b/rust/crates/bpann/src/index/tree.rs
+@@ -9,7 +9,21 @@ use crate::index::tree_pbuf_all::pbuf_all;
+ use crate::index::tree_resid::RowSrc;
+ use crate::index::tree_store::{Kind, TreeStore};
+
+-pub const TREE_LEAF_CAPACITY: usize = 64;
++/// Rows per leaf. Build-time option (report 0254): `ENN_LEAF_CAP=256 maturin build ...`; default 64.
++pub const TREE_LEAF_CAPACITY: usize = parse_cap(option_env!("ENN_LEAF_CAP"), 64);
++
++const fn parse_cap(v: Option<&str>, default: usize) -> usize {
++    let Some(v) = v else { return default };
++    let b = v.as_bytes();
++    let (mut i, mut n) = (0, 0usize);
++    while i < b.len() {
++        assert!(b[i].is_ascii_digit(), "ENN_LEAF_CAP must be a decimal integer");
++        n = n * 10 + (b[i] - b'0') as usize;
++        i += 1;
++    }
++    assert!(n >= 8, "ENN_LEAF_CAP must be >= 8");
++    n
++}
+ pub const TREE_FANOUT: usize = 16;
+ pub const TREE_CENTROID_STRIDE: u32 = 16;
+
+diff --git a/rust/crates/bpann/src/index/tree_codes.rs b/rust/crates/bpann/src/index/tree_codes.rs
+index e582101..74539b2 100644
+--- a/rust/crates/bpann/src/index/tree_codes.rs
++++ b/rust/crates/bpann/src/index/tree_codes.rs
+@@ -59,9 +59,16 @@ pub fn code_row_bytes(num_dim: usize) -> usize {
+ }
+
+ pub(super) fn page_bytes_hdr(hdr: usize, row_bytes: usize) -> usize {
+-    (hdr + SLOT_ENTRIES * row_bytes).div_ceil(CODE_ALIGN) * CODE_ALIGN
++    (hdr + SLOT_ENTRIES * row_bytes + LARGE_LEAF_TAIL).div_ceil(CODE_ALIGN) * CODE_ALIGN
+ }
+
++/// Large-leaf builds (report 0254) reserve room for the leaf-id tail in every code region.
++const LARGE_LEAF_TAIL: usize = if crate::index::tree::TREE_LEAF_CAPACITY > 64 {
++    SLOT_ENTRIES * 4
++} else {
++    0
++};
++
+ pub fn code_page_bytes(num_dim: usize) -> usize {
+     page_bytes_hdr(code_hdr(num_dim), page_row_bytes(num_dim))
+ }
+diff --git a/rust/crates/bpann/src/index/tree_leaf_ids.rs b/rust/crates/bpann/src/index/tree_leaf_ids.rs
+index 319138b..12f9f85 100644
+--- a/rust/crates/bpann/src/index/tree_leaf_ids.rs
++++ b/rust/crates/bpann/src/index/tree_leaf_ids.rs
+@@ -30,8 +30,12 @@ fn tail_offset(num_dim: usize) -> usize {
+
+ const ONE_PAGE: usize = 4096;
+
++/// Large-leaf builds (report 0254) read the whole multi-page code region per leaf, so the tail may span pages.
++const MULTI_PAGE_TAIL: bool = crate::index::tree::TREE_LEAF_CAPACITY > 64;
++
+ pub fn tail_fits(num_dim: usize) -> bool {
+-    code_page_bytes(num_dim) == ONE_PAGE && tail_offset(num_dim) + TAIL_BYTES <= ONE_PAGE
++    let bytes = code_page_bytes(num_dim);
++    (bytes == ONE_PAGE || MULTI_PAGE_TAIL) && tail_offset(num_dim) + TAIL_BYTES <= bytes
+ }
+
+ const HINT_KNOWN: u16 = 1 << 15;
+diff --git a/rust/crates/bpann/src/index/tree_search_knobs.rs b/rust/crates/bpann/src/index/tree_search_knobs.rs
+index 5d63b3e..c18c7f1 100644
+--- a/rust/crates/bpann/src/index/tree_search_knobs.rs
++++ b/rust/crates/bpann/src/index/tree_search_knobs.rs
+@@ -1,6 +1,8 @@
+ use std::sync::atomic::{AtomicU64, Ordering};
+
+-pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 100.0;
++/// 100 leaves per lnN at 64-row leaves; scaled so large-leaf builds (report 0254) scan the same rows.
++pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 =
++    100.0 * 64.0 / crate::index::tree::TREE_LEAF_CAPACITY as f64;
+
+ static LEAF_COEFFICIENT_BITS: AtomicU64 = AtomicU64::new(0);

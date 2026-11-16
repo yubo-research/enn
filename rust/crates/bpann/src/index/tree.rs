@@ -9,7 +9,7 @@ use crate::index::tree_pbuf_all::pbuf_all;
 use crate::index::tree_resid::RowSrc;
 use crate::index::tree_store::{Kind, TreeStore};
 
-pub const TREE_LEAF_CAPACITY: usize = 64;
+pub const TREE_LEAF_CAPACITY: usize = crate::index::tree_search_knobs::parse_cap(option_env!("ENN_LEAF_CAP"), 64);
 pub const TREE_FANOUT: usize = 16;
 pub const TREE_CENTROID_STRIDE: u32 = 16;
 

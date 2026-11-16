@@ -59,8 +59,14 @@ pub fn code_row_bytes(num_dim: usize) -> usize {
 }
 
 pub(super) fn page_bytes_hdr(hdr: usize, row_bytes: usize) -> usize {
-    (hdr + SLOT_ENTRIES * row_bytes).div_ceil(CODE_ALIGN) * CODE_ALIGN
+    (hdr + SLOT_ENTRIES * row_bytes + LARGE_LEAF_TAIL).div_ceil(CODE_ALIGN) * CODE_ALIGN
 }
+
+const LARGE_LEAF_TAIL: usize = if crate::index::tree::TREE_LEAF_CAPACITY > 64 {
+    SLOT_ENTRIES * 4
+} else {
+    0
+};
 
 pub fn code_page_bytes(num_dim: usize) -> usize {
     page_bytes_hdr(code_hdr(num_dim), page_row_bytes(num_dim))

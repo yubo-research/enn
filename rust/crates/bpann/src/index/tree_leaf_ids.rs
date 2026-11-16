@@ -30,8 +30,11 @@ fn tail_offset(num_dim: usize) -> usize {
 
 const ONE_PAGE: usize = 4096;
 
+const MULTI_PAGE_TAIL: bool = crate::index::tree::TREE_LEAF_CAPACITY > 64;
+
 pub fn tail_fits(num_dim: usize) -> bool {
-    code_page_bytes(num_dim) == ONE_PAGE && tail_offset(num_dim) + TAIL_BYTES <= ONE_PAGE
+    let bytes = code_page_bytes(num_dim);
+    (bytes == ONE_PAGE || MULTI_PAGE_TAIL) && tail_offset(num_dim) + TAIL_BYTES <= bytes
 }
 
 const HINT_KNOWN: u16 = 1 << 15;
