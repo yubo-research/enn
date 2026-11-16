@@ -8,7 +8,7 @@ fn exact_fallback_defaults_off() {
 #[test]
 fn leaf_budget_grows_like_ln_n() {
     assert_eq!(leaf_budget(0), 1);
-    assert_eq!(leaf_budget(1_000_000), 415);
+    assert_eq!(leaf_budget(1_000_000), 1382);
     let ratio = leaf_budget(10_000_000) as f64 / leaf_budget(1_000_000) as f64;
     assert!((ratio - 10_000_000f64.ln() / 1_000_000f64.ln()).abs() < 1e-2);
 }
@@ -23,7 +23,7 @@ fn internal_page_cap_grows_like_ln_n() {
 #[test]
 fn internal_page_cap_default_coefficient() {
     assert_eq!(internal_coefficient(), TREE_SEARCH_INTERNAL_PAGES_PER_LN_N);
-    assert_eq!(internal_page_cap(1_000_000), 139);
+    assert_eq!(internal_page_cap(1_000_000), 1382);
 }
 
 #[test]

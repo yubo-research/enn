@@ -170,7 +170,7 @@ fn lower_bound(d2: f32, radius: f32) -> f32 {
     discounted(d2, radius, 1.0)
 }
 
-pub const TREE_SEARCH_INTERNAL_PAGES_PER_LN_N: f64 = 10.0;
+pub const TREE_SEARCH_INTERNAL_PAGES_PER_LN_N: f64 = 100.0;
 
 pub(super) type FrontierItem = (u16, OrderedF32, OrderedF32, u32, u16);
 

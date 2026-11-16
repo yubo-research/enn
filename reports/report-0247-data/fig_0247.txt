@@ -1,0 +1,68 @@
+head0  loglik  - main n=10 -0.01431 SE 0.00598 p 0.040
+head0  nrmse   - main n=10 +0.00107 SE 0.00036 p 0.015
+B      loglik  - main n=10 -0.01423 SE 0.00542 p 0.028
+B      nrmse   - main n=10 +0.00096 SE 0.00028 p 0.008
+C      loglik  - main n=10 -0.00201 SE 0.00199 p 0.339
+C      nrmse   - main n=10 +0.00011 SE 0.00011 p 0.368
+pbuf   loglik  - main n=10 -0.02770 SE 0.00782 p 0.006
+pbuf   nrmse   - main n=10 +0.00212 SE 0.00051 p 0.003
+D      loglik  - main n=10 -0.00221 SE 0.00121 p 0.101
+D      nrmse   - main n=10 +0.00010 SE 0.00007 p 0.173
+B recall@10 mean 0.9780 min 0.9733 n=10
+C recall@10 mean 0.9987 min 0.9981 n=10
+RAM c30/main query_s    D= 10 N=1e+04 n=5 ratio 2.86
+RAM c30/main query_s    D= 10 N=1e+05 n=5 ratio 0.60
+RAM c30/main query_s    D= 10 N=1e+06 n=5 ratio 1.03
+RAM c30/main query_s    D=100 N=1e+04 n=5 ratio 1.92
+RAM c30/main query_s    D=100 N=1e+05 n=5 ratio 0.64
+RAM c30/main add_us_row D= 10 N=1e+04 n=5 ratio 2.05
+RAM c30/main add_us_row D= 10 N=1e+05 n=5 ratio 1.82
+RAM c30/main add_us_row D= 10 N=1e+06 n=5 ratio 1.99
+RAM c30/main add_us_row D=100 N=1e+04 n=5 ratio 1.66
+RAM c30/main add_us_row D=100 N=1e+05 n=5 ratio 1.88
+RAM c30-main loglik D= 10 N=1e+04 n=5 +0.00097 p 0.115
+RAM c30-main loglik D= 10 N=1e+05 n=5 +0.00098 p 0.762
+RAM c30-main loglik D= 10 N=1e+06 n=5 -0.01516 p 0.179
+RAM c30-main loglik D=100 N=1e+04 n=5 +0.00000 p 1.000
+RAM c30-main loglik D=100 N=1e+05 n=5 -0.01381 p 0.012
+RAM c100/main query_s    D= 10 N=1e+04 n=5 ratio 2.94
+RAM c100/main query_s    D= 10 N=1e+05 n=5 ratio 2.15
+RAM c100/main query_s    D= 10 N=1e+06 n=5 ratio 2.83
+RAM c100/main query_s    D=100 N=1e+04 n=5 ratio 1.95
+RAM c100/main query_s    D=100 N=1e+05 n=5 ratio 1.17
+RAM c100/main add_us_row D= 10 N=1e+04 n=5 ratio 2.06
+RAM c100/main add_us_row D= 10 N=1e+05 n=5 ratio 1.81
+RAM c100/main add_us_row D= 10 N=1e+06 n=5 ratio 1.95
+RAM c100/main add_us_row D=100 N=1e+04 n=5 ratio 1.61
+RAM c100/main add_us_row D=100 N=1e+05 n=5 ratio 1.91
+RAM c100-main loglik D= 10 N=1e+04 n=5 +0.00097 p 0.115
+RAM c100-main loglik D= 10 N=1e+05 n=5 +0.00241 p 0.373
+RAM c100-main loglik D= 10 N=1e+06 n=5 -0.00471 p 0.018
+RAM c100-main loglik D=100 N=1e+04 n=5 +0.00000 p 1.000
+RAM c100-main loglik D=100 N=1e+05 n=5 +0.00098 p 0.710
+cold c30 N=1e+00 query 1 ms read 14 KiB add 0.05 ms/row
+cold c30 N=3e+00 query 2 ms read 63 KiB add 0.08 ms/row
+cold c30 N=1e+01 query 9 ms read 97 KiB add 0.50 ms/row
+cold c30 N=3e+01 query 16 ms read 135 KiB add 0.62 ms/row
+cold c30 N=1e+02 query 20 ms read 174 KiB add 0.64 ms/row
+cold c30 N=3e+02 query 24 ms read 199 KiB add 0.74 ms/row
+cold c30 N=1e+03 query 28 ms read 225 KiB add 0.77 ms/row
+cold c30 N=3e+03 query 41 ms read 325 KiB add 0.92 ms/row
+cold c30 N=1e+04 query 116 ms read 842 KiB add 1.26 ms/row
+cold c30 N=3e+04 query 200 ms read 1588 KiB add 1.60 ms/row
+cold c30 N=1e+05 query 238 ms read 2457 KiB add 1.87 ms/row
+cold c30 N=3e+05 query 266 ms read 3500 KiB add 1.88 ms/row
+cold c30 N=1e+06 query 301 ms read 4447 KiB add 2.52 ms/row
+cold c100 N=1e+00 query 3 ms read 15 KiB add 0.17 ms/row
+cold c100 N=3e+00 query 7 ms read 62 KiB add 0.28 ms/row
+cold c100 N=1e+01 query 9 ms read 92 KiB add 0.53 ms/row
+cold c100 N=3e+01 query 15 ms read 133 KiB add 0.57 ms/row
+cold c100 N=1e+02 query 21 ms read 178 KiB add 0.70 ms/row
+cold c100 N=3e+02 query 27 ms read 210 KiB add 0.69 ms/row
+cold c100 N=1e+03 query 27 ms read 216 KiB add 0.75 ms/row
+cold c100 N=3e+03 query 41 ms read 329 KiB add 0.95 ms/row
+cold c100 N=1e+04 query 113 ms read 849 KiB add 1.17 ms/row
+cold c100 N=3e+04 query 248 ms read 1920 KiB add 1.53 ms/row
+cold c100 N=1e+05 query 635 ms read 4998 KiB add 1.82 ms/row
+cold c100 N=3e+05 query 702 ms read 7746 KiB add 2.03 ms/row
+cold c100 N=1e+06 query 834 ms read 23291 KiB add 2.64 ms/row

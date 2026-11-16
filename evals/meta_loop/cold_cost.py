@@ -21,6 +21,14 @@ D, MAXN, WORK, OUT, DEV = (
 )
 NQ, NA, AG = int(os.environ.get("NQ", "20")), int(os.environ.get("NA", "10")), 32
 MODE = os.environ.get("COLD", "pageout")
+for _env, _fn in (
+    ("LEAF_COEF", "set_leaf_coefficient"),
+    ("INTERNAL_COEF", "set_internal_coefficient"),
+):
+    if os.environ.get(_env):
+        import enn._rust as _r
+
+        getattr(_r, _fn)(float(os.environ[_env]))
 P = ENNParams(
     k_num_neighbors=10, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.1
 )

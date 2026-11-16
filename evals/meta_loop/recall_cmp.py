@@ -8,7 +8,10 @@ os.environ.setdefault("RAYON_NUM_THREADS", "1")
 import numpy as np
 from scipy.stats import norm
 
-from enn._rust import leaf_coefficient, set_leaf_coefficient
+try:
+    from enn._rust import leaf_coefficient, set_leaf_coefficient
+except ImportError:
+    leaf_coefficient = set_leaf_coefficient = None
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_params import ENNParams, PosteriorFlags
 
@@ -42,7 +45,18 @@ def draw(g, n):
     return g.random((n, INTRINSIC)) @ BASIS + 0.01 * g.standard_normal((n, D))
 
 
-set_leaf_coefficient(LEAF)
+if LEAF > 0:
+    set_leaf_coefficient(LEAF)
+for _env, _fn in (
+    ("STOP_EPS", "set_stop_epsilon"),
+    ("INTERNAL_COEF", "set_internal_coefficient"),
+    ("RERANK_SKIP", "set_f32_rerank_skip"),
+):
+    if os.environ.get(_env):
+        import enn._rust as _r
+
+        _v = float(os.environ[_env])
+        getattr(_r, _fn)(bool(_v) if _env == "RERANK_SKIP" else _v)
 if os.environ.get("CODE_EXTRA"):
     from enn._rust import set_code_extra
 
@@ -75,14 +89,23 @@ yt = ft + NOISE * np.random.default_rng(20_000 + SEED).standard_normal((NTEST, 1
 
 exact = np.empty((NTEST, K), dtype=np.int64)
 xx = (X * X).sum(1)
-for s in range(0, NTEST, 100):
-    q = xt[s : s + 100]
+for s in range(0, NTEST, 20):
+    q = xt[s : s + 20]
     d2 = (q * q).sum(1)[:, None] + xx[None, :] - 2.0 * q @ X.T
-    exact[s : s + 100] = np.argpartition(d2, K, axis=1)[:, :K]
+    exact[s : s + 20] = np.argpartition(d2, K, axis=1)[:, :K]
 
+walk = None
+try:
+    from enn._rust import take_walk_totals
+except ImportError:
+    take_walk_totals = None
+if take_walk_totals:
+    take_walk_totals()
 t = time.perf_counter()
 approx = m.neighbors(xt, K)
 t_nb = time.perf_counter() - t
+if take_walk_totals:
+    walk = take_walk_totals()
 recall = np.mean(
     [len(set(a.tolist()) & set(e.tolist())) / K for a, e in zip(approx, exact)]
 )
@@ -98,12 +121,16 @@ rec = {
     "intrinsic": INTRINSIC,
     "code_extra": os.environ.get("CODE_EXTRA", "default"),
     "code4": os.environ.get("ENN_CODE4", "0"),
-    "leaf_coef_read": float(leaf_coefficient()),
+    "leaf_coef_read": float(leaf_coefficient()) if leaf_coefficient else -1.0,
     "add_us_row": 1e6 * (t_add + t_sync) / N,
     "recall_at_10": float(recall),
     "neighbors_ms_per_query": 1e3 * t_nb / NTEST,
     "knn_nrmse_exact": rmse_exact,
     "knn_nrmse_approx": rmse_approx,
+    "stop_eps": os.environ.get("STOP_EPS", "default"),
+    "internal_coef": os.environ.get("INTERNAL_COEF", "default"),
+    "rerank_skip": os.environ.get("RERANK_SKIP", "default"),
+    "walk_totals": walk,
 }
 P = ENNParams(
     k_num_neighbors=K,

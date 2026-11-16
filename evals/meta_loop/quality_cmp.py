@@ -15,6 +15,14 @@ D, N, SEED = int(sys.argv[1]), int(float(sys.argv[2])), int(sys.argv[3])
 WORK, OUT = sys.argv[4], sys.argv[5]
 NOISE, NTEST, BATCH = 0.1, 1000, 1000
 rng = np.random.default_rng(SEED)
+for _env, _fn in (
+    ("LEAF_COEF", "set_leaf_coefficient"),
+    ("INTERNAL_COEF", "set_internal_coefficient"),
+):
+    if os.environ.get(_env):
+        import enn._rust as _r
+
+        getattr(_r, _fn)(float(os.environ[_env]))
 
 
 def f(x):
@@ -41,6 +49,8 @@ xt = np.random.default_rng(10_000 + SEED).random((NTEST, D))
 ft = f(xt)
 yt = ft + NOISE * np.random.default_rng(20_000 + SEED).standard_normal((NTEST, 1))
 rec = {"D": D, "n": N, "seed": SEED, "add_us_row": 1e6 * (t_add + t_sync) / N}
+rec["leaf_coef"] = os.environ.get("LEAF_COEF", "default")
+rec["internal_coef"] = os.environ.get("INTERNAL_COEF", "default")
 for k in (10,):
     P = ENNParams(
         k_num_neighbors=k,
