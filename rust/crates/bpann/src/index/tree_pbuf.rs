@@ -339,13 +339,12 @@ impl Tree {
         FLUSH_ROWS.fetch_add(n?, Ordering::Relaxed);
         FLUSHES.fetch_add(1, Ordering::Relaxed);
         if outer {
-            REPLAY_LEAVES.with(|v| {
-                let mut v = v.borrow_mut();
-                v.sort_unstable();
-                v.dedup();
-                FLUSH_LEAVES.fetch_add(v.len() as u64, Ordering::Relaxed);
-                v.clear();
-            });
+            let mut v = REPLAY_LEAVES.with(|v| std::mem::take(&mut *v.borrow_mut()));
+            let inserts = v.len();
+            v.sort_unstable();
+            v.dedup();
+            FLUSH_LEAVES.fetch_add(v.len() as u64, Ordering::Relaxed);
+            self.lloyd_after_flush(&v, inserts);
             FLUSH_FAULTS.fetch_add(thread_majflt() - f0, Ordering::Relaxed);
             FLUSH_NS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
         }

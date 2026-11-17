@@ -45,8 +45,19 @@ pub fn set_lloyd(every: usize, hood: usize, pages: usize, graph: bool) {
     LLOYD_PAGES.store(pages, Ordering::Relaxed);
 }
 
+static LLOYD_FLUSH: AtomicUsize = AtomicUsize::new(usize::MAX);
+
 thread_local! {
     static CURSOR: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static FLUSH_OWED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+pub fn lloyd_flush() -> bool {
+    knob(&LLOYD_FLUSH, "ENN_LLOYD_FLUSH", 0) == 1
+}
+
+pub fn set_lloyd_flush(on: bool) {
+    LLOYD_FLUSH.store(usize::from(on), Ordering::Relaxed);
 }
 
 fn lloyd_graph() -> bool {
@@ -55,6 +66,7 @@ fn lloyd_graph() -> bool {
 
 pub fn reset_lloyd_graph() {
     CURSOR.with(|c| c.set(0));
+    FLUSH_OWED.with(|c| c.set(0));
 }
 
 type Candidate = (f32, u32, u32, usize);
@@ -199,9 +211,28 @@ impl Tree {
         {
             return;
         }
-        let Some(leaf) = self.next_sweep_leaf() else {
+        if let Some(leaf) = self.next_sweep_leaf() {
+            self.lloyd_pass(leaf);
+        }
+    }
+
+    pub(super) fn lloyd_after_flush(&mut self, leaves: &[u32], inserts: usize) {
+        let k = lloyd_every();
+        if k == 0 || !lloyd_flush() || leaves.is_empty() || self.store.resid() || self.store.nib() {
             return;
-        };
+        }
+        let owed = FLUSH_OWED.with(|c| c.get()) + inserts;
+        let passes = owed / k;
+        FLUSH_OWED.with(|c| c.set(owed % k));
+        for i in 0..passes {
+            let leaf = leaves[i % leaves.len()];
+            if self.live_leaf(leaf) && self.store.parent(leaf).is_some() {
+                self.lloyd_pass(leaf);
+            }
+        }
+    }
+
+    fn lloyd_pass(&mut self, leaf: u32) {
         let h = if lloyd_graph() {
             self.graph_hood(leaf, lloyd_hood())
         } else {

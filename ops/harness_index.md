@@ -37,3 +37,4 @@
 0240: nodebuf_cap.sh, nodebuf_ram_ab.sh, fig_0240.py - need the 0240 patch;
 
 0239: fig_0239.py, resid_faults.py, posterior_identity.py, resid_ab.sh / resid_ram_ab.sh arms like 2t0.1, 2i; resid_* see resid_README.sh, fig_0238.py, code4_* see code4_README.sh, fig_0237.py, leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.
+- 0261: `evals/meta_loop/capq_0261.sh` (capped add+query, arms name:lloyd:graph:walk:leaf:pbuf:lloyd_flush, XV=extra env), `probe_0261.sh/.py` (in-RAM leaves / internal expansions / rows scanned per query), `quality_0261.sh` (paired-seed quality with buffer fields; stats via reassign_stats_0252.py), `sum_0261.py` (table of capq logs), `fig_0261.py` (capped 4-panel), `fig_0261b.py` (in-RAM bars).

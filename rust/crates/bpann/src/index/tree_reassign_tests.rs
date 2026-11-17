@@ -206,3 +206,21 @@ fn graph_ordered_walks_find_the_neighbors() {
         assert!(r >= base - 0.02 && r > 0.95, "mode {mode}: {r} vs {base}");
     }
 }
+
+fn build_buffered(flush: bool) -> f64 {
+    crate::index::tree_pbuf::set_pbuf_rows(50);
+    crate::index::tree_pbuf_all::set_pbuf_all(true);
+    crate::index::tree_lloyd::set_lloyd_flush(flush);
+    let s = build(0, 0, 4, true);
+    crate::index::tree_lloyd::set_lloyd_flush(false);
+    crate::index::tree_pbuf_all::set_pbuf_all(false);
+    crate::index::tree_pbuf::set_pbuf_rows(0);
+    s
+}
+
+#[test]
+fn lloyd_passes_at_buffer_flush_tighten_leaves() {
+    let base = build_buffered(false);
+    let flushed = build_buffered(true);
+    assert!(flushed < base, "lloyd at flush: {flushed} vs {base}");
+}
