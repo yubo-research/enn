@@ -1,0 +1,8 @@
+r64      walk  ltr p50/p90 38/76 miss 0.000 pages@ltr 38 L 183 tl 7.2
+oracle   ideal ltr p50/p90 7/9 miss 0.000 pages@ltr 7 L 7 tl 7.2
+r64      ideal ltr p50/p90 30/68 miss 0.000 pages@ltr 30 L 36 tl 7.2
+o64      ideal ltr p50/p90 18/44 miss 0.000 pages@ltr 18 L 22 tl 6.1
+o256     ideal ltr p50/p90 11/22 miss 0.000 pages@ltr 12 L 12 tl 5.1
+o1024    ideal ltr p50/p90 5/9 miss 0.000 pages@ltr 16 L 5 tl 3.8
+l64      ideal ltr p50/p90 14/28 miss 0.000 pages@ltr 14 L 15 tl 5.7
+DONE D=10 N=10000 seed=1 arm=r64 build 0s total 8s

@@ -1,0 +1,4 @@
+r64r     walk  ltr p50/p90 47/119 miss 0.003 pages@ltr 47 L 344 tl 7.1
+r64r     ideal ltr p50/p90 31/94 miss 0.000 pages@ltr 31 L 43 tl 7.1
+oracle   ideal ltr p50/p90 7/9 miss 0.000 pages@ltr 7 L 7 tl 7.1
+DONE D=10 N=100000 seed=0 arm=r64r build 0s total 10s

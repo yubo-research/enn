@@ -1,0 +1,4 @@
+r256     walk  ltr p50/p90 127/298 miss 0.110 pages@ltr 152 L 373 tl 7.7
+oracle   ideal ltr p50/p90 8/9 miss 0.000 pages@ltr 9 L 8 tl 7.7
+r256     ideal ltr p50/p90 81/200 miss 0.000 pages@ltr 95 L 109 tl 7.7
+DONE D=10 N=3000000 seed=0 arm=r256 build 8s total 165s

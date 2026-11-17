@@ -4,7 +4,7 @@ import os
 import sys
 
 import numpy as np
-from scipy.cluster.vq import kmeans2
+from partition_common import two_means
 
 D, N, SEED, OUT = (
     int(sys.argv[1]),
@@ -44,15 +44,6 @@ def draw(g, n):
         return g.random((n, D)).astype(np.float32)
     z = g.random((n, INTRINSIC)) @ BASIS + 0.01 * g.standard_normal((n, D))
     return z.astype(np.float32)
-
-
-def two_means(P, rng):
-    sub = P[rng.choice(len(P), min(len(P), 4000), replace=False)]
-    cen, _ = kmeans2(sub, 2, minit="++", seed=rng, iter=10)
-    left = ((P - cen[0]) ** 2).sum(1) <= ((P - cen[1]) ** 2).sum(1)
-    if left.all() or not left.any():
-        left = np.arange(len(P)) < len(P) // 2
-    return left
 
 
 def split_rec(X, cap, rng):

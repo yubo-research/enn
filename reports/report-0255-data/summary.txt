@@ -1,0 +1,24 @@
+panel | arm | n_max | add_last_us | add_max_step | add_meas/fit | q_last_ms | q_max_step | q_meas/fit
+1G_D100 | tree, no buffers | 3000000 | 62.1 | 5.55 | 6.54 | 28.60 | 3.78 | 2.14
+1G_D100 | tree, every-level buffers R=3000 | 30000000 | 16.2 | 2.59 | 1.08 | 2698.23 | 5.43 | 95.89
+1G_D100 | main (RAM-resident rows) | 1000000 | 10.2 | 2.78 | 2.69 | 19.85 | 3.88 | 3.21
+256M_D100 | tree, no buffers | 3000000 | 716.2 | 15.60 | 99.66 | 348.28 | 8.12 | 39.09
+256M_D100 | tree, every-level buffers R=3000 | 10000000 | 16.5 | 2.21 | 1.55 | 6311.13 | 72.87 | 296.11
+256M_D100 | tree, 256-row leaves | 3000000 | 526.6 | 36.92 | 111.51 | 536.83 | 19.31 | 93.37
+256M_D10 | tree, no buffers (64-row leaves) | 3000000 | 158.5 | 18.45 | 76.87 | 266.03 | 42.60 | 44.49
+256M_D10 | tree, 256-row leaves | 10000000 | 693.4 | 88.59 | 306.41 | 233.50 | 35.22 | 44.51
+256M_D10 | tree, split-time reassignment | 3000000 | 185.1 | 11.77 | 22.06 | 147.43 | 27.93 | 67.48
+
+cold fits (0235), N in [1e4,1e6]: label | metric | a | b per lnN
+D = 10 | cold query ms | -62.648 | 22.663
+D = 10 | cold add ms/row | -0.855 | 0.228
+D = 100 | cold query ms | 26.487 | 28.126
+D = 100 | cold add ms/row | 0.386 | 0.177
+
+add-cliff onsets: label | cap | hot B/row | onset N | onset*B/C
+0218, 64 MB | 67108864 | 190 | 1.98e+05 | 0.56
+0218, 256 MB | 268435456 | 190 | 1.12e+06 | 0.79
+0218, 1 GB | 1073741824 | 190 | 3.04e+06 | 0.54
+0241, 8-bit | 268435456 | 190 | 1.19e+06 | 0.84
+0241, 4-bit residual | 268435456 | 140 | 1.82e+06 | 0.95
+0250 (coarse grid) | 268435456 | 190 | 1.37e+06 | 0.97
