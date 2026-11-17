@@ -3,11 +3,11 @@ use std::collections::{BinaryHeap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::distance::l2_sq_f32;
 use crate::index::tree::Tree;
-use crate::index::tree_lloyd::with_graph_neighbors;
+use crate::index::tree_codes::coded_sq_l2;
 use crate::index::tree_search::FrontierItem;
 use crate::index::tree_store::TreeStore;
+use crate::index::tree_topk::TopK;
 use crate::small_n_search::OrderedF32;
 
 static WALK_GRAPH: AtomicUsize = AtomicUsize::new(usize::MAX);
@@ -94,57 +94,99 @@ impl GraphWalk {
         self.heap.pop().map(|Reverse((_, b, l))| (b.0, l))
     }
 
+    pub(super) fn bound(
+        &self,
+        s: &TreeStore,
+        (n, raw, b): (u32, u16, OrderedF32),
+        root: u32,
+        lower: KeyFn,
+    ) -> Option<OrderedF32> {
+        if !self.on() {
+            return Some(b);
+        }
+        if self.seen.contains(&n) {
+            return None;
+        }
+        offer_bound(s, (n, raw, b.0), root, lower).map(OrderedF32)
+    }
+
     pub(super) fn expand(
         &mut self,
         tree: &Tree,
         leaf: u32,
-        query: &[f32],
+        query: (&[f32], f32),
         frontier: &mut BinaryHeap<Reverse<FrontierItem>>,
-        keys: (KeyFn, KeyFn),
+        (top, key, lower): (&TopK, KeyFn, KeyFn),
     ) {
         if !self.on() {
             return;
         }
         let s = &tree.store;
         self.pushed.insert(leaf);
-        with_graph_neighbors(leaf, |ns| {
-            for &n in ns {
-                self.offer(s, n, query, frontier, keys);
+        for (n, r, code) in s.lgraph_entries(leaf) {
+            if self.seen.contains(&n) || !self.pushed.insert(n) {
+                continue;
             }
-        });
-    }
-
-    fn offer(
-        &mut self,
-        s: &TreeStore,
-        n: u32,
-        query: &[f32],
-        frontier: &mut BinaryHeap<Reverse<FrontierItem>>,
-        keys: (KeyFn, KeyFn),
-    ) {
-        if self.seen.contains(&n) || !self.pushed.insert(n) || !live_leaf(s, n) {
-            return;
-        }
-        let Some(d2) = centroid_d2(s, n, query) else {
-            return;
-        };
-        let r = s.radius(n);
-        let bound = OrderedF32((keys.1)(d2, r));
-        if self.mode == GRAPH_FIRST {
-            self.heap.push(Reverse((OrderedF32(d2), bound, n)));
-        } else {
-            frontier.push(Reverse((0, OrderedF32((keys.0)(d2, r)), bound, n, 0)));
+            let (d2, err) = coded_sq_l2(query.0, query.1, code);
+            let low = if code_err_on() {
+                (d2.sqrt() - err).max(0.0).powi(2)
+            } else {
+                d2
+            };
+            if prune_on() && top.cannot_improve(lower(low, r)) {
+                continue;
+            }
+            if self.mode == GRAPH_FIRST {
+                self.heap
+                    .push(Reverse((OrderedF32(d2), OrderedF32(low), n)));
+            } else {
+                frontier.push(Reverse((0, OrderedF32(key(d2, r)), OrderedF32(low), n, 0)));
+            }
         }
     }
 }
 
-fn live_leaf(s: &TreeStore, n: u32) -> bool {
-    (n as usize) < s.num_pages() && !s.is_free(n) && s.is_leaf(n) && s.len(n) > 0
+fn offer_bound(
+    s: &TreeStore,
+    (n, raw, low): (u32, u16, f32),
+    root: u32,
+    lower: KeyFn,
+) -> Option<f32> {
+    if raw != 0 || n == root {
+        return Some(low);
+    }
+    if (n as usize) >= s.num_pages() || s.is_free(n) || !s.is_leaf(n) || s.len(n) == 0 {
+        return None;
+    }
+    Some(lower(low, s.radius(n)))
 }
 
-fn centroid_d2(s: &TreeStore, leaf: u32, query: &[f32]) -> Option<f32> {
-    let p = s.parent(leaf)?;
-    let slot = s.ids(p).iter().position(|&c| c == leaf)?;
-    let d = s.num_dim();
-    Some(l2_sq_f32(&s.block(p)[slot * d..(slot + 1) * d], query))
+static PRUNE: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+fn prune_on() -> bool {
+    let v = PRUNE.load(Ordering::Relaxed);
+    if v != usize::MAX {
+        return v == 1;
+    }
+    let e = std::env::var("ENN_GRAPH_PRUNE")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(1);
+    PRUNE.store(e, Ordering::Relaxed);
+    e == 1
+}
+
+static CODE_ERR: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+fn code_err_on() -> bool {
+    let v = CODE_ERR.load(Ordering::Relaxed);
+    if v != usize::MAX {
+        return v == 1;
+    }
+    let e = std::env::var("ENN_GRAPH_ERR")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+    CODE_ERR.store(e, Ordering::Relaxed);
+    e == 1
 }

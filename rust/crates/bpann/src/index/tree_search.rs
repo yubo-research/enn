@@ -367,9 +367,17 @@ pub(super) fn search_tree_scored(
             stopped_on_budget = true;
             break;
         }
-        if top.cannot_improve(bound.0) || !graph.first_visit(page_id) {
+        let Some(bound) = graph
+            .bound(
+                s,
+                (page_id, raw, bound),
+                tree.header.root_page_id,
+                lower_bound,
+            )
+            .filter(|b| !top.cannot_improve(b.0) && graph.first_visit(page_id))
+        else {
             continue;
-        }
+        };
         if !from_graph && !kinds.is_leaf(s, page_id, raw) {
             expanded += 1;
             leaves +=
@@ -406,7 +414,13 @@ pub(super) fn search_tree_scored(
         )?;
         leaves += 1;
         quiet = if top.inserts == inserts { quiet + 1 } else { 0 };
-        graph.expand(tree, page_id, query, &mut frontier, (priority, lower_bound));
+        graph.expand(
+            tree,
+            page_id,
+            (query, qn2),
+            &mut frontier,
+            (&top, priority, lower_bound),
+        );
     }
     meter.record(leaves, stopped_on_budget);
     crate::index::tree_parent_count::end_walk();

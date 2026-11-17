@@ -78,6 +78,7 @@ pub struct TreeStore {
     pub(super) residency: Residency,
     pub(super) icache: InternalCache,
     pub(super) pbuf: crate::index::tree_pbuf::PBuf,
+    pub(super) lgraph: crate::index::tree_lgraph::LeafGraph,
 }
 
 impl TreeStore {
@@ -129,6 +130,7 @@ impl TreeStore {
         self.slots = map(&self.files.1, capacity * self.slot_words * 4)?;
         self.codes = map(&self.codes_file, capacity * self.code_page_len())?;
         self.pbuf.grow(capacity)?;
+        self.lgraph.grow(capacity)?;
         self.capacity = capacity;
         self.update_tracking();
         Ok(())
@@ -350,6 +352,9 @@ impl TreeStore {
         out.codes[..code_len].copy_from_slice(&self.codes[..code_len]);
         out.pbuf = self
             .pbuf
+            .clone_into(&self.dir, self.capacity, self.num_pages)?;
+        out.lgraph = self
+            .lgraph
             .clone_into(&self.dir, self.capacity, self.num_pages)?;
         Ok(out)
     }

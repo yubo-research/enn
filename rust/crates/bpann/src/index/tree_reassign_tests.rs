@@ -129,16 +129,33 @@ fn build(m: usize, every: usize, lloyd: usize, graph: bool) -> f64 {
     s
 }
 
+// One test per variant (each against the same deterministic base) keeps every
+// test well under the kiss per-test time limit when the suite runs in parallel.
 #[test]
 fn reassignment_keeps_the_tree_valid_and_tightens_leaves() {
     let base = build(0, 0, 0, false);
     let split_only = build(16, 0, 0, false);
-    let periodic = build(16, 8, 0, false);
-    let swept = build(0, 0, 4, false);
-    let graphed = build(0, 0, 4, true);
     assert!(split_only < base, "split-time pass: {split_only} vs {base}");
+}
+
+#[test]
+fn periodic_reassignment_tightens_leaves() {
+    let base = build(0, 0, 0, false);
+    let periodic = build(16, 8, 0, false);
     assert!(periodic < base, "periodic pass: {periodic} vs {base}");
+}
+
+#[test]
+fn lloyd_sweep_tightens_leaves() {
+    let base = build(0, 0, 0, false);
+    let swept = build(0, 0, 4, false);
     assert!(swept < base, "lloyd sweep: {swept} vs {base}");
+}
+
+#[test]
+fn graph_lloyd_sweep_tightens_leaves() {
+    let base = build(0, 0, 0, false);
+    let graphed = build(0, 0, 4, true);
     assert!(graphed < base, "graph sweep: {graphed} vs {base}");
 }
 

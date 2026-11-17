@@ -1,5 +1,5 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::distance::l2_sq_f32;
@@ -49,28 +49,11 @@ thread_local! {
     static CURSOR: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
-static GRAPH: std::sync::LazyLock<std::sync::Mutex<HashMap<u32, Vec<u32>>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
-
-fn graph_lock() -> std::sync::MutexGuard<'static, HashMap<u32, Vec<u32>>> {
-    GRAPH.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-pub(super) fn graph_neighbors(leaf: u32) -> Vec<u32> {
-    graph_lock().get(&leaf).cloned().unwrap_or_default()
-}
-
-pub(super) fn with_graph_neighbors(leaf: u32, f: impl FnOnce(&[u32])) {
-    let g = graph_lock();
-    f(g.get(&leaf).map_or(&[][..], Vec::as_slice));
-}
-
 fn lloyd_graph() -> bool {
     knob(&LLOYD_GRAPH, "ENN_LLOYD_GRAPH", 0) == 1
 }
 
 pub fn reset_lloyd_graph() {
-    graph_lock().clear();
     CURSOR.with(|c| c.set(0));
 }
 
@@ -153,37 +136,29 @@ impl Tree {
     }
 
     fn graph_candidates(&self, leaf: u32, m: usize) -> HashSet<u32> {
+        let s = &self.store;
         let mut cand: HashSet<u32> = HashSet::new();
-        let first: Vec<u32> = graph_neighbors(leaf);
+        let first: Vec<u32> = s.lgraph_ids(leaf);
         if first.is_empty() {
             if let Some(h) = self.hood(leaf, leaf, m) {
                 cand.extend(h.leaves);
             }
         }
-        {
-            let g = graph_lock();
-            for &n in &first {
-                cand.insert(n);
-                if let Some(nn) = g.get(&n) {
-                    cand.extend(nn.iter().copied());
-                }
+        for &n in &first {
+            cand.insert(n);
+            if self.live_leaf(n) {
+                cand.extend(s.lgraph_entries(n).map(|e| e.0));
             }
         }
-        if let Some(p) = self.store.parent(leaf) {
-            cand.extend(
-                self.store
-                    .ids(p)
-                    .iter()
-                    .copied()
-                    .filter(|&c| self.store.is_leaf(c)),
-            );
+        if let Some(p) = s.parent(leaf) {
+            cand.extend(s.ids(p).iter().copied().filter(|&c| s.is_leaf(c)));
         }
         cand.remove(&leaf);
         cand.retain(|&l| self.live_leaf(l));
         cand
     }
 
-    fn graph_hood(&self, leaf: u32, m: usize) -> Option<Hood> {
+    fn graph_hood(&mut self, leaf: u32, m: usize) -> Option<Hood> {
         let c = self.centroid_of(leaf)?;
         let mut scored: Vec<(f32, u32, Vec<f32>)> = self
             .graph_candidates(leaf, m)
@@ -195,19 +170,15 @@ impl Tree {
         if scored.is_empty() {
             return None;
         }
-        let ids: Vec<u32> = scored.iter().map(|x| x.1).collect();
-        {
-            let mut g = graph_lock();
-            g.insert(leaf, ids.clone());
-            for &n in &ids {
-                let e = g.entry(n).or_default();
-                if !e.contains(&leaf) {
-                    e.push(leaf);
-                    if e.len() > 2 * m {
-                        e.remove(0);
-                    }
-                }
-            }
+        let s = &mut self.store;
+        let entries: Vec<(u32, f32, Vec<f32>)> = scored
+            .iter()
+            .map(|(_, l, cl)| (*l, s.radius(*l), cl.clone()))
+            .collect();
+        s.lgraph_set(leaf, &entries);
+        let me = (leaf, s.radius(leaf), &c[..]);
+        for &(_, n, _) in &scored {
+            s.lgraph_link(n, me, 2 * m);
         }
         let mut leaves = vec![leaf];
         let mut cents = vec![c];

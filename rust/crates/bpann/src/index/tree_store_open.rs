@@ -67,6 +67,7 @@ impl TreeStore {
             )),
             icache: Default::default(),
             pbuf,
+            lgraph: crate::index::tree_lgraph::LeafGraph::new(num_dim.max(1)),
         })
     }
 
@@ -113,6 +114,7 @@ impl TreeStore {
             )),
             icache: Default::default(),
             pbuf,
+            lgraph: crate::index::tree_lgraph::LeafGraph::open(dir, num_dim.max(1), capacity),
         };
         store.update_tracking();
         if fresh {
