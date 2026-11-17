@@ -344,7 +344,10 @@ pub(super) fn search_tree_scored(
     let probe = ColdProbe::start();
     let kinds = Kinds::new(s, coded.is_some());
     let mut ahead = Lookahead::new(if coded.is_some() { code_prefetch() } else { 0 });
-    let mut graph = crate::index::tree_graph_walk::GraphWalk::new();
+    let (mut graph, mut tags) = (
+        crate::index::tree_graph_walk::GraphWalk::new(),
+        crate::index::tree_pbuf_tag::TagWalk::new(s),
+    );
     while let Some((from_graph, Reverse((phase, key, bound, page_id, raw)))) = graph
         .pop()
         .map(|(b, l)| (true, Reverse((0, OrderedF32(0.0), OrderedF32(b), l, 0))))
@@ -378,17 +381,24 @@ pub(super) fn search_tree_scored(
         else {
             continue;
         };
+        leaves += tags.popped(
+            s,
+            page_id,
+            (query, qn2),
+            coded.as_deref_mut(),
+            &mut top,
+            &mut score,
+        )?;
         if !from_graph && !kinds.is_leaf(s, page_id, raw) {
             expanded += 1;
-            leaves +=
-                crate::index::tree_pbuf_all::charged_leaves(crate::index::tree_pbuf::score_pbuf(
-                    s,
-                    page_id,
-                    (query, qn2),
-                    coded.as_deref_mut(),
-                    &mut top,
-                    &mut score,
-                )?);
+            leaves += tags.expanded(
+                s,
+                page_id,
+                (query, qn2),
+                coded.as_deref_mut(),
+                &mut top,
+                &mut score,
+            )?;
             let walk = Expand {
                 query: (query, qn2),
                 coded: coded.is_some(),

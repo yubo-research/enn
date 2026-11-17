@@ -122,7 +122,10 @@ pub(crate) const fn parse_cap(v: Option<&str>, default: usize) -> usize {
     let b = v.as_bytes();
     let (mut i, mut n) = (0, 0usize);
     while i < b.len() {
-        assert!(b[i].is_ascii_digit(), "ENN_LEAF_CAP must be a decimal integer");
+        assert!(
+            b[i].is_ascii_digit(),
+            "ENN_LEAF_CAP must be a decimal integer"
+        );
         n = n * 10 + (b[i] - b'0') as usize;
         i += 1;
     }

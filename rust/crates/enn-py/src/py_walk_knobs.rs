@@ -19,3 +19,8 @@ pub fn set_walk_trace_py(on: bool) {
 pub fn take_walk_trace_py() -> ennbo::WalkTrace {
     ennbo::take_walk_trace()
 }
+
+#[pyfunction(name = "take_pbuf_tag_stats")]
+pub fn take_pbuf_tag_stats_py() -> (u64, u64, u64, u64) {
+    ennbo::take_pbuf_tag_stats()
+}

@@ -54,6 +54,22 @@ impl TreeStore {
         let m = self.meta_words_mut(id);
         m[ROUTE_WORD..ROUTE_WORD + radii.len()].copy_from_slice(&radii);
         m[KIND_WORD] = KIND_MAGIC;
+        if self.pbuf_tagged() && self.pbuf_len(id) > 0 {
+            self.pbuf_retag(id);
+        }
+    }
+
+    pub(super) fn route_radius(&self, parent: u32, slot: usize) -> f32 {
+        f32::from_bits(self.meta_words(parent)[ROUTE_WORD + slot] & !LEAF_BIT)
+    }
+
+    pub(super) fn widen_route(&mut self, parent: u32, slot: usize, r: f32) {
+        if slot >= ROUTE_SLOTS || r <= self.route_radius(parent, slot) {
+            return;
+        }
+        self.icache.invalidate(parent);
+        let w = &mut self.meta_words_mut(parent)[ROUTE_WORD + slot];
+        *w = (*w & LEAF_BIT) | (r.to_bits() & !LEAF_BIT);
     }
 
     pub(super) fn route_child_is_leaf(&self, parent: u32, slot: usize) -> bool {
@@ -74,6 +90,11 @@ impl TreeStore {
             return;
         }
         if let Some(slot) = self.ids(p).iter().position(|&c| c == child) {
+            let r = if self.pbuf_tagged() && self.pbuf_len(p) > 0 {
+                r.max(self.route_radius(p, slot))
+            } else {
+                r
+            };
             self.set_route(p, slot, child, r);
         }
     }

@@ -357,6 +357,8 @@ pub fn take_pbuf_detail() -> (u64, u64, u64) {
     ennbo_bpann::index::tree_pbuf::take_pbuf_detail()
 }
 
+pub use ennbo_bpann::index::tree_pbuf_tag::take_pbuf_tag_stats;
+
 pub fn set_count_parents(value: bool) {
     ennbo_bpann::index::tree_parent_count::set_count_parents(value);
 }

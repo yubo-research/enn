@@ -23,6 +23,8 @@ pub mod tree_pbuf;
 pub mod tree_pbuf_all;
 pub mod tree_pbuf_cold;
 mod tree_pbuf_punch;
+mod tree_pbuf_scan;
+pub mod tree_pbuf_tag;
 pub mod tree_persist;
 pub mod tree_reassign;
 pub mod tree_resid;

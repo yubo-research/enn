@@ -114,11 +114,11 @@ impl CodedScan {
         &mut self,
         s: &TreeStore,
         page: u32,
-        query: &[f32],
-        qn2: f32,
+        query: (&[f32], f32),
+        pick: crate::index::tree_pbuf_tag::TagPick,
         offer: &mut impl FnMut(u32, f64),
     ) -> usize {
-        let hits = s.pbuf_scan(page, query, qn2);
+        let hits = s.pbuf_scan(page, query, pick);
         for &(row, d2, e) in &hits {
             self.err_max = self.err_max.max(e);
             let i = self.locs.len() as u32;

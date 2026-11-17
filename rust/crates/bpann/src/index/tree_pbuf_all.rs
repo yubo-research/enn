@@ -146,7 +146,7 @@ impl Tree {
         if fault_split() {
             s.probe_push(child);
         }
-        let n = timed(4, || counted(1, || s.pbuf_push(child, row, v)));
+        let n = timed(4, || counted(1, || s.pbuf_push(child, row, v, slack)));
         Ok((n >= s.pbuf_cap(child)).then_some(child))
     }
 
@@ -156,7 +156,7 @@ impl Tree {
         if updates_centroid(row) {
             s.set_count(root, s.count(root) + TREE_CENTROID_STRIDE as usize);
         }
-        let n = s.pbuf_push(root, row, v);
+        let n = s.pbuf_push(root, row, v, 0.0);
         self.header.indexed_rows += 1;
         if n >= s.pbuf_cap(root) {
             self.pbuf_flush(root)?;

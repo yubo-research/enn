@@ -46,6 +46,7 @@ take_parent_counts = _ext.util.take_parent_counts
 set_count_parents = _ext.util.set_count_parents
 take_pbuf_stats = _ext.util.take_pbuf_stats
 take_pbuf_detail = _ext.util.take_pbuf_detail
+take_pbuf_tag_stats = _ext.util.take_pbuf_tag_stats
 take_pbuf_fault_split = _ext.util.take_pbuf_fault_split
 take_pbuf_cold = _ext.util.take_pbuf_cold
 take_phase_ns = _ext.util.take_phase_ns

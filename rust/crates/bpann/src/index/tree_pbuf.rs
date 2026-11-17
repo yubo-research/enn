@@ -6,7 +6,7 @@ use memmap2::MmapMut;
 
 use crate::error::BpannError;
 use crate::index::tree::Tree;
-use crate::index::tree_codes::{code_row_bytes, coded_sq_l2, decode_header, encode_row};
+use crate::index::tree_codes::{code_row_bytes, decode_header, encode_row};
 use crate::index::tree_counts::dist;
 use crate::index::tree_store::{TreeStore, META_HDR_WORDS, META_WORDS};
 use crate::index::tree_store_files::{io_err, map, named_file, scratch_file};
@@ -91,6 +91,7 @@ pub fn set_pbuf_rows(rows: usize) {
 pub struct PBuf {
     pub(super) rows: usize,
     pub(super) rec: usize,
+    pub(super) tagged: bool,
     file: Option<File>,
     pub(super) map: Option<MmapMut>,
 }
@@ -101,9 +102,11 @@ impl PBuf {
     }
 
     fn sized(rows: usize, num_dim: usize, coded8: bool) -> Self {
+        let tagged = crate::index::tree_pbuf_tag::pbuf_tag();
         Self {
             rows: if coded8 { rows } else { 0 },
-            rec: 4 + code_row_bytes(num_dim),
+            rec: 4 + code_row_bytes(num_dim) + usize::from(tagged),
+            tagged,
             file: None,
             map: None,
         }
@@ -164,6 +167,7 @@ impl PBuf {
         let mut b = Self {
             rows: self.rows,
             rec: self.rec,
+            tagged: self.tagged,
             file: None,
             map: None,
         };
@@ -186,6 +190,17 @@ impl PBuf {
         self.file
             .as_ref()
             .map_or(Ok(()), |f| f.sync_all().map_err(io_err))
+    }
+
+    pub(super) fn code_len(&self) -> usize {
+        self.rec - 4 - usize::from(self.tagged)
+    }
+
+    pub(super) fn set_tag(&mut self, id: u32, i: usize, tag: u8) {
+        if self.tagged {
+            let at = id as usize * self.page_len() + (i + 1) * self.rec - 1;
+            self.map.as_mut().expect("pbuf mapped")[at] = tag;
+        }
     }
 
     pub(super) fn region(&self, id: u32, n: usize) -> &[u8] {
@@ -211,24 +226,26 @@ impl TreeStore {
         self.meta_words_mut(id)[BUF_WORD] = 0;
     }
 
-    pub(super) fn pbuf_push(&mut self, id: u32, row: u32, v: &[f32]) -> usize {
+    pub(super) fn pbuf_push(&mut self, id: u32, row: u32, v: &[f32], slack: f32) -> usize {
         let n = self.pbuf_len(id);
-        let (rec, plen) = (self.pbuf.rec, self.pbuf.page_len());
+        let tag = if self.pbuf.tagged {
+            self.pbuf_tag_row(id, v, slack)
+        } else {
+            0
+        };
+        let (rec, plen, cl) = (self.pbuf.rec, self.pbuf.page_len(), self.pbuf.code_len());
         let at = id as usize * plen + n * rec;
         let m = self.pbuf.map.as_mut().expect("pbuf mapped");
         m[at..at + 4].copy_from_slice(&row.to_le_bytes());
-        encode_row(v, &mut m[at + 4..at + rec]);
+        encode_row(v, &mut m[at + 4..at + 4 + cl]);
+        self.pbuf.set_tag(id, n, tag);
         self.meta_words_mut(id)[BUF_WORD] = (n + 1) as u32;
         n + 1
     }
 
     pub fn pbuf_records(&self, id: u32) -> impl Iterator<Item = (u32, &[u8])> + '_ {
-        let n = self.pbuf_len(id);
-        let rec = self.pbuf.rec;
-        let bytes: &[u8] = if n == 0 { &[] } else { self.pbuf.region(id, n) };
-        bytes
-            .chunks_exact(rec)
-            .map(|r| (u32::from_le_bytes([r[0], r[1], r[2], r[3]]), &r[4..]))
+        self.pbuf_tagged_records(id)
+            .map(|(row, code, _)| (row, code))
     }
 
     pub fn pbuf_ids(&self, id: u32) -> Vec<u32> {
@@ -297,21 +314,12 @@ impl TreeStore {
 
     pub(super) fn pbuf_rescale(&mut self, id: u32, ratio: &[f64]) {
         let rows = self.pbuf_take(id);
-        for (row, mut v, _) in rows {
+        for (row, mut v, slack) in rows {
             for (x, &r) in v.iter_mut().zip(ratio) {
                 *x = (f64::from(*x) * r) as f32;
             }
-            self.pbuf_push(id, row, &v);
+            self.pbuf_push(id, row, &v, slack);
         }
-    }
-
-    pub(super) fn pbuf_scan(&self, id: u32, query: &[f32], qn2: f32) -> Vec<(u32, f32, f32)> {
-        self.pbuf_records(id)
-            .map(|(row, code)| {
-                let (d2, e) = coded_sq_l2(query, qn2, code);
-                (row, d2, e)
-            })
-            .collect()
     }
 }
 
@@ -335,6 +343,9 @@ impl Tree {
                 })
                 .map(|()| n)
         };
+        if self.store.pbuf_tagged() && !self.store.is_free(id) && !self.store.is_leaf(id) {
+            self.store.refresh_routes(id);
+        }
         FLUSH_DEPTH.with(|d| d.set(d.get() - 1));
         FLUSH_ROWS.fetch_add(n?, Ordering::Relaxed);
         FLUSHES.fetch_add(1, Ordering::Relaxed);
@@ -390,35 +401,6 @@ impl Tree {
             .flat_map(|p| self.store.pbuf_ids(p))
             .collect()
     }
-}
-
-pub(super) fn score_pbuf(
-    s: &TreeStore,
-    page_id: u32,
-    (query, qn2): (&[f32], f32),
-    coded: Option<&mut crate::index::tree_codes_search::CodedScan>,
-    top: &mut crate::index::tree_topk::TopK,
-    score: &mut impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
-) -> Result<usize, BpannError> {
-    use crate::index::tree_search::XP_LEAF_ROWS;
-    if s.pbuf_len(page_id) == 0 {
-        return Ok(0);
-    }
-    s.advise_pbuf(page_id, 0, s.pbuf_len(page_id));
-    if let Some(scan) = coded {
-        let n = scan.scan_pbuf(s, page_id, query, qn2, &mut |i, d2| top.offer(i, d2));
-        XP_LEAF_ROWS.fetch_add(n as u64, Ordering::Relaxed);
-        return Ok(n);
-    }
-    let ids = s.pbuf_ids(page_id);
-    let n = ids.len();
-    XP_LEAF_ROWS.fetch_add(n as u64, Ordering::Relaxed);
-    for row in ids {
-        if let Some(distance) = score(row, None, top.limit())? {
-            top.offer(row, distance);
-        }
-    }
-    Ok(n)
 }
 
 #[cfg(test)]

@@ -9,7 +9,8 @@ use crate::index::tree_pbuf_all::pbuf_all;
 use crate::index::tree_resid::RowSrc;
 use crate::index::tree_store::{Kind, TreeStore};
 
-pub const TREE_LEAF_CAPACITY: usize = crate::index::tree_search_knobs::parse_cap(option_env!("ENN_LEAF_CAP"), 64);
+pub const TREE_LEAF_CAPACITY: usize =
+    crate::index::tree_search_knobs::parse_cap(option_env!("ENN_LEAF_CAP"), 64);
 pub const TREE_FANOUT: usize = 16;
 pub const TREE_CENTROID_STRIDE: u32 = 16;
 
@@ -201,7 +202,7 @@ impl Tree {
             let child = s.ids(cur)[slot];
             if !replay && s.pbuf_on() && s.route_child_is_leaf(cur, slot) {
                 debug_assert!(s.is_leaf(child), "route leaf bit stale at {cur}");
-                let n = s.pbuf_push(cur, row, v);
+                let n = s.pbuf_push(cur, row, v, slack);
                 self.header.indexed_rows += 1;
                 if n >= s.pbuf_cap(cur) {
                     self.pbuf_flush(cur)?;

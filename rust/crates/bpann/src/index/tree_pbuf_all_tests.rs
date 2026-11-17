@@ -74,7 +74,7 @@ fn punched_buffers_keep_every_row_and_free_taken_pages() {
     assert_eq!(t.leaf_row_ids(), (0..n as u32).collect::<Vec<u32>>());
     t.assert_counts_consistent();
     let root = t.header.root_page_id;
-    let _ = t.store.pbuf_push(root, 7, &row(7, d));
+    let _ = t.store.pbuf_push(root, 7, &row(7, d), 0.0);
     let _ = t.store.pbuf_take(root);
     let first = t.store.pbuf_region_bytes(root, 1);
     assert!(first.iter().all(|&b| b == 0), "taken page not punched");
