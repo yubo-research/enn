@@ -127,7 +127,6 @@ impl Tree {
         let path = self.index_dir.join(STAMP_FILE);
         let _ = fs::remove_file(&path);
         if !self.rows_cached || !self.store.is_named_in(&self.index_dir) {
-            self.pbuf_flush_all()?;
             return self.persist();
         }
         persist_header_without_pages(&self.index_dir, &self.header)?;

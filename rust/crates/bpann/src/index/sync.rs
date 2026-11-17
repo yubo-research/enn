@@ -43,10 +43,6 @@ impl Clone for IncrementalIndex {
 const ADD_ADVISE_BATCH: usize = 32;
 const ADVISE_HOT_GROUPS: u32 = 32;
 const ADVISE_FAULTS_PER_GROUP: u64 = ADD_ADVISE_BATCH as u64 / 4;
-fn advise_mode() -> &'static str {
-    static F: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    F.get_or_init(|| std::env::var("ENN_ADVISE").unwrap_or_default())
-}
 
 fn major_faults() -> u64 {
     let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
@@ -64,11 +60,7 @@ struct AdviseGate {
 
 impl AdviseGate {
     fn wanted(&mut self) -> bool {
-        match advise_mode() {
-            "off" => false,
-            "always" => true,
-            _ => self.observe(major_faults()),
-        }
+        self.observe(major_faults())
     }
 
     fn observe(&mut self, f: u64) -> bool {
@@ -219,18 +211,10 @@ impl IncrementalIndex {
             }
             bpann_row_to_f32(train_x.mmap_row_slice(row)?, scale_x, x_scale, &mut v);
             v.resize(tree_dim, 0.0);
-            let exact = |r: u32, out: &mut Vec<f32>| {
-                let Ok(x) = train_x.mmap_row_slice(r as usize) else {
-                    return false;
-                };
-                bpann_row_to_f32(x, scale_x, x_scale, out);
-                out.resize(tree_dim, 0.0);
-                true
-            };
             match self.tree.as_mut() {
                 Some(tree) => {
-                    tree.insert_row_src(row as u32, &v, Some(&exact))?;
-                    self.morph.advance_src(tree, Some(&exact));
+                    tree.insert_row(row as u32, &v)?;
+                    self.morph.advance(tree);
                 }
                 None => {
                     self.tree = Some(Tree::new_tree(

@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::OnceLock;
 
 use crate::index::tree_store::TreeStore;
 
@@ -15,9 +14,7 @@ thread_local! {
 }
 
 pub fn count_parents_enabled() -> bool {
-    static ENV: OnceLock<bool> = OnceLock::new();
     FORCED.load(Ordering::Relaxed)
-        || *ENV.get_or_init(|| std::env::var("ENN_COUNT_PARENTS").is_ok_and(|v| v == "1"))
 }
 
 pub fn set_count_parents(value: bool) {

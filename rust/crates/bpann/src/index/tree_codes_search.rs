@@ -4,7 +4,7 @@ use crate::distance::{bpann_row_to_f32, l2_sq_f32};
 use crate::error::BpannError;
 use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
-use crate::index::tree_codes::{code_extra, coded_sq_l2, nib_sq_l2};
+use crate::index::tree_codes::{code_extra, coded_sq_l2};
 use crate::index::tree_search::{search_tree, search_tree_scored, F32_WALKS};
 use crate::index::tree_store::{TreeStore, SLOT_ENTRIES};
 
@@ -77,7 +77,6 @@ pub struct CodedScan {
     d2s: Vec<f32>,
     err_max: f32,
     pub(super) advised: bool,
-    shifted: Vec<f32>,
 }
 
 impl CodedScan {
@@ -110,25 +109,6 @@ impl CodedScan {
         n
     }
 
-    pub(super) fn scan_pbuf(
-        &mut self,
-        s: &TreeStore,
-        page: u32,
-        query: (&[f32], f32),
-        pick: crate::index::tree_pbuf_tag::TagPick,
-        offer: &mut impl FnMut(u32, f64),
-    ) -> usize {
-        let hits = s.pbuf_scan(page, query, pick);
-        for &(row, d2, e) in &hits {
-            self.err_max = self.err_max.max(e);
-            let i = self.locs.len() as u32;
-            self.locs.push((row, page, u32::MAX, e));
-            self.d2s.push(d2);
-            offer(i, f64::from(d2));
-        }
-        hits.len()
-    }
-
     #[inline(always)]
     fn scan_rows(
         &mut self,
@@ -137,17 +117,7 @@ impl CodedScan {
         offer: &mut impl FnMut(u32, f64),
         ids: impl Iterator<Item = u32>,
     ) -> usize {
-        if s.resid() {
-            let mut q = std::mem::take(&mut self.shifted);
-            let qn2 = s.shift_query(at.0, at.1, &mut q);
-            let n = self.scan_with(s, (at.0, &q, qn2), offer, ids, nib_sq_l2);
-            self.shifted = q;
-            n
-        } else if s.nib() {
-            self.scan_with(s, at, offer, ids, nib_sq_l2)
-        } else {
-            self.scan_with(s, at, offer, ids, coded_sq_l2)
-        }
+        self.scan_with(s, at, offer, ids, coded_sq_l2)
     }
 
     #[inline(always)]
@@ -224,7 +194,7 @@ pub fn search_tree_coded(
     }
     let mut out = exact_rows(&need, query, store)?;
     let stopped = F32_WALKS.budget_stops.load(Ordering::Relaxed) > stops_before;
-    if !stopped && refine_more_enabled() {
+    if !stopped {
         let unvisited = if top.len() >= pool {
             top.last().map_or(0.0, |p| (p.1 as f32).sqrt())
         } else {
@@ -261,23 +231,6 @@ fn exact_rows(
         out.push((row, l2_sq_f32(&query[..n], &buf[..n])));
     }
     Ok(out)
-}
-
-static REFINE_MORE: AtomicU64 = AtomicU64::new(u64::MAX);
-
-pub fn refine_more_enabled() -> bool {
-    match REFINE_MORE.load(Ordering::Relaxed) {
-        u64::MAX => {
-            let on = std::env::var("ENN_REFINE_MORE").as_deref() != Ok("0");
-            REFINE_MORE.store(u64::from(on), Ordering::Relaxed);
-            on
-        }
-        v => v != 0,
-    }
-}
-
-pub fn set_refine_more(value: bool) {
-    REFINE_MORE.store(u64::from(value), Ordering::Relaxed);
 }
 
 fn refine_more(

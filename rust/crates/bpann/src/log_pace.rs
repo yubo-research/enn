@@ -1,11 +1,6 @@
 pub(crate) const KICK_BYTES: usize = 1 << 20;
 pub(crate) const DROP_ALIGN_BYTES: usize = 2 << 20;
 
-pub(crate) fn enabled() -> bool {
-    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| std::env::var("ENN_LOG_PACE").as_deref() != Ok("0"))
-}
-
 pub(crate) fn kick(fd: i32, kicked: &mut usize, head: usize) {
     let end = head / KICK_BYTES * KICK_BYTES;
     if end <= *kicked {

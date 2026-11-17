@@ -3,11 +3,6 @@ use crate::index::tree_store::{Kind, TreeStore, LEN_MASK, META_HDR_WORDS, NO_PAR
 
 pub const SIB_BLOCK: usize = 16;
 
-fn sib_blocks_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("ENN_SIB_BLOCKS").map_or(true, |v| v != "0"))
-}
-
 impl TreeStore {
     pub(super) fn alloc_tagged(&mut self, tag: u32) -> Result<u32, BpannError> {
         if self.num_pages == self.capacity {
@@ -27,7 +22,6 @@ impl TreeStore {
         if tag == crate::index::tree_store::kind_tag(Kind::Leaf) {
             self.mirror_ids(id, &[]);
         } else if tag != 0 {
-            self.clear_pbuf_word(id);
             self.mirror_clear(id);
         }
         Ok(id)
@@ -39,14 +33,10 @@ impl TreeStore {
 
     pub fn mark_free(&mut self, id: u32) {
         self.meta_words_mut(id)[0] = 0;
-        self.clear_pbuf_word(id);
         self.mirror_clear(id);
     }
 
     pub fn alloc_near(&mut self, kind: Kind, near: &[u32]) -> Result<u32, BpannError> {
-        if !sib_blocks_enabled() {
-            return self.alloc(kind);
-        }
         let mut tried: Vec<usize> = Vec::new();
         for &sib in near {
             let b = sib as usize / SIB_BLOCK;

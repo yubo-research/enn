@@ -116,19 +116,3 @@ pub fn patience_for(p: f64, indexed_rows: usize) -> usize {
     }
     ((p * (indexed_rows.max(1) as f64).ln()).ceil() as usize).max(1)
 }
-
-pub(crate) const fn parse_cap(v: Option<&str>, default: usize) -> usize {
-    let Some(v) = v else { return default };
-    let b = v.as_bytes();
-    let (mut i, mut n) = (0, 0usize);
-    while i < b.len() {
-        assert!(
-            b[i].is_ascii_digit(),
-            "ENN_LEAF_CAP must be a decimal integer"
-        );
-        n = n * 10 + (b[i] - b'0') as usize;
-        i += 1;
-    }
-    assert!(n >= 8, "ENN_LEAF_CAP must be >= 8");
-    n
-}

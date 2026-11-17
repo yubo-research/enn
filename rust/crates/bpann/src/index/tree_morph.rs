@@ -4,7 +4,6 @@ use crate::distance::l2_sq_f32;
 use crate::index::split::weighted_mean;
 use crate::index::tree::{Tree, TREE_FANOUT, TREE_LEAF_CAPACITY};
 use crate::index::tree_counts::dist;
-use crate::index::tree_resid::RowSrc;
 
 thread_local! {
     static PROJ: RefCell<Vec<(f32, usize)>> = const { RefCell::new(Vec::new()) };
@@ -12,32 +11,8 @@ thread_local! {
 
 pub const MORPH_LAPS: usize = 16;
 
-fn morph_laps() -> usize {
-    static LAPS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *LAPS.get_or_init(|| {
-        std::env::var("ENN_MORPH_LAPS")
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(MORPH_LAPS)
-    })
-}
-
 pub const MORPH_WORK_PER_ADD: usize = 6 * TREE_LEAF_CAPACITY;
 
-fn morph_always() -> bool {
-    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| std::env::var("ENN_MORPH_ALWAYS").as_deref() == Ok("1"))
-}
-
-fn morph_work() -> isize {
-    static ENV: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| {
-        std::env::var("ENN_MORPH_WORK")
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(MORPH_WORK_PER_ADD as isize)
-    })
-}
 pub const MORPH_POOL_LEAVES: usize = 2 * TREE_FANOUT;
 
 #[derive(Clone, Debug, Default)]
@@ -50,7 +25,7 @@ pub struct Morph {
 
 impl Morph {
     pub fn schedule(&mut self, tree: &Tree) {
-        self.laps_left = morph_laps();
+        self.laps_left = MORPH_LAPS;
         self.slots_left = if self.laps_left > 0 {
             tree.num_pages()
         } else {
@@ -63,17 +38,10 @@ impl Morph {
     }
 
     pub fn advance(&mut self, tree: &mut Tree) {
-        self.advance_src(tree, None)
-    }
-
-    pub fn advance_src(&mut self, tree: &mut Tree, src: RowSrc) {
-        if !self.active() && morph_always() {
-            self.schedule(tree);
-        }
         if !self.active() {
             return;
         }
-        self.credit += morph_work();
+        self.credit += MORPH_WORK_PER_ADD as isize;
         while self.credit > 0 {
             let Some(page) = self.next_internal(tree) else {
                 break;
@@ -82,13 +50,10 @@ impl Morph {
                 .store
                 .parent(page)
                 .is_some_and(|p| small_subtree_leaves(tree, p).is_some());
-            if tree.store.pbuf_on() && !covered && tree.pbuf_flush_subtree(page).is_err() {
-                break;
-            }
             let work = if covered {
                 0
             } else {
-                repartition_leaves(tree, page, src) + repartition_internal(tree, page)
+                repartition_leaves(tree, page) + repartition_internal(tree, page)
             };
             self.credit -= work.max(1) as isize;
         }
@@ -261,7 +226,7 @@ fn runs(sizes: impl Iterator<Item = usize>) -> Vec<Vec<usize>> {
         .collect()
 }
 
-fn repartition_leaves(tree: &mut Tree, page: u32, src: RowSrc) -> usize {
+fn repartition_leaves(tree: &mut Tree, page: u32) -> usize {
     let d = tree.store.num_dim();
     let deep = small_subtree_leaves(tree, page);
     let leaves = deep.clone().unwrap_or_else(|| {
@@ -295,13 +260,7 @@ fn repartition_leaves(tree: &mut Tree, page: u32, src: RowSrc) -> usize {
     }
     let mut coded = Vec::new();
     for &leaf in &leaves {
-        let ids = tree.store.ids(leaf).to_vec();
-        coded.extend_from_slice(
-            &tree
-                .store
-                .exact_moved(leaf, &ids, src)
-                .unwrap_or_else(|| tree.store.leaf_code_bytes(leaf)),
-        );
+        coded.extend_from_slice(&tree.store.leaf_code_bytes(leaf));
     }
     for ((&id, group), c) in leaves.iter().zip(groups).zip(centers) {
         let Some((parent, slot)) = slot_in_parent(tree, id) else {
@@ -315,7 +274,7 @@ fn repartition_leaves(tree: &mut Tree, page: u32, src: RowSrc) -> usize {
             id,
             mine.iter().map(|p| dist(p, &c)).fold(0.0, f32::max) + slack,
         );
-        let rb = s.moved_rb();
+        let rb = s.code_rb();
         let bytes: Vec<u8> = group
             .iter()
             .flat_map(|&i| coded[i * rb..(i + 1) * rb].iter().copied())

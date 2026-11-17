@@ -1,40 +1,19 @@
-use std::sync::atomic::{AtomicU8, Ordering};
-
-use crate::index::tree_codes::{code_hdr, code_page_bytes, page_row_bytes};
+use crate::index::tree_codes::{code_page_bytes, code_row_bytes, CODE_PAGE_HEADER};
 use crate::index::tree_store::{TreeStore, SLOT_ENTRIES};
 
 const MIRROR: u32 = 0x1D5_0001;
 const MAGIC_AT: usize = 4;
 const TAIL_BYTES: usize = SLOT_ENTRIES * 4;
 
-static LEAF_IDS: AtomicU8 = AtomicU8::new(2);
-
-pub fn leaf_ids_enabled() -> bool {
-    match LEAF_IDS.load(Ordering::Relaxed) {
-        2 => {
-            let on = std::env::var("ENN_LEAF_IDS").map_or(true, |v| v != "0");
-            LEAF_IDS.store(u8::from(on), Ordering::Relaxed);
-            on
-        }
-        v => v != 0,
-    }
-}
-
-pub fn set_leaf_ids(value: bool) {
-    LEAF_IDS.store(u8::from(value), Ordering::Relaxed);
-}
-
 fn tail_offset(num_dim: usize) -> usize {
-    code_hdr(num_dim) + SLOT_ENTRIES * page_row_bytes(num_dim)
+    CODE_PAGE_HEADER + SLOT_ENTRIES * code_row_bytes(num_dim)
 }
 
 const ONE_PAGE: usize = 4096;
 
-const MULTI_PAGE_TAIL: bool = crate::index::tree::TREE_LEAF_CAPACITY > 64;
-
 pub fn tail_fits(num_dim: usize) -> bool {
     let bytes = code_page_bytes(num_dim);
-    (bytes == ONE_PAGE || MULTI_PAGE_TAIL) && tail_offset(num_dim) + TAIL_BYTES <= bytes
+    bytes == ONE_PAGE && tail_offset(num_dim) + TAIL_BYTES <= bytes
 }
 
 const HINT_KNOWN: u16 = 1 << 15;
@@ -53,7 +32,7 @@ impl LeafTest {
 
     pub(super) fn new(s: &TreeStore, coded: bool) -> Self {
         Self {
-            on: coded && leaf_ids_enabled() && tail_fits(s.num_dim),
+            on: coded && tail_fits(s.num_dim),
         }
     }
 
@@ -122,7 +101,7 @@ impl TreeStore {
     }
 
     pub fn leaf_id_tail(&self, id: u32) -> Option<&[u8]> {
-        if !leaf_ids_enabled() || !tail_fits(self.num_dim) {
+        if !tail_fits(self.num_dim) {
             return None;
         }
         if self.mirror_word(id, MAGIC_AT) != MIRROR {
@@ -147,7 +126,7 @@ impl TreeStore {
     }
 
     pub(super) fn coded_extent(&self, id: u32, used: usize) -> usize {
-        if leaf_ids_enabled() && tail_fits(self.num_dim) && self.is_leaf(id) {
+        if tail_fits(self.num_dim) && self.is_leaf(id) {
             tail_offset(self.num_dim) + TAIL_BYTES
         } else {
             used

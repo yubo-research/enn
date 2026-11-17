@@ -240,10 +240,6 @@ pub fn set_prefetch_pages(value: usize) {
     ennbo_bpann::index::tree_search::set_prefetch_pages(value);
 }
 
-pub fn set_leaf_ids(value: bool) {
-    ennbo_bpann::index::tree_leaf_ids::set_leaf_ids(value);
-}
-
 pub fn set_meta_prefetch(value: usize) {
     ennbo_bpann::index::tree_search::set_meta_prefetch(value);
 }
@@ -340,27 +336,6 @@ pub fn take_walk_trace() -> WalkTrace {
 pub fn take_parent_counts() -> (u64, u64, u64, u64) {
     ennbo_bpann::index::tree_parent_count::take_parent_counts()
 }
-
-pub fn take_pbuf_stats() -> (u64, u64, u64, u64) {
-    ennbo_bpann::index::tree_pbuf::take_pbuf_stats()
-}
-
-pub fn take_pbuf_fault_split() -> (u64, u64, u64, u64, u64) {
-    ennbo_bpann::index::tree_pbuf_all::take_pbuf_fault_split()
-}
-
-pub fn take_pbuf_cold() -> Vec<u64> {
-    ennbo_bpann::index::tree_pbuf_cold::take_pbuf_cold()
-}
-
-pub fn take_pbuf_detail() -> (u64, u64, u64) {
-    ennbo_bpann::index::tree_pbuf::take_pbuf_detail()
-}
-
-pub use ennbo_bpann::index::tree_pbuf_diag::{set_pbuf_diag_targets, take_pbuf_diag, PbufDiagRow};
-pub use ennbo_bpann::index::tree_pbuf_rehome::take_pbuf_rehome_stats;
-pub use ennbo_bpann::index::tree_reparent::take_reparent_stats;
-pub use ennbo_bpann::index::tree_pbuf_tag::take_pbuf_tag_stats;
 
 pub fn set_count_parents(value: bool) {
     ennbo_bpann::index::tree_parent_count::set_count_parents(value);

@@ -121,7 +121,6 @@ rec = {
     "leaf_coef": LEAF,
     "intrinsic": INTRINSIC,
     "code_extra": os.environ.get("CODE_EXTRA", "default"),
-    "code4": os.environ.get("ENN_CODE4", "0"),
     "leaf_coef_read": float(leaf_coefficient()) if leaf_coefficient else -1.0,
     "add_us_row": 1e6 * (t_add + t_sync) / N,
     "recall_at_10": float(recall),

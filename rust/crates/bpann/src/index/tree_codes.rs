@@ -4,10 +4,6 @@ use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 use crate::error::BpannError;
-pub use crate::index::tree_nib::{
-    code4_enabled, code_hdr, decode_nib_row, encode_nib_row, encode_page_row, nib_codes, nib_resid,
-    nib_row_bytes, nib_sq_l2, page_row_bytes, page_sq_l2, resid_codes, set_code4, set_code4_resid,
-};
 use crate::index::tree_store::{TreeStore, CODES_FILE, META_HDR_WORDS, META_WORDS, SLOT_ENTRIES};
 use crate::index::tree_store_files::{named_file, scratch_file};
 
@@ -15,8 +11,6 @@ pub(super) const CODE_PAGE_HEADER: usize = 64;
 const CODE_ALIGN: usize = 4096;
 pub(super) const ROW_HEADER: usize = 8;
 const VALID: u32 = 0xC0DE_0001;
-const VALID4: u32 = 0xC0DE_0004;
-const VALID5: u32 = 0xC0DE_0005;
 const CODE_ADVICE_KEY: u32 = 1 << 31;
 const META_ADVICE_KEY: u32 = 1 << 30;
 const NODE_ADVICE_KEY: u32 = 1 << 29;
@@ -59,17 +53,11 @@ pub fn code_row_bytes(num_dim: usize) -> usize {
 }
 
 pub(super) fn page_bytes_hdr(hdr: usize, row_bytes: usize) -> usize {
-    (hdr + SLOT_ENTRIES * row_bytes + LARGE_LEAF_TAIL).div_ceil(CODE_ALIGN) * CODE_ALIGN
+    (hdr + SLOT_ENTRIES * row_bytes).div_ceil(CODE_ALIGN) * CODE_ALIGN
 }
 
-const LARGE_LEAF_TAIL: usize = if crate::index::tree::TREE_LEAF_CAPACITY > 64 {
-    SLOT_ENTRIES * 4
-} else {
-    0
-};
-
 pub fn code_page_bytes(num_dim: usize) -> usize {
-    page_bytes_hdr(code_hdr(num_dim), page_row_bytes(num_dim))
+    page_bytes_hdr(CODE_PAGE_HEADER, code_row_bytes(num_dim))
 }
 
 pub fn encode_row(v: &[f32], out: &mut [u8]) {
@@ -169,16 +157,12 @@ pub(super) fn create_codes_file(dir: &Path, named: bool) -> Result<File, BpannEr
 impl TreeStore {
     #[inline]
     pub fn code_rb(&self) -> usize {
-        if self.nib {
-            nib_row_bytes(self.num_dim)
-        } else {
-            code_row_bytes(self.num_dim)
-        }
+        code_row_bytes(self.num_dim)
     }
 
     #[inline]
     pub fn code_page_len(&self) -> usize {
-        page_bytes_hdr(self.code_hdr(), self.code_rb())
+        page_bytes_hdr(CODE_PAGE_HEADER, self.code_rb())
     }
 
     pub(super) fn code_page_range(&self, id: u32) -> std::ops::Range<usize> {
@@ -195,57 +179,34 @@ impl TreeStore {
     pub fn codes_valid(&self, id: u32) -> bool {
         let r = self.code_page_range(id);
         let h = &self.codes[r.start..r.start + 4];
-        u32::from_le_bytes([h[0], h[1], h[2], h[3]]) == self.valid_word()
-    }
-
-    fn valid_word(&self) -> u32 {
-        if self.resid {
-            VALID5
-        } else if self.nib {
-            VALID4
-        } else {
-            VALID
-        }
+        u32::from_le_bytes([h[0], h[1], h[2], h[3]]) == VALID
     }
 
     pub fn code_row(&self, id: u32, slot: usize) -> &[u8] {
         let rb = self.code_rb();
-        let start = self.code_page_range(id).start + self.code_hdr() + slot * rb;
+        let start = self.code_page_range(id).start + CODE_PAGE_HEADER + slot * rb;
         &self.codes[start..start + rb]
     }
 
     pub fn code_rows(&self, id: u32, n: usize) -> &[u8] {
-        let start = self.code_page_range(id).start + self.code_hdr();
+        let start = self.code_page_range(id).start + CODE_PAGE_HEADER;
         &self.codes[start..start + n * self.code_rb()]
     }
 
     pub(super) fn set_codes_valid(&mut self, id: u32, valid: bool) {
-        let word = if valid { self.valid_word() } else { 0 };
+        let word = if valid { VALID } else { 0 };
         self.code_page_mut(id)[..4].copy_from_slice(&word.to_le_bytes());
     }
 
     pub(super) fn encode_code_row(&mut self, id: u32, slot: usize, v: &[f32]) {
-        if self.resid && self.is_leaf(id) {
-            return self.encode_resid_row(id, slot, v);
-        }
-        let nib = self.nib;
         let rb = self.code_rb();
-        let start = self.code_hdr() + slot * rb;
-        encode_page_row(v, &mut self.code_page_mut(id)[start..start + rb], nib);
+        let start = CODE_PAGE_HEADER + slot * rb;
+        encode_row(v, &mut self.code_page_mut(id)[start..start + rb]);
     }
 
     pub fn leaf_rows(&self, id: u32) -> Vec<f32> {
         let mut out = Vec::with_capacity(self.len(id) * self.num_dim);
-        if self.resid {
-            self.decode_leaf_resid(id, &mut out);
-            return out;
-        }
-        let nib = self.nib;
         for slot in 0..self.len(id) {
-            if nib {
-                decode_nib_row(self.code_row(id, slot), self.num_dim, &mut out);
-                continue;
-            }
             let (scale, _, codes) = decode_header(self.code_row(id, slot));
             out.extend(codes.iter().map(|&c| scale * f32::from(c)));
         }
@@ -253,10 +214,6 @@ impl TreeStore {
     }
 
     pub fn leaf_err(&self, id: u32) -> f32 {
-        if self.nib {
-            return (0..self.len(id))
-                .fold(0.0, |m, slot| m.max(nib_resid(self.code_row(id, slot))));
-        }
         let half = 0.5 * (self.num_dim as f32).sqrt();
         (0..self.len(id)).fold(0.0, |m, slot| {
             m.max(half * decode_header(self.code_row(id, slot)).0)
@@ -346,10 +303,10 @@ impl TreeStore {
         let rb = self.code_rb();
         let _ = self
             .codes
-            .advise_range(memmap2::Advice::WillNeed, start, self.code_hdr());
+            .advise_range(memmap2::Advice::WillNeed, start, CODE_PAGE_HEADER);
         let _ = self.codes.advise_range(
             memmap2::Advice::WillNeed,
-            start + self.code_hdr() + slot * rb,
+            start + CODE_PAGE_HEADER + slot * rb,
             rb,
         );
     }
@@ -359,7 +316,7 @@ impl TreeStore {
             return;
         }
         let r = self.code_page_range(id);
-        let used = self.coded_extent(id, self.code_hdr() + self.len(id) * self.code_rb());
+        let used = self.coded_extent(id, CODE_PAGE_HEADER + self.len(id) * self.code_rb());
         let _ = self
             .codes
             .advise_range(memmap2::Advice::WillNeed, r.start, used.min(r.len()));

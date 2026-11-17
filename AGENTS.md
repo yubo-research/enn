@@ -7,7 +7,8 @@
 Macros the user may use to communicate with you more efficiently:
 DCC: Don't Change Code. Just discuss.
 
-Use two-column, academic style for reports.
+Use two-column, academic style for reports. Put the abstract in the left column (rather than spanning the
+full width of the page).
 Put reports in `reports/`.
   - Keep both the .tex and .pdf file in reports/. Remove the other, intermediate TeX-compilation files.
 

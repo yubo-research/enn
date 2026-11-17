@@ -40,15 +40,10 @@ pub(super) fn kind_tag(kind: Kind) -> u32 {
         Kind::Internal => 2 << 24,
     }
 }
-fn mmap_append_forced() -> bool {
-    static FORCED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *FORCED.get_or_init(|| std::env::var_os("ENN_MMAP_APPEND").is_some())
-}
-
 #[cfg(unix)]
 fn append_whole_pages(file: &File, off: usize, v: &[f32]) -> bool {
     use std::os::unix::fs::FileExt;
-    if !(v.len() * 4).is_multiple_of(PAGE_BYTES) || mmap_append_forced() {
+    if !(v.len() * 4).is_multiple_of(PAGE_BYTES) {
         return false;
     }
     let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
@@ -73,12 +68,8 @@ pub struct TreeStore {
     pub(super) slots: MmapMut,
     pub(super) codes_file: File,
     pub(super) codes: MmapMut,
-    pub(super) nib: bool,
-    pub(super) resid: bool,
     pub(super) residency: Residency,
     pub(super) icache: InternalCache,
-    pub(super) pbuf: crate::index::tree_pbuf::PBuf,
-    pub(super) lgraph: crate::index::tree_lgraph::LeafGraph,
 }
 
 impl TreeStore {
@@ -119,7 +110,6 @@ impl TreeStore {
             let ids = self.ids(id).to_vec();
             self.mirror_ids(id, &ids);
         } else {
-            self.clear_pbuf_word(id);
             self.mirror_clear(id);
         }
     }
@@ -129,8 +119,6 @@ impl TreeStore {
         self.meta = map(&self.files.0, capacity * META_WORDS * 4)?;
         self.slots = map(&self.files.1, capacity * self.slot_words * 4)?;
         self.codes = map(&self.codes_file, capacity * self.code_page_len())?;
-        self.pbuf.grow(capacity)?;
-        self.lgraph.grow(capacity)?;
         self.capacity = capacity;
         self.update_tracking();
         Ok(())
@@ -246,14 +234,6 @@ impl TreeStore {
                 *w = v.to_bits();
             }
         }
-        if self.resid && self.is_leaf(id) && n > 0 {
-            let d = self.num_dim;
-            let mut mean = vec![0.0f32; d];
-            for v in block.chunks_exact(d) {
-                mean.iter_mut().zip(v).for_each(|(m, x)| *m += x / n as f32);
-            }
-            self.set_anchor(id, &mean);
-        }
         for (slot, v) in block.chunks_exact(self.num_dim).enumerate() {
             self.encode_code_row(id, slot, v);
         }
@@ -298,9 +278,6 @@ impl TreeStore {
             self.set_route(id, n, entry_id, r);
         }
         if self.codes_valid(id) {
-            if self.resid && n == 0 && self.is_leaf(id) {
-                self.set_anchor(id, v);
-            }
             self.encode_code_row(id, n, v);
         }
         if self.is_leaf(id) {
@@ -350,12 +327,6 @@ impl TreeStore {
         Residency::copy_released(&self.slots, &mut out.slots, slot_len);
         let code_len = self.num_pages * self.code_page_len();
         out.codes[..code_len].copy_from_slice(&self.codes[..code_len]);
-        out.pbuf = self
-            .pbuf
-            .clone_into(&self.dir, self.capacity, self.num_pages)?;
-        out.lgraph = self
-            .lgraph
-            .clone_into(&self.dir, self.capacity, self.num_pages)?;
         Ok(out)
     }
 }

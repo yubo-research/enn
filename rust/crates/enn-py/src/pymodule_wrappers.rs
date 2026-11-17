@@ -55,33 +55,6 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_parent_counts_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_count_parents_py, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_util::take_pbuf_stats_py, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_util::take_pbuf_detail_py, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_walk_knobs::take_pbuf_tag_stats_py,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_walk_knobs::set_pbuf_diag_targets_py,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_walk_knobs::take_pbuf_diag_py,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_walk_knobs::take_pbuf_rehome_stats_py,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_walk_knobs::take_reparent_stats_py,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(crate::py_util::take_pbuf_cold_py, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::py_util::take_pbuf_fault_split_py,
-        m
-    )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_phase_ns_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_f32_rerank_skip_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_prefix_reuse_py, m)?)?;
@@ -97,7 +70,6 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_prefetch_pages_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_meta_prefetch_py, m)?)?;
-    m.add_function(wrap_pyfunction!(crate::py_util::set_leaf_ids_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_leaf_codes_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_code_extra_py, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::set_code_prefetch_py, m)?)?;

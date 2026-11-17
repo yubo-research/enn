@@ -294,9 +294,6 @@ mod tests {
     #[test]
     fn children_of_a_node_share_few_id_blocks() {
         use crate::index::tree_sib::SIB_BLOCK;
-        if std::env::var("ENN_SIB_BLOCKS").is_ok_and(|v| v == "0") {
-            return;
-        }
         let (n, dim) = (30_000usize, 3usize);
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(11);
         let vs: Vec<f32> = (0..n * dim).map(|_| rng.gen::<f32>()).collect();

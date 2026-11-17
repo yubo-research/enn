@@ -64,18 +64,8 @@ fn release_map(map: &MmapMut) {
     }
 }
 
-fn env_budget_cap() -> Option<usize> {
-    static CAP: OnceLock<Option<usize>> = OnceLock::new();
-    *CAP.get_or_init(|| {
-        std::env::var("ENN_RESIDENT_BUDGET_BYTES")
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-    })
-}
-
 impl Residency {
     pub fn new(budget: usize) -> Self {
-        let budget = env_budget_cap().map_or(budget, |cap| budget.min(cap));
         Self {
             bits: Vec::new(),
             advised: (0..(1usize << ADVISED_BITS_LOG2) / 64)

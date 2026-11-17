@@ -8,11 +8,6 @@ use crate::index::tree_residency::{Residency, DEFAULT_RESIDENT_BUDGET_BYTES};
 
 pub(crate) const MMAP_GROW_ROWS: usize = 64;
 
-fn linear_grow() -> bool {
-    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| std::env::var("ENN_LOG_GROW_LINEAR").as_deref() == Ok("1"))
-}
-
 pub struct MmapColumnStore {
     pub path: PathBuf,
     pub ncols: usize,
@@ -44,7 +39,7 @@ impl MmapColumnStore {
         if need_bytes <= self.mmap.len() {
             return Ok(());
         }
-        let step = if linear_grow() { 0 } else { self.nrows / 8 };
+        let step = self.nrows / 8;
         let grow_rows = (need_rows - self.nrows).max(MMAP_GROW_ROWS).max(step);
         let new_len = self.bytes_for_rows(self.nrows + grow_rows);
 
@@ -166,30 +161,21 @@ impl MmapColumnStore {
             }
         }
         self.nrows = new_nrows;
-        crate::index::tree_pbuf_cold::timed(0, || self.drop_old_log_pages());
+        self.drop_old_log_pages();
         Ok(())
     }
 
     fn drop_old_log_pages(&mut self) {
         use std::os::unix::io::AsRawFd;
-        if std::env::var_os("BPANN_KEEP_LOG_CACHE").is_some() {
-            return;
-        }
         let rb = self.row_bytes();
         let fd = self.file.as_raw_fd();
-        let range = if crate::log_pace::enabled() {
-            crate::log_pace::kick(fd, &mut self.kicked_bytes, self.nrows * rb);
-            crate::log_pace::drop_range(
-                self.dropped_bytes,
-                self.nrows * rb,
-                self.drop_lag_bytes,
-                self.drop_step_bytes,
-            )
-        } else {
-            let upto = self.nrows.saturating_sub(self.drop_lag_bytes / rb);
-            (upto >= self.dropped_rows + self.drop_step_bytes / rb)
-                .then_some((self.dropped_rows * rb, upto * rb))
-        };
+        crate::log_pace::kick(fd, &mut self.kicked_bytes, self.nrows * rb);
+        let range = crate::log_pace::drop_range(
+            self.dropped_bytes,
+            self.nrows * rb,
+            self.drop_lag_bytes,
+            self.drop_step_bytes,
+        );
         let Some((off, end)) = range else {
             return;
         };

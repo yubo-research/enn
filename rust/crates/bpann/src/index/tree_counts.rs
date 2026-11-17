@@ -94,7 +94,6 @@ impl Tree {
             self.coordinate_absolute_error * maximum + f32::MIN_POSITIVE as f64;
         for page in 0..self.num_pages() as u32 {
             if !self.store.is_leaf(page) {
-                self.store.pbuf_rescale(page, ratio);
                 for row in self.store.block_mut(page).chunks_mut(dim) {
                     for (v, &r) in row.iter_mut().zip(ratio) {
                         *v = (f64::from(*v) * r) as f32;
@@ -127,7 +126,7 @@ impl Tree {
         let n = if self.store.is_leaf(page) {
             self.store.len(page)
         } else {
-            let mut sum = self.store.pbuf_len(page);
+            let mut sum = 0;
             for child in self.store.ids(page).to_vec() {
                 if child as usize >= self.num_pages() {
                     return None;

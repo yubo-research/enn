@@ -7,14 +7,6 @@ from enn.enn.enn_params import ENNParams
 from evals.harness.work_dirs import fresh_work_dir
 
 
-def test_ensure_index_sync_callable():
-    rng = np.random.default_rng(0)
-    x = rng.standard_normal((8, 2))
-    y = rng.standard_normal((8, 1))
-    model = EpistemicNearestNeighbors(x, y, work_dir=fresh_work_dir())
-    model.ensure_index_sync()
-
-
 def test_ensure_index_sync_after_add_matches_fresh_posterior():
     rng = np.random.default_rng(42)
     d = 3

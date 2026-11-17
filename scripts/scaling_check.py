@@ -8,8 +8,6 @@ import time
 
 import numpy as np
 
-CACHE = sys.argv[4] if len(sys.argv) > 4 else "128000000"
-os.environ.setdefault("ENN_RESIDENT_BUDGET_BYTES", CACHE)
 from enn.enn.enn_class import EpistemicNearestNeighbors as ENN
 from enn.enn.enn_params import ENNParams
 
