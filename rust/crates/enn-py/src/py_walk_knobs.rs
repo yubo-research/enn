@@ -35,6 +35,11 @@ pub fn take_pbuf_diag_py() -> Vec<ennbo::PbufDiagRow> {
     ennbo::take_pbuf_diag()
 }
 
+#[pyfunction(name = "take_reparent_stats")]
+pub fn take_reparent_stats_py() -> (u64, u64, u64, u64) {
+    ennbo::take_reparent_stats()
+}
+
 #[pyfunction(name = "take_pbuf_rehome_stats")]
 pub fn take_pbuf_rehome_stats_py() -> (u64, u64) {
     ennbo::take_pbuf_rehome_stats()

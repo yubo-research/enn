@@ -202,6 +202,7 @@ impl Tree {
     }
 
     pub(super) fn lloyd_sweep_step(&mut self, row: u32) {
+        self.reparent_step(row);
         let k = lloyd_every();
         if k == 0
             || !row.is_multiple_of(k as u32)
@@ -246,6 +247,7 @@ impl Tree {
         let (dest, moved) = assign(&h, &g, sizes, self.store.num_dim(), true);
         if moved > 0 {
             self.rewrite(&h, &g, &dest);
+            self.retag_parents(&h.leaves);
         }
     }
 }

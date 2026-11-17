@@ -79,7 +79,7 @@ pub(super) struct Hood {
 }
 
 impl Tree {
-    fn slot_of(&self, child: u32) -> Option<(u32, usize)> {
+    pub(super) fn slot_of(&self, child: u32) -> Option<(u32, usize)> {
         let p = self.store.parent(child)?;
         let slot = self.store.ids(p).iter().position(|&c| c == child)?;
         Some((p, slot))

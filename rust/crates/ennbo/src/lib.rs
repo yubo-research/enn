@@ -359,6 +359,7 @@ pub fn take_pbuf_detail() -> (u64, u64, u64) {
 
 pub use ennbo_bpann::index::tree_pbuf_diag::{set_pbuf_diag_targets, take_pbuf_diag, PbufDiagRow};
 pub use ennbo_bpann::index::tree_pbuf_rehome::take_pbuf_rehome_stats;
+pub use ennbo_bpann::index::tree_reparent::take_reparent_stats;
 pub use ennbo_bpann::index::tree_pbuf_tag::take_pbuf_tag_stats;
 
 pub fn set_count_parents(value: bool) {

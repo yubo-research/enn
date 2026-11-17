@@ -1,0 +1,2 @@
+d10_1e5      M=64  n=10 recall 0.9980 query_s 1.757 add_us 9.15 | vs main: dloglik +0.0006 (SE 0.0021, p=0.8) dnrmse -0.00000 (p=0.98) query x1.26 add x8.20
+d10_1e6      M=64  n=10 recall 0.9635 query_s 2.604 add_us 13.64 | vs main: dloglik -0.0303 (SE 0.0082, p=0.0049) dnrmse +0.00251 (p=0.0011) query x1.13 add x9.50

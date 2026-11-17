@@ -1,0 +1,8 @@
+{"arm": "t3000", "D": 10, "n": 1000000, "add_us": 11.966158363968134, "flushes": 1005, "flush_ms": 11266.426755, "internal_q": 117.0, "q_us": 4476.546263322234, "leaves_q": 139.0, "rows_q": 41137.69666666666, "walks_q": 1.0, "tag": "1", "buf_scanned_q": 34933.04666666667, "buf_visited_q": 259797.05, "retags": 0, "orphans_q": 0.0}
+{"arm": "h300", "D": 10, "n": 1000000, "add_us": 24.758313522674143, "flushes": 11952, "flush_ms": 23744.159482, "internal_q": 67.05333333333333, "q_us": 1871.1921557163198, "leaves_q": 139.0, "rows_q": 9691.84, "walks_q": 1.0, "tag": "1", "buf_scanned_q": 3591.233333333333, "buf_visited_q": 24499.09, "retags": 0, "orphans_q": 0.0}
+{"arm": "s3000", "D": 10, "n": 1000000, "add_us": 12.17013508733362, "flushes": 999, "flush_ms": 9468.383896, "internal_q": 53.60666666666667, "q_us": 3142.9679645225406, "leaves_q": 139.0, "rows_q": 30912.736666666668, "walks_q": 1.0, "tag": "1", "buf_scanned_q": 24639.97333333333, "buf_visited_q": 142418.95, "retags": 0, "orphans_q": 0.0}
+{"arm": "hs300", "D": 10, "n": 1000000, "add_us": 26.186266595032066, "flushes": 11976, "flush_ms": 24095.363126, "internal_q": 54.67333333333333, "q_us": 1952.2887095808983, "leaves_q": 139.0, "rows_q": 9403.29, "walks_q": 1.0, "tag": "1", "buf_scanned_q": 3294.923333333333, "buf_visited_q": 20736.27666666667, "retags": 0, "orphans_q": 0.0}
+
+real	1m21.364s
+user	1m14.738s
+sys	0m4.027s

@@ -50,6 +50,7 @@ take_pbuf_tag_stats = _ext.util.take_pbuf_tag_stats
 set_pbuf_diag_targets = _ext.util.set_pbuf_diag_targets
 take_pbuf_diag = _ext.util.take_pbuf_diag
 take_pbuf_rehome_stats = _ext.util.take_pbuf_rehome_stats
+take_reparent_stats = _ext.util.take_reparent_stats
 take_pbuf_fault_split = _ext.util.take_pbuf_fault_split
 take_pbuf_cold = _ext.util.take_pbuf_cold
 take_phase_ns = _ext.util.take_phase_ns

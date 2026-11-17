@@ -73,6 +73,10 @@ pub fn pymodule_util(m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::py_walk_knobs::take_pbuf_rehome_stats_py,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::py_walk_knobs::take_reparent_stats_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(crate::py_util::take_pbuf_cold_py, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_util::take_pbuf_fault_split_py,

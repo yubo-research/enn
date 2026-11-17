@@ -29,6 +29,7 @@ mod tree_pbuf_scan;
 pub mod tree_pbuf_tag;
 pub mod tree_persist;
 pub mod tree_reassign;
+pub mod tree_reparent;
 pub mod tree_resid;
 pub mod tree_residency;
 pub(crate) mod tree_routes;

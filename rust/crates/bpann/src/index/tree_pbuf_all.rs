@@ -188,6 +188,7 @@ impl Tree {
         if n >= s.pbuf_cap(root) {
             self.pbuf_flush(root)?;
         }
+        self.reparent_step(row);
         Ok(())
     }
 
