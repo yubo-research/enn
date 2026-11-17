@@ -1,0 +1,4 @@
+s16g3    walk  ltr p50/p90 56/110 miss 0.007 pages@ltr 56 L 251 tl 6.8
+oracle   ideal ltr p50/p90 7/9 miss 0.000 pages@ltr 7 L 7 tl 6.8
+s16g3    ideal ltr p50/p90 26/77 miss 0.000 pages@ltr 26 L 36 tl 6.8
+DONE D=10 N=100000 seed=0 arm=s16g3 build 6s total 14s

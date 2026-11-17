@@ -73,9 +73,9 @@ fn reassign_full() -> bool {
     *ENV.get_or_init(|| std::env::var("ENN_REASSIGN_FULL").as_deref() == Ok("1"))
 }
 
-struct Hood {
-    leaves: Vec<u32>,
-    cents: Vec<Vec<f32>>,
+pub(super) struct Hood {
+    pub(super) leaves: Vec<u32>,
+    pub(super) cents: Vec<Vec<f32>>,
 }
 
 impl Tree {
@@ -85,13 +85,13 @@ impl Tree {
         Some((p, slot))
     }
 
-    fn centroid_of(&self, leaf: u32) -> Option<Vec<f32>> {
+    pub(super) fn centroid_of(&self, leaf: u32) -> Option<Vec<f32>> {
         let (p, slot) = self.slot_of(leaf)?;
         let d = self.store.num_dim();
         Some(self.store.block(p)[slot * d..(slot + 1) * d].to_vec())
     }
 
-    fn hood(&self, a: u32, b: u32, m: usize) -> Option<Hood> {
+    pub(super) fn hood(&self, a: u32, b: u32, m: usize) -> Option<Hood> {
         let s = &self.store;
         let d = s.num_dim();
         let p = s.parent(a)?;
@@ -148,7 +148,7 @@ impl Tree {
         }
     }
 
-    fn gather(&self, h: &Hood) -> Gathered {
+    pub(super) fn gather(&self, h: &Hood) -> Gathered {
         let s = &self.store;
         let mut g = Gathered {
             ids: Vec::new(),
@@ -181,7 +181,7 @@ impl Tree {
         let g = self.gather(&h);
         let t = prof(1, t);
         let sizes: Vec<usize> = h.leaves.iter().map(|&l| self.store.len(l)).collect();
-        let (dest, moved) = assign(&h, &g, sizes, self.store.num_dim());
+        let (dest, moved) = assign(&h, &g, sizes, self.store.num_dim(), reassign_full());
         if prof_on() {
             PROF[5].fetch_add(g.owner.len(), Ordering::Relaxed);
             PROF[6].fetch_add(moved, Ordering::Relaxed);
@@ -194,7 +194,7 @@ impl Tree {
         Ok(())
     }
 
-    fn rewrite(&mut self, h: &Hood, g: &Gathered, dest: &[usize]) {
+    pub(super) fn rewrite(&mut self, h: &Hood, g: &Gathered, dest: &[usize]) {
         let d = self.store.num_dim();
         let rb = self.store.moved_rb();
         let k = h.leaves.len();
@@ -245,7 +245,7 @@ impl Tree {
     }
 }
 
-struct Gathered {
+pub(super) struct Gathered {
     ids: Vec<u32>,
     owner: Vec<usize>,
     rows: Vec<f32>,
@@ -266,10 +266,15 @@ fn centroid_gaps(cents: &[Vec<f32>]) -> Vec<f32> {
     cc
 }
 
-fn assign(h: &Hood, g: &Gathered, mut size: Vec<usize>, d: usize) -> (Vec<usize>, usize) {
+pub(super) fn assign(
+    h: &Hood,
+    g: &Gathered,
+    mut size: Vec<usize>,
+    d: usize,
+    full: bool,
+) -> (Vec<usize>, usize) {
     let k = h.cents.len();
     let cc = centroid_gaps(&h.cents);
-    let full = reassign_full();
     let mut dest = g.owner.clone();
     let mut moved = 0usize;
     for (r, v) in g.rows.chunks_exact(d).enumerate() {

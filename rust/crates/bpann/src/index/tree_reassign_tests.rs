@@ -112,8 +112,9 @@ fn spread(t: &Tree) -> f64 {
     tot / n as f64
 }
 
-fn build(m: usize, every: usize) -> f64 {
+fn build(m: usize, every: usize, lloyd: usize, graph: bool) -> f64 {
     set_reassign(m, every);
+    crate::index::tree_lloyd::set_lloyd(lloyd, 16, 8, graph);
     let dir = TempDir::new().unwrap();
     let scale = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
     let store = store_with_rows(&dir, 3_000, scale.len(), 7);
@@ -124,14 +125,19 @@ fn build(m: usize, every: usize) -> f64 {
     assert_valid(&idx, &store, &scale);
     let s = spread(idx.tree.as_ref().unwrap());
     set_reassign(0, 0);
+    crate::index::tree_lloyd::set_lloyd(0, 16, 8, false);
     s
 }
 
 #[test]
 fn reassignment_keeps_the_tree_valid_and_tightens_leaves() {
-    let base = build(0, 0);
-    let split_only = build(16, 0);
-    let periodic = build(16, 8);
+    let base = build(0, 0, 0, false);
+    let split_only = build(16, 0, 0, false);
+    let periodic = build(16, 8, 0, false);
+    let swept = build(0, 0, 4, false);
+    let graphed = build(0, 0, 4, true);
     assert!(split_only < base, "split-time pass: {split_only} vs {base}");
     assert!(periodic < base, "periodic pass: {periodic} vs {base}");
+    assert!(swept < base, "lloyd sweep: {swept} vs {base}");
+    assert!(graphed < base, "graph sweep: {graphed} vs {base}");
 }

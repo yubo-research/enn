@@ -1,0 +1,37 @@
+# Index of evaluation harnesses in evals/meta_loop (moved from STATE.md on 2026-11-16; newest first)
+
+0257: every_0257.sh OUT arm:N:seed:M:FULL:EVERY:LLOYD (growth_0256.py counts; env PP overlay, ENN_LLOYD_PAGES, ENN_LLOYD_GRAPH, ENN_LEAF_SPLIT, NQ, D), quality_0257.sh OUT D N SEEDS "name:LLOYD_EVERY:GRAPH ..." (recall_cmp.py, 2G scope 1 CPU; stats with reassign_stats_0252.py QDIR), addcost_0257.sh OUT arm:M:FULL:EVERY:LLOYD:PAGES (capped add-only timing; env N, D), fig_0257.py DATA OUT_STEM, partition_common.py (two_means shared by growth_0256/leaf_size_0253); overlays ov_0257 (tree-searched/exact hood), ov_0257g (graph hood); Rust: tree_lloyd.rs ENN_LLOYD_EVERY/HOOD/PAGES/GRAPH, set_lloyd;
+
+0256: growth_0256.sh OUT arm:N:seed ... (growth_0256.py D N SEED WORK OUT; env ARM=r64|r64r|r256, CAP, OFFLINE=64,256,1024, LLOYD=passes, NQ, K, INTRINSIC; PYTHONPATH overlay ov_c64/ov_c256 in /home/dsweet/bench_work), fig_0256.py DATA_DIR[:DATA_DIR2...] OUT_STEM (env REC, THR; several data directories may be joined with ":", e.g. growth:growth_seeds): leaves and pages per query to the last true neighbour and to pooled recall thresholds, real walk order vs ideal centroid order vs offline partitions vs oracle.
+
+0254: leafcap_quality_0254.sh OUT D N SEEDS "256 64" (env INTRINSIC; needs wheel overlays ov_c64/ov_c256 from overlay_0252.sh, the c256 one built with ENN_LEAF_CAP=256), pair_0254.py A.jsonl B.jsonl [D N] (paired stats on shared keys), fig_0254.py CAPQ_DIR OUT_STEM [QUAL_DIR C64_1E6_JSONL]; capped sweeps via capq_0250.sh with PP= overlay and REP=, chains in reports/report-0254-data/chain*.sh (chain4b.sh = budget-30 recall at D=10 1e6 + in-session main timing, written, NOT run); Rust: ENN_LEAF_CAP build-time env, parse_cap in tree_search_knobs.rs;
+
+0253: io_screen_0253.py D N SEED WORK OUT (offline walk -> leaves/blocks/runs/util; env NQ, INTRINSIC, GAP, ENN_LEAF_EXTENT needs patch), leaf_size_0253.py D N SEED OUT (env CAPS, INTRINSIC, NQ, K), fig_0253.py DATA OUT; capq_0250.py records q_rd_ops/fd_rd_ops; capq_0250.sh env EXTENT/BLOCKREAD (need block_read.patch);
+
+0252: leaf_order_0252.sh OUT (leaf_order_0252.py D N SEED WORK OUT; env SPECS="D:N:I:SEED ...", PARTS=tree,pca,kmeans,lloyd1,lloyd3, GRAPH_M, LEAF_SPLIT, TAG, PP; offline leaf-shape/visit-order screen from tree_meta.bin), reassign_quality_0252.sh OUT D N SEEDS "M..." (env PP, INTRINSIC, EVERY, FULL), reassign_stats_0252.py QDIR (pairs vs r0 and main), reassign_time_0252.py D N SEED WORK OUT (quick in-RAM probe), overlay_0252.sh NAME (wheel overlay in /home/dsweet/bench_work), fig_0252.py DATA OUT; env REASSIGN in capq_0250.sh, TAG in stop_trace_0251.sh; Rust env ENN_REASSIGN, ENN_REASSIGN_FULL, ENN_REASSIGN_EVERY, ENN_REASSIGN_PROF, ENN_LEAF_SPLIT, ENN_MORPH_ALWAYS, ENN_MORPH_WORK;
+
+0251: stop_trace_0251.sh OUT (stop_trace_0251.py D N SEED WORK OUT; env INTRINSIC, NQ, RADIUS_W, SPECS="D:N:I ..."; offline replay of stop rules, box/oracle what-ifs), patience_quality_0251.sh OUT D N SEEDS "P... main" (env PP overlay, FIRST, INTRINSIC, QW), patience_stats_0251.py QDIR [MAIN_JSONL] (pairs vs p0 and main; D=10 main from report-0246-data/score/main.jsonl), fig_0251.py DATA OUT; env PATIENCE in recall_cmp.py and capq_0250.sh; bindings set_walk_trace/take_walk_trace, set_radius_weight, set_patience_coefficient;
+
+0250: capq_0250.sh OUT D MAXN CAP SECONDS ARM... (capq_0250.py; arm suffixes as pbuf_cap.sh; env PP, REP, NQ/NF default 100/10, 30/5 at 1G; works on main via PP=/mnt/scratch/enn_bench/main/src), qattr_0250.py D N WORK OUT DEV VARIANT... (base|extra0|again; rows scanned, internal pages, exact rows, per-file residency growth), capq_lib_0250.py, pread_ab_0250.sh (needs reverted patch), pair_0250.py A.jsonl B.jsonl (paired recall_cmp stats, any N), fig_0250.py DATA OUT; run chains reports/report-0250-data/chain*.sh, qual.sh, qual_extra.sh;
+
+0249: pace_0249.sh OUT CAP MAXN REPS ARM_PACE... (arm e.g. 3000aph_0 / 3000aph_1 = LOG_PACE; runs dirty_files.py beside stall_probe.sh), pace_summary_0249.py DIR CAP ARM..., dirty_files.py WORKDIR OUT [HZ] [PATTERN] (cachestat per file + cgroup dirty), resident_map.py FILE [BINS] (mincore), log_residency_0249.py WORKDIR N OUT (ENN_LOG_PACE=0|1), wchan_0249.sh (perturbs timing!), fig_0249.py DATA OUT; suffix u = ENN_LOG_PACE=0 in pbuf_cap.sh / pbuf_ram_ab.sh; stall_probe.sh LOG_PACE=0|1;
+
+0248: stall_probe.sh FAULTS=1 (mincore probes, 11-value take_pbuf_cold), TIMERS=1 (phase timers), LOG_LINEAR=1; wchan_sample.py PATTERN PROGRESS_JSONL OUT_JSON [HZ] (run beside stall_probe.sh; kill by PID, pkill -f matches your own shell); rsize_0248.sh OUT CAP MAXN REPS ARM...; grow_0248.sh OUT CAP MAXN REPS ARM; single_add_0248.sh OUT D N0 M REPS; quality_0248.sh OUT (PP overlay); fig_0248.py DATA OUT;
+
+0247: recall_sweep_0247.sh OUT (seed-0 c sweep + knob probes + main), budget_quality_0247.sh OUT LANE (10-seed recall/quality arms B/C/D), budget_ab_0247.sh OUT D N SEEDS (1G-scope timing c30/c100/main), budget_cold_0247.sh OUT, fig_0247.py QDIR SCOREDIR OUT.pdf; env knobs LEAF_COEF/INTERNAL_COEF in quality_cmp.py and cold_cost.py, STOP_EPS/INTERNAL_COEF/RERANK_SKIP in recall_cmp.py (LEAF<=0 keeps default; runs on main);
+
+0246: fig_0246.py DIR [png] (cap/cold figure + fit_0246.txt), scorecard_0246.sh OUT (pbuf vs main via scorecard_0226.sh; copy pbuf.jsonl to head.jsonl for scorecard_0226.py), quality_1e6_0246.sh OUT D N SEEDS (pbuf/head0/main paired), pbuf_cold.sh takes suffix h;
+
+0245: arm suffix h = ENN_PBUF_PUNCH=1 in pbuf_cap.sh/stall_probe.sh/pbuf_ram_ab.sh (arms without h set 0); stall_probe.py now records tail_seen_row/tail_cold_row with FAULTS=1; fig_0245.py (imports fig_0244);
+
+0244: stall_probe.sh/.py (wall/cpu/PSI/faults/device ops per 1e5-row window; FAULTS=1 splits faults take/push/leaf), leaf_extents.py (offline leaf-run count from tree_meta.bin), extent_cap.sh (needs 0244 patch), fig_0244.py; arm suffix p = prefetch (arms without p set ENN_PBUF_PREFETCH=0), x = extents (patch);
+
+0243: pbuf_all_diag.sh (64M NVMe mechanism; arm suffix a=every level, s=stagger), pbuf_cap.sh / pbuf_cold.sh / pbuf_ram_ab.sh now take the same suffixes, pbuf_quality.sh QDIR, pbuf_ram_ab.sh RDIR, pbuf_ram_stats.py OUT pb_0 D, fig_0243.py; matched-wheel overlays = copy of src/enn + wheel .so + ennbo.libs;
+
+0242: parent_count.sh/.py, pbuf_cap.sh, pbuf_diag.sh/.py (needs overlay with take_pbuf_* bindings; now in src), pbuf_quality.sh, pbuf_ram_ab.sh, pbuf_ram_stats.py, pbuf_cold.sh, fig_0242.py; build_ab.sh takes HEAD_PP;
+
+0241: code4_cap.sh, disk_extent.py, fig_0241.py;
+
+0240: nodebuf_cap.sh, nodebuf_ram_ab.sh, fig_0240.py - need the 0240 patch;
+
+0239: fig_0239.py, resid_faults.py, posterior_identity.py, resid_ab.sh / resid_ram_ab.sh arms like 2t0.1, 2i; resid_* see resid_README.sh, fig_0238.py, code4_* see code4_README.sh, fig_0237.py, leaf_ids_ab.*, build_ab.sh, keep_warm.*, disk_qd.py, fig_0236.py, cold_cost.*, prefetch_cold.py, advise_data_ab.*, scorecard_0226.*, paired_quality.py, bytes_per_add.py, cap_sweep.sh, recall_cmp.py), scripts/bench_cmp/bench.py.

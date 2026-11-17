@@ -1,0 +1,4 @@
+g3       walk  ltr p50/p90 62/143 miss 0.000 pages@ltr 62 L 420 tl 7.4
+oracle   ideal ltr p50/p90 7/9 miss 0.000 pages@ltr 7 L 7 tl 7.4
+g3       ideal ltr p50/p90 36/108 miss 0.000 pages@ltr 36 L 53 tl 7.4
+DONE D=10 N=100000 seed=0 arm=g3 build 6s total 18s

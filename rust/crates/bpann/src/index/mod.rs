@@ -13,6 +13,7 @@ mod tree_cold;
 pub mod tree_counts;
 pub mod tree_icache;
 pub mod tree_leaf_ids;
+pub mod tree_lloyd;
 pub mod tree_morph;
 pub mod tree_nib;
 pub mod tree_parent_count;

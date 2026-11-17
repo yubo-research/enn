@@ -189,6 +189,7 @@ impl Tree {
                 if split {
                     self.split_leaf(cur, &mut path, src)?;
                 } else if !replay {
+                    self.lloyd_sweep_step(row);
                     let k = crate::index::tree_reassign::reassign_every();
                     if k > 0 && row.is_multiple_of(k) {
                         self.reassign_after_split(cur, cur)?;

@@ -1,0 +1,4 @@
+s2g3     walk  ltr p50/p90 174/338 miss 0.007 pages@ltr 174 L 610 tl 7.6
+oracle   ideal ltr p50/p90 8/10 miss 0.000 pages@ltr 8 L 8 tl 7.6
+s2g3     ideal ltr p50/p90 43/137 miss 0.000 pages@ltr 43 L 66 tl 7.6
+DONE D=10 N=1000000 seed=0 arm=s2g3 build 134s total 165s

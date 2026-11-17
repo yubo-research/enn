@@ -1,0 +1,4 @@
+g3p32    walk  ltr p50/p90 168/418 miss 0.007 pages@ltr 168 L 828 tl 8.1
+oracle   ideal ltr p50/p90 8/10 miss 0.000 pages@ltr 8 L 8 tl 8.1
+g3p32    ideal ltr p50/p90 67/181 miss 0.000 pages@ltr 67 L 93 tl 8.1
+DONE D=10 N=1000000 seed=0 arm=g3p32 build 71s total 107s

@@ -1,0 +1,4 @@
+g30pinf  walk  ltr p50/p90 128/297 miss 0.003 pages@ltr 128 L 572 tl 7.4
+oracle   ideal ltr p50/p90 7/9 miss 0.000 pages@ltr 7 L 7 tl 7.4
+g30pinf  ideal ltr p50/p90 36/103 miss 0.000 pages@ltr 36 L 57 tl 7.4
+DONE D=10 N=1000000 seed=0 arm=g30pinf build 1000s total 1029s
