@@ -47,7 +47,22 @@ pub fn set_lloyd(every: usize, hood: usize, pages: usize, graph: bool) {
 
 thread_local! {
     static CURSOR: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-    static GRAPH: std::cell::RefCell<HashMap<u32, Vec<u32>>> = std::cell::RefCell::new(HashMap::new());
+}
+
+static GRAPH: std::sync::LazyLock<std::sync::Mutex<HashMap<u32, Vec<u32>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+fn graph_lock() -> std::sync::MutexGuard<'static, HashMap<u32, Vec<u32>>> {
+    GRAPH.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+pub(super) fn graph_neighbors(leaf: u32) -> Vec<u32> {
+    graph_lock().get(&leaf).cloned().unwrap_or_default()
+}
+
+pub(super) fn with_graph_neighbors(leaf: u32, f: impl FnOnce(&[u32])) {
+    let g = graph_lock();
+    f(g.get(&leaf).map_or(&[][..], Vec::as_slice));
 }
 
 fn lloyd_graph() -> bool {
@@ -55,7 +70,7 @@ fn lloyd_graph() -> bool {
 }
 
 pub fn reset_lloyd_graph() {
-    GRAPH.with(|g| g.borrow_mut().clear());
+    graph_lock().clear();
     CURSOR.with(|c| c.set(0));
 }
 
@@ -139,21 +154,21 @@ impl Tree {
 
     fn graph_candidates(&self, leaf: u32, m: usize) -> HashSet<u32> {
         let mut cand: HashSet<u32> = HashSet::new();
-        let first: Vec<u32> = GRAPH.with(|g| g.borrow().get(&leaf).cloned().unwrap_or_default());
+        let first: Vec<u32> = graph_neighbors(leaf);
         if first.is_empty() {
             if let Some(h) = self.hood(leaf, leaf, m) {
                 cand.extend(h.leaves);
             }
         }
-        GRAPH.with(|g| {
-            let g = g.borrow();
+        {
+            let g = graph_lock();
             for &n in &first {
                 cand.insert(n);
                 if let Some(nn) = g.get(&n) {
                     cand.extend(nn.iter().copied());
                 }
             }
-        });
+        }
         if let Some(p) = self.store.parent(leaf) {
             cand.extend(
                 self.store
@@ -181,8 +196,8 @@ impl Tree {
             return None;
         }
         let ids: Vec<u32> = scored.iter().map(|x| x.1).collect();
-        GRAPH.with(|g| {
-            let mut g = g.borrow_mut();
+        {
+            let mut g = graph_lock();
             g.insert(leaf, ids.clone());
             for &n in &ids {
                 let e = g.entry(n).or_default();
@@ -193,7 +208,7 @@ impl Tree {
                     }
                 }
             }
-        });
+        }
         let mut leaves = vec![leaf];
         let mut cents = vec![c];
         for (_, l, cl) in scored {

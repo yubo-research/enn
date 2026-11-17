@@ -344,9 +344,14 @@ pub(super) fn search_tree_scored(
     let probe = ColdProbe::start();
     let kinds = Kinds::new(s, coded.is_some());
     let mut ahead = Lookahead::new(if coded.is_some() { code_prefetch() } else { 0 });
-    while let Some(Reverse((phase, key, bound, page_id, raw))) = ahead.pop(&mut frontier) {
+    let mut graph = crate::index::tree_graph_walk::GraphWalk::new();
+    while let Some((from_graph, Reverse((phase, key, bound, page_id, raw)))) = graph
+        .pop()
+        .map(|(b, l)| (true, Reverse((0, OrderedF32(0.0), OrderedF32(b), l, 0))))
+        .or_else(|| ahead.pop(&mut frontier).map(|x| (false, x)))
+    {
         let depth = Kinds::depth(raw);
-        if !deepest_first && expanded >= internal_cap {
+        if !from_graph && !deepest_first && expanded >= internal_cap {
             deepest_first = true;
             let mut all = std::mem::take(&mut frontier).into_vec();
             all.push(Reverse((phase, key, bound, page_id, raw)));
@@ -362,10 +367,10 @@ pub(super) fn search_tree_scored(
             stopped_on_budget = true;
             break;
         }
-        if top.cannot_improve(bound.0) {
+        if top.cannot_improve(bound.0) || !graph.first_visit(page_id) {
             continue;
         }
-        if !kinds.is_leaf(s, page_id, raw) {
+        if !from_graph && !kinds.is_leaf(s, page_id, raw) {
             expanded += 1;
             leaves +=
                 crate::index::tree_pbuf_all::charged_leaves(crate::index::tree_pbuf::score_pbuf(
@@ -386,7 +391,9 @@ pub(super) fn search_tree_scored(
             walk.run(s, (page_id, depth), &top, &mut frontier);
             continue;
         }
-        ahead.before_leaf(s, &mut frontier, coded.as_deref_mut(), kinds);
+        if !from_graph {
+            ahead.before_leaf(s, &mut frontier, coded.as_deref_mut(), kinds);
+        }
         crate::index::tree_walk_trace::note_leaf(bound.0, s.ids(page_id));
         let inserts = top.inserts;
         score_leaf(
@@ -399,6 +406,7 @@ pub(super) fn search_tree_scored(
         )?;
         leaves += 1;
         quiet = if top.inserts == inserts { quiet + 1 } else { 0 };
+        graph.expand(tree, page_id, query, &mut frontier, (priority, lower_bound));
     }
     meter.record(leaves, stopped_on_budget);
     crate::index::tree_parent_count::end_walk();

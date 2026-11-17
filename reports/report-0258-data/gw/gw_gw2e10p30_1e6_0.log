@@ -1,0 +1,4 @@
+gw2e10p30 walk  ltr p50/p90 32/102 miss 0.013 pages@ltr 32 L 307 tl 6.9
+oracle   ideal ltr p50/p90 7/9 miss 0.000 pages@ltr 7 L 7 tl 6.9
+gw2e10p30 ideal ltr p50/p90 28/85 miss 0.000 pages@ltr 28 L 48 tl 6.9
+DONE D=10 N=1000000 seed=0 arm=gw2e10p30 build 28s total 81s

@@ -22,6 +22,9 @@ K = int(os.environ.get("K", "10"))
 INTRINSIC = int(os.environ.get("INTRINSIC", "0"))
 OFFLINE = [int(c) for c in os.environ.get("OFFLINE", "").split(",") if c]
 LLOYD = int(os.environ.get("LLOYD", "0"))
+PATIENCE = float(os.environ.get("PATIENCE", "0"))
+if PATIENCE > 0:
+    R.set_patience_coefficient(PATIENCE)
 NOISE = 0.1
 PAGE, PAGE_HDR, ROW_B = 4096, 64, 8 + D
 GRID = np.unique(

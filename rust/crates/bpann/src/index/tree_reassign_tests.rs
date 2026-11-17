@@ -141,3 +141,51 @@ fn reassignment_keeps_the_tree_valid_and_tightens_leaves() {
     assert!(swept < base, "lloyd sweep: {swept} vs {base}");
     assert!(graphed < base, "graph sweep: {graphed} vs {base}");
 }
+
+fn recall(t: &Tree, store: &MmapColumnStore, rows: usize, mode: usize) -> f64 {
+    use crate::index::search::MmapSearchStore;
+    use crate::index::tree_graph_walk::set_local_walk_graph;
+    let x_scale = vec![1.0; 6];
+    let s = MmapSearchStore {
+        train_x: store,
+        scale_x: false,
+        x_scale: &x_scale,
+    };
+    let mut rng = ChaCha8Rng::seed_from_u64(5);
+    let mut hit = 0usize;
+    set_local_walk_graph(Some(mode));
+    for _ in 0..30 {
+        let q: Vec<f64> = (0..6).map(|_| rng.gen::<f64>()).collect();
+        let got = crate::index::tree_search::search_tree_refined(t, &q, 10, &s).unwrap();
+        let mut all: Vec<(f64, u32)> = (0..rows as u32)
+            .map(|r| {
+                let x = store.mmap_row_slice(r as usize).unwrap();
+                (x.iter().zip(&q).map(|(a, b)| (a - b) * (a - b)).sum(), r)
+            })
+            .collect();
+        all.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let truth: Vec<u32> = all[..10].iter().map(|p| p.1).collect();
+        hit += got.iter().filter(|p| truth.contains(&p.0)).count();
+    }
+    set_local_walk_graph(None);
+    hit as f64 / 300.0
+}
+
+#[test]
+fn graph_ordered_walks_find_the_neighbors() {
+    crate::index::tree_lloyd::set_lloyd(4, 16, 8, true);
+    let dir = TempDir::new().unwrap();
+    let scale = [1.0; 6];
+    let store = store_with_rows(&dir, 3_000, scale.len(), 9);
+    let mut idx = IncrementalIndex::new(dir.path().join("idx"));
+    for end in (300..=3_000).step_by(300) {
+        sync(&mut idx, &store, &scale, end);
+    }
+    crate::index::tree_lloyd::set_lloyd(0, 16, 8, false);
+    let t = tree(&idx);
+    let base = recall(t, &store, 3_000, 0);
+    for mode in [1, 2] {
+        let r = recall(t, &store, 3_000, mode);
+        assert!(r >= base - 0.02 && r > 0.95, "mode {mode}: {r} vs {base}");
+    }
+}
