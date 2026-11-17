@@ -1,0 +1,2 @@
+g30 killed at start (same add path as g10; replaced by patched arm)
+g10w killed after 1e6 (write-if-changed: more writes, slower; reverted)

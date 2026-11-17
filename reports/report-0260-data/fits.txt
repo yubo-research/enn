@@ -1,0 +1,6 @@
+main  add_us    fit 1e3..1e6 a=   -2.328 b=   0.342 in-range ratio 0.44..17.17 | N=3e+06: 0.5x fit
+main  query_ms  fit 1e3..1e6 a=   -2.374 b=   0.304 in-range ratio -0.14..1.27 | N=3e+06: 13.8x fit
+def   add_us    fit 1e3..1e6 a=   -1.684 b=   0.360 in-range ratio 0.63..2.16 | N=3e+06: 53.7x fit
+def   query_ms  fit 1e3..1e6 a=   -5.219 b=   0.666 in-range ratio -0.17..1.57 | N=3e+06: 54.1x fit
+g10   add_us    fit 1e3..1e6 a=  -11.807 b=   3.964 in-range ratio 0.75..1.31 | N=3e+06: 16.8x fit
+g10   query_ms  fit 1e3..1e6 a=   -1.414 b=   0.189 in-range ratio -1.02..1.73 | N=3e+06: 41.4x fit
