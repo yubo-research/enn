@@ -140,7 +140,7 @@ impl Tree {
         Some(Hood { leaves, cents })
     }
 
-    fn live_leaf(&self, l: u32) -> bool {
+    pub(super) fn live_leaf(&self, l: u32) -> bool {
         (l as usize) < self.store.num_pages()
             && !self.store.is_free(l)
             && self.store.is_leaf(l)

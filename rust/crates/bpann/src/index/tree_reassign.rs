@@ -129,7 +129,7 @@ impl Tree {
         Some(Hood { leaves, cents })
     }
 
-    fn cover_up_many(&mut self, leaf: u32, rows: &[&[f32]], slack: f32, delta: isize) {
+    pub(super) fn cover_up_many(&mut self, leaf: u32, rows: &[&[f32]], slack: f32, delta: isize) {
         let d = self.store.num_dim();
         let mut node = leaf;
         while let Some((p, slot)) = self.slot_of(node) {

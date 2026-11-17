@@ -158,7 +158,23 @@ fn offer_bound(
     if (n as usize) >= s.num_pages() || s.is_free(n) || !s.is_leaf(n) || s.len(n) == 0 {
         return None;
     }
-    Some(lower(low, s.radius(n)))
+    Some(lower(low, walk_radius(s, n)))
+}
+
+fn walk_radius(s: &TreeStore, n: u32) -> f32 {
+    let own = s.radius(n);
+    if !s.pbuf_tagged() {
+        return own;
+    }
+    s.parent(n)
+        .filter(|&p| !s.is_leaf(p) && s.pbuf_len(p) > 0)
+        .and_then(|p| {
+            s.ids(p)
+                .iter()
+                .position(|&c| c == n)
+                .map(|slot| s.route_radius(p, slot))
+        })
+        .map_or(own, |r| own.max(r))
 }
 
 static PRUNE: AtomicUsize = AtomicUsize::new(usize::MAX);

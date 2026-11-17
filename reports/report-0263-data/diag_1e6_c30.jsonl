@@ -1,0 +1,1 @@
+{"arm": "h3000c30", "D": 10, "n": 1000000, "seed": 0, "recall": 0.9963333333333333, "rehome_checked": 900000, "rehome_moved": 780607, "cells": [["leaf", 4, 0, 1, 1, 968], ["leafparent_buf", 3, 0, 0, 0, 11], ["leafparent_buf", 3, 1, 1, 1, 1742], ["upper_buf", 0, 1, 0, 1, 5], ["upper_buf", 1, 1, 0, 1, 28], ["upper_buf", 2, 1, 0, 1, 246]]}

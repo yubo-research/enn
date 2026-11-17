@@ -140,16 +140,24 @@ impl TreeStore {
     }
 }
 
-pub(super) struct TagWalk {
+pub(super) struct TagWalk<'a> {
     on: bool,
     index: TagIndex,
+    store: &'a TreeStore,
 }
 
-impl TagWalk {
-    pub(super) fn new(s: &TreeStore) -> Self {
+impl Drop for TagWalk<'_> {
+    fn drop(&mut self) {
+        crate::index::tree_pbuf_diag::end_walk(self.store, &self.index.done);
+    }
+}
+
+impl<'a> TagWalk<'a> {
+    pub(super) fn new(s: &'a TreeStore) -> Self {
         Self {
             on: s.pbuf_tagged(),
             index: TagIndex::default(),
+            store: s,
         }
     }
 
@@ -162,6 +170,7 @@ impl TagWalk {
         top: &mut TopK,
         score: &mut impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
     ) -> Result<usize, BpannError> {
+        crate::index::tree_pbuf_diag::note_popped(page_id, query.0);
         if !self.on {
             return Ok(0);
         }

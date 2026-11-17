@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 use crate::error::BpannError;
@@ -46,6 +46,25 @@ fn flag(over: &AtomicU8, env: &OnceLock<bool>, name: &str) -> bool {
         v => v == 1,
     }
 }
+
+pub fn pbuf_leaf_rows() -> usize {
+    static ENV: OnceLock<usize> = OnceLock::new();
+    match LEAF_ROWS.load(Ordering::Relaxed) {
+        usize::MAX => *ENV.get_or_init(|| {
+            std::env::var("ENN_PBUF_LEAF_ROWS")
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0)
+        }),
+        v => v,
+    }
+}
+
+pub fn set_pbuf_leaf_rows(rows: usize) {
+    LEAF_ROWS.store(rows, Ordering::Relaxed);
+}
+
+static LEAF_ROWS: AtomicUsize = AtomicUsize::new(usize::MAX);
 
 pub fn pbuf_all() -> bool {
     static ENV: OnceLock<bool> = OnceLock::new();
@@ -105,6 +124,10 @@ pub fn set_pbuf_stagger(on: bool) {
 
 impl TreeStore {
     pub(super) fn pbuf_cap(&self, id: u32) -> usize {
+        let leaf_rows = pbuf_leaf_rows();
+        if leaf_rows > 0 && self.len(id) > 0 && self.route_child_is_leaf(id, 0) {
+            return leaf_rows.min(self.pbuf.rows);
+        }
         let r = self.pbuf.rows;
         if !pbuf_stagger() {
             return r;
@@ -146,6 +169,10 @@ impl Tree {
         if fault_split() {
             s.probe_push(child);
         }
+        if let Some(target) = self.pbuf_rehome_target(child, v) {
+            return Ok(self.pbuf_push_rehomed(target, row, v, slack));
+        }
+        let s = &mut self.store;
         let n = timed(4, || counted(1, || s.pbuf_push(child, row, v, slack)));
         Ok((n >= s.pbuf_cap(child)).then_some(child))
     }
