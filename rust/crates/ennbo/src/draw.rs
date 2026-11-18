@@ -47,6 +47,7 @@ pub struct NeighborData {
     pub idx: Vec<Vec<usize>>,
     pub y_neighbors: Array2<f64>,
     pub k: usize,
+    pub counts: Option<Vec<f64>>,
 }
 
 impl NeighborData {
@@ -61,6 +62,7 @@ impl NeighborData {
             idx,
             y_neighbors,
             k,
+            counts: None,
         }
     }
 

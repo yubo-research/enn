@@ -4,6 +4,7 @@ mod dual_api;
 mod light;
 mod neighbor;
 pub mod neighbor_dist;
+mod neighbor_whatif;
 pub(crate) use neighbor::index_search;
 
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2};
@@ -115,6 +116,7 @@ pub struct WeightedPosteriorData<'a> {
     pub params: &'a ENNParams,
     pub observation_noise: bool,
     pub yvar_neighbors_override: Option<&'a Array2<f64>>,
+    pub counts_override: Option<&'a [f64]>,
 }
 
 pub fn compute_weighted_posterior(
@@ -135,7 +137,10 @@ pub fn compute_weighted_posterior(
     };
     let y_centered = data.y_neighbors - &y_mean;
 
-    let counts = neighbor_counts(model, data.idx);
+    let counts = match data.counts_override {
+        Some(c) if model.aggregates_duplicates() => Some(c.to_vec()),
+        _ => neighbor_counts(model, data.idx),
+    };
     let yvar_neighbors: Option<Array2<f64>> = if let Some(ov) = data.yvar_neighbors_override {
         Some(ov.clone())
     } else if model.has_yvar() {
@@ -155,8 +160,11 @@ pub fn compute_weighted_posterior(
                         .neighbor_yvar(neighbor_idx)
                         .expect("row_yvar")
                         .expect("yvar");
+                    let dilution = data
+                        .counts_override
+                        .map_or(1.0, |c| model.neighbor_count(neighbor_idx) / c[i * k + j]);
                     for m in 0..model.num_metrics() {
-                        yvar_neighbors[[i * k + j, m]] = yvar_row[m];
+                        yvar_neighbors[[i * k + j, m]] = yvar_row[m] * dilution;
                     }
                 }
             }
@@ -376,6 +384,7 @@ pub fn compute_posterior_internals(
             params,
             observation_noise: flags.observation_noise,
             yvar_neighbors_override: None,
+            counts_override: None,
         };
         compute_weighted_posterior(model, wp_data, None, None)
     } else {
@@ -502,6 +511,7 @@ pub fn compute_conditional_posterior_internals(
             params,
             observation_noise: flags.observation_noise,
             yvar_neighbors_override: None,
+            counts_override: data.counts.as_deref(),
         };
         let y_mean_cond = compute_mean_for_conditional_moments(model, y_whatif);
         compute_weighted_posterior(

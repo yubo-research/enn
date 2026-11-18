@@ -12,6 +12,16 @@ const NO_ROW: u32 = u32::MAX;
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
+pub fn find_site(
+    backend: &crate::backend::BpannBackend,
+    x: &[f64],
+) -> Result<Option<usize>, BpannError> {
+    match backend.row_groups() {
+        Some(groups) => groups.find_rep(&backend.train_x, x),
+        None => Ok(None),
+    }
+}
+
 pub fn hash_x_bits(x: &[f64]) -> u64 {
     x.iter().fold(FNV_OFFSET, |h, &v| {
         let bits = if v == 0.0 {
@@ -200,6 +210,16 @@ impl RowGroups {
             g.add_observation(obs, hash, found);
         }
         Ok(())
+    }
+
+    pub fn find_rep(
+        &self,
+        store: &MmapColumnStore,
+        x: &[f64],
+    ) -> Result<Option<usize>, BpannError> {
+        let g = self.groups.read().expect("row groups");
+        let row = g.find(store, (self.hash)(x), x)?;
+        Ok(row.map(|r| g.rep[r as usize] as usize))
     }
 
     pub fn is_representative(&self, obs: u32) -> bool {

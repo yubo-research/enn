@@ -77,3 +77,27 @@ def test_repeats_keep_reducing_the_epistemic_error():
         se_by_setting[aggregate] = ses
     assert se_by_setting[True][1] < se_by_setting[True][0]
     assert abs(se_by_setting[False][1] - se_by_setting[False][0]) < 1e-9
+
+
+def test_conditional_posterior_merges_whatif_rows_at_stored_sites():
+    rng = np.random.default_rng(3)
+    train_x = rng.uniform(size=(10, 2))
+    train_y = rng.normal(size=(10, 1))
+    query = rng.uniform(size=(4, 2))
+    whatif_x = np.vstack([train_x[:1], [[0.2, 0.7], [0.2, 0.7]]])
+    whatif_y = np.array([[5.0], [1.0], [2.0]])
+    params = ENNParams(
+        k_num_neighbors=3, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.3
+    )
+    flags = PosteriorFlags()
+    cond = EpistemicNearestNeighbors(
+        train_x, train_y, work_dir=fresh_work_dir(), aggregate_duplicates=True
+    ).conditional_posterior(whatif_x, whatif_y, query, params=params, flags=flags)
+    real = EpistemicNearestNeighbors(
+        np.vstack([train_x, whatif_x]),
+        np.vstack([train_y, whatif_y]),
+        work_dir=fresh_work_dir(),
+        aggregate_duplicates=True,
+    ).posterior(query, params=params, flags=flags)
+    assert np.abs(cond.mu - real.mu).max() < 1e-9
+    assert np.abs(cond.se - real.se).max() < 1e-9

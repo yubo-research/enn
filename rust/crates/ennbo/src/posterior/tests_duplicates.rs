@@ -411,3 +411,43 @@ fn many_duplicate_adds_leave_one_row() {
     assert_eq!((b.model.len(), b.model.num_rows()), (100_001, 1));
     assert_eq!(b.model.neighbor_count(0), 100_001.0);
 }
+
+#[test]
+fn conditional_posterior_merges_whatif_rows_into_sites_like_a_real_add() {
+    let (mut x, mut y, _) = distinct_points(14);
+    let shared = x.row(2).to_owned();
+    x.row_mut(5).assign(&shared);
+    x.row_mut(9).assign(&shared);
+    y[[5, 0]] += 0.7;
+    let xw = array![
+        [x[[2, 0]], x[[2, 1]], x[[2, 2]]],
+        [0.31, -0.62, 0.9],
+        [0.31, -0.62, 0.9],
+        [-0.4, 0.2, 0.1],
+        [x[[0, 0]], x[[0, 1]], x[[0, 2]]]
+    ];
+    let yw = Array2::from_shape_fn((5, 2), |(i, j)| 3.0 + i as f64 - 0.5 * j as f64);
+    let q = array![[0.1, -0.2, 0.3], [0.5, 0.5, -0.5], [0.31, -0.62, 0.9]];
+    for tau in [0.0, 0.5] {
+        for exclude_nearest in [false, true] {
+            for observation_noise in [false, true] {
+                let params = ENNParams::new(4, 2.5, 0.07).unwrap().with_tau(tau).unwrap();
+                let flags = PosteriorFlags::new()
+                    .with_exclude_nearest(exclude_nearest)
+                    .with_observation_noise(observation_noise);
+                let base = build(true, x.clone(), y.clone(), None);
+                let cond = base
+                    .model
+                    .conditional_posterior(&xw.view(), &yw.view(), &q.view(), &params, &flags)
+                    .unwrap();
+                let mut real = build(true, x.clone(), y.clone(), None);
+                real.model.add(&xw.view(), &yw.view(), None).unwrap();
+                let want = real.model.posterior(&q.view(), &params, &flags).unwrap();
+                for (a, b) in [(&cond.mu, &want.mu), (&cond.se, &want.se)] {
+                    let d = (a - b).mapv(f64::abs).fold(0.0, |m, &v| f64::max(m, v));
+                    assert!(d < 1e-9, "tau={tau} excl={exclude_nearest} diff={d}");
+                }
+            }
+        }
+    }
+}

@@ -90,6 +90,10 @@ impl<'a> EnnRowAccess<'a> {
         self.model.backend.row_x(i)
     }
 
+    pub(crate) fn find_site(&self, x: &[f64]) -> Result<Option<usize>, ENNError> {
+        self.model.backend.find_site(x)
+    }
+
     pub fn row_y(&self, i: usize) -> Result<Array1<f64>, ENNError> {
         self.model.backend.row_y(i)
     }

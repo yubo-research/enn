@@ -158,6 +158,10 @@ impl EnnBackend {
         disk_read(self.handle.data())?.row_x(i)
     }
 
+    pub fn find_site(&self, x: &[f64]) -> Result<Option<usize>, ENNError> {
+        crate::disk_bpann::enn_backend::find_site(&*disk_read(self.handle.data())?, x)
+    }
+
     pub fn row_y(&self, i: usize) -> Result<Array1<f64>, ENNError> {
         disk_read(self.handle.data())?.row_y(i)
     }

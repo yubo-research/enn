@@ -89,6 +89,7 @@ pub(super) fn compute_batch_with_shared_neighbors(
             params: &paramss[0],
             observation_noise: flags.observation_noise,
             yvar_neighbors_override: None,
+            counts_override: None,
         };
 
         for (i, params) in paramss.iter().enumerate() {

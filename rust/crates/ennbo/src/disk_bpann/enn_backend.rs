@@ -40,6 +40,10 @@ fn empty_bpann(
     .map_err(bpann_err)
 }
 
+pub fn find_site(backend: &DiskBpannEnnBackend, x: &[f64]) -> Result<Option<usize>, ENNError> {
+    ennbo_bpann::row_groups::find_site(&backend.inner, x).map_err(bpann_err)
+}
+
 pub struct DiskBpannEnnBackend {
     inner: BpannBackend,
     num_metrics: usize,

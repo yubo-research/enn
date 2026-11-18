@@ -237,6 +237,7 @@ fn test_compute_weighted_posterior() {
         params: &params,
         observation_noise: false,
         yvar_neighbors_override: None,
+        counts_override: None,
     };
 
     let result = compute_weighted_posterior(&model, data, None, None);
