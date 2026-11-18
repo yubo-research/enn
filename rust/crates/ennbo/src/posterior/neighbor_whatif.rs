@@ -177,7 +177,7 @@ pub(crate) fn get_conditional_neighbor_data(
     }
 
     let batch_size = x.nrows();
-    let train_search_k = search_k.min(n_train);
+    let train_search_k = search_k.min(n_train_sites);
     let (dist2_train, idx_train) = if train_search_k > 0 {
         index_search(model, x, train_search_k as i32, false)?
     } else {

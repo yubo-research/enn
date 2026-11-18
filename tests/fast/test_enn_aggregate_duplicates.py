@@ -101,3 +101,28 @@ def test_conditional_posterior_merges_whatif_rows_at_stored_sites():
     ).posterior(query, params=params, flags=flags)
     assert np.abs(cond.mu - real.mu).max() < 1e-9
     assert np.abs(cond.se - real.se).max() < 1e-9
+
+
+def test_conditional_posterior_with_k_above_distinct_sites():
+    rng = np.random.default_rng(6)
+    sites = rng.standard_normal((8, 2))
+    train_x = np.repeat(sites, 3, axis=0)
+    train_y = rng.standard_normal((24, 1))
+    x_whatif = rng.standard_normal((2, 2))
+    y_whatif = rng.standard_normal((2, 1))
+    query = rng.standard_normal((4, 2))
+    params = ENNParams(
+        k_num_neighbors=9, epistemic_variance_scale=1.0, aleatoric_variance_scale=0.3
+    )
+    flags = PosteriorFlags()
+    cond = EpistemicNearestNeighbors(
+        train_x, train_y, work_dir=fresh_work_dir(), aggregate_duplicates=True
+    ).conditional_posterior(x_whatif, y_whatif, query, params=params, flags=flags)
+    added = EpistemicNearestNeighbors(
+        np.vstack([train_x, x_whatif]),
+        np.vstack([train_y, y_whatif]),
+        work_dir=fresh_work_dir(),
+        aggregate_duplicates=True,
+    ).posterior(query, params=params, flags=flags)
+    np.testing.assert_allclose(cond.mu, added.mu, atol=1e-12)
+    np.testing.assert_allclose(cond.se, added.se, atol=1e-12)
