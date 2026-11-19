@@ -45,9 +45,9 @@ impl EpistemicNearestNeighbors {
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Option<ENNError> {
-        if x.nrows() != y.nrows() || x.ncols() != self.num_dim || y.ncols() != self.num_metrics {
+        if x.nrows() != y.nrows() || x.ncols() != self.num_dim {
             return Some(ENNError::InvalidShape {
-                expected: vec![y.nrows(), self.num_metrics],
+                expected: vec![y.nrows(), self.num_dim],
                 got: vec![x.nrows(), x.ncols()],
             });
         }
