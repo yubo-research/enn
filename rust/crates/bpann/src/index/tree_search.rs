@@ -57,7 +57,7 @@ pub fn internal_coefficient() -> f64 {
 }
 
 pub fn set_internal_coefficient(value: f64) {
-    let bits = if value == TREE_SEARCH_INTERNAL_PAGES_PER_LN_N {
+    let bits = if value.is_nan() || value <= 0.0 || value == TREE_SEARCH_INTERNAL_PAGES_PER_LN_N {
         0
     } else {
         value.to_bits()

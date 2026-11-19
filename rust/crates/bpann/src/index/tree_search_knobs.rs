@@ -15,7 +15,7 @@ pub fn leaf_coefficient() -> f64 {
 }
 
 pub fn set_leaf_coefficient(value: f64) {
-    let bits = if value == TREE_SEARCH_LEAVES_PER_LN_N {
+    let bits = if value.is_nan() || value <= 0.0 || value == TREE_SEARCH_LEAVES_PER_LN_N {
         0
     } else {
         value.to_bits()
@@ -115,4 +115,20 @@ pub fn patience_for(p: f64, indexed_rows: usize) -> usize {
         return usize::MAX;
     }
     ((p * (indexed_rows.max(1) as f64).ln()).ceil() as usize).max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_leaf_coefficients_restore_the_default() {
+        for bad in [f64::NAN, -1.0, -0.0, 0.0, f64::NEG_INFINITY] {
+            set_leaf_coefficient(7.0);
+            assert_eq!(leaf_coefficient(), 7.0);
+            set_leaf_coefficient(bad);
+            assert_eq!(leaf_coefficient(), TREE_SEARCH_LEAVES_PER_LN_N);
+        }
+        set_leaf_coefficient(0.0);
+    }
 }
