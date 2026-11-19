@@ -64,10 +64,11 @@ def test_auto_affine_onehot_predictions_survive_relabeling(tmp_path):
         params = fitter.ask(
             model,
             num_fit_candidates=30,
-            num_fit_samples=256,
+            num_fit_samples=128,
             affine_calibrate=True,
         )
         assert model.metric.uses_learned_metric
+        assert params.calibrator is not None
         neighbors.append(model.neighbors(q, 10))
         posterior = model.posterior(
             q, params=params, flags=PosteriorFlags(observation_noise=True)

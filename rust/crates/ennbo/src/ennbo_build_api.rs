@@ -33,3 +33,5 @@ macro_rules! define_ennbo_build_api {
         }
     };
 }
+
+pub(super) use define_ennbo_build_api;

@@ -43,6 +43,18 @@ fn philox_hash_matches_numpy_grid() {
 }
 
 #[test]
+fn affine_calibrator_scales_both_uncertainty_components() {
+    let mut cal = AffineCalibrator::identity(1);
+    cal.c[0] = 0.5;
+    let epi = ndarray::array![[6.0]];
+    let ale = ndarray::array![[8.0]];
+    let (total, scaled_epi, scaled_ale) = cal.apply_se(&epi, &ale).unwrap();
+    assert_eq!(scaled_epi, ndarray::array![[3.0]]);
+    assert_eq!(scaled_ale, ndarray::array![[4.0]]);
+    assert_eq!(total, ndarray::array![[5.0]]);
+}
+
+#[test]
 fn calibrator_recovers_known_line() {
     let mu = Array2::from_shape_vec((3, 1), vec![0.0, 1.0, 2.0]).unwrap();
     let y = Array2::from_shape_vec((3, 1), vec![1.0, 3.0, 5.0]).unwrap();

@@ -145,7 +145,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
 
     @property
     def num_outputs(self) -> int:
-        return int(self._rust_model.num_outputs)
+        return self._num_metrics
 
     @property
     def rust_backend(self):

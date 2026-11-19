@@ -285,6 +285,8 @@ mod tests {
         assert!(tr
             .tell_update_new_batch(&wide.view(), &incumbent.view(), 1)
             .is_err());
+        tr.morbo_rescalarize_incumbent(50).unwrap();
+        assert_eq!(tr.length(), 1.0);
     }
 
     #[test]

@@ -27,3 +27,10 @@ impl PyNumpyNormal {
         ndarray::Array1::from(out).to_pyarray_bound(py)
     }
 }
+
+#[cfg(test)]
+#[test]
+fn standard_normals_accepts_the_python_token_and_sample_count() {
+    let _: for<'py> fn(&mut PyNumpyNormal, Python<'py>, usize) -> Bound<'py, PyArray1<f64>> =
+        PyNumpyNormal::standard_normals;
+}

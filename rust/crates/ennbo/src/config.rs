@@ -413,6 +413,21 @@ mod tests {
     }
 
     #[test]
+    fn turbo_builder_can_select_lhd_with_a_global_region() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = crate::layout::EnnLayout::new(dir.path(), false).unwrap();
+        let (config, num_init) = OptimizerConfig::turbo_enn(layout)
+            .lhd_only()
+            .trust_region(TrustRegionConfig::Global)
+            .acquisition(AcquisitionConfig::Random)
+            .num_init(Some(3))
+            .build()
+            .unwrap();
+        assert!(matches!(config.surrogate, SurrogateConfig::None));
+        assert_eq!(num_init, Some(3));
+    }
+
+    #[test]
     fn test_init_strategy_enum() {
         let init_default = InitStrategy::default();
         assert_eq!(init_default, InitStrategy::LHD);

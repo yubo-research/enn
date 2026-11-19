@@ -519,6 +519,23 @@ mod kiss_coverage_tests {
     }
 
     #[test]
+    fn pushed_pages_can_be_updated_by_id() {
+        let dir = TempDir::new().unwrap();
+        let mut index = BpannIndex::from_pages_unpersisted(
+            2,
+            1,
+            8,
+            vec![Page::empty_range_leaf(0, 0, 1, vec![0.0, 0.0])],
+            dir.path().to_path_buf(),
+        )
+        .unwrap();
+        assert!(index.page_by_id_mut(9).is_none());
+        index.push_page(Page::empty_range_leaf(9, 1, 2, vec![1.0, 2.0]));
+        *index.page_by_id_mut(9).unwrap() = Page::empty_range_leaf(9, 1, 2, vec![2.0, 3.0]);
+        assert_eq!(index.page_by_id(9).unwrap().centroid(), vec![2.0, 3.0]);
+    }
+
+    #[test]
     fn needs_skip_edges_follows_tuning_provider() {
         use crate::tuning::{clear_tuning_provider, set_tuning_provider, BpannTuning};
 

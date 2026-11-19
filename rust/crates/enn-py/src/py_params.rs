@@ -104,3 +104,12 @@ impl PyENNParams {
         )
     }
 }
+
+#[cfg(test)]
+#[test]
+fn repr_reports_neighbor_count_and_variance_scales() {
+    let params = PyENNParams {
+        inner: ennbo::ENNParams::new(3, 1.0, 0.3).expect("valid parameters"),
+    };
+    assert_eq!(params.__repr__(), "ENNParams(k=3, epi=1.0000, ale=0.3000)");
+}

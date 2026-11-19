@@ -50,3 +50,5 @@ macro_rules! define_enn_py_build_api {
         }
     };
 }
+
+pub(super) use define_enn_py_build_api;

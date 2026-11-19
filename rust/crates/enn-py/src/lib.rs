@@ -8,8 +8,10 @@
 use pyo3::prelude::*;
 use pyo3::wrap_pymodule;
 
+mod enn_py_build_api;
+
 pub mod enn_py_build {
-    include!("enn_py_build_api.inc.rs");
+    use super::enn_py_build_api::define_enn_py_build_api;
     use super::link_rpath;
     define_enn_py_build_api!(link_rpath);
 }
