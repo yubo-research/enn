@@ -16,7 +16,6 @@ def test_reservoir_fills_then_keeps_capacity() -> None:
     res = ms.Reservoir(5, 2, 0)
     res.add(np.arange(6).reshape(3, 2), np.arange(3))
     assert len(res) == 3 and res.num_seen == 3
-    assert res.__len__() == len(res)
     np.testing.assert_array_equal(res.y, [[0], [1], [2]])
     res.add(np.zeros((10, 2)), np.full(10, -1.0))
     assert len(res) == 5 and res.capacity == 5 and res.num_seen == 13

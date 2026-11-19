@@ -2,10 +2,8 @@
 #![allow(missing_docs)]
 
 #[allow(missing_docs)]
-mod ennbo_build_api;
-
 pub mod ennbo_build {
-    use super::ennbo_build_api::define_ennbo_build_api;
+    include!("ennbo_build_api.inc.rs");
     use super::link_search;
     define_ennbo_build_api!(link_search);
 }
@@ -79,9 +77,7 @@ pub mod numpy_pcg;
 #[allow(missing_docs)]
 pub mod numpy_seed;
 #[allow(missing_docs)]
-mod numpy_ziggurat_ki;
 pub mod numpy_ziggurat_tables;
-mod numpy_ziggurat_wi;
 #[allow(missing_docs)]
 pub mod optimizer;
 #[allow(missing_docs)]

@@ -9,7 +9,6 @@ def test_ackley_1d_input():
     x = np.zeros(5)
     result = ackley(x)
     assert result.shape == (1,)
-    np.testing.assert_array_equal(result, ackley.__call__(x))
 
 
 def test_ackley_2d_input():
@@ -51,7 +50,6 @@ def test_double_ackley_shape():
     x = np.zeros((10, 6))
     result = obj(x)
     assert result.shape == (10, 2)
-    np.testing.assert_array_equal(result, obj.__call__(x))
 
 
 def test_double_ackley_requires_even_dims():

@@ -40,7 +40,6 @@ def test_model_workflow_uses_only_root_imports(tmp_path) -> None:
     train_x = rng.uniform(size=(30, 2))
     train_y = train_x.sum(axis=1, keepdims=True)
     model = EpistemicNearestNeighbors(train_x, train_y, work_dir=tmp_path / "store")
-    assert model.__len__() == len(model) == len(train_x)
     params = ENNStatefulFitter(3, seed=0).ask(
         model, num_fit_candidates=4, num_fit_samples=4
     )

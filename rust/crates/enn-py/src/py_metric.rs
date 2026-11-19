@@ -262,7 +262,7 @@ impl PyReservoir {
     }
 
     fn x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        let len = self.__len__();
+        let len = self.inner.len();
         let dim = self.inner.num_dim();
         Array2::from_shape_vec((len, dim), self.inner.x().to_vec())
             .expect("shape")
@@ -270,7 +270,7 @@ impl PyReservoir {
     }
 
     fn y<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        let len = self.__len__();
+        let len = self.inner.len();
         let outputs = self.inner.num_outputs();
         Array2::from_shape_vec((len, outputs), self.inner.y().to_vec())
             .expect("shape")

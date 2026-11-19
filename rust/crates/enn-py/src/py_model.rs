@@ -457,7 +457,6 @@ mod kiss_coverage_tests {
             PyEpistemicNearestNeighbors::neighbors,
             PyEpistemicNearestNeighbors::neighbor_distances_and_indices,
             PyEpistemicNearestNeighbors::index_neighbor_distances_and_indices,
-            PyEpistemicNearestNeighbors::__len__,
             PyEpistemicNearestNeighbors::num_outputs,
             PyEpistemicNearestNeighbors::num_dim,
             PyEpistemicNearestNeighbors::train_rows_at,

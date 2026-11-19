@@ -1,7 +1,5 @@
 #[path = "link_search.rs"]
 mod link_search;
 
-mod ennbo_build_api;
-use ennbo_build_api::define_ennbo_build_api;
-
+include!("ennbo_build_api.inc.rs");
 define_ennbo_build_api!(link_search);
