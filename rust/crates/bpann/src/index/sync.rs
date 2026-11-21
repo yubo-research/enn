@@ -111,7 +111,12 @@ impl IncrementalIndex {
                 Ok(())
             })?;
         }
-        if self.tree.is_none() && end.saturating_sub(self.indexed_rows) >= BULK_BUILD_MIN_ROWS {
+        if self.tree.is_none()
+            && end
+                .saturating_sub(self.indexed_rows)
+                .min(bulk_build_max_rows(num_dim))
+                >= BULK_BUILD_MIN_ROWS
+        {
             self.bulk_build_from(train_x, num_dim, (scale_x, x_scale), end)?;
         }
         for row in self.indexed_rows..end {

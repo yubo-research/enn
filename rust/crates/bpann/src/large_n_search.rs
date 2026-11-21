@@ -48,7 +48,7 @@ fn pending_topk(
     scale_x: bool,
     x_scale: &[f64],
 ) -> Result<Vec<(u32, f64)>, BpannError> {
-    use crate::small_n_search::OrderedFloat;
+    use crate::ordered::OrderedFloat;
     let mut heap = std::collections::BinaryHeap::with_capacity(k + 1);
     for row in start..end {
         let distance = crate::distance::row_sq_l2(

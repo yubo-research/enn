@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -112,6 +113,19 @@ def test_run_eval_tiny(capsys: pytest.CaptureFixture[str]) -> None:
     assert out.count("EVAL: ") == len(TINY.n_grid) + len(mod.REG_METRICS)
     assert all(f"reg = {m} obs = {_reg_obs(m)} best = " in out for m in mod.REG_METRICS)
     assert set(fits) == set(mod.REG_METRICS)
+
+
+def test_run_seed_generates_only_new_batches(monkeypatch: pytest.MonkeyPatch) -> None:
+    sizes = []
+    make_data = mod.make_data
+
+    def record_batch(size, rng):
+        sizes.append(size)
+        return make_data(size, rng)
+
+    monkeypatch.setattr(mod, "make_data", record_batch)
+    mod.run_seed(replace(TINY, n_grid=(20, 27, 70)))
+    assert sizes == [TINY.num_test, 20, 7, 20, 20, 3]
 
 
 def test_run_eval_rejects_bad_config() -> None:

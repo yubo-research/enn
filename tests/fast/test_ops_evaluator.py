@@ -49,21 +49,41 @@ def test_run_unknown_eval_fails() -> None:
     assert "no evals match" in result.output
 
 
-def test_run_invokes_evaluate(monkeypatch) -> None:
+def test_run_limits_each_eval_and_stops_on_failure(monkeypatch) -> None:
+    import subprocess
+
     from ops import evaluate
 
-    called: list[str] = []
+    names = ["short/a", "short/b", "short/c"]
+    calls = []
 
-    def fake_load(name: str):
-        def evaluate_fn() -> None:
-            called.append(name)
+    def run(command, *, check):
+        calls.append(command)
+        assert check
+        if command[-1] == "short/b":
+            raise subprocess.CalledProcessError(42, command)
 
-        return evaluate_fn
+    monkeypatch.setattr(evaluate, "select_eval_names", lambda prefix: names)
+    monkeypatch.setattr(evaluate.subprocess, "run", run)
+    result = CliRunner().invoke(evaluate.cli, ["run", "short/"])
 
-    monkeypatch.setattr(evaluate, "load_evaluate", fake_load)
-    result = CliRunner().invoke(evaluate.cli, ["run", "short/optimization"])
-    assert result.exit_code == 0, result.output
-    assert called == ["short/optimization"]
+    assert result.exit_code != 0
+    assert "short/b" in result.output
+    assert "42" in result.output
+    assert calls == [
+        [
+            "systemd-run",
+            "--user",
+            "--scope",
+            "--quiet",
+            "--property=CPUQuota=100%",
+            "--property=MemoryMax=200000000",
+            "--property=MemorySwapMax=0",
+            "--",
+            *evaluate.eval_command(name),
+        ]
+        for name in names[:2]
+    ]
 
 
 def test_run_prefix_runs_all_selected(monkeypatch) -> None:
@@ -71,13 +91,7 @@ def test_run_prefix_runs_all_selected(monkeypatch) -> None:
 
     called: list[str] = []
 
-    def fake_load(name: str):
-        def evaluate_fn() -> None:
-            called.append(name)
-
-        return evaluate_fn
-
-    monkeypatch.setattr(evaluate, "load_evaluate", fake_load)
+    monkeypatch.setattr(evaluate, "run_local_eval", called.append)
     for prefix in ("short/", "sh"):
         called.clear()
         result = CliRunner().invoke(evaluate.cli, ["run", prefix])

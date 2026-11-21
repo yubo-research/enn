@@ -32,6 +32,8 @@ fn max_dist(points: &[&[f32]], g: &[usize], c: &[f32]) -> f32 {
     g.iter().map(|&i| dist(points[i], c)).fold(0.0, f32::max)
 }
 
+type Sibling = (u32, Vec<f32>);
+
 pub struct Tree {
     pub header: IndexHeader,
     pub store: TreeStore,
@@ -104,7 +106,6 @@ impl Tree {
     }
 
     pub fn insert_row(&mut self, row: u32, v: &[f32]) -> Result<(), BpannError> {
-        let mut path: Vec<(u32, usize)> = Vec::new();
         let mut cur = self.header.root_page_id;
         loop {
             let s = &mut self.store;
@@ -113,7 +114,7 @@ impl Tree {
                 s.push_entry(cur, row, v);
                 self.header.indexed_rows += 1;
                 if self.store.len(cur) > TREE_LEAF_CAPACITY {
-                    self.split_leaf(cur, &mut path)?;
+                    self.split_leaf(cur)?;
                 }
                 return Ok(());
             }
@@ -125,12 +126,11 @@ impl Tree {
             mean_update(c, v, n_child);
             let r = (s.radius(child) + moved).max(moved * (n_child - 1) as f32);
             s.set_radius(child, r);
-            path.push((cur, slot));
             cur = child;
         }
     }
 
-    fn split_leaf(&mut self, leaf: u32, path: &mut Vec<(u32, usize)>) -> Result<(), BpannError> {
+    fn split_leaf(&mut self, leaf: u32) -> Result<(), BpannError> {
         let row_ids = self.store.ids(leaf).to_vec();
         let block = self.store.block(leaf).to_vec();
         let vectors: Vec<&[f32]> = block.chunks(self.store.num_dim()).collect();
@@ -150,44 +150,37 @@ impl Tree {
         s.set_count(new_id, right.len());
         s.set_radius(new_id, max_dist(&vectors, &right, &cb));
         s.set_entries(new_id, &pick_ids(&right), &gather(&right));
-        self.attach_sibling(path, (leaf, ca), (new_id, cb))
+        self.attach_sibling((leaf, ca), (new_id, cb))
     }
 
-    fn attach_sibling(
-        &mut self,
-        path: &mut Vec<(u32, usize)>,
-        old: (u32, Vec<f32>),
-        new: (u32, Vec<f32>),
-    ) -> Result<(), BpannError> {
-        let s = &mut self.store;
-        let Some((parent, slot)) = path.pop() else {
-            let root = s.alloc(Kind::Internal)?;
-            s.set_count(root, s.count(old.0) + s.count(new.0));
-            s.set_entries(
-                root,
-                &[old.0, new.0],
-                &[old.1.as_slice(), new.1.as_slice()].concat(),
-            );
-            s.set_parent(root, None);
-            s.set_parent(old.0, Some(root));
-            s.set_parent(new.0, Some(root));
-            self.header.root_page_id = root;
-            return Ok(());
-        };
-        s.set_parent(new.0, Some(parent));
-        s.entry_mut(parent, slot).copy_from_slice(&old.1);
-        s.push_entry(parent, new.0, &new.1);
-        if s.len(parent) > TREE_FANOUT {
-            self.split_internal(path, parent)?;
+    fn attach_sibling(&mut self, mut old: Sibling, mut new: Sibling) -> Result<(), BpannError> {
+        loop {
+            let s = &mut self.store;
+            let Some(parent) = s.parent(old.0) else {
+                let root = s.alloc(Kind::Internal)?;
+                s.set_count(root, s.count(old.0) + s.count(new.0));
+                s.set_entries(root, &[old.0, new.0], &[old.1, new.1].concat());
+                s.set_parent(old.0, Some(root));
+                s.set_parent(new.0, Some(root));
+                self.header.root_page_id = root;
+                return Ok(());
+            };
+            let slot = s
+                .ids(parent)
+                .iter()
+                .position(|&id| id == old.0)
+                .expect("child in parent");
+            s.set_parent(new.0, Some(parent));
+            s.entry_mut(parent, slot).copy_from_slice(&old.1);
+            s.push_entry(parent, new.0, &new.1);
+            if s.len(parent) <= TREE_FANOUT {
+                return Ok(());
+            }
+            (old, new) = self.split_internal(parent)?;
         }
-        Ok(())
     }
 
-    fn split_internal(
-        &mut self,
-        path: &mut Vec<(u32, usize)>,
-        page_id: u32,
-    ) -> Result<(), BpannError> {
+    fn split_internal(&mut self, page_id: u32) -> Result<(Sibling, Sibling), BpannError> {
         let s = &self.store;
         let all_children = s.ids(page_id).to_vec();
         let flat = s.block(page_id).to_vec();
@@ -224,6 +217,6 @@ impl Tree {
             .for_each(|&kid| s.set_parent(kid, Some(new_id)));
         s.set_entries(page_id, &kids_a, &cents_a);
         s.set_entries(new_id, &kids_b, &cents_b);
-        self.attach_sibling(path, (page_id, ca), (new_id, cb))
+        Ok(((page_id, ca), (new_id, cb)))
     }
 }

@@ -6,7 +6,7 @@ use crate::distance::{bpann_row_to_f32, l2_sq_f32};
 use crate::error::BpannError;
 use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
-use crate::small_n_search::{OrderedF32, OrderedFloat};
+use crate::ordered::{OrderedF32, OrderedFloat};
 
 pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 128.0;
 
@@ -108,6 +108,8 @@ pub fn leaf_budget(indexed_rows: usize) -> usize {
     let ln_n = (indexed_rows.max(1) as f64).ln();
     ((leaf_coefficient() * ln_n).ceil() as usize).max(1)
 }
+
+const MAX_FRONTIER_PAGES: usize = 4096;
 
 pub const TREE_SEARCH_RADIUS_WEIGHT: f32 = 0.1;
 
@@ -303,97 +305,151 @@ pub fn search_tree_f64(
     } else {
         leaf_budget(tree.header.indexed_rows)
     };
-    search_tree_scored(
-        tree,
-        &scaled,
-        k,
-        budget,
-        &F64_WALKS,
-        |row, _, limit| {
-            let point = store.train_x.mmap_row_slice(row as usize)?;
-            let mut distance = 0.0;
-            for (j, (&q, &x)) in query_scaled.iter().zip(point).enumerate() {
-                let x = if store.scale_x {
-                    x / store.x_scale[j]
-                } else {
-                    x
-                };
-                let delta = q - x;
-                distance += delta * delta;
-                if distance > limit {
-                    return Ok(None);
-                }
+    search_tree_scored(tree, &scaled, k, budget, &F64_WALKS, |row, _, limit| {
+        let point = store.train_x.mmap_row_slice(row as usize)?;
+        let mut distance = 0.0;
+        for (j, (&q, &x)) in query_scaled.iter().zip(point).enumerate() {
+            let x = if store.scale_x {
+                x / store.x_scale[j]
+            } else {
+                x
+            };
+            let delta = q - x;
+            distance += delta * delta;
+            if distance > limit {
+                return Ok(None);
             }
-            Ok(Some(distance.max(0.0)))
-        },
-    )
+        }
+        Ok(Some(distance.max(0.0)))
+    })
 }
 
-fn search_tree_scored(
+type FrontierEntry = (OrderedF32, OrderedF32, u32);
+
+struct Walk<'a, F> {
+    tree: &'a Tree,
+    query: &'a [f32],
+    top: TopK,
+    score: F,
+    leaves: usize,
+}
+
+impl<F> Walk<'_, F>
+where
+    F: FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
+{
+    fn score_leaf(&mut self, page: u32) -> Result<(), BpannError> {
+        let s = &self.tree.store;
+        let d = self.query.len().max(1);
+        let block = self.tree.rows_cached().then(|| s.block(page));
+        for (i, &row) in s.ids(page).iter().enumerate() {
+            let x = block.map(|v| &v[i * d..(i + 1) * d]);
+            if let Some(distance) = (self.score)(row, x, self.top.limit())? {
+                self.top.offer(row, distance);
+            }
+        }
+        self.leaves += 1;
+        Ok(())
+    }
+
+    fn children(&self, page: u32) -> Vec<FrontierEntry> {
+        let s = &self.tree.store;
+        let d = self.query.len().max(1);
+        s.ids(page)
+            .iter()
+            .zip(s.block(page).chunks_exact(d))
+            .filter_map(|(&child, c)| {
+                let d2 = l2_sq_f32(self.query, c);
+                let radius = s.radius(child);
+                let bound = lower_bound(d2, radius);
+                (!self.top.cannot_improve(bound))
+                    .then_some((OrderedF32(priority(d2, radius)), OrderedF32(bound), child))
+            })
+            .collect()
+    }
+
+    fn best_first(&mut self, leaf_budget: usize) -> Result<bool, BpannError> {
+        let root = (OrderedF32(0.0), OrderedF32(0.0), self.tree.header.root_page_id);
+        let mut frontier = BinaryHeap::from([Reverse(root)]);
+        while let Some(Reverse((_, bound, page_id))) = frontier.pop() {
+            if self.leaves >= leaf_budget && self.top.heap.len() >= self.top.k {
+                return Ok(true);
+            }
+            if self.top.cannot_improve(bound.0) {
+                continue;
+            }
+            if self.tree.store.is_leaf(page_id) {
+                self.score_leaf(page_id)?;
+                continue;
+            }
+            frontier.extend(self.children(page_id).into_iter().map(Reverse));
+            if frontier.len() > MAX_FRONTIER_PAGES {
+                frontier = keep_most_promising(frontier);
+            }
+        }
+        Ok(false)
+    }
+
+    fn depth_first(&mut self) -> Result<(), BpannError> {
+        let mut stack = vec![(OrderedF32(0.0), self.tree.header.root_page_id)];
+        while let Some((bound, page_id)) = stack.pop() {
+            if self.top.cannot_improve(bound.0) {
+                continue;
+            }
+            if self.tree.store.is_leaf(page_id) {
+                self.score_leaf(page_id)?;
+                continue;
+            }
+            let mut kids = self.children(page_id);
+            kids.sort_unstable_by(|a, b| b.cmp(a));
+            stack.extend(kids.into_iter().map(|(_, bound, child)| (bound, child)));
+        }
+        Ok(())
+    }
+}
+
+fn keep_most_promising(
+    frontier: BinaryHeap<Reverse<FrontierEntry>>,
+) -> BinaryHeap<Reverse<FrontierEntry>> {
+    let keep = MAX_FRONTIER_PAGES / 2;
+    let mut entries = frontier.into_vec();
+    entries.select_nth_unstable_by(keep, |a, b| a.0.cmp(&b.0));
+    entries.truncate(keep);
+    BinaryHeap::from(entries)
+}
+
+fn search_tree_scored<F>(
     tree: &Tree,
     query: &[f32],
     k: usize,
     leaf_budget: usize,
     meter: &WalkMeter,
-    mut score: impl FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
-) -> Result<Vec<(u32, f64)>, BpannError> {
-    let mut top = TopK {
-        k,
-        heap: BinaryHeap::with_capacity(k + 1),
-    };
+    score: F,
+) -> Result<Vec<(u32, f64)>, BpannError>
+where
+    F: FnMut(u32, Option<&[f32]>, f64) -> Result<Option<f64>, BpannError>,
+{
     if k == 0 || tree.num_pages() == 0 {
         return Ok(Vec::new());
     }
-    let s = &tree.store;
-    let d = query.len().max(1);
-    let mut frontier: BinaryHeap<Reverse<(OrderedF32, OrderedF32, u32)>> = BinaryHeap::new();
-    frontier.push(Reverse((
-        OrderedF32(0.0),
-        OrderedF32(0.0),
-        tree.header.root_page_id,
-    )));
-    let mut leaves = 0usize;
-    let mut stopped_on_budget = false;
-    while let Some(Reverse((_, bound, page_id))) = frontier.pop() {
-        if leaves >= leaf_budget && top.heap.len() >= k {
-            stopped_on_budget = true;
-            break;
-        }
-        if top.cannot_improve(bound.0) {
-            continue;
-        }
-        if !s.is_leaf(page_id) {
-            for (&child, c) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
-                let d2 = l2_sq_f32(query, c);
-                let radius = s.radius(child);
-                let bound = lower_bound(d2, radius);
-                if !top.cannot_improve(bound) {
-                    frontier.push(Reverse((
-                        OrderedF32(priority(d2, radius)),
-                        OrderedF32(bound),
-                        child,
-                    )));
-                }
-            }
-            continue;
-        }
-        if tree.rows_cached() {
-            for (&row, x) in s.ids(page_id).iter().zip(s.block(page_id).chunks_exact(d)) {
-                if let Some(distance) = score(row, Some(x), top.limit())? {
-                    top.offer(row, distance);
-                }
-            }
-        } else {
-            for &row in s.ids(page_id) {
-                if let Some(distance) = score(row, None, top.limit())? {
-                    top.offer(row, distance);
-                }
-            }
-        }
-        leaves += 1;
-    }
-    meter.record(leaves, stopped_on_budget);
-    Ok(top.into_sorted())
+    let mut walk = Walk {
+        tree,
+        query,
+        top: TopK {
+            k,
+            heap: BinaryHeap::with_capacity(k + 1),
+        },
+        score,
+        leaves: 0,
+    };
+    let stopped_on_budget = if leaf_budget == usize::MAX {
+        walk.depth_first()?;
+        false
+    } else {
+        walk.best_first(leaf_budget)?
+    };
+    meter.record(walk.leaves, stopped_on_budget);
+    Ok(walk.top.into_sorted())
 }
 
 #[cfg(test)]
@@ -420,5 +476,17 @@ mod tests {
         assert_eq!(priority(1.0, 100.0), 0.0);
         assert_eq!(lower_bound(4.0, 1.0), 1.0);
         assert_eq!(lower_bound(4.0, 3.0), 0.0);
+    }
+
+    #[test]
+    fn keep_most_promising_halves_the_frontier_and_keeps_the_best() {
+        let entries = (0..=MAX_FRONTIER_PAGES as u32)
+            .rev()
+            .map(|i| Reverse((OrderedF32(i as f32), OrderedF32(0.0), i)));
+        let kept = keep_most_promising(entries.collect());
+        assert_eq!(kept.len(), MAX_FRONTIER_PAGES / 2);
+        let mut ids: Vec<u32> = kept.into_iter().map(|Reverse((_, _, id))| id).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, (0..(MAX_FRONTIER_PAGES / 2) as u32).collect::<Vec<_>>());
     }
 }

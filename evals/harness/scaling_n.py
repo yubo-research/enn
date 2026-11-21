@@ -117,19 +117,18 @@ class ScalingRun:
         out["peak_mib"] = now["peak_mib"] - self.base_mem["rss_mib"]
         return out
 
-    def add(self, x: np.ndarray, y: np.ndarray) -> float:
-        t0 = time.perf_counter()
-        for start in range(0, len(x), self.config.batch):
-            xb, yb = (
-                x[start : start + self.config.batch],
-                y[start : start + self.config.batch],
-            )
+    def add(self, num_rows: int, rng: np.random.Generator) -> float:
+        elapsed = 0.0
+        for start in range(0, num_rows, self.config.batch):
+            x, y = make_data(min(self.config.batch, num_rows - start), rng)
+            t0 = time.perf_counter()
             if self.model is None:
-                self.model = build_model(MODEL, xb, yb, self.work_dir)
+                self.model = build_model(MODEL, x, y, self.work_dir)
             else:
-                self.model.add(xb, yb)
+                self.model.add(x, y)
             self.model.ensure_index_sync()
-        return time.perf_counter() - t0
+            elapsed += time.perf_counter() - t0
+        return elapsed
 
     def fit(self) -> float:
         t0 = time.perf_counter()
@@ -149,7 +148,6 @@ class ScalingRun:
 
 def run_seed(config: ScalingConfig) -> list[dict[str, float]]:
     rng = np.random.default_rng(config.seed)
-    x, y = make_data(max(config.n_grid), rng)
     x_test, y_test = make_data(config.num_test, rng)
     rows: list[dict[str, float]] = []
     with tempfile.TemporaryDirectory(prefix=WORK_DIR_PREFIX) as work_dir:
@@ -157,7 +155,7 @@ def run_seed(config: ScalingConfig) -> list[dict[str, float]]:
         lo = 0
         for hi in config.n_grid:
             reset_peak()
-            add_s = run.add(x[lo:hi], y[lo:hi])
+            add_s = run.add(hi - lo, rng)
             fit_s = run.fit()
             mu, se, query_s = run.query(x_test)
             row = {

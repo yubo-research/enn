@@ -172,28 +172,7 @@ fn backend_scale_and_row_accessors() {
     let (_d2, idx2) = b.search(&array![[0.1, 0.1]].view(), 1, false).unwrap();
     assert_eq!(idx1[[0, 0]], idx2[[0, 0]]);
     assert_eq!(idx1[[0, 0]], 0);
-    assert_eq!(ennbo_bpann::SMALL_N_INCORE_SEARCH_LIMIT, 8192);
-    let flat = ennbo_bpann::load_or_build_small_n_cache(&b, b.len()).unwrap();
-    assert_eq!(flat.len(), b.len() * 2);
-    let hits = ennbo_bpann::topk_flat_sq_l2(&[0.0, 0.0], &flat, 2, 2, 1);
-    assert_eq!(hits[0].0, 0);
     assert!(ennbo_bpann::OrderedF32(1.0) > ennbo_bpann::OrderedF32(0.0));
-    assert!(ennbo_bpann::topk_flat_sq_l2(&[0.0, 0.0], &[], 0, 2, 1).is_empty());
-    let scored = ennbo_bpann::score_queries_flat(
-        &[vec![0.1, 0.1]],
-        &ennbo_bpann::ScoreQueriesFlat {
-            flat: &flat,
-            total: 2,
-            num_dim: 2,
-            scale_x: false,
-            x_scale: &[1.0, 1.0],
-            k_eff: 1,
-            pool_k: 1,
-            exclude_nearest: false,
-        },
-    );
-    assert_eq!(scored.len(), 1);
-    assert_eq!(scored[0].1[0], 0);
 
     b.append_rows(&array![[2.0, 0.0]].view(), &array![[2.0]].view(), None)
         .unwrap();
@@ -214,7 +193,7 @@ fn large_n_search_indexed_and_pending_finds_nearest() {
     let dir = TempDir::new().unwrap();
     let mut b = BpannBackend::new_empty(dir.path().to_path_buf(), 2, 1).unwrap();
 
-    let n = ennbo_bpann::SMALL_N_INCORE_SEARCH_LIMIT + 50;
+    let n = 8_242;
     let mut xs = Array2::<f64>::zeros((n, 2));
     let mut ys = Array2::<f64>::zeros((n, 1));
     for i in 0..n {

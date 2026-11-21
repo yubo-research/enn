@@ -5,6 +5,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import numpy as np
 
@@ -52,6 +53,7 @@ BPANN_METRIC_LEARNING: dict[str, ENNMetricLearning] = {
     "bpann_disk_auto": ENNMetricLearning.AUTO,
 }
 WORK_DIR_PREFIX = "enn_metric_12d_"
+WORK_DIR_PARENT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(frozen=True)
@@ -113,11 +115,10 @@ class StreamedModel:
         self.model.add(x, y)
         self.model.ensure_index_sync()
 
-    def advance(self, x: np.ndarray, y: np.ndarray, lo: int, hi: int) -> float:
+    def advance(self, count: int, data: DataFn, rng: np.random.Generator) -> float:
         t0 = time.perf_counter()
-        for start in range(lo, hi, self.config.batch):
-            stop = min(hi, start + self.config.batch)
-            self._add_rows(x[start:stop], y[start:stop])
+        for start in range(0, count, self.config.batch):
+            self._add_rows(*data(min(count - start, self.config.batch), rng))
         assert self.model is not None
         self.params = self.fitter.ask(
             self.model,
@@ -136,15 +137,14 @@ class StreamedModel:
 def run_model(
     name: str, work_dir: str, config: Metric12dConfig, data: DataFn = make_data
 ) -> list[CheckpointResult]:
-    rng = np.random.default_rng(config.seed)
-    x, y = data(config.stream_rows(), rng)
-    x_test, y_test = data(config.num_test, rng)
+    train_rng, test_rng = np.random.default_rng(config.seed).spawn(2)
+    x_test, y_test = data(config.num_test, test_rng)
     y_test_std = float(np.std(y_test))
     streamed = StreamedModel(name, work_dir, config)
     results: list[CheckpointResult] = []
     lo = 0
     for hi in config.n_grid:
-        add_s = streamed.advance(x, y, lo, hi)
+        add_s = streamed.advance(hi - lo, data, train_rng)
         mu, se, query_s = streamed.query(x_test)
         result = CheckpointResult(
             model=name,
@@ -182,7 +182,9 @@ def run_eval(
     results: list[CheckpointResult] = []
     for i in range(cfg.num_seeds):
         seed_cfg = replace(cfg, seed=cfg.seed + i)
-        with tempfile.TemporaryDirectory(prefix=WORK_DIR_PREFIX) as work_dir:
+        with tempfile.TemporaryDirectory(
+            prefix=WORK_DIR_PREFIX, dir=WORK_DIR_PARENT
+        ) as work_dir:
             for name in models:
                 results.extend(run_model(name, work_dir, seed_cfg, data))
     summaries = summarize(results)

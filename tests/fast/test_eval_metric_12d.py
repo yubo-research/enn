@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -53,11 +54,11 @@ def test_advance_adds_rows_in_batches_and_auto_refits_inside_add(
 ) -> None:
     monkeypatch.setattr(mod.ENNStatefulFitter, "ask", lambda *a, **kw: None)
     cfg = mod.Metric12dConfig(batch=40)
-    x, y = mod.make_data(260, np.random.default_rng(4))
+    rng = np.random.default_rng(4)
     with tempfile.TemporaryDirectory() as work_dir:
         streamed = mod.StreamedModel("bpann_disk_auto", work_dir, cfg)
         for lo, hi in ((0, 30), (30, 100), (100, 260)):
-            assert streamed.advance(x, y, lo, hi) > 0
+            assert streamed.advance(hi - lo, mod.make_data, rng) > 0
         assert len(streamed.model) == 260
         assert streamed.model.metric.num_seen == 260
         assert streamed.model.metric.num_refits == 2
@@ -186,3 +187,7 @@ def test_truncated_grid_with_same_num_rows_reproduces_long_prefix() -> None:
     assert [(r.num_obs, r.loglik, r.nrmse) for r in short] == [
         (r.num_obs, r.loglik, r.nrmse) for r in long[:2]
     ]
+
+
+def test_work_dirs_live_under_the_repo_not_the_caller_cwd() -> None:
+    assert mod.WORK_DIR_PARENT == Path(__file__).resolve().parents[2]

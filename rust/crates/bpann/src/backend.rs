@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use ndarray::{Array1, Array2, ArrayView2};
 
@@ -36,7 +36,6 @@ pub struct BpannBackend {
     indexed_rows_written: usize,
     index_dirty: Mutex<bool>,
     num_obs_counter: obs::NumObsCounter,
-    pub(crate) small_n_x_cache: Mutex<Option<(usize, Arc<[f64]>)>>,
     _store_lock: fs::File,
 }
 
@@ -116,7 +115,6 @@ impl BpannBackend {
             indexed_rows_written: indexed_rows,
             index_dirty: Mutex::new(indexed_rows < n),
             num_obs_counter,
-            small_n_x_cache: Mutex::new(None),
             _store_lock: store_lock,
         };
         backend.insert_unindexed_rows()?;
@@ -242,7 +240,6 @@ impl BpannBackend {
             yvar,
         )?;
         *self.index_dirty.lock().expect("index_dirty") = true;
-        *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.num_obs_counter.set(self.len());
         self.insert_unindexed_rows()
     }

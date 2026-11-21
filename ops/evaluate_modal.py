@@ -3,24 +3,18 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
-import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 
-from ops.evaluate import REPO_ROOT
+from ops.evaluate import EVAL_CPUS, REPO_ROOT, eval_command
 
 REMOTE_ROOT = "/root"
+MODAL_MEMORY_MIB = 95
 TIMEOUT_S = 24 * 3600
 _IGNORE = ["**/__pycache__", "**/*.pyc"]
 
 EvalResult = tuple[str, int, str]
 RemoteCall = Callable[[str], Awaitable[tuple[int, str]]]
-
-
-def eval_command(eval_id: str) -> list[str]:
-    """Run exactly one eval (``run`` would treat the id as a prefix)."""
-    code = "import sys; from ops.evaluate import load_evaluate; load_evaluate(sys.argv[1])()"
-    return [sys.executable, "-c", code, eval_id]
 
 
 def run_eval_captured(eval_id: str) -> tuple[int, str]:
@@ -95,7 +89,11 @@ def _remote_runtime():
 
     app = modal.App("enn-evals", image=image, include_source=False)
 
-    remote = app.function(cpu=4.0, memory=8192, timeout=TIMEOUT_S)(run_eval_captured)
+    remote = app.function(
+        cpu=(EVAL_CPUS, EVAL_CPUS),
+        memory=(MODAL_MEMORY_MIB, MODAL_MEMORY_MIB),
+        timeout=TIMEOUT_S,
+    )(run_eval_captured)
     return app, remote
 
 

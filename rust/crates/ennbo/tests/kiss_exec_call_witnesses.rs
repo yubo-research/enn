@@ -143,7 +143,6 @@ fn kiss_call_witness_chunk_3() {
     fn sample() {}
     fn scale_x() {}
     fn schedule_background_flush() {}
-    fn ScoreQueriesFlat() {}
     fn search_beam_width() {}
     fn SearchPendingArgs() {}
     fn set_config_path_py() {}
@@ -163,7 +162,6 @@ fn kiss_call_witness_chunk_3() {
     sample();
     scale_x();
     schedule_background_flush();
-    ScoreQueriesFlat();
     search_beam_width();
     SearchPendingArgs();
     set_config_path_py();

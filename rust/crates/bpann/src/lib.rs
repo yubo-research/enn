@@ -7,7 +7,7 @@ pub mod merge;
 pub mod metric;
 pub mod mmap_store;
 pub mod observation;
-pub mod small_n_search;
+pub mod ordered;
 pub mod store_file;
 pub mod tuning;
 
@@ -23,10 +23,7 @@ pub use merge::{
     merge_topk_precomputed_dist_with_self,
 };
 pub use observation::{bpann_remove_store, MAX_NUM_DIM, MAX_RECORD_STRIDE};
-pub use small_n_search::{
-    load_or_build_small_n_cache, score_queries_flat, topk_flat_sq_l2, OrderedF32, ScoreQueriesFlat,
-    SMALL_N_INCORE_SEARCH_LIMIT,
-};
+pub use ordered::OrderedF32;
 pub use store_file::{
     bpann_lock_store, bpann_read_json, bpann_replace_json_text, bpann_write_json,
 };
@@ -349,8 +346,6 @@ mod acceptance_tests {
         }
     }
 
-    /// Regression: batched adds past the in-core limit must keep recall high
-    /// in the incremental tree.
     #[test]
     fn test_tree_recall_after_ensure_index_sync() {
         let n = 15_000usize;
@@ -378,7 +373,6 @@ mod acceptance_tests {
         }
         b.ensure_index_sync().unwrap();
         assert_eq!(b.indexed_rows(), n);
-        assert!(n > SMALL_N_INCORE_SEARCH_LIMIT);
         let tree = b.index_snapshot().expect("indexed snapshot");
         assert_eq!(tree.header.indexed_rows, n);
         let mut total_recall = 0.0;
@@ -401,9 +395,7 @@ mod acceptance_tests {
 
     #[test]
     fn test_large_scale_batched_recall_default_flush() {
-        // Cross the in-core boundary and several default hard-flush intervals.
-        // The Python large-scale integration test also covers 100,000 rows.
-        let n = 2 * SMALL_N_INCORE_SEARCH_LIMIT + DEFAULT_PENDING_HARD_FLUSH_THRESHOLD;
+        let n = 16_384 + DEFAULT_PENDING_HARD_FLUSH_THRESHOLD;
         let d = 10usize;
         let k = 9usize;
         let batch = 200usize;

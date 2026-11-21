@@ -8,14 +8,14 @@ use crate::index::split::{median_split, weighted_mean};
 use crate::index::tree::{Tree, TREE_FANOUT, TREE_LEAF_CAPACITY};
 use crate::index::tree_counts::dist;
 use crate::index::tree_store::Kind;
-use crate::small_n_search::OrderedF32;
+use crate::ordered::OrderedF32;
 
 pub const BULK_BUILD_MIN_ROWS: usize = 65_536;
 
-pub const BULK_BUILD_MAX_BYTES: usize = 256 << 20;
+pub const BULK_BUILD_MAX_BYTES: usize = 8 << 20;
 
 pub fn bulk_build_max_rows(num_dim: usize) -> usize {
-    (BULK_BUILD_MAX_BYTES / (4 * num_dim.max(1))).max(BULK_BUILD_MIN_ROWS)
+    BULK_BUILD_MAX_BYTES / (4 * num_dim.max(1))
 }
 
 enum Node {
@@ -259,7 +259,7 @@ mod tests {
             dir.path().join("i"),
         )
         .unwrap();
-        assert_eq!(bulk_build_max_rows(1_000_000), BULK_BUILD_MIN_ROWS);
+        assert!(bulk_build_max_rows(1_000_000) < BULK_BUILD_MIN_ROWS);
         assert_eq!(bulk_build_max_rows(4), BULK_BUILD_MAX_BYTES / 16);
         for &row in &rows[8000..] {
             let r = row as usize;

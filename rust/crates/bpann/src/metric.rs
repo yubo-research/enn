@@ -52,7 +52,6 @@ impl BpannBackend {
             .map(|j| self.current_scale(j) / x_scale[j])
             .collect();
         self.index.rescale_coords(&ratio);
-        *self.small_n_x_cache.lock().expect("small_n_x_cache") = None;
         self.scale_x = true;
         self.x_scale = x_scale.to_owned();
         self.write_metric_marker()

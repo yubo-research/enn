@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -13,6 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 EVALS_DIR = REPO_ROOT / "evals"
 EVAL_PREFIX = "eval_"
 EVAL_BUCKETS = ("long", "short")
+EVAL_CPUS = 1
+EVAL_MEMORY_BYTES = 200_000_000
 
 
 def ensure_repo_on_sys_path() -> None:
@@ -108,12 +111,45 @@ def list_cmd(prefix: str | None) -> None:
         click.echo(name)
 
 
+def eval_command(eval_id: str) -> list[str]:
+    """Load one exact eval in a fresh interpreter from any working directory."""
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "from ops.evaluate import load_evaluate; load_evaluate(sys.argv[2])()"
+    )
+    return [sys.executable, "-c", code, str(REPO_ROOT), eval_id]
+
+
+def run_local_eval(eval_id: str) -> None:
+    command = [
+        "systemd-run",
+        "--user",
+        "--scope",
+        "--quiet",
+        f"--property=CPUQuota={EVAL_CPUS * 100}%",
+        f"--property=MemoryMax={EVAL_MEMORY_BYTES}",
+        "--property=MemorySwapMax=0",
+        "--",
+        *eval_command(eval_id),
+    ]
+    try:
+        subprocess.run(command, check=True)
+    except OSError as exc:
+        raise click.ClickException(
+            f"cannot launch {eval_id} with systemd-run: {exc}"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(
+            f"{eval_id} failed (status {exc.returncode})"
+        ) from exc
+
+
 @cli.command("run")
 @click.argument("prefix", required=False, default=None)
 def run_cmd(prefix: str | None) -> None:
     """Run ``evaluate()`` for every eval id selected by PREFIX (same filter as list)."""
     for eval_id in select_eval_names(prefix):
-        load_evaluate(eval_id)()
+        run_local_eval(eval_id)
 
 
 @cli.command("run-model")
