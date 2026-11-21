@@ -1,6 +1,7 @@
 """One-hot labels must not change exact disk neighbors or calibrated predictions."""
 
 import numpy as np
+from scipy.spatial.distance import cdist
 
 from enn import EpistemicNearestNeighbors
 from enn.enn.cat_codes import CatEncoder, CatEncoding, DimKind
@@ -40,7 +41,8 @@ def test_fixed_metric_onehot_neighbors_match_exact_after_relabeling(tmp_path):
         x, q = encoder.encode(raw), encoder.encode(query)
         model = _model(x, y, tmp_path / str(label))
         model.metric.set_weights(weights)
-        exact = np.argsort(((x[None] - q[:, None]) ** 2) @ weights, axis=1)
+        scale = np.sqrt(weights)
+        exact = np.argsort(cdist(q * scale, x * scale, metric="sqeuclidean"), axis=1)
         if expected is None:
             expected = exact[:, :10]
         np.testing.assert_array_equal(exact[:, :10], expected)

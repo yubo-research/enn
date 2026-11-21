@@ -8,7 +8,7 @@ SHORT_CONFIG = Metric12dConfig(
     num_fit_candidates=16,
     num_fit_samples=32,
 )
-LONG_CONFIG = Metric12dConfig(n_grid=(100, 1000, 10000, 100000))
+LONG_CONFIG = Metric12dConfig(n_grid=(100, 1000, 10000, 100000, 1000000))
 
 
 def run_prediction(config: Metric12dConfig) -> None:

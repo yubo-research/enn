@@ -151,13 +151,14 @@ def test_enn_class_properties():
     _, y_at, yvar_at = enn.train_rows_at([0, 1])
     assert y_at.shape == (2, 1)
     assert yvar_at is None
-    assert enn.num_outputs == 1
+    assert enn._num_dim == 2
+    assert enn._num_metrics == enn.num_outputs == 1
 
 
 def test_enn_class_add():
     enn = _enn_model()
     enn.add(np.array([[0.5, 0.6]]), np.array([[3.0]]))
-    assert len(enn) == 3
+    assert enn.__len__() == 3
 
 
 def test_enn_neighbor_distances_add_and_search():

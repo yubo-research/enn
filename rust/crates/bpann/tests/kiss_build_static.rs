@@ -22,3 +22,21 @@ fn kiss_build_module_names_in_source() {
 fn kiss_needs_skip_edges_name_is_covered() {
     assert!(BUILD_SRC.contains("fn needs_skip_edges"));
 }
+
+#[test]
+fn pushed_page_can_be_mutated_by_sparse_id() {
+    use ennbo_bpann::index::{build::BpannIndex, page::Page};
+    let mut index = BpannIndex::build_single_leaf_from_rows_with_persist(
+        &[0],
+        &[vec![0.0]],
+        1,
+        Default::default(),
+        false,
+    )
+    .unwrap();
+    let page = Page::empty_range_leaf(10, 1, 2, vec![1.0]);
+    index.push_page(page);
+    let replacement = Page::empty_range_leaf(10, 1, 3, vec![2.0]);
+    *index.page_by_id_mut(10).unwrap() = replacement.clone();
+    assert_eq!(index.page_by_id(10), Some(&replacement));
+}

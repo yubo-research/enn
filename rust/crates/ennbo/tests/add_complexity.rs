@@ -1,8 +1,5 @@
 use ennbo::EpistemicNearestNeighbors;
 use ndarray::Array2;
-use std::collections::HashMap;
-use std::hint::black_box;
-use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
@@ -10,56 +7,30 @@ const ROW_COUNTS: [usize; 5] = [1_000, 3_000, 10_000, 30_000, 100_000];
 const BASELINE_ROWS: usize = ROW_COUNTS[0];
 const NUM_ADDS: usize = 32;
 const MAX_SECS_PER_BASELINE_SEC: f64 = 2.5;
-const TIMING_REPEATS: usize = 1;
-const MAX_MEASUREMENT_ATTEMPTS: usize = 25;
+const TIMING_SAMPLES: usize = 10;
+const MAX_ATTEMPTS: usize = 3;
 
 fn row_f64(i: usize) -> f64 {
     f64::from(u32::try_from(i).unwrap_or(u32::MAX))
 }
 
-fn cached_array<F>(
-    cache: &OnceLock<Mutex<HashMap<usize, Array2<f64>>>>,
-    n: usize,
-    build: F,
-) -> Array2<f64>
-where
-    F: FnOnce(usize) -> Array2<f64>,
-{
-    let cache = cache.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = cache.lock().expect("deterministic data cache");
-    if let Some(array) = guard.get(&n) {
-        return array.clone();
-    }
-    let array = build(n);
-    guard.insert(n, array.clone());
-    array
-}
-
-static X_CACHE: OnceLock<Mutex<HashMap<usize, Array2<f64>>>> = OnceLock::new();
-static Y_CACHE: OnceLock<Mutex<HashMap<usize, Array2<f64>>>> = OnceLock::new();
-static YVAR_CACHE: OnceLock<Mutex<HashMap<usize, Array2<f64>>>> = OnceLock::new();
-
 fn deterministic_x(n: usize) -> Array2<f64> {
-    cached_array(&X_CACHE, n, |n| {
-        Array2::from_shape_fn((n, 2), |(i, j)| {
-            let base = row_f64(i);
-            if j == 0 {
-                base * 0.001
-            } else {
-                (base * 0.017).sin()
-            }
-        })
+    Array2::from_shape_fn((n, 2), |(i, j)| {
+        let base = row_f64(i);
+        if j == 0 {
+            base * 0.001
+        } else {
+            (base * 0.017).sin()
+        }
     })
 }
 
 fn deterministic_y(n: usize) -> Array2<f64> {
-    cached_array(&Y_CACHE, n, |n| {
-        Array2::from_shape_fn((n, 1), |(i, _)| (row_f64(i) * 0.013).cos())
-    })
+    Array2::from_shape_fn((n, 1), |(i, _)| (row_f64(i) * 0.013).cos())
 }
 
 fn deterministic_yvar(n: usize) -> Array2<f64> {
-    cached_array(&YVAR_CACHE, n, |n| Array2::from_elem((n, 1), 1e-6))
+    Array2::from_elem((n, 1), 1e-6)
 }
 
 fn layout(dir: &TempDir, weighting: bool) -> ennbo::EnnLayout {
@@ -86,12 +57,11 @@ fn model_with_rows_and_yvar(dir: &TempDir, n: usize, scale_x: bool) -> Epistemic
     .unwrap()
 }
 
-fn timed_single_row_adds_with_yvar(
+fn prepared_model(
     starting_rows: usize,
-    num_adds: usize,
     scale_x: bool,
     with_yvar: bool,
-) -> Duration {
+) -> (EpistemicNearestNeighbors, TempDir) {
     let dir = TempDir::new().unwrap();
     let mut model = if with_yvar {
         model_with_rows_and_yvar(&dir, starting_rows, scale_x)
@@ -113,53 +83,52 @@ fn timed_single_row_adds_with_yvar(
         None => model.add(&warm_x.view(), &warm_y.view(), None).unwrap(),
     }
 
-    let start = Instant::now();
-    for i in 0..num_adds {
-        let fi = row_f64(i);
-        let x = Array2::from_shape_vec(
-            (1, 2),
-            vec![
+    (model, dir)
+}
+
+type PreparedModels = [(EpistemicNearestNeighbors, TempDir); ROW_COUNTS.len()];
+
+fn measure_flat_growth(
+    models: &mut PreparedModels,
+    attempt: usize,
+    with_yvar: bool,
+) -> Vec<(usize, f64)> {
+    let yvar = with_yvar.then(|| deterministic_yvar(1));
+    let mut samples = [[Duration::ZERO; ROW_COUNTS.len()]; TIMING_SAMPLES];
+    // Compare the same input under nearby system load, rotating which size goes first.
+    for (sample, batch) in samples.iter_mut().enumerate() {
+        for i in 0..NUM_ADDS {
+            let row = (attempt * TIMING_SAMPLES + sample) * NUM_ADDS + i;
+            let fi = row_f64(row);
+            let x = ndarray::arr2(&[[
                 fi.mul_add(0.001, 10_000.0),
                 fi.mul_add(0.017, 10_000.0).sin(),
-            ],
-        )
-        .unwrap();
-        let y = Array2::from_shape_vec((1, 1), vec![fi.mul_add(0.013, 10_000.0).cos()]).unwrap();
-        let yvar = if with_yvar {
-            Some(deterministic_yvar(1))
-        } else {
-            None
-        };
-        match yvar.as_ref() {
-            Some(yv) => model.add(&x.view(), &y.view(), Some(&yv.view())).unwrap(),
-            None => model.add(&x.view(), &y.view(), None).unwrap(),
+            ]]);
+            let y = ndarray::arr2(&[[fi.mul_add(0.013, 10_000.0).cos()]]);
+            let yvar_view = yvar.as_ref().map(|a| a.view());
+            for offset in 0..models.len() {
+                let index = (row + offset) % models.len();
+                let start = Instant::now();
+                models[index]
+                    .0
+                    .add(&x.view(), &y.view(), yvar_view.as_ref())
+                    .unwrap();
+                batch[index] += start.elapsed();
+            }
         }
     }
-    let elapsed = start.elapsed();
-
-    black_box(model.len());
-    elapsed
-}
-
-fn best_of_repeats_secs(
-    starting_rows: usize,
-    num_adds: usize,
-    scale_x: bool,
-    with_yvar: bool,
-) -> f64 {
-    (0..TIMING_REPEATS)
-        .map(|_| {
-            timed_single_row_adds_with_yvar(starting_rows, num_adds, scale_x, with_yvar)
-                .as_secs_f64()
-        })
-        .min_by(|a, b| a.partial_cmp(b).expect("timing samples must be ordered"))
-        .expect("at least one timing repeat")
-}
-
-fn measure_flat_growth(scale_x: bool, with_yvar: bool) -> Vec<(usize, f64)> {
     ROW_COUNTS
         .into_iter()
-        .map(|n| (n, best_of_repeats_secs(n, NUM_ADDS, scale_x, with_yvar)))
+        .enumerate()
+        .map(|(index, n)| {
+            // Contention only adds time, so the fastest batch best estimates the add cost.
+            let fastest = samples
+                .iter()
+                .map(|batch| batch[index])
+                .min()
+                .expect("at least one timing sample");
+            (n, fastest.as_secs_f64())
+        })
         .collect()
 }
 
@@ -202,19 +171,19 @@ fn flat_growth_violation(
 }
 
 fn assert_flat_growth_for_config(scale_x: bool, with_yvar: bool) {
-    let mut last_measurements = Vec::new();
-    for attempt in 0..MAX_MEASUREMENT_ATTEMPTS {
-        let measurements = measure_flat_growth(scale_x, with_yvar);
-        last_measurements.clone_from(&measurements);
-        if let Some(message) = flat_growth_violation(&measurements, scale_x, with_yvar) {
-            assert!(attempt + 1 != MAX_MEASUREMENT_ATTEMPTS, "{message}",);
-            continue;
+    let mut models = ROW_COUNTS.map(|n| prepared_model(n, scale_x, with_yvar));
+    let mut failures = Vec::with_capacity(MAX_ATTEMPTS);
+    // Real growth fails every attempt; a burst of load from other tests rarely does.
+    for attempt in 0..MAX_ATTEMPTS {
+        let measurements = measure_flat_growth(&mut models, attempt, with_yvar);
+        match flat_growth_violation(&measurements, scale_x, with_yvar) {
+            None => return,
+            Some(message) => failures.push(message),
         }
-        return;
     }
     panic!(
-        "flat growth check failed after {MAX_MEASUREMENT_ATTEMPTS} attempts \
-         scale_x={scale_x} with_yvar={with_yvar}: {last_measurements:?}",
+        "flat growth failed in all {MAX_ATTEMPTS} attempts:\n{}",
+        failures.join("\n")
     );
 }
 

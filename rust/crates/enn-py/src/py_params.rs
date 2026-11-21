@@ -104,3 +104,16 @@ impl PyENNParams {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repr_displays_scales_and_neighborhood() {
+        let params = PyENNParams {
+            inner: ennbo::ENNParams::new(3, 1.0, 0.5).unwrap(),
+        };
+        assert_eq!(params.__repr__(), "ENNParams(k=3, epi=1.0000, ale=0.5000)");
+    }
+}

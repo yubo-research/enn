@@ -322,6 +322,13 @@ mod tests {
     }
 
     #[test]
+    fn global_rescalarize_is_a_noop() {
+        let mut state = TrustRegionState::Global;
+        state.morbo_rescalarize_incumbent(0).unwrap();
+        assert!(matches!(state, TrustRegionState::Global));
+    }
+
+    #[test]
     fn turbo_noise_aware_tell_update_expands_on_incumbent_not_batch_max() {
         use ndarray::Array2;
 

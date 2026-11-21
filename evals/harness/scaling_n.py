@@ -26,7 +26,7 @@ from ops.stress import DRAW_FLAGS, MeanSE, format_mean_se, mean_se
 
 MODEL = "bpann_disk_auto"
 MODEL_LABEL = "bpann_disk_auto_ols"
-N_GRID: tuple[int, ...] = (100, 300, 1000, 3000, 10000, 30000, 100000)
+N_GRID: tuple[int, ...] = (100, 300, 1000, 3000, 10000, 30000, 100000, 300000, 1000000)
 MIB = 1024.0 * 1024.0
 WORK_DIR_PREFIX = "enn_scaling_n_"
 MEMORY_METRICS: tuple[str, ...] = (
