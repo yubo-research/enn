@@ -36,7 +36,7 @@ pub struct BpannBackend {
     indexed_rows_written: usize,
     index_dirty: Mutex<bool>,
     num_obs_counter: obs::NumObsCounter,
-    _store_lock: fs::File,
+    store_lock: fs::File,
 }
 
 impl BpannBackend {
@@ -115,7 +115,7 @@ impl BpannBackend {
             indexed_rows_written: indexed_rows,
             index_dirty: Mutex::new(indexed_rows < n),
             num_obs_counter,
-            _store_lock: store_lock,
+            store_lock,
         };
         backend.insert_unindexed_rows()?;
         let indexed_rows = backend.index.indexed_rows;
@@ -286,6 +286,9 @@ impl BpannBackend {
     }
 
     pub fn persist_index_to_disk(&mut self) -> Result<(), BpannError> {
+        if !crate::store_file::bpann_store_still_present(&self.work_dir, &self.store_lock) {
+            return Ok(());
+        }
         let index_dirty = *self.index_dirty.lock().expect("index_dirty");
         if !self
             .index

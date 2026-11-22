@@ -74,3 +74,19 @@ def test_best_term_degenerate_fits_are_none() -> None:
     assert all(math.isnan(f.r2) for f in flat.values())
     assert mod.best_term(flat) == "none"
     assert mod.best_term({}) == "none"
+
+
+@pytest.mark.parametrize("dof", [1, 3, 19, 100])
+@pytest.mark.parametrize("t", [0.0, 0.3, 1.96, 4.0, 30.0])
+def test_two_sided_t_p_matches_student_t(t: float, dof: int) -> None:
+    from scipy.special import stdtr
+
+    expected = 2.0 * stdtr(dof, -abs(t))
+    assert mod.two_sided_t_p(t, dof) == pytest.approx(expected, rel=1e-7, abs=1e-300)
+    assert mod.two_sided_t_p(-t, dof) == mod.two_sided_t_p(t, dof)
+
+
+def test_regularized_beta_edges() -> None:
+    assert mod.regularized_beta(2.0, 0.5, 0.0) == 0.0
+    assert mod.regularized_beta(2.0, 0.5, 1.0) == 1.0
+    assert mod.two_sided_t_p(math.inf, 5) == 0.0

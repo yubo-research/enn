@@ -1285,7 +1285,7 @@ def run_proposal_scale_stress(
                 bounds=bounds,
                 config=config,
                 seed=int(np.random.default_rng(seed + n).integers(2**63 - 1)),
-                work_dir=tempfile.mkdtemp(prefix="stress_turbo_"),
+                work_dir=tempfile.mkdtemp(prefix="stress_turbo_", dir=n_work_dir),
             )
         seed_turbo_enn_to_n(
             opt,

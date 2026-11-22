@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import tempfile
-
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_fitter import ENNStatefulFitter
 from enn.enn.posterior_flags import PosteriorFlags
+from evals.harness.work_dirs import fresh_work_dir
 from ops.qa import make_bounded_1d_xy, y_bounds_array
 
 LO, HI = -3.0, 7.0
@@ -33,7 +32,7 @@ def fit_model(
         x_train[:0],
         y_train[:0],
         y_bounds=y_bounds,
-        work_dir=tempfile.mkdtemp(prefix="enn_bounded_figure_"),
+        work_dir=fresh_work_dir(prefix="enn_bounded_figure_"),
     )
     model.add(x_train, y_train)
     fitter = ENNStatefulFitter(

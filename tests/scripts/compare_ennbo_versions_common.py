@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import MISSING, asdict, dataclass
@@ -313,7 +312,7 @@ def _work_dir_kwargs(surrogate_config: Any) -> dict[str, str]:
     work_dir = surrogate_config.__dataclass_fields__.get("work_dir")
     if work_dir is None or work_dir.default is not MISSING:
         return {}
-    return {"work_dir": tempfile.mkdtemp(prefix="enn_compare_versions_")}
+    return {"work_dir": fresh_work_dir(prefix="enn_compare_versions_")}
 
 
 def _fit_config(enn_fit_config: Any, affine_calibrate: bool) -> Any:

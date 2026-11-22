@@ -30,6 +30,14 @@ pub fn bpann_lock_store(work_dir: &Path) -> Result<File, BpannError> {
     }
 }
 
+pub fn bpann_store_still_present(work_dir: &Path, held: &File) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (fs::metadata(work_dir.join(STORE_LOCK_FILE)), held.metadata()) {
+        (Ok(on_disk), Ok(open)) => on_disk.dev() == open.dev() && on_disk.ino() == open.ino(),
+        _ => false,
+    }
+}
+
 pub fn bpann_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), BpannError> {
     let body = serde_json::to_string(value).map_err(|e| invalid(path, e))?;
     bpann_replace_json_text(path, &body)
@@ -64,6 +72,20 @@ mod tests {
         assert!(err.to_string().contains("already open"), "{err}");
         drop(holder);
         assert!(bpann_lock_store(dir.path()).is_ok());
+    }
+
+    #[test]
+    fn store_presence_tracks_the_held_lock_file_not_the_path() {
+        let dir = TempDir::new().unwrap();
+        let work_dir = dir.path().join("store");
+        fs::create_dir(&work_dir).unwrap();
+        let held = bpann_lock_store(&work_dir).unwrap();
+        assert!(bpann_store_still_present(&work_dir, &held));
+        fs::remove_dir_all(&work_dir).unwrap();
+        assert!(!bpann_store_still_present(&work_dir, &held));
+        fs::create_dir(&work_dir).unwrap();
+        let _other = bpann_lock_store(&work_dir).unwrap();
+        assert!(!bpann_store_still_present(&work_dir, &held));
     }
 
     #[test]

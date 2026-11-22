@@ -6,8 +6,6 @@ partition and must still complete.
 
 from __future__ import annotations
 
-import tempfile
-
 import numpy as np
 
 from enn.enn.enn_class import EpistemicNearestNeighbors
@@ -36,13 +34,13 @@ def _bpann_with_duplicates(n: int, work_dir: str) -> EpistemicNearestNeighbors:
     )
 
 
-def test_duplicate_observations_kmeans_partition_completes() -> None:
-    safe_dir = tempfile.mkdtemp()
+def test_duplicate_observations_kmeans_partition_completes(tmp_path) -> None:
+    safe_dir = str(tmp_path / "safe")
     safe = _bpann_with_duplicates(STRUCTURED_BUILD_ROW_LIMIT, safe_dir)
     post = safe.posterior(QUERY, params=_enn_params())
     assert post.mu.shape == (1, 1)
 
-    crash_dir = tempfile.mkdtemp()
+    crash_dir = str(tmp_path / "crash")
     large = _bpann_with_duplicates(STRUCTURED_BUILD_ROW_LIMIT + 1, crash_dir)
     post_large = large.posterior(QUERY, params=_enn_params())
     assert post_large.mu.shape == (1, 1)

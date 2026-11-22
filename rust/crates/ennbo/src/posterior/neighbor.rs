@@ -34,44 +34,32 @@ pub(crate) fn dist2s_for_neighbor_indices(
     x: &ArrayView2<f64>,
     idx: &Array2<i64>,
 ) -> Array2<f64> {
-    let n_query = idx.nrows();
-    let k = idx.ncols();
-    let mut out = Array2::zeros((n_query, k));
-    let mut seen = std::collections::HashSet::with_capacity(n_query.saturating_mul(k).min(4096));
-    let mut unique: Vec<usize> = Vec::new();
+    let (n_query, k) = idx.dim();
+    let mut out = Array2::from_elem((n_query, k), f64::INFINITY);
     for i in 0..n_query {
-        for j in 0..k {
-            let ni = idx[[i, j]];
-            if ni >= 0 {
-                let u = ni as usize;
-                if seen.insert(u) {
-                    unique.push(u);
-                }
-            }
+        let ids: Vec<usize> = idx
+            .row(i)
+            .iter()
+            .filter(|&&ni| ni >= 0)
+            .map(|&ni| ni as usize)
+            .collect();
+        if ids.is_empty() {
+            continue;
         }
-    }
-    unique.sort_unstable();
-    let mut row_map: std::collections::HashMap<usize, Array1<f64>> =
-        std::collections::HashMap::with_capacity(unique.len());
-    if !unique.is_empty() {
         let (train_x, _, _) = model
             .rows()
-            .train_rows_at(&unique)
+            .train_rows_at(&ids)
             .expect("train_rows_at for neighbors");
-        for (pos, &u) in unique.iter().enumerate() {
-            row_map.insert(u, train_x.row(pos).to_owned());
-        }
-    }
-    for i in 0..n_query {
-        let x_row = x.row(i);
+        let mut pos = 0;
         for j in 0..k {
-            let ni = idx[[i, j]];
-            if ni < 0 {
-                out[[i, j]] = f64::INFINITY;
-            } else {
-                let t_row = row_map.get(&(ni as usize)).expect("neighbor row").view();
-                out[[i, j]] =
-                    posterior_row_sq_l2(x_row, t_row, model.scale_x, model.x_scale.view());
+            if idx[[i, j]] >= 0 {
+                out[[i, j]] = posterior_row_sq_l2(
+                    x.row(i),
+                    train_x.row(pos),
+                    model.scale_x,
+                    model.x_scale.view(),
+                );
+                pos += 1;
             }
         }
     }

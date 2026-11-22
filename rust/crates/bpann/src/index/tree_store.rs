@@ -52,7 +52,7 @@ fn kind_tag(kind: Kind) -> u32 {
 
 fn map(file: &File, bytes: usize) -> Result<MmapMut, BpannError> {
     file.set_len(bytes as u64).map_err(io_err)?;
-    unsafe { MmapMut::map_mut(file) }.map_err(io_err)
+    crate::mmap_store::map_random(file)
 }
 
 pub struct TreeStore {
@@ -194,6 +194,14 @@ impl TreeStore {
         unsafe {
             std::slice::from_raw_parts_mut((self.slots.as_mut_ptr() as *mut u32).add(i * n), n)
         }
+    }
+
+    pub fn prefetch(&self, id: u32) {
+        let start = id as usize * self.slot_words * 4;
+        let len = (SLOT_ENTRIES + self.len(id) * self.num_dim) * 4;
+        let _ = self
+            .slots
+            .advise_range(memmap2::Advice::WillNeed, start, len);
     }
 
     pub fn is_leaf(&self, id: u32) -> bool {

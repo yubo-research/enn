@@ -141,6 +141,21 @@ mod acceptance_tests {
     }
 
     #[test]
+    fn test_persist_does_not_resurrect_a_removed_or_replaced_store() {
+        let dir = TempDir::new().unwrap();
+        let work_dir = dir.path().join("store");
+        let (x, y) = synthetic_train(64, 4, 11);
+        let mut b = BpannBackend::new_empty(work_dir.clone(), 4, 1).unwrap();
+        b.append_rows(&x.view(), &y.view(), None).unwrap();
+        fs::remove_dir_all(&work_dir).unwrap();
+        b.persist_index_to_disk().unwrap();
+        assert!(!work_dir.exists());
+        let _newer = BpannBackend::new_empty(work_dir.clone(), 4, 1).unwrap();
+        b.persist_index_to_disk().unwrap();
+        assert!(!work_dir.join("index").join("pages.bin").exists());
+    }
+
+    #[test]
     fn test_y_yvar_not_in_index_pages() {
         let dir = TempDir::new().unwrap();
         let (x, y) = synthetic_train(64, 4, 7);

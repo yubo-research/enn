@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import multiprocessing
-import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
@@ -22,6 +21,7 @@ from evals.harness.metric_12d import (
 )
 from evals.harness.metrics import format_directed, format_plain, gaussian_loglik, rmse
 from evals.harness.scaling_fit import ALPHA, RegFit, best_term, single_term_fits
+from evals.harness.work_dirs import scoped_work_dir
 from ops.stress import DRAW_FLAGS, MeanSE, format_mean_se, mean_se
 
 MODEL = "bpann_disk_auto"
@@ -150,7 +150,7 @@ def run_seed(config: ScalingConfig) -> list[dict[str, float]]:
     rng = np.random.default_rng(config.seed)
     x_test, y_test = make_data(config.num_test, rng)
     rows: list[dict[str, float]] = []
-    with tempfile.TemporaryDirectory(prefix=WORK_DIR_PREFIX) as work_dir:
+    with scoped_work_dir(WORK_DIR_PREFIX) as work_dir:
         run = ScalingRun(work_dir, config)
         lo = 0
         for hi in config.n_grid:

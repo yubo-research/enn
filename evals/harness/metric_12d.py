@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -20,6 +19,7 @@ from evals.harness.metric_12d_results import (
     summarize,
 )
 from evals.harness.metrics import gaussian_loglik, rmse
+from evals.harness.work_dirs import scoped_work_dir
 from ops.stress import DRAW_FLAGS
 
 NUM_DIM = 12
@@ -182,9 +182,7 @@ def run_eval(
     results: list[CheckpointResult] = []
     for i in range(cfg.num_seeds):
         seed_cfg = replace(cfg, seed=cfg.seed + i)
-        with tempfile.TemporaryDirectory(
-            prefix=WORK_DIR_PREFIX, dir=WORK_DIR_PARENT
-        ) as work_dir:
+        with scoped_work_dir(WORK_DIR_PREFIX, parent=WORK_DIR_PARENT) as work_dir:
             for name in models:
                 results.extend(run_model(name, work_dir, seed_cfg, data))
     summaries = summarize(results)

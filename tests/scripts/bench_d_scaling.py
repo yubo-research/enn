@@ -1,4 +1,3 @@
-import tempfile
 import time
 
 import numpy as np
@@ -7,6 +6,7 @@ import pandas as pd
 from enn.enn.enn_class import EpistemicNearestNeighbors
 from enn.enn.enn_class_support import enn_neighbor_distances_and_indices
 from enn.enn.enn_params import ENNParams
+from evals.harness.work_dirs import fresh_work_dir
 
 
 def benchmark_d_scaling(ds=None, n=1000, num_candidates=5000):
@@ -35,7 +35,7 @@ def benchmark_d_scaling(ds=None, n=1000, num_candidates=5000):
             train_x,
             train_y,
             weighting=True,
-            work_dir=tempfile.mkdtemp(prefix="enn_bench_d_scaling_"),
+            work_dir=fresh_work_dir(prefix="enn_bench_d_scaling_"),
         )
         row["ENN_Init (s)"] = time.perf_counter() - t0
 

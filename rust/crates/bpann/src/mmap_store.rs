@@ -8,6 +8,16 @@ use crate::index::tree_residency::{Residency, DEFAULT_RESIDENT_BUDGET_BYTES};
 
 pub(crate) const MMAP_GROW_ROWS: usize = 64;
 
+pub(crate) fn map_random(file: &std::fs::File) -> Result<MmapMut, BpannError> {
+    let map = unsafe { MmapMut::map_mut(file) }
+        .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+    if !map.is_empty() {
+        map.advise(memmap2::Advice::Random)
+            .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
+    }
+    Ok(map)
+}
+
 pub struct MmapColumnStore {
     pub path: PathBuf,
     pub ncols: usize,
@@ -37,9 +47,7 @@ impl MmapColumnStore {
         self.file
             .set_len(new_len as u64)
             .map_err(|e| BpannError::InvalidParameter(e.to_string()))?;
-        self.mmap = unsafe {
-            MmapMut::map_mut(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
-        };
+        self.mmap = map_random(&self.file)?;
         self.residency.update_tracking(new_len, 0);
         Ok(())
     }
@@ -84,9 +92,7 @@ impl MmapColumnStore {
                 "known_nrows {nrows} exceeds train file bytes {len}"
             )));
         }
-        let mmap = unsafe {
-            MmapMut::map_mut(&file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
-        };
+        let mmap = map_random(&file)?;
         let mut residency = Residency::new(DEFAULT_RESIDENT_BUDGET_BYTES);
         residency.update_tracking(mmap.len(), 0);
         Ok(Self {
@@ -150,11 +156,19 @@ impl MmapColumnStore {
     }
 
     pub fn release_resident_pages(&mut self) -> Result<(), BpannError> {
-        self.mmap = unsafe {
-            MmapMut::map_mut(&self.file).map_err(|e| BpannError::InvalidParameter(e.to_string()))?
-        };
+        self.mmap = map_random(&self.file)?;
         self.residency.forget();
         Ok(())
+    }
+
+    pub fn prefetch_rows(&self, rows: &[usize]) {
+        for &i in rows.iter().filter(|&&i| i < self.nrows) {
+            let _ = self.mmap.advise_range(
+                memmap2::Advice::WillNeed,
+                i * self.row_bytes(),
+                self.row_bytes(),
+            );
+        }
     }
 
     pub fn mmap_row_slice(&self, i: usize) -> Result<&[f64], BpannError> {

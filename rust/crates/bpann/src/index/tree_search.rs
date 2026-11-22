@@ -8,7 +8,9 @@ use crate::index::search::MmapSearchStore;
 use crate::index::tree::Tree;
 use crate::ordered::{OrderedF32, OrderedFloat};
 
-pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 128.0;
+pub const TREE_SEARCH_LEAVES_PER_LN_N: f64 = 10.0;
+
+pub const TREE_SEARCH_TIE_LEAVES_PER_LN_N: f64 = 100.0;
 
 static LEAF_COEFFICIENT_BITS: AtomicU64 = AtomicU64::new(0);
 
@@ -105,8 +107,16 @@ pub fn take_walk_totals() -> WalkTotals {
 }
 
 pub fn leaf_budget(indexed_rows: usize) -> usize {
+    ln_budget(leaf_coefficient(), indexed_rows)
+}
+
+pub fn tie_leaf_budget(indexed_rows: usize) -> usize {
+    ln_budget(TREE_SEARCH_TIE_LEAVES_PER_LN_N, indexed_rows)
+}
+
+fn ln_budget(coefficient: f64, indexed_rows: usize) -> usize {
     let ln_n = (indexed_rows.max(1) as f64).ln();
-    ((leaf_coefficient() * ln_n).ceil() as usize).max(1)
+    ((coefficient * ln_n).ceil() as usize).max(1)
 }
 
 const MAX_FRONTIER_PAGES: usize = 4096;
@@ -223,6 +233,8 @@ pub fn search_tree_refined_with_extra(
     };
     let candidates = search_tree(tree, &scaled, pool, budget, store)?;
     let boundary = candidates.last().map_or(0.0, |p| f64::from(p.1));
+    let pool_rows: Vec<usize> = candidates.iter().map(|&(row, _)| row as usize).collect();
+    store.train_x.prefetch_rows(&pool_rows);
     let mut refined: Vec<(u32, f64)> = candidates
         .iter()
         .map(|&(row, _)| {
@@ -242,13 +254,30 @@ pub fn search_tree_refined_with_extra(
     let certified = refined
         .get(k.saturating_sub(1))
         .is_some_and(|p| refinement_lower_bound(tree, query, store, boundary) > p.1);
-    if !all_rows && (!tree.rows_cached() || !certified) {
+    if !all_rows && (!tree.rows_cached() || (exact_fallback() && !certified)) {
         FALLBACK_RETURNS.fetch_add(1, Ordering::Relaxed);
         return search_tree_f64(tree, query, k, store);
+    }
+    if !all_rows && !certified && !f32_separates_top_k(&candidates, &refined, k) {
+        FALLBACK_RETURNS.fetch_add(1, Ordering::Relaxed);
+        let budget = tie_leaf_budget(tree.header.indexed_rows);
+        return search_tree_f64_with_budget(tree, query, k, store, budget);
     }
     CERTIFIED_RETURNS.fetch_add(1, Ordering::Relaxed);
     refined.truncate(k);
     Ok(refined)
+}
+
+fn f32_separates_top_k(candidates: &[(u32, f32)], refined: &[(u32, f64)], k: usize) -> bool {
+    let Some(&(_, boundary)) = candidates.last() else {
+        return true;
+    };
+    refined.iter().take(k).all(|&(row, _)| {
+        candidates
+            .iter()
+            .find(|&&(r, _)| r == row)
+            .is_some_and(|&(_, d)| d < boundary)
+    })
 }
 
 fn refinement_lower_bound(
@@ -287,6 +316,21 @@ pub fn search_tree_f64(
     k: usize,
     store: &MmapSearchStore<'_>,
 ) -> Result<Vec<(u32, f64)>, BpannError> {
+    let budget = if exact_fallback() {
+        usize::MAX
+    } else {
+        leaf_budget(tree.header.indexed_rows)
+    };
+    search_tree_f64_with_budget(tree, query, k, store, budget)
+}
+
+fn search_tree_f64_with_budget(
+    tree: &Tree,
+    query: &[f64],
+    k: usize,
+    store: &MmapSearchStore<'_>,
+    budget: usize,
+) -> Result<Vec<(u32, f64)>, BpannError> {
     let mut scaled = Vec::with_capacity(query.len());
     bpann_row_to_f32(query, store.scale_x, store.x_scale, &mut scaled);
     let query_scaled: Vec<f64> = query
@@ -300,11 +344,6 @@ pub fn search_tree_f64(
             }
         })
         .collect();
-    let budget = if exact_fallback() {
-        usize::MAX
-    } else {
-        leaf_budget(tree.header.indexed_rows)
-    };
     search_tree_scored(tree, &scaled, k, budget, &F64_WALKS, |row, _, limit| {
         let point = store.train_x.mmap_row_slice(row as usize)?;
         let mut distance = 0.0;
@@ -341,6 +380,9 @@ where
     fn score_leaf(&mut self, page: u32) -> Result<(), BpannError> {
         let s = &self.tree.store;
         let d = self.query.len().max(1);
+        if self.tree.rows_cached() {
+            s.prefetch(page);
+        }
         let block = self.tree.rows_cached().then(|| s.block(page));
         for (i, &row) in s.ids(page).iter().enumerate() {
             let x = block.map(|v| &v[i * d..(i + 1) * d]);
@@ -355,6 +397,7 @@ where
     fn children(&self, page: u32) -> Vec<FrontierEntry> {
         let s = &self.tree.store;
         let d = self.query.len().max(1);
+        s.prefetch(page);
         s.ids(page)
             .iter()
             .zip(s.block(page).chunks_exact(d))
@@ -464,9 +507,12 @@ mod tests {
     #[test]
     fn leaf_budget_grows_like_ln_n() {
         assert_eq!(leaf_budget(0), 1);
-        assert_eq!(leaf_budget(1_000_000), 1769);
+        assert_eq!(leaf_budget(1_000_000), 139);
+        assert_eq!(leaf_budget(10_000_000), 162);
+        assert_eq!(tie_leaf_budget(1_000_000), 1382);
         let ratio = leaf_budget(10_000_000) as f64 / leaf_budget(1_000_000) as f64;
-        assert!((ratio - 10_000_000f64.ln() / 1_000_000f64.ln()).abs() < 1e-3);
+        let ln_ratio = 10_000_000f64.ln() / 1_000_000f64.ln();
+        assert!((ratio - ln_ratio).abs() < 1.0 / leaf_budget(1_000_000) as f64);
     }
 
     #[test]

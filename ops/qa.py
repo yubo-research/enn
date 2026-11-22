@@ -88,28 +88,29 @@ def run_turbo_enn_ackley(
         trust_region=TurboTRConfig(noise_aware=True),
         acq_type=AcqType.UCB,
     )
-    optimizer = create_optimizer(
-        bounds=bounds,
-        config=config,
-        seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
-        work_dir=tempfile.mkdtemp(prefix="qa_ackley_bpann_"),
-    )
-    y_var_scale = float(noise) ** 2
-    y_best = -np.inf
-    cumulative_num_arms = 0
-    t_start = time.perf_counter()
-    for i_iter in range(num_rounds):
-        x_arms = optimizer.ask(num_arms=num_arms)
-        y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
-        optimizer.tell(x_arms, y_obs, train_yvar=y_var_scale * np.ones_like(y_obs))
-        y_best = max(y_best, float(np.max(y_obs)))
-        cumulative_num_arms += int(np.asarray(x_arms).shape[0])
-        seconds_since_start_of_run = time.perf_counter() - t_start
-        click.echo(
-            f"EVAL: iter = {i_iter} arms = {cumulative_num_arms} "
-            f"SMALLER(dt) = {seconds_since_start_of_run:.02f} "
-            f"LARGER(y_best) = {y_best:.04f}"
+    with tempfile.TemporaryDirectory(prefix="qa_ackley_bpann_") as work_dir:
+        optimizer = create_optimizer(
+            bounds=bounds,
+            config=config,
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+            work_dir=work_dir,
         )
+        y_var_scale = float(noise) ** 2
+        y_best = -np.inf
+        cumulative_num_arms = 0
+        t_start = time.perf_counter()
+        for i_iter in range(num_rounds):
+            x_arms = optimizer.ask(num_arms=num_arms)
+            y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
+            optimizer.tell(x_arms, y_obs, train_yvar=y_var_scale * np.ones_like(y_obs))
+            y_best = max(y_best, float(np.max(y_obs)))
+            cumulative_num_arms += int(np.asarray(x_arms).shape[0])
+            seconds_since_start_of_run = time.perf_counter() - t_start
+            click.echo(
+                f"EVAL: iter = {i_iter} arms = {cumulative_num_arms} "
+                f"SMALLER(dt) = {seconds_since_start_of_run:.02f} "
+                f"LARGER(y_best) = {y_best:.04f}"
+            )
 
 
 @click.group()
@@ -518,25 +519,28 @@ def run_turbo_acq_seed(
         num_fit_samples=num_fit_samples,
         turbo_zero=turbo_zero,
     )
-    optimizer = create_optimizer(
-        bounds=bounds,
-        config=config,
-        seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
-        work_dir=tempfile.mkdtemp(prefix="qa_turbo_acq_"),
-    )
-    y_var_scale = float(noise) ** 2
-    y_best = -np.inf
-    trajectory: list[float] = []
-    t0 = time.perf_counter()
-    for _ in range(num_rounds):
-        x_arms = optimizer.ask(num_arms=num_arms)
-        y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
-        if noise > 0.0:
-            optimizer.tell(x_arms, y_obs, train_yvar=y_var_scale * np.ones_like(y_obs))
-        else:
-            optimizer.tell(x_arms, y_obs)
-        y_best = max(y_best, float(np.max(y_obs)))
-        trajectory.append(y_best)
+    with tempfile.TemporaryDirectory(prefix="qa_turbo_acq_") as work_dir:
+        optimizer = create_optimizer(
+            bounds=bounds,
+            config=config,
+            seed=int(np.random.default_rng(seed).integers(2**63 - 1)),
+            work_dir=work_dir,
+        )
+        y_var_scale = float(noise) ** 2
+        y_best = -np.inf
+        trajectory: list[float] = []
+        t0 = time.perf_counter()
+        for _ in range(num_rounds):
+            x_arms = optimizer.ask(num_arms=num_arms)
+            y_obs = np.asarray(objective(x_arms), dtype=float).reshape(-1, 1)
+            if noise > 0.0:
+                optimizer.tell(
+                    x_arms, y_obs, train_yvar=y_var_scale * np.ones_like(y_obs)
+                )
+            else:
+                optimizer.tell(x_arms, y_obs)
+            y_best = max(y_best, float(np.max(y_obs)))
+            trajectory.append(y_best)
     return TurboAcqSeedResult(
         y_best=y_best,
         time_seconds=time.perf_counter() - t0,

@@ -9,7 +9,7 @@ thread_local! {
     static PROJ: RefCell<Vec<(f32, usize)>> = const { RefCell::new(Vec::new()) };
 }
 
-pub const MORPH_LAPS: usize = 16;
+pub const MORPH_LAPS: usize = 3;
 
 pub const MORPH_WORK_PER_ADD: usize = 6 * TREE_LEAF_CAPACITY;
 pub const MORPH_POOL_LEAVES: usize = 2 * TREE_FANOUT;
