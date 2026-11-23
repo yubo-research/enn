@@ -210,7 +210,7 @@ mod tests {
         let x = Array2::from_shape_fn((n, dim), |(i, j)| (i + j) as f64);
         let y = Array2::from_shape_fn((n, 1), |(i, _)| i as f64);
         model.add(&x.view(), &y.view(), None).expect("add");
-        write_backend(model.backend.handle.data()).mark_index_stale();
+        write_backend(model.backend.ologn_handle().unwrap().data()).mark_index_stale();
         model
     }
 
@@ -422,7 +422,8 @@ mod tests {
         model.backend.wait_for_flush().expect("wait soft");
         model
             .backend
-            .handle
+            .ologn_handle()
+            .unwrap()
             .persist_index_to_disk()
             .expect("hard persist");
         assert!(dir.path().join("index/pages.bin").exists());

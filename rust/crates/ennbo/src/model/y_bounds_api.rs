@@ -49,12 +49,17 @@ impl EpistemicNearestNeighbors {
         let y_bounds = resolve_y_bounds(y_bounds.as_ref(), num_metrics)?;
         let identity = StoreIdentity::of(&layout, (num_dim, num_metrics), &[], &y_bounds);
         identity.record(work_dir)?;
-        let backend = EnnBackend::new_empty_disk(
-            work_dir.to_path_buf(),
-            num_dim,
-            num_metrics,
-            pending_flush_threshold,
-        )?;
+        let backend = match layout.store() {
+            crate::layout::StoreType::OLogN => EnnBackend::new_empty_disk(
+                work_dir.to_path_buf(),
+                num_dim,
+                num_metrics,
+                pending_flush_threshold,
+            )?,
+            crate::layout::StoreType::O1 => {
+                EnnBackend::new_empty_o1(work_dir.to_path_buf(), num_dim, num_metrics)?
+            }
+        };
         let auto = layout.metric_learning() == MetricLearning::Auto;
         let mut model = Self {
             original_y: None,

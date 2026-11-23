@@ -1,7 +1,7 @@
 
 - When you need to generate parameters linear on a log scale, use a subset of: ..., 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, ...
 - Don't edit README.md.
-
+- Make the default report style two-column, academic, with the abstract in a column (not spanning the page).
 
 
 Macros the user may use to communicate with you more efficiently:

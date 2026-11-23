@@ -76,6 +76,8 @@ pub mod normal_sample;
 #[allow(missing_docs)]
 pub mod numpy_pcg;
 #[allow(missing_docs)]
+pub mod o1;
+#[allow(missing_docs)]
 pub mod numpy_seed;
 #[allow(missing_docs)]
 mod numpy_ziggurat_ki;
@@ -176,7 +178,7 @@ pub use hash::normal_hash_batch_multi_seed;
 pub use hash::normal_hash_batch_multi_seed_fast;
 pub use hypervolume::hypervolume_2d_max;
 pub use incumbent_tracker::IncrementalIncumbentTracker;
-pub use layout::EnnLayout;
+pub use layout::{EnnLayout, StoreType};
 pub use model::EnnIndexAccess;
 pub use model::EnnRowAccess;
 pub use model::EpistemicNearestNeighbors;

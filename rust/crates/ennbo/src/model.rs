@@ -140,13 +140,18 @@ impl EpistemicNearestNeighbors {
         if !reopen {
             identity.record(work_dir)?;
         }
-        let backend = EnnBackend::new_disk(
-            work_dir.to_path_buf(),
-            train_x,
-            train_y,
-            train_yvar,
-            x_scale.clone(),
-        )?;
+        let backend = match layout.store() {
+            crate::layout::StoreType::OLogN => EnnBackend::new_disk(
+                work_dir.to_path_buf(),
+                train_x,
+                train_y,
+                train_yvar,
+                x_scale.clone(),
+            )?,
+            crate::layout::StoreType::O1 => {
+                EnnBackend::new_o1(work_dir.to_path_buf(), train_x, train_y, train_yvar)?
+            }
+        };
 
         let mut model = Self {
             original_y: None,

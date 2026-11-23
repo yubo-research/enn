@@ -11,11 +11,17 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use crate::error::ENNError;
+use crate::o1::O1Store;
 
 pub type TrainRowsAtResult = (Array2<f64>, Array2<f64>, Option<Array2<f64>>);
 
+pub(crate) enum BackendKind {
+    OLogN(DiskBackendHandle),
+    O1(Box<RwLock<O1Store>>),
+}
+
 pub struct EnnBackend {
-    pub(crate) handle: DiskBackendHandle,
+    pub(crate) kind: BackendKind,
 }
 
 fn disk_read<'a>(
@@ -32,6 +38,31 @@ fn disk_write<'a>(
         .map_err(|_| ENNError::InvalidParameter("disk backend lock poisoned".to_string()))
 }
 
+fn o1_read(s: &RwLock<O1Store>) -> Result<std::sync::RwLockReadGuard<'_, O1Store>, ENNError> {
+    s.read()
+        .map_err(|_| ENNError::InvalidParameter("O1 store lock poisoned".to_string()))
+}
+
+fn o1_write(s: &RwLock<O1Store>) -> Result<std::sync::RwLockWriteGuard<'_, O1Store>, ENNError> {
+    s.write()
+        .map_err(|_| ENNError::InvalidParameter("O1 store lock poisoned".to_string()))
+}
+
+macro_rules! read_either {
+    ($self:expr, $g:ident => $e:expr) => {
+        match &$self.kind {
+            BackendKind::OLogN(h) => {
+                let $g = disk_read(h.data())?;
+                $e
+            }
+            BackendKind::O1(s) => {
+                let $g = o1_read(s)?;
+                $e
+            }
+        }
+    };
+}
+
 impl EnnBackend {
     pub fn new_disk(
         work_dir: PathBuf,
@@ -43,7 +74,21 @@ impl EnnBackend {
         let inner =
             DiskBpannEnnBackend::new(work_dir, train_x, train_y, train_yvar, false, x_scale)?;
         Ok(Self {
-            handle: DiskBackendHandle::new(inner),
+            kind: BackendKind::OLogN(DiskBackendHandle::new(inner)),
+        })
+    }
+
+    pub fn new_o1(
+        work_dir: PathBuf,
+        train_x: Array2<f64>,
+        train_y: Array2<f64>,
+        train_yvar: Option<Array2<f64>>,
+    ) -> Result<Self, ENNError> {
+        let mut store = O1Store::open_or_create(work_dir, train_x.ncols(), train_y.ncols())?;
+        let yvar = train_yvar.as_ref().map(|v| v.view());
+        store.append_rows(&train_x.view(), &train_y.view(), yvar.as_ref())?;
+        Ok(Self {
+            kind: BackendKind::O1(Box::new(RwLock::new(store))),
         })
     }
 
@@ -63,41 +108,66 @@ impl EnnBackend {
             None => DiskBpannEnnBackend::new_empty(work_dir, num_dim, num_metrics)?,
         };
         Ok(Self {
-            handle: DiskBackendHandle::new(inner),
+            kind: BackendKind::OLogN(DiskBackendHandle::new(inner)),
         })
     }
 
+    pub fn new_empty_o1(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+    ) -> Result<Self, ENNError> {
+        let store = O1Store::open_or_create(work_dir, num_dim, num_metrics)?;
+        Ok(Self {
+            kind: BackendKind::O1(Box::new(RwLock::new(store))),
+        })
+    }
+
+    pub(crate) fn ologn_handle(&self) -> Option<&DiskBackendHandle> {
+        match &self.kind {
+            BackendKind::OLogN(h) => Some(h),
+            BackendKind::O1(_) => None,
+        }
+    }
+
     pub fn wait_for_flush(&self) -> Result<(), ENNError> {
-        self.handle.wait_for_flush()
+        self.ologn_handle().map_or(Ok(()), |h| h.wait_for_flush())
     }
 
     pub fn schedule_background_flush(&self) -> Result<(), ENNError> {
-        self.handle.schedule_background_flush()
+        self.ologn_handle()
+            .map_or(Ok(()), |h| h.schedule_background_flush())
+    }
+
+    fn len_checked(&self) -> Result<usize, ENNError> {
+        read_either!(self, g => Ok(g.len()))
     }
 
     pub fn len(&self) -> usize {
-        disk_read(self.handle.data()).map(|g| g.len()).unwrap_or(0)
+        self.len_checked().unwrap_or(0)
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    fn shape_checked(&self) -> Result<(usize, usize), ENNError> {
+        read_either!(self, g => Ok((g.num_dim(), g.num_metrics())))
+    }
+
     pub fn num_dim(&self) -> usize {
-        disk_read(self.handle.data())
-            .map(|g| g.num_dim())
-            .unwrap_or(0)
+        self.shape_checked().map(|s| s.0).unwrap_or(0)
     }
 
     pub fn num_metrics(&self) -> usize {
-        disk_read(self.handle.data())
-            .map(|g| g.num_metrics())
-            .unwrap_or(0)
+        self.shape_checked().map(|s| s.1).unwrap_or(0)
     }
 
     pub fn mark_index_stale(&self) {
-        if let Ok(mut g) = disk_write(self.handle.data()) {
-            g.mark_index_stale();
+        if let Some(h) = self.ologn_handle() {
+            if let Ok(mut g) = disk_write(h.data()) {
+                g.mark_index_stale();
+            }
         }
     }
 
@@ -107,37 +177,50 @@ impl EnnBackend {
         y: &ArrayView2<f64>,
         yvar: Option<&ArrayView2<f64>>,
     ) -> Result<(), ENNError> {
-        disk_write(self.handle.data())?.append_rows(x, y, yvar)
+        match &self.kind {
+            BackendKind::OLogN(h) => disk_write(h.data())?.append_rows(x, y, yvar),
+            BackendKind::O1(s) => o1_write(s)?.append_rows(x, y, yvar),
+        }
     }
 
     pub fn ensure_index_sync(&self, scale_x: bool, x_scale: &Array1<f64>) -> Result<(), ENNError> {
-        self.wait_for_flush()?;
-        disk_write(self.handle.data())?.ensure_index_sync(scale_x, x_scale)
+        match self.ologn_handle() {
+            Some(h) => {
+                h.wait_for_flush()?;
+                disk_write(h.data())?.ensure_index_sync(scale_x, x_scale)
+            }
+            None => Ok(()),
+        }
     }
 
     pub fn metric_scale(&self) -> Result<Option<Array1<f64>>, ENNError> {
-        Ok(disk_read(self.handle.data())?.metric_scale())
+        read_either!(self, g => Ok(g.metric_scale()))
     }
 
     pub fn set_metric_scale(&self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
-        self.wait_for_flush()?;
-        disk_write(self.handle.data())?.set_metric_scale(x_scale, rebuild)
+        match &self.kind {
+            BackendKind::OLogN(h) => {
+                h.wait_for_flush()?;
+                disk_write(h.data())?.set_metric_scale(x_scale, rebuild)
+            }
+            BackendKind::O1(s) => o1_write(s)?.set_metric_scale(x_scale, rebuild),
+        }
     }
 
     pub fn train_rows_at(&self, indices: &[usize]) -> Result<TrainRowsAtResult, ENNError> {
-        disk_read(self.handle.data())?.train_rows_at(indices)
+        read_either!(self, g => g.train_rows_at(indices))
     }
 
     pub fn row_x(&self, i: usize) -> Result<Array1<f64>, ENNError> {
-        disk_read(self.handle.data())?.row_x(i)
+        read_either!(self, g => g.row_x(i))
     }
 
     pub fn row_y(&self, i: usize) -> Result<Array1<f64>, ENNError> {
-        disk_read(self.handle.data())?.row_y(i)
+        read_either!(self, g => g.row_y(i))
     }
 
     pub fn row_yvar(&self, i: usize) -> Result<Option<Array1<f64>>, ENNError> {
-        disk_read(self.handle.data())?.row_yvar(i)
+        read_either!(self, g => g.row_yvar(i))
     }
 
     pub fn search(
@@ -151,36 +234,46 @@ impl EnnBackend {
                 "search_k must be > 0, got {search_k}"
             )));
         }
-        let backend = disk_read(self.handle.data())?;
-        if x.ncols() != backend.num_dim() {
+        let num_dim = self.num_dim();
+        if x.ncols() != num_dim {
             return Err(ENNError::InvalidShape {
-                expected: vec![x.nrows(), backend.num_dim()],
+                expected: vec![x.nrows(), num_dim],
                 got: x.shape().to_vec(),
             });
         }
-        backend.search(x, search_k, exclude_nearest)
+        match &self.kind {
+            BackendKind::OLogN(h) => disk_read(h.data())?.search(x, search_k, exclude_nearest),
+            BackendKind::O1(s) => o1_read(s)?.search(x, search_k as usize, exclude_nearest),
+        }
     }
 
     pub fn index_memory_bytes(&self) -> Result<usize, ENNError> {
-        disk_read(self.handle.data())?.index_memory_bytes()
+        match &self.kind {
+            BackendKind::OLogN(h) => disk_read(h.data())?.index_memory_bytes(),
+            BackendKind::O1(s) => Ok(o1_read(s)?.index_memory_bytes()),
+        }
     }
 
     pub fn index_len(&self) -> usize {
-        disk_read(self.handle.data()).map(|g| g.len()).unwrap_or(0)
+        self.len()
     }
 
     pub(crate) fn persist_index_to_disk(&self) -> Result<(), ENNError> {
-        self.handle.persist_index_to_disk()
+        self.ologn_handle()
+            .map_or(Ok(()), |h| h.persist_index_to_disk())
     }
 
     pub(crate) fn release_observation_pages(&self) -> Result<(), ENNError> {
-        disk_write(self.handle.data())?.release_observation_pages()
+        match self.ologn_handle() {
+            Some(h) => disk_write(h.data())?.release_observation_pages(),
+            None => Ok(()),
+        }
     }
 }
 
 impl Drop for EnnBackend {
     fn drop(&mut self) {
-        if let Err(e) = self.handle.persist_index_to_disk() {
+        if let Err(e) = self.persist_index_to_disk() {
             eprintln!("ennbo: persist_index_to_disk on drop failed: {e}");
         }
     }
@@ -217,9 +310,38 @@ mod backend_tests {
     }
 
     #[test]
+    fn o1_backend_dispatches_rows_search_and_metric() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let backend = EnnBackend::new_o1(
+            dir.path().to_path_buf(),
+            array![[0.0, 0.0], [1.0, 0.0]],
+            array![[0.0], [1.0]],
+            None,
+        )
+        .unwrap();
+        assert!(backend.ologn_handle().is_none());
+        backend.ensure_index_sync(false, &Array1::ones(2)).unwrap();
+        backend.wait_for_flush().unwrap();
+        backend.schedule_background_flush().unwrap();
+        backend.mark_index_stale();
+        backend.release_observation_pages().unwrap();
+        assert_eq!((backend.len(), backend.num_dim(), backend.num_metrics()), (2, 2, 1));
+        let (_, idx) = backend.search(&array![[0.9, 0.0]].view(), 1, false).unwrap();
+        assert_eq!(idx[[0, 0]], 1);
+        assert!(backend.search(&array![[0.9]].view(), 1, false).is_err());
+        backend.set_metric_scale(&array![1.0, 2.0], true).unwrap();
+        assert_eq!(backend.metric_scale().unwrap(), Some(array![1.0, 2.0]));
+        assert_eq!(backend.row_y(1).unwrap()[0], 1.0);
+        assert!(backend.row_yvar(1).unwrap().is_none());
+        assert!(backend.index_memory_bytes().is_ok());
+        let empty = EnnBackend::new_empty_o1(dir.path().join("e"), 2, 1).unwrap();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
     fn disk_read_used() {
         let dir = tempfile::TempDir::new().unwrap();
         let backend = two_row_backend(&dir);
-        assert_eq!(disk_read(backend.handle.data()).unwrap().len(), 2);
+        assert_eq!(disk_read(backend.ologn_handle().unwrap().data()).unwrap().len(), 2);
     }
 }

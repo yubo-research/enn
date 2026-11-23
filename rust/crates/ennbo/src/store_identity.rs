@@ -5,7 +5,7 @@ use ndarray::Array2;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ENNError;
-use crate::layout::EnnLayout;
+use crate::layout::{EnnLayout, StoreType};
 
 pub(crate) const STORE_IDENTITY_FILE: &str = "store_identity.json";
 const STORE_METADATA_FILE: &str = "metadata.json";
@@ -19,6 +19,8 @@ pub(crate) struct StoreIdentity {
     y_bounds: Vec<(Option<f64>, Option<f64>)>,
     #[serde(default = "committed_by_default")]
     committed: bool,
+    #[serde(default)]
+    pub(crate) store: StoreType,
 }
 
 fn committed_by_default() -> bool {
@@ -76,6 +78,7 @@ impl StoreIdentity {
                 .map(|row| (finite(row[0]), finite(row[1])))
                 .collect(),
             committed: false,
+            store: layout.store(),
         }
     }
 
@@ -98,7 +101,7 @@ impl StoreIdentity {
     }
 
     pub(crate) fn layout(&self, work_dir: PathBuf) -> Result<EnnLayout, ENNError> {
-        EnnLayout::new(work_dir, self.weighting)
+        Ok(EnnLayout::new(work_dir, self.weighting)?.with_store(self.store))
     }
 
     pub(crate) fn y_bounds(&self) -> Array2<f64> {

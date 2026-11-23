@@ -11,6 +11,7 @@ from enn.turbo.config.enn_x_scaling import ENNMetricLearning
 
 from .cat_ties import resolve_tied_groups
 from .enn_class_support import _to_rust_seeds, rust_params
+from .enn_store import ENNStore, store_name
 from .mbpann import MBPANNMetric
 
 if TYPE_CHECKING:
@@ -34,6 +35,10 @@ class _EnnRustView:
     @property
     def weighting(self) -> bool:
         return bool(self._rust_model.weighting)
+
+    @property
+    def store(self) -> ENNStore:
+        return ENNStore(str(self._rust_model.store))
 
     @property
     def metric(self) -> MBPANNMetric | None:
@@ -84,7 +89,10 @@ class EpistemicNearestNeighbors(_EnnRustView):
         work_dir: str | os.PathLike[str],
         weighting: bool = False,
         y_bounds: np.ndarray | None = None,
+        store: ENNStore | str = ENNStore.OLOGN,
     ) -> None:
+        store = store_name(store)
+        weighting = weighting or store == ENNStore.O1.value
         groups = [
             list(g)
             for g in resolve_tied_groups(train_x, tied_dims, weighting=weighting)
@@ -100,6 +108,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
             "train_yvar": train_yvar,
             "weighting": weighting,
             "tied_dims": groups,
+            "store": store,
         }
         if y_bounds is not None:
             rust_kwargs["y_bounds"] = y_bounds
