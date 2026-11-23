@@ -2,6 +2,7 @@ mod buckets;
 mod disk_index;
 mod keys;
 mod lsh;
+mod pending;
 mod search;
 #[cfg(test)]
 mod disk_tests;

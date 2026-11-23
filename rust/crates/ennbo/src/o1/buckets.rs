@@ -3,13 +3,16 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 
-use super::keys::{file_len, open_rw, KeyFile};
+use super::keys::{file_len, install, open_rw, KeyFile};
 use super::lsh::{io_error, mix64};
+use super::pending::Entry;
 use crate::error::ENNError;
 
 const KEY_CHUNK_ROWS: usize = 1 << 16;
 const MAX_OPEN_PARTS: usize = 64;
 const PART_RECORD_BYTES: usize = 8;
+const FLUSH_WINDOW_BYTES: u64 = 1 << 20;
+const FLUSH_GAP_BYTES: u64 = 16 << 10;
 
 pub(crate) fn slot_bytes(cap: usize) -> usize {
     8 + 4 * cap
@@ -74,11 +77,35 @@ impl BucketFile {
         slot_bytes(self.cap)
     }
 
-    pub(crate) fn read_ids(&self, key: u64, out: &mut Vec<u32>) -> Result<(), ENNError> {
+    pub(crate) fn cap(&self) -> usize {
+        self.cap
+    }
+
+    pub(crate) fn read_slot(&self, key: u64) -> Result<Vec<u8>, ENNError> {
         let mut slot = vec![0u8; self.sb()];
         self.file
             .read_exact_at(&mut slot, key * self.sb() as u64)
             .map_err(io_error)?;
+        Ok(slot)
+    }
+
+    pub(crate) fn place_row(&self, slot: &mut [u8], row: u32) {
+        place(slot, row, self.cap, self.seed);
+    }
+
+    pub(crate) fn read_ids(&self, key: u64, pending: Option<&Entry>, out: &mut Vec<u32>) -> Result<(), ENNError> {
+        let owned;
+        let slot: &[u8] = match pending {
+            Some(Entry::Slot(slot)) => slot,
+            rows => {
+                let mut slot = self.read_slot(key)?;
+                if let Some(Entry::Rows(rows)) = rows {
+                    rows.iter().for_each(|&r| self.place_row(&mut slot, r));
+                }
+                owned = slot;
+                &owned
+            }
+        };
         let arrivals = u64::from_le_bytes(slot[..8].try_into().expect("slot header"));
         let count = (arrivals as usize).min(self.cap);
         out.extend(
@@ -89,17 +116,32 @@ impl BucketFile {
         Ok(())
     }
 
-    pub(crate) fn insert(&self, pairs: &mut [(u64, u32)]) -> Result<(), ENNError> {
-        pairs.sort_unstable();
-        let sb = self.sb();
-        let mut slot = vec![0u8; sb];
-        for group in pairs.chunk_by(|a, b| a.0 == b.0) {
-            let offset = group[0].0 * sb as u64;
-            self.file.read_exact_at(&mut slot, offset).map_err(io_error)?;
-            for &(_, row) in group {
-                place(&mut slot, row, self.cap, self.seed);
+    pub(crate) fn write_pending(&self, entries: &[(u64, Entry)]) -> Result<(), ENNError> {
+        let sb = self.sb() as u64;
+        let mut buf = Vec::new();
+        let mut lo = 0;
+        while lo < entries.len() {
+            let first = entries[lo].0;
+            let mut hi = lo + 1;
+            while hi < entries.len()
+                && (entries[hi].0 - first + 1) * sb <= FLUSH_WINDOW_BYTES
+                && (entries[hi].0 - entries[hi - 1].0) * sb <= FLUSH_GAP_BYTES
+            {
+                hi += 1;
             }
-            self.file.write_all_at(&slot, offset).map_err(io_error)?;
+            let last = entries[hi - 1].0;
+            buf.resize(((last - first + 1) * sb) as usize, 0);
+            self.file.read_exact_at(&mut buf, first * sb).map_err(io_error)?;
+            for (key, entry) in &entries[lo..hi] {
+                let at = ((key - first) * sb) as usize;
+                let slot = &mut buf[at..at + sb as usize];
+                match entry {
+                    Entry::Slot(bytes) => slot.copy_from_slice(bytes),
+                    Entry::Rows(rows) => rows.iter().for_each(|&r| self.place_row(slot, r)),
+                }
+            }
+            self.file.write_all_at(&buf, first * sb).map_err(io_error)?;
+            lo = hi;
         }
         Ok(())
     }
@@ -130,9 +172,8 @@ impl BucketFile {
             }
             std::fs::remove_dir_all(&scratch).map_err(io_error)?;
         }
-        out.sync_data().map_err(io_error)?;
         drop(out);
-        std::fs::rename(&tmp, &self.path).map_err(io_error)?;
+        install(&tmp, &self.path)?;
         self.file = open_rw(&self.path, false)?;
         Ok(())
     }

@@ -1,3 +1,4 @@
+use ndarray::{s, Array2, ArrayView2};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -13,6 +14,7 @@ pub struct O1Params {
     pub bucket_cap: usize,
     pub num_probes: usize,
     pub build_budget_bytes: usize,
+    pub pending_budget_bytes: usize,
 }
 
 impl Default for O1Params {
@@ -23,6 +25,7 @@ impl Default for O1Params {
             bucket_cap: 32,
             num_probes: 4,
             build_budget_bytes: 32 << 20,
+            pending_budget_bytes: 32 << 20,
         }
     }
 }
@@ -60,22 +63,8 @@ pub(crate) fn target_bits(n: usize, bucket_target: usize) -> usize {
     bits
 }
 
-pub(crate) fn dot(a: &[f64], b: &[f64]) -> f64 {
-    let mut acc = [0.0f64; 4];
-    let body = a.len() - a.len() % 4;
-    for (ca, cb) in a[..body].chunks_exact(4).zip(b[..body].chunks_exact(4)) {
-        for (l, slot) in acc.iter_mut().enumerate() {
-            *slot += ca[l] * cb[l];
-        }
-    }
-    let tail: f64 = (body..a.len()).map(|j| a[j] * b[j]).sum();
-    acc.iter().sum::<f64>() + tail
-}
-
 struct Hyperplane {
-    normal: Vec<f64>,
     anchor_row: usize,
-    offset: f64,
 }
 
 pub(crate) struct Planes {
@@ -83,7 +72,8 @@ pub(crate) struct Planes {
     dim: usize,
     planes: Vec<Vec<Hyperplane>>,
     hash_scale: Vec<f64>,
-    inv_scale: Vec<f64>,
+    proj: Array2<f64>,
+    offsets: Vec<f64>,
 }
 
 impl Planes {
@@ -93,14 +83,14 @@ impl Planes {
             dim,
             planes: (0..num_tables).map(|_| Vec::new()).collect(),
             hash_scale: vec![1.0; dim],
-            inv_scale: vec![1.0; dim],
+            proj: Array2::zeros((dim, 0)),
+            offsets: Vec::new(),
         }
     }
 
     pub(crate) fn cleared(&self) -> Self {
         let mut fresh = Self::new(self.dim, self.seed, self.planes.len());
         fresh.hash_scale.clone_from(&self.hash_scale);
-        fresh.inv_scale.clone_from(&self.inv_scale);
         fresh
     }
 
@@ -120,7 +110,7 @@ impl Planes {
     }
 
     pub(crate) fn memory_bytes(&self) -> usize {
-        self.planes.len() * self.bits() * (self.dim + 2) * 8 + 16 * self.dim
+        self.planes.len() * self.bits() * (self.dim + 2) * 8 + 8 * self.dim
     }
 
     fn normal(&self, table: usize, bit: usize) -> Vec<f64> {
@@ -128,71 +118,96 @@ impl Planes {
         (0..self.dim).map(|_| standard_normal(&mut rng)).collect()
     }
 
-    fn anchor_offset(&self, normal: &[f64], rows: &MmapColumnStore, anchor_row: usize) -> Result<f64, ENNError> {
-        if rows.nrows == 0 {
-            return Ok(0.0);
+    fn refresh(&mut self, rows: &MmapColumnStore) -> Result<(), ENNError> {
+        let bits = self.bits();
+        let mut proj = Array2::zeros((self.dim, self.planes.len() * bits));
+        for (t, table) in self.planes.iter().enumerate() {
+            for b in 0..table.len() {
+                for (j, (v, s)) in self.normal(t, b).iter().zip(&self.hash_scale).enumerate() {
+                    proj[[j, t * bits + b]] = v / s;
+                }
+            }
         }
-        Ok(dot(normal, &self.scaled(rows.mmap_row_slice(anchor_row)?)))
+        self.proj = proj;
+        self.offsets = vec![0.0; self.proj.ncols()];
+        if rows.nrows == 0 {
+            return Ok(());
+        }
+        for (t, table) in self.planes.iter().enumerate() {
+            for (b, plane) in table.iter().enumerate() {
+                let c = t * bits + b;
+                let x = rows.mmap_rows_view(plane.anchor_row, plane.anchor_row + 1)?;
+                self.offsets[c] = x.dot(&self.proj.slice(s![.., c..c + 1]))[[0, 0]];
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn push_bit(&mut self, rows: &MmapColumnStore) -> Result<(), ENNError> {
         let bit = self.bits();
         for t in 0..self.planes.len() {
-            let normal = self.normal(t, bit);
             let draw = mix64(plane_seed(self.seed, t, bit) ^ 0xa5a5);
             let anchor_row = (draw % rows.nrows.max(1) as u64) as usize;
-            let offset = self.anchor_offset(&normal, rows, anchor_row)?;
-            self.planes[t].push(Hyperplane { normal, anchor_row, offset });
+            self.planes[t].push(Hyperplane { anchor_row });
         }
-        Ok(())
+        self.refresh(rows)
     }
 
     pub(crate) fn restore(&mut self, anchors: &[Vec<usize>], rows: &MmapColumnStore) -> Result<(), ENNError> {
         for (t, table_anchors) in anchors.iter().enumerate() {
-            for (bit, &anchor_row) in table_anchors.iter().enumerate() {
-                let normal = self.normal(t, bit);
-                self.planes[t].push(Hyperplane { normal, anchor_row, offset: 0.0 });
+            for &anchor_row in table_anchors {
+                self.planes[t].push(Hyperplane { anchor_row });
             }
         }
-        let scale = self.hash_scale.clone();
-        self.set_scale(&scale, rows)
+        self.refresh(rows)
     }
 
     pub(crate) fn set_scale(&mut self, hash_scale: &[f64], rows: &MmapColumnStore) -> Result<(), ENNError> {
         self.hash_scale = hash_scale.to_vec();
-        self.inv_scale = hash_scale.iter().map(|s| 1.0 / s).collect();
-        for t in 0..self.planes.len() {
-            for b in 0..self.planes[t].len() {
-                let plane = &self.planes[t][b];
-                let offset = self.anchor_offset(&plane.normal, rows, plane.anchor_row)?;
-                self.planes[t][b].offset = offset;
+        self.refresh(rows)
+    }
+
+    fn gaps(&self, x: &ArrayView2<f64>, from_bit: usize) -> Array2<f64> {
+        let bits = self.bits();
+        let width = bits - from_bit;
+        let cols: Vec<usize> = (0..self.planes.len())
+            .flat_map(|t| (from_bit..bits).map(move |b| t * bits + b))
+            .collect();
+        let mut g = if width == bits {
+            x.dot(&self.proj)
+        } else {
+            x.dot(&self.proj.select(ndarray::Axis(1), &cols))
+        };
+        for (j, &c) in cols.iter().enumerate() {
+            g.column_mut(j).mapv_inplace(|v| v - self.offsets[c]);
+        }
+        g
+    }
+
+    pub(crate) fn row_keys(&self, x: &ArrayView2<f64>, from_bit: usize) -> Vec<u64> {
+        let width = self.bits() - from_bit;
+        let g = self.gaps(x, from_bit);
+        let mut out = Vec::with_capacity(x.nrows() * self.planes.len());
+        for row in g.rows() {
+            for t in 0..self.planes.len() {
+                let key = (0..width).fold(0u64, |k, b| (k << 1) | u64::from(row[t * width + b] > 0.0));
+                out.push(key);
             }
         }
-        Ok(())
-    }
-
-    pub(crate) fn scaled(&self, x: &[f64]) -> Vec<f64> {
-        x.iter().zip(&self.inv_scale).map(|(v, w)| v * w).collect()
-    }
-
-    pub(crate) fn key_bits(&self, table: usize, z: &[f64], from_bit: usize) -> u64 {
-        let mut key = 0u64;
-        for plane in &self.planes[table][from_bit..] {
-            key = (key << 1) | u64::from(dot(&plane.normal, z) > plane.offset);
-        }
-        key
+        out
     }
 
     pub(crate) fn query_keys(&self, x: &[f64], num_probes: usize) -> Vec<(u64, Vec<usize>)> {
-        let z = self.scaled(x);
         let bits = self.bits();
-        self.planes
-            .iter()
-            .map(|table| {
+        let view = ArrayView2::from_shape((1, x.len()), x).expect("query row");
+        let g = self.gaps(&view, 0);
+        let row = g.row(0);
+        (0..self.planes.len())
+            .map(|t| {
                 let mut key = 0u64;
                 let mut margins = Vec::with_capacity(bits);
-                for (b, plane) in table.iter().enumerate() {
-                    let gap = dot(&plane.normal, &z) - plane.offset;
+                for b in 0..bits {
+                    let gap = row[t * bits + b];
                     key = (key << 1) | u64::from(gap > 0.0);
                     margins.push((gap.abs(), bits - 1 - b));
                 }

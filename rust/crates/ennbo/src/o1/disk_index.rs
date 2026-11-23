@@ -7,10 +7,12 @@ use std::path::{Path, PathBuf};
 use super::buckets::BucketFile;
 use super::keys::{KeyFile, KeyWriter};
 use super::lsh::{io_error, table_seed, target_bits, O1Params, Planes};
+use super::pending::Pending;
 use crate::backend::MmapColumnStore;
 use crate::error::ENNError;
 
 const CHUNK_ROWS: usize = 4096;
+const GEMM_ROWS: usize = 256;
 pub(crate) const O1_INDEX_FILE: &str = "o1_index.json";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -18,6 +20,8 @@ pub(crate) struct IndexState {
     pub num_tables: usize,
     pub bucket_cap: usize,
     pub indexed_rows: usize,
+    #[serde(default)]
+    pub bucketed_rows: Option<usize>,
     pub hash_scale: Vec<f64>,
     pub anchors: Vec<Vec<usize>>,
 }
@@ -27,6 +31,7 @@ pub(crate) struct LshIndex {
     planes: Planes,
     keys: Vec<KeyFile>,
     buckets: Vec<BucketFile>,
+    pending: Vec<Pending>,
     num_rows: usize,
     state_path: PathBuf,
 }
@@ -53,7 +58,8 @@ impl LshIndex {
             let seed_t = table_seed(seed, t);
             buckets.push(BucketFile::open(table_path(work_dir, "buckets", t), params.bucket_cap, seed_t)?);
         }
-        let mut index = Self { params, planes, keys, buckets, num_rows: 0, state_path };
+        let pending = (0..params.num_tables).map(|_| Pending::default()).collect();
+        let mut index = Self { params, planes, keys, buckets, pending, num_rows: 0, state_path };
         if let Some(state) = saved.filter(|s| index.can_restore(s, rows.nrows)) {
             index.planes.set_scale(&state.hash_scale, rows)?;
             index.planes.restore(&state.anchors, rows)?;
@@ -61,6 +67,7 @@ impl LshIndex {
             for k in &index.keys {
                 k.truncate(index.num_rows)?;
             }
+            index.replay_pending(state.bucketed_rows.unwrap_or(index.num_rows))?;
             return Ok(index);
         }
         index.planes.set_scale(fallback_scale, rows)?;
@@ -101,6 +108,7 @@ impl LshIndex {
         s.num_tables == self.params.num_tables
             && s.bucket_cap == self.params.bucket_cap
             && s.indexed_rows == nrows
+            && s.bucketed_rows.is_none_or(|b| b <= nrows)
             && s.anchors.len() == self.params.num_tables
             && s.anchors.iter().all(|a| a.len() == bits)
             && self.keys.iter().all(|k| k.len() >= nrows)
@@ -110,6 +118,7 @@ impl LshIndex {
     fn reset(&mut self) -> Result<(), ENNError> {
         self.planes = self.planes.cleared();
         self.num_rows = 0;
+        self.pending.iter_mut().for_each(Pending::clear);
         for (k, b) in self.keys.iter().zip(&self.buckets) {
             k.truncate(0)?;
             b.reset()?;
@@ -122,6 +131,7 @@ impl LshIndex {
             num_tables: self.params.num_tables,
             bucket_cap: self.params.bucket_cap,
             indexed_rows: self.num_rows,
+            bucketed_rows: Some(self.num_rows - self.pending_rows()),
             hash_scale: self.planes.hash_scale().to_vec(),
             anchors: self.planes.anchors(),
         }
@@ -136,19 +146,22 @@ impl LshIndex {
     }
 
     pub(crate) fn memory_bytes(&self) -> usize {
-        self.planes.memory_bytes()
+        self.planes.memory_bytes() + self.pending_bytes()
+    }
+
+    pub(crate) fn pending_bytes(&self) -> usize {
+        self.pending.iter().map(Pending::bytes).sum()
     }
 
     fn chunk_keys(&self, rows: &MmapColumnStore, range: Range<usize>, from_bit: usize) -> Result<Vec<u64>, ENNError> {
         let l = self.params.num_tables;
+        let x = rows.mmap_rows_view(range.start, range.end)?;
         let mut out = vec![0u64; range.len() * l];
-        out.par_chunks_mut(l).enumerate().try_for_each(|(i, slot)| {
-            let z = self.planes.scaled(rows.mmap_row_slice(range.start + i)?);
-            for (t, k) in slot.iter_mut().enumerate() {
-                *k = self.planes.key_bits(t, &z, from_bit);
-            }
-            Ok::<(), ENNError>(())
-        })?;
+        out.par_chunks_mut(GEMM_ROWS * l).enumerate().for_each(|(i, slot)| {
+            let lo = i * GEMM_ROWS;
+            let block = x.slice(ndarray::s![lo..lo + slot.len() / l, ..]);
+            slot.copy_from_slice(&self.planes.row_keys(&block, from_bit));
+        });
         Ok(out)
     }
 
@@ -169,10 +182,13 @@ impl LshIndex {
                 let col = self.column(&flat, t);
                 self.keys[t].write_at(lo, &col)?;
                 if incremental {
-                    let mut pairs: Vec<(u64, u32)> =
-                        col.iter().enumerate().map(|(i, &k)| (k, (lo + i) as u32)).collect();
-                    self.buckets[t].insert(&mut pairs)?;
+                    for (i, &k) in col.iter().enumerate() {
+                        self.pending[t].push(k, (lo + i) as u32, &self.buckets[t])?;
+                    }
                 }
+            }
+            if incremental && self.pending_bytes() > self.params.pending_budget_bytes {
+                self.flush_pending()?;
             }
         }
         self.num_rows = rows.nrows;
@@ -183,6 +199,31 @@ impl LshIndex {
             }
             self.rewrite_keys(rows, old)?;
             self.rebuild_buckets()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn pending_rows(&self) -> usize {
+        self.pending.first().map_or(0, Pending::rows)
+    }
+
+    pub(crate) fn flush_pending(&mut self) -> Result<(), ENNError> {
+        self.buckets
+            .par_iter()
+            .zip(self.pending.par_iter_mut())
+            .try_for_each(|(b, p)| b.write_pending(&p.take_sorted()))
+    }
+
+    fn replay_pending(&mut self, from_row: usize) -> Result<(), ENNError> {
+        let mut col = vec![0u64; CHUNK_ROWS];
+        for lo in (from_row..self.num_rows).step_by(CHUNK_ROWS) {
+            let len = CHUNK_ROWS.min(self.num_rows - lo);
+            for ((k, p), b) in self.keys.iter().zip(&mut self.pending).zip(&self.buckets) {
+                k.read_at(lo, &mut col[..len])?;
+                for (i, &key) in col[..len].iter().enumerate() {
+                    p.push(key, (lo + i) as u32, b)?;
+                }
+            }
         }
         Ok(())
     }
@@ -217,6 +258,7 @@ impl LshIndex {
 
     pub(crate) fn rebuild_buckets(&mut self) -> Result<(), ENNError> {
         let bits = self.bits();
+        self.pending.iter_mut().for_each(Pending::clear);
         for (b, k) in self.buckets.iter_mut().zip(&self.keys) {
             b.rebuild(k, self.num_rows, bits, self.params.build_budget_bytes)?;
         }
@@ -226,9 +268,11 @@ impl LshIndex {
     pub(crate) fn candidate_ids(&self, query: &[f64]) -> Result<Vec<u32>, ENNError> {
         let mut ids = Vec::new();
         for (t, (key, flips)) in self.planes.query_keys(query, self.params.num_probes).into_iter().enumerate() {
-            self.buckets[t].read_ids(key, &mut ids)?;
+            let pending = &self.pending[t];
+            self.buckets[t].read_ids(key, pending.get(key), &mut ids)?;
             for bit in flips {
-                self.buckets[t].read_ids(key ^ (1u64 << bit), &mut ids)?;
+                let probe = key ^ (1u64 << bit);
+                self.buckets[t].read_ids(probe, pending.get(probe), &mut ids)?;
             }
         }
         ids.sort_unstable();

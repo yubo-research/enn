@@ -30,13 +30,8 @@ impl MmapColumnStore {
         if need_bytes <= self.mmap.len() {
             return Ok(());
         }
-        let grow_rows = (need_rows - self.nrows).max(MMAP_GROW_ROWS);
+        let grow_rows = (need_rows - self.nrows).max(self.nrows).max(MMAP_GROW_ROWS);
         let new_len = self.bytes_for_rows(self.nrows + grow_rows);
-        if !self.mmap.is_empty() {
-            self.mmap
-                .flush()
-                .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
-        }
         self.file
             .set_len(new_len as u64)
             .map_err(|e| ENNError::InvalidParameter(e.to_string()))?;
@@ -142,6 +137,18 @@ impl MmapColumnStore {
             }
         }
         Ok(out)
+    }
+
+    pub(crate) fn mmap_rows_view(&self, start: usize, end: usize) -> Result<ArrayView2<'_, f64>, ENNError> {
+        if start > end || end > self.nrows {
+            return Err(ENNError::InvalidParameter(format!(
+                "mmap_rows_view {start}..{end} out of range [0, {})",
+                self.nrows
+            )));
+        }
+        let bytes = &self.mmap[start * self.row_bytes()..end * self.row_bytes()];
+        let vals: &[f64] = unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const f64, (end - start) * self.ncols) };
+        ArrayView2::from_shape((end - start, self.ncols), vals).map_err(|e| ENNError::InvalidParameter(e.to_string()))
     }
 
     #[cfg_attr(not(test), allow(dead_code))]

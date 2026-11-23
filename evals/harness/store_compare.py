@@ -4,7 +4,7 @@ import json
 import multiprocessing
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 import numpy as np
 
@@ -98,11 +98,28 @@ class StoreRun(ScalingRun):
         return out
 
 
+def calibration_fields(run: StoreRun, test) -> dict:
+    x_test, y_test = test
+    cal = run.params.calibrator
+    if cal is None:
+        return {"calibrated": False}
+    raw = run.model.posterior(x_test, params=replace(run.params, calibrator=None))
+    return {
+        "calibrated": True,
+        "cal_a": float(cal.a[0]),
+        "cal_b": float(cal.b[0]),
+        "cal_c": float(cal.c[0]),
+        "loglik_raw": gaussian_loglik(y_test, raw.mu, raw.se),
+        "nrmse_raw": rmse(y_test, raw.mu) / float(np.std(y_test)),
+    }
+
+
 def checkpoint_row(run: StoreRun, n: int, timings: dict, test) -> dict:
     x_test, y_test = test
     mu, se, post_s, draw_s = run.query(x_test)
     num_test = len(y_test)
     return {
+        **calibration_fields(run, test),
         **asdict(run.config),
         "n": n,
         **run.memory(),

@@ -16,6 +16,14 @@ pub(crate) fn open_rw(path: &Path, truncate: bool) -> Result<File, ENNError> {
         .map_err(io_error)
 }
 
+pub(crate) fn install(tmp: &Path, path: &Path) -> Result<(), ENNError> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io_error(e)),
+        _ => {}
+    }
+    std::fs::rename(tmp, path).map_err(io_error)
+}
+
 pub(crate) fn file_len(path: &Path) -> u64 {
     std::fs::metadata(path).map_or(0, |m| m.len())
 }
@@ -58,7 +66,7 @@ impl KeyFile {
     }
 
     pub(crate) fn replace_with(&mut self, tmp: &Path) -> Result<(), ENNError> {
-        std::fs::rename(tmp, &self.path).map_err(io_error)?;
+        install(tmp, &self.path)?;
         self.file = open_rw(&self.path, false)?;
         Ok(())
     }
