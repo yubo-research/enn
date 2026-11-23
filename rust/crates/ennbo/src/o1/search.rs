@@ -1,25 +1,12 @@
 use ndarray::{Array2, ArrayView2};
 use rayon::prelude::*;
 
-use super::lsh::LshTables;
+use super::disk_index::LshIndex;
 use crate::backend::MmapColumnStore;
 use crate::error::ENNError;
 
 pub(crate) const O1_EXACT_ROWS: usize = 256;
 const SELF_DIST2_EPS: f64 = 1e-24;
-
-pub(crate) fn candidate_ids(tables: &LshTables, query: &[f64]) -> Vec<u32> {
-    let mut ids = Vec::new();
-    for (t, (key, flips)) in tables.query_keys(query).into_iter().enumerate() {
-        ids.extend_from_slice(tables.bucket_ids(t, key));
-        for bit in flips {
-            ids.extend_from_slice(tables.bucket_ids(t, key ^ (1u64 << bit)));
-        }
-    }
-    ids.sort_unstable();
-    ids.dedup();
-    ids
-}
 
 fn top_up(ids: &mut Vec<u32>, n: usize, need: usize) {
     let mut extra = Vec::new();
@@ -53,7 +40,7 @@ fn weighted_dist2(a: &[f64], b: &[f64], weights: &[f64]) -> f64 {
 }
 
 pub(crate) struct SearchContext<'a> {
-    pub tables: &'a LshTables,
+    pub index: &'a LshIndex,
     pub rows: &'a MmapColumnStore,
     pub weights: &'a [f64],
 }
@@ -64,7 +51,7 @@ impl SearchContext<'_> {
         let mut ids = if n <= O1_EXACT_ROWS {
             (0..n as u32).collect()
         } else {
-            candidate_ids(self.tables, query)
+            self.index.candidate_ids(query)?
         };
         top_up(&mut ids, n, need);
         let mut scored = Vec::with_capacity(ids.len());

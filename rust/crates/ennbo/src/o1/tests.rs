@@ -1,5 +1,5 @@
 use super::lsh::target_bits;
-use super::search::{candidate_ids, O1_EXACT_ROWS};
+use super::search::O1_EXACT_ROWS;
 use super::*;
 use ndarray::Array2;
 use rand::rngs::StdRng;
@@ -68,7 +68,7 @@ fn large_store_recall_and_bucket_bounds() {
     for seed in 0..20u64 {
         let (q, _) = random_rows(1, 4, 100 + seed);
         let q = q.row(0).to_vec();
-        assert!(candidate_ids(&store.tables, &q).len() <= p.num_tables * (1 + p.num_probes) * p.bucket_cap);
+        assert!(store.index.candidate_ids(&q).unwrap().len() <= p.num_tables * (1 + p.num_probes) * p.bucket_cap);
         let (_, idx) = store.search(&ndarray::arr2(&[[q[0], q[1], q[2], q[3]]]).view(), 1, false).unwrap();
         hits += usize::from(idx[[0, 0]] == exact_top(&store, &q, 1)[0]);
     }
@@ -172,7 +172,7 @@ fn recall_diagnostic(d: usize, params: O1Params) {
         let mut hits = 0usize;
         for q in queries.rows() {
             let qv = q.to_vec();
-            cand += candidate_ids(&store.tables, &qv).len();
+            cand += store.index.candidate_ids(&qv).unwrap().len();
             let truth = exact_top(&store, &qv, 10);
             let (_, idx) = store.search(&q.insert_axis(ndarray::Axis(0)), 10, false).unwrap();
             hits += idx.row(0).iter().filter(|i| truth.contains(i)).count();

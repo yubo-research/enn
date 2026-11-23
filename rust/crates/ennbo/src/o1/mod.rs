@@ -1,5 +1,10 @@
+mod buckets;
+mod disk_index;
+mod keys;
 mod lsh;
 mod search;
+#[cfg(test)]
+mod disk_tests;
 #[cfg(test)]
 mod tests;
 
@@ -10,7 +15,8 @@ use std::path::{Path, PathBuf};
 
 use crate::backend::{MmapColumnStore, TrainRowsAtResult};
 use crate::error::ENNError;
-use lsh::LshTables;
+use disk_index::LshIndex;
+use lsh::io_error;
 pub use lsh::O1Params;
 use search::SearchContext;
 
@@ -31,11 +37,7 @@ pub struct O1Store {
     y: MmapColumnStore,
     yvar: Option<MmapColumnStore>,
     x_scale: Option<Array1<f64>>,
-    tables: LshTables,
-}
-
-fn io_error(e: impl std::fmt::Display) -> ENNError {
-    ENNError::InvalidParameter(e.to_string())
+    index: LshIndex,
 }
 
 fn store_path(work_dir: &Path, name: &str) -> PathBuf {
@@ -68,17 +70,15 @@ impl O1Store {
             .has_yvar
             .then(|| MmapColumnStore::mmap_open_or_create(store_path(&work_dir, "yvar"), num_metrics, n))
             .transpose()?;
-        let mut tables = LshTables::new(num_dim, O1_SEED, params);
         let hash_scale = meta.hash_scale.unwrap_or_else(|| vec![1.0; num_dim]);
-        tables.rehash(&x, &hash_scale)?;
-        tables.insert_rows(&x, 0)?;
+        let index = LshIndex::open(&work_dir, O1_SEED, params, &hash_scale, &x)?;
         Ok(Self {
             work_dir,
             x,
             y,
             yvar,
             x_scale: meta.x_scale.map(Array1::from),
-            tables,
+            index,
         })
     }
 
@@ -87,7 +87,7 @@ impl O1Store {
             num_rows: self.x.nrows,
             has_yvar: self.yvar.is_some(),
             x_scale: self.x_scale.as_ref().map(|s| s.to_vec()),
-            hash_scale: Some(self.tables.hash_scale().to_vec()),
+            hash_scale: Some(self.index.hash_scale().to_vec()),
         };
         bpann_write_json(&self.work_dir.join(O1_META_FILE), &meta).map_err(io_error)
     }
@@ -109,7 +109,7 @@ impl O1Store {
     }
 
     pub fn hash_bits(&self) -> usize {
-        self.tables.bits()
+        self.index.bits()
     }
 
     fn append_yvar(&mut self, yvar: Option<&ArrayView2<f64>>, rows: usize) -> Result<(), ENNError> {
@@ -145,7 +145,7 @@ impl O1Store {
         self.append_yvar(yvar, x.nrows())?;
         self.y.mmap_append(y)?;
         self.x.mmap_append(x)?;
-        self.tables.insert_rows(&self.x, start)?;
+        self.index.insert_rows(&self.x, start)?;
         self.write_meta()
     }
 
@@ -160,8 +160,8 @@ impl O1Store {
             ));
         }
         self.x_scale = Some(x_scale.clone());
-        if rebuild || self.tables.bits() == 0 {
-            self.tables.rehash(&self.x, &x_scale.to_vec())?;
+        if rebuild || self.index.bits() == 0 {
+            self.index.rehash(&self.x, &x_scale.to_vec())?;
         }
         self.write_meta()
     }
@@ -177,7 +177,7 @@ impl O1Store {
             None => vec![1.0; self.num_dim()],
         };
         let ctx = SearchContext {
-            tables: &self.tables,
+            index: &self.index,
             rows: &self.x,
             weights: &weights,
         };
@@ -210,6 +210,6 @@ impl O1Store {
     }
 
     pub fn index_memory_bytes(&self) -> usize {
-        self.tables.memory_bytes()
+        self.index.memory_bytes()
     }
 }
