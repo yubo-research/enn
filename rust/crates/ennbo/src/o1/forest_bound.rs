@@ -1,7 +1,7 @@
 use std::collections::{BinaryHeap, HashSet};
 
-use super::forest_node::{Code, Dir};
-use super::forest_rules::{ForestRules, ProbeRule};
+use super::forest_node::Dir;
+use super::forest_rules::ForestRules;
 use super::forest_tree::RowSource;
 use super::search::{fetch_row, weighted_dist2, X_COLUMN};
 use crate::error::ENNError;
@@ -24,20 +24,13 @@ impl Ord for Dist {
 }
 
 pub(crate) fn dual_norm(dir: &Dir, weights: &[f64]) -> f64 {
-    let sum = |v: &mut dyn Iterator<Item = f64>| v.zip(weights).map(|(a, w)| a * a / w).sum::<f64>().sqrt();
-    match &dir.code {
-        Code::I8(q) => f64::from(dir.scale) * sum(&mut q.iter().map(|&a| f64::from(a))),
-        Code::F32(v) => sum(&mut v.iter().map(|&a| f64::from(a))),
-    }
+    f64::from(dir.scale) * dir.code.iter().zip(weights).map(|(&a, w)| f64::from(a) * f64::from(a) / w).sum::<f64>().sqrt()
 }
 
 pub(crate) struct Scorer<'w> {
     pub weights: &'w [f64],
     need: usize,
     bound: f64,
-    patience: u32,
-    stale: u32,
-    squared: bool,
     top: BinaryHeap<Dist>,
     seen: Option<HashSet<u32>>,
     codes: bool,
@@ -49,7 +42,7 @@ pub(crate) struct Scorer<'w> {
 impl<'w> Scorer<'w> {
     pub(crate) fn new(weights: &'w [f64], need: usize, invs: &[Vec<f64>], rules: &ForestRules) -> Self {
         let codes = rules.rerank > 0;
-        Self { weights, need: need.max(1), bound: rules.bound, patience: rules.patience, stale: 0, squared: rules.probe == ProbeRule::SumSquares, top: BinaryHeap::new(), seen: (invs.len() > 1).then(HashSet::new), codes, narrow: None, scored: Vec::new(), coded: Vec::new() }
+        Self { weights, need: need.max(1), bound: rules.bound, top: BinaryHeap::new(), seen: (invs.len() > 1).then(HashSet::new), codes, narrow: None, scored: Vec::new(), coded: Vec::new() }
     }
 
     pub(crate) fn kth(&self) -> f64 {
@@ -57,16 +50,10 @@ impl<'w> Scorer<'w> {
     }
 
     pub(crate) fn prunes(&self, cost: f64) -> bool {
-        let lb2 = if self.squared { cost } else { cost * cost };
-        self.bound > 0.0 && lb2 > self.bound * self.kth()
-    }
-
-    pub(crate) fn settled(&self) -> bool {
-        self.patience > 0 && self.stale >= self.patience
+        self.bound > 0.0 && cost * cost > self.bound * self.kth()
     }
 
     pub(crate) fn add(&mut self, query: &[f64], ids: &[u32], src: RowSource<'_>) -> Result<(), ENNError> {
-        let before = self.kth();
         for &id in ids {
             if self.seen.as_mut().is_some_and(|s| !s.insert(id)) {
                 continue;
@@ -95,7 +82,6 @@ impl<'w> Scorer<'w> {
                 self.top.push(Dist(d));
             }
         }
-        self.stale = if self.kth() < before { 0 } else { self.stale + 1 };
         Ok(())
     }
 }
@@ -106,10 +92,9 @@ mod tests {
 
     #[test]
     fn margins_scale_to_the_current_metric_and_pruning_needs_a_full_top() {
-        let dir = Dir::quantize(&[0.6, 0.8], true);
-        assert!((dual_norm(&dir, &[1.0, 1.0]) - 1.0).abs() < 1e-6);
-        assert!((dual_norm(&dir, &[4.0, 1.0]) - 0.73f64.sqrt()).abs() < 1e-6);
-        assert!((dual_norm(&Dir::quantize(&[0.6, 0.8], false), &[1.0, 1.0]) - 1.0).abs() < 0.01);
+        let dir = Dir::quantize(&[0.6, 0.8]);
+        assert!((dual_norm(&dir, &[1.0, 1.0]) - 1.0).abs() < 0.01);
+        assert!((dual_norm(&dir, &[4.0, 1.0]) - 0.73f64.sqrt()).abs() < 0.01);
         let w = [1.0, 1.0];
         let mut s = Scorer::new(&w, 2, &[vec![1.0, 1.0]], &ForestRules::default());
         assert!(!s.prunes(100.0));
@@ -118,6 +103,5 @@ mod tests {
         assert_eq!(s.kth(), 4.0);
         assert!(!s.prunes(1.9));
         assert!(s.prunes(2.1));
-        assert!(!s.settled());
     }
 }

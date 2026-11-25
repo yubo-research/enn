@@ -45,7 +45,7 @@ impl Cached {
             + match self {
                 Self::Node(n) => match &**n {
                     Node::Leaf { ids, .. } => std::mem::size_of::<Node>() + 4 * ids.capacity(),
-                    Node::Split { cut: Cut::Dir(d), .. } => std::mem::size_of::<Node>() + std::mem::size_of::<Dir>() + d.payload_bytes(),
+                    Node::Split { cut: Cut::Dir(d), .. } => std::mem::size_of::<Node>() + std::mem::size_of::<Dir>() + d.len(),
                     _ => std::mem::size_of::<Node>(),
                 },
                 Self::Row(r) => 8 * r.len(),

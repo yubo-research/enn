@@ -28,41 +28,11 @@ impl O1Index {
         }
     }
 
-    pub(crate) fn set_alpha(&mut self, alpha: f64) -> Result<(), ENNError> {
-        match self {
-            Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no subtree rebuilds".into())),
-            Self::Forest(f) => {
-                f.set_alpha(alpha);
-                Ok(())
-            }
-        }
-    }
-
     pub(crate) fn set_rerank(&mut self, rerank: u32) -> Result<(), ENNError> {
         match self {
             Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no row codes".into())),
             Self::Forest(f) => {
                 f.set_rerank(rerank);
-                Ok(())
-            }
-        }
-    }
-
-    pub(crate) fn set_local_rebuild(&mut self, kib: u32, pread: u8) -> Result<(), ENNError> {
-        match self {
-            Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no subtree rebuilds".into())),
-            Self::Forest(f) => {
-                f.set_local_rebuild(kib, pread);
-                Ok(())
-            }
-        }
-    }
-
-    pub(crate) fn set_segments(&mut self, params: super::SegParams) -> Result<(), ENNError> {
-        match self {
-            Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no segments".into())),
-            Self::Forest(f) => {
-                f.set_segments(params);
                 Ok(())
             }
         }

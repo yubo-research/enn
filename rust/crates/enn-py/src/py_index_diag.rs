@@ -83,16 +83,9 @@ pub fn index_set_io_width(model: PyRef<'_, PyEpistemicNearestNeighbors>, width: 
 }
 
 #[pyfunction]
-#[pyo3(signature = (model, rule, select="first_seen", bound=1.0, patience=0))]
-pub fn index_set_probe_rule(model: PyRef<'_, PyEpistemicNearestNeighbors>, rule: &str, select: &str, bound: f64, patience: u32) -> PyResult<()> {
-    let rule: ennbo::o1::ProbeRule = rule.parse().map_err(py_err)?;
-    let select: ennbo::o1::SelectRule = select.parse().map_err(py_err)?;
-    model.inner.index_access().set_probe_rule(rule, select, (bound, patience)).map_err(py_err)
-}
-
-#[pyfunction]
-pub fn index_set_split_candidates(model: PyRef<'_, PyEpistemicNearestNeighbors>, candidates: u32) -> PyResult<()> {
-    model.inner.index_access().set_split_candidates(candidates).map_err(py_err)
+#[pyo3(signature = (model, bound=1.0))]
+pub fn index_set_bound(model: PyRef<'_, PyEpistemicNearestNeighbors>, bound: f64) -> PyResult<()> {
+    model.inner.index_access().set_bound(bound).map_err(py_err)
 }
 
 #[pyfunction]
@@ -121,16 +114,6 @@ pub fn index_set_pread_pivots(model: PyRef<'_, PyEpistemicNearestNeighbors>, on:
 }
 
 #[pyfunction]
-pub fn index_set_staging(model: PyRef<'_, PyEpistemicNearestNeighbors>, above: u32, work: u32) -> PyResult<()> {
-    model.inner.index_access().set_staging(above, work).map_err(py_err)
-}
-
-#[pyfunction]
-pub fn index_set_lean(model: PyRef<'_, PyEpistemicNearestNeighbors>, lean: u32) -> PyResult<()> {
-    model.inner.index_access().set_lean(lean).map_err(py_err)
-}
-
-#[pyfunction]
 #[pyo3(signature = (model, rows_per_insert, grow=1.3, min_rows=4096))]
 pub fn index_set_row_order(model: PyRef<'_, PyEpistemicNearestNeighbors>, rows_per_insert: usize, grow: f64, min_rows: usize) -> PyResult<()> {
     let params = ennbo::o1::OrderParams { rows_per_insert, grow, min_rows };
@@ -148,25 +131,8 @@ pub fn index_set_rerank(model: PyRef<'_, PyEpistemicNearestNeighbors>, rerank: u
 }
 
 #[pyfunction]
-pub fn index_set_alpha(model: PyRef<'_, PyEpistemicNearestNeighbors>, alpha: f64) -> PyResult<()> {
-    model.inner.index_access().set_alpha(alpha).map_err(py_err)
-}
-
-#[pyfunction]
 pub fn index_set_trees(model: PyRef<'_, PyEpistemicNearestNeighbors>, n: usize) -> PyResult<()> {
     model.inner.index_access().set_trees(n).map_err(py_err)
-}
-
-#[pyfunction]
-#[pyo3(signature = (model, kib, pread=0))]
-pub fn index_set_local_rebuild(model: PyRef<'_, PyEpistemicNearestNeighbors>, kib: u32, pread: u8) -> PyResult<()> {
-    model.inner.index_access().set_local_rebuild(kib, pread).map_err(py_err)
-}
-
-#[pyfunction]
-#[pyo3(signature = (model, rows, work=300))]
-pub fn index_set_segments(model: PyRef<'_, PyEpistemicNearestNeighbors>, rows: usize, work: usize) -> PyResult<()> {
-    model.inner.index_access().set_segments(ennbo::o1::SegParams { rows, work }).map_err(py_err)
 }
 
 #[pyfunction]
@@ -214,10 +180,6 @@ pub fn index_maint_stats<'py>(py: Python<'py>, model: PyRef<'_, PyEpistemicNeare
     d.set_item("order_rows", m.order_rows)?;
     d.set_item("order_builds", m.order_builds)?;
     d.set_item("ordered_rows", m.ordered_rows)?;
-    d.set_item("seg_ns", m.seg_ns)?;
-    d.set_item("seg_rows", m.seg_rows)?;
-    d.set_item("merges", m.merges)?;
-    d.set_item("segments", m.segments)?;
     d.set_item("gathered", m.gathered)?;
     d.set_item("rebuild_gathered", m.rebuild_gathered)?;
     d.set_item("route_rows", m.route_rows)?;
@@ -303,7 +265,7 @@ mod tests {
 
     #[test]
     fn index_diag_functions_are_linked() {
-        let _ = (index_occupancy, index_candidates, index_set_probe_budget, index_set_io_width, index_set_probe_rule, index_set_split_candidates, index_set_split_rule, index_node_io, index_set_repair, index_maintain, index_compact, occupancy_dict);
-        let _ = (index_set_cache, index_cache_stats, index_set_profile, index_take_profile, index_maint_stats, index_set_staging, index_set_lean, index_set_pread_pivots, index_set_row_order, index_order_rows, index_set_par_rebuild, index_set_alpha, index_set_rerank, index_set_local_rebuild, index_set_trees, index_set_segments, py_err);
+        let _ = (index_occupancy, index_candidates, index_set_probe_budget, index_set_io_width, index_set_bound, index_set_split_rule, index_node_io, index_set_repair, index_maintain, index_compact, occupancy_dict);
+        let _ = (index_set_cache, index_cache_stats, index_set_profile, index_take_profile, index_maint_stats, index_set_pread_pivots, index_set_row_order, index_order_rows, index_set_par_rebuild, index_set_rerank, index_set_trees, py_err);
     }
 }

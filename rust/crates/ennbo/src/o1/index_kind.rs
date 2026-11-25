@@ -3,7 +3,7 @@ use std::path::Path;
 use super::cache::SharedCache;
 use super::disk_index::{LshIndex, O1Occupancy};
 use super::forest::{ForestIndex, ForestParams, MaintStats};
-use super::forest_rules::{ProbeRule, SelectRule, SplitRule};
+use super::forest_rules::SplitRule;
 use super::lsh::O1Params;
 use super::profile::QueryProfile;
 use super::row_order::Rows;
@@ -167,37 +167,20 @@ impl O1Index {
         }
     }
 
-    pub(crate) fn set_split(&mut self, rule: Option<SplitRule>, candidates: Option<u32>, rows: &MmapColumnStore) -> Result<(), ENNError> {
+    pub(crate) fn set_split(&mut self, rule: SplitRule, rows: &MmapColumnStore) -> Result<(), ENNError> {
         match self {
             Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no split rule".into())),
-            Self::Forest(f) => f.set_split(rule, candidates, rows),
+            Self::Forest(f) => f.set_split(rule, rows),
         }
     }
 
-    pub(crate) fn set_probe_rule(&mut self, rule: ProbeRule, select: SelectRule, stop: (f64, u32)) -> Result<(), ENNError> {
+    pub(crate) fn set_bound(&mut self, bound: f64) -> Result<(), ENNError> {
         match self {
-            Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no probe rule".into())),
+            Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no search bound".into())),
             Self::Forest(f) => {
-                f.set_probe_rule(rule, select, stop);
+                f.set_bound(bound);
                 Ok(())
             }
-        }
-    }
-
-    pub(crate) fn set_staging(&mut self, above: u32, work: u32) -> Result<(), ENNError> {
-        match self {
-            Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no staged rebuilds".into())),
-            Self::Forest(f) => {
-                f.set_staging(above, work);
-                Ok(())
-            }
-        }
-    }
-
-    pub(crate) fn set_lean(&mut self, lean: u32) -> Result<(), ENNError> {
-        match self {
-            Self::Lsh(_) => Err(ENNError::InvalidParameter("the O1 LSH index has no split lean".into())),
-            Self::Forest(f) => f.set_lean(lean),
         }
     }
 

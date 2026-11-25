@@ -62,10 +62,6 @@ impl O1Store {
         self.index.set_pread_pivots(on)
     }
 
-    pub fn set_lean(&mut self, lean: u32) -> Result<(), ENNError> {
-        self.index.set_lean(lean)
-    }
-
     pub fn set_row_order(&mut self, params: super::OrderParams) -> Result<(), ENNError> {
         self.index.set_row_order(params)
     }
@@ -78,29 +74,14 @@ impl O1Store {
         self.index.set_rerank(rerank)
     }
 
-    pub fn set_alpha(&mut self, alpha: f64) -> Result<(), ENNError> {
-        self.index.set_alpha(alpha)
-    }
-
     pub fn set_trees(&mut self, n: usize) -> Result<(), ENNError> {
         self.index.set_trees(n, &self.x)
-    }
-
-    pub fn set_local_rebuild(&mut self, kib: u32, pread: u8) -> Result<(), ENNError> {
-        self.index.set_local_rebuild(kib, pread)
-    }
-
-    pub fn set_segments(&mut self, params: super::SegParams) -> Result<(), ENNError> {
-        self.index.set_segments(params)
     }
 
     pub fn order_rows(&mut self) -> Result<usize, ENNError> {
         self.index.order_now(&self.x)
     }
 
-    pub fn set_staging(&mut self, above: u32, work: u32) -> Result<(), ENNError> {
-        self.index.set_staging(above, work)
-    }
 }
 
 pub fn scattered_rows(store: &O1Store, indices: &[usize]) -> Result<(Array2<f64>, Array2<f64>), ENNError> {

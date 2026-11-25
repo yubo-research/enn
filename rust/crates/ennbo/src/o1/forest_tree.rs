@@ -3,8 +3,7 @@ use std::path::Path;
 use super::cache::ObjCache;
 use super::forest_node::{Cut, Node, NodeFile, NIL};
 use super::forest_rules::{SplitConfig, SplitRule};
-use super::forest_split::{choose_split, Projector};
-use super::forest_stage::{Parted, Placed, Staged};
+use super::forest_split::{choose_split, Parted, Placed, Projector};
 use super::lsh::io_error;
 use super::row_order::Rows;
 use super::search::{fetch_row, RowRef, X_COLUMN};
@@ -44,9 +43,6 @@ pub(crate) struct Tree {
     pub(crate) stats: TreeStats,
     pub(crate) split: SplitConfig,
     pub(crate) packed_at: u32,
-    pub(crate) staged: Option<Staged>,
-    pub(crate) release: Vec<u32>,
-    pub(crate) base: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -80,13 +76,13 @@ pub(crate) fn depth_limit(n: usize, cap: usize, alpha: f64) -> usize {
 
 impl Tree {
     pub(crate) fn create(path: &Path, cap: usize, seed: u64, split: SplitConfig, dim: usize) -> Result<Self, ENNError> {
-        Ok(Self { nodes: NodeFile::create(path, cap, dim, split.rule.payload(dim))?, seed, stats: TreeStats::default(), split, packed_at: 0, staged: None, release: Vec::new(), base: 0 })
+        Ok(Self { nodes: NodeFile::create(path, cap, dim, split.rule.payload(dim))?, seed, stats: TreeStats::default(), split, packed_at: 0 })
     }
 
     pub(crate) fn open(path: &Path, cap: usize, seed: u64) -> Result<Self, ENNError> {
         let nodes = NodeFile::open(path, cap)?;
         let packed_at = nodes.num_nodes();
-        Ok(Self { nodes, seed, stats: TreeStats::default(), split: SplitConfig::default(), packed_at, staged: None, release: Vec::new(), base: 0 })
+        Ok(Self { nodes, seed, stats: TreeStats::default(), split: SplitConfig::default(), packed_at })
     }
 
     fn projector<'a>(&self, inv_scale: &'a [f64]) -> Projector<'a> {
@@ -142,7 +138,7 @@ impl Tree {
     pub(super) fn descend_from(&self, start: u32, x: &[f64], inv_scale: &[f64], rows: &MmapColumnStore) -> Result<(Vec<u32>, u32), ENNError> {
         let mut path = Vec::new();
         let mut at = start;
-        let src = RowSource { store: Rows::plain(rows), cache: None, pread: self.split.pread & 2 == 2 };
+        let src = RowSource { store: Rows::plain(rows), cache: None, pread: false };
         while let Some((_, near, _)) = self.step(x, inv_scale, at, src)? {
             path.push(at);
             at = near;
@@ -166,10 +162,9 @@ impl Tree {
         if placed == Placed::Present {
             return Ok(());
         }
-        self.note_late(&path, id);
         let Placed::Split(made) = placed else { return Ok(()) };
         path.push(leaf);
-        if path.len() + made > depth_limit((id - self.base.min(id)) as usize + 1, self.nodes.cap(), alpha) {
+        if path.len() + made > depth_limit(id as usize + 1, self.nodes.cap(), alpha) {
             self.rebalance(&path, rows, inv_scale, alpha)?;
         }
         Ok(())
@@ -232,10 +227,6 @@ impl Tree {
     }
 
     pub(crate) fn build(&mut self, slot: u32, ids: Vec<u32>, rows: &MmapColumnStore, inv_scale: &[f64]) -> Result<usize, ENNError> {
-        if ids.len() > self.nodes.cap() && ids.len() <= super::forest_plan::local_rows(self.split.local_kib, rows.ncols) && rows.ncols > 0 {
-            let plan = self.plan_subtree(slot, ids, rows, inv_scale)?;
-            return self.write_plan(slot, plan);
-        }
         let Some(p) = self.part(slot, ids, rows, inv_scale)? else { return Ok(0) };
         let dl = self.build(p.left.0, p.left.1, rows, inv_scale)?;
         let dr = self.build(p.right.0, p.right.1, rows, inv_scale)?;
@@ -273,7 +264,7 @@ impl Tree {
         Ok(())
     }
 
-    fn count(&self, node: u32, limit: usize) -> Result<usize, ENNError> {
+    fn count(&self, node: u32) -> Result<usize, ENNError> {
         let (mut stack, mut n) = (vec![node], 0);
         while let Some(at) = stack.pop() {
             match self.nodes.read(at)? {
@@ -284,30 +275,20 @@ impl Tree {
                 Node::Split { left, right, .. } => stack.extend([left, right]),
                 Node::Free { .. } => return Err(io_error("forest tree reaches a free node")),
             }
-            if n > limit {
-                break;
-            }
         }
         Ok(n)
     }
 
     fn rebalance(&mut self, path: &[u32], rows: &MmapColumnStore, inv_scale: &[f64], alpha: f64) -> Result<(), ENNError> {
-        let limit = if self.staged.is_some() { self.split.stage_above as usize } else { usize::MAX };
-        let mut below = self.count(path[path.len() - 1], limit)?;
+        let mut below = self.count(path[path.len() - 1])?;
         for (i, w) in path.windows(2).enumerate().rev() {
             let Node::Split { left, right, .. } = self.nodes.read(w[0])? else {
                 return Err(io_error("forest path is corrupt"));
             };
             let sibling = if left == w[1] { right } else { left };
-            if below > limit {
-                return Ok(());
-            }
-            let size = below + self.count(sibling, limit - below)?;
-            if size > limit {
-                return Ok(());
-            }
+            let size = below + self.count(sibling)?;
             if below.max(size - below) as f64 > alpha * size as f64 {
-                return self.rebuild_or_stage(&path[..=i], size, rows, inv_scale);
+                return self.rebuild(path[i], rows, inv_scale);
             }
             below = size;
         }

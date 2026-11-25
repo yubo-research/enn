@@ -88,7 +88,6 @@ def test_o1f_pivot_split_rule_keeps_every_row_reachable():
     )
     backend = model.rust_backend
     _rust.index_set_split_rule(backend, "pivot")
-    _rust.index_set_split_candidates(backend, 1)
     model.add(x[500:], y[500:])
     occ = _rust.index_occupancy(backend)
     assert occ["reachable_rows"] == 2000 and occ["splits"] > 0

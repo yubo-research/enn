@@ -49,13 +49,6 @@ impl<'a> EnnIndexAccess<'a> {
             .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no I/O width".into()))
     }
 
-    pub fn set_split_candidates(&self, candidates: u32) -> Result<(), ENNError> {
-        self.model
-            .backend
-            .with_o1(|s| s.set_split_candidates(candidates))?
-            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no split rule".into()))
-    }
-
     pub fn set_split_rule(&self, rule: crate::o1::SplitRule) -> Result<(), ENNError> {
         self.model
             .backend
@@ -63,11 +56,11 @@ impl<'a> EnnIndexAccess<'a> {
             .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no split rule".into()))
     }
 
-    pub fn set_probe_rule(&self, rule: crate::o1::ProbeRule, select: crate::o1::SelectRule, stop: (f64, u32)) -> Result<(), ENNError> {
+    pub fn set_bound(&self, bound: f64) -> Result<(), ENNError> {
         self.model
             .backend
-            .with_o1(|s| s.set_probe_rule(rule, select, stop))?
-            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no probe rule".into()))
+            .with_o1(|s| s.set_bound(bound))?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no search bound".into()))
     }
 
     pub fn set_repair(&self, repair_rows: usize, stale_drift: f64, prefer_fresh: bool) -> Result<(), ENNError> {

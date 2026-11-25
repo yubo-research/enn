@@ -62,17 +62,6 @@ fn recall(store: &O1Store, queries: &Array2<f64>, k: usize) -> f64 {
 fn trajectory_rows_stay_reachable_with_bounded_leaves_and_depth() {
     let n = 4000;
     let p = ForestParams::default();
-    let (dir, x) = (TempDir::new().unwrap(), trajectory(n, 3));
-    let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    store.set_staging(200, 64).unwrap();
-    let mut seen_staged = 0;
-    for lo in (0..n).step_by(500) {
-        insert_all(&mut store, &x.slice(ndarray::s![lo..lo + 500, ..]).to_owned(), 1);
-        assert_invariants(&store);
-        seen_staged += store.index.forest().trees.iter().filter(|t| t.staged.is_some()).count();
-    }
-    let occ = assert_invariants(&store);
-    assert!(seen_staged > 0 && occ.hash_bits <= 2 * depth_limit(n, p.leaf_cap, p.alpha), "{}", occ.hash_bits);
     let dir = TempDir::new().unwrap();
     let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
     insert_all(&mut store, &trajectory(n, 3), 1);
@@ -88,38 +77,18 @@ fn trajectory_rows_stay_reachable_with_bounded_leaves_and_depth() {
     }
     let dir = TempDir::new().unwrap();
     let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    assert!(store.set_lean(20).is_err());
-    store.set_lean(15).unwrap();
-    insert_all(&mut store, &trajectory(n, 3), 1);
-    let leaned = assert_invariants(&store);
-    assert!(leaned.hash_bits <= depth_limit(n, p.leaf_cap, p.alpha) + 1);
-    assert!(leaned.rebuilt_rows < occ.rebuilt_rows);
-    let dir = TempDir::new().unwrap();
-    let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
     store.set_par_rebuild(100).unwrap();
     insert_all(&mut store, &trajectory(n, 3), 1);
     let planned = assert_invariants(&store);
     assert!(planned.hash_bits <= depth_limit(n, p.leaf_cap, p.alpha) + 1 && planned.rebuilds > 0);
     assert!(planned.max_rebuild_rows >= 100 && planned.free_nodes < planned.disk_nodes);
-    let reads_per_rebuilt_row = |store: &O1Store| {
-        let m = store.index.forest().maint_stats();
-        assert!(m.gathered >= m.rebuild_gathered);
-        m.rebuild_gathered as f64 / m.rebuilt_rows as f64
-    };
     let routed = |s: &O1Store| s.index.forest().maint_stats().route_rows;
     let dir = TempDir::new().unwrap();
-    let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    store.set_local_rebuild(64, 3).unwrap();
-    insert_all(&mut store, &trajectory(n / 3, 3), 1);
-    let local = assert_invariants(&store);
-    assert!(local.hash_bits <= depth_limit(n, p.leaf_cap, p.alpha) + 1 && local.rebuilds > 0);
-    let dir = TempDir::new().unwrap();
     let mut base = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    base.set_local_rebuild(0, 0).unwrap();
     base.set_split_rule(forest_rules::SplitRule::Pivot).unwrap();
     insert_all(&mut base, &trajectory(n / 3, 3), 1);
-    assert!(routed(&store) == 0 && routed(&base) > 0);
-    assert!(reads_per_rebuilt_row(&store) < 1.5 && reads_per_rebuilt_row(&base) > 2.5, "{} {}", reads_per_rebuilt_row(&store), reads_per_rebuilt_row(&base));
+    let m = base.index.forest().maint_stats();
+    assert!(routed(&store) == 0 && routed(&base) > 0 && m.gathered >= m.rebuild_gathered);
 }
 
 #[test]
@@ -191,28 +160,20 @@ fn uniform_recall_is_high_and_budget_bounds_candidates() {
     }
     assert!(narrow < 0.9);
     store.set_probe_budget(40, 200).unwrap();
-    for (rule, select) in [(ProbeRule::SumSquares, SelectRule::FirstSeen), (ProbeRule::MaxMargin, SelectRule::Votes)] {
-        store.set_probe_rule(rule, select, (0.0, 0)).unwrap();
-        for row in q.rows() {
-            let ids = store.index.candidate_ids(&row.to_vec(), &Default::default(), &store.x).unwrap();
-            assert!(ids.len() <= 200 && ids.windows(2).all(|w| w[0] < w[1]));
-        }
-        assert!(recall(&store, &q, 10) > narrow);
+    for row in q.rows() {
+        let ids = store.index.candidate_ids(&row.to_vec(), &Default::default(), &store.x).unwrap();
+        assert!(ids.len() <= 200 && ids.windows(2).all(|w| w[0] < w[1]));
     }
+    assert!(recall(&store, &q, 10) > narrow);
     store.set_probe_budget(1000, 32000).unwrap();
-    store.set_probe_rule(ProbeRule::MaxMargin, SelectRule::FirstSeen, (1.0, 0)).unwrap();
+    store.set_bound(1.0).unwrap();
     let bounded = recall(&store, &q, 10);
-    store.set_probe_rule(ProbeRule::MaxMargin, SelectRule::FirstSeen, (0.01, 0)).unwrap();
+    store.set_bound(0.01).unwrap();
     assert!(bounded > 0.95 && recall(&store, &q, 10) < bounded);
-    store.set_probe_rule(ProbeRule::MaxMargin, SelectRule::FirstSeen, (0.0, 1)).unwrap();
-    let hasty = recall(&store, &q, 10);
-    store.set_probe_rule(ProbeRule::MaxMargin, SelectRule::FirstSeen, (0.0, 100)).unwrap();
-    let patient = recall(&store, &q, 10);
-    assert!(hasty < patient, "{hasty} {patient}");
     let lsh_dir = TempDir::new().unwrap();
     let mut lsh = O1Store::open_or_create(lsh_dir.path().to_path_buf(), D, 1).unwrap();
     assert!(lsh.set_probe_budget(2, 64).is_err());
-    assert!(lsh.set_probe_rule(ProbeRule::MaxMargin, SelectRule::Votes, (0.0, 0)).is_err());
+    assert!(lsh.set_bound(1.0).is_err());
 }
 
 #[test]
@@ -242,9 +203,10 @@ fn tree_ordered_rows_keep_answers_and_survive_reopen() {
     assert_invariants(&store);
     drop(store);
     std::fs::write(dir.path().join("o1f_xo_copy_99.bin"), b"stale").unwrap();
+    std::fs::write(dir.path().join("o1f_tree_999.build"), b"stale").unwrap();
     let mut reopened = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
     assert_eq!(reopened.maint_stats().unwrap().ordered_rows, 6000);
-    assert!(!dir.path().join("o1f_xo_copy_99.bin").exists());
+    assert!(!dir.path().join("o1f_xo_copy_99.bin").exists() && !dir.path().join("o1f_tree_999.build").exists());
     let exact = plain.search(&q.view(), 10, false).unwrap();
     assert_eq!(reopened.search(&q.view(), 10, false).unwrap(), exact);
     reopened.set_rerank(0).unwrap();
@@ -261,43 +223,4 @@ fn tree_ordered_rows_keep_answers_and_survive_reopen() {
     assert_eq!(bare.maint_stats().unwrap().ordered_rows, 0);
     assert!(std::fs::read_dir(dir.path()).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().starts_with("o1f_xo_")));
     assert_eq!(bare.search(&q.view(), 10, false).unwrap(), plain.search(&q.view(), 10, false).unwrap());
-}
-
-#[test]
-fn segments_merge_in_budgeted_steps_and_keep_every_row_reachable() {
-    let x = trajectory(6000, 21);
-    let mut rng = StdRng::seed_from_u64(22);
-    let q = Array2::from_shape_fn((20, D), |_| rng.gen::<f64>());
-    let dir = TempDir::new().unwrap();
-    let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    store.set_segments(SegParams { rows: 500, work: 400 }).unwrap();
-    let (n, mut most) = (ForestParams::default().num_trees, 0);
-    for lo in (0..6000).step_by(250) {
-        insert_all(&mut store, &x.slice(ndarray::s![lo..lo + 250, ..]).to_owned(), 50);
-        let occ = store.occupancy().unwrap();
-        assert_eq!(occ.reachable_rows, store.len());
-        assert_eq!(occ.table_rows.iter().sum::<usize>(), n * store.len());
-        assert!(occ.max_arrivals as usize <= ForestParams::default().leaf_cap);
-        most = most.max(store.maint_stats().unwrap().segments);
-    }
-    let m = store.maint_stats().unwrap();
-    assert!(m.merges >= 3 && m.seg_rows > 0 && m.segments >= 2 && most <= 6, "{m:?} {most}");
-    assert!(recall(&store, &q, 10) > 0.5);
-    let before = store.search(&q.view(), 10, false).unwrap();
-    store.set_row_order(OrderParams { rows_per_insert: 2, grow: 1.3, min_rows: 1000 }).unwrap();
-    assert_eq!(store.order_rows().unwrap(), 6000);
-    assert_eq!(store.search(&q.view(), 10, false).unwrap(), before);
-    drop(store);
-    std::fs::write(dir.path().join("o1f_tree_999.build"), b"stale").unwrap();
-    let mut reopened = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    assert!(!dir.path().join("o1f_tree_999.build").exists());
-    assert_eq!(reopened.maint_stats().unwrap().segments, m.segments);
-    assert_eq!(reopened.search(&q.view(), 10, false).unwrap(), before);
-    reopened.set_segments(SegParams { rows: 500, work: 100_000 }).unwrap();
-    insert_all(&mut reopened, &trajectory(1000, 23), 1000);
-    let occ = reopened.occupancy().unwrap();
-    assert_eq!(occ.reachable_rows, 7000);
-    assert_eq!(occ.table_rows.iter().sum::<usize>(), n * 7000);
-    let live: usize = std::fs::read_dir(dir.path()).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().starts_with("o1f_tree_")).count();
-    assert_eq!(live, n * reopened.maint_stats().unwrap().segments as usize);
 }

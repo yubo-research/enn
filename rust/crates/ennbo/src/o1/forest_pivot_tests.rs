@@ -45,9 +45,12 @@ fn cut_counts(store: &O1Store) -> (usize, usize, usize) {
 
 #[test]
 fn pivot_splits_keep_invariants_cache_equivalence_and_reopen() {
-    for rule in [SplitRule::Pivot, SplitRule::PivotI8, SplitRule::PivotF32] {
-        check_pivot_rule(rule);
-    }
+    check_pivot_rule(SplitRule::Pivot);
+}
+
+#[test]
+fn coded_pivot_splits_keep_invariants_cache_equivalence_and_reopen() {
+    check_pivot_rule(SplitRule::PivotI8);
 }
 
 fn check_pivot_rule(rule: SplitRule) {
@@ -113,15 +116,7 @@ fn same_page_edges(store: &O1Store) -> f64 {
 }
 
 #[test]
-fn seeded_rule_writes_no_pivots_and_lsh_rejects_the_rule() {
-    let dir = TempDir::new().unwrap();
-    let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    store.set_split_rule(SplitRule::Seeded).unwrap();
-    store.set_split_candidates(16).unwrap();
-    insert_all(&mut store, &trajectory(600, 2), 50);
-    let (seeded, pivots, dirs) = cut_counts(&store);
-    assert!(seeded > 0 && pivots + dirs == 0);
-    assert_invariants(&store);
+fn coded_rule_stores_directions_and_lsh_rejects_the_rule() {
     let lsh_dir = TempDir::new().unwrap();
     let mut lsh = O1Store::open_or_create(lsh_dir.path().to_path_buf(), D, 1).unwrap();
     assert!(lsh.set_split_rule(SplitRule::Pivot).is_err());
@@ -130,9 +125,8 @@ fn seeded_rule_writes_no_pivots_and_lsh_rejects_the_rule() {
     let mut rng = StdRng::seed_from_u64(8);
     insert_all(&mut wide, &Array2::from_shape_fn((300, 40), |_| rng.gen::<f64>()), 100);
     assert_eq!(wide.occupancy().unwrap().node_bytes, 24 + 128);
-    wide.set_split_rule(SplitRule::PivotF32).unwrap();
     let (_, pivots, dirs) = cut_counts(&wide);
     assert!(pivots == 0 && dirs > 5);
-    assert_eq!(assert_invariants(&wide).node_bytes, 24 + 160);
+    assert_eq!(assert_invariants(&wide).node_bytes, 24 + 128);
     assert!(lsh.set_io_width(4, 0).is_err());
 }

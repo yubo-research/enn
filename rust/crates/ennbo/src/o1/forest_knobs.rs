@@ -11,10 +11,6 @@ impl ForestIndex {
         self.params.prefer_fresh = prefer_fresh;
     }
 
-    pub(crate) fn set_alpha(&mut self, alpha: f64) {
-        self.params.alpha = alpha.clamp(0.55, 0.95);
-    }
-
     pub(crate) fn set_cache(&mut self, cache: SharedCache) {
         self.trees.iter_mut().chain(self.repair.iter_mut().map(|r| &mut r.shadow)).for_each(|t| t.nodes.set_cache(cache.clone()));
         self.cache = cache;

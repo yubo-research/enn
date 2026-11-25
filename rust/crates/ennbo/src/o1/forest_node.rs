@@ -17,7 +17,6 @@ const TAG_SPLIT: u32 = 2;
 const TAG_FREE: u32 = 3;
 const TAG_PIVOT: u32 = 4;
 const TAG_DIR8: u32 = 5;
-const TAG_DIR32: u32 = 6;
 
 static NEXT_FILE_UID: AtomicU64 = AtomicU64::new(1);
 
@@ -26,47 +25,25 @@ fn next_uid() -> u64 {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Code {
-    I8(Box<[i8]>),
-    F32(Box<[f32]>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Dir {
     pub scale: f32,
-    pub code: Code,
+    pub code: Box<[i8]>,
 }
 
 impl Dir {
-    pub(crate) fn quantize(dir: &[f64], wide: bool) -> Self {
-        if wide {
-            return Self { scale: 1.0, code: Code::F32(dir.iter().map(|&v| v as f32).collect()) };
-        }
+    pub(crate) fn quantize(dir: &[f64]) -> Self {
         let top = dir.iter().fold(0.0f64, |m, v| m.max(v.abs()));
         let scale = (top / 127.0) as f32;
         let inv = if scale > 0.0 { 1.0 / f64::from(scale) } else { 0.0 };
-        Self { scale, code: Code::I8(dir.iter().map(|&v| (v * inv).round().clamp(-127.0, 127.0) as i8).collect()) }
+        Self { scale, code: dir.iter().map(|&v| (v * inv).round().clamp(-127.0, 127.0) as i8).collect() }
     }
 
     pub(crate) fn dot(&self, x: &[f64]) -> f64 {
-        match &self.code {
-            Code::I8(q) => f64::from(self.scale) * q.iter().zip(x).map(|(&a, b)| f64::from(a) * b).sum::<f64>(),
-            Code::F32(v) => v.iter().zip(x).map(|(&a, b)| f64::from(a) * b).sum(),
-        }
+        f64::from(self.scale) * self.code.iter().zip(x).map(|(&a, b)| f64::from(a) * b).sum::<f64>()
     }
 
     pub(crate) fn len(&self) -> usize {
-        match &self.code {
-            Code::I8(q) => q.len(),
-            Code::F32(v) => v.len(),
-        }
-    }
-
-    pub(crate) fn payload_bytes(&self) -> usize {
-        match &self.code {
-            Code::I8(q) => q.len(),
-            Code::F32(v) => 4 * v.len(),
-        }
+        self.code.len()
     }
 }
 
@@ -157,23 +134,15 @@ fn encode(node: &Node, cap: usize, payload: usize) -> Vec<u8> {
 
 fn encode_dir(buf: &mut [u8], dir: &Dir) {
     buf[12..16].copy_from_slice(&dir.scale.to_le_bytes());
-    put_u32(buf, 0, if matches!(dir.code, Code::F32(_)) { TAG_DIR32 } else { TAG_DIR8 });
+    put_u32(buf, 0, TAG_DIR8);
     let body = &mut buf[HEADER_BYTES..];
-    match &dir.code {
-        Code::I8(q) => q.iter().zip(body.iter_mut()).for_each(|(&v, b)| *b = v as u8),
-        Code::F32(v) => v.iter().zip(body.chunks_exact_mut(4)).for_each(|(&v, b)| b.copy_from_slice(&v.to_le_bytes())),
-    }
+    dir.code.iter().zip(body.iter_mut()).for_each(|(&v, b)| *b = v as u8);
 }
 
-fn decode_dir(buf: &[u8], dim: usize, wide: bool) -> Option<Dir> {
+fn decode_dir(buf: &[u8], dim: usize) -> Option<Dir> {
     let scale = f32::from_le_bytes(buf[12..16].try_into().ok()?);
-    let body = buf.get(HEADER_BYTES..HEADER_BYTES + dim * if wide { 4 } else { 1 })?;
-    let code = if wide {
-        Code::F32(body.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().expect("f32 field"))).collect())
-    } else {
-        Code::I8(body.iter().map(|&b| b as i8).collect())
-    };
-    Some(Dir { scale, code })
+    let body = buf.get(HEADER_BYTES..HEADER_BYTES + dim)?;
+    Some(Dir { scale, code: body.iter().map(|&b| b as i8).collect() })
 }
 
 fn decode(buf: &[u8], cap: usize, dim: usize) -> Result<Node, ENNError> {
@@ -190,7 +159,7 @@ fn decode(buf: &[u8], cap: usize, dim: usize) -> Result<Node, ENNError> {
             left: a,
             right: b,
         }),
-        TAG_DIR8 | TAG_DIR32 => match decode_dir(buf, dim, get_u32(buf, 0) == TAG_DIR32) {
+        TAG_DIR8 => match decode_dir(buf, dim) {
             Some(dir) if dim > 0 => Ok(Node::Split { cut: Cut::Dir(Arc::new(dir)), thr: get_thr(buf), left: a, right: b }),
             _ => Err(io_error("forest direction record does not fit its file")),
         },
@@ -271,11 +240,11 @@ impl NodeFile {
     }
 
     pub(crate) fn holds(&self, rule: SplitRule, dim: usize) -> bool {
-        rule.coded().is_none() || (dim == self.dim && rule.payload(dim) <= (4 * self.cap).max(self.payload))
+        rule != SplitRule::PivotI8 || (dim == self.dim && rule.payload(dim) <= (4 * self.cap).max(self.payload))
     }
 
     pub(crate) fn fits(&self, dir: &Dir) -> bool {
-        dir.len() == self.dim && dir.payload_bytes() <= (4 * self.cap).max(self.payload)
+        dir.len() == self.dim && dir.len() <= (4 * self.cap).max(self.payload)
     }
 
     fn offset(&self, id: u32) -> u64 {

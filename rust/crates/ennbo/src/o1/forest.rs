@@ -33,12 +33,11 @@ pub struct ForestParams {
     pub pread_pivots: bool,
     pub rules: ForestRules,
     pub order: super::row_order::OrderParams,
-    pub seg: super::forest_seg::SegParams,
 }
 
 impl Default for ForestParams {
     fn default() -> Self {
-        Self { num_trees: 1, leaf_cap: 32, max_leaves: 100, max_candidates: 3200, alpha: 0.7, repair_rows: 30, stale_drift: 0.25, prefer_fresh: true, rebuild_below: 3000, io_width: 10, io_slow_ns: 30_000, pread_pivots: true, rules: ForestRules::default(), order: super::row_order::OrderParams::default(), seg: super::forest_seg::SegParams::default() }
+        Self { num_trees: 1, leaf_cap: 32, max_leaves: 100, max_candidates: 3200, alpha: 0.7, repair_rows: 30, stale_drift: 0.25, prefer_fresh: true, rebuild_below: 3000, io_width: 10, io_slow_ns: 30_000, pread_pivots: true, rules: ForestRules::default(), order: super::row_order::OrderParams::default() }
     }
 }
 
@@ -55,10 +54,6 @@ pub struct MaintStats {
     pub order_rows: u64,
     pub order_builds: u64,
     pub ordered_rows: u64,
-    pub seg_ns: u64,
-    pub seg_rows: u64,
-    pub merges: u64,
-    pub segments: u64,
     pub gathered: u64,
     pub rebuild_gathered: u64,
     pub route_rows: u64,
@@ -88,15 +83,16 @@ pub(crate) struct ForestIndex {
     pub(super) maint: MaintStats,
     pub(super) order: Option<super::row_order::RowOrder>,
     pub(super) order_build: Option<super::row_order::OrderBuild>,
-    pub(super) seg_job: Option<super::forest_seg::SegJob>,
 }
 
-pub(crate) fn tree_path(work_dir: &Path, fid: u64) -> PathBuf {
-    work_dir.join(format!("o1f_tree_{fid}.bin"))
+pub(crate) fn tree_path(work_dir: &Path, t: usize) -> PathBuf {
+    work_dir.join(format!("o1f_tree_{t}.bin"))
 }
 
-fn legacy_segs(n: usize) -> Vec<super::forest_seg::Seg> {
-    vec![super::forest_seg::Seg { lo: 0, files: (0..n as u64).collect() }]
+fn file_id(name: &str) -> Option<usize> {
+    let rest = name.strip_prefix("o1f_tree_")?;
+    let (num, ext) = rest.split_once('.')?;
+    matches!(ext, "bin" | "build" | "pack").then(|| num.parse().ok()).flatten()
 }
 
 impl ForestIndex {
@@ -111,7 +107,7 @@ impl ForestIndex {
         params.rules = params.rules.for_shape(rows.ncols, params.leaf_cap);
         let saved: Option<ForestState> = bpann_read_json(&work_dir.join(FOREST_STATE_FILE)).ok().flatten();
         let metrics: Option<ForestMetrics> = bpann_read_json(&work_dir.join(FOREST_METRICS_FILE)).ok().flatten();
-        let recorded = metrics.as_ref().map(|m| m.segs.first().map_or(m.tree_scales.len(), |s| s.files.len()));
+        let recorded = metrics.as_ref().map(|m| m.tree_scales.len());
         params.num_trees = saved.as_ref().map(|s| s.num_trees).or(recorded).filter(|&n| n > 0).unwrap_or(params.num_trees);
         let mut index = Self {
             params,
@@ -128,9 +124,7 @@ impl ForestIndex {
             maint: MaintStats::default(),
             order: super::row_order::RowOrder::open(work_dir, rows.ncols, rows.nrows)?,
             order_build: None,
-            seg_job: None,
         };
-        index.metrics.segs = legacy_segs(params.num_trees);
         if let (Some(state), Some(m)) = (saved, metrics) {
             if index.can_restore(&state, &m, rows) && index.restore(&state, m, rows)? {
                 return Ok(index);
@@ -142,23 +136,17 @@ impl ForestIndex {
 
     fn restore(&mut self, state: &ForestState, metrics: ForestMetrics, rows: &MmapColumnStore) -> Result<bool, ENNError> {
         let dirty = state.indexed_rows != rows.nrows || state.metrics_version != metrics.version;
-        let mut metrics = metrics;
-        if metrics.segs.is_empty() {
-            metrics.segs = legacy_segs(self.params.num_trees);
-        }
-        let opened = metrics.segs.iter().flat_map(|s| s.files.iter().map(move |&fid| (s.lo, fid)));
-        let trees = opened
-            .map(|(lo, fid)| Tree::open(&tree_path(&self.work_dir, fid), self.params.leaf_cap, table_seed(self.seed, fid as usize)).map(|t| (lo, t)))
+        let trees = (0..self.params.num_trees)
+            .map(|t| Tree::open(&tree_path(&self.work_dir, t), self.params.leaf_cap, table_seed(self.seed, t)))
             .collect::<Result<Vec<_>, _>>();
         let Ok(trees) = trees else {
             return Ok(false);
         };
         let trees: Vec<Tree> = trees
             .into_iter()
-            .map(|(lo, mut t)| {
+            .map(|mut t| {
                 t.nodes.set_cache(self.cache.clone());
                 t.split = self.params.rules.split;
-                t.base = lo as u32;
                 t
             })
             .collect();
@@ -184,34 +172,37 @@ impl ForestIndex {
         }
         self.remove_stale_files()?;
         self.save_metrics()?;
-        let (alpha, n) = (self.params.alpha, self.params.num_trees);
+        let alpha = self.params.alpha;
         self.num_rows = rows.nrows;
-        for s in 0..self.metrics.segs.len() {
-            let (lo, hi) = self.seg_bounds(s);
-            let r = s * n..(s + 1) * n;
-            self.trees[r.clone()].par_iter_mut().zip(self.invs[r].par_iter()).try_for_each(|(tree, inv)| {
-                (from.max(lo)..hi).try_for_each(|id| tree.insert_absent(id as u32, rows, inv, alpha))
-            })?;
-        }
+        self.trees.par_iter_mut().zip(self.invs.par_iter()).try_for_each(|(tree, inv)| {
+            (from..rows.nrows).try_for_each(|id| tree.insert_absent(id as u32, rows, inv, alpha))
+        })?;
         self.commit()
     }
 
     fn can_restore(&self, s: &ForestState, m: &ForestMetrics, rows: &MmapColumnStore) -> bool {
-        let segs = if m.segs.is_empty() { legacy_segs(self.params.num_trees) } else { m.segs.clone() };
         s.num_trees == self.params.num_trees
             && s.leaf_cap == self.params.leaf_cap
-            && segs.iter().all(|g| g.files.len() == s.num_trees && g.lo <= s.indexed_rows)
-            && segs.windows(2).all(|w| w[0].lo < w[1].lo)
             && s.indexed_rows <= rows.nrows
             && s.metrics_version <= m.version
             && m.target.len() == rows.ncols
-            && m.tree_scales.len() == self.params.num_trees * segs.len()
+            && m.tree_scales.len() == self.params.num_trees
             && m.tree_scales.iter().all(|t| t.len() == rows.ncols)
     }
 
     pub(super) fn tree_file(&self, t: usize) -> PathBuf {
-        let n = self.params.num_trees;
-        tree_path(&self.work_dir, self.metrics.segs[t / n].files[t % n])
+        tree_path(&self.work_dir, t)
+    }
+
+    pub(crate) fn remove_orphans(&self) -> Result<(), ENNError> {
+        for entry in std::fs::read_dir(&self.work_dir).map_err(io_error)? {
+            let path = entry.map_err(io_error)?.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            if file_id(name).is_some_and(|t| t >= self.params.num_trees || !name.ends_with(".bin")) {
+                std::fs::remove_file(&path).map_err(io_error)?;
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn retire_io(&mut self, tree: &Tree) {
@@ -253,8 +244,6 @@ impl ForestIndex {
         self.invalidate()?;
         self.abandon_repair()?;
         self.remove_stale_files()?;
-        self.drop_seg_job();
-        self.metrics.segs = legacy_segs(self.params.num_trees);
         self.remove_orphans()?;
         let old = std::mem::take(&mut self.trees);
         old.iter().for_each(|t| self.retire_io(t));
@@ -271,12 +260,12 @@ impl ForestIndex {
         self.trees = (0..n)
             .into_par_iter()
             .map(|t| {
-                let mut tree = Tree::create(&tree_path(&dir, t as u64), cap, table_seed(seed, t), split, rows.ncols)?;
+                let mut tree = Tree::create(&tree_path(&dir, t), cap, table_seed(seed, t), split, rows.ncols)?;
                 tree.nodes.set_cache(cache.clone());
                 tree.stats = TreeStats { global_rebuilds: prior[t].global_rebuilds + replaces, ..prior[t] };
                 let root = tree.nodes.root();
                 tree.build(root, (0..rows.nrows as u32).collect(), rows, &inv)?;
-                tree.compact(&tree_path(&dir, t as u64))?;
+                tree.compact(&tree_path(&dir, t))?;
                 Ok(tree)
             })
             .collect::<Result<Vec<_>, ENNError>>()?;
@@ -290,16 +279,12 @@ impl ForestIndex {
         }
         let alpha = self.params.alpha;
         let t0 = std::time::Instant::now();
-        let work = (rows.nrows - start.min(rows.nrows)).saturating_mul(self.params.rules.split.stage_work as usize);
-        let active = self.active_trees();
-        self.trees[active.clone()].par_iter_mut().zip(self.invs[active].par_iter()).try_for_each(|(tree, inv)| {
-            (start..rows.nrows).try_for_each(|id| tree.insert(id as u32, rows, inv, alpha))?;
-            tree.advance(rows, inv, work)
+        self.trees.par_iter_mut().zip(self.invs.par_iter()).try_for_each(|(tree, inv)| {
+            (start..rows.nrows).try_for_each(|id| tree.insert(id as u32, rows, inv, alpha))
         })?;
         self.num_rows = rows.nrows;
         let t1 = std::time::Instant::now();
-        let per = if self.segmented() { self.params.seg.work } else { self.params.repair_rows };
-        let budget = (rows.nrows - start.min(rows.nrows)).saturating_mul(per);
+        let budget = (rows.nrows - start.min(rows.nrows)).saturating_mul(self.params.repair_rows);
         self.maintain(rows, budget)?;
         let t2 = std::time::Instant::now();
         self.repack_one()?;
@@ -339,7 +324,6 @@ impl ForestIndex {
     pub(crate) fn maint_stats(&self) -> MaintStats {
         let mut m = self.maint;
         m.ordered_rows = self.order.as_ref().map_or(0, |o| o.rows() as u64);
-        m.segments = self.metrics.segs.len() as u64;
         for tree in &self.trees {
             m.rebuilt_rows += tree.stats.rebuilt_rows;
             m.splits += tree.stats.splits;

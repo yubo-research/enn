@@ -11,10 +11,8 @@ mod forest_pack;
 mod forest_plan;
 mod forest_query;
 mod forest_rules;
-mod forest_seg;
 mod forest_repair;
 mod forest_split;
-mod forest_stage;
 mod forest_tree;
 mod index_kind;
 mod index_order;
@@ -51,8 +49,7 @@ pub use cache::CacheStats;
 pub use disk_index::O1Occupancy;
 pub use forest::{ForestParams, MaintStats};
 pub use row_order::OrderParams;
-pub use forest_seg::SegParams;
-pub use forest_rules::{ForestRules, ProbeRule, SelectRule, SplitConfig, SplitRule};
+pub use forest_rules::{ForestRules, SplitConfig, SplitRule};
 use index_kind::O1Index;
 pub use index_kind::O1IndexParams;
 use lsh::io_error;
@@ -308,16 +305,12 @@ impl O1Store {
         self.index.set_io_width(width, slow_ns)
     }
 
-    pub fn set_split_candidates(&mut self, candidates: u32) -> Result<(), ENNError> {
-        self.index.set_split(None, Some(candidates), &self.x)
-    }
-
     pub fn set_split_rule(&mut self, rule: SplitRule) -> Result<(), ENNError> {
-        self.index.set_split(Some(rule), None, &self.x)
+        self.index.set_split(rule, &self.x)
     }
 
-    pub fn set_probe_rule(&mut self, rule: ProbeRule, select: SelectRule, stop: (f64, u32)) -> Result<(), ENNError> {
-        self.index.set_probe_rule(rule, select, stop)
+    pub fn set_bound(&mut self, bound: f64) -> Result<(), ENNError> {
+        self.index.set_bound(bound)
     }
 
     pub fn set_repair(&mut self, repair_rows: usize, stale_drift: f64, prefer_fresh: bool) -> Result<(), ENNError> {

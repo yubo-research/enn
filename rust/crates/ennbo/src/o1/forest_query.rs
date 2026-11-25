@@ -9,26 +9,9 @@ use super::forest_bound::Scorer;
 use super::forest_node::Node;
 use super::lsh::io_error;
 use super::profile::{QueryProfile, Stage};
-use super::forest_rules::SelectRule;
 use super::forest_tree::{RowSource, SplitRef};
 use super::row_order::Rows;
 use crate::error::ENNError;
-
-pub(crate) fn select_by_votes(raw: &[u32], keep: usize) -> Vec<u32> {
-    let mut order: Vec<usize> = (0..raw.len()).collect();
-    order.sort_by_key(|&i| raw[i]);
-    let mut tallies: Vec<(u32, usize, u32)> = Vec::new();
-    for i in order {
-        match tallies.last_mut() {
-            Some(t) if t.0 == raw[i] => t.2 += 1,
-            _ => tallies.push((raw[i], i, 1)),
-        }
-    }
-    tallies.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.cmp(&b.1)));
-    let mut ids: Vec<u32> = tallies.into_iter().take(keep).map(|t| t.0).collect();
-    ids.sort_unstable();
-    ids
-}
 
 struct Probe {
     tier: f64,
@@ -157,7 +140,7 @@ impl ForestIndex {
 
     pub(crate) fn scored_at(&self, query: &[f64], prof: &QueryProfile, rows: Rows<'_>, overlap: bool, weights: &[f64], need: usize) -> Result<Option<Scored>, ENNError> {
         let rules = &self.params.rules;
-        if rules.bound <= 0.0 && rules.patience == 0 {
+        if rules.bound <= 0.0 {
             return Ok(None);
         }
         let mut scorer = Scorer::new(weights, need, &self.invs, rules);
@@ -199,15 +182,11 @@ impl ForestIndex {
         let weights = score.as_deref().map(|s| s.weights);
         let (mut ids, mut pages, mut splits, mut leaves) = (Vec::new(), 0, 0, 0);
         while let Some(top) = heap.peek() {
-            let full = self.params.rules.select == SelectRule::FirstSeen && ids.len() >= self.params.max_candidates;
-            if pages >= self.params.max_leaves || full {
+            if pages >= self.params.max_leaves || ids.len() >= self.params.max_candidates {
                 break;
             }
             let key = (top.tree, top.node);
             if let Some(sc) = score.as_deref_mut() {
-                if sc.settled() {
-                    break;
-                }
                 if sc.prunes(top.bound) {
                     heap.pop();
                     continue;
@@ -231,9 +210,8 @@ impl ForestIndex {
             match step {
                 Expansion::Split { margin, bound, near, far } => {
                     splits += 1;
-                    let rule = self.params.rules.probe;
                     heap.push(Probe { node: near, ..p });
-                    heap.push(Probe { cost: rule.cost(p.cost, margin), bound: rule.cost(p.bound, bound), node: far, ..p });
+                    heap.push(Probe { cost: p.cost.max(margin), bound: p.bound.max(bound), node: far, ..p });
                 }
                 Expansion::Leaf { ids: page, pages: n } => {
                     if let Some(sc) = score.as_deref_mut() {
@@ -246,25 +224,9 @@ impl ForestIndex {
             }
         }
         prof.count_visits(splits, leaves, pages as u64);
-        if self.params.rules.select == SelectRule::Votes {
-            return Ok(select_by_votes(&ids, self.params.max_candidates));
-        }
         ids.truncate(self.params.max_candidates);
         ids.sort_unstable();
         ids.dedup();
         Ok(ids)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn votes_keep_the_most_repeated_ids_then_the_earliest_seen() {
-        assert_eq!(select_by_votes(&[5, 9, 2, 9, 7, 2, 9], 2), vec![2, 9]);
-        assert_eq!(select_by_votes(&[5, 9, 2, 9, 7, 2, 9], 3), vec![2, 5, 9]);
-        assert_eq!(select_by_votes(&[4, 3], 9), vec![3, 4]);
-        assert!(select_by_votes(&[], 3).is_empty());
     }
 }

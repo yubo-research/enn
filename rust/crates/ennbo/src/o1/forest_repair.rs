@@ -28,10 +28,6 @@ pub(crate) struct ForestMetrics {
     pub target: Vec<f64>,
     pub tree_scales: Vec<Vec<f64>>,
     pub repair: Option<(usize, Vec<f64>)>,
-    #[serde(default)]
-    pub segs: Vec<super::forest_seg::Seg>,
-    #[serde(default)]
-    pub next_fid: u64,
 }
 
 pub(crate) struct Repair {
@@ -75,10 +71,9 @@ impl ForestIndex {
     }
 
     pub(crate) fn remove_stale_files(&self) -> Result<(), ENNError> {
-        let files: Vec<u64> = self.metrics.segs.iter().flat_map(|s| s.files.iter().copied()).collect();
-        for (t, fid) in files.into_iter().enumerate() {
+        for t in 0..self.trees.len().max(self.params.num_trees) {
             let shadow = shadow_path(&self.work_dir, t);
-            for path in [shadow.with_extension("pack"), shadow, super::forest::tree_path(&self.work_dir, fid).with_extension("pack")] {
+            for path in [shadow.with_extension("pack"), shadow, super::forest::tree_path(&self.work_dir, t).with_extension("pack")] {
                 match std::fs::remove_file(&path) {
                     Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io_error(e)),
                     _ => {}
@@ -134,9 +129,6 @@ impl ForestIndex {
     }
 
     pub(crate) fn maintain(&mut self, rows: &MmapColumnStore, budget: usize) -> Result<usize, ENNError> {
-        if self.segmented() {
-            return self.step_segments(rows, budget);
-        }
         let (alpha, mut done) = (self.params.alpha, 0);
         while done < budget {
             if self.repair.is_none() && !self.start_repair()? {
@@ -147,7 +139,6 @@ impl ForestIndex {
             for id in r.cursor..hi {
                 r.shadow.insert(id as u32, rows, &r.inv, alpha)?;
             }
-            r.shadow.advance(rows, &r.inv, (hi - r.cursor).saturating_mul(r.shadow.split.stage_work as usize))?;
             done += hi - r.cursor;
             r.cursor = hi;
             if r.cursor == rows.nrows {

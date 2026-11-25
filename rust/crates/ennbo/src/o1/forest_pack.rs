@@ -25,23 +25,20 @@ pub(crate) fn page_ids(page: u64, rec: u64) -> Vec<u32> {
     (lo.div_ceil(rec)..hi / rec).filter(|&i| i >= 1 && (i + 1) * rec <= hi).map(|i| i as u32).collect()
 }
 
-pub(crate) struct PackJob {
+struct PackJob {
     map: Vec<u32>,
     order: Vec<u32>,
     blocks: VecDeque<u32>,
     page: u64,
     end: u32,
-    written: usize,
-    out: Option<NodeFile>,
-    dst: std::path::PathBuf,
 }
 
 impl PackJob {
-    pub(crate) fn new(nodes: &NodeFile, dst: &Path) -> Self {
-        Self { map: vec![NIL; nodes.num_nodes() as usize], order: Vec::new(), blocks: VecDeque::from([nodes.root()]), page: 0, end: 1, written: 0, out: None, dst: dst.to_path_buf() }
+    fn new(nodes: &NodeFile) -> Self {
+        Self { map: vec![NIL; nodes.num_nodes() as usize], order: Vec::new(), blocks: VecDeque::from([nodes.root()]), page: 0, end: 1 }
     }
 
-    fn walk_page(&mut self, nodes: &NodeFile) -> Result<usize, ENNError> {
+    fn walk_page(&mut self, nodes: &NodeFile) -> Result<(), ENNError> {
         let slots = page_ids(self.page, nodes.record_bytes() as u64);
         self.page += 1;
         let mut queue = VecDeque::new();
@@ -53,38 +50,30 @@ impl PackJob {
             queue.extend(children(&nodes.read_disk(at)?));
         }
         self.blocks.extend(queue);
-        Ok(slots.len().max(1))
+        Ok(())
     }
 
-    fn open_out(&mut self, nodes: &NodeFile) -> Result<(), ENNError> {
+    fn open_out(&self, nodes: &NodeFile, dst: &Path) -> Result<NodeFile, ENNError> {
         let (dim, payload) = nodes.dim_payload();
-        let mut out = NodeFile::create(&self.dst, nodes.cap(), dim, payload)?;
+        let mut out = NodeFile::create(dst, nodes.cap(), dim, payload)?;
         out.set_layout(self.map[nodes.root() as usize], self.end)?;
         let mut used = vec![false; self.end as usize];
         self.order.iter().for_each(|&at| used[self.map[at as usize] as usize] = true);
         for slot in (1..self.end).filter(|&s| !used[s as usize]) {
             out.write(slot, &Node::Free { next: NIL })?;
         }
-        self.out = Some(out);
-        Ok(())
+        Ok(out)
     }
 
-    pub(crate) fn step(&mut self, nodes: &NodeFile, left: &mut usize) -> Result<Option<NodeFile>, ENNError> {
-        while *left > 0 {
-            if !self.blocks.is_empty() {
-                *left = left.saturating_sub(self.walk_page(nodes)?);
-                continue;
-            }
-            if self.out.is_none() {
-                self.open_out(nodes)?;
-            }
-            let Some(&at) = self.order.get(self.written) else { return Ok(self.out.take()) };
-            let out = self.out.as_ref().ok_or_else(|| io_error("pack output is missing"))?;
-            out.write(self.map[at as usize], &remap(nodes.read_disk(at)?, &self.map))?;
-            self.written += 1;
-            *left -= 1;
+    fn run(mut self, nodes: &NodeFile, dst: &Path) -> Result<NodeFile, ENNError> {
+        while !self.blocks.is_empty() {
+            self.walk_page(nodes)?;
         }
-        Ok(None)
+        let out = self.open_out(nodes, dst)?;
+        for &at in &self.order {
+            out.write(self.map[at as usize], &remap(nodes.read_disk(at)?, &self.map))?;
+        }
+        Ok(out)
     }
 }
 
@@ -98,14 +87,11 @@ fn remap(node: Node, map: &[u32]) -> Node {
 }
 
 pub(crate) fn pack(nodes: &NodeFile, dst: &Path) -> Result<NodeFile, ENNError> {
-    let mut left = usize::MAX;
-    PackJob::new(nodes, dst).step(nodes, &mut left)?.ok_or_else(|| io_error("pack did not finish"))
+    PackJob::new(nodes).run(nodes, dst)
 }
 
 impl Tree {
     pub(crate) fn compact(&mut self, path: &Path) -> Result<usize, ENNError> {
-        self.staged = None;
-        self.release.clear();
         let tmp = path.with_extension("pack");
         let mut packed = pack(&self.nodes, &tmp)?;
         std::fs::rename(&tmp, path).map_err(io_error)?;
@@ -127,7 +113,7 @@ impl Tree {
 
 impl ForestIndex {
     pub(crate) fn repack_one(&mut self) -> Result<bool, ENNError> {
-        let Some(t) = self.active_trees().find(|&t| self.trees[t].needs_repack()) else { return Ok(false) };
+        let Some(t) = (0..self.trees.len()).find(|&t| self.trees[t].needs_repack()) else { return Ok(false) };
         let path = self.tree_file(t);
         let nodes = self.trees[t].compact(&path)?;
         self.maint.repacks += 1;
