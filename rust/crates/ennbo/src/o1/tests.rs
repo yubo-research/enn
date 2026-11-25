@@ -68,7 +68,7 @@ fn large_store_recall_and_bucket_bounds() {
     for seed in 0..20u64 {
         let (q, _) = random_rows(1, 4, 100 + seed);
         let q = q.row(0).to_vec();
-        assert!(store.index.candidate_ids(&q).unwrap().len() <= p.num_tables * (1 + p.num_probes) * p.bucket_cap);
+        assert!(store.index.candidate_ids(&q, &Default::default(), &store.x).unwrap().len() <= p.num_tables * (1 + p.num_probes) * p.bucket_cap);
         let (_, idx) = store.search(&ndarray::arr2(&[[q[0], q[1], q[2], q[3]]]).view(), 1, false).unwrap();
         hits += usize::from(idx[[0, 0]] == exact_top(&store, &q, 1)[0]);
     }
@@ -127,18 +127,24 @@ fn yvar_rows_round_trip_and_mismatch_is_rejected() {
 fn o1_model_learns_metric_and_reopens() {
     use crate::layout::{EnnLayout, StoreType};
     use crate::model::EpistemicNearestNeighbors;
-    let dir = TempDir::new().unwrap();
-    let layout = EnnLayout::new(dir.path(), false).unwrap().with_store(StoreType::O1);
-    let (x, y) = random_rows(400, 3, 11);
-    let mut model = EpistemicNearestNeighbors::new(x.clone(), y.clone(), None, layout).unwrap();
-    assert!(model.auto_metric.is_some());
-    model.add(&x.view(), &y.view(), None).unwrap();
-    let idx = model.neighbors(&x.slice(ndarray::s![0..2, ..]), 3, false).unwrap();
-    assert_eq!(idx.shape(), &[2, 3]);
-    drop(model);
-    let reopened = EpistemicNearestNeighbors::open(dir.path()).unwrap();
-    assert_eq!(reopened.len(), 800);
-    assert_eq!(reopened.layout.store(), StoreType::O1);
+    for store in [StoreType::O1, StoreType::O1Forest] {
+        let dir = TempDir::new().unwrap();
+        let layout = EnnLayout::new(dir.path(), false).unwrap().with_store(store);
+        let (x, y) = random_rows(400, 3, 11);
+        let mut model = EpistemicNearestNeighbors::new(x.clone(), y.clone(), None, layout).unwrap();
+        assert!(model.auto_metric.is_some());
+        model.add(&x.view(), &y.view(), None).unwrap();
+        model.add(&x.view(), &y.view(), None).unwrap();
+        let idx = model.neighbors(&x.slice(ndarray::s![0..2, ..]), 3, false).unwrap();
+        assert_eq!(idx.shape(), &[2, 3]);
+        drop(model);
+        let reservoir = dir.path().join("metric_reservoir.json");
+        std::fs::remove_file(&reservoir).ok();
+        let reopened = EpistemicNearestNeighbors::open(dir.path()).unwrap();
+        assert!(reservoir.exists());
+        assert_eq!(reopened.len(), 1200);
+        assert_eq!(reopened.layout.store(), store);
+    }
 }
 
 #[test]
@@ -172,7 +178,7 @@ fn recall_diagnostic(d: usize, params: O1Params) {
         let mut hits = 0usize;
         for q in queries.rows() {
             let qv = q.to_vec();
-            cand += store.index.candidate_ids(&qv).unwrap().len();
+            cand += store.index.candidate_ids(&qv, &Default::default(), &store.x).unwrap().len();
             let truth = exact_top(&store, &qv, 10);
             let (_, idx) = store.search(&q.insert_axis(ndarray::Axis(0)), 10, false).unwrap();
             hits += idx.row(0).iter().filter(|i| truth.contains(i)).count();
@@ -187,5 +193,51 @@ fn recall_diagnostic(d: usize, params: O1Params) {
             cand as f64 / 200.0,
             hits as f64 / 2000.0
         );
+    }
+}
+
+#[test]
+fn occupancy_counts_reachable_rows_within_cap() {
+    let dir = TempDir::new().unwrap();
+    let store = filled_store(&dir, 3000, 3);
+    let occ = store.occupancy().unwrap();
+    assert_eq!(occ.num_rows, 3000);
+    assert_eq!(occ.hash_bits, store.hash_bits());
+    assert_eq!(occ.table_rows.len(), O1Params::default().num_tables);
+    assert!(occ.reachable_rows <= occ.num_rows);
+    for (t, &rows) in occ.table_rows.iter().enumerate() {
+        assert!(rows <= occ.reachable_rows);
+        assert!(rows <= occ.keys_used[t] * occ.bucket_cap);
+        assert!(occ.overflow_keys[t] <= occ.keys_used[t]);
+    }
+}
+
+#[test]
+fn occupancy_shows_overflow_loss_for_duplicate_rows() {
+    let dir = TempDir::new().unwrap();
+    let mut store = O1Store::open_or_create(dir.path().to_path_buf(), 2, 1).unwrap();
+    let x = Array2::from_elem((2000, 2), 0.25);
+    let y = Array2::zeros((2000, 1));
+    store.append_rows(&x.view(), &y.view(), None).unwrap();
+    let occ = store.occupancy().unwrap();
+    let cap = occ.bucket_cap;
+    assert_eq!(occ.max_arrivals, 2000);
+    assert!(occ.overflow_keys.iter().all(|&k| k == 1));
+    assert!(occ.reachable_rows <= cap * occ.table_rows.len());
+}
+
+#[test]
+fn candidates_cover_search_results() {
+    let dir = TempDir::new().unwrap();
+    let store = filled_store(&dir, 3000, 4);
+    let q = ndarray::arr2(&[[0.3, 0.6, 0.1, 0.9], [0.5, 0.5, 0.5, 0.5]]);
+    let cands = store.candidates(&q.view(), 10).unwrap();
+    let (_, idx) = store.search(&q.view(), 10, false).unwrap();
+    assert_eq!(cands.len(), 2);
+    for (qi, c) in cands.iter().enumerate() {
+        assert!(c.len() >= 10);
+        for &id in idx.row(qi) {
+            assert!(c.contains(&(id as u32)));
+        }
     }
 }

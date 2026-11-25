@@ -26,6 +26,36 @@ pub(crate) struct IndexState {
     pub anchors: Vec<Vec<usize>>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct O1Occupancy {
+    pub num_rows: usize,
+    pub hash_bits: usize,
+    pub bucket_cap: usize,
+    pub reachable_rows: usize,
+    pub table_rows: Vec<usize>,
+    pub keys_used: Vec<usize>,
+    pub overflow_keys: Vec<usize>,
+    pub max_arrivals: u64,
+    pub mean_depth: f64,
+    pub disk_nodes: usize,
+    pub free_nodes: usize,
+    pub node_bytes: usize,
+    pub node_reads: u64,
+    pub node_writes: u64,
+    pub splits: u64,
+    pub rebuilds: u64,
+    pub rebuilt_rows: u64,
+    pub max_rebuild_rows: u64,
+    pub global_rebuilds: u64,
+    pub stale_trees: usize,
+    pub max_drift: f64,
+    pub repairs_started: u64,
+    pub repairs_finished: u64,
+    pub repairs_abandoned: u64,
+    pub repair_rows: u64,
+    pub repair_cursor: Option<usize>,
+}
+
 pub(crate) struct LshIndex {
     params: O1Params,
     planes: Planes,
@@ -263,6 +293,38 @@ impl LshIndex {
             b.rebuild(k, self.num_rows, bits, self.params.build_budget_bytes)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn occupancy(&self) -> Result<O1Occupancy, ENNError> {
+        let mut seen = vec![false; self.num_rows];
+        let mut occ = O1Occupancy {
+            num_rows: self.num_rows,
+            hash_bits: self.bits(),
+            bucket_cap: self.params.bucket_cap,
+            ..O1Occupancy::default()
+        };
+        let mut ids = Vec::new();
+        for (b, p) in self.buckets.iter().zip(&self.pending) {
+            let (mut rows, mut used, mut over) = (0, 0, 0);
+            for key in 0..(1u64 << self.bits()) {
+                ids.clear();
+                let arrivals = b.read_ids(key, p.get(key), &mut ids)?;
+                used += usize::from(arrivals > 0);
+                over += usize::from(arrivals > b.cap() as u64);
+                occ.max_arrivals = occ.max_arrivals.max(arrivals);
+                rows += ids.len();
+                for &i in &ids {
+                    if let Some(s) = seen.get_mut(i as usize) {
+                        *s = true;
+                    }
+                }
+            }
+            occ.table_rows.push(rows);
+            occ.keys_used.push(used);
+            occ.overflow_keys.push(over);
+        }
+        occ.reachable_rows = seen.iter().filter(|&&s| s).count();
+        Ok(occ)
     }
 
     pub(crate) fn candidate_ids(&self, query: &[f64]) -> Result<Vec<u32>, ENNError> {

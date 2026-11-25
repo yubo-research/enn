@@ -92,7 +92,7 @@ class EpistemicNearestNeighbors(_EnnRustView):
         store: ENNStore | str = ENNStore.OLOGN,
     ) -> None:
         store = store_name(store)
-        weighting = weighting or store == ENNStore.O1.value
+        weighting = weighting or store in (ENNStore.O1.value, ENNStore.O1F.value)
         groups = [
             list(g)
             for g in resolve_tied_groups(train_x, tied_dims, weighting=weighting)

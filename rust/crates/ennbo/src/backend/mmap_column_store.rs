@@ -1,6 +1,7 @@
 use memmap2::MmapMut;
 use ndarray::{Array2, ArrayView2};
 use std::fs::{File, OpenOptions};
+use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 
 use crate::error::ENNError;
@@ -17,7 +18,7 @@ pub struct MmapColumnStore {
 }
 
 impl MmapColumnStore {
-    fn row_bytes(&self) -> usize {
+    pub(crate) fn row_bytes(&self) -> usize {
         self.ncols * std::mem::size_of::<f64>()
     }
 
@@ -128,6 +129,33 @@ impl MmapColumnStore {
         Ok(slice)
     }
 
+    pub(crate) fn file_handle(&self) -> Result<File, ENNError> {
+        self.file.try_clone().map_err(|e| ENNError::InvalidParameter(e.to_string()))
+    }
+
+    pub(crate) fn flush(&self) -> Result<(), ENNError> {
+        self.mmap.flush().map_err(|e| ENNError::InvalidParameter(e.to_string()))
+    }
+
+    pub(crate) fn pread_row(&self, i: usize) -> Result<Vec<f64>, ENNError> {
+        if i >= self.nrows {
+            return Err(ENNError::InvalidParameter(format!("row {i} out of range [0, {})", self.nrows)));
+        }
+        let mut bytes = vec![0u8; self.row_bytes()];
+        self.file
+            .read_exact_at(&mut bytes, (i * self.row_bytes()) as u64)
+            .map_err(|e| ENNError::InvalidParameter(format!("row {i} read failed: {e}")))?;
+        Ok(bytes.chunks_exact(8).map(|c| f64::from_ne_bytes(c.try_into().unwrap_or([0; 8]))).collect())
+    }
+
+    pub(crate) fn pread_gather(&self, indices: &[usize]) -> Result<Array2<f64>, ENNError> {
+        let mut out = Array2::zeros((indices.len(), self.ncols));
+        for (r, &i) in indices.iter().enumerate() {
+            out.row_mut(r).assign(&ndarray::ArrayView1::from(&self.pread_row(i)?[..]));
+        }
+        Ok(out)
+    }
+
     pub(crate) fn mmap_gather(&self, indices: &[usize]) -> Result<Array2<f64>, ENNError> {
         let mut out = Array2::zeros((indices.len(), self.ncols));
         for (new_i, &old_i) in indices.iter().enumerate() {
@@ -151,7 +179,6 @@ impl MmapColumnStore {
         ArrayView2::from_shape((end - start, self.ncols), vals).map_err(|e| ENNError::InvalidParameter(e.to_string()))
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn mmap_row_range(&self, start: usize, end: usize) -> Result<Array2<f64>, ENNError> {
         if start > end {
             return Err(ENNError::InvalidParameter(format!(

@@ -5,8 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{AutoMetric, MetricCounters};
 use crate::error::ENNError;
+use crate::reservoir::ReservoirState;
 
 pub(crate) const METRIC_STATE_FILE: &str = "metric_state.json";
+pub(crate) const RESERVOIR_STATE_FILE: &str = "metric_reservoir.json";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AutoMetricState {
@@ -41,6 +43,25 @@ impl AutoMetric {
             counters: self.counters,
         };
         bpann_write_json(&work_dir.join(METRIC_STATE_FILE), &state).map_err(file_error)
+    }
+
+    pub(crate) fn save_reservoir_if_due(&mut self, work_dir: &Path) -> Result<(), ENNError> {
+        if self.rows.num_seen() < self.saved_seen + self.rows.capacity() {
+            return Ok(());
+        }
+        bpann_write_json(&work_dir.join(RESERVOIR_STATE_FILE), &self.rows.state()).map_err(file_error)?;
+        self.saved_seen = self.rows.num_seen();
+        Ok(())
+    }
+
+    pub(crate) fn saved_reservoir(&self, work_dir: &Path, num_rows: usize) -> Option<ReservoirState> {
+        let state: ReservoirState = bpann_read_json(&work_dir.join(RESERVOIR_STATE_FILE)).ok().flatten()?;
+        self.rows.fits(&state, num_rows).then_some(state)
+    }
+
+    pub(crate) fn restore_reservoir(&mut self, state: &ReservoirState, x: &[f64], y: &[f64]) {
+        self.rows.restore(state, x, y);
+        self.saved_seen = state.num_seen;
     }
 
     pub(crate) fn apply_policy(&mut self, state: &AutoMetricState) -> Result<(), ENNError> {
@@ -121,6 +142,25 @@ mod tests {
         assert_eq!(live.rows.x(), replayed.rows.x());
         assert_eq!(live.rows.y(), replayed.rows.y());
         assert_eq!(live.num_seen(), replayed.num_seen());
+        let dir = TempDir::new().unwrap();
+        let mut part = AutoMetric::new(2, 1, vec![], 1).unwrap();
+        part.configure(None, None, None, Some(4)).ok();
+        part.replay_rows(&x[..6], &y[..3], 3);
+        part.save_reservoir_if_due(dir.path()).unwrap();
+        assert!(part.saved_reservoir(dir.path(), 20).is_none());
+        part.replay_rows(&x[6..24], &y[3..12], 9);
+        part.save_reservoir_if_due(dir.path()).unwrap();
+        let mut resumed = AutoMetric::new(2, 1, vec![], 1).unwrap();
+        resumed.configure(None, None, None, Some(4)).ok();
+        assert!(resumed.saved_reservoir(dir.path(), 11).is_none());
+        let state = resumed.saved_reservoir(dir.path(), 20).unwrap();
+        let xs: Vec<f64> = state.slots.iter().flat_map(|&i| x[2 * i..2 * i + 2].to_vec()).collect();
+        let ys: Vec<f64> = state.slots.iter().map(|&i| y[i]).collect();
+        resumed.restore_reservoir(&state, &xs, &ys);
+        resumed.replay_rows(&x[24..], &y[12..], 8);
+        assert_eq!(resumed.rows.x(), replayed.rows.x());
+        assert_eq!(resumed.rows.y(), replayed.rows.y());
+        assert_eq!(resumed.num_seen(), replayed.num_seen());
     }
 
     #[test]

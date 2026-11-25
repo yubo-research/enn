@@ -25,7 +25,10 @@ impl EpistemicNearestNeighbors {
         if refitted {
             self.save_auto_metric_state()?;
         }
-        Ok(())
+        match self.auto_metric.as_mut() {
+            Some(metric) => metric.save_reservoir_if_due(self.layout.work_dir()),
+            None => Ok(()),
+        }
     }
 
     fn save_auto_metric_state(&self) -> Result<(), ENNError> {
@@ -35,20 +38,33 @@ impl EpistemicNearestNeighbors {
         }
     }
 
+    fn stored_rows(&self, indices: &[usize], scattered: bool) -> Result<(Vec<f64>, Vec<f64>), ENNError> {
+        let (x, y) = match scattered {
+            true => self.backend.scattered_rows(indices)?,
+            false => self.backend.train_rows_at(indices).map(|(x, y, _)| (x, y))?,
+        };
+        let y = match &self.original_y {
+            Some(history) => history.gather(indices)?,
+            None => y,
+        };
+        Ok((x.iter().copied().collect(), y.iter().copied().collect()))
+    }
+
     fn replay_stored_rows(&self, metric: &mut AutoMetric) -> Result<(), ENNError> {
-        for start in (0..self.num_obs).step_by(super::STATS_CHUNK_ROWS) {
-            let end = (start + super::STATS_CHUNK_ROWS).min(self.num_obs);
-            let indices: Vec<usize> = (start..end).collect();
-            let (x, y, _) = self.backend.train_rows_at(&indices)?;
-            let y = match &self.original_y {
-                Some(history) => history.gather(&indices)?,
-                None => y,
-            };
-            let x_flat: Vec<f64> = x.iter().copied().collect();
-            let y_flat: Vec<f64> = y.iter().copied().collect();
-            metric.replay_rows(&x_flat, &y_flat, indices.len());
+        let mut from = 0;
+        if let Some(state) = metric.saved_reservoir(self.layout.work_dir(), self.num_obs) {
+            let (x, y) = self.stored_rows(&state.slots, true)?;
+            metric.restore_reservoir(&state, &x, &y);
+            from = state.num_seen;
         }
-        Ok(())
+        let chunk = super::stats_chunk_rows(self.num_dim);
+        for start in (from..self.num_obs).step_by(chunk) {
+            let end = (start + chunk).min(self.num_obs);
+            let indices: Vec<usize> = (start..end).collect();
+            let (x, y) = self.stored_rows(&indices, false)?;
+            metric.replay_rows(&x, &y, indices.len());
+        }
+        metric.save_reservoir_if_due(self.layout.work_dir())
     }
 
     pub(crate) fn restore_auto_metric(&mut self) -> Result<(), ENNError> {

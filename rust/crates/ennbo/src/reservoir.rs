@@ -2,6 +2,16 @@ use ndarray::ArrayView2;
 
 use crate::error::ENNError;
 use crate::numpy_pcg::NumpyPcg64;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ReservoirState {
+    pub seed: u64,
+    pub capacity: usize,
+    pub num_seen: usize,
+    pub rng: [u64; 5],
+    pub slots: Vec<usize>,
+}
 
 pub struct RowReservoir {
     num_dim: usize,
@@ -13,6 +23,7 @@ pub struct RowReservoir {
     ys: Vec<f64>,
     len: usize,
     num_seen: usize,
+    slots: Vec<usize>,
 }
 
 impl RowReservoir {
@@ -37,6 +48,7 @@ impl RowReservoir {
             ys: vec![0.0; capacity * num_outputs],
             len: 0,
             num_seen: 0,
+            slots: Vec::new(),
         })
     }
 
@@ -144,14 +156,38 @@ impl RowReservoir {
             let i = self.len;
             self.xs[i * self.num_dim..(i + 1) * self.num_dim].copy_from_slice(x);
             self.ys[i * self.num_outputs..(i + 1) * self.num_outputs].copy_from_slice(y);
+            self.slots.push(self.num_seen);
             self.len += 1;
         } else {
             let slot = self.rng.integers_high(self.num_seen as u64 + 1) as usize;
             if slot < self.capacity {
                 self.xs[slot * self.num_dim..(slot + 1) * self.num_dim].copy_from_slice(x);
                 self.ys[slot * self.num_outputs..(slot + 1) * self.num_outputs].copy_from_slice(y);
+                self.slots[slot] = self.num_seen;
             }
         }
         self.num_seen += 1;
+    }
+
+    pub(crate) fn state(&self) -> ReservoirState {
+        ReservoirState { seed: self.seed, capacity: self.capacity, num_seen: self.num_seen, rng: self.rng.words(), slots: self.slots.clone() }
+    }
+
+    pub(crate) fn fits(&self, s: &ReservoirState, num_rows: usize) -> bool {
+        s.seed == self.seed
+            && s.capacity == self.capacity
+            && s.num_seen <= num_rows
+            && s.slots.len() == s.num_seen.min(s.capacity)
+            && s.slots.iter().all(|&i| i < s.num_seen)
+    }
+
+    pub(crate) fn restore(&mut self, s: &ReservoirState, x: &[f64], y: &[f64]) {
+        let n = s.slots.len();
+        self.xs[..n * self.num_dim].copy_from_slice(&x[..n * self.num_dim]);
+        self.ys[..n * self.num_outputs].copy_from_slice(&y[..n * self.num_outputs]);
+        self.len = n;
+        self.num_seen = s.num_seen;
+        self.slots.clone_from(&s.slots);
+        self.rng = NumpyPcg64::from_words(s.rng);
     }
 }

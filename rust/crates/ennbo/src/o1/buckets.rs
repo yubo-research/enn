@@ -93,7 +93,7 @@ impl BucketFile {
         place(slot, row, self.cap, self.seed);
     }
 
-    pub(crate) fn read_ids(&self, key: u64, pending: Option<&Entry>, out: &mut Vec<u32>) -> Result<(), ENNError> {
+    pub(crate) fn read_ids(&self, key: u64, pending: Option<&Entry>, out: &mut Vec<u32>) -> Result<u64, ENNError> {
         let owned;
         let slot: &[u8] = match pending {
             Some(Entry::Slot(slot)) => slot,
@@ -113,7 +113,7 @@ impl BucketFile {
                 .chunks_exact(4)
                 .map(|b| u32::from_le_bytes(b.try_into().expect("4-byte id"))),
         );
-        Ok(())
+        Ok(arrivals)
     }
 
     pub(crate) fn write_pending(&self, entries: &[(u64, Entry)]) -> Result<(), ENNError> {

@@ -69,6 +69,33 @@ pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::py_model::PyEpistemicNearestNeighbors>()?;
     m.add_class::<crate::py_model::PyENNParams>()?;
     m.add_function(wrap_pyfunction!(crate::py_model::train_rows_at_warped, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_occupancy, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_candidates, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_probe_budget, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_io_width, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_probe_rule, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_split_candidates, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_split_rule, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_node_io, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_maint_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_staging, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_lean, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_row_order, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_order_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_par_rebuild, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_rerank, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_local_rebuild, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_trees, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_segments, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_pread_pivots, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_repair, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_cache, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_cache_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_profile, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_take_profile, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_maintain, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_compact, m)?)?;
     m.add_function(wrap_pyfunction!(
         crate::py_layout::validate_enn_placement_py,
         m

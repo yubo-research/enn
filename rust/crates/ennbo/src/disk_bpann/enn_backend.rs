@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use ennbo_bpann::BpannBackend;
-use ndarray::{Array1, Array2, ArrayView2};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 
 use crate::backend::TrainRowsAtResult;
 use crate::error::ENNError;
@@ -140,6 +140,14 @@ impl DiskBpannEnnBackend {
     pub fn row_y(&self, i: usize) -> Result<Array1<f64>, ENNError> {
         let (y, _) = self.inner.mmap_row_y_and_yvar(i).map_err(bpann_err)?;
         Ok(Array1::from(y.to_vec()))
+    }
+
+    pub fn y_rows(&self, start: usize, end: usize) -> Result<Array2<f64>, ENNError> {
+        let mut out = Array2::zeros((end.saturating_sub(start), self.inner.num_metrics()));
+        for (r, i) in (start..end).enumerate() {
+            out.row_mut(r).assign(&ArrayView1::from(self.inner.mmap_row_y_and_yvar(i).map_err(bpann_err)?.0));
+        }
+        Ok(out)
     }
 
     pub fn row_yvar(&self, i: usize) -> Result<Option<Array1<f64>>, ENNError> {

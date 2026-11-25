@@ -119,6 +119,7 @@ pub struct AutoMetric {
     next_refit: usize,
     pub heldout_gain: Option<f64>,
     counters: MetricCounters,
+    saved_seen: usize,
 }
 
 impl AutoMetric {
@@ -143,6 +144,7 @@ impl AutoMetric {
             next_refit: MIN_DEPENDENCE_ROWS,
             heldout_gain: None,
             counters: MetricCounters::default(),
+            saved_seen: 0,
         })
     }
 
@@ -178,12 +180,20 @@ impl AutoMetric {
             )?;
         }
         if let Some(growth) = refit_growth {
-            self.refit_growth = growth;
+            self.reschedule_refit(growth);
         }
         if let Some(drift) = rebuild_drift {
             self.rebuild_drift = drift;
         }
         Ok(())
+    }
+
+    fn reschedule_refit(&mut self, growth: f64) {
+        if self.counters.num_refits > 0 {
+            let rescaled = (self.next_refit as f64 * growth / self.refit_growth).ceil() as usize;
+            self.next_refit = rescaled.max(MIN_DEPENDENCE_ROWS);
+        }
+        self.refit_growth = growth;
     }
 
     pub fn seed(&self) -> u64 {
@@ -321,6 +331,24 @@ mod tests {
         assert!(metric
             .configure(Some(3.0), Some(0.25), Some(7), Some(1))
             .is_err());
+    }
+
+    #[test]
+    fn configure_growth_reschedules_a_pending_refit() {
+        let n = 600;
+        let x: Vec<f64> = (0..n * 2).map(|i| ((i * 7919) % 1000) as f64 / 1000.0).collect();
+        let y: Vec<f64> = (0..n).map(|i| x[2 * i]).collect();
+        let mut metric = AutoMetric::new(2, 1, vec![], 0).unwrap();
+        metric.observe(&x, &y, n).unwrap();
+        let fits = metric.counters.num_refits;
+        assert!(fits >= 1);
+        let pending = metric.next_refit;
+        metric.configure(Some(1e12), None, None, None).unwrap();
+        assert!(metric.next_refit > 1000 * pending);
+        metric.observe(&x, &y, n).unwrap();
+        assert_eq!(metric.counters.num_refits, fits);
+        metric.configure(Some(2.0), None, None, None).unwrap();
+        assert!(metric.next_refit >= MIN_DEPENDENCE_ROWS);
     }
 
     #[test]

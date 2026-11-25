@@ -5,7 +5,7 @@ use crate::backend::TrainRowsAtResult;
 use crate::error::ENNError;
 
 pub struct EnnIndexAccess<'a> {
-    model: &'a EpistemicNearestNeighbors,
+    pub(super) model: &'a EpistemicNearestNeighbors,
 }
 
 impl<'a> EnnIndexAccess<'a> {
@@ -21,6 +21,104 @@ impl<'a> EnnIndexAccess<'a> {
 
     pub fn memory_bytes(&self) -> Result<usize, ENNError> {
         self.model.backend.index_memory_bytes()
+    }
+
+    pub fn occupancy(&self) -> Result<Option<crate::o1::O1Occupancy>, ENNError> {
+        self.model.backend.with_o1(|s| s.occupancy())
+    }
+
+    pub fn candidates(&self, x: &ArrayView2<f64>, search_k: usize) -> Result<Option<Vec<Vec<u32>>>, ENNError> {
+        self.model.backend.with_o1(|s| s.candidates(x, search_k))
+    }
+
+    pub fn node_io(&self) -> Result<Option<(u64, u64)>, ENNError> {
+        self.model.backend.with_o1(|s| Ok(s.node_io())).map(Option::flatten)
+    }
+
+    pub fn set_probe_budget(&self, max_leaves: usize, max_candidates: usize) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| s.set_probe_budget(max_leaves, max_candidates))?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no probe budget".into()))
+    }
+
+    pub fn set_io_width(&self, width: usize, slow_ns: u64) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| s.set_io_width(width, slow_ns))?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no I/O width".into()))
+    }
+
+    pub fn set_split_candidates(&self, candidates: u32) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| s.set_split_candidates(candidates))?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no split rule".into()))
+    }
+
+    pub fn set_split_rule(&self, rule: crate::o1::SplitRule) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| s.set_split_rule(rule))?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no split rule".into()))
+    }
+
+    pub fn set_probe_rule(&self, rule: crate::o1::ProbeRule, select: crate::o1::SelectRule, stop: (f64, u32)) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| s.set_probe_rule(rule, select, stop))?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no probe rule".into()))
+    }
+
+    pub fn set_repair(&self, repair_rows: usize, stale_drift: f64, prefer_fresh: bool) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| s.set_repair(repair_rows, stale_drift, prefer_fresh))?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no repair budget".into()))
+    }
+
+    pub fn maintain(&self, max_rows: usize) -> Result<usize, ENNError> {
+        Ok(self.model.backend.with_o1(|s| s.maintain_index(max_rows))?.unwrap_or(0))
+    }
+
+    pub fn compact(&self) -> Result<usize, ENNError> {
+        Ok(self.model.backend.with_o1(|s| s.compact_index())?.unwrap_or(0))
+    }
+
+    pub fn set_cache_budget(&self, budget_bytes: usize) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| {
+                s.set_cache_budget(budget_bytes);
+                Ok(())
+            })?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no object cache".into()))
+    }
+
+    pub fn set_cache_split(&self, node_bytes: usize, row_bytes: usize) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| {
+                s.set_cache_split(node_bytes, row_bytes);
+                Ok(())
+            })?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no object cache".into()))
+    }
+
+    pub fn cache_stats(&self) -> Result<Option<crate::o1::CacheStats>, ENNError> {
+        self.model.backend.with_o1(|s| Ok(s.cache_stats())).map(Option::flatten)
+    }
+
+    pub fn set_profile(&self, enabled: bool) -> Result<(), ENNError> {
+        self.model.backend.with_o1(|s| {
+            s.set_profile(enabled);
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    pub fn take_profile(&self) -> Result<Option<crate::o1::ProfileStats>, ENNError> {
+        self.model.backend.with_o1(|s| Ok(s.take_profile()))
     }
 
     pub fn release_observation_pages(&self) -> Result<(), ENNError> {
@@ -175,5 +273,9 @@ mod access_tests {
         let _ = access
             .index_neighbor_distances_and_indices(&query.view(), 1, false)
             .unwrap();
+        let has_buckets = access.occupancy().unwrap().is_some();
+        assert_eq!(access.candidates(&query.view(), 1).unwrap().is_some(), has_buckets);
+        assert!(access.node_io().unwrap().is_none());
+        assert!(access.maint_stats().unwrap().is_none());
     }
 }

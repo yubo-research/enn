@@ -56,9 +56,9 @@ impl EpistemicNearestNeighbors {
                 num_metrics,
                 pending_flush_threshold,
             )?,
-            crate::layout::StoreType::O1 => {
-                EnnBackend::new_empty_o1(work_dir.to_path_buf(), num_dim, num_metrics)?
-            }
+            crate::layout::StoreType::O1 | crate::layout::StoreType::O1Forest => EnnBackend::new_empty_o1(
+                crate::o1::O1Store::open_for(layout.store(), work_dir.to_path_buf(), num_dim, num_metrics)?,
+            ),
         };
         let auto = layout.metric_learning() == MetricLearning::Auto;
         let mut model = Self {

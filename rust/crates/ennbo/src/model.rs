@@ -9,9 +9,14 @@ use crate::metric_auto::AutoMetric;
 use crate::store_identity::{claim_store_dir, StoreIdentity};
 use crate::y_bounds::resolve_y_bounds;
 
-const STATS_CHUNK_ROWS: usize = 1 << 16;
+const STATS_CHUNK_BYTES: usize = 1 << 20;
+
+pub(crate) fn stats_chunk_rows(num_dim: usize) -> usize {
+    (STATS_CHUNK_BYTES / (8 * num_dim.max(1))).max(1)
+}
 
 mod access;
+mod access_tune;
 mod auto_api;
 mod metric;
 mod outputs_api;
@@ -148,9 +153,12 @@ impl EpistemicNearestNeighbors {
                 train_yvar,
                 x_scale.clone(),
             )?,
-            crate::layout::StoreType::O1 => {
-                EnnBackend::new_o1(work_dir.to_path_buf(), train_x, train_y, train_yvar)?
-            }
+            crate::layout::StoreType::O1 | crate::layout::StoreType::O1Forest => EnnBackend::new_o1(
+                crate::o1::O1Store::open_for(layout.store(), work_dir.to_path_buf(), num_dim, num_metrics)?,
+                train_x,
+                train_y,
+                train_yvar,
+            )?,
         };
 
         let mut model = Self {
@@ -345,9 +353,9 @@ fn sync_obs_stats_from_backend(model: &mut EpistemicNearestNeighbors) -> Result<
         Array1::zeros(model.num_metrics),
         Array1::zeros(model.num_metrics),
     );
-    for start in (0..n).step_by(STATS_CHUNK_ROWS) {
-        let indices: Vec<usize> = (start..(start + STATS_CHUNK_ROWS).min(n)).collect();
-        let (_, y, _) = model.backend.train_rows_at(&indices)?;
+    let chunk = stats_chunk_rows(model.num_metrics);
+    for start in (0..n).step_by(chunk) {
+        let y = model.backend.y_rows(start, (start + chunk).min(n))?;
         accumulate_columns(&mut y_sum, &mut y_sumsq, y.view());
     }
     model.y_sum = y_sum;
@@ -520,7 +528,7 @@ mod tests {
     #[test]
     fn disk_reopen_recomputes_stats_across_chunks() {
         let dir = tempfile::TempDir::new().unwrap();
-        let n = STATS_CHUNK_ROWS + 1234;
+        let n = stats_chunk_rows(1) + 1234;
         let x = Array2::from_shape_fn((n, 2), |(i, j)| ((i * 7 + j * 3) % 101) as f64 * 0.01);
         let y = Array2::from_shape_fn((n, 1), |(i, _)| ((i * 13) % 97) as f64 * 0.1);
         let built = EpistemicNearestNeighbors::new_with_storage(
@@ -536,5 +544,7 @@ mod tests {
         drop(built);
         let reopened = EpistemicNearestNeighbors::open(dir.path()).unwrap();
         assert_eq!(stats(&reopened), expected);
+        assert!(stats_chunk_rows(1000) * 1000 * 8 <= STATS_CHUNK_BYTES);
+        assert_eq!(stats_chunk_rows(usize::MAX / 16), 1);
     }
 }

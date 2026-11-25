@@ -50,9 +50,9 @@ fn partitioned_rebuild_matches_single_pass_rebuild() {
 fn incremental_inserts_match_a_full_rebuild() {
     let dir = TempDir::new().unwrap();
     let mut store = store_with(dir.path(), O1Params::default(), 3000, 100);
-    store.index.flush_pending().unwrap();
+    store.index.lsh_mut().flush_pending().unwrap();
     let before = bucket_files(dir.path(), 8);
-    store.index.rebuild_buckets().unwrap();
+    store.index.lsh_mut().rebuild_buckets().unwrap();
     assert_eq!(before, bucket_files(dir.path(), 8));
 }
 
@@ -60,7 +60,7 @@ fn incremental_inserts_match_a_full_rebuild() {
 fn reopen_reads_the_disk_index_without_rebuilding() {
     let dir = TempDir::new().unwrap();
     let store = store_with(dir.path(), O1Params::default(), 3000, 500);
-    let cands: Vec<Vec<u32>> = queries().iter().map(|q| store.index.candidate_ids(q).unwrap()).collect();
+    let cands: Vec<Vec<u32>> = queries().iter().map(|q| store.index.candidate_ids(q, &Default::default(), &store.x).unwrap()).collect();
     let bits = store.hash_bits();
     drop(store);
     let stamp = |t: usize| std::fs::metadata(dir.path().join(format!("o1_buckets_{t}.bin"))).unwrap().modified().unwrap();
@@ -68,10 +68,10 @@ fn reopen_reads_the_disk_index_without_rebuilding() {
     let reopened = O1Store::open_or_create(dir.path().to_path_buf(), D, 1).unwrap();
     assert_eq!(stamps, (0..8).map(stamp).collect::<Vec<_>>());
     assert_eq!(reopened.hash_bits(), bits);
-    let again: Vec<Vec<u32>> = queries().iter().map(|q| reopened.index.candidate_ids(q).unwrap()).collect();
+    let again: Vec<Vec<u32>> = queries().iter().map(|q| reopened.index.candidate_ids(q, &Default::default(), &reopened.x).unwrap()).collect();
     assert_eq!(cands, again);
-    assert!(reopened.index.pending_bytes() > 0);
-    assert_eq!(reopened.index_memory_bytes(), 8 * bits * (D + 2) * 8 + 8 * D + reopened.index.pending_bytes());
+    assert!(reopened.index.lsh().pending_bytes() > 0);
+    assert_eq!(reopened.index_memory_bytes(), 8 * bits * (D + 2) * 8 + 8 * D + reopened.index.lsh().pending_bytes());
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn missing_index_state_rebuilds_the_index_from_rows() {
     assert_eq!(saved.indexed_rows, 3000);
     for q in queries() {
         let (_, idx) = reopened.search(&ndarray::arr2(&[[q[0], q[1], q[2], q[3]]]).view(), 1, false).unwrap();
-        assert!(reopened.index.candidate_ids(&q).unwrap().len() > 8);
+        assert!(reopened.index.candidate_ids(&q, &Default::default(), &reopened.x).unwrap().len() > 8);
         assert!(idx[[0, 0]] >= 0);
     }
 }
@@ -119,13 +119,13 @@ fn buffered_inserts_match_immediate_writes() {
     let (a, b) = (TempDir::new().unwrap(), TempDir::new().unwrap());
     let immediate = store_with(a.path(), eager, 3000, 100);
     let mut buffered = store_with(b.path(), base, 3000, 100);
-    assert_eq!(immediate.index.pending_rows(), 0);
-    assert!(buffered.index.pending_rows() > 0);
+    assert_eq!(immediate.index.lsh().pending_rows(), 0);
+    assert!(buffered.index.lsh().pending_rows() > 0);
     for q in queries() {
-        assert_eq!(immediate.index.candidate_ids(&q).unwrap(), buffered.index.candidate_ids(&q).unwrap());
+        assert_eq!(immediate.index.candidate_ids(&q, &Default::default(), &immediate.x).unwrap(), buffered.index.candidate_ids(&q, &Default::default(), &buffered.x).unwrap());
     }
-    buffered.index.flush_pending().unwrap();
-    assert_eq!(buffered.index.pending_rows(), 0);
+    buffered.index.lsh_mut().flush_pending().unwrap();
+    assert_eq!(buffered.index.lsh().pending_rows(), 0);
     assert_eq!(bucket_files(a.path(), 8), bucket_files(b.path(), 8));
 }
 
@@ -133,12 +133,12 @@ fn buffered_inserts_match_immediate_writes() {
 fn reopen_replays_buffered_rows_from_the_key_files() {
     let dir = TempDir::new().unwrap();
     let store = store_with(dir.path(), O1Params::default(), 3000, 500);
-    let pending = store.index.pending_rows();
+    let pending = store.index.lsh().pending_rows();
     assert!(pending > 0);
-    let cands: Vec<Vec<u32>> = queries().iter().map(|q| store.index.candidate_ids(q).unwrap()).collect();
+    let cands: Vec<Vec<u32>> = queries().iter().map(|q| store.index.candidate_ids(q, &Default::default(), &store.x).unwrap()).collect();
     drop(store);
     let reopened = O1Store::open_or_create(dir.path().to_path_buf(), D, 1).unwrap();
-    assert_eq!(reopened.index.pending_rows(), pending);
-    let again: Vec<Vec<u32>> = queries().iter().map(|q| reopened.index.candidate_ids(q).unwrap()).collect();
+    assert_eq!(reopened.index.lsh().pending_rows(), pending);
+    let again: Vec<Vec<u32>> = queries().iter().map(|q| reopened.index.candidate_ids(q, &Default::default(), &reopened.x).unwrap()).collect();
     assert_eq!(cands, again);
 }

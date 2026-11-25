@@ -10,6 +10,8 @@ pub enum StoreType {
     OLogN,
     #[serde(rename = "O1")]
     O1,
+    #[serde(rename = "O1F")]
+    O1Forest,
 }
 
 impl StoreType {
@@ -17,6 +19,7 @@ impl StoreType {
         match name {
             "OLOGN" | "ologn" | "OLogN" => Some(Self::OLogN),
             "O1" | "o1" => Some(Self::O1),
+            "O1F" | "o1f" => Some(Self::O1Forest),
             _ => None,
         }
     }
@@ -25,6 +28,7 @@ impl StoreType {
         match self {
             Self::OLogN => "OLOGN",
             Self::O1 => "O1",
+            Self::O1Forest => "O1F",
         }
     }
 }
@@ -66,7 +70,7 @@ impl EnnLayout {
     }
 
     pub fn weighting(&self) -> bool {
-        self.weighting || self.store == StoreType::O1
+        self.weighting || matches!(self.store, StoreType::O1 | StoreType::O1Forest)
     }
 
     pub fn work_dir(&self) -> &Path {
@@ -109,7 +113,7 @@ mod tests {
         assert_eq!(layout.store(), StoreType::O1);
         assert!(layout.weighting());
         assert_eq!(layout.metric_learning(), MetricLearning::Auto);
-        for t in [StoreType::OLogN, StoreType::O1] {
+        for t in [StoreType::OLogN, StoreType::O1, StoreType::O1Forest] {
             assert_eq!(StoreType::parse(t.name()), Some(t));
         }
         assert_eq!(StoreType::parse("nope"), None);

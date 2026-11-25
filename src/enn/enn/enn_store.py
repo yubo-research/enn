@@ -6,6 +6,7 @@ from enum import Enum
 class ENNStore(Enum):
     OLOGN = "OLOGN"
     O1 = "O1"
+    O1F = "O1F"
 
 
 def store_name(store: ENNStore | str) -> str:

@@ -8,8 +8,12 @@ def test_list_eval_names_includes_known_evals() -> None:
 
     names = list_eval_names()
     assert names == [
+        "long/o1_drift",
+        "long/o1_scaling",
         "long/prediction",
         "long/scaling",
+        "short/o1_drift",
+        "short/o1_workloads",
         "short/optimization",
         "short/prediction",
     ]

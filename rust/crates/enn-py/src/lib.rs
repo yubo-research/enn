@@ -23,6 +23,7 @@ pub mod py_fit;
 pub mod py_fitter;
 pub mod py_hash;
 pub mod py_hypervolume;
+pub mod py_index_diag;
 pub mod py_layout;
 pub mod py_metric;
 pub mod py_model;
