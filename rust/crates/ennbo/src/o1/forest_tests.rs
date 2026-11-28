@@ -42,13 +42,24 @@ pub(super) fn assert_invariants(store: &O1Store) -> O1Occupancy {
 
 fn exact_top(store: &O1Store, q: &[f64], k: usize) -> Vec<i64> {
     let mut all: Vec<(f64, i64)> = (0..store.len())
-        .map(|i| (store.row_x(i).unwrap().iter().zip(q).map(|(a, b)| (a - b) * (a - b)).sum(), i as i64))
+        .map(|i| {
+            (
+                store
+                    .row_x(i)
+                    .unwrap()
+                    .iter()
+                    .zip(q)
+                    .map(|(a, b)| (a - b) * (a - b))
+                    .sum(),
+                i as i64,
+            )
+        })
         .collect();
     all.sort_by(|a, b| a.0.total_cmp(&b.0));
     all.into_iter().take(k).map(|p| p.1).collect()
 }
 
-fn recall(store: &O1Store, queries: &Array2<f64>, k: usize) -> f64 {
+pub(super) fn recall(store: &O1Store, queries: &Array2<f64>, k: usize) -> f64 {
     let (_, idx) = store.search(&queries.view(), k, false).unwrap();
     let mut hit = 0;
     for (qi, q) in queries.rows().into_iter().enumerate() {
@@ -111,13 +122,31 @@ fn reopen_restores_the_same_candidates_and_survives_rehash() {
     let dir = TempDir::new().unwrap();
     let x = trajectory(2000, 9);
     let mut rng = StdRng::seed_from_u64(1);
-    let queries: Vec<Vec<f64>> = (0..5).map(|_| (0..D).map(|_| rng.gen::<f64>()).collect()).collect();
+    let queries: Vec<Vec<f64>> = (0..5)
+        .map(|_| (0..D).map(|_| rng.gen::<f64>()).collect())
+        .collect();
     let before: Vec<Vec<u32>> = {
         let store = forest_store(&dir, &x, 100);
-        queries.iter().map(|q| store.index.candidate_ids(q, &Default::default(), &store.x).unwrap()).collect()
+        queries
+            .iter()
+            .map(|q| {
+                store
+                    .index
+                    .candidate_ids(q, &Default::default(), &store.x)
+                    .unwrap()
+            })
+            .collect()
     };
     let mut reopened = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    let after: Vec<Vec<u32>> = queries.iter().map(|q| reopened.index.candidate_ids(q, &Default::default(), &reopened.x).unwrap()).collect();
+    let after: Vec<Vec<u32>> = queries
+        .iter()
+        .map(|q| {
+            reopened
+                .index
+                .candidate_ids(q, &Default::default(), &reopened.x)
+                .unwrap()
+        })
+        .collect();
     assert_eq!(before, after);
     assert_eq!(reopened.index.forest().node_io().1, 0);
     let scale = ndarray::Array1::from_iter((0..D).map(|j| 1.0 + j as f64));
@@ -132,11 +161,28 @@ fn reopen_restores_the_same_candidates_and_survives_rehash() {
     assert_invariants(&reopened);
     reopened.set_trees(3).unwrap();
     assert!(reopened.set_trees(0).is_err());
-    let three: Vec<Vec<u32>> = queries.iter().map(|q| reopened.index.candidate_ids(q, &Default::default(), &reopened.x).unwrap()).collect();
+    let three: Vec<Vec<u32>> = queries
+        .iter()
+        .map(|q| {
+            reopened
+                .index
+                .candidate_ids(q, &Default::default(), &reopened.x)
+                .unwrap()
+        })
+        .collect();
     drop(reopened);
     let kept = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
     assert_eq!(kept.index.forest().trees.len(), 3);
-    assert_eq!(three, queries.iter().map(|q| kept.index.candidate_ids(q, &Default::default(), &kept.x).unwrap()).collect::<Vec<_>>());
+    assert_eq!(
+        three,
+        queries
+            .iter()
+            .map(|q| kept
+                .index
+                .candidate_ids(q, &Default::default(), &kept.x)
+                .unwrap())
+            .collect::<Vec<_>>()
+    );
     assert_eq!(kept.occupancy().unwrap().table_rows.len(), 3);
     drop(kept);
     std::fs::remove_file(dir.path().join(forest::FOREST_STATE_FILE)).unwrap();
@@ -156,12 +202,22 @@ fn uniform_recall_is_high_and_budget_bounds_candidates() {
     store.set_probe_budget(2, 64).unwrap();
     let narrow = recall(&store, &q, 10);
     for row in q.rows() {
-        assert!(store.index.candidate_ids(&row.to_vec(), &Default::default(), &store.x).unwrap().len() <= 64);
+        assert!(
+            store
+                .index
+                .candidate_ids(&row.to_vec(), &Default::default(), &store.x)
+                .unwrap()
+                .len()
+                <= 64
+        );
     }
     assert!(narrow < 0.9);
     store.set_probe_budget(40, 200).unwrap();
     for row in q.rows() {
-        let ids = store.index.candidate_ids(&row.to_vec(), &Default::default(), &store.x).unwrap();
+        let ids = store
+            .index
+            .candidate_ids(&row.to_vec(), &Default::default(), &store.x)
+            .unwrap();
         assert!(ids.len() <= 200 && ids.windows(2).all(|w| w[0] < w[1]));
     }
     assert!(recall(&store, &q, 10) > narrow);
@@ -183,20 +239,64 @@ fn tree_ordered_rows_keep_answers_and_survive_reopen() {
     let q = Array2::from_shape_fn((20, D), |_| rng.gen::<f64>());
     let (plain_dir, dir) = (TempDir::new().unwrap(), TempDir::new().unwrap());
     let mut plain = O1Store::open_forest(plain_dir.path().to_path_buf(), D, 1).unwrap();
-    plain.set_row_order(OrderParams { rows_per_insert: 0, ..OrderParams::default() }).unwrap();
+    plain
+        .set_row_order(OrderParams {
+            rows_per_insert: 0,
+            ..OrderParams::default()
+        })
+        .unwrap();
     insert_all(&mut plain, &x, 250);
     assert_eq!(plain.maint_stats().unwrap().ordered_rows, 0);
     let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    assert!(store.set_row_order(OrderParams { rows_per_insert: 2, grow: 1.0, min_rows: 1000 }).is_err());
-    store.set_row_order(OrderParams { rows_per_insert: 2, grow: 1.3, min_rows: 1000 }).unwrap();
+    assert!(store
+        .set_row_order(OrderParams {
+            rows_per_insert: 2,
+            grow: 1.0,
+            min_rows: 1000,
+            sort_bytes: 0
+        })
+        .is_err());
+    store
+        .set_row_order(OrderParams {
+            rows_per_insert: 2,
+            grow: 1.3,
+            min_rows: 1000,
+            sort_bytes: 0,
+        })
+        .unwrap();
     insert_all(&mut store, &x, 250);
     let m = store.maint_stats().unwrap();
-    assert!(m.order_builds >= 2 && m.ordered_rows >= 3000 && m.ordered_rows < 6000, "{m:?}");
-    assert_eq!(store.search(&q.view(), 10, false).unwrap(), plain.search(&q.view(), 10, false).unwrap());
+    assert!(
+        m.order_builds >= 2 && m.ordered_rows >= 3000 && m.ordered_rows < 6000,
+        "{m:?}"
+    );
+    let src = row_order::Rows {
+        x: &store.x,
+        order: store.index.forest().order.as_ref(),
+        near: None,
+    };
+    let ids: Vec<u32> = (0..300)
+        .map(|_| rng.gen_range(0..6000))
+        .chain([5999, 0, 17])
+        .collect();
+    assert!(ids.iter().any(|&i| src.covers(i)) && ids.iter().any(|&i| !src.covers(i)));
+    ids.iter().for_each(|&i| {
+        assert_eq!(
+            src.mapped(i as usize).unwrap(),
+            x.row(i as usize).as_slice().unwrap()
+        )
+    });
+    assert_eq!(
+        store.search(&q.view(), 10, false).unwrap(),
+        plain.search(&q.view(), 10, false).unwrap()
+    );
     store.set_io_width(4, 0).unwrap();
     for i in 0..q.nrows() {
         let one = q.slice(ndarray::s![i..i + 1, ..]);
-        assert_eq!(store.search(&one, 10, false).unwrap(), plain.search(&one, 10, false).unwrap());
+        assert_eq!(
+            store.search(&one, 10, false).unwrap(),
+            plain.search(&one, 10, false).unwrap()
+        );
     }
     assert_eq!(store.order_rows().unwrap(), 6000);
     assert_eq!(store.row_x(4321).unwrap(), plain.row_x(4321).unwrap());
@@ -206,7 +306,10 @@ fn tree_ordered_rows_keep_answers_and_survive_reopen() {
     std::fs::write(dir.path().join("o1f_tree_999.build"), b"stale").unwrap();
     let mut reopened = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
     assert_eq!(reopened.maint_stats().unwrap().ordered_rows, 6000);
-    assert!(!dir.path().join("o1f_xo_copy_99.bin").exists() && !dir.path().join("o1f_tree_999.build").exists());
+    assert!(
+        !dir.path().join("o1f_xo_copy_99.bin").exists()
+            && !dir.path().join("o1f_tree_999.build").exists()
+    );
     let exact = plain.search(&q.view(), 10, false).unwrap();
     assert_eq!(reopened.search(&q.view(), 10, false).unwrap(), exact);
     reopened.set_rerank(0).unwrap();
@@ -215,12 +318,22 @@ fn tree_ordered_rows_keep_answers_and_survive_reopen() {
     reopened.set_profile(true);
     let coded = reopened.search(&q.view(), 10, false).unwrap();
     let p = reopened.take_profile();
-    assert!(p.coded > p.reranked && p.reranked == 30 * q.nrows() as u64, "{p:?}");
+    assert!(
+        p.coded > p.reranked && p.reranked == 30 * q.nrows() as u64,
+        "{p:?}"
+    );
     assert_eq!(coded.0, exact.0);
     drop(reopened);
     std::fs::remove_file(dir.path().join(row_order::ROW_ORDER_FILE)).unwrap();
     let bare = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
     assert_eq!(bare.maint_stats().unwrap().ordered_rows, 0);
-    assert!(std::fs::read_dir(dir.path()).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().starts_with("o1f_xo_")));
-    assert_eq!(bare.search(&q.view(), 10, false).unwrap(), plain.search(&q.view(), 10, false).unwrap());
+    assert!(std::fs::read_dir(dir.path()).unwrap().all(|e| !e
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .starts_with("o1f_xo_")));
+    assert_eq!(
+        bare.search(&q.view(), 10, false).unwrap(),
+        plain.search(&q.view(), 10, false).unwrap()
+    );
 }

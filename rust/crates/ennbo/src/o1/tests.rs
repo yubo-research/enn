@@ -51,9 +51,7 @@ fn small_store_search_is_exact() {
     let dir = TempDir::new().unwrap();
     let store = filled_store(&dir, 300, 3);
     let q = [0.5, 0.5, 0.5];
-    let (dist, idx) = store
-        .search(&ndarray::arr2(&[q]).view(), 5, false)
-        .unwrap();
+    let (dist, idx) = store.search(&ndarray::arr2(&[q]).view(), 5, false).unwrap();
     assert_eq!(idx.row(0).to_vec(), exact_top(&store, &q, 5));
     assert!(dist[[0, 0]] <= dist[[0, 4]]);
 }
@@ -68,8 +66,17 @@ fn large_store_recall_and_bucket_bounds() {
     for seed in 0..20u64 {
         let (q, _) = random_rows(1, 4, 100 + seed);
         let q = q.row(0).to_vec();
-        assert!(store.index.candidate_ids(&q, &Default::default(), &store.x).unwrap().len() <= p.num_tables * (1 + p.num_probes) * p.bucket_cap);
-        let (_, idx) = store.search(&ndarray::arr2(&[[q[0], q[1], q[2], q[3]]]).view(), 1, false).unwrap();
+        assert!(
+            store
+                .index
+                .candidate_ids(&q, &Default::default(), &store.x)
+                .unwrap()
+                .len()
+                <= p.num_tables * (1 + p.num_probes) * p.bucket_cap
+        );
+        let (_, idx) = store
+            .search(&ndarray::arr2(&[[q[0], q[1], q[2], q[3]]]).view(), 1, false)
+            .unwrap();
         hits += usize::from(idx[[0, 0]] == exact_top(&store, &q, 1)[0]);
     }
     assert!(hits >= 14, "recall@1 too low: {hits}/20");
@@ -94,14 +101,18 @@ fn metric_scale_rebuild_and_reopen_round_trip() {
     let mut store = filled_store(&dir, O1_EXACT_ROWS, 3);
     let scale = Array1::from(vec![1.0, 10.0, 10.0]);
     store.set_metric_scale(&scale, true).unwrap();
-    assert!(store.set_metric_scale(&Array1::from(vec![1.0]), true).is_err());
+    assert!(store
+        .set_metric_scale(&Array1::from(vec![1.0]), true)
+        .is_err());
     let q = [0.2, 0.9, 0.1];
     let (_, before) = store.search(&ndarray::arr2(&[q]).view(), 4, false).unwrap();
     drop(store);
     let reopened = O1Store::open_or_create(dir.path().to_path_buf(), 3, 1).unwrap();
     assert_eq!(reopened.len(), O1_EXACT_ROWS);
     assert_eq!(reopened.metric_scale(), Some(scale));
-    let (_, after) = reopened.search(&ndarray::arr2(&[q]).view(), 4, false).unwrap();
+    let (_, after) = reopened
+        .search(&ndarray::arr2(&[q]).view(), 4, false)
+        .unwrap();
     assert_eq!(before, after);
     assert!(reopened.index_memory_bytes() > 0);
     assert_eq!((reopened.num_dim(), reopened.num_metrics()), (3, 1));
@@ -115,12 +126,17 @@ fn yvar_rows_round_trip_and_mismatch_is_rejected() {
     let x = ndarray::arr2(&[[0.0, 1.0], [1.0, 0.0]]);
     let y = ndarray::arr2(&[[1.0], [2.0]]);
     let v = ndarray::arr2(&[[0.1], [0.2]]);
-    store.append_rows(&x.view(), &y.view(), Some(&v.view())).unwrap();
+    store
+        .append_rows(&x.view(), &y.view(), Some(&v.view()))
+        .unwrap();
     assert_eq!(store.row_yvar(1).unwrap().unwrap()[0], 0.2);
     assert_eq!(store.row_y(0).unwrap()[0], 1.0);
     assert!(store.append_rows(&x.view(), &y.view(), None).is_err());
     let (tx, ty, tv) = store.train_rows_at(&[1]).unwrap();
-    assert_eq!((tx[[0, 0]], ty[[0, 0]], tv.unwrap()[[0, 0]]), (1.0, 2.0, 0.2));
+    assert_eq!(
+        (tx[[0, 0]], ty[[0, 0]], tv.unwrap()[[0, 0]]),
+        (1.0, 2.0, 0.2)
+    );
 }
 
 #[test]
@@ -135,7 +151,9 @@ fn o1_model_learns_metric_and_reopens() {
         assert!(model.auto_metric.is_some());
         model.add(&x.view(), &y.view(), None).unwrap();
         model.add(&x.view(), &y.view(), None).unwrap();
-        let idx = model.neighbors(&x.slice(ndarray::s![0..2, ..]), 3, false).unwrap();
+        let idx = model
+            .neighbors(&x.slice(ndarray::s![0..2, ..]), 3, false)
+            .unwrap();
         assert_eq!(idx.shape(), &[2, 3]);
         drop(model);
         let reservoir = dir.path().join("metric_reservoir.json");
@@ -153,9 +171,19 @@ fn o1_recall_and_candidates_versus_n() {
     let base = O1Params::default();
     let settings = [
         base,
-        O1Params { num_tables: 16, ..base },
-        O1Params { num_probes: 12, ..base },
-        O1Params { bucket_target: 32, bucket_cap: 128, ..base },
+        O1Params {
+            num_tables: 16,
+            ..base
+        },
+        O1Params {
+            num_probes: 12,
+            ..base
+        },
+        O1Params {
+            bucket_target: 32,
+            bucket_cap: 128,
+            ..base
+        },
     ];
     for d in [10usize, 100] {
         for params in settings {
@@ -178,9 +206,15 @@ fn recall_diagnostic(d: usize, params: O1Params) {
         let mut hits = 0usize;
         for q in queries.rows() {
             let qv = q.to_vec();
-            cand += store.index.candidate_ids(&qv, &Default::default(), &store.x).unwrap().len();
+            cand += store
+                .index
+                .candidate_ids(&qv, &Default::default(), &store.x)
+                .unwrap()
+                .len();
             let truth = exact_top(&store, &qv, 10);
-            let (_, idx) = store.search(&q.insert_axis(ndarray::Axis(0)), 10, false).unwrap();
+            let (_, idx) = store
+                .search(&q.insert_axis(ndarray::Axis(0)), 10, false)
+                .unwrap();
             hits += idx.row(0).iter().filter(|i| truth.contains(i)).count();
         }
         println!(

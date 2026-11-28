@@ -1,39 +1,91 @@
 mod buckets;
 mod cache;
 mod cache_shard;
+#[cfg(test)]
+mod cache_tests;
 mod disk_index;
+#[cfg(test)]
+mod disk_tests;
 mod forest;
+mod forest_acct;
+mod forest_batch;
+#[cfg(test)]
+mod forest_batch_tests;
 mod forest_bound;
-mod forest_node;
+mod forest_defer;
+#[cfg(test)]
+mod forest_defer_tests;
+mod forest_extern;
+mod forest_gather;
+mod forest_grow;
+mod forest_jobbuild;
 mod forest_knobs;
+mod forest_lrows;
+mod forest_node;
+mod forest_npack;
 mod forest_order;
 mod forest_pack;
+#[cfg(test)]
+mod forest_pivot_tests;
 mod forest_plan;
+pub mod forest_prefetch;
 mod forest_query;
-mod forest_rules;
 mod forest_repair;
+#[cfg(test)]
+mod forest_lrows_tests;
+#[cfg(test)]
+mod forest_prefetch_tests;
+#[cfg(test)]
+mod forest_repair_tests;
+mod forest_rules;
+mod forest_scan;
 mod forest_split;
+#[cfg(test)]
+mod forest_tests;
 mod forest_tree;
+pub mod hygiene;
+#[cfg(test)]
+mod hygiene_tests;
+pub mod io_streams;
+mod hlsm;
+mod hlsm_build;
+mod hlsm_frame;
+mod hlsm_hash;
+mod hlsm_io;
+mod hlsm_query;
+mod hlsm_run;
+#[cfg(test)]
+mod hlsm_tests;
 mod index_kind;
 mod index_order;
 mod keys;
 mod lsh;
+mod graph;
+mod graph_box;
+mod graph_buf;
+mod graph_io;
+mod graph_query;
+mod graph_split;
+#[cfg(test)]
+mod graph_tests;
+mod graph_up;
+mod lsm;
+mod lsm_key;
+mod lsm_merge;
+mod lsm_keying;
+mod lsm_query;
+mod lsm_run;
+#[cfg(test)]
+mod lsm_tests;
 mod pending;
 mod profile;
-mod search;
 mod row_codes;
 mod row_order;
+mod row_sort;
+#[cfg(test)]
+mod row_sort_tests;
+mod search;
 pub(crate) mod store_rows;
-#[cfg(test)]
-mod cache_tests;
-#[cfg(test)]
-mod disk_tests;
-#[cfg(test)]
-mod forest_tests;
-#[cfg(test)]
-mod forest_repair_tests;
-#[cfg(test)]
-mod forest_pivot_tests;
 #[cfg(test)]
 mod tests;
 
@@ -44,18 +96,18 @@ use std::path::{Path, PathBuf};
 
 use crate::backend::{MmapColumnStore, TrainRowsAtResult};
 use crate::error::ENNError;
-use cache::SharedCache;
 pub use cache::CacheStats;
+use cache::SharedCache;
 pub use disk_index::O1Occupancy;
 pub use forest::{ForestParams, MaintStats};
-pub use row_order::OrderParams;
 pub use forest_rules::{ForestRules, SplitConfig, SplitRule};
 use index_kind::O1Index;
 pub use index_kind::O1IndexParams;
 use lsh::io_error;
 pub use lsh::O1Params;
-use profile::QueryProfile;
 pub use profile::ProfileStats;
+use profile::QueryProfile;
+pub use row_order::OrderParams;
 use search::SearchContext;
 
 pub(crate) const O1_META_FILE: &str = "o1_meta.json";
@@ -108,7 +160,11 @@ impl O1Store {
         }
     }
 
-    pub fn open_forest(work_dir: PathBuf, num_dim: usize, num_metrics: usize) -> Result<Self, ENNError> {
+    pub fn open_forest(
+        work_dir: PathBuf,
+        num_dim: usize,
+        num_metrics: usize,
+    ) -> Result<Self, ENNError> {
         let params = O1IndexParams::Forest(ForestParams::default());
         Self::open_with_index(work_dir, (num_dim, num_metrics), params)
     }
@@ -136,7 +192,9 @@ impl O1Store {
         let y = MmapColumnStore::mmap_open_or_create(store_path(&work_dir, "y"), num_metrics, n)?;
         let yvar = meta
             .has_yvar
-            .then(|| MmapColumnStore::mmap_open_or_create(store_path(&work_dir, "yvar"), num_metrics, n))
+            .then(|| {
+                MmapColumnStore::mmap_open_or_create(store_path(&work_dir, "yvar"), num_metrics, n)
+            })
             .transpose()?;
         let hash_scale = meta.hash_scale.unwrap_or_else(|| vec![1.0; num_dim]);
         let index = O1Index::open(&work_dir, O1_SEED, params, &hash_scale, &x)?;
@@ -225,7 +283,11 @@ impl O1Store {
         self.x_scale.clone()
     }
 
-    pub fn set_metric_scale(&mut self, x_scale: &Array1<f64>, rebuild: bool) -> Result<(), ENNError> {
+    pub fn set_metric_scale(
+        &mut self,
+        x_scale: &Array1<f64>,
+        rebuild: bool,
+    ) -> Result<(), ENNError> {
         if x_scale.len() != self.num_dim() || !x_scale.iter().all(|s| s.is_finite() && *s > 0.0) {
             return Err(ENNError::InvalidParameter(
                 "metric x_scale must be finite, positive and match num_dim".into(),
@@ -263,7 +325,11 @@ impl O1Store {
         ctx.search(x, search_k, exclude_nearest)
     }
 
-    pub fn candidates(&self, x: &ArrayView2<f64>, search_k: usize) -> Result<Vec<Vec<u32>>, ENNError> {
+    pub fn candidates(
+        &self,
+        x: &ArrayView2<f64>,
+        search_k: usize,
+    ) -> Result<Vec<Vec<u32>>, ENNError> {
         let weights = self.metric_weights();
         let ctx = SearchContext {
             index: &self.index,
@@ -297,7 +363,11 @@ impl O1Store {
         self.index.node_io()
     }
 
-    pub fn set_probe_budget(&mut self, max_leaves: usize, max_candidates: usize) -> Result<(), ENNError> {
+    pub fn set_probe_budget(
+        &mut self,
+        max_leaves: usize,
+        max_candidates: usize,
+    ) -> Result<(), ENNError> {
         self.index.set_budget(max_leaves, max_candidates)
     }
 
@@ -313,8 +383,18 @@ impl O1Store {
         self.index.set_bound(bound)
     }
 
-    pub fn set_repair(&mut self, repair_rows: usize, stale_drift: f64, prefer_fresh: bool) -> Result<(), ENNError> {
-        self.index.set_repair(repair_rows, stale_drift, prefer_fresh)
+    pub fn set_repair(
+        &mut self,
+        repair_rows: usize,
+        stale_drift: f64,
+        prefer_fresh: bool,
+    ) -> Result<(), ENNError> {
+        self.index
+            .set_repair(repair_rows, stale_drift, prefer_fresh)
+    }
+
+    pub fn set_defer(&mut self, defer_rows: u32, local_bytes: u32) -> Result<(), ENNError> {
+        self.index.set_defer(defer_rows, local_bytes)
     }
 
     pub fn maintain_index(&mut self, max_rows: usize) -> Result<usize, ENNError> {

@@ -29,10 +29,16 @@ fn cached_store_answers_like_uncached_through_splits_rebuilds_and_repair() {
     let plain = drifting_store(&plain_dir, 0);
     let cached = drifting_store(&cached_dir, 48 << 10);
     let q = queries(30, 4);
-    assert_eq!(plain.search(&q.view(), 10, false).unwrap(), cached.search(&q.view(), 10, false).unwrap());
+    assert_eq!(
+        plain.search(&q.view(), 10, false).unwrap(),
+        cached.search(&q.view(), 10, false).unwrap()
+    );
     let (po, co) = (assert_invariants(&plain), assert_invariants(&cached));
     assert!(co.repairs_started > 0 && co.rebuilds > 0);
-    assert_eq!((po.disk_nodes, po.splits, po.repairs_finished), (co.disk_nodes, co.splits, co.repairs_finished));
+    assert_eq!(
+        (po.disk_nodes, po.splits, po.repairs_finished),
+        (co.disk_nodes, co.splits, co.repairs_finished)
+    );
     assert_eq!(po.node_writes, co.node_writes);
     assert!(co.node_reads < po.node_reads);
     let stats = cached.cache_stats().unwrap();
@@ -41,7 +47,10 @@ fn cached_store_answers_like_uncached_through_splits_rebuilds_and_repair() {
     assert!(plain.cache_stats().is_none());
     drop(cached);
     let reopened = O1Store::open_forest(cached_dir.path().to_path_buf(), D, 1).unwrap();
-    assert_eq!(plain.search(&q.view(), 10, false).unwrap(), reopened.search(&q.view(), 10, false).unwrap());
+    assert_eq!(
+        plain.search(&q.view(), 10, false).unwrap(),
+        reopened.search(&q.view(), 10, false).unwrap()
+    );
 }
 
 #[test]
@@ -59,10 +68,16 @@ fn repeated_queries_hit_the_cache_and_rows_y_come_from_it() {
     let reads = store.node_io().unwrap().0;
     assert_eq!(first, store.search(&q.view(), 10, false).unwrap());
     let warm = store.cache_stats().unwrap();
-    assert_eq!((warm.node_misses, warm.row_misses), (cold.node_misses, cold.row_misses));
+    assert_eq!(
+        (warm.node_misses, warm.row_misses),
+        (cold.node_misses, cold.row_misses)
+    );
     assert_eq!(store.node_io().unwrap().0, reads);
     let nn = first.1[[0, 0]] as usize;
-    assert_eq!(store.row_y(nn).unwrap(), Array1::from(vec![store.row_x(nn).unwrap()[0]]));
+    assert_eq!(
+        store.row_y(nn).unwrap(),
+        Array1::from(vec![store.row_x(nn).unwrap()[0]])
+    );
     assert_eq!(store.cache_stats().unwrap().row_misses, warm.row_misses + 1);
     store.set_cache_budget(0);
     assert!(store.cache_stats().is_none());
@@ -73,7 +88,10 @@ fn repeated_queries_hit_the_cache_and_rows_y_come_from_it() {
 fn profile_counts_each_node_read_once() {
     let dir = TempDir::new().unwrap();
     let mut store = O1Store::open_forest(dir.path().to_path_buf(), D, 1).unwrap();
-    assert_eq!(store.cache_stats().unwrap().node_budget_bytes, DEFAULT_NODE_CACHE_BYTES);
+    assert_eq!(
+        store.cache_stats().unwrap().node_budget_bytes,
+        DEFAULT_NODE_CACHE_BYTES
+    );
     store.set_cache_budget(0);
     insert_all(&mut store, &trajectory(3000, 2), 300);
     let q = queries(7, 3);
@@ -86,7 +104,10 @@ fn profile_counts_each_node_read_once() {
     assert_eq!(p.queries, 7);
     assert!(p.split_visits > 0 && p.leaf_visits > 0 && p.candidates > 0);
     assert!(p.leaf_pages >= p.leaf_visits);
-    assert_eq!(store.node_io().unwrap().0 - reads, p.split_visits + p.leaf_pages);
+    assert_eq!(
+        store.node_io().unwrap().0 - reads,
+        p.split_visits + p.leaf_pages
+    );
     assert!(p.search_ns >= p.hash_ns + p.route_ns + p.leaf_ns + p.row_ns + p.distance_ns);
 }
 

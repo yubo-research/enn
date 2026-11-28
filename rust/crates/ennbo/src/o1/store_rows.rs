@@ -15,9 +15,20 @@ const Y_COLUMN: u8 = 1;
 const YVAR_COLUMN: u8 = 2;
 
 impl O1Store {
-    fn cached_row(&self, store: &MmapColumnStore, column: u8, i: usize) -> Result<Array1<f64>, ENNError> {
-        let rows = if column == X_COLUMN { self.index.rows(store) } else { Rows::plain(store) };
-        Ok(Array1::from(fetch_row(rows, self.cache.as_deref(), column, i)?.to_vec()))
+    fn cached_row(
+        &self,
+        store: &MmapColumnStore,
+        column: u8,
+        i: usize,
+    ) -> Result<Array1<f64>, ENNError> {
+        let rows = if column == X_COLUMN {
+            self.index.rows(store)
+        } else {
+            Rows::plain(store)
+        };
+        Ok(Array1::from(
+            fetch_row(rows, self.cache.as_deref(), column, i)?.to_vec(),
+        ))
     }
 
     pub fn row_x(&self, i: usize) -> Result<Array1<f64>, ENNError> {
@@ -29,7 +40,10 @@ impl O1Store {
     }
 
     pub fn row_yvar(&self, i: usize) -> Result<Option<Array1<f64>>, ENNError> {
-        self.yvar.as_ref().map(|s| self.cached_row(s, YVAR_COLUMN, i)).transpose()
+        self.yvar
+            .as_ref()
+            .map(|s| self.cached_row(s, YVAR_COLUMN, i))
+            .transpose()
     }
 
     pub fn set_cache_budget(&mut self, budget_bytes: usize) {
@@ -81,11 +95,16 @@ impl O1Store {
     pub fn order_rows(&mut self) -> Result<usize, ENNError> {
         self.index.order_now(&self.x)
     }
-
 }
 
-pub fn scattered_rows(store: &O1Store, indices: &[usize]) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
-    Ok((store.x.pread_gather(indices)?, store.y.pread_gather(indices)?))
+pub fn scattered_rows(
+    store: &O1Store,
+    indices: &[usize],
+) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
+    Ok((
+        store.x.pread_gather(indices)?,
+        store.y.pread_gather(indices)?,
+    ))
 }
 
 pub fn y_rows(store: &O1Store, start: usize, end: usize) -> Result<Array2<f64>, ENNError> {

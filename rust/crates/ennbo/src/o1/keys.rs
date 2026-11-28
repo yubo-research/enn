@@ -49,12 +49,16 @@ impl KeyFile {
 
     pub(crate) fn write_at(&self, row: usize, keys: &[u64]) -> Result<(), ENNError> {
         let bytes: Vec<u8> = keys.iter().flat_map(|k| k.to_le_bytes()).collect();
-        self.file.write_all_at(&bytes, row as u64 * 8).map_err(io_error)
+        self.file
+            .write_all_at(&bytes, row as u64 * 8)
+            .map_err(io_error)
     }
 
     pub(crate) fn read_at(&self, row: usize, out: &mut [u64]) -> Result<(), ENNError> {
         let mut bytes = vec![0u8; out.len() * 8];
-        self.file.read_exact_at(&mut bytes, row as u64 * 8).map_err(io_error)?;
+        self.file
+            .read_exact_at(&mut bytes, row as u64 * 8)
+            .map_err(io_error)?;
         for (k, b) in out.iter_mut().zip(bytes.chunks_exact(8)) {
             *k = u64::from_le_bytes(b.try_into().expect("8-byte chunk"));
         }

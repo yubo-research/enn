@@ -49,13 +49,20 @@ impl AutoMetric {
         if self.rows.num_seen() < self.saved_seen + self.rows.capacity() {
             return Ok(());
         }
-        bpann_write_json(&work_dir.join(RESERVOIR_STATE_FILE), &self.rows.state()).map_err(file_error)?;
+        bpann_write_json(&work_dir.join(RESERVOIR_STATE_FILE), &self.rows.state())
+            .map_err(file_error)?;
         self.saved_seen = self.rows.num_seen();
         Ok(())
     }
 
-    pub(crate) fn saved_reservoir(&self, work_dir: &Path, num_rows: usize) -> Option<ReservoirState> {
-        let state: ReservoirState = bpann_read_json(&work_dir.join(RESERVOIR_STATE_FILE)).ok().flatten()?;
+    pub(crate) fn saved_reservoir(
+        &self,
+        work_dir: &Path,
+        num_rows: usize,
+    ) -> Option<ReservoirState> {
+        let state: ReservoirState = bpann_read_json(&work_dir.join(RESERVOIR_STATE_FILE))
+            .ok()
+            .flatten()?;
         self.rows.fits(&state, num_rows).then_some(state)
     }
 
@@ -154,7 +161,11 @@ mod tests {
         resumed.configure(None, None, None, Some(4)).ok();
         assert!(resumed.saved_reservoir(dir.path(), 11).is_none());
         let state = resumed.saved_reservoir(dir.path(), 20).unwrap();
-        let xs: Vec<f64> = state.slots.iter().flat_map(|&i| x[2 * i..2 * i + 2].to_vec()).collect();
+        let xs: Vec<f64> = state
+            .slots
+            .iter()
+            .flat_map(|&i| x[2 * i..2 * i + 2].to_vec())
+            .collect();
         let ys: Vec<f64> = state.slots.iter().map(|&i| y[i]).collect();
         resumed.restore_reservoir(&state, &xs, &ys);
         resumed.replay_rows(&x[24..], &y[12..], 8);

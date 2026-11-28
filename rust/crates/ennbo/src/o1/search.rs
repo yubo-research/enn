@@ -37,12 +37,20 @@ pub(crate) fn fetch_row<'a>(
     i: usize,
 ) -> Result<RowRef<'a>, ENNError> {
     let Some(cache) = cache.filter(|c| c.caches_rows()) else {
-        return store.mapped(i).map(RowRef::Mapped);
+        return store.fetch(i, crate::backend::query_pread()).map(|r| match r {
+            std::borrow::Cow::Borrowed(r) => RowRef::Mapped(r),
+            std::borrow::Cow::Owned(r) => RowRef::Shared(r.into()),
+        });
     };
-    let key = CacheKey::Row { column, row: i as u32 };
+    let key = CacheKey::Row {
+        column,
+        row: i as u32,
+    };
     match cache.get_or_load(key, || store.pread(i).map(|r| Cached::Row(r.into())))? {
         Cached::Row(r) => Ok(RowRef::Shared(r)),
-        Cached::Node(_) => Err(ENNError::InvalidParameter("row cache entry holds a node".into())),
+        Cached::Node(_) => Err(ENNError::InvalidParameter(
+            "row cache entry holds a node".into(),
+        )),
     }
 }
 
@@ -107,7 +115,8 @@ impl SearchContext<'_> {
         let mut ids = if n <= O1_EXACT_ROWS {
             (0..n as u32).collect()
         } else {
-            self.index.candidate_ids_at(query, self.profile, self.rows, self.overlap)?
+            self.index
+                .candidate_ids_at(query, self.profile, self.rows, self.overlap)?
         };
         top_up(&mut ids, n, need);
         Ok(ids)
@@ -115,15 +124,36 @@ impl SearchContext<'_> {
 
     fn score(&self, query: &[f64], ids: &[u32]) -> Result<Vec<(f64, u32)>, ENNError> {
         ids.iter()
-            .map(|&id| Ok((weighted_dist2(query, &fetch_row(self.rows, self.cache, X_COLUMN, id as usize)?, self.weights), id)))
+            .map(|&id| {
+                Ok((
+                    weighted_dist2(
+                        query,
+                        &fetch_row(self.rows, self.cache, X_COLUMN, id as usize)?,
+                        self.weights,
+                    ),
+                    id,
+                ))
+            })
             .collect()
     }
 
-    fn score_read(&self, query: &[f64], ids: &[u32], pread: bool) -> Result<Vec<(f64, u32)>, ENNError> {
+    fn score_read(
+        &self,
+        query: &[f64],
+        ids: &[u32],
+        pread: bool,
+    ) -> Result<Vec<(f64, u32)>, ENNError> {
         if !pread {
             return self.score(query, ids);
         }
-        ids.iter().map(|&id| Ok((weighted_dist2(query, &self.rows.pread(id as usize)?, self.weights), id))).collect()
+        ids.iter()
+            .map(|&id| {
+                Ok((
+                    weighted_dist2(query, &self.rows.pread(id as usize)?, self.weights),
+                    id,
+                ))
+            })
+            .collect()
     }
 
     fn scored(&self, query: &[f64], ids: &[u32]) -> Result<Vec<(f64, u32)>, ENNError> {
@@ -132,14 +162,27 @@ impl SearchContext<'_> {
         let t0 = Instant::now();
         let mut out = self.score(query, &ids[..head])?;
         let rest = &ids[head..];
-        if !self.overlap || width <= 1 || rest.len() < width || (t0.elapsed().as_nanos() as u64) < slow_ns {
+        if !self.overlap
+            || width <= 1
+            || rest.len() < width
+            || (t0.elapsed().as_nanos() as u64) < slow_ns
+        {
             out.extend(self.score(query, rest)?);
             return Ok(out);
         }
         let pread = !self.cache.is_some_and(ObjCache::caches_rows) && scattered(rest, self.rows);
         let parts: Vec<Result<Vec<(f64, u32)>, ENNError>> = std::thread::scope(|scope| {
-            let jobs: Vec<_> = rest.chunks(rest.len().div_ceil(width)).map(|c| scope.spawn(move || self.score_read(query, c, pread))).collect();
-            jobs.into_iter().map(|j| j.join().unwrap_or_else(|_| Err(ENNError::InvalidParameter("row worker panicked".into())))).collect()
+            let jobs: Vec<_> = rest
+                .chunks(rest.len().div_ceil(width))
+                .map(|c| scope.spawn(move || self.score_read(query, c, pread)))
+                .collect();
+            jobs.into_iter()
+                .map(|j| {
+                    j.join().unwrap_or_else(|_| {
+                        Err(ENNError::InvalidParameter("row worker panicked".into()))
+                    })
+                })
+                .collect()
         });
         for part in parts {
             out.extend(part?);
@@ -150,7 +193,20 @@ impl SearchContext<'_> {
     fn ranked(&self, query: &[f64], need: usize) -> Result<Vec<(f64, u32)>, ENNError> {
         let t_search = self.profile.start();
         if self.rows.nrows() > O1_EXACT_ROWS {
-            if let Some(mut scored) = self.index.scored_at(query, self.profile, self.rows, self.overlap, self.weights, need)?.map(|s| self.reranked(query, s, need)).transpose()?.filter(|s| s.len() >= need) {
+            if let Some(mut scored) = self
+                .index
+                .scored_at(
+                    query,
+                    self.profile,
+                    self.rows,
+                    self.overlap,
+                    self.weights,
+                    need,
+                )?
+                .map(|s| self.reranked(query, s, need))
+                .transpose()?
+                .filter(|s| s.len() >= need)
+            {
                 self.profile.count_query(scored.len());
                 let out = Self::nearest(&mut scored, need);
                 self.profile.stop(Stage::Search, t_search);
@@ -173,8 +229,11 @@ impl SearchContext<'_> {
         }
         self.profile.stop(Stage::Row, t_rows);
         let t_dist = self.profile.start();
-        let mut scored: Vec<(f64, u32)> =
-            rows.iter().zip(&ids).map(|(row, &id)| (weighted_dist2(query, row, self.weights), id)).collect();
+        let mut scored: Vec<(f64, u32)> = rows
+            .iter()
+            .zip(&ids)
+            .map(|(row, &id)| (weighted_dist2(query, row, self.weights), id))
+            .collect();
         self.profile.stop(Stage::Distance, t_dist);
         let out = Self::nearest(&mut scored, need);
         self.profile.stop(Stage::Search, t_search);
@@ -182,10 +241,17 @@ impl SearchContext<'_> {
     }
 
     fn reranked(&self, query: &[f64], s: Scored, need: usize) -> Result<Vec<(f64, u32)>, ENNError> {
-        let Scored { mut exact, mut coded, rerank } = s;
+        let Scored {
+            mut exact,
+            mut coded,
+            rerank,
+        } = s;
         let total = coded.len();
         if total > 0 {
-            let mut ids: Vec<u32> = Self::nearest(&mut coded, rerank.max(need)).into_iter().map(|(_, id)| id).collect();
+            let mut ids: Vec<u32> = Self::nearest(&mut coded, rerank.max(need))
+                .into_iter()
+                .map(|(_, id)| id)
+                .collect();
             ids.sort_unstable();
             self.profile.count_codes(total, ids.len());
             exact.extend(self.scored(query, &ids)?);
@@ -253,9 +319,20 @@ mod tests {
     #[test]
     fn scattered_rows_are_read_one_by_one_with_the_same_answers() {
         let dummy = tempfile::TempDir::new().unwrap();
-        let x100 = crate::backend::MmapColumnStore::mmap_open_or_create(dummy.path().join("x.bin"), 100, Some(0)).unwrap();
-        assert!(!scattered(&(0..1280).collect::<Vec<u32>>(), Rows::plain(&x100)));
-        assert!(scattered(&(0..1280).map(|i| i * 1000).collect::<Vec<u32>>(), Rows::plain(&x100)));
+        let x100 = crate::backend::MmapColumnStore::mmap_open_or_create(
+            dummy.path().join("x.bin"),
+            100,
+            Some(0),
+        )
+        .unwrap();
+        assert!(!scattered(
+            &(0..1280).collect::<Vec<u32>>(),
+            Rows::plain(&x100)
+        ));
+        assert!(scattered(
+            &(0..1280).map(|i| i * 1000).collect::<Vec<u32>>(),
+            Rows::plain(&x100)
+        ));
         let d = 600;
         let mut rng = StdRng::seed_from_u64(5);
         let x = Array2::from_shape_fn((1500, d), |_| rng.gen::<f64>());
@@ -267,8 +344,13 @@ mod tests {
         let batch = store.search(&q.view(), 10, false).unwrap();
         store.set_io_width(4, 0).unwrap();
         for i in 0..q.nrows() {
-            let one = store.search(&q.slice(ndarray::s![i..i + 1, ..]), 10, false).unwrap();
-            assert_eq!((one.0.row(0).to_owned(), one.1.row(0).to_owned()), (batch.0.row(i).to_owned(), batch.1.row(i).to_owned()));
+            let one = store
+                .search(&q.slice(ndarray::s![i..i + 1, ..]), 10, false)
+                .unwrap();
+            assert_eq!(
+                (one.0.row(0).to_owned(), one.1.row(0).to_owned()),
+                (batch.0.row(i).to_owned(), batch.1.row(i).to_owned())
+            );
         }
     }
 }

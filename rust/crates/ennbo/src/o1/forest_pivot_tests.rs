@@ -27,12 +27,19 @@ fn cut_counts(store: &O1Store) -> (usize, usize, usize) {
     for tree in &f.trees {
         for id in 1..tree.nodes.num_nodes() {
             match tree.nodes.read(id).unwrap() {
-                Node::Split { cut: Cut::Seed(_), .. } => seeded += 1,
-                Node::Split { cut: Cut::Pivot(a, b), .. } => {
+                Node::Split {
+                    cut: Cut::Seed(_), ..
+                } => seeded += 1,
+                Node::Split {
+                    cut: Cut::Pivot(a, b),
+                    ..
+                } => {
                     assert!(a != b && (a as usize) < store.len() && (b as usize) < store.len());
                     pivots += 1;
                 }
-                Node::Split { cut: Cut::Dir(d), .. } => {
+                Node::Split {
+                    cut: Cut::Dir(d), ..
+                } => {
                     assert_eq!(d.len(), store.num_dim());
                     dirs += 1;
                 }
@@ -58,23 +65,52 @@ fn check_pivot_rule(rule: SplitRule) {
     let plain = pivot_store(&plain_dir, 0, rule);
     let cached = pivot_store(&cached_dir, 48 << 10, rule);
     let (seeded, pivots, dirs) = cut_counts(&plain);
-    let (routed, other) = if rule == SplitRule::Pivot { (pivots, dirs) } else { (dirs, pivots) };
+    let (routed, other) = if rule == SplitRule::Pivot {
+        (pivots, dirs)
+    } else {
+        (dirs, pivots)
+    };
     assert!(routed > 10 * seeded.max(1) && other == 0);
     let mut rng = StdRng::seed_from_u64(4);
     let q = Array2::from_shape_fn((30, D), |_| rng.gen::<f64>());
     let answer = plain.search(&q.view(), 10, false).unwrap();
     assert_eq!(answer, cached.search(&q.view(), 10, false).unwrap());
-    let serial: Vec<Vec<u32>> = q.rows().into_iter().map(|r| plain.index.candidate_ids(&r.to_vec(), &Default::default(), &plain.x).unwrap()).collect();
+    let serial: Vec<Vec<u32>> = q
+        .rows()
+        .into_iter()
+        .map(|r| {
+            plain
+                .index
+                .candidate_ids(&r.to_vec(), &Default::default(), &plain.x)
+                .unwrap()
+        })
+        .collect();
     let (mut plain, mut cached) = (plain, cached);
     for width in [2, 8] {
         plain.set_io_width(width, 0).unwrap();
         plain.set_pread_pivots(width == 2).unwrap();
-        cached.set_io_width(width, if width == 2 { 0 } else { 30_000 }).unwrap();
-        let wide: Vec<Vec<u32>> = q.rows().into_iter().map(|r| plain.index.candidate_ids(&r.to_vec(), &Default::default(), &plain.x).unwrap()).collect();
+        cached
+            .set_io_width(width, if width == 2 { 0 } else { 30_000 })
+            .unwrap();
+        let wide: Vec<Vec<u32>> = q
+            .rows()
+            .into_iter()
+            .map(|r| {
+                plain
+                    .index
+                    .candidate_ids(&r.to_vec(), &Default::default(), &plain.x)
+                    .unwrap()
+            })
+            .collect();
         assert_eq!(serial, wide);
         for i in 0..3 {
-            let one = plain.search(&q.slice(ndarray::s![i..i + 1, ..]), 10, false).unwrap();
-            assert_eq!((one.0.row(0).to_owned(), one.1.row(0).to_owned()), (answer.0.row(i).to_owned(), answer.1.row(i).to_owned()));
+            let one = plain
+                .search(&q.slice(ndarray::s![i..i + 1, ..]), 10, false)
+                .unwrap();
+            assert_eq!(
+                (one.0.row(0).to_owned(), one.1.row(0).to_owned()),
+                (answer.0.row(i).to_owned(), answer.1.row(i).to_owned())
+            );
         }
         assert_eq!(answer, plain.search(&q.view(), 10, false).unwrap());
         assert_eq!(answer, cached.search(&q.view(), 10, false).unwrap());
@@ -123,7 +159,11 @@ fn coded_rule_stores_directions_and_lsh_rejects_the_rule() {
     let wide_dir = TempDir::new().unwrap();
     let mut wide = O1Store::open_forest(wide_dir.path().to_path_buf(), 40, 1).unwrap();
     let mut rng = StdRng::seed_from_u64(8);
-    insert_all(&mut wide, &Array2::from_shape_fn((300, 40), |_| rng.gen::<f64>()), 100);
+    insert_all(
+        &mut wide,
+        &Array2::from_shape_fn((300, 40), |_| rng.gen::<f64>()),
+        100,
+    );
     assert_eq!(wide.occupancy().unwrap().node_bytes, 24 + 128);
     let (_, pivots, dirs) = cut_counts(&wide);
     assert!(pivots == 0 && dirs > 5);

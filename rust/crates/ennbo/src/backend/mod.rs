@@ -5,6 +5,7 @@ mod mmap_column_store;
 pub use crate::disk_bpann::DiskBpannEnnBackend;
 pub(crate) use flush_controller::DiskBackendHandle;
 pub use mmap_column_store::MmapColumnStore;
+pub(crate) use mmap_column_store::{advise_random, auto_us, latch, query_pread, store_pread};
 
 use ndarray::{Array1, Array2, ArrayView2};
 use std::path::PathBuf;
@@ -203,7 +204,10 @@ impl EnnBackend {
         read_either!(self, g => g.train_rows_at(indices))
     }
 
-    pub fn scattered_rows(&self, indices: &[usize]) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
+    pub fn scattered_rows(
+        &self,
+        indices: &[usize],
+    ) -> Result<(Array2<f64>, Array2<f64>), ENNError> {
         match &self.kind {
             BackendKind::O1(s) => crate::o1::store_rows::scattered_rows(&*o1_read(s)?, indices),
             BackendKind::OLogN(_) => self.train_rows_at(indices).map(|(x, y, _)| (x, y)),
@@ -253,7 +257,10 @@ impl EnnBackend {
         }
     }
 
-    pub fn with_o1<T>(&self, f: impl FnOnce(&mut O1Store) -> Result<T, ENNError>) -> Result<Option<T>, ENNError> {
+    pub fn with_o1<T>(
+        &self,
+        f: impl FnOnce(&mut O1Store) -> Result<T, ENNError>,
+    ) -> Result<Option<T>, ENNError> {
         match &self.kind {
             BackendKind::OLogN(_) => Ok(None),
             BackendKind::O1(s) => f(&mut *o1_write(s)?).map(Some),
@@ -340,23 +347,42 @@ mod backend_tests {
         backend.schedule_background_flush().unwrap();
         backend.mark_index_stale();
         backend.release_observation_pages().unwrap();
-        assert_eq!((backend.len(), backend.num_dim(), backend.num_metrics()), (2, 2, 1));
-        let (_, idx) = backend.search(&array![[0.9, 0.0]].view(), 1, false).unwrap();
+        assert_eq!(
+            (backend.len(), backend.num_dim(), backend.num_metrics()),
+            (2, 2, 1)
+        );
+        let (_, idx) = backend
+            .search(&array![[0.9, 0.0]].view(), 1, false)
+            .unwrap();
         assert_eq!(idx[[0, 0]], 1);
         assert!(backend.search(&array![[0.9]].view(), 1, false).is_err());
         backend.set_metric_scale(&array![1.0, 2.0], true).unwrap();
         assert_eq!(backend.metric_scale().unwrap(), Some(array![1.0, 2.0]));
         assert_eq!(backend.row_y(1).unwrap()[0], 1.0);
         assert_eq!(backend.y_rows(1, 2).unwrap(), array![[1.0]]);
-        assert_eq!(backend.scattered_rows(&[1, 0]).unwrap(), (array![[1.0, 0.0], [0.0, 0.0]], array![[1.0], [0.0]]));
+        assert_eq!(
+            backend.scattered_rows(&[1, 0]).unwrap(),
+            (array![[1.0, 0.0], [0.0, 0.0]], array![[1.0], [0.0]])
+        );
         assert!(backend.scattered_rows(&[2]).is_err());
         assert!(backend.y_rows(1, 3).is_err());
         assert!(backend.row_yvar(1).unwrap().is_none());
         assert!(backend.index_memory_bytes().is_ok());
-        assert_eq!(backend.with_o1(|s| s.occupancy()).unwrap().unwrap().num_rows, 2);
-        let cands = backend.with_o1(|s| s.candidates(&array![[0.9, 0.0]].view(), 1)).unwrap().unwrap();
+        assert_eq!(
+            backend
+                .with_o1(|s| s.occupancy())
+                .unwrap()
+                .unwrap()
+                .num_rows,
+            2
+        );
+        let cands = backend
+            .with_o1(|s| s.candidates(&array![[0.9, 0.0]].view(), 1))
+            .unwrap()
+            .unwrap();
         assert_eq!(cands, vec![vec![0, 1]]);
-        let empty = EnnBackend::new_empty_o1(O1Store::open_or_create(dir.path().join("e"), 2, 1).unwrap());
+        let empty =
+            EnnBackend::new_empty_o1(O1Store::open_or_create(dir.path().join("e"), 2, 1).unwrap());
         assert!(empty.is_empty());
     }
 
@@ -364,7 +390,12 @@ mod backend_tests {
     fn disk_read_used() {
         let dir = tempfile::TempDir::new().unwrap();
         let backend = two_row_backend(&dir);
-        assert_eq!(disk_read(backend.ologn_handle().unwrap().data()).unwrap().len(), 2);
+        assert_eq!(
+            disk_read(backend.ologn_handle().unwrap().data())
+                .unwrap()
+                .len(),
+            2
+        );
         assert!(backend.with_o1(|s| s.occupancy()).unwrap().is_none());
     }
 }

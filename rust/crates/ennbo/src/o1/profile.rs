@@ -65,7 +65,8 @@ impl QueryProfile {
     pub(crate) fn count_query(&self, candidates: usize) {
         if self.enabled() {
             self.queries.fetch_add(1, Ordering::Relaxed);
-            self.candidates.fetch_add(candidates as u64, Ordering::Relaxed);
+            self.candidates
+                .fetch_add(candidates as u64, Ordering::Relaxed);
         }
     }
 
@@ -124,7 +125,18 @@ mod tests {
         p.count_codes(6, 2);
         let s = p.take();
         assert!(s.row_ns >= 2_000_000);
-        assert_eq!((s.queries, s.candidates, s.split_visits, s.leaf_visits, s.leaf_pages, s.coded, s.reranked), (1, 7, 3, 2, 4, 6, 2));
+        assert_eq!(
+            (
+                s.queries,
+                s.candidates,
+                s.split_visits,
+                s.leaf_visits,
+                s.leaf_pages,
+                s.coded,
+                s.reranked
+            ),
+            (1, 7, 3, 2, 4, 6, 2)
+        );
         assert_eq!(p.take(), ProfileStats::default());
     }
 }

@@ -77,6 +77,7 @@ pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_split_rule, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_node_io, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_maint_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::io_stream_stats, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_row_order, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_order_rows, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_par_rebuild, m)?)?;
@@ -84,6 +85,7 @@ pub fn pymodule_model(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_trees, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_pread_pivots, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_repair, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_defer, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_cache, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_cache_stats, m)?)?;
     m.add_function(wrap_pyfunction!(crate::py_index_diag::index_set_profile, m)?)?;

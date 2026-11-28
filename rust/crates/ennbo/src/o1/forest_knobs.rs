@@ -12,8 +12,31 @@ impl ForestIndex {
     }
 
     pub(crate) fn set_cache(&mut self, cache: SharedCache) {
-        self.trees.iter_mut().chain(self.repair.iter_mut().map(|r| &mut r.shadow)).for_each(|t| t.nodes.set_cache(cache.clone()));
+        self.trees
+            .iter_mut()
+            .chain(self.repair.iter_mut().map(|r| &mut r.shadow))
+            .for_each(|t| t.nodes.set_cache(cache.clone()));
         self.cache = cache;
+    }
+
+    pub(crate) fn batch_hygiene(&self) {
+        use super::hygiene::{enabled, Hygiene};
+        let (drop, wb) = (enabled(Hygiene::LeafRows), enabled(Hygiene::LeafRowsWriteback));
+        if !(drop || wb) {
+            return;
+        }
+        for l in self
+            .trees
+            .iter()
+            .chain(self.repair.iter().map(|r| &r.shadow))
+            .filter_map(|t| t.lrows.as_ref())
+        {
+            if drop {
+                l.drop_cached();
+            } else {
+                l.start_writeback();
+            }
+        }
     }
 
     pub(crate) fn hash_scale(&self) -> &[f64] {
@@ -44,8 +67,14 @@ impl ForestIndex {
     }
 
     pub(crate) fn node_io(&self) -> (u64, u64) {
-        self.trees.iter().chain(self.repair.iter().map(|r| &r.shadow)).fold(self.retired_io, |(r, w), t| {
-            (r + t.nodes.counters.reads.load(AtomicOrdering::Relaxed), w + t.nodes.counters.writes.load(AtomicOrdering::Relaxed))
-        })
+        self.trees
+            .iter()
+            .chain(self.repair.iter().map(|r| &r.shadow))
+            .fold(self.retired_io, |(r, w), t| {
+                (
+                    r + t.nodes.counters.reads.load(AtomicOrdering::Relaxed),
+                    w + t.nodes.counters.writes.load(AtomicOrdering::Relaxed),
+                )
+            })
     }
 }

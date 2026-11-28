@@ -16,7 +16,12 @@ fn block_bytes(ncols: usize) -> usize {
 
 pub(crate) fn code_file_bytes(rows: usize, ncols: usize) -> usize {
     let tail = rows % CODE_BLOCK;
-    (rows / CODE_BLOCK) * block_bytes(ncols) + if tail > 0 { 8 * ncols + tail * ncols } else { 0 }
+    (rows / CODE_BLOCK) * block_bytes(ncols)
+        + if tail > 0 {
+            8 * ncols + tail * ncols
+        } else {
+            0
+        }
 }
 
 pub(crate) struct CodeWriter {
@@ -28,7 +33,11 @@ pub(crate) struct CodeWriter {
 impl CodeWriter {
     pub(crate) fn create(path: &Path, ncols: usize) -> Result<Self, ENNError> {
         let file = File::create(path).map_err(io_error)?;
-        Ok(Self { out: BufWriter::new(file), ncols, pending: Vec::with_capacity(CODE_BLOCK * ncols) })
+        Ok(Self {
+            out: BufWriter::new(file),
+            ncols,
+            pending: Vec::with_capacity(CODE_BLOCK * ncols),
+        })
     }
 
     pub(crate) fn push(&mut self, row: &[f64]) -> Result<(), ENNError> {
@@ -53,13 +62,23 @@ impl CodeWriter {
             }
         }
         let lo32: Vec<f32> = lo.iter().map(|&v| v as f32).collect();
-        let step: Vec<f32> = (0..d).map(|j| ((hi[j] - f64::from(lo32[j])).max(0.0) / LEVELS) as f32).collect();
+        let step: Vec<f32> = (0..d)
+            .map(|j| ((hi[j] - f64::from(lo32[j])).max(0.0) / LEVELS) as f32)
+            .collect();
         let mut bytes = Vec::with_capacity(8 * d + n * d);
-        lo32.iter().chain(&step).for_each(|v| bytes.extend_from_slice(&v.to_le_bytes()));
+        lo32.iter()
+            .chain(&step)
+            .for_each(|v| bytes.extend_from_slice(&v.to_le_bytes()));
         for row in self.pending.chunks_exact(d) {
             for j in 0..d {
                 let s = f64::from(step[j]);
-                let c = if s > 0.0 { ((row[j] - f64::from(lo32[j])) / s).round().clamp(0.0, LEVELS) } else { 0.0 };
+                let c = if s > 0.0 {
+                    ((row[j] - f64::from(lo32[j])) / s)
+                        .round()
+                        .clamp(0.0, LEVELS)
+                } else {
+                    0.0
+                };
                 bytes.push(c as u8);
             }
         }
@@ -81,16 +100,26 @@ pub(crate) struct RowCodes {
 }
 
 impl RowCodes {
+    pub(crate) fn advise_now(&self) {
+        let name = std::path::Path::new("o1f_xo_code.bin");
+        crate::backend::advise_random(name, &self.map, |a| self.map.advise(a));
+    }
+
     pub(crate) fn open(path: &Path, ncols: usize, rows: usize) -> Option<Self> {
         let file = File::open(path).ok()?;
         let map = unsafe { Mmap::map(&file) }.ok()?;
+        crate::backend::advise_random(path, &map, |a| map.advise(a));
         (map.len() == code_file_bytes(rows, ncols) && ncols > 0).then_some(Self { map, ncols })
     }
 
     fn floats(&self, at: usize, n: usize) -> &[f32] {
         let bytes = &self.map[at..at + 4 * n];
         let (head, mid, _) = unsafe { bytes.align_to::<f32>() };
-        if head.is_empty() && mid.len() == n { mid } else { &[] }
+        if head.is_empty() && mid.len() == n {
+            mid
+        } else {
+            &[]
+        }
     }
 
     pub(crate) fn dist2(&self, slot: usize, query: &[f32], weights: &[f32]) -> f64 {
@@ -103,13 +132,22 @@ impl RowCodes {
         }
         let mut acc = [0.0f32; 8];
         let body = d - d % 8;
-        for (((((q, w), l), s), c), _) in query[..body].chunks_exact(8).zip(weights[..body].chunks_exact(8)).zip(lo[..body].chunks_exact(8)).zip(step[..body].chunks_exact(8)).zip(code[..body].chunks_exact(8)).zip(0..) {
+        for (((((q, w), l), s), c), _) in query[..body]
+            .chunks_exact(8)
+            .zip(weights[..body].chunks_exact(8))
+            .zip(lo[..body].chunks_exact(8))
+            .zip(step[..body].chunks_exact(8))
+            .zip(code[..body].chunks_exact(8))
+            .zip(0..)
+        {
             for k in 0..8 {
                 let e = q[k] - l[k] - s[k] * f32::from(c[k]);
                 acc[k] += w[k] * e * e;
             }
         }
-        let tail: f32 = (body..d).map(|j| weights[j] * (query[j] - lo[j] - step[j] * f32::from(code[j])).powi(2)).sum();
+        let tail: f32 = (body..d)
+            .map(|j| weights[j] * (query[j] - lo[j] - step[j] * f32::from(code[j])).powi(2))
+            .sum();
         f64::from(acc.iter().sum::<f32>() + tail)
     }
 }
@@ -123,14 +161,27 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("c.bin");
         let mut w = CodeWriter::create(&path, 2).unwrap();
-        let rows: Vec<[f64; 2]> = (0..40).map(|i| if i < 32 { [1e-6 * i as f64, 5.0] } else { [100.0 + i as f64, -3.0] }).collect();
+        let rows: Vec<[f64; 2]> = (0..40)
+            .map(|i| {
+                if i < 32 {
+                    [1e-6 * i as f64, 5.0]
+                } else {
+                    [100.0 + i as f64, -3.0]
+                }
+            })
+            .collect();
         rows.iter().for_each(|r| w.push(r).unwrap());
         w.finish().unwrap();
-        assert_eq!(std::fs::metadata(&path).unwrap().len() as usize, code_file_bytes(40, 2));
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().len() as usize,
+            code_file_bytes(40, 2)
+        );
         assert!(RowCodes::open(&path, 2, 41).is_none());
         let codes = RowCodes::open(&path, 2, 40).unwrap();
         for (i, r) in rows.iter().enumerate() {
-            let err = codes.dist2(i, &[r[0] as f32, r[1] as f32], &[1.0, 1.0]).sqrt();
+            let err = codes
+                .dist2(i, &[r[0] as f32, r[1] as f32], &[1.0, 1.0])
+                .sqrt();
             assert!(err < if i < 32 { 1e-5 } else { 0.02 }, "row {i} err {err}");
         }
         assert!((codes.dist2(3, &[0.0, 0.0], &[0.0, 1.0]) - 25.0).abs() < 1e-5);

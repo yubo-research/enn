@@ -1,13 +1,14 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::cache::ObjCache;
+use super::forest_defer::Job;
+use super::forest_lrows::{lrows_path, LeafRows, NearRows};
 use super::forest_node::{Cut, Node, NodeFile, NIL};
 use super::forest_rules::{SplitConfig, SplitRule};
-use super::forest_split::{choose_split, Parted, Placed, Projector};
+use super::forest_split::{Placed, Projector};
 use super::lsh::io_error;
 use super::row_order::Rows;
 use super::search::{fetch_row, RowRef, X_COLUMN};
-use crate::backend::MmapColumnStore;
 use crate::error::ENNError;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -21,6 +22,23 @@ pub(crate) struct TreeStats {
     pub gathered: u64,
     pub rebuild_gathered: u64,
     pub route_rows: u64,
+    pub deferred: u64,
+    pub skipped: u64,
+    pub aborted: u64,
+    pub late_rows: u64,
+    pub scan_nodes: u64,
+    pub phase_ns: [u64; 5],
+    pub phase_flt: [u64; 5],
+    pub phase_rd: [u64; 5],
+    pub split_store: u64,
+    pub rebuild_store: u64,
+    pub split_flt: u64,
+    pub rebuild_flt: u64,
+    pub split_ns: u64,
+    pub rebuild_ns: u64,
+    pub split_age: [u64; 4],
+    pub near_hits: u64,
+    pub split_diag: [u64; 12],
 }
 
 impl TreeStats {
@@ -34,6 +52,33 @@ impl TreeStats {
         self.gathered += old.gathered;
         self.rebuild_gathered += old.rebuild_gathered;
         self.route_rows += old.route_rows;
+        self.deferred += old.deferred;
+        self.skipped += old.skipped;
+        self.aborted += old.aborted;
+        self.late_rows += old.late_rows;
+        self.scan_nodes += old.scan_nodes;
+        self.phase_ns
+            .iter_mut()
+            .zip(old.phase_ns)
+            .for_each(|(a, b)| *a += b);
+        for k in 0..5 {
+            self.phase_flt[k] += old.phase_flt[k];
+            self.phase_rd[k] += old.phase_rd[k];
+        }
+        self.split_store += old.split_store;
+        self.rebuild_store += old.rebuild_store;
+        self.split_flt += old.split_flt;
+        self.rebuild_flt += old.rebuild_flt;
+        self.split_ns += old.split_ns;
+        self.rebuild_ns += old.rebuild_ns;
+        self.split_age
+            .iter_mut()
+            .zip(old.split_age)
+            .for_each(|(a, b)| *a += b);
+        self.near_hits += old.near_hits;
+        for k in 0..12 {
+            self.split_diag[k] += old.split_diag[k];
+        }
     }
 }
 
@@ -43,6 +88,12 @@ pub(crate) struct Tree {
     pub(crate) stats: TreeStats,
     pub(crate) split: SplitConfig,
     pub(crate) packed_at: u32,
+    pub(crate) dir: PathBuf,
+    pub(crate) job: Option<Box<Job>>,
+    pub(crate) path: PathBuf,
+    pub(crate) lrows: Option<LeafRows>,
+    pub(crate) mixed: bool,
+    pub(crate) warm: super::forest_prefetch::Gate,
 }
 
 #[derive(Clone, Copy)]
@@ -65,8 +116,17 @@ pub(crate) struct LeafVisit<'a> {
     pub ids: &'a [u32],
 }
 
-pub(super) fn row(rows: &MmapColumnStore, id: u32) -> Result<&[f64], ENNError> {
-    rows.mmap_row_slice(id as usize)
+pub(super) fn row(rows: Rows<'_>, id: u32) -> Result<std::borrow::Cow<'_, [f64]>, ENNError> {
+    rows.mapped(id as usize)
+}
+
+pub(super) fn uncovered(rows: Rows<'_>, ids: &[u32]) -> u64 {
+    let covered = rows.order.map_or(0, |o| o.rows());
+    ids.iter().filter(|&&i| i as usize >= covered).count() as u64
+}
+
+fn parent(path: &Path) -> PathBuf {
+    path.parent().map_or_else(PathBuf::new, Path::to_path_buf)
 }
 
 pub(crate) fn depth_limit(n: usize, cap: usize, alpha: f64) -> usize {
@@ -75,33 +135,93 @@ pub(crate) fn depth_limit(n: usize, cap: usize, alpha: f64) -> usize {
 }
 
 impl Tree {
-    pub(crate) fn create(path: &Path, cap: usize, seed: u64, split: SplitConfig, dim: usize) -> Result<Self, ENNError> {
-        Ok(Self { nodes: NodeFile::create(path, cap, dim, split.rule.payload(dim))?, seed, stats: TreeStats::default(), split, packed_at: 0 })
+    pub(crate) fn create(
+        path: &Path,
+        cap: usize,
+        seed: u64,
+        split: SplitConfig,
+        dim: usize,
+    ) -> Result<Self, ENNError> {
+        let _ = std::fs::remove_file(lrows_path(path));
+        let _ = std::fs::remove_file(lrows_path(path).with_extension("lslot"));
+        Ok(Self {
+            nodes: NodeFile::create(path, cap, dim, split.rule.payload(dim))?,
+            seed,
+            stats: TreeStats::default(),
+            split,
+            packed_at: 0,
+            dir: parent(path),
+            job: None,
+            path: path.to_path_buf(),
+            lrows: None,
+            mixed: false,
+            warm: super::forest_prefetch::Gate::default(),
+        })
     }
 
     pub(crate) fn open(path: &Path, cap: usize, seed: u64) -> Result<Self, ENNError> {
         let nodes = NodeFile::open(path, cap)?;
         let packed_at = nodes.num_nodes();
-        Ok(Self { nodes, seed, stats: TreeStats::default(), split: SplitConfig::default(), packed_at })
+        let dim = nodes.dim_payload().0;
+        let lrows = if super::forest_lrows::clustered() && dim > 0 && lrows_path(path).exists() {
+            Some(LeafRows::open(path, cap, dim, false)?)
+        } else {
+            None
+        };
+        Ok(Self {
+            nodes,
+            seed,
+            stats: TreeStats::default(),
+            split: SplitConfig::default(),
+            packed_at,
+            dir: parent(path),
+            job: None,
+            path: path.to_path_buf(),
+            lrows,
+            mixed: false,
+            warm: super::forest_prefetch::Gate::default(),
+        })
     }
 
-    fn projector<'a>(&self, inv_scale: &'a [f64]) -> Projector<'a> {
-        Projector { tree_seed: self.seed, inv_scale }
+    pub(super) fn projector<'a>(&self, inv_scale: &'a [f64]) -> Projector<'a> {
+        Projector {
+            tree_seed: self.seed,
+            inv_scale,
+        }
     }
 
-    pub(crate) fn branch(&self, x: &[f64], inv_scale: &[f64], split: &SplitRef, rows: RowSource<'_>, weights: Option<&[f64]>) -> Result<(f64, f64, u32, u32), ENNError> {
+    pub(crate) fn branch(
+        &self,
+        x: &[f64],
+        inv_scale: &[f64],
+        split: &SplitRef,
+        rows: RowSource<'_>,
+        weights: Option<&[f64]>,
+    ) -> Result<(f64, f64, u32, u32), ENNError> {
         let projector = self.projector(inv_scale);
         let (p, norm) = match split.cut {
-            Cut::Seed(seed) => (projector.project(x, seed), weights.map(|w| projector.seed_dual_norm(w))),
+            Cut::Seed(seed) => (
+                projector.project(x, seed),
+                weights.map(|w| projector.seed_dual_norm(w)),
+            ),
             Cut::Pivot(a, b) => {
                 let get = |i: u32| match (rows.pread && !rows.store.covers(i), rows.cache) {
-                    (true, None) => rows.store.pread(i as usize).map(|r| RowRef::Shared(r.into())),
+                    (true, None) => rows
+                        .store
+                        .pread(i as usize)
+                        .map(|r| RowRef::Shared(r.into())),
                     _ => fetch_row(rows.store, rows.cache, X_COLUMN, i as usize),
                 };
                 let (ra, rb) = (get(a)?, get(b)?);
-                (projector.project_pivot(x, &ra, &rb), weights.map(|w| projector.pivot_dual_norm(&ra, &rb, w)))
+                (
+                    projector.project_pivot(x, &ra, &rb),
+                    weights.map(|w| projector.pivot_dual_norm(&ra, &rb, w)),
+                )
             }
-            Cut::Dir(ref dir) => (dir.dot(x), weights.map(|w| super::forest_bound::dual_norm(dir, w))),
+            Cut::Dir(ref dir) => (
+                dir.dot(x),
+                weights.map(|w| super::forest_bound::dual_norm(dir, w)),
+            ),
         };
         let raw = p - split.thr;
         let bound = match norm {
@@ -109,12 +229,40 @@ impl Tree {
             Some(_) => 0.0,
             None => raw.abs(),
         };
-        Ok(if raw < 0.0 { (-raw, bound, split.left, split.right) } else { (raw, bound, split.right, split.left) })
+        Ok(if raw < 0.0 {
+            (-raw, bound, split.left, split.right)
+        } else {
+            (raw, bound, split.right, split.left)
+        })
     }
 
-    pub(crate) fn step(&self, x: &[f64], inv_scale: &[f64], node: u32, rows: RowSource<'_>) -> Result<Option<(f64, u32, u32)>, ENNError> {
+    pub(crate) fn step(
+        &self,
+        x: &[f64],
+        inv_scale: &[f64],
+        node: u32,
+        rows: RowSource<'_>,
+    ) -> Result<Option<(f64, u32, u32)>, ENNError> {
         match self.nodes.read(node)? {
-            Node::Split { cut, thr, left, right } => self.branch(x, inv_scale, &SplitRef { cut, thr, left, right }, rows, None).map(|(m, _, near, far)| Some((m, near, far))),
+            Node::Split {
+                cut,
+                thr,
+                left,
+                right,
+            } => self
+                .branch(
+                    x,
+                    inv_scale,
+                    &SplitRef {
+                        cut,
+                        thr,
+                        left,
+                        right,
+                    },
+                    rows,
+                    None,
+                )
+                .map(|(m, _, near, far)| Some((m, near, far))),
             _ => Ok(None),
         }
     }
@@ -135,10 +283,20 @@ impl Tree {
         Ok(pages)
     }
 
-    pub(super) fn descend_from(&self, start: u32, x: &[f64], inv_scale: &[f64], rows: &MmapColumnStore) -> Result<(Vec<u32>, u32), ENNError> {
+    pub(super) fn descend_from(
+        &self,
+        start: u32,
+        x: &[f64],
+        inv_scale: &[f64],
+        rows: Rows<'_>,
+    ) -> Result<(Vec<u32>, u32), ENNError> {
         let mut path = Vec::new();
         let mut at = start;
-        let src = RowSource { store: Rows::plain(rows), cache: None, pread: false };
+        let src = RowSource {
+            store: rows,
+            cache: None,
+            pread: false,
+        };
         while let Some((_, near, _)) = self.step(x, inv_scale, at, src)? {
             path.push(at);
             at = near;
@@ -146,172 +304,149 @@ impl Tree {
         Ok((path, at))
     }
 
-    pub(crate) fn insert(&mut self, id: u32, rows: &MmapColumnStore, inv_scale: &[f64], alpha: f64) -> Result<(), ENNError> {
+    pub(crate) fn insert(
+        &mut self,
+        id: u32,
+        rows: Rows<'_>,
+        inv_scale: &[f64],
+        alpha: f64,
+    ) -> Result<(), ENNError> {
         self.insert_row(id, rows, inv_scale, alpha, false)
     }
 
-    pub(crate) fn insert_absent(&mut self, id: u32, rows: &MmapColumnStore, inv_scale: &[f64], alpha: f64) -> Result<(), ENNError> {
+    pub(crate) fn insert_absent(
+        &mut self,
+        id: u32,
+        rows: Rows<'_>,
+        inv_scale: &[f64],
+        alpha: f64,
+    ) -> Result<(), ENNError> {
         self.insert_row(id, rows, inv_scale, alpha, true)
     }
 
-    fn insert_row(&mut self, id: u32, rows: &MmapColumnStore, inv_scale: &[f64], alpha: f64, skip_present: bool) -> Result<(), ENNError> {
+    fn insert_row(
+        &mut self,
+        id: u32,
+        rows: Rows<'_>,
+        inv_scale: &[f64],
+        alpha: f64,
+        skip_present: bool,
+    ) -> Result<(), ENNError> {
         let x = row(rows, id)?;
-        let (mut path, leaf) = self.descend_from(self.nodes.root(), x, inv_scale, rows)?;
-        self.stats.route_rows += if self.split.rule == SplitRule::Pivot { 2 * path.len() as u64 } else { 0 };
-        let placed = self.place(id, leaf, rows, inv_scale, skip_present)?;
+        let (mut path, leaf) = self.descend_from(self.nodes.root(), &x, inv_scale, rows)?;
+        self.stats.route_rows += if self.split.rule == SplitRule::Pivot {
+            2 * path.len() as u64
+        } else {
+            0
+        };
+        let shared = self.job.as_ref().map_or(0, |j| j.shared(&path));
+        let frozen = self.job.as_ref().is_some_and(|j| j.freezes(shared));
+        let placed = self.place(id, leaf, rows, inv_scale, skip_present, !frozen)?;
         if placed == Placed::Present {
             return Ok(());
         }
-        let Placed::Split(made) = placed else { return Ok(()) };
-        path.push(leaf);
-        if path.len() + made > depth_limit(id as usize + 1, self.nodes.cap(), alpha) {
-            self.rebalance(&path, rows, inv_scale, alpha)?;
+        if let Some(job) = self.job.as_mut() {
+            job.log(id, shared);
+        }
+        if let Placed::Split(made) = placed {
+            path.push(leaf);
+            let deep = path.len() + made > depth_limit(id as usize + 1, self.nodes.cap(), alpha);
+            if deep && self.job.as_ref().is_some_and(|j| j.covers(shared)) {
+                self.stats.skipped += 1;
+            } else if deep {
+                self.rebalance_any(&path, id, rows, inv_scale, alpha)?;
+            }
+        }
+        self.advance(rows)
+    }
+
+    fn rebalance_any(
+        &mut self,
+        path: &[u32],
+        id: u32,
+        rows: Rows<'_>,
+        inv_scale: &[f64],
+        alpha: f64,
+    ) -> Result<(), ENNError> {
+        if self.split.defer_rows == 0 {
+            return self.rebalance(path, rows, inv_scale, alpha);
+        }
+        self.rebalance_deferred(path, id, rows, inv_scale, alpha)
+    }
+
+    pub(super) fn ensure_lrows(&mut self, dim: usize) -> Result<(), ENNError> {
+        if self.lrows.is_none() && super::forest_lrows::clustered() && dim > 0 {
+            self.lrows = Some(LeafRows::open(&self.path, self.nodes.cap(), dim, false)?);
+        }
+        if self.lrows.as_ref().is_some_and(|l| !l.fits(dim)) {
+            self.lrows = None;
         }
         Ok(())
     }
 
-    pub(super) fn place(&mut self, id: u32, leaf: u32, rows: &MmapColumnStore, inv_scale: &[f64], skip_present: bool) -> Result<Placed, ENNError> {
-        let mut pages = Vec::new();
-        let mut at = leaf;
-        let mut last = Vec::new();
-        while at != NIL {
-            let Node::Leaf { ids, next } = self.nodes.read(at)? else {
-                return Err(io_error("forest leaf chain is corrupt"));
-            };
-            if skip_present && ids.contains(&id) {
-                return Ok(Placed::Present);
-            }
-            pages.push(at);
-            (last, at) = (ids, next);
-        }
-        let tail = *pages.last().ok_or_else(|| io_error("forest leaf is missing"))?;
-        if last.len() < self.nodes.cap() {
-            last.push(id);
-            self.nodes.write(tail, &Node::Leaf { ids: last, next: NIL })?;
-            return Ok(Placed::Appended);
-        }
-        if pages.len() > 1 && !pages.len().is_power_of_two() {
-            let page = self.nodes.alloc()?;
-            self.nodes.write(page, &Node::Leaf { ids: vec![id], next: NIL })?;
-            self.stats.chain_pages += 1;
-            self.nodes.write(tail, &Node::Leaf { ids: last, next: page })?;
-            return Ok(Placed::Appended);
-        }
-        let mut ids = Vec::new();
-        self.leaf_ids(leaf, &mut ids)?;
-        ids.push(id);
-        let made = self.build(leaf, ids, rows, inv_scale)?;
-        self.nodes.free(&pages[1..])?;
-        Ok(Placed::Split(made))
-    }
-
-    pub(super) fn part(&mut self, slot: u32, mut ids: Vec<u32>, rows: &MmapColumnStore, inv_scale: &[f64]) -> Result<Option<Parted>, ENNError> {
-        if ids.len() <= self.nodes.cap() {
-            self.nodes.write(slot, &Node::Leaf { ids, next: NIL })?;
-            return Ok(None);
-        }
-        self.stats.gathered += ids.len() as u64;
-        let xs = ids.iter().map(|&i| row(rows, i)).collect::<Result<Vec<_>, _>>()?;
-        let split = if self.nodes.holds(self.split.rule, rows.ncols) { self.split } else { SplitConfig { rule: SplitRule::Pivot, ..self.split } };
-        let Some((cut, thr, left)) = choose_split(&self.projector(inv_scale), &xs, &ids, slot, self.seed, split) else {
-            self.write_chain(slot, ids)?;
+    pub(super) fn near_rows(
+        &mut self,
+        pages: &[u32],
+        ids: &[u32],
+    ) -> Result<Option<NearRows>, ENNError> {
+        let Some(l) = &self.lrows else {
             return Ok(None);
         };
-        drop(xs);
-        let (mut l_ids, mut r_ids) = (Vec::new(), Vec::new());
-        for (id, is_left) in ids.drain(..).zip(left) {
-            if is_left { l_ids.push(id) } else { r_ids.push(id) }
+        let mut near = NearRows::new();
+        for &page in pages {
+            self.stats.near_hits += l.get(page, Some(ids), &mut near)? as u64;
         }
-        let (l, r) = (self.nodes.alloc()?, self.nodes.alloc()?);
-        Ok(Some(Parted { node: Node::Split { cut, thr, left: l, right: r }, left: (l, l_ids), right: (r, r_ids) }))
+        Ok(Some(near))
     }
 
-    pub(crate) fn build(&mut self, slot: u32, ids: Vec<u32>, rows: &MmapColumnStore, inv_scale: &[f64]) -> Result<usize, ENNError> {
-        let Some(p) = self.part(slot, ids, rows, inv_scale)? else { return Ok(0) };
-        let dl = self.build(p.left.0, p.left.1, rows, inv_scale)?;
-        let dr = self.build(p.right.0, p.right.1, rows, inv_scale)?;
-        self.nodes.write(slot, &p.node)?;
-        self.stats.splits += 1;
-        Ok(1 + dl.max(dr))
-    }
-
-    pub(super) fn write_chain(&mut self, slot: u32, ids: Vec<u32>) -> Result<usize, ENNError> {
-        let chunks: Vec<Vec<u32>> = ids.chunks(self.nodes.cap()).map(<[u32]>::to_vec).collect();
-        let mut next = NIL;
-        for chunk in chunks[1..].iter().rev() {
-            let page = self.nodes.alloc()?;
-            self.nodes.write(page, &Node::Leaf { ids: chunk.clone(), next })?;
-            next = page;
-            self.stats.chain_pages += 1;
-        }
-        self.nodes.write(slot, &Node::Leaf { ids: chunks[0].clone(), next })?;
-        Ok(0)
-    }
-
-    pub(super) fn gather(&self, node: u32, ids: &mut Vec<u32>, nodes: &mut Vec<u32>) -> Result<(), ENNError> {
-        let mut stack = vec![node];
-        while let Some(at) = stack.pop() {
-            nodes.push(at);
-            match self.nodes.read(at)? {
-                Node::Leaf { ids: page, next } => {
-                    ids.extend_from_slice(&page);
-                    stack.extend((next != NIL).then_some(next));
-                }
-                Node::Split { left, right, .. } => stack.extend([left, right]),
-                Node::Free { .. } => return Err(io_error("forest tree reaches a free node")),
-            }
-        }
-        Ok(())
-    }
-
-    fn count(&self, node: u32) -> Result<usize, ENNError> {
-        let (mut stack, mut n) = (vec![node], 0);
-        while let Some(at) = stack.pop() {
-            match self.nodes.read(at)? {
-                Node::Leaf { ids, next } => {
-                    n += ids.len();
-                    stack.extend((next != NIL).then_some(next));
-                }
-                Node::Split { left, right, .. } => stack.extend([left, right]),
-                Node::Free { .. } => return Err(io_error("forest tree reaches a free node")),
-            }
-        }
-        Ok(n)
-    }
-
-    fn rebalance(&mut self, path: &[u32], rows: &MmapColumnStore, inv_scale: &[f64], alpha: f64) -> Result<(), ENNError> {
-        let mut below = self.count(path[path.len() - 1])?;
-        for (i, w) in path.windows(2).enumerate().rev() {
-            let Node::Split { left, right, .. } = self.nodes.read(w[0])? else {
-                return Err(io_error("forest path is corrupt"));
+    pub(crate) fn chain_near(&self, leaf: u32) -> Result<Option<NearRows>, ENNError> {
+        let Some(l) = self.lrows.as_ref().filter(|_| super::forest_lrows::clustered()) else {
+            return Ok(None);
+        };
+        let (mut near, mut at) = (NearRows::new(), leaf);
+        while at != NIL {
+            l.get(at, None, &mut near)?;
+            at = match self.nodes.read(at)? {
+                Node::Leaf { next, .. } => next,
+                _ => return Err(io_error("forest leaf chain is corrupt")),
             };
-            let sibling = if left == w[1] { right } else { left };
-            let size = below + self.count(sibling)?;
-            if below.max(size - below) as f64 > alpha * size as f64 {
-                return self.rebuild(path[i], rows, inv_scale);
-            }
-            below = size;
         }
-        Ok(())
+        Ok(Some(near))
     }
 
-    pub(crate) fn rebuild(&mut self, slot: u32, rows: &MmapColumnStore, inv_scale: &[f64]) -> Result<(), ENNError> {
-        let (mut ids, mut old) = (Vec::new(), Vec::new());
-        self.gather(slot, &mut ids, &mut old)?;
-        let n = ids.len() as u64;
-        let before = self.stats.gathered;
-        if self.split.par_above > 0 && ids.len() >= self.split.par_above as usize {
-            let plan = self.plan_subtree(slot, ids, rows, inv_scale)?;
-            self.write_plan(slot, plan)?;
-        } else {
-            self.build(slot, ids, rows, inv_scale)?;
+    pub(super) fn subtree_near(&mut self, slot: u32) -> Result<Option<NearRows>, ENNError> {
+        if self.lrows.is_none() || !super::forest_lrows::clustered() {
+            return Ok(None);
         }
-        self.nodes.free(&old[1..])?;
-        self.stats.rebuild_gathered += self.stats.gathered - before;
-        self.stats.rebuilds += 1;
-        self.stats.rebuilt_rows += n;
-        self.stats.max_rebuild_rows = self.stats.max_rebuild_rows.max(n);
-        Ok(())
+        let (mut stack, mut pages) = (vec![slot], Vec::new());
+        while let Some(at) = stack.pop() {
+            match self.nodes.read(at)? {
+                Node::Leaf { next, .. } => {
+                    pages.push(at);
+                    stack.extend((next != NIL).then_some(next));
+                }
+                Node::Split { left, right, .. } => stack.extend([left, right]),
+                Node::Free { .. } => return Err(io_error("forest tree reaches a free node")),
+            }
+        }
+        let mut near = NearRows::new();
+        if let Some(l) = &self.lrows {
+            for page in pages {
+                self.stats.near_hits += l.get(page, None, &mut near)? as u64;
+            }
+        }
+        Ok(Some(near))
+    }
+
+    pub(crate) fn effective_split(&self, dim: usize) -> SplitConfig {
+        if self.nodes.holds(self.split.rule, dim) {
+            self.split
+        } else {
+            SplitConfig {
+                rule: SplitRule::Pivot,
+                ..self.split
+            }
+        }
     }
 
     pub(crate) fn walk(&self, mut visit: impl FnMut(LeafVisit<'_>)) -> Result<(), ENNError> {
@@ -319,11 +454,17 @@ impl Tree {
         let mut ids = Vec::new();
         while let Some((at, depth)) = stack.pop() {
             match self.nodes.read(at)? {
-                Node::Split { left, right, .. } => stack.extend([(left, depth + 1), (right, depth + 1)]),
+                Node::Split { left, right, .. } => {
+                    stack.extend([(left, depth + 1), (right, depth + 1)])
+                }
                 Node::Leaf { .. } => {
                     ids.clear();
                     let pages = self.leaf_ids(at, &mut ids)?;
-                    visit(LeafVisit { depth, pages, ids: &ids });
+                    visit(LeafVisit {
+                        depth,
+                        pages,
+                        ids: &ids,
+                    });
                 }
                 Node::Free { .. } => return Err(io_error("forest tree reaches a free node")),
             }

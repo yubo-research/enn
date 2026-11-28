@@ -27,15 +27,26 @@ impl<'a> EnnIndexAccess<'a> {
         self.model.backend.with_o1(|s| s.occupancy())
     }
 
-    pub fn candidates(&self, x: &ArrayView2<f64>, search_k: usize) -> Result<Option<Vec<Vec<u32>>>, ENNError> {
+    pub fn candidates(
+        &self,
+        x: &ArrayView2<f64>,
+        search_k: usize,
+    ) -> Result<Option<Vec<Vec<u32>>>, ENNError> {
         self.model.backend.with_o1(|s| s.candidates(x, search_k))
     }
 
     pub fn node_io(&self) -> Result<Option<(u64, u64)>, ENNError> {
-        self.model.backend.with_o1(|s| Ok(s.node_io())).map(Option::flatten)
+        self.model
+            .backend
+            .with_o1(|s| Ok(s.node_io()))
+            .map(Option::flatten)
     }
 
-    pub fn set_probe_budget(&self, max_leaves: usize, max_candidates: usize) -> Result<(), ENNError> {
+    pub fn set_probe_budget(
+        &self,
+        max_leaves: usize,
+        max_candidates: usize,
+    ) -> Result<(), ENNError> {
         self.model
             .backend
             .with_o1(|s| s.set_probe_budget(max_leaves, max_candidates))?
@@ -63,19 +74,39 @@ impl<'a> EnnIndexAccess<'a> {
             .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no search bound".into()))
     }
 
-    pub fn set_repair(&self, repair_rows: usize, stale_drift: f64, prefer_fresh: bool) -> Result<(), ENNError> {
+    pub fn set_repair(
+        &self,
+        repair_rows: usize,
+        stale_drift: f64,
+        prefer_fresh: bool,
+    ) -> Result<(), ENNError> {
         self.model
             .backend
             .with_o1(|s| s.set_repair(repair_rows, stale_drift, prefer_fresh))?
             .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no repair budget".into()))
     }
 
+    pub fn set_defer(&self, defer_rows: u32, local_bytes: u32) -> Result<(), ENNError> {
+        self.model
+            .backend
+            .with_o1(|s| s.set_defer(defer_rows, local_bytes))?
+            .ok_or_else(|| ENNError::InvalidParameter("OLOGN has no deferred rebuild".into()))
+    }
+
     pub fn maintain(&self, max_rows: usize) -> Result<usize, ENNError> {
-        Ok(self.model.backend.with_o1(|s| s.maintain_index(max_rows))?.unwrap_or(0))
+        Ok(self
+            .model
+            .backend
+            .with_o1(|s| s.maintain_index(max_rows))?
+            .unwrap_or(0))
     }
 
     pub fn compact(&self) -> Result<usize, ENNError> {
-        Ok(self.model.backend.with_o1(|s| s.compact_index())?.unwrap_or(0))
+        Ok(self
+            .model
+            .backend
+            .with_o1(|s| s.compact_index())?
+            .unwrap_or(0))
     }
 
     pub fn set_cache_budget(&self, budget_bytes: usize) -> Result<(), ENNError> {
@@ -99,7 +130,10 @@ impl<'a> EnnIndexAccess<'a> {
     }
 
     pub fn cache_stats(&self) -> Result<Option<crate::o1::CacheStats>, ENNError> {
-        self.model.backend.with_o1(|s| Ok(s.cache_stats())).map(Option::flatten)
+        self.model
+            .backend
+            .with_o1(|s| Ok(s.cache_stats()))
+            .map(Option::flatten)
     }
 
     pub fn set_profile(&self, enabled: bool) -> Result<(), ENNError> {
@@ -267,7 +301,10 @@ mod access_tests {
             .index_neighbor_distances_and_indices(&query.view(), 1, false)
             .unwrap();
         let has_buckets = access.occupancy().unwrap().is_some();
-        assert_eq!(access.candidates(&query.view(), 1).unwrap().is_some(), has_buckets);
+        assert_eq!(
+            access.candidates(&query.view(), 1).unwrap().is_some(),
+            has_buckets
+        );
         assert!(access.node_io().unwrap().is_none());
         assert!(access.maint_stats().unwrap().is_none());
     }

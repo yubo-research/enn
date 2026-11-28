@@ -27,7 +27,9 @@ impl CacheKey {
     pub(crate) fn shard(&self) -> usize {
         let h = match *self {
             Self::Node { file, id } => mix64((file << 32) ^ u64::from(id)),
-            Self::Row { column, row } => mix64(0x9e37_79b9_7f4a_7c15 ^ (u64::from(column) << 40) ^ u64::from(row)),
+            Self::Row { column, row } => {
+                mix64(0x9e37_79b9_7f4a_7c15 ^ (u64::from(column) << 40) ^ u64::from(row))
+            }
         };
         (h % SHARDS as u64) as usize
     }
@@ -45,7 +47,9 @@ impl Cached {
             + match self {
                 Self::Node(n) => match &**n {
                     Node::Leaf { ids, .. } => std::mem::size_of::<Node>() + 4 * ids.capacity(),
-                    Node::Split { cut: Cut::Dir(d), .. } => std::mem::size_of::<Node>() + std::mem::size_of::<Dir>() + d.len(),
+                    Node::Split {
+                        cut: Cut::Dir(d), ..
+                    } => std::mem::size_of::<Node>() + std::mem::size_of::<Dir>() + d.len(),
                     _ => std::mem::size_of::<Node>(),
                 },
                 Self::Row(r) => 8 * r.len(),
@@ -88,7 +92,9 @@ impl ObjCache {
 
     fn with_pools(pool_budgets: Vec<usize>) -> Self {
         Self {
-            shards: (0..SHARDS * pool_budgets.len()).map(|_| Mutex::new(Shard::default())).collect(),
+            shards: (0..SHARDS * pool_budgets.len())
+                .map(|_| Mutex::new(Shard::default()))
+                .collect(),
             pool_budgets,
             hits: Default::default(),
             misses: Default::default(),
@@ -97,22 +103,35 @@ impl ObjCache {
     }
 
     pub(crate) fn caches_rows(&self) -> bool {
-        self.pool_budgets.get(ROW_CLASS).or(self.pool_budgets.first()).is_some_and(|&b| b > 0)
+        self.pool_budgets
+            .get(ROW_CLASS)
+            .or(self.pool_budgets.first())
+            .is_some_and(|&b| b > 0)
     }
 
     fn pool(&self, key: &CacheKey) -> usize {
-        if self.pool_budgets.len() == 1 { 0 } else { key.class() }
+        if self.pool_budgets.len() == 1 {
+            0
+        } else {
+            key.class()
+        }
     }
 
     fn shard(&self, key: &CacheKey) -> std::sync::MutexGuard<'_, Shard> {
-        self.shards[self.pool(key) * SHARDS + key.shard()].lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.shards[self.pool(key) * SHARDS + key.shard()]
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn shard_budget(&self, key: &CacheKey) -> usize {
         self.pool_budgets[self.pool(key)] / SHARDS
     }
 
-    pub(crate) fn get_or_load<E>(&self, key: CacheKey, load: impl FnOnce() -> Result<Cached, E>) -> Result<Cached, E> {
+    pub(crate) fn get_or_load<E>(
+        &self,
+        key: CacheKey,
+        load: impl FnOnce() -> Result<Cached, E>,
+    ) -> Result<Cached, E> {
         if let Some(v) = self.shard(&key).touch(&key) {
             self.hits[key.class()].fetch_add(1, Ordering::Relaxed);
             return Ok(v);
@@ -121,6 +140,21 @@ impl ObjCache {
         let value = load()?;
         self.put(key, value.clone());
         Ok(value)
+    }
+
+    pub(crate) fn get(&self, key: &CacheKey) -> Option<Cached> {
+        let hit = self.shard(key).touch(key);
+        self.counter(key, hit.is_some())
+            .fetch_add(1, Ordering::Relaxed);
+        hit
+    }
+
+    fn counter(&self, key: &CacheKey, hit: bool) -> &AtomicU64 {
+        if hit {
+            &self.hits[key.class()]
+        } else {
+            &self.misses[key.class()]
+        }
     }
 
     pub(crate) fn put(&self, key: CacheKey, value: Cached) {
@@ -135,7 +169,11 @@ impl ObjCache {
     pub(crate) fn stats(&self) -> CacheStats {
         let mut s = CacheStats {
             budget_bytes: self.pool_budgets.iter().sum(),
-            node_budget_bytes: if self.pool_budgets.len() == 1 { 0 } else { self.pool_budgets[NODE_CLASS] },
+            node_budget_bytes: if self.pool_budgets.len() == 1 {
+                0
+            } else {
+                self.pool_budgets[NODE_CLASS]
+            },
             node_hits: self.hits[NODE_CLASS].load(Ordering::Relaxed),
             node_misses: self.misses[NODE_CLASS].load(Ordering::Relaxed),
             row_hits: self.hits[ROW_CLASS].load(Ordering::Relaxed),
@@ -145,7 +183,9 @@ impl ObjCache {
             ..CacheStats::default()
         };
         for shard in &self.shards {
-            let g = shard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let g = shard
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             s.node_bytes += g.bytes[NODE_CLASS];
             s.row_bytes += g.bytes[ROW_CLASS];
             s.node_entries += g.entries[NODE_CLASS];
@@ -166,7 +206,12 @@ mod tests {
     }
 
     fn loaded(c: &ObjCache, r: u32) -> f64 {
-        match c.get_or_load::<()>(CacheKey::Row { column: 0, row: r }, || Ok(row(f64::from(r), 4))).unwrap() {
+        match c
+            .get_or_load::<()>(CacheKey::Row { column: 0, row: r }, || {
+                Ok(row(f64::from(r), 4))
+            })
+            .unwrap()
+        {
             Cached::Row(v) => v[0],
             Cached::Node(_) => panic!("row expected"),
         }
@@ -216,7 +261,13 @@ mod tests {
         let c = ObjCache::new(1 << 20);
         let key = CacheKey::Node { file: 3, id: 7 };
         c.put(key, Cached::Node(Arc::new(Node::Free { next: 1 })));
-        c.put(key, Cached::Node(Arc::new(Node::Leaf { ids: vec![4, 5], next: 0 })));
+        c.put(
+            key,
+            Cached::Node(Arc::new(Node::Leaf {
+                ids: vec![4, 5],
+                next: 0,
+            })),
+        );
         let got = c.get_or_load::<()>(key, || panic!("must hit")).unwrap();
         assert!(matches!(got, Cached::Node(n) if *n == Node::Leaf { ids: vec![4, 5], next: 0 }));
         assert_eq!(c.stats().node_entries, 1);
@@ -228,7 +279,10 @@ mod tests {
             loaded(&split, r);
         }
         let s = split.stats();
-        assert_eq!((s.node_entries, s.node_evictions, s.node_budget_bytes), (1, 0, 1 << 20));
+        assert_eq!(
+            (s.node_entries, s.node_evictions, s.node_budget_bytes),
+            (1, 0, 1 << 20)
+        );
         assert!(s.row_entries <= SHARDS && s.row_evictions > 0);
         let tiny = ObjCache::new(8);
         tiny.put(key, Cached::Node(Arc::new(Node::Free { next: 0 })));

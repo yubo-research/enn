@@ -58,7 +58,15 @@ pub(crate) struct Shard {
 
 impl Default for Shard {
     fn default() -> Self {
-        Self { map: HashMap::default(), slots: Vec::new(), free: Vec::new(), head: NONE, tail: NONE, bytes: [0; 2], entries: [0; 2] }
+        Self {
+            map: HashMap::default(),
+            slots: Vec::new(),
+            free: Vec::new(),
+            head: NONE,
+            tail: NONE,
+            bytes: [0; 2],
+            entries: [0; 2],
+        }
     }
 }
 
@@ -118,7 +126,13 @@ impl Shard {
         }
     }
 
-    pub(crate) fn put(&mut self, key: CacheKey, value: Cached, budget: usize, evictions: &[AtomicU64; 2]) {
+    pub(crate) fn put(
+        &mut self,
+        key: CacheKey,
+        value: Cached,
+        budget: usize,
+        evictions: &[AtomicU64; 2],
+    ) {
         self.remove(&key);
         let bytes = value.bytes();
         if bytes > budget {
@@ -128,7 +142,13 @@ impl Shard {
             let old = self.drop_slot(self.tail);
             evictions[old.class()].fetch_add(1, Ordering::Relaxed);
         }
-        let slot = Slot { key, value: Some(value), bytes, prev: NONE, next: NONE };
+        let slot = Slot {
+            key,
+            value: Some(value),
+            bytes,
+            prev: NONE,
+            next: NONE,
+        };
         let i = match self.free.pop() {
             Some(i) => {
                 self.slots[i as usize] = slot;

@@ -22,7 +22,10 @@ pub(crate) fn page_ids(page: u64, rec: u64) -> Vec<u32> {
         return vec![page as u32 + 1];
     }
     let (lo, hi) = (page * PAGE_BYTES, (page + 1) * PAGE_BYTES);
-    (lo.div_ceil(rec)..hi / rec).filter(|&i| i >= 1 && (i + 1) * rec <= hi).map(|i| i as u32).collect()
+    (lo.div_ceil(rec)..hi / rec)
+        .filter(|&i| i >= 1 && (i + 1) * rec <= hi)
+        .map(|i| i as u32)
+        .collect()
 }
 
 struct PackJob {
@@ -35,7 +38,13 @@ struct PackJob {
 
 impl PackJob {
     fn new(nodes: &NodeFile) -> Self {
-        Self { map: vec![NIL; nodes.num_nodes() as usize], order: Vec::new(), blocks: VecDeque::from([nodes.root()]), page: 0, end: 1 }
+        Self {
+            map: vec![NIL; nodes.num_nodes() as usize],
+            order: Vec::new(),
+            blocks: VecDeque::from([nodes.root()]),
+            page: 0,
+            end: 1,
+        }
     }
 
     fn walk_page(&mut self, nodes: &NodeFile) -> Result<(), ENNError> {
@@ -43,11 +52,13 @@ impl PackJob {
         self.page += 1;
         let mut queue = VecDeque::new();
         for &slot in &slots {
-            let Some(at) = queue.pop_front().or_else(|| self.blocks.pop_front()) else { break };
+            let Some(at) = queue.pop_front().or_else(|| self.blocks.pop_front()) else {
+                break;
+            };
             self.map[at as usize] = slot;
             self.order.push(at);
             self.end = self.end.max(slot + 1);
-            queue.extend(children(&nodes.read_disk(at)?));
+            queue.extend(children(&nodes.read_disk(at, true)?));
         }
         self.blocks.extend(queue);
         Ok(())
@@ -58,47 +69,74 @@ impl PackJob {
         let mut out = NodeFile::create(dst, nodes.cap(), dim, payload)?;
         out.set_layout(self.map[nodes.root() as usize], self.end)?;
         let mut used = vec![false; self.end as usize];
-        self.order.iter().for_each(|&at| used[self.map[at as usize] as usize] = true);
+        self.order
+            .iter()
+            .for_each(|&at| used[self.map[at as usize] as usize] = true);
         for slot in (1..self.end).filter(|&s| !used[s as usize]) {
             out.write(slot, &Node::Free { next: NIL })?;
         }
         Ok(out)
     }
 
-    fn run(mut self, nodes: &NodeFile, dst: &Path) -> Result<NodeFile, ENNError> {
+    fn run(mut self, nodes: &NodeFile, dst: &Path) -> Result<(NodeFile, Vec<u32>), ENNError> {
         while !self.blocks.is_empty() {
             self.walk_page(nodes)?;
         }
         let out = self.open_out(nodes, dst)?;
         for &at in &self.order {
-            out.write(self.map[at as usize], &remap(nodes.read_disk(at)?, &self.map))?;
+            out.write(
+                self.map[at as usize],
+                &remap(nodes.read_disk(at, true)?, &self.map),
+            )?;
         }
-        Ok(out)
+        Ok((out, self.map))
     }
 }
 
 fn remap(node: Node, map: &[u32]) -> Node {
     let m = |id: u32| if id == NIL { NIL } else { map[id as usize] };
     match node {
-        Node::Split { cut, thr, left, right } => Node::Split { cut, thr, left: m(left), right: m(right) },
+        Node::Split {
+            cut,
+            thr,
+            left,
+            right,
+        } => Node::Split {
+            cut,
+            thr,
+            left: m(left),
+            right: m(right),
+        },
         Node::Leaf { ids, next } => Node::Leaf { ids, next: m(next) },
         other => other,
     }
 }
 
-pub(crate) fn pack(nodes: &NodeFile, dst: &Path) -> Result<NodeFile, ENNError> {
+pub(crate) fn pack(nodes: &NodeFile, dst: &Path) -> Result<(NodeFile, Vec<u32>), ENNError> {
     PackJob::new(nodes).run(nodes, dst)
 }
 
 impl Tree {
     pub(crate) fn compact(&mut self, path: &Path) -> Result<usize, ENNError> {
+        self.job = None;
         let tmp = path.with_extension("pack");
-        let mut packed = pack(&self.nodes, &tmp)?;
+        let (mut packed, map) = pack(&self.nodes, &tmp)?;
         std::fs::rename(&tmp, path).map_err(io_error)?;
         packed.set_cache(self.nodes.shared_cache());
         packed.absorb_counters(&self.nodes);
         self.nodes = packed;
         self.packed_at = self.nodes.num_nodes();
+        if self.lrows.is_some() {
+            let mut keep = map;
+            for k in keep.iter_mut().filter(|k| **k != 0) {
+                if !matches!(self.nodes.read(*k)?, Node::Leaf { .. }) {
+                    *k = 0;
+                }
+            }
+            if let Some(l) = self.lrows.as_mut() {
+                l.repack(&keep)?;
+            }
+        }
         Ok(self.nodes.num_nodes() as usize)
     }
 }
@@ -107,13 +145,17 @@ pub(crate) const REPACK_MIN_NODES: u32 = 64;
 
 impl Tree {
     pub(crate) fn needs_repack(&self) -> bool {
-        u64::from(self.nodes.num_nodes()) * 10 >= u64::from(self.packed_at.max(REPACK_MIN_NODES)) * 13
+        self.job.is_none()
+            && u64::from(self.nodes.num_nodes()) * 10
+                >= u64::from(self.packed_at.max(REPACK_MIN_NODES)) * 13
     }
 }
 
 impl ForestIndex {
     pub(crate) fn repack_one(&mut self) -> Result<bool, ENNError> {
-        let Some(t) = (0..self.trees.len()).find(|&t| self.trees[t].needs_repack()) else { return Ok(false) };
+        let Some(t) = (0..self.trees.len()).find(|&t| self.trees[t].needs_repack()) else {
+            return Ok(false);
+        };
         let path = self.tree_file(t);
         let nodes = self.trees[t].compact(&path)?;
         self.maint.repacks += 1;
@@ -139,7 +181,9 @@ mod tests {
     fn page_slots_hold_whole_records_and_skip_the_header() {
         assert_eq!(page_ids(0, 152), (1..26).collect::<Vec<u32>>());
         assert_eq!(page_ids(1, 152), (27..53).collect::<Vec<u32>>());
-        assert!(page_ids(1, 152).iter().all(|&i| u64::from(i) * 152 >= 4096 && u64::from(i + 1) * 152 <= 8192));
+        assert!(page_ids(1, 152)
+            .iter()
+            .all(|&i| u64::from(i) * 152 >= 4096 && u64::from(i + 1) * 152 <= 8192));
         assert_eq!(page_ids(3, 3000), vec![4]);
     }
 }

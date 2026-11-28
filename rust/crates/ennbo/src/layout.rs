@@ -109,7 +109,9 @@ mod tests {
 
     #[test]
     fn o1_store_always_learns_its_metric() {
-        let layout = EnnLayout::new("rows", false).unwrap().with_store(StoreType::O1);
+        let layout = EnnLayout::new("rows", false)
+            .unwrap()
+            .with_store(StoreType::O1);
         assert_eq!(layout.store(), StoreType::O1);
         assert!(layout.weighting());
         assert_eq!(layout.metric_learning(), MetricLearning::Auto);

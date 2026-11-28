@@ -2,7 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use super::cache::{CacheKey, Cached, SharedCache};
 use super::forest_rules::SplitRule;
@@ -34,12 +34,28 @@ impl Dir {
     pub(crate) fn quantize(dir: &[f64]) -> Self {
         let top = dir.iter().fold(0.0f64, |m, v| m.max(v.abs()));
         let scale = (top / 127.0) as f32;
-        let inv = if scale > 0.0 { 1.0 / f64::from(scale) } else { 0.0 };
-        Self { scale, code: dir.iter().map(|&v| (v * inv).round().clamp(-127.0, 127.0) as i8).collect() }
+        let inv = if scale > 0.0 {
+            1.0 / f64::from(scale)
+        } else {
+            0.0
+        };
+        Self {
+            scale,
+            code: dir
+                .iter()
+                .map(|&v| (v * inv).round().clamp(-127.0, 127.0) as i8)
+                .collect(),
+        }
     }
 
     pub(crate) fn dot(&self, x: &[f64]) -> f64 {
-        f64::from(self.scale) * self.code.iter().zip(x).map(|(&a, b)| f64::from(a) * b).sum::<f64>()
+        f64::from(self.scale)
+            * self
+                .code
+                .iter()
+                .zip(x)
+                .map(|(&a, b)| f64::from(a) * b)
+                .sum::<f64>()
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -56,15 +72,30 @@ pub(crate) enum Cut {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Node {
-    Leaf { ids: Vec<u32>, next: u32 },
-    Split { cut: Cut, thr: f64, left: u32, right: u32 },
-    Free { next: u32 },
+    Leaf {
+        ids: Vec<u32>,
+        next: u32,
+    },
+    Split {
+        cut: Cut,
+        thr: f64,
+        left: u32,
+        right: u32,
+    },
+    Free {
+        next: u32,
+    },
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct NodeCounters {
     pub reads: AtomicU64,
     pub writes: AtomicU64,
+    pub read_ns: AtomicU64,
+    pub leaf_ns: AtomicU64,
+    pub leaf_reads: AtomicU64,
+    pub pack_hits: AtomicU64,
+    pub pack_miss: AtomicU64,
 }
 
 pub(crate) struct NodeFile {
@@ -77,6 +108,7 @@ pub(crate) struct NodeFile {
     num_nodes: u32,
     uid: u64,
     cache: SharedCache,
+    pub(crate) pack: Option<Mutex<super::forest_npack::Pack>>,
     pub(crate) counters: NodeCounters,
 }
 
@@ -90,6 +122,11 @@ fn get_u32(buf: &[u8], at: usize) -> u32 {
 
 fn get_thr(buf: &[u8]) -> f64 {
     f64::from_le_bytes(buf[16..24].try_into().expect("thr field"))
+}
+
+fn interior_only() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("ENN_CACHE_INTERIOR").is_some())
 }
 
 pub(crate) fn record_bytes(cap: usize, payload: usize) -> usize {
@@ -107,7 +144,12 @@ fn encode(node: &Node, cap: usize, payload: usize) -> Vec<u8> {
                 put_u32(&mut buf, HEADER_BYTES + 4 * i, *id);
             }
         }
-        Node::Split { cut, thr, left, right } => {
+        Node::Split {
+            cut,
+            thr,
+            left,
+            right,
+        } => {
             put_u32(&mut buf, 4, *left);
             put_u32(&mut buf, 8, *right);
             buf[16..24].copy_from_slice(&thr.to_le_bytes());
@@ -136,23 +178,36 @@ fn encode_dir(buf: &mut [u8], dir: &Dir) {
     buf[12..16].copy_from_slice(&dir.scale.to_le_bytes());
     put_u32(buf, 0, TAG_DIR8);
     let body = &mut buf[HEADER_BYTES..];
-    dir.code.iter().zip(body.iter_mut()).for_each(|(&v, b)| *b = v as u8);
+    dir.code
+        .iter()
+        .zip(body.iter_mut())
+        .for_each(|(&v, b)| *b = v as u8);
 }
 
 fn decode_dir(buf: &[u8], dim: usize) -> Option<Dir> {
     let scale = f32::from_le_bytes(buf[12..16].try_into().ok()?);
     let body = buf.get(HEADER_BYTES..HEADER_BYTES + dim)?;
-    Some(Dir { scale, code: body.iter().map(|&b| b as i8).collect() })
+    Some(Dir {
+        scale,
+        code: body.iter().map(|&b| b as i8).collect(),
+    })
 }
 
-fn decode(buf: &[u8], cap: usize, dim: usize) -> Result<Node, ENNError> {
+pub(super) fn decode(buf: &[u8], cap: usize, dim: usize) -> Result<Node, ENNError> {
     let (a, b) = (get_u32(buf, 4), get_u32(buf, 8));
     match get_u32(buf, 0) {
         TAG_LEAF if (a as usize) <= cap => Ok(Node::Leaf {
-            ids: (0..a as usize).map(|i| get_u32(buf, HEADER_BYTES + 4 * i)).collect(),
+            ids: (0..a as usize)
+                .map(|i| get_u32(buf, HEADER_BYTES + 4 * i))
+                .collect(),
             next: b,
         }),
-        TAG_SPLIT => Ok(Node::Split { cut: Cut::Seed(get_u32(buf, 12)), thr: get_thr(buf), left: a, right: b }),
+        TAG_SPLIT => Ok(Node::Split {
+            cut: Cut::Seed(get_u32(buf, 12)),
+            thr: get_thr(buf),
+            left: a,
+            right: b,
+        }),
         TAG_PIVOT if cap > 0 => Ok(Node::Split {
             cut: Cut::Pivot(get_u32(buf, 12), get_u32(buf, HEADER_BYTES)),
             thr: get_thr(buf),
@@ -160,16 +215,28 @@ fn decode(buf: &[u8], cap: usize, dim: usize) -> Result<Node, ENNError> {
             right: b,
         }),
         TAG_DIR8 => match decode_dir(buf, dim) {
-            Some(dir) if dim > 0 => Ok(Node::Split { cut: Cut::Dir(Arc::new(dir)), thr: get_thr(buf), left: a, right: b }),
+            Some(dir) if dim > 0 => Ok(Node::Split {
+                cut: Cut::Dir(Arc::new(dir)),
+                thr: get_thr(buf),
+                left: a,
+                right: b,
+            }),
             _ => Err(io_error("forest direction record does not fit its file")),
         },
         TAG_FREE => Ok(Node::Free { next: b }),
-        tag => Err(io_error(format!("forest node is corrupt (tag {tag}, count {a})"))),
+        tag => Err(io_error(format!(
+            "forest node is corrupt (tag {tag}, count {a})"
+        ))),
     }
 }
 
 impl NodeFile {
-    pub(crate) fn create(path: &Path, cap: usize, dim: usize, payload: usize) -> Result<Self, ENNError> {
+    pub(crate) fn create(
+        path: &Path,
+        cap: usize,
+        dim: usize,
+        payload: usize,
+    ) -> Result<Self, ENNError> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -177,22 +244,48 @@ impl NodeFile {
             .truncate(true)
             .open(path)
             .map_err(io_error)?;
-        let mut nf = Self { file, cap, dim, payload, root: 1, free_head: NIL, num_nodes: 1, uid: next_uid(), cache: None, counters: NodeCounters::default() };
+        let mut nf = Self {
+            file,
+            cap,
+            dim,
+            payload,
+            root: 1,
+            free_head: NIL,
+            num_nodes: 1,
+            uid: next_uid(),
+            cache: None,
+            pack: super::forest_npack::from_env(record_bytes(cap, payload)),
+            counters: NodeCounters::default(),
+        };
         let root = nf.alloc()?;
         nf.root = root;
-        nf.write(root, &Node::Leaf { ids: Vec::new(), next: NIL })?;
+        nf.write(
+            root,
+            &Node::Leaf {
+                ids: Vec::new(),
+                next: NIL,
+            },
+        )?;
         nf.write_header()?;
         Ok(nf)
     }
 
     pub(crate) fn open(path: &Path, cap: usize) -> Result<Self, ENNError> {
-        let file = OpenOptions::new().read(true).write(true).open(path).map_err(io_error)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .map_err(io_error)?;
         let mut buf = vec![0u8; record_bytes(cap, 0)];
         file.read_exact_at(&mut buf, 0).map_err(io_error)?;
         if get_u32(&buf, 0) != TAG_HEADER || get_u32(&buf, 16) as usize != cap {
             return Err(io_error("forest node file header does not match"));
         }
-        let (num_nodes, dim, payload) = (get_u32(&buf, 12), get_u32(&buf, 20) as usize, get_u32(&buf, HEADER_BYTES) as usize);
+        let (num_nodes, dim, payload) = (
+            get_u32(&buf, 12),
+            get_u32(&buf, 20) as usize,
+            get_u32(&buf, HEADER_BYTES) as usize,
+        );
         let len = file.metadata().map_err(io_error)?.len();
         if len < (num_nodes as u64) * record_bytes(cap, payload) as u64 {
             return Err(io_error("forest node file is truncated"));
@@ -207,6 +300,7 @@ impl NodeFile {
             num_nodes,
             uid: next_uid(),
             cache: None,
+            pack: super::forest_npack::from_env(record_bytes(cap, payload)),
             counters: NodeCounters::default(),
         })
     }
@@ -240,7 +334,8 @@ impl NodeFile {
     }
 
     pub(crate) fn holds(&self, rule: SplitRule, dim: usize) -> bool {
-        rule != SplitRule::PivotI8 || (dim == self.dim && rule.payload(dim) <= (4 * self.cap).max(self.payload))
+        rule != SplitRule::PivotI8
+            || (dim == self.dim && rule.payload(dim) <= (4 * self.cap).max(self.payload))
     }
 
     pub(crate) fn fits(&self, dir: &Dir) -> bool {
@@ -263,13 +358,64 @@ impl NodeFile {
         if id == NIL || id >= self.num_nodes {
             return Err(io_error(format!("forest node {id} is out of range")));
         }
-        let Some(cache) = &self.cache else {
-            return self.read_disk(id);
-        };
-        match cache.get_or_load(self.key(id), || self.read_disk(id).map(|n| Cached::Node(Arc::new(n))))? {
-            Cached::Node(n) => Ok((*n).clone()),
-            Cached::Row(_) => Err(io_error("forest node cache entry holds a row")),
+        if let Some(raw) = self
+            .pack
+            .as_ref()
+            .and_then(|p| super::forest_npack::copied(p, id))
+        {
+            self.counters.pack_hits.fetch_add(1, Ordering::Relaxed);
+            return decode(&raw, self.cap, self.dim);
         }
+        let Some(cache) = &self.cache else {
+            let node = self.read_disk(id, true)?;
+            if let Some(pack) = &self.pack {
+                let raw = encode(&node, self.cap, self.payload);
+                super::forest_npack::store(
+                    pack,
+                    id,
+                    matches!(node, Node::Split { .. }),
+                    &raw,
+                    true,
+                    &self.counters.pack_miss,
+                );
+            }
+            return Ok(node);
+        };
+        match cache.get(&self.key(id)) {
+            Some(Cached::Node(n)) if !interior_only() || matches!(&*n, Node::Split { .. }) => {
+                let node = (*n).clone();
+                if let Some(pack) = &self.pack {
+                    let raw = encode(&node, self.cap, self.payload);
+                    super::forest_npack::store(
+                        pack,
+                        id,
+                        matches!(node, Node::Split { .. }),
+                        &raw,
+                        false,
+                        &self.counters.pack_miss,
+                    );
+                }
+                return Ok(node);
+            }
+            Some(Cached::Row(_)) => return Err(io_error("forest node cache entry holds a row")),
+            Some(Cached::Node(_)) | None => {}
+        }
+        let node = self.read_disk(id, true)?;
+        if !interior_only() || matches!(node, Node::Split { .. }) {
+            cache.put(self.key(id), Cached::Node(Arc::new(node.clone())));
+        }
+        if let Some(pack) = &self.pack {
+            let raw = encode(&node, self.cap, self.payload);
+            super::forest_npack::store(
+                pack,
+                id,
+                matches!(node, Node::Split { .. }),
+                &raw,
+                true,
+                &self.counters.pack_miss,
+            );
+        }
+        Ok(node)
     }
 
     pub(crate) fn shared_cache(&self) -> SharedCache {
@@ -277,8 +423,34 @@ impl NodeFile {
     }
 
     pub(crate) fn absorb_counters(&self, old: &NodeFile) {
-        self.counters.reads.fetch_add(old.counters.reads.load(Ordering::Relaxed), Ordering::Relaxed);
-        self.counters.writes.fetch_add(old.counters.writes.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.counters.reads.fetch_add(
+            old.counters.reads.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.counters.writes.fetch_add(
+            old.counters.writes.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.counters.read_ns.fetch_add(
+            old.counters.read_ns.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.counters.leaf_ns.fetch_add(
+            old.counters.leaf_ns.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.counters.leaf_reads.fetch_add(
+            old.counters.leaf_reads.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.counters.pack_hits.fetch_add(
+            old.counters.pack_hits.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.counters.pack_miss.fetch_add(
+            old.counters.pack_miss.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
     }
 
     pub(crate) fn dim_payload(&self) -> (usize, usize) {
@@ -290,27 +462,63 @@ impl NodeFile {
         self.write_header()
     }
 
-    pub(crate) fn read_disk(&self, id: u32) -> Result<Node, ENNError> {
+    pub(crate) fn read_disk(&self, id: u32, count: bool) -> Result<Node, ENNError> {
         let mut buf = vec![0u8; self.record_bytes()];
-        self.file.read_exact_at(&mut buf, self.offset(id)).map_err(io_error)?;
+        let t0 = std::time::Instant::now();
+        self.file
+            .read_exact_at(&mut buf, self.offset(id))
+            .inspect(|()| super::io_streams::read(super::io_streams::Stream::Node, self.offset(id), buf.len(), t0))
+            .map_err(io_error)?;
+        if !count {
+            return decode(&buf, self.cap, self.dim);
+        }
+        let ns = t0.elapsed().as_nanos() as u64;
+        self.counters.read_ns.fetch_add(ns, Ordering::Relaxed);
         self.counters.reads.fetch_add(1, Ordering::Relaxed);
+        if get_u32(&buf, 0) == TAG_LEAF {
+            self.counters.leaf_ns.fetch_add(ns, Ordering::Relaxed);
+            self.counters.leaf_reads.fetch_add(1, Ordering::Relaxed);
+        }
         decode(&buf, self.cap, self.dim)
     }
 
     pub(crate) fn write(&self, id: u32, node: &Node) -> Result<(), ENNError> {
         match node {
-            Node::Leaf { ids, .. } if ids.len() > self.cap => return Err(io_error("forest leaf exceeds its capacity")),
-            Node::Split { cut: Cut::Dir(dir), .. } if !self.fits(dir) => return Err(io_error("forest direction does not fit its record")),
+            Node::Leaf { ids, .. } if ids.len() > self.cap => {
+                return Err(io_error("forest leaf exceeds its capacity"))
+            }
+            Node::Split {
+                cut: Cut::Dir(dir), ..
+            } if !self.fits(dir) => {
+                return Err(io_error("forest direction does not fit its record"))
+            }
             _ => {}
         }
-        let written = self.file.write_all_at(&encode(node, self.cap, self.payload), self.offset(id)).map_err(io_error);
+        let raw = encode(node, self.cap, self.payload);
+        let written = self
+            .file
+            .write_all_at(&raw, self.offset(id))
+            .map_err(io_error);
+        super::io_streams::wrote(super::io_streams::Stream::Node, self.offset(id), raw.len());
         if let Some(cache) = &self.cache {
             match &written {
-                Ok(()) => cache.put(self.key(id), Cached::Node(Arc::new(node.clone()))),
-                Err(_) => cache.remove(&self.key(id)),
+                Ok(()) if !interior_only() || matches!(node, Node::Split { .. }) => {
+                    cache.put(self.key(id), Cached::Node(Arc::new(node.clone())))
+                }
+                _ => cache.remove(&self.key(id)),
             }
         }
         written?;
+        if let Some(pack) = &self.pack {
+            super::forest_npack::store(
+                pack,
+                id,
+                matches!(node, Node::Split { .. }),
+                &raw,
+                false,
+                &self.counters.pack_miss,
+            );
+        }
         self.counters.writes.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
@@ -325,7 +533,9 @@ impl NodeFile {
             id
         } else {
             let id = self.num_nodes;
-            self.num_nodes = id.checked_add(1).ok_or_else(|| io_error("forest node file is full"))?;
+            self.num_nodes = id
+                .checked_add(1)
+                .ok_or_else(|| io_error("forest node file is full"))?;
             id
         };
         self.write_header()?;
@@ -334,7 +544,12 @@ impl NodeFile {
 
     pub(crate) fn free(&mut self, ids: &[u32]) -> Result<(), ENNError> {
         for &id in ids {
-            self.write(id, &Node::Free { next: self.free_head })?;
+            self.write(
+                id,
+                &Node::Free {
+                    next: self.free_head,
+                },
+            )?;
             self.free_head = id;
         }
         self.write_header()

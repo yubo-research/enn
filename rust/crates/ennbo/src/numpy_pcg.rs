@@ -24,12 +24,23 @@ impl NumpyPcg64 {
     pub(crate) fn words(&self) -> [u64; 5] {
         let split = |v: u128| [(v >> 64) as u64, v as u64];
         let (s, i) = (split(self.state), split(self.inc));
-        [s[0], s[1], i[0], i[1], u64::from(self.u32_buf) | (u64::from(self.has_u32) << 32)]
+        [
+            s[0],
+            s[1],
+            i[0],
+            i[1],
+            u64::from(self.u32_buf) | (u64::from(self.has_u32) << 32),
+        ]
     }
 
     pub(crate) fn from_words(w: [u64; 5]) -> Self {
         let join = |hi: u64, lo: u64| (u128::from(hi) << 64) | u128::from(lo);
-        Self { state: join(w[0], w[1]), inc: join(w[2], w[3]), has_u32: w[4] >> 32 != 0, u32_buf: w[4] as u32 }
+        Self {
+            state: join(w[0], w[1]),
+            inc: join(w[2], w[3]),
+            has_u32: w[4] >> 32 != 0,
+            u32_buf: w[4] as u32,
+        }
     }
 
     pub fn from_seed(seed: u64) -> Self {

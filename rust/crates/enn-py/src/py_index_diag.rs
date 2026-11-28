@@ -109,14 +109,19 @@ pub fn index_set_repair(
 }
 
 #[pyfunction]
+pub fn index_set_defer(model: PyRef<'_, PyEpistemicNearestNeighbors>, defer_rows: u32, local_bytes: u32) -> PyResult<()> {
+    model.inner.index_access().set_defer(defer_rows, local_bytes).map_err(py_err)
+}
+
+#[pyfunction]
 pub fn index_set_pread_pivots(model: PyRef<'_, PyEpistemicNearestNeighbors>, on: bool) -> PyResult<()> {
     model.inner.index_access().set_pread_pivots(on).map_err(py_err)
 }
 
 #[pyfunction]
-#[pyo3(signature = (model, rows_per_insert, grow=1.3, min_rows=4096))]
-pub fn index_set_row_order(model: PyRef<'_, PyEpistemicNearestNeighbors>, rows_per_insert: usize, grow: f64, min_rows: usize) -> PyResult<()> {
-    let params = ennbo::o1::OrderParams { rows_per_insert, grow, min_rows };
+#[pyo3(signature = (model, rows_per_insert, grow=1.3, min_rows=4096, sort_bytes=4194304))]
+pub fn index_set_row_order(model: PyRef<'_, PyEpistemicNearestNeighbors>, rows_per_insert: usize, grow: f64, min_rows: usize, sort_bytes: usize) -> PyResult<()> {
+    let params = ennbo::o1::OrderParams { rows_per_insert, grow, min_rows, sort_bytes };
     model.inner.index_access().set_row_order(params).map_err(py_err)
 }
 
@@ -183,7 +188,39 @@ pub fn index_maint_stats<'py>(py: Python<'py>, model: PyRef<'_, PyEpistemicNeare
     d.set_item("gathered", m.gathered)?;
     d.set_item("rebuild_gathered", m.rebuild_gathered)?;
     d.set_item("route_rows", m.route_rows)?;
+    d.set_item("deferred", m.deferred)?;
+    d.set_item("skipped", m.skipped)?;
+    d.set_item("aborted", m.aborted)?;
+    d.set_item("late_rows", m.late_rows)?;
+    d.set_item("scan_nodes", m.scan_nodes)?;
+    d.set_item("max_rebuild_rows", m.max_rebuild_rows)?;
+    d.set_item("job_active", m.job_active)?;
+    d.set_item("flushes", m.flushes)?;
+    d.set_item("phase_ns", m.phase_ns.to_vec())?;
+    d.set_item("phase_flt", m.phase_flt.to_vec())?;
+    d.set_item("phase_rd", m.phase_rd.to_vec())?;
+    d.set_item("majflt", m.majflt.to_vec())?;
+    d.set_item("read_bytes", m.read_bytes.to_vec())?;
+    d.set_item("store_rows", m.store_rows.to_vec())?;
+    d.set_item("gather_flt", m.gather_flt.to_vec())?;
+    d.set_item("gather_ns", m.gather_ns.to_vec())?;
+    d.set_item("split_age", m.split_age.to_vec())?;
+    d.set_item("near_hits", m.near_hits)?;
+    d.set_item("split_diag", m.split_diag.to_vec())?;
+    d.set_item("pack_hits", m.pack_hits)?;
+    d.set_item("pack_miss", m.pack_miss)?;
     Ok(Some(d))
+}
+
+#[pyfunction]
+pub fn io_stream_stats(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+    let d = PyDict::new_bound(py);
+    for (name, counts) in ennbo::o1::io_streams::snapshot() {
+        d.set_item(name, counts.to_vec())?;
+    }
+    d.set_item("hygiene", ennbo::o1::hygiene::counts().to_vec())?;
+    d.set_item("prefetch_pass", ennbo::o1::forest_prefetch::totals().to_vec())?;
+    Ok(d)
 }
 
 fn py_err(e: ennbo::ENNError) -> PyErr {
@@ -266,6 +303,6 @@ mod tests {
     #[test]
     fn index_diag_functions_are_linked() {
         let _ = (index_occupancy, index_candidates, index_set_probe_budget, index_set_io_width, index_set_bound, index_set_split_rule, index_node_io, index_set_repair, index_maintain, index_compact, occupancy_dict);
-        let _ = (index_set_cache, index_cache_stats, index_set_profile, index_take_profile, index_maint_stats, index_set_pread_pivots, index_set_row_order, index_order_rows, index_set_par_rebuild, index_set_rerank, index_set_trees, py_err);
+        let _ = (index_set_cache, index_cache_stats, index_set_profile, index_take_profile, index_maint_stats, index_set_pread_pivots, index_set_row_order, index_order_rows, index_set_par_rebuild, index_set_rerank, index_set_trees, io_stream_stats, py_err);
     }
 }

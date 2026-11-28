@@ -24,7 +24,14 @@ impl Ord for Dist {
 }
 
 pub(crate) fn dual_norm(dir: &Dir, weights: &[f64]) -> f64 {
-    f64::from(dir.scale) * dir.code.iter().zip(weights).map(|(&a, w)| f64::from(a) * f64::from(a) / w).sum::<f64>().sqrt()
+    f64::from(dir.scale)
+        * dir
+            .code
+            .iter()
+            .zip(weights)
+            .map(|(&a, w)| f64::from(a) * f64::from(a) / w)
+            .sum::<f64>()
+            .sqrt()
 }
 
 pub(crate) struct Scorer<'w> {
@@ -40,26 +47,55 @@ pub(crate) struct Scorer<'w> {
 }
 
 impl<'w> Scorer<'w> {
-    pub(crate) fn new(weights: &'w [f64], need: usize, invs: &[Vec<f64>], rules: &ForestRules) -> Self {
+    pub(crate) fn new(
+        weights: &'w [f64],
+        need: usize,
+        invs: &[Vec<f64>],
+        rules: &ForestRules,
+    ) -> Self {
         let codes = rules.rerank > 0;
-        Self { weights, need: need.max(1), bound: rules.bound, top: BinaryHeap::new(), seen: (invs.len() > 1).then(HashSet::new), codes, narrow: None, scored: Vec::new(), coded: Vec::new() }
+        Self {
+            weights,
+            need: need.max(1),
+            bound: rules.bound,
+            top: BinaryHeap::new(),
+            seen: (invs.len() > 1).then(HashSet::new),
+            codes,
+            narrow: None,
+            scored: Vec::new(),
+            coded: Vec::new(),
+        }
     }
 
     pub(crate) fn kth(&self) -> f64 {
-        if self.top.len() < self.need { f64::INFINITY } else { self.top.peek().map_or(f64::INFINITY, |d| d.0) }
+        if self.top.len() < self.need {
+            f64::INFINITY
+        } else {
+            self.top.peek().map_or(f64::INFINITY, |d| d.0)
+        }
     }
 
     pub(crate) fn prunes(&self, cost: f64) -> bool {
         self.bound > 0.0 && cost * cost > self.bound * self.kth()
     }
 
-    pub(crate) fn add(&mut self, query: &[f64], ids: &[u32], src: RowSource<'_>) -> Result<(), ENNError> {
+    pub(crate) fn add(
+        &mut self,
+        query: &[f64],
+        ids: &[u32],
+        src: RowSource<'_>,
+    ) -> Result<(), ENNError> {
         for &id in ids {
             if self.seen.as_mut().is_some_and(|s| !s.insert(id)) {
                 continue;
             }
             let code = if self.codes {
-                let (q, w) = self.narrow.get_or_insert_with(|| (query.iter().map(|&v| v as f32).collect(), self.weights.iter().map(|&v| v as f32).collect()));
+                let (q, w) = self.narrow.get_or_insert_with(|| {
+                    (
+                        query.iter().map(|&v| v as f32).collect(),
+                        self.weights.iter().map(|&v| v as f32).collect(),
+                    )
+                });
                 src.store.code_dist2(id, q, w)
             } else {
                 None
@@ -70,7 +106,11 @@ impl<'w> Scorer<'w> {
                     d
                 }
                 None => {
-                    let d = weighted_dist2(query, &fetch_row(src.store, src.cache, X_COLUMN, id as usize)?, self.weights);
+                    let d = weighted_dist2(
+                        query,
+                        &fetch_row(src.store, src.cache, X_COLUMN, id as usize)?,
+                        self.weights,
+                    );
                     self.scored.push((d, id));
                     d
                 }

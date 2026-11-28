@@ -170,7 +170,13 @@ impl RowReservoir {
     }
 
     pub(crate) fn state(&self) -> ReservoirState {
-        ReservoirState { seed: self.seed, capacity: self.capacity, num_seen: self.num_seen, rng: self.rng.words(), slots: self.slots.clone() }
+        ReservoirState {
+            seed: self.seed,
+            capacity: self.capacity,
+            num_seen: self.num_seen,
+            rng: self.rng.words(),
+            slots: self.slots.clone(),
+        }
     }
 
     pub(crate) fn fits(&self, s: &ReservoirState, num_rows: usize) -> bool {

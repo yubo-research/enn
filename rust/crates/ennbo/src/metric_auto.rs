@@ -336,7 +336,9 @@ mod tests {
     #[test]
     fn configure_growth_reschedules_a_pending_refit() {
         let n = 600;
-        let x: Vec<f64> = (0..n * 2).map(|i| ((i * 7919) % 1000) as f64 / 1000.0).collect();
+        let x: Vec<f64> = (0..n * 2)
+            .map(|i| ((i * 7919) % 1000) as f64 / 1000.0)
+            .collect();
         let y: Vec<f64> = (0..n).map(|i| x[2 * i]).collect();
         let mut metric = AutoMetric::new(2, 1, vec![], 0).unwrap();
         metric.observe(&x, &y, n).unwrap();

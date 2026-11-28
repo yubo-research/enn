@@ -6,10 +6,11 @@ use std::time::{Duration, Instant};
 
 use super::forest::ForestIndex;
 use super::forest_bound::Scorer;
+use super::forest_lrows::NearRows;
 use super::forest_node::Node;
+use super::forest_tree::{RowSource, SplitRef};
 use super::lsh::io_error;
 use super::profile::{QueryProfile, Stage};
-use super::forest_tree::{RowSource, SplitRef};
 use super::row_order::Rows;
 use crate::error::ENNError;
 
@@ -47,8 +48,17 @@ impl Ord for Probe {
 }
 
 enum Expansion {
-    Split { margin: f64, bound: f64, near: u32, far: u32 },
-    Leaf { ids: Vec<u32>, pages: usize },
+    Split {
+        margin: f64,
+        bound: f64,
+        near: u32,
+        far: u32,
+    },
+    Leaf {
+        ids: Vec<u32>,
+        pages: usize,
+        near: Option<NearRows>,
+    },
 }
 
 pub(crate) struct Scored {
@@ -69,27 +79,66 @@ struct IoWorkers {
 const LOOKAHEAD_POPS: usize = 4;
 
 impl ForestIndex {
-    fn expand(&self, query: &[f64], tree: usize, node: u32, prof: &QueryProfile, src: RowSource<'_>, weights: Option<&[f64]>) -> Result<Expansion, ENNError> {
+    fn expand(
+        &self,
+        query: &[f64],
+        tree: usize,
+        node: u32,
+        prof: &QueryProfile,
+        src: RowSource<'_>,
+        weights: Option<&[f64]>,
+    ) -> Result<Expansion, ENNError> {
         let t0 = prof.start();
         let read = self.trees[tree].nodes.read(node)?;
-        self.finish(query, tree, read, t0, prof, src, weights)
+        self.finish(query, (tree, node), read, t0, prof, src, weights)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn finish(&self, query: &[f64], tree: usize, read: Node, t0: Option<Instant>, prof: &QueryProfile, src: RowSource<'_>, weights: Option<&[f64]>) -> Result<Expansion, ENNError> {
+    fn finish(
+        &self,
+        query: &[f64],
+        (tree, node): (usize, u32),
+        read: Node,
+        t0: Option<Instant>,
+        prof: &QueryProfile,
+        src: RowSource<'_>,
+        weights: Option<&[f64]>,
+    ) -> Result<Expansion, ENNError> {
         let t = &self.trees[tree];
         match read {
-            Node::Split { cut, thr, left, right } => {
+            Node::Split {
+                cut,
+                thr,
+                left,
+                right,
+            } => {
                 prof.stop(Stage::Route, t0);
                 let t1 = prof.start();
-                let (margin, bound, near, far) = t.branch(query, &self.invs[tree], &SplitRef { cut, thr, left, right }, src, weights)?;
+                let (margin, bound, near, far) = t.branch(
+                    query,
+                    &self.invs[tree],
+                    &SplitRef {
+                        cut,
+                        thr,
+                        left,
+                        right,
+                    },
+                    src,
+                    weights,
+                )?;
                 prof.stop(Stage::Hash, t1);
-                Ok(Expansion::Split { margin, bound, near, far })
+                Ok(Expansion::Split {
+                    margin,
+                    bound,
+                    near,
+                    far,
+                })
             }
             Node::Leaf { mut ids, next } => {
                 let pages = 1 + t.leaf_ids(next, &mut ids)?;
+                let near = t.chain_near(node)?;
                 prof.stop(Stage::Leaf, t0);
-                Ok(Expansion::Leaf { ids, pages })
+                Ok(Expansion::Leaf { ids, pages, near })
             }
             Node::Free { .. } => Err(io_error("forest tree reaches a free node")),
         }
@@ -113,7 +162,12 @@ impl ForestIndex {
         wave
     }
 
-    fn expand_wave(&self, heap: &mut BinaryHeap<Probe>, memo: &mut Memo, io: &IoWorkers) -> Result<(), ENNError> {
+    fn expand_wave(
+        &self,
+        heap: &mut BinaryHeap<Probe>,
+        memo: &mut Memo,
+        io: &IoWorkers,
+    ) -> Result<(), ENNError> {
         let wave = self.wave(heap, memo);
         for &key in &wave {
             io.jobs.send(key).map_err(io_error)?;
@@ -125,31 +179,88 @@ impl ForestIndex {
         Ok(())
     }
 
-    fn io_worker(&self, query: &[f64], prof: &QueryProfile, src: RowSource<'_>, weights: Option<&[f64]>, jobs: &Mutex<Receiver<(usize, u32)>>, done: &Sender<Done>) {
+    fn io_worker(
+        &self,
+        query: &[f64],
+        prof: &QueryProfile,
+        src: RowSource<'_>,
+        weights: Option<&[f64]>,
+        jobs: &Mutex<Receiver<(usize, u32)>>,
+        done: &Sender<Done>,
+    ) {
         loop {
-            let Some((t, n)) = jobs.lock().ok().and_then(|rx| rx.recv().ok()) else { return };
-            if done.send(((t, n), self.expand(query, t, n, prof, src, weights))).is_err() {
+            let Some((t, n)) = jobs.lock().ok().and_then(|rx| rx.recv().ok()) else {
+                return;
+            };
+            if done
+                .send(((t, n), self.expand(query, t, n, prof, src, weights)))
+                .is_err()
+            {
                 return;
             }
         }
     }
 
-    pub(crate) fn candidate_ids_at(&self, query: &[f64], prof: &QueryProfile, rows: Rows<'_>, overlap: bool) -> Result<Vec<u32>, ENNError> {
-        self.probe_at(query, prof, rows, overlap, None)
+    pub(crate) fn candidate_ids_at(
+        &self,
+        query: &[f64],
+        prof: &QueryProfile,
+        rows: Rows<'_>,
+        overlap: bool,
+    ) -> Result<Vec<u32>, ENNError> {
+        let mut ids = self.probe_at(query, prof, rows, overlap, None)?;
+        ids.extend(self.buffered(rows.nrows()));
+        Ok(ids)
     }
 
-    pub(crate) fn scored_at(&self, query: &[f64], prof: &QueryProfile, rows: Rows<'_>, overlap: bool, weights: &[f64], need: usize) -> Result<Option<Scored>, ENNError> {
+    pub(crate) fn scored_at(
+        &self,
+        query: &[f64],
+        prof: &QueryProfile,
+        rows: Rows<'_>,
+        overlap: bool,
+        weights: &[f64],
+        need: usize,
+    ) -> Result<Option<Scored>, ENNError> {
         let rules = &self.params.rules;
         if rules.bound <= 0.0 {
             return Ok(None);
         }
         let mut scorer = Scorer::new(weights, need, &self.invs, rules);
+        let tail: Vec<u32> = self.buffered(rows.nrows()).collect();
+        if !tail.is_empty() {
+            let src = RowSource {
+                store: rows,
+                cache: self.cache.as_deref(),
+                pread: false,
+            };
+            scorer.add(query, &tail, src)?;
+        }
         self.probe_at(query, prof, rows, overlap, Some(&mut scorer))?;
-        Ok(Some(Scored { exact: scorer.scored, coded: scorer.coded, rerank: rules.rerank as usize }))
+        Ok(Some(Scored {
+            exact: scorer.scored,
+            coded: scorer.coded,
+            rerank: rules.rerank as usize,
+        }))
     }
 
-    fn probe_at(&self, query: &[f64], prof: &QueryProfile, rows: Rows<'_>, overlap: bool, mut score: Option<&mut Scorer<'_>>) -> Result<Vec<u32>, ENNError> {
-        let src = RowSource { store: Rows { x: rows.x, order: self.order.as_ref() }, cache: self.cache.as_deref(), pread: false };
+    fn probe_at(
+        &self,
+        query: &[f64],
+        prof: &QueryProfile,
+        rows: Rows<'_>,
+        overlap: bool,
+        mut score: Option<&mut Scorer<'_>>,
+    ) -> Result<Vec<u32>, ENNError> {
+        let src = RowSource {
+            store: Rows {
+                x: rows.x,
+                order: self.order.as_ref(),
+                near: None,
+            },
+            cache: self.cache.as_deref(),
+            pread: false,
+        };
         if !overlap || self.params.io_width <= 1 {
             return self.search(query, prof, src, &mut || None, score);
         }
@@ -164,7 +275,16 @@ impl ForestIndex {
                 for _ in 0..self.params.io_width {
                     let (job_rx, done_tx) = (&job_rx, done_tx.clone());
                     let pread = self.params.pread_pivots;
-                    scope.spawn(move || self.io_worker(query, prof, RowSource { pread, ..src }, weights, job_rx, &done_tx));
+                    scope.spawn(move || {
+                        self.io_worker(
+                            query,
+                            prof,
+                            RowSource { pread, ..src },
+                            weights,
+                            job_rx,
+                            &done_tx,
+                        )
+                    });
                 }
                 Some(IoWorkers { jobs, done })
             };
@@ -172,11 +292,24 @@ impl ForestIndex {
         })
     }
 
-    fn search(&self, query: &[f64], prof: &QueryProfile, src: RowSource<'_>, start_io: &mut dyn FnMut() -> Option<IoWorkers>, mut score: Option<&mut Scorer<'_>>) -> Result<Vec<u32>, ENNError> {
+    fn search(
+        &self,
+        query: &[f64],
+        prof: &QueryProfile,
+        src: RowSource<'_>,
+        start_io: &mut dyn FnMut() -> Option<IoWorkers>,
+        mut score: Option<&mut Scorer<'_>>,
+    ) -> Result<Vec<u32>, ENNError> {
         let slow = Duration::from_nanos(self.params.io_slow_ns);
         let mut io: Option<IoWorkers> = None;
         let mut heap: BinaryHeap<Probe> = (0..self.trees.len())
-            .map(|tree| Probe { tier: self.tier(tree), cost: 0.0, bound: 0.0, tree, node: self.trees[tree].nodes.root() })
+            .map(|tree| Probe {
+                tier: self.tier(tree),
+                cost: 0.0,
+                bound: 0.0,
+                tree,
+                node: self.trees[tree].nodes.root(),
+            })
             .collect();
         let mut memo = Memo::new();
         let weights = score.as_deref().map(|s| s.weights);
@@ -208,14 +341,32 @@ impl ForestIndex {
                 }
             };
             match step {
-                Expansion::Split { margin, bound, near, far } => {
+                Expansion::Split {
+                    margin,
+                    bound,
+                    near,
+                    far,
+                } => {
                     splits += 1;
                     heap.push(Probe { node: near, ..p });
-                    heap.push(Probe { cost: p.cost.max(margin), bound: p.bound.max(bound), node: far, ..p });
+                    heap.push(Probe {
+                        cost: p.cost.max(margin),
+                        bound: p.bound.max(bound),
+                        node: far,
+                        ..p
+                    });
                 }
-                Expansion::Leaf { ids: page, pages: n } => {
+                Expansion::Leaf {
+                    ids: page,
+                    pages: n,
+                    near,
+                } => {
                     if let Some(sc) = score.as_deref_mut() {
-                        sc.add(query, &page, src)?;
+                        let store = Rows {
+                            near: near.as_ref(),
+                            ..src.store
+                        };
+                        sc.add(query, &page, RowSource { store, ..src })?;
                     }
                     ids.extend_from_slice(&page);
                     pages += n;

@@ -76,13 +76,13 @@ pub mod normal_sample;
 #[allow(missing_docs)]
 pub mod numpy_pcg;
 #[allow(missing_docs)]
-pub mod o1;
-#[allow(missing_docs)]
 pub mod numpy_seed;
 #[allow(missing_docs)]
 mod numpy_ziggurat_ki;
 pub mod numpy_ziggurat_tables;
 mod numpy_ziggurat_wi;
+#[allow(missing_docs)]
+pub mod o1;
 #[allow(missing_docs)]
 pub mod optimizer;
 #[allow(missing_docs)]

@@ -4,7 +4,10 @@ use crate::o1::{MaintStats, OrderParams};
 
 impl EnnIndexAccess<'_> {
     pub fn maint_stats(&self) -> Result<Option<MaintStats>, ENNError> {
-        self.model.backend.with_o1(|s| Ok(s.maint_stats())).map(Option::flatten)
+        self.model
+            .backend
+            .with_o1(|s| Ok(s.maint_stats()))
+            .map(Option::flatten)
     }
 
     pub fn set_pread_pivots(&self, on: bool) -> Result<(), ENNError> {

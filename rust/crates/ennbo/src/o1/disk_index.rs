@@ -86,10 +86,22 @@ impl LshIndex {
         for t in 0..params.num_tables {
             keys.push(KeyFile::open(table_path(work_dir, "keys", t), false)?);
             let seed_t = table_seed(seed, t);
-            buckets.push(BucketFile::open(table_path(work_dir, "buckets", t), params.bucket_cap, seed_t)?);
+            buckets.push(BucketFile::open(
+                table_path(work_dir, "buckets", t),
+                params.bucket_cap,
+                seed_t,
+            )?);
         }
         let pending = (0..params.num_tables).map(|_| Pending::default()).collect();
-        let mut index = Self { params, planes, keys, buckets, pending, num_rows: 0, state_path };
+        let mut index = Self {
+            params,
+            planes,
+            keys,
+            buckets,
+            pending,
+            num_rows: 0,
+            state_path,
+        };
         if let Some(state) = saved.filter(|s| index.can_restore(s, rows.nrows)) {
             index.planes.set_scale(&state.hash_scale, rows)?;
             index.planes.restore(&state.anchors, rows)?;
@@ -119,13 +131,21 @@ impl LshIndex {
         bpann_write_json(&self.state_path, &self.state()).map_err(io_error)
     }
 
-    pub(crate) fn insert_rows(&mut self, rows: &MmapColumnStore, start: usize) -> Result<(), ENNError> {
+    pub(crate) fn insert_rows(
+        &mut self,
+        rows: &MmapColumnStore,
+        start: usize,
+    ) -> Result<(), ENNError> {
         self.invalidate()?;
         self.append(rows, start)?;
         self.commit()
     }
 
-    pub(crate) fn rehash(&mut self, rows: &MmapColumnStore, hash_scale: &[f64]) -> Result<(), ENNError> {
+    pub(crate) fn rehash(
+        &mut self,
+        rows: &MmapColumnStore,
+        hash_scale: &[f64],
+    ) -> Result<(), ENNError> {
         self.invalidate()?;
         self.planes.set_scale(hash_scale, rows)?;
         self.rewrite_keys(rows, 0)?;
@@ -183,25 +203,38 @@ impl LshIndex {
         self.pending.iter().map(Pending::bytes).sum()
     }
 
-    fn chunk_keys(&self, rows: &MmapColumnStore, range: Range<usize>, from_bit: usize) -> Result<Vec<u64>, ENNError> {
+    fn chunk_keys(
+        &self,
+        rows: &MmapColumnStore,
+        range: Range<usize>,
+        from_bit: usize,
+    ) -> Result<Vec<u64>, ENNError> {
         let l = self.params.num_tables;
         let x = rows.mmap_rows_view(range.start, range.end)?;
         let mut out = vec![0u64; range.len() * l];
-        out.par_chunks_mut(GEMM_ROWS * l).enumerate().for_each(|(i, slot)| {
-            let lo = i * GEMM_ROWS;
-            let block = x.slice(ndarray::s![lo..lo + slot.len() / l, ..]);
-            slot.copy_from_slice(&self.planes.row_keys(&block, from_bit));
-        });
+        out.par_chunks_mut(GEMM_ROWS * l)
+            .enumerate()
+            .for_each(|(i, slot)| {
+                let lo = i * GEMM_ROWS;
+                let block = x.slice(ndarray::s![lo..lo + slot.len() / l, ..]);
+                slot.copy_from_slice(&self.planes.row_keys(&block, from_bit));
+            });
         Ok(out)
     }
 
     fn column(&self, flat: &[u64], t: usize) -> Vec<u64> {
-        flat.iter().skip(t).step_by(self.params.num_tables).copied().collect()
+        flat.iter()
+            .skip(t)
+            .step_by(self.params.num_tables)
+            .copied()
+            .collect()
     }
 
     fn append(&mut self, rows: &MmapColumnStore, start: usize) -> Result<(), ENNError> {
         if u32::try_from(rows.nrows).is_err() {
-            return Err(ENNError::InvalidParameter("O1 store holds at most 2^32 rows".into()));
+            return Err(ENNError::InvalidParameter(
+                "O1 store holds at most 2^32 rows".into(),
+            ));
         }
         let target = target_bits(rows.nrows, self.params.bucket_target);
         let incremental = self.bits() >= target;
@@ -329,7 +362,12 @@ impl LshIndex {
 
     pub(crate) fn candidate_ids(&self, query: &[f64]) -> Result<Vec<u32>, ENNError> {
         let mut ids = Vec::new();
-        for (t, (key, flips)) in self.planes.query_keys(query, self.params.num_probes).into_iter().enumerate() {
+        for (t, (key, flips)) in self
+            .planes
+            .query_keys(query, self.params.num_probes)
+            .into_iter()
+            .enumerate()
+        {
             let pending = &self.pending[t];
             self.buckets[t].read_ids(key, pending.get(key), &mut ids)?;
             for bit in flips {

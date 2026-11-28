@@ -153,12 +153,19 @@ impl EpistemicNearestNeighbors {
                 train_yvar,
                 x_scale.clone(),
             )?,
-            crate::layout::StoreType::O1 | crate::layout::StoreType::O1Forest => EnnBackend::new_o1(
-                crate::o1::O1Store::open_for(layout.store(), work_dir.to_path_buf(), num_dim, num_metrics)?,
-                train_x,
-                train_y,
-                train_yvar,
-            )?,
+            crate::layout::StoreType::O1 | crate::layout::StoreType::O1Forest => {
+                EnnBackend::new_o1(
+                    crate::o1::O1Store::open_for(
+                        layout.store(),
+                        work_dir.to_path_buf(),
+                        num_dim,
+                        num_metrics,
+                    )?,
+                    train_x,
+                    train_y,
+                    train_yvar,
+                )?
+            }
         };
 
         let mut model = Self {

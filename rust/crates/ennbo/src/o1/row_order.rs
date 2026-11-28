@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -9,8 +10,9 @@ use ndarray::Array2;
 use serde::{Deserialize, Serialize};
 
 use super::forest_tree::Tree;
-use super::row_codes::{CodeWriter, RowCodes};
 use super::lsh::io_error;
+use super::row_codes::{CodeWriter, RowCodes};
+use super::row_sort::{OrderSort, Sink};
 use crate::backend::MmapColumnStore;
 use crate::error::ENNError;
 
@@ -24,11 +26,17 @@ pub struct OrderParams {
     pub rows_per_insert: usize,
     pub grow: f64,
     pub min_rows: usize,
+    pub sort_bytes: usize,
 }
 
 impl Default for OrderParams {
     fn default() -> Self {
-        Self { rows_per_insert: 10, grow: 1.3, min_rows: 4096 }
+        Self {
+            rows_per_insert: 10,
+            grow: 1.3,
+            min_rows: 4096,
+            sort_bytes: 4 << 20,
+        }
     }
 }
 
@@ -55,12 +63,14 @@ pub(crate) struct OrderBuild {
     done: usize,
     rows: usize,
     flusher: Option<JoinHandle<std::io::Result<()>>>,
+    sort: Option<OrderSort>,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct Rows<'a> {
     pub x: &'a MmapColumnStore,
     pub order: Option<&'a RowOrder>,
+    pub near: Option<&'a super::forest_lrows::NearRows>,
 }
 
 fn word(bytes: &[u8], i: usize) -> u32 {
@@ -72,7 +82,13 @@ fn file_path(dir: &Path, generation: u64, what: &str) -> PathBuf {
 }
 
 fn open_rw(path: &Path, create: bool) -> Result<File, ENNError> {
-    OpenOptions::new().read(true).write(true).create(create).truncate(create).open(path).map_err(io_error)
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(create)
+        .truncate(create)
+        .open(path)
+        .map_err(io_error)
 }
 
 fn remove_if_present(path: &Path) -> Result<(), ENNError> {
@@ -83,9 +99,18 @@ fn remove_if_present(path: &Path) -> Result<(), ENNError> {
 }
 
 pub(crate) fn remove_other_generations(dir: &Path, keep: Option<u64>) -> Result<(), ENNError> {
-    let kept: Vec<String> = keep.map_or_else(Vec::new, |g| ["copy", "map", "code"].iter().map(|w| format!("{PREFIX}{w}_{g}.bin")).collect());
+    let kept: Vec<String> = keep.map_or_else(Vec::new, |g| {
+        ["copy", "map", "code"]
+            .iter()
+            .map(|w| format!("{PREFIX}{w}_{g}.bin"))
+            .collect()
+    });
     for entry in std::fs::read_dir(dir).map_err(io_error)? {
-        let name = entry.map_err(io_error)?.file_name().to_string_lossy().into_owned();
+        let name = entry
+            .map_err(io_error)?
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
         if name.starts_with(PREFIX) && !kept.contains(&name) {
             remove_if_present(&dir.join(name))?;
         }
@@ -94,9 +119,20 @@ pub(crate) fn remove_other_generations(dir: &Path, keep: Option<u64>) -> Result<
 }
 
 impl RowOrder {
+    pub(crate) fn advise_now(&self) {
+        self.copy.advise_now();
+        let name = Path::new("o1f_xo_map.bin");
+        crate::backend::advise_random(name, &self.map, |a| self.map.advise(a));
+        if let Some(c) = &self.codes {
+            c.advise_now();
+        }
+    }
+
     pub(crate) fn open(dir: &Path, ncols: usize, nrows: usize) -> Result<Option<Self>, ENNError> {
         let state: Option<OrderState> = bpann_read_json(&dir.join(ROW_ORDER_FILE)).ok().flatten();
-        let opened = state.filter(|s| s.rows <= nrows).map(|s| Self::open_files(dir, s, ncols));
+        let opened = state
+            .filter(|s| s.rows <= nrows)
+            .map(|s| Self::open_files(dir, s, ncols));
         let order = match opened {
             Some(Ok(o)) => Some(o),
             _ => None,
@@ -106,13 +142,25 @@ impl RowOrder {
     }
 
     fn open_files(dir: &Path, s: OrderState, ncols: usize) -> Result<Self, ENNError> {
-        let copy = MmapColumnStore::mmap_open_or_create(file_path(dir, s.generation, "copy"), ncols, Some(s.rows))?;
-        let map = unsafe { Mmap::map(&open_rw(&file_path(dir, s.generation, "map"), false)?) }.map_err(io_error)?;
+        let copy = MmapColumnStore::mmap_open_or_create(
+            file_path(dir, s.generation, "copy"),
+            ncols,
+            Some(s.rows),
+        )?;
+        let map_path = file_path(dir, s.generation, "map");
+        let map = unsafe { Mmap::map(&open_rw(&map_path, false)?) }.map_err(io_error)?;
+        crate::backend::advise_random(&map_path, &map, |a| map.advise(a));
         if map.len() != 4 * s.rows {
             return Err(io_error("row order map has the wrong length"));
         }
         let codes = RowCodes::open(&file_path(dir, s.generation, "code"), ncols, s.rows);
-        Ok(Self { copy, map, codes, rows: s.rows, generation: s.generation })
+        Ok(Self {
+            copy,
+            map,
+            codes,
+            rows: s.rows,
+            generation: s.generation,
+        })
     }
 
     pub(crate) fn rows(&self) -> usize {
@@ -130,12 +178,18 @@ impl RowOrder {
 
 impl<'a> Rows<'a> {
     pub(crate) fn plain(x: &'a MmapColumnStore) -> Self {
-        Self { x, order: None }
+        Self {
+            x,
+            order: None,
+            near: None,
+        }
     }
 
     pub(crate) fn code_dist2(&self, i: u32, query: &[f32], weights: &[f32]) -> Option<f64> {
         let o = self.order.filter(|o| (i as usize) < o.rows)?;
-        o.codes.as_ref().map(|c| c.dist2(o.slot(i as usize), query, weights))
+        o.codes
+            .as_ref()
+            .map(|c| c.dist2(o.slot(i as usize), query, weights))
     }
 
     fn locate(&self, i: usize) -> (&'a MmapColumnStore, usize) {
@@ -145,14 +199,38 @@ impl<'a> Rows<'a> {
         }
     }
 
-    pub(crate) fn mapped(&self, i: usize) -> Result<&'a [f64], ENNError> {
+    pub(crate) fn mapped(&self, i: usize) -> Result<Cow<'a, [f64]>, ENNError> {
+        self.fetch(i, crate::backend::store_pread())
+    }
+
+    pub(crate) fn fetch(&self, i: usize, pread: bool) -> Result<Cow<'a, [f64]>, ENNError> {
+        if let Some(v) = self.near.and_then(|m| m.get(&(i as u32))) {
+            return Ok(Cow::Borrowed(v));
+        }
         let (store, at) = self.locate(i);
-        store.mmap_row_slice(at)
+        if pread {
+            return store.pread_row(at).map(Cow::Owned);
+        }
+        store.mmap_row_slice(at).map(Cow::Borrowed)
     }
 
     pub(crate) fn pread(&self, i: usize) -> Result<Vec<f64>, ENNError> {
         let (store, at) = self.locate(i);
         store.pread_row(at)
+    }
+
+    pub(crate) fn source(&self, i: usize) -> usize {
+        self.locate(i).1
+    }
+
+    pub(crate) fn read_sources(&self, lo: usize, hi: usize) -> Result<Vec<u8>, ENNError> {
+        let split = self.order.map_or(0, |o| o.rows).clamp(lo, hi);
+        let mut bytes = match self.order {
+            Some(o) if split > lo => o.copy.pread_bytes(lo, split)?,
+            _ => Vec::new(),
+        };
+        bytes.extend(self.x.pread_bytes(split, hi)?);
+        Ok(bytes)
     }
 
     pub(crate) fn position(&self, i: u32) -> u64 {
@@ -176,7 +254,14 @@ impl<'a> Rows<'a> {
 }
 
 impl OrderBuild {
-    pub(crate) fn start(dir: &Path, generation: u64, trees: &[&Tree], rows: usize, ncols: usize) -> Result<Option<Self>, ENNError> {
+    pub(crate) fn start(
+        dir: &Path,
+        generation: u64,
+        trees: &[&Tree],
+        rows: usize,
+        ncols: usize,
+        sort_bytes: usize,
+    ) -> Result<Option<Self>, ENNError> {
         let order_path = file_path(dir, generation, "order");
         let mut out = BufWriter::new(open_rw(&order_path, true)?);
         let (mut count, mut failed) = (0usize, None);
@@ -200,18 +285,52 @@ impl OrderBuild {
             return Ok(None);
         }
         let order = unsafe { Mmap::map(&open_rw(&order_path, false)?) }.map_err(io_error)?;
-        let map_file = open_rw(&file_path(dir, generation, "map"), true)?;
+        let map_path = file_path(dir, generation, "map");
+        let map_file = open_rw(&map_path, true)?;
         map_file.set_len(4 * rows as u64).map_err(io_error)?;
         let mut map = unsafe { MmapMut::map_mut(&map_file) }.map_err(io_error)?;
+        crate::backend::advise_random(&map_path, &map, |a| map.advise(a));
         map.fill(0xff);
         let copy_path = file_path(dir, generation, "copy");
         remove_if_present(&copy_path)?;
         let copy = MmapColumnStore::mmap_open_or_create(copy_path, ncols, Some(0))?;
         let codes = CodeWriter::create(&file_path(dir, generation, "code"), ncols)?;
-        Ok(Some(Self { generation, order, map, copy, codes, done: 0, rows, flusher: None }))
+        let tag = format!("{PREFIX}sort_{generation}");
+        let sort = if sort_bytes > 0 {
+            Some(OrderSort::start(dir, &tag, rows, ncols, sort_bytes)?)
+        } else {
+            None
+        };
+        Ok(Some(Self {
+            generation,
+            order,
+            map,
+            copy,
+            codes,
+            done: 0,
+            rows,
+            flusher: None,
+            sort,
+        }))
     }
 
     pub(crate) fn step(&mut self, src: Rows<'_>, budget: usize) -> Result<usize, ENNError> {
+        if let Some(sort) = self.sort.as_mut() {
+            let mut sink = Sink {
+                order: &self.order,
+                map: &mut self.map,
+                copy: &mut self.copy,
+                codes: &mut self.codes,
+            };
+            let moved = sort.step(src, budget, &mut sink)?;
+            self.done += moved;
+            self.sync_copy()?;
+            return Ok(moved);
+        }
+        self.step_gather(src, budget)
+    }
+
+    fn step_gather(&mut self, src: Rows<'_>, budget: usize) -> Result<usize, ENNError> {
         let end = self.done.saturating_add(budget).min(self.rows);
         let ncols = self.copy.ncols;
         let mut at = self.done;
@@ -224,8 +343,8 @@ impl OrderBuild {
                     return Err(io_error("tree order lists a row twice or out of range"));
                 }
                 let row = src.mapped(id)?;
-                self.codes.push(row)?;
-                buf.row_mut(r).assign(&ndarray::ArrayView1::from(row));
+                self.codes.push(&row)?;
+                buf.row_mut(r).assign(&ndarray::ArrayView1::from(&*row));
                 self.map[4 * id..4 * id + 4].copy_from_slice(&(k as u32).to_le_bytes());
             }
             self.copy.mmap_append(&buf.view())?;
@@ -233,16 +352,21 @@ impl OrderBuild {
         }
         let moved = end - self.done;
         self.done = end;
+        self.sync_copy()?;
+        Ok(moved)
+    }
+
+    fn sync_copy(&mut self) -> Result<(), ENNError> {
         if self.flusher.as_ref().is_none_or(|f| f.is_finished()) {
             self.join_flusher()?;
             let file = self.copy.file_handle()?;
             self.flusher = Some(std::thread::spawn(move || file.sync_data()));
         }
-        Ok(moved)
+        Ok(())
     }
 
     pub(crate) fn finished(&self) -> bool {
-        self.done == self.rows
+        self.done == self.rows && self.sort.as_ref().is_none_or(OrderSort::finished)
     }
 
     fn join_flusher(&mut self) -> Result<(), ENNError> {
@@ -258,11 +382,28 @@ impl OrderBuild {
         self.copy.flush()?;
         self.map.flush().map_err(io_error)?;
         self.codes.finish()?;
-        bpann_write_json(&dir.join(ROW_ORDER_FILE), &OrderState { generation: self.generation, rows: self.rows }).map_err(io_error)?;
+        bpann_write_json(
+            &dir.join(ROW_ORDER_FILE),
+            &OrderState {
+                generation: self.generation,
+                rows: self.rows,
+            },
+        )
+        .map_err(io_error)?;
         let map = self.map.make_read_only().map_err(io_error)?;
         drop(self.order);
         remove_other_generations(dir, Some(self.generation))?;
-        let codes = RowCodes::open(&file_path(dir, self.generation, "code"), self.copy.ncols, self.rows);
-        Ok(RowOrder { copy: self.copy, map, codes, rows: self.rows, generation: self.generation })
+        let codes = RowCodes::open(
+            &file_path(dir, self.generation, "code"),
+            self.copy.ncols,
+            self.rows,
+        );
+        Ok(RowOrder {
+            copy: self.copy,
+            map,
+            codes,
+            rows: self.rows,
+            generation: self.generation,
+        })
     }
 }

@@ -39,7 +39,11 @@ fn place(slot: &mut [u8], row: u32, cap: usize, seed: u64) {
     }
 }
 
-fn for_each_key(keys: &KeyFile, n: usize, mut f: impl FnMut(u32, u64) -> Result<(), ENNError>) -> Result<(), ENNError> {
+fn for_each_key(
+    keys: &KeyFile,
+    n: usize,
+    mut f: impl FnMut(u32, u64) -> Result<(), ENNError>,
+) -> Result<(), ENNError> {
     let mut chunk = vec![0u64; KEY_CHUNK_ROWS];
     for start in (0..n).step_by(KEY_CHUNK_ROWS) {
         let len = KEY_CHUNK_ROWS.min(n - start);
@@ -61,7 +65,12 @@ pub(crate) struct BucketFile {
 impl BucketFile {
     pub(crate) fn open(path: PathBuf, cap: usize, seed: u64) -> Result<Self, ENNError> {
         let file = open_rw(&path, false)?;
-        Ok(Self { path, file, cap, seed })
+        Ok(Self {
+            path,
+            file,
+            cap,
+            seed,
+        })
     }
 
     pub(crate) fn has_bits(&self, bits: usize) -> bool {
@@ -93,7 +102,12 @@ impl BucketFile {
         place(slot, row, self.cap, self.seed);
     }
 
-    pub(crate) fn read_ids(&self, key: u64, pending: Option<&Entry>, out: &mut Vec<u32>) -> Result<u64, ENNError> {
+    pub(crate) fn read_ids(
+        &self,
+        key: u64,
+        pending: Option<&Entry>,
+        out: &mut Vec<u32>,
+    ) -> Result<u64, ENNError> {
         let owned;
         let slot: &[u8] = match pending {
             Some(Entry::Slot(slot)) => slot,
@@ -131,7 +145,9 @@ impl BucketFile {
             }
             let last = entries[hi - 1].0;
             buf.resize(((last - first + 1) * sb) as usize, 0);
-            self.file.read_exact_at(&mut buf, first * sb).map_err(io_error)?;
+            self.file
+                .read_exact_at(&mut buf, first * sb)
+                .map_err(io_error)?;
             for (key, entry) in &entries[lo..hi] {
                 let at = ((key - first) * sb) as usize;
                 let slot = &mut buf[at..at + sb as usize];
@@ -146,7 +162,13 @@ impl BucketFile {
         Ok(())
     }
 
-    pub(crate) fn rebuild(&mut self, keys: &KeyFile, n: usize, bits: usize, budget: usize) -> Result<(), ENNError> {
+    pub(crate) fn rebuild(
+        &mut self,
+        keys: &KeyFile,
+        n: usize,
+        bits: usize,
+        budget: usize,
+    ) -> Result<(), ENNError> {
         let sb = self.sb();
         let (part_slots, parts) = rebuild_partitions(bits, self.cap, budget);
         let tmp = self.path.with_extension("tmp");
@@ -188,7 +210,12 @@ impl BucketFile {
     ) -> Result<(), ENNError> {
         let mut writers = window
             .clone()
-            .map(|p| Ok(BufWriter::with_capacity(1 << 16, open_rw(&part_path(scratch, p), true)?)))
+            .map(|p| {
+                Ok(BufWriter::with_capacity(
+                    1 << 16,
+                    open_rw(&part_path(scratch, p), true)?,
+                ))
+            })
             .collect::<Result<Vec<_>, ENNError>>()?;
         for_each_key(keys, n, |row, key| {
             let p = key as usize / part_slots;
@@ -206,7 +233,13 @@ impl BucketFile {
         Ok(())
     }
 
-    fn fill_part(&self, out: &File, scratch: &Path, p: usize, part_slots: usize) -> Result<(), ENNError> {
+    fn fill_part(
+        &self,
+        out: &File,
+        scratch: &Path,
+        p: usize,
+        part_slots: usize,
+    ) -> Result<(), ENNError> {
         let sb = self.sb();
         let path = part_path(scratch, p);
         let mut reader = BufReader::with_capacity(1 << 16, File::open(&path).map_err(io_error)?);
@@ -220,9 +253,15 @@ impl BucketFile {
             }
             let local = u32::from_le_bytes(rec[..4].try_into().expect("local key")) as usize;
             let row = u32::from_le_bytes(rec[4..].try_into().expect("row id"));
-            place(&mut buf[local * sb..(local + 1) * sb], row, self.cap, self.seed);
+            place(
+                &mut buf[local * sb..(local + 1) * sb],
+                row,
+                self.cap,
+                self.seed,
+            );
         }
-        out.write_all_at(&buf, (p * part_slots * sb) as u64).map_err(io_error)?;
+        out.write_all_at(&buf, (p * part_slots * sb) as u64)
+            .map_err(io_error)?;
         std::fs::remove_file(&path).map_err(io_error)
     }
 }

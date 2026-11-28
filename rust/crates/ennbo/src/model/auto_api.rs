@@ -38,10 +38,17 @@ impl EpistemicNearestNeighbors {
         }
     }
 
-    fn stored_rows(&self, indices: &[usize], scattered: bool) -> Result<(Vec<f64>, Vec<f64>), ENNError> {
+    fn stored_rows(
+        &self,
+        indices: &[usize],
+        scattered: bool,
+    ) -> Result<(Vec<f64>, Vec<f64>), ENNError> {
         let (x, y) = match scattered {
             true => self.backend.scattered_rows(indices)?,
-            false => self.backend.train_rows_at(indices).map(|(x, y, _)| (x, y))?,
+            false => self
+                .backend
+                .train_rows_at(indices)
+                .map(|(x, y, _)| (x, y))?,
         };
         let y = match &self.original_y {
             Some(history) => history.gather(indices)?,

@@ -153,7 +153,11 @@ impl Planes {
         self.refresh(rows)
     }
 
-    pub(crate) fn restore(&mut self, anchors: &[Vec<usize>], rows: &MmapColumnStore) -> Result<(), ENNError> {
+    pub(crate) fn restore(
+        &mut self,
+        anchors: &[Vec<usize>],
+        rows: &MmapColumnStore,
+    ) -> Result<(), ENNError> {
         for (t, table_anchors) in anchors.iter().enumerate() {
             for &anchor_row in table_anchors {
                 self.planes[t].push(Hyperplane { anchor_row });
@@ -162,7 +166,11 @@ impl Planes {
         self.refresh(rows)
     }
 
-    pub(crate) fn set_scale(&mut self, hash_scale: &[f64], rows: &MmapColumnStore) -> Result<(), ENNError> {
+    pub(crate) fn set_scale(
+        &mut self,
+        hash_scale: &[f64],
+        rows: &MmapColumnStore,
+    ) -> Result<(), ENNError> {
         self.hash_scale = hash_scale.to_vec();
         self.refresh(rows)
     }
@@ -190,7 +198,8 @@ impl Planes {
         let mut out = Vec::with_capacity(x.nrows() * self.planes.len());
         for row in g.rows() {
             for t in 0..self.planes.len() {
-                let key = (0..width).fold(0u64, |k, b| (k << 1) | u64::from(row[t * width + b] > 0.0));
+                let key =
+                    (0..width).fold(0u64, |k, b| (k << 1) | u64::from(row[t * width + b] > 0.0));
                 out.push(key);
             }
         }

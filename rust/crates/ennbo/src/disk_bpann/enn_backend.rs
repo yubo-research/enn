@@ -145,7 +145,9 @@ impl DiskBpannEnnBackend {
     pub fn y_rows(&self, start: usize, end: usize) -> Result<Array2<f64>, ENNError> {
         let mut out = Array2::zeros((end.saturating_sub(start), self.inner.num_metrics()));
         for (r, i) in (start..end).enumerate() {
-            out.row_mut(r).assign(&ArrayView1::from(self.inner.mmap_row_y_and_yvar(i).map_err(bpann_err)?.0));
+            out.row_mut(r).assign(&ArrayView1::from(
+                self.inner.mmap_row_y_and_yvar(i).map_err(bpann_err)?.0,
+            ));
         }
         Ok(out)
     }
