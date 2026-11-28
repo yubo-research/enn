@@ -14,9 +14,9 @@ fn append(store: &mut O1Store, x: &Array2<f64>, step: usize) {
     }
 }
 
-fn build(n: usize, d: usize, seed: u64) -> (TempDir, O1Store, Array2<f64>) {
+fn build(n: usize, d: usize, seed: u64, l0: usize) -> (TempDir, O1Store, Array2<f64>) {
     std::env::set_var("ENN_O1_KIND", "hlsm");
-    std::env::set_var("ENN_E_L0", "300");
+    std::env::set_var("ENN_E_L0", l0.to_string());
     let mut rng = StdRng::seed_from_u64(seed);
     let x = Array2::from_shape_fn((n, d), |_| rng.gen::<f64>());
     let dir = TempDir::new().unwrap();
@@ -44,7 +44,7 @@ fn meta(dir: &TempDir) -> super::hlsm::EMeta {
 fn hlsm_with_unbounded_window_is_exact_through_reopen_and_metric_change() {
     std::env::set_var("ENN_E_WIN", "1e12");
     let (n, d) = (5000, 6);
-    let (dir, mut store, x) = build(n, d, 11);
+    let (dir, mut store, x) = build(n, d, 11, 300);
     store.set_probe_budget(1, usize::MAX).unwrap();
     let mut rng = StdRng::seed_from_u64(3);
     let q = Array2::from_shape_fn((20, d), |_| rng.gen::<f64>());
@@ -81,8 +81,9 @@ fn hlsm_with_unbounded_window_is_exact_through_reopen_and_metric_change() {
 
 #[test]
 fn hlsm_default_window_finds_most_neighbours() {
-    let (n, d) = (20000, 8);
-    let (_dir, mut store, x) = build(n, d, 5);
+    // One merged run of 12000 entries, about 5x the default 32 KiB window (2340 entries at d=8), so the window is bounded.
+    let (n, d) = (12000, 8);
+    let (_dir, mut store, x) = build(n, d, 5, 750);
     store.set_probe_budget(1, 100).unwrap();
     let mut rng = StdRng::seed_from_u64(9);
     let q = Array2::from_shape_fn((30, d), |_| rng.gen::<f64>());
